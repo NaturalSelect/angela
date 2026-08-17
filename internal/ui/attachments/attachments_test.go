@@ -6,8 +6,8 @@ import (
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/stretchr/testify/require"
 )
 

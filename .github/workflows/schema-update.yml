@@ -8,13 +8,14 @@ on:
       - "internal/agent/hyper/**"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   update-schema:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -24,6 +25,6 @@ jobs:
         with:
           commit_message: "chore: auto-update files"
           branch: main
-          commit_user_name: Charm
-          commit_user_email: 124303983+charmcli@users.noreply.github.com
-          commit_author: Charm <124303983+charmcli@users.noreply.github.com>
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>

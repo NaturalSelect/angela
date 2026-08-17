@@ -24,25 +24,25 @@ import (
 	tea "charm.land/bubbletea/v2"
 	fang "charm.land/fang/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/NaturalSelect/angela/internal/app"
+	"github.com/NaturalSelect/angela/internal/client"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/event"
+	"github.com/NaturalSelect/angela/internal/lock"
+	angelalog "github.com/NaturalSelect/angela/internal/log"
+	"github.com/NaturalSelect/angela/internal/projects"
+	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/server"
+	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/logo"
+	ui "github.com/NaturalSelect/angela/internal/ui/model"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/version"
+	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/charmbracelet/colorprofile"
-	"github.com/charmbracelet/crush/internal/app"
-	"github.com/charmbracelet/crush/internal/client"
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/db"
-	"github.com/charmbracelet/crush/internal/event"
-	"github.com/charmbracelet/crush/internal/lock"
-	crushlog "github.com/charmbracelet/crush/internal/log"
-	"github.com/charmbracelet/crush/internal/projects"
-	"github.com/charmbracelet/crush/internal/proto"
-	"github.com/charmbracelet/crush/internal/server"
-	"github.com/charmbracelet/crush/internal/session"
-	"github.com/charmbracelet/crush/internal/skills"
-	"github.com/charmbracelet/crush/internal/ui/common"
-	"github.com/charmbracelet/crush/internal/ui/logo"
-	ui "github.com/charmbracelet/crush/internal/ui/model"
-	"github.com/charmbracelet/crush/internal/ui/styles"
-	"github.com/charmbracelet/crush/internal/version"
-	"github.com/charmbracelet/crush/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/charmtone"
@@ -55,9 +55,9 @@ var clientHost string
 
 func init() {
 	rootCmd.PersistentFlags().StringP("cwd", "c", "", "Current working directory")
-	rootCmd.PersistentFlags().StringP("data-dir", "D", "", "Custom crush data directory")
+	rootCmd.PersistentFlags().StringP("data-dir", "D", "", "Custom angela data directory")
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Debug")
-	rootCmd.PersistentFlags().StringVarP(&clientHost, "host", "H", server.DefaultHost(), "Connect to a specific crush server host (for advanced users)")
+	rootCmd.PersistentFlags().StringVarP(&clientHost, "host", "H", server.DefaultHost(), "Connect to a specific angela server host (for advanced users)")
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
@@ -81,33 +81,33 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "crush",
+	Use:   "angela",
 	Short: "A terminal-first AI assistant for software development",
 	Long:  "A glamorous, terminal-first AI assistant for software development and adjacent tasks",
 	Example: `
 # Run in interactive mode
-crush
+angela
 
 # Run non-interactively
-crush run "Guess my 5 favorite Pokémon"
+angela run "Guess my 5 favorite Pokémon"
 
 # Run a non-interactively with pipes and redirection
-cat README.md | crush run "make this more glamorous" > GLAMOROUS_README.md
+cat README.md | angela run "make this more glamorous" > GLAMOROUS_README.md
 
 # Run with debug logging in a specific directory
-crush --debug --cwd /path/to/project
+angela --debug --cwd /path/to/project
 
 # Run in yolo mode (auto-accept all permissions; use with care)
-crush --yolo
+angela --yolo
 
 # Run with custom data directory
-crush --data-dir /path/to/custom/.crush
+angela --data-dir /path/to/custom/.angela
 
 # Continue a previous session
-crush --session {session-id}
+angela --session {session-id}
 
 # Continue the most recent session
-crush --continue
+angela --continue
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sessionID, _ := cmd.Flags().GetString("session")
@@ -145,7 +145,7 @@ crush --continue
 		if _, err := program.Run(); err != nil {
 			event.Error(err)
 			slog.Error("TUI run error", "error", err)
-			return errors.New("Crush crashed. If metrics are enabled, we were notified about it. If you'd like to report it, please copy the stacktrace above and open an issue at https://github.com/charmbracelet/crush/issues/new?template=bug.yml") //nolint:staticcheck
+			return errors.New("Angela crashed. If metrics are enabled, we were notified about it. If you'd like to report it, please copy the stacktrace above and open an issue at https://github.com/NaturalSelect/angela/issues/new?template=bug.yml") //nolint:staticcheck
 		}
 		printSessionResume(model)
 		return nil
@@ -167,13 +167,13 @@ var heartbit = lipgloss.NewStyle().Foreground(charmtone.Dolly).SetString(`
 `)
 
 // printSessionResume prints the session title and resume hint to stdout after
-// the TUI exits, so the user can resume the session with `crush -s <id>`.
+// the TUI exits, so the user can resume the session with `angela -s <id>`.
 // Nothing is printed when there is no active session.
 func printSessionResume(model *ui.UI) {
 	out := colorprofile.NewWriter(os.Stderr, os.Environ())
 
 	t := styles.ThemeForProvider("")
-	crushLogo := logo.Render(t.Logo.GradCanvas, version.Version, true, logo.Opts{
+	angelaLogo := logo.Render(t.Logo.GradCanvas, version.Version, true, logo.Opts{
 		FieldColor:   t.Logo.FieldColor,
 		TitleColorA:  t.Logo.TitleColorA,
 		TitleColorB:  t.Logo.TitleColorB,
@@ -189,8 +189,8 @@ func printSessionResume(model *ui.UI) {
 	style := lipgloss.NewStyle().Padding(1, 3)
 	contentWidth := tw - style.GetHorizontalFrameSize()
 
-	info := crushLogo +
-		"\nThanks for using Crush! " +
+	info := angelaLogo +
+		"\nThanks for using Angela! " +
 		lipgloss.NewStyle().Width(contentWidth).Render(randomExitMessage())
 
 	if hasSession {
@@ -204,7 +204,7 @@ func printSessionResume(model *ui.UI) {
 
 		hash := session.HashID(sess.ID)[:7]
 		sessionLine := lipgloss.NewStyle().Foreground(charmtone.Charple).Render("Session  ") + title
-		continueLine := lipgloss.NewStyle().Foreground(charmtone.Charple).Render("Continue ") + "crush -s " + hash
+		continueLine := lipgloss.NewStyle().Foreground(charmtone.Charple).Render("Continue ") + "angela -s " + hash
 		info += "\n\n" + sessionLine + "\n" + continueLine
 	}
 
@@ -292,9 +292,9 @@ func supportsProgressBar() bool {
 }
 
 // useClientServer returns true when the client/server architecture is
-// enabled via the CRUSH_CLIENT_SERVER environment variable.
+// enabled via the ANGELA_CLIENT_SERVER environment variable.
 func useClientServer() bool {
-	v, _ := strconv.ParseBool(os.Getenv("CRUSH_CLIENT_SERVER"))
+	v, _ := strconv.ParseBool(os.Getenv("ANGELA_CLIENT_SERVER"))
 	return v
 }
 
@@ -316,7 +316,7 @@ func setupWorkspaceWithProgressBar(cmd *cobra.Command) (workspace.Workspace, fun
 }
 
 // setupWorkspace returns a Workspace and cleanup function. When
-// CRUSH_CLIENT_SERVER=1, it connects to a server process and returns a
+// ANGELA_CLIENT_SERVER=1, it connects to a server process and returns a
 // ClientWorkspace. Otherwise it creates an in-process app.App and
 // returns an AppWorkspace.
 func setupWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
@@ -369,8 +369,8 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 		return nil, nil, err
 	}
 
-	logFile := filepath.Join(cfg.Options.DataDirectory, "logs", "crush.log")
-	crushlog.Setup(logFile, debug)
+	logFile := filepath.Join(cfg.Options.DataDirectory, "logs", "angela.log")
+	angelalog.Setup(logFile, debug)
 
 	// Discover skills once before app.New. Local mode hosts a single
 	// workspace per process, so WithGlobalMirror keeps the package
@@ -493,8 +493,8 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 	}
 
 	if ws.Config != nil {
-		logFile := filepath.Join(ws.Config.Options.DataDirectory, "logs", "crush.log")
-		crushlog.Setup(logFile, debug)
+		logFile := filepath.Join(ws.Config.Options.DataDirectory, "logs", "angela.log")
+		angelalog.Setup(logFile, debug)
 	}
 
 	// Retiring the client releases every claim it holds, so it covers
@@ -551,7 +551,7 @@ func replaceExitingServer(cmd *cobra.Command, hostURL *url.URL) error {
 		}
 	}
 	if err := spawnAndWaitReady(cmd, hostURL); err != nil {
-		return fmt.Errorf("failed to initialize crush server: %v", err)
+		return fmt.Errorf("failed to initialize angela server: %v", err)
 	}
 	return nil
 }
@@ -563,11 +563,11 @@ func replaceExitingServer(cmd *cobra.Command, hostURL *url.URL) error {
 func ensureServer(cmd *cobra.Command, hostURL *url.URL) error {
 	// Initialize the persistent log here so stale-socket diagnostics
 	// emitted before connectToServer runs are captured in the per-host
-	// server log file. crushlog.Setup uses sync.Once internally, so the
+	// server log file. angelalog.Setup uses sync.Once internally, so the
 	// later call from connectToServer becomes a no-op.
 	debug, _ := cmd.Flags().GetBool("debug")
-	logFile := filepath.Join(config.GlobalCacheDir(), "server-"+safeHostName(hostURL), "crush.log")
-	crushlog.Setup(logFile, debug)
+	logFile := filepath.Join(config.GlobalCacheDir(), "server-"+safeHostName(hostURL), "angela.log")
+	angelalog.Setup(logFile, debug)
 
 	switch hostURL.Scheme {
 	case "unix", "npipe":
@@ -615,13 +615,13 @@ func ensureServer(cmd *cobra.Command, hostURL *url.URL) error {
 
 		if needsStart {
 			if err := spawnAndWaitReady(cmd, hostURL); err != nil {
-				return fmt.Errorf("failed to initialize crush server: %v", err)
+				return fmt.Errorf("failed to initialize angela server: %v", err)
 			}
 			return nil
 		}
 
 		if err := waitForServerReady(cmd.Context(), hostURL); err != nil {
-			return fmt.Errorf("failed to initialize crush server: %v", err)
+			return fmt.Errorf("failed to initialize angela server: %v", err)
 		}
 	}
 
@@ -630,7 +630,7 @@ func ensureServer(cmd *cobra.Command, hostURL *url.URL) error {
 
 // spawnAndWaitReady serializes the spawn-and-wait-for-readiness sequence
 // across concurrent clients via an exclusive flock on
-// $XDG_CACHE_HOME/crush/server-<safeHost>/start.lock.
+// $XDG_CACHE_HOME/angela/server-<safeHost>/start.lock.
 //
 // After acquiring the lock it re-probes readiness so that a client that
 // blocked while another client was spawning can skip its own spawn and
@@ -702,10 +702,10 @@ func safeHostName(hostURL *url.URL) string {
 }
 
 // serverReadyTimeout returns the total budget for the readiness probe.
-// Overridable via CRUSH_SERVER_READY_TIMEOUT (parsed as a Go duration).
+// Overridable via ANGELA_SERVER_READY_TIMEOUT (parsed as a Go duration).
 func serverReadyTimeout() time.Duration {
 	const def = 10 * time.Second
-	v := os.Getenv("CRUSH_SERVER_READY_TIMEOUT")
+	v := os.Getenv("ANGELA_SERVER_READY_TIMEOUT")
 	if v == "" {
 		return def
 	}
@@ -953,18 +953,18 @@ func startDetachedServer(cmd *cobra.Command, hostURL *url.URL) error {
 	c.Stderr = stderr
 
 	if err := c.Start(); err != nil {
-		return fmt.Errorf("failed to start crush server: %v", err)
+		return fmt.Errorf("failed to start angela server: %v", err)
 	}
 
 	if err := c.Process.Release(); err != nil {
-		return fmt.Errorf("failed to detach crush server process: %v", err)
+		return fmt.Errorf("failed to detach angela server process: %v", err)
 	}
 
 	return nil
 }
 
 func shouldEnableMetrics(cfg *config.Config) bool {
-	if v, _ := strconv.ParseBool(os.Getenv("CRUSH_DISABLE_METRICS")); v {
+	if v, _ := strconv.ParseBool(os.Getenv("ANGELA_DISABLE_METRICS")); v {
 		return false
 	}
 	if v, _ := strconv.ParseBool(os.Getenv("DO_NOT_TRACK")); v {
@@ -1043,7 +1043,7 @@ func ResolveCwd(cmd *cobra.Command) (string, error) {
 	return cwd, nil
 }
 
-func createDotCrushDir(dir string) error {
+func createDotAngelaDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create data directory: %q %w", dir, err)
 	}

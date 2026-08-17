@@ -1,10 +1,10 @@
 name: labeler
 
+# NOTE: issues/pull_request_target triggers are disabled until the labels
+# referenced in .github/labeler.yml are created on this repo (fork did not
+# carry over the upstream repo's custom labels). Re-add them once labels
+# exist; workflow_dispatch stays available for manual testing.
 on:
-  issues:
-    types: [opened]
-  pull_request_target:
-    types: [opened]
   workflow_dispatch:
     inputs:
       issue-number:

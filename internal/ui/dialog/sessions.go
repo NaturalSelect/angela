@@ -9,10 +9,10 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/crush/internal/session"
-	"github.com/charmbracelet/crush/internal/ui/common"
-	"github.com/charmbracelet/crush/internal/ui/list"
-	"github.com/charmbracelet/crush/internal/ui/util"
+	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/list"
+	"github.com/NaturalSelect/angela/internal/ui/util"
 	uv "github.com/charmbracelet/ultraviolet"
 )
 

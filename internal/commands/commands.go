@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/home"
-	"github.com/charmbracelet/crush/internal/skills"
+	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/home"
+	"github.com/NaturalSelect/angela/internal/skills"
 )
 
 var namedArgPattern = regexp.MustCompile(`\$([A-Z][A-Z0-9_]*)`)
@@ -121,11 +121,11 @@ func LoadMCPPrompts() ([]MCPPrompt, error) {
 func buildCommandSources(cfg *config.Config) []commandSource {
 	return []commandSource{
 		{
-			path:   filepath.Join(home.Config(), "crush", "commands"),
+			path:   filepath.Join(home.Config(), "angela", "commands"),
 			prefix: userCommandPrefix,
 		},
 		{
-			path:   filepath.Join(home.Dir(), ".crush", "commands"),
+			path:   filepath.Join(home.Dir(), ".angela", "commands"),
 			prefix: userCommandPrefix,
 		},
 		{

@@ -9,11 +9,11 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/crush/internal/commands"
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/ui/common"
-	"github.com/charmbracelet/crush/internal/ui/list"
-	"github.com/charmbracelet/crush/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/commands"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/list"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
 	uv "github.com/charmbracelet/ultraviolet"
 )
 

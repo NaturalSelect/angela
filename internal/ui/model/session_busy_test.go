@@ -10,16 +10,16 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
-	"github.com/charmbracelet/crush/internal/agent/notify"
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/lsp"
-	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/pubsub"
-	"github.com/charmbracelet/crush/internal/session"
-	"github.com/charmbracelet/crush/internal/ui/attachments"
-	"github.com/charmbracelet/crush/internal/ui/common"
-	"github.com/charmbracelet/crush/internal/ui/dialog"
-	"github.com/charmbracelet/crush/internal/workspace"
+	"github.com/NaturalSelect/angela/internal/agent/notify"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/pubsub"
+	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/ui/attachments"
+	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
 // countingWorkspace is a workspace.Workspace stub that counts every probe

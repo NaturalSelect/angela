@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"charm.land/fantasy"
-	"github.com/charmbracelet/crush/internal/agent"
-	"github.com/charmbracelet/crush/internal/agent/agenttest"
-	"github.com/charmbracelet/crush/internal/db"
-	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/proto"
-	"github.com/charmbracelet/crush/internal/session"
+	"github.com/NaturalSelect/angela/internal/agent"
+	"github.com/NaturalSelect/angela/internal/agent/agenttest"
+	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/stretchr/testify/require"
 )
 

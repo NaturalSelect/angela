@@ -1,14 +1,13 @@
-// Package logo renders a Crush wordmark in a stylized way.
+// Package logo renders an Angela wordmark in a stylized way.
 package logo
 
 import (
 	"fmt"
 	"image/color"
-	"math/rand/v2"
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/crush/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -18,7 +17,7 @@ type letterform func(bool) string
 
 const diag = `╱`
 
-// Opts are the options for rendering the Crush title art.
+// Opts are the options for rendering the Angela title art.
 type Opts struct {
 	FieldColor   color.Color // diagonal lines
 	TitleColorA  color.Color // left gradient ramp point
@@ -26,91 +25,63 @@ type Opts struct {
 	CharmColor   color.Color // Charm™ text color
 	VersionColor color.Color // version text color
 	Width        int         // width of the rendered logo, used for truncation
-	Hyper        bool        // whether it is Crush or Hypercrush
+	Hyper        bool        // whether it is Angela or Hyperangela
 
 	// When true, stretch a random letterform on each render. Has no effect in
 	// compact mode. Mainly for testing. In production you will want to cache
 	// the stretched letterform to keep the logo from jittering on resize.
+	//
+	// NOTE: currently a no-op — Render doesn't use letterforms while the
+	// ANGELA title is a placeholder (see Render's doc comment).
 	Unstable bool
 }
 
-// Render renders the Crush logo. Set the argument to true to render the narrow
+// Render renders the Angela logo. Set the argument to true to render the narrow
 // version, intended for use in a sidebar.
 //
 // The compact argument determines whether it renders compact for the sidebar
 // or wider for the main pane.
+//
+// NOTE: the title is rendered as plain gradient text rather than blocky
+// letterforms. The letterform set in letterforms.go only covers
+// C/E/EAlt/H/P/R/SAlt/U/Y/YAlt and can't spell "ANGELA" (missing A/N/G/L).
+// This is a placeholder until those letterforms are designed.
 func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
-	charm := "Charm™"
-	if !o.Hyper {
-		charm = " " + charm
-	}
-
 	fg := func(c color.Color, s string) string {
 		return lipgloss.NewStyle().Foreground(c).Render(s)
 	}
 
 	// Title.
-	const spacing = 1
-	var hyperLetterforms []letterform
-	if o.Hyper {
-		hyperLetterforms = []letterform{
-			LetterH,
-			LetterYAlt,
-			LetterP,
-			LetterE,
-			LetterR,
-		}
-	}
-	crushLetterforms := []letterform{
-		LetterC,
-		LetterR,
-		LetterU,
-		LetterSAlt,
-		LetterH,
-	}
+	name := "ANGELA"
 	if o.Hyper && !compact {
-		crushLetterforms = append(hyperLetterforms, crushLetterforms...)
+		name = "HYPERANGELA"
 	}
-
-	stretchIndex := -1 // -1 means no stretching.
-	if !compact && !o.Unstable {
-		// Always stretch the same letterform, which is picked once at random.
-		stretchIndex = cachedRandN(len(crushLetterforms))
-	} else if !compact && o.Unstable {
-		// Stretch a random letterform on every render.
-		stretchIndex = rand.IntN(len(crushLetterforms))
-	}
-	crush := renderWord(spacing, stretchIndex, crushLetterforms...)
+	angela := styles.ApplyForegroundGrad(base, name, o.TitleColorA, o.TitleColorB)
 	if o.Hyper && compact {
-		crush = renderWord(spacing, stretchIndex, hyperLetterforms...) + "\n" + crush
+		angela = styles.ApplyForegroundGrad(base, "HYPER", o.TitleColorA, o.TitleColorB) + "\n" + angela
 	}
-	crushWidth := lipgloss.Width(crush)
-	b := new(strings.Builder)
-	for r := range strings.SplitSeq(crush, "\n") {
-		fmt.Fprintln(b, styles.ApplyForegroundGrad(base, r, o.TitleColorA, o.TitleColorB))
-	}
-	crush = b.String()
+	angelaWidth := lipgloss.Width(angela)
 
-	// Charm and version.
-	metaRowGap := 1
-	maxVersionWidth := crushWidth - lipgloss.Width(charm) - metaRowGap
-	version = ansi.Truncate(version, maxVersionWidth, "…") // truncate version if too long.
+	// Version. (There is no Charm™-equivalent mark configured for this
+	// build, so the meta row is just the version, right-aligned to the
+	// title width.)
+	version = ansi.Truncate(version, angelaWidth, "…") // truncate version if too long.
 	if o.Hyper && compact {
 		version += " "
 	}
-	gap := max(0, crushWidth-lipgloss.Width(charm)-lipgloss.Width(version))
-	metaRow := fg(o.CharmColor, charm) + strings.Repeat(" ", gap) + fg(o.VersionColor, version)
+	gap := max(0, angelaWidth-lipgloss.Width(version))
+	metaRow := strings.Repeat(" ", gap) + fg(o.VersionColor, version)
 
-	// Join the meta row and big Crush title.
-	crush = strings.TrimSpace(metaRow + "\n" + crush)
+	// Join the meta row and big title.
+	angela = strings.TrimSpace(metaRow + "\n" + angela)
 
-	// Narrow version. If this is Hypercrush, this is also a stacked version.
+	// Narrow version. If this is Hyperangela, this is also a stacked version.
 	if compact {
-		field := fg(o.FieldColor, strings.Repeat(diag, crushWidth))
-		return strings.Join([]string{field, field, crush, field, ""}, "\n")
+		field := fg(o.FieldColor, strings.Repeat(diag, angelaWidth))
+		return strings.Join([]string{field, field, angela, field, ""}, "\n")
 	}
 
-	fieldHeight := lipgloss.Height(crush)
+	fieldHeight := lipgloss.Height(angela)
 
 	// Left field.
 	const leftWidth = 6
@@ -121,7 +92,7 @@ func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
 	}
 
 	// Right field.
-	rightWidth := max(15, o.Width-crushWidth-leftWidth-2) // 2 for the gap.
+	rightWidth := max(15, o.Width-angelaWidth-leftWidth-2) // 2 for the gap.
 	const stepDownAt = 0
 	rightField := new(strings.Builder)
 	for i := range fieldHeight {
@@ -134,7 +105,7 @@ func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
 
 	// Return the wide version.
 	const hGap = " "
-	logo := lipgloss.JoinHorizontal(lipgloss.Top, leftField.String(), hGap, crush, hGap, rightField.String())
+	logo := lipgloss.JoinHorizontal(lipgloss.Top, leftField.String(), hGap, angela, hGap, rightField.String())
 	if o.Width > 0 {
 		// Truncate the logo to the specified width.
 		lines := strings.Split(logo, "\n")
@@ -146,16 +117,14 @@ func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
 	return logo
 }
 
-// SmallRender renders a smaller version of the Crush logo, suitable for
+// SmallRender renders a smaller version of the Angela logo, suitable for
 // smaller windows or sidebar usage.
 func SmallRender(t *styles.Styles, width int, o Opts) string {
-	name := "Crush"
+	name := "ANGELA"
 	if o.Hyper {
-		name = "HYPERCRUSH"
+		name = "HYPERANGELA"
 	}
-	charm := "Charm™"
-	title := t.Logo.SmallCharm.Render(charm)
-	title = fmt.Sprintf("%s %s", title, styles.ApplyBoldForegroundGrad(t.Logo.GradCanvas, name, t.Logo.SmallGradFromColor, t.Logo.SmallGradToColor))
+	title := styles.ApplyBoldForegroundGrad(t.Logo.GradCanvas, name, t.Logo.SmallGradFromColor, t.Logo.SmallGradToColor)
 	remainingWidth := width - lipgloss.Width(title) - 1 // 1 for the space after the name
 	if remainingWidth > 0 {
 		lines := strings.Repeat("╱", remainingWidth)

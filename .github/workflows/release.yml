@@ -11,23 +11,26 @@ concurrency:
   group: goreleaser
   cancel-in-progress: true
 
+permissions:
+  contents: write
+  id-token: write
+
 jobs:
   goreleaser:
-    uses: charmbracelet/meta/.github/workflows/goreleaser.yml@main
-    with:
-      go_version: "1.26"
-      macos_sign_entitlements: "./.github/entitlements.plist"
-    secrets:
-      docker_username: ${{ secrets.DOCKERHUB_USERNAME }}
-      docker_token: ${{ secrets.DOCKERHUB_TOKEN }}
-      gh_pat: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-      goreleaser_key: ${{ secrets.GORELEASER_KEY }}
-      fury_token: ${{ secrets.FURY_TOKEN }}
-      nfpm_gpg_key: ${{ secrets.NFPM_GPG_KEY }}
-      nfpm_passphrase: ${{ secrets.NFPM_PASSPHRASE }}
-      aur_key: ${{ secrets.AUR_KEY }}
-      macos_sign_p12: ${{ secrets.MACOS_SIGN_P12 }}
-      macos_sign_password: ${{ secrets.MACOS_SIGN_PASSWORD }}
-      macos_notary_issuer_id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-      macos_notary_key_id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-      macos_notary_key: ${{ secrets.MACOS_NOTARY_KEY }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

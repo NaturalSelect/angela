@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/csync"
-	"github.com/charmbracelet/crush/internal/fsext"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/fsext"
 	powernapconfig "github.com/charmbracelet/x/powernap/pkg/config"
 	powernap "github.com/charmbracelet/x/powernap/pkg/lsp"
 	"github.com/sourcegraph/jsonrpc2"
@@ -379,7 +379,7 @@ func handles(server *powernapconfig.ServerConfig, filePath, workDir string) bool
 // This is generally faster than [Manager.StopAll] because it doesn't wait for
 // the server to exit gracefully, but it can lead to data loss if the server is
 // in the middle of writing something.
-// Generally it doesn't matter when shutting down Crush, though.
+// Generally it doesn't matter when shutting down Angela, though.
 func (s *Manager) KillAll(context.Context) {
 	var wg sync.WaitGroup
 	for name, client := range s.clients.Seq2() {

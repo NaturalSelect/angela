@@ -1,5 +1,5 @@
 {
-  description = "Crush development environment";
+  description = "Angela development environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

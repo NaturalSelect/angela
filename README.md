@@ -1,22 +1,21 @@
-# Crush
+# Angela
 
 <p align="center">
-    <a href="https://stuff.charm.sh/crush/charm-crush.png"><img width="450" alt="Charm Crush Logo" src="https://github.com/user-attachments/assets/cf8ca3ce-8b02-43f0-9d0f-5a331488da4b" /></a><br />
-    <a href="https://github.com/charmbracelet/crush/releases"><img src="https://img.shields.io/github/release/charmbracelet/crush" alt="Latest Release"></a>
-    <a href="https://github.com/charmbracelet/crush/actions"><img src="https://github.com/charmbracelet/crush/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
+    <a href="https://github.com/NaturalSelect/angela/releases"><img src="https://img.shields.io/github/release/NaturalSelect/angela" alt="Latest Release"></a>
+    <a href="https://github.com/NaturalSelect/angela/actions"><img src="https://github.com/NaturalSelect/angela/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
 </p>
 
 <p align="center">Your new coding bestie, now available in your favourite terminal.<br />Your tools, your code, and your workflows, wired into your LLM of choice.</p>
 <p align="center">终端里的编程新搭档，<br />无缝接入你的工具、代码与工作流，全面兼容主流 LLM 模型。</p>
 
-<p align="center"><img width="800" alt="Crush Demo" src="https://github.com/user-attachments/assets/58280caf-851b-470a-b6f7-d5c4ea8a1968" /></p>
+<p align="center"><img width="800" alt="Angela Demo" src="https://github.com/user-attachments/assets/58280caf-851b-470a-b6f7-d5c4ea8a1968" /></p>
 
 ## Features
 
 - **Multi-Model:** choose from a wide range of LLMs or add your own via OpenAI- or Anthropic-compatible APIs
 - **Flexible:** switch LLMs mid-session while preserving context
 - **Session-Based:** maintain multiple work sessions and contexts per project
-- **LSP-Enhanced:** Crush uses LSPs for additional context, just like you do
+- **LSP-Enhanced:** Angela uses LSPs for additional context, just like you do
 - **Extensible:** add capabilities via MCPs (`http`, `stdio`, and `sse`)
 - **Works Everywhere:** first-class support in every terminal on macOS, Linux, Windows (PowerShell and WSL), Android, FreeBSD, OpenBSD, and NetBSD
 - **Industrial Grade:** built on the Charm ecosystem, powering 25k+ applications, from leading open source projects to business-critical infrastructure
@@ -27,51 +26,51 @@ Use a package manager:
 
 ```bash
 # Homebrew
-brew install charmbracelet/tap/crush
+brew install charmbracelet/tap/angela
 
 # NPM
-npm install -g @charmland/crush
+npm install -g @naturalselect/angela
 
 # Arch Linux (btw)
-yay -S crush-bin
+yay -S angela-bin
 
 # Nix
-nix run github:numtide/nix-ai-tools#crush
+nix run github:numtide/nix-ai-tools#angela
 
 # FreeBSD
-pkg install crush
+pkg install angela
 ```
 
 Windows users:
 
 ```bash
 # Winget
-winget install charmbracelet.crush
+winget install charmbracelet.angela
 
 # Scoop
 scoop bucket add charm https://github.com/charmbracelet/scoop-bucket.git
-scoop install crush
+scoop install angela
 ```
 
 <details>
 <summary><strong>Nix (NUR)</strong></summary>
 
-Crush is available via the official Charm [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.crush`, which is the most up-to-date way to get Crush in Nix.
+Angela is available via the official Charm [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.angela`, which is the most up-to-date way to get Angela in Nix.
 
-You can also try out Crush via the NUR with `nix-shell`:
+You can also try out Angela via the NUR with `nix-shell`:
 
 ```bash
 # Add the NUR channel.
 nix-channel --add https://github.com/nix-community/NUR/archive/main.tar.gz nur
 nix-channel --update
 
-# Get Crush in a Nix shell.
-nix-shell -p '(import <nur> { pkgs = import <nixpkgs> {}; }).repos.charmbracelet.crush'
+# Get Angela in a Nix shell.
+nix-shell -p '(import <nur> { pkgs = import <nixpkgs> {}; }).repos.charmbracelet.angela'
 ```
 
 ### NixOS & Home Manager Module Usage via NUR
 
-Crush provides NixOS and Home Manager modules via NUR.
+Angela provides NixOS and Home Manager modules via NUR.
 You can use these modules directly in your flake by importing them from NUR. Since it auto detects whether its a home manager or nixos context you can use the import the exact same way :)
 
 ```nix
@@ -86,9 +85,9 @@ You can use these modules directly in your flake by importing them from NUR. Sin
       system = "x86_64-linux";
       modules = [
         nur.modules.nixos.default
-        nur.repos.charmbracelet.modules.crush
+        nur.repos.charmbracelet.modules.angela
         {
-          programs.crush = {
+          programs.angela = {
             enable = true;
             settings = {
               providers = {
@@ -133,7 +132,7 @@ You can use these modules directly in your flake by importing them from NUR. Sin
 sudo mkdir -p /etc/apt/keyrings
 curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
 echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
-sudo apt update && sudo apt install crush
+sudo apt update && sudo apt install angela
 ```
 
 </details>
@@ -148,7 +147,7 @@ baseurl=https://repo.charm.sh/yum/
 enabled=1
 gpgcheck=1
 gpgkey=https://repo.charm.sh/yum/gpg.key' | sudo tee /etc/yum.repos.d/charm.repo
-sudo yum install crush
+sudo yum install angela
 ```
 
 </details>
@@ -158,12 +157,12 @@ Or, download it:
 - [Packages][releases] are available in Debian and RPM formats
 - [Binaries][releases] are available for Linux, macOS, Windows, FreeBSD, OpenBSD, and NetBSD
 
-[releases]: https://github.com/charmbracelet/crush/releases
+[releases]: https://github.com/NaturalSelect/angela/releases
 
 Or just install it with Go:
 
 ```
-go install github.com/charmbracelet/crush@latest
+go install github.com/NaturalSelect/angela@latest
 ```
 
 On illumos (OpenIndiana, OmniOS), the command above works as-is. Only native
@@ -172,11 +171,11 @@ the terminal bell still work. On Oracle Solaris, add `-tags sqlite3_dotlk` so
 the local database uses dot-file locking:
 
 ```
-go install -tags sqlite3_dotlk github.com/charmbracelet/crush@latest
+go install -tags sqlite3_dotlk github.com/NaturalSelect/angela@latest
 ```
 
 > [!WARNING]
-> Productivity may increase when using Crush and you may find yourself nerd
+> Productivity may increase when using Angela and you may find yourself nerd
 > sniped when first using the application. If the symptoms persist, join the
 > [Slack][slack] or [Discord][discord] and nerd snipe the rest of us.
 
@@ -185,15 +184,15 @@ go install -tags sqlite3_dotlk github.com/charmbracelet/crush@latest
 The quickest way to get started is to choose a [Hyper][hyper] model from model
 picker. Follow the steps to authenticate and you'll be good to go.
 
-[Hyper], from Charm, is the official Crush provider. It’s subscription-based,
-with a free tier, and optimized for Crush. It’s privacy focused, with zero data
+[Hyper], from Charm, is the official Angela provider. It’s subscription-based,
+with a free tier, and optimized for Angela. It’s privacy focused, with zero data
 retention (ZDR) is and designed to comply with GDPR. [More on Hyper][hyper].
 
 <p><a href="https://hyper.charm.land"><img width="340" height="200" alt="Charm Hyper" src="https://github.com/user-attachments/assets/50875289-7992-454d-9f14-9f790413fb5e" /></a></p>
 
 ## API Keys
 
-You can also use Crush with many other providers such as Anthopic, OpenAI,
+You can also use Angela with many other providers such as Anthopic, OpenAI,
 Gemini, OpenRouter and so on. Press <kbd>ctrl+l</kbd> to open the model picker,
 choose the provider of your choice, and paste your API key.
 
@@ -232,29 +231,29 @@ That said, you can also set environment variables for preferred providers:
 
 [hyper]: https://hyper.charm.land
 
-Also note that Crush can support nearly any provider, including
+Also note that Angela can support nearly any provider, including
 [Local Models](#local-models). For more info see
 [Custom Providers](#custom-providers) below.
 
 ### By the Way
 
-Is there a provider you’d like to see in Crush? Is there an existing model that needs an update?
+Is there a provider you’d like to see in Angela? Is there an existing model that needs an update?
 
-Crush’s default model listing is managed in [Catwalk](https://github.com/charmbracelet/catwalk), a community-supported, open source repository of Crush-compatible models, and you’re welcome to contribute.
+Angela’s default model listing is managed in [Catwalk](https://github.com/charmbracelet/catwalk), a community-supported, open source repository of Angela-compatible models, and you’re welcome to contribute.
 
 <a href="https://github.com/charmbracelet/catwalk"><img width="174" height="174" alt="Catwalk Badge" src="https://github.com/user-attachments/assets/95b49515-fe82-4409-b10d-5beb0873787d" /></a>
 
 ## Configuration
 
 > [!TIP]
-> Crush ships with a builtin skill for configuring itself. Most of the time
+> Angela ships with a builtin skill for configuring itself. Most of the time
 > you can just tell what you want it to configure and it will get the job done.
 
-Crush runs great with no configuration. That said, if you do need or want to
-customize Crush, you can, with a `crushrc`.
+Angela runs great with no configuration. That said, if you do need or want to
+customize Angela, you can, with a `angelarc`.
 
-A `crushrc` is just Bash with some Crush-specific builtins. It’s a lot like
-a `.bashrc`, just for your Crush. Because Crush has a native, built-in Bash
+A `angelarc` is just Bash with some Angela-specific builtins. It’s a lot like
+a `.bashrc`, just for your Angela. Because Angela has a native, built-in Bash
 interpreter, Bash-based config works identically across all platforms, including
 Windows.
 
@@ -287,14 +286,14 @@ with the following priority:
 
 | Priority | Unix-like                 | Windows                               |
 | -------- | ------------------------- | ------------------------------------- |
-| 1        | `./.crushrc`              | `.\.crushrc`                          |
-| 2        | `./crushrc`               | `.\crushrc`                           |
-| 3        | `~/.config/crush/crushrc` | `%USERPROFILE%\.config\crush\crushrc` |
+| 1        | `./.angelarc`              | `.\.angelarc`                          |
+| 2        | `./angelarc`               | `.\angelarc`                           |
+| 3        | `~/.config/angela/angelarc` | `%USERPROFILE%\.config\angela\angelarc` |
 
-(Crush respects the [XDG Base Directory Specification][xdg], so your paths
+(Angela respects the [XDG Base Directory Specification][xdg], so your paths
 may differ depending on your `XDG_CONFIG_HOME` value. Data directories such as
-`~/.local/share/crush` and `%LOCALAPPDATA%\crush` contain JSON state only; Crush
-does not execute a `crushrc` from them.)
+`~/.local/share/angela` and `%LOCALAPPDATA%\angela` contain JSON state only; Angela
+does not execute a `angelarc` from them.)
 
 [xdg]: https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
 
@@ -304,25 +303,25 @@ consdiered deprecated. See: [the config docs](./docs/config/) for details.
 > [!TIP]
 > You can override the user and data config locations by setting:
 >
-> - `CRUSH_GLOBAL_CONFIG`
-> - `CRUSH_GLOBAL_DATA`
+> - `ANGELA_GLOBAL_CONFIG`
+> - `ANGELA_GLOBAL_DATA`
 
-As an additional note, Crush also stores ephemeral data, such as application
+As an additional note, Angela also stores ephemeral data, such as application
 state, in one additional location. This is state and should not be edited by
 hand, nor should it be considered configuration.
 
 ```bash
 # Unix
-$HOME/.local/share/crush/crush.json
+$HOME/.local/share/angela/angela.json
 
 # Windows
-%LOCALAPPDATA%\crush\crush.json
+%LOCALAPPDATA%\angela\angela.json
 ```
 
 #### A note on security
 
-Both `crushrc` and `crush.json` are trusted code; `crushrc` runs in a full
-shell, and any `$(...)` in `crush.json` runs at load time. Don't launch Crush
+Both `angelarc` and `angela.json` are trusted code; `angelarc` runs in a full
+shell, and any `$(...)` in `angela.json` runs at load time. Don't launch Angela
 in a directory whose config you haven't reviewed, and don't randomly `source`
 files from the internet into your config.
 
@@ -331,11 +330,11 @@ files from the internet into your config.
 The top-level `env` field sets environment variables at startup, before
 providers are configured. This is useful for variables that affect provider
 authentication (e.g. the AWS SDK credential chain) without wrapping the
-`crush` command in a shell script or exporting them in your shell profile:
+`angela` command in a shell script or exporting them in your shell profile:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
   "env": {
     "AWS_PROFILE": "my-sso-profile"
   }
@@ -348,11 +347,11 @@ a value.
 
 ### LSPs
 
-Crush can use LSPs for additional context to help inform its decisions, just
+Angela can use LSPs for additional context to help inform its decisions, just
 like you would. LSPs can be added manually like so:
 
 ```bash
-# crushrc
+# angelarc
 
 lsp add go --command "gopls" --env "GOTOOLCHAIN go1.24.5"
 lsp add typescript --command "typescript-language-server" --args --stdio
@@ -361,12 +360,12 @@ lsp add nix --command "nil"
 
 ### MCPs
 
-Crush also supports Model Context Protocol (MCP) servers through three transport
+Angela also supports Model Context Protocol (MCP) servers through three transport
 types: `stdio` for command-line servers, `http` for HTTP endpoints, and `sse`
 for Server-Sent Events.
 
 ```bash
-# crushrc
+# angelarc
 
 # Add a local MCP server that runs a Node.js script.
 mcp add filesystem --command node --args /path/to/mcp-server.js \
@@ -384,7 +383,7 @@ mcp add streaming-service --type sse --url "https://example.com/mcp/sse" \
 
 #### MCP OAuth
 
-HTTP and SSE MCP servers that require OAuth can use Crush's built-in
+HTTP and SSE MCP servers that require OAuth can use Angela's built-in
 authorization-code flow instead of a static `Authorization` header. Set
 `"oauth": true` to enable it:
 
@@ -421,20 +420,20 @@ credentials directly. All values support shell expansion:
 }
 ```
 
-When `oauth_client_id` is set, Crush skips dynamic client registration
-and authenticates as the specified client. When omitted, Crush attempts
+When `oauth_client_id` is set, Angela skips dynamic client registration
+and authenticates as the specified client. When omitted, Angela attempts
 dynamic registration automatically (works with Linear, Notion, and other
 servers that support RFC 7591).
 
 ### Hooks
 
-Crush has preliminary support for hooks. For details, see
+Angela has preliminary support for hooks. For details, see
 [the hook guide](./docs/hooks/).
 
 ### Sharing a workspace across clients
 
-When Crush is run against a shared backend (for example two TUIs talking to
-the same `crush serve`), clients are grouped into **workspaces** keyed by
+When Angela is run against a shared backend (for example two TUIs talking to
+the same `angela serve`), clients are grouped into **workspaces** keyed by
 their resolved `--cwd`. Two clients with the same `--cwd` join the same
 underlying workspace, so they share the session list, message history,
 permission queue, LSP, and MCP state.
@@ -467,14 +466,14 @@ does not get reaped before it can attach.
 
 ### Global context files
 
-Crush automatically includes two files for cross-project instructions. Think of
+Angela automatically includes two files for cross-project instructions. Think of
 these are personal additions to the system prompt.
 
-- `~/.config/crush/CRUSH.md`: Crush-specific rules that would confuse other
-  agentic coding tools. If you only use Crush, this is the only one you need to
+- `~/.config/angela/ANGELA.md`: Angela-specific rules that would confuse other
+  agentic coding tools. If you only use Angela, this is the only one you need to
   edit.
 - `~/.config/AGENTS.md`: generic instructions that other coding tools might
-  read. Avoid referring to Crush-specific features or workflows here. You
+  read. Avoid referring to Angela-specific features or workflows here. You
   probably only care about this if you use multiple agentic coding tools and
   want to share instructions between them.
 
@@ -491,17 +490,17 @@ option global-context-path "/full/path/to/folder/of/files/"
 
 ### Ignoring Files
 
-Crush respects `.gitignore` files by default, but you can also create a
-`.crushignore` file to specify additional files and directories that Crush
+Angela respects `.gitignore` files by default, but you can also create a
+`.angelaignore` file to specify additional files and directories that Angela
 should ignore. This is useful for excluding files that you want in version
-control but don't want Crush to consider when providing context.
+control but don't want Angela to consider when providing context.
 
-The `.crushignore` file uses the same syntax as `.gitignore` and can be placed
+The `.angelaignore` file uses the same syntax as `.gitignore` and can be placed
 in the root of your project or in subdirectories.
 
 ### Allowing Tools
 
-By default, Crush will ask you for permission before running tool calls. If
+By default, Angela will ask you for permission before running tool calls. If
 you'd like, you can allow tools to be executed without prompting you for
 permissions. Use this with care.
 
@@ -521,43 +520,43 @@ To disable tools from MCP servers, see the [MCP config section](#mcps).
 
 ### You only live once
 
-You can also skip all permission prompts completely by running Crush with the
+You can also skip all permission prompts completely by running Angela with the
 `--yolo` flag. Be very, very careful with this feature.
 
 ### Disabling Skills
 
-You can prevent Crush from using certain skills entirely. Disabled skills are
+You can prevent Angela from using certain skills entirely. Disabled skills are
 hidden from the agent, including builtin skills and skills discovered from
 disk.
 
 ```bash
-option disable-skill crush-config
+option disable-skill angela-config
 ```
 
 ### Agent Skills
 
-Crush supports the [Agent Skills](https://agentskills.io) open standard for
+Angela supports the [Agent Skills](https://agentskills.io) open standard for
 extending agent capabilities with reusable skill packages. Skills are folders
-containing a `SKILL.md` file with instructions that Crush can discover and
+containing a `SKILL.md` file with instructions that Angela can discover and
 activate on demand.
 
 The global paths we looks for skills are:
 
-- `$CRUSH_SKILLS_DIR`
+- `$ANGELA_SKILLS_DIR`
 - `$XDG_CONFIG_HOME/agents/skills` or `~/.config/agents/skills/`
-- `$XDG_CONFIG_HOME/crush/skills` or `~/.config/crush/skills/`
+- `$XDG_CONFIG_HOME/angela/skills` or `~/.config/angela/skills/`
 - `~/.agents/skills/`
 - `~/.claude/skills/`
 - On Windows, we _also_ look at
   - `%LOCALAPPDATA%\agents\skills\` or `%USERPROFILE%\AppData\Local\agents\skills\`
-  - `%LOCALAPPDATA%\crush\skills\` or `%USERPROFILE%\AppData\Local\crush\skills\`
+  - `%LOCALAPPDATA%\angela\skills\` or `%USERPROFILE%\AppData\Local\angela\skills\`
 - Additional paths configured via `options.skills_paths`
 
 On top of that, we _also_ load skills in your project from the following
 relative paths:
 
 - `.agents/skills`
-- `.crush/skills`
+- `.angela/skills`
 - `.claude/skills`
 - `.cursor/skills`
 
@@ -571,16 +570,16 @@ You can get started with example skills from [anthropics/skills](https://github.
 
 ```bash
 # Unix
-mkdir -p ~/.config/crush/skills
-cd ~/.config/crush/skills
+mkdir -p ~/.config/angela/skills
+cd ~/.config/angela/skills
 git clone https://github.com/anthropics/skills.git _temp
 mv _temp/skills/* . && rm -rf _temp
 ```
 
 ```powershell
 # Windows (PowerShell)
-mkdir -Force "$env:LOCALAPPDATA\crush\skills"
-cd "$env:LOCALAPPDATA\crush\skills"
+mkdir -Force "$env:LOCALAPPDATA\angela\skills"
+cd "$env:LOCALAPPDATA\angela\skills"
 git clone https://github.com/anthropics/skills.git _temp
 mv _temp/skills/* . ; rm -r -force _temp
 ```
@@ -621,7 +620,7 @@ Skills with `disable-model-invocation` won't appear in the model's available ski
 
 ### Desktop notifications
 
-Crush sends desktop notifications when a tool call requires permission and when
+Angela sends desktop notifications when a tool call requires permission and when
 the agent finishes its turn. They're only sent when the terminal window isn't
 focused _and_ your terminal supports reporting the focus state.
 
@@ -635,24 +634,24 @@ supported.
 
 ### Initialization
 
-When you initialize a project, Crush analyzes your codebase and creates
+When you initialize a project, Angela analyzes your codebase and creates
 a context file that helps it work more effectively in future sessions. By
 default, this file is named `AGENTS.md`, but you can customize the name and
 location with the `initialize-as` option:
 
 ```bash
-# crushrc
+# angelarc
 option initialize-as AGENTS.md
 ```
 
 This is useful if you prefer a different naming convention or want to place the
-file in a specific directory (e.g., `CRUSH.md` or `docs/LLMs.md`). Crush will
+file in a specific directory (e.g., `ANGELA.md` or `docs/LLMs.md`). Angela will
 fill the file with project-specific context like build commands, code patterns,
 and conventions it discovered during initialization.
 
 ### Attribution Settings
 
-By default, Crush adds attribution information to Git commits and pull requests
+By default, Angela adds attribution information to Git commits and pull requests
 it creates. You can customize this behavior with `option` commands:
 
 ```bash
@@ -662,15 +661,15 @@ option attribution-generated-with true
 
 - `trailer_style`: Controls the attribution trailer added to commit messages
   (default: `assisted-by`)
-  - `assisted-by`: Adds `Assisted-by: Crush:[ModelID]` as specified in [the convention](https://docs.kernel.org/process/coding-assistants.html#attribution)
-  - `co-authored-by`: Adds `Co-Authored-By: Crush <crush@charm.land>`
+  - `assisted-by`: Adds `Assisted-by: Angela:[ModelID]` as specified in [the convention](https://docs.kernel.org/process/coding-assistants.html#attribution)
+  - `co-authored-by`: Adds `Co-Authored-By: Angela <angela@users.noreply.github.com>`
   - `none`: No attribution trailer
-- `generated_with`: When true (default), adds `💘 Generated with Crush` line to
+- `generated_with`: When true (default), adds `💘 Generated with Angela` line to
   commit messages and PR descriptions
 
 ### Custom Providers
 
-Crush supports custom provider configurations for both OpenAI-compatible and
+Angela supports custom provider configurations for both OpenAI-compatible and
 Anthropic-compatible APIs.
 
 > [!NOTE]
@@ -725,29 +724,29 @@ model add custom-anthropic/claude-sonnet-4-20250514 \
 
 ### Amazon Bedrock
 
-Crush currently supports running Anthropic models through Bedrock, with caching disabled.
+Angela currently supports running Anthropic models through Bedrock, with caching disabled.
 
-A Bedrock provider appears once Crush can find AWS credentials. You can
+A Bedrock provider appears once Angela can find AWS credentials. You can
 authenticate in one of two ways:
 
 **API key.** Set `AWS_BEARER_TOKEN_BEDROCK` to a Bedrock API key. This is the
 simplest option and never expires mid-session.
 
 **AWS credential chain (SSO, profiles, access keys).** Configure AWS the usual
-way with `aws configure` or `aws configure sso`. Crush picks up whatever the
+way with `aws configure` or `aws configure sso`. Angela picks up whatever the
 AWS SDK credential chain resolves, including `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`
 / `AWS_SECRET_ACCESS_KEY`, or an SSO session. To select a specific profile,
-set `AWS_PROFILE` in your shell (`AWS_PROFILE=myprofile crush`) or in the
+set `AWS_PROFILE` in your shell (`AWS_PROFILE=myprofile angela`) or in the
 top-level [`env`](#environment-variables) config.
 
 If you authenticate via AWS SSO, your session expires periodically. Set
 `aws_auth_refresh` to a command that refreshes it. When Bedrock returns a
-credential error, Crush runs the command, then retries the request in place
+credential error, Angela runs the command, then retries the request in place
 (no duplicate messages, no manual restart):
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
   "env": {
     "AWS_PROFILE": "my-sso-profile"
   },
@@ -775,7 +774,7 @@ $ gcloud auth application-default login
 To add specific models to the configuration, configure as such:
 
 ```bash
-# crushrc — authentication still comes from gcloud and the VERTEXAI_* env vars.
+# angelarc — authentication still comes from gcloud and the VERTEXAI_* env vars.
 provider add vertexai --type google-vertex
 
 model add vertexai/claude-sonnet-4@20250514 \
@@ -792,9 +791,9 @@ model add vertexai/claude-sonnet-4@20250514 \
 
 ### Local Models
 
-Crush can auto-discovers models from local providers. Add a custom provider
+Angela can auto-discovers models from local providers. Add a custom provider
 with `type` set to `llamacpp`, `omlx`, `lmstudio`, `litellm`, or `ollama`
-and leave out the models list. Crush will populate the model list
+and leave out the models list. Angela will populate the model list
 automatically.
 
 ```bash
@@ -823,7 +822,7 @@ by auto-discovery. Auto discovery will run if the model list is empty for any
 the found models with your hand configured ones.
 
 ```bash
-# crushrc
+# angelarc
 provider add ollama \
   --name Ollama \
   --type ollama \
@@ -841,37 +840,37 @@ your explicit model fields win on conflicts.
 
 ## Logging
 
-Sometimes you need to look at logs. Luckily, Crush logs all sorts of
-stuff. Logs are stored in `./.crush/logs/crush.log` relative to the project.
+Sometimes you need to look at logs. Luckily, Angela logs all sorts of
+stuff. Logs are stored in `./.angela/logs/angela.log` relative to the project.
 
 The CLI also contains some helper commands to make perusing recent logs easier:
 
 ```bash
 # Print the last 1000 lines
-crush logs
+angela logs
 
 # Print the last 500 lines
-crush logs --tail 500
+angela logs --tail 500
 
 # Follow logs in real time
-crush logs --follow
+angela logs --follow
 ```
 
-Want more logging? Run `crush` with the `--debug` flag, or enable it in your
-`crushrc`:
+Want more logging? Run `angela` with the `--debug` flag, or enable it in your
+`angelarc`:
 
 ```bash
-# crushrc
+# angelarc
 option debug true
 option debug-lsp true
 ```
 
 ## Provider Auto-Updates
 
-By default, Crush automatically checks for the latest and greatest list of
+By default, Angela automatically checks for the latest and greatest list of
 providers and models from [Catwalk](https://github.com/charmbracelet/catwalk),
-the open source Crush provider database. This means that when new providers and
-models are available, or when model metadata changes, Crush automatically
+the open source Angela provider database. This means that when new providers and
+models are available, or when model metadata changes, Angela automatically
 updates your local configuration.
 
 ### Disabling automatic provider updates
@@ -880,58 +879,58 @@ For those with restricted internet access, or those who prefer to work in
 air-gapped environments, this might not be want you want, and this feature can
 be disabled.
 
-To disable automatic provider updates in your `crushrc`:
+To disable automatic provider updates in your `angelarc`:
 
 ```bash
 option provider-auto-update false
 ```
 
-Or set the `CRUSH_DISABLE_PROVIDER_AUTO_UPDATE` environment variable:
+Or set the `ANGELA_DISABLE_PROVIDER_AUTO_UPDATE` environment variable:
 
 ```bash
-export CRUSH_DISABLE_PROVIDER_AUTO_UPDATE=1
+export ANGELA_DISABLE_PROVIDER_AUTO_UPDATE=1
 ```
 
 ### Manually updating providers
 
-Manually updating providers is possible with the `crush update-providers`
+Manually updating providers is possible with the `angela update-providers`
 command:
 
 ```bash
 # Update providers remotely from Catwalk.
-crush update-providers
+angela update-providers
 
 # Update providers from a custom Catwalk base URL.
-crush update-providers https://example.com/
+angela update-providers https://example.com/
 
 # Update providers from a local file.
-crush update-providers /path/to/local-providers.json
+angela update-providers /path/to/local-providers.json
 
-# Reset providers to the embedded version, embedded at crush at build time.
-crush update-providers embedded
+# Reset providers to the embedded version, embedded at angela at build time.
+angela update-providers embedded
 
 # For more info:
-crush update-providers --help
+angela update-providers --help
 ```
 
 ## Metrics
 
-Crush records pseudonymous usage metrics (tied to a device-specific hash),
+Angela records pseudonymous usage metrics (tied to a device-specific hash),
 which maintainers rely on to inform development and support priorities. The
 metrics include solely usage metadata; prompts and responses are NEVER
 collected.
 
-Details on exactly what’s collected are in the source code ([here](https://github.com/charmbracelet/crush/tree/main/internal/event)
-and [here](https://github.com/charmbracelet/crush/blob/main/internal/llm/agent/event.go)).
+Details on exactly what’s collected are in the source code ([here](https://github.com/NaturalSelect/angela/tree/main/internal/event)
+and [here](https://github.com/NaturalSelect/angela/blob/main/internal/llm/agent/event.go)).
 
 You can opt out of metrics collection at any time by setting the environment
 variable by setting the following in your environment:
 
 ```bash
-export CRUSH_DISABLE_METRICS=1
+export ANGELA_DISABLE_METRICS=1
 ```
 
-Crush also respects the [`DO_NOT_TRACK`](https://donottrack.sh/) convention
+Angela also respects the [`DO_NOT_TRACK`](https://donottrack.sh/) convention
 which can be enabled via `export DO_NOT_TRACK=1`.
 
 ## Q&A
@@ -949,7 +948,7 @@ Installing an extra tool might be needed on Unix-like environments.
 
 ## Contributing
 
-See the [contributing guide](https://github.com/charmbracelet/crush?tab=contributing-ov-file#contributing).
+See the [contributing guide](https://github.com/NaturalSelect/angela?tab=contributing-ov-file#contributing).
 
 ## Whatcha think?
 
@@ -966,7 +965,7 @@ We’d love to hear your thoughts on this project. Need help? We gotchu. You can
 
 ## License
 
-[FSL-1.1-MIT](https://github.com/charmbracelet/crush/raw/main/LICENSE.md)
+[FSL-1.1-MIT](https://github.com/NaturalSelect/angela/raw/main/LICENSE.md)
 
 ---
 

@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/csync"
-	"github.com/charmbracelet/crush/internal/oauth"
+	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/stretchr/testify/require"
 )
 
 // writeTokenToDisk persists token as the hyper provider credential in the
-// config file at path, mimicking what another crush instance would leave
+// config file at path, mimicking what another angela instance would leave
 // behind after a successful refresh.
 func writeTokenToDisk(t *testing.T, path string, token *oauth.Token) {
 	t.Helper()
@@ -39,7 +39,7 @@ func writeTokenToDisk(t *testing.T, path string, token *oauth.Token) {
 // newRefreshTestStore builds a ConfigStore whose hyper provider holds an
 // expired OAuth token, persisted both in memory and on disk at configPath.
 // Stores that share a configPath also share the per-provider refresh lock,
-// which lets a single test process faithfully simulate two crush instances:
+// which lets a single test process faithfully simulate two angela instances:
 // lock.File opens a fresh descriptor per call, so two stores block each
 // other on the same lock file exactly as two processes would.
 func newRefreshTestStore(t *testing.T, configPath string, exchange func(ctx context.Context, providerID, refreshToken string) (*oauth.Token, error)) *ConfigStore {
@@ -75,7 +75,7 @@ func newRefreshTestStore(t *testing.T, configPath string, exchange func(ctx cont
 func TestRefreshOAuthToken_InProcessSingleFlight(t *testing.T) {
 	t.Parallel()
 
-	configPath := filepath.Join(t.TempDir(), "crush.json")
+	configPath := filepath.Join(t.TempDir(), "angela.json")
 
 	var exchanges atomic.Int64
 	store := newRefreshTestStore(t, configPath, func(ctx context.Context, providerID, refreshToken string) (*oauth.Token, error) {
@@ -123,7 +123,7 @@ func TestRefreshOAuthToken_InProcessSingleFlight(t *testing.T) {
 func TestRefreshOAuthToken_CrossProcessAdopt(t *testing.T) {
 	t.Parallel()
 
-	configPath := filepath.Join(t.TempDir(), "crush.json")
+	configPath := filepath.Join(t.TempDir(), "angela.json")
 
 	var (
 		mu          sync.Mutex
@@ -224,7 +224,7 @@ func rotatingExchange(live string, next int) (exchange func(ctx context.Context,
 func TestRefreshOAuthToken_StalePeerBorrowsRotatedRefreshToken(t *testing.T) {
 	t.Parallel()
 
-	configPath := filepath.Join(t.TempDir(), "crush.json")
+	configPath := filepath.Join(t.TempDir(), "angela.json")
 	exchange, exchanges, reuse := rotatingExchange("rt3", 4)
 	store := newRefreshTestStore(t, configPath, exchange)
 
@@ -254,7 +254,7 @@ func TestRefreshOAuthToken_StalePeerBorrowsRotatedRefreshToken(t *testing.T) {
 func TestRefreshOAuthToken_AdoptsFresherDiskToken(t *testing.T) {
 	t.Parallel()
 
-	configPath := filepath.Join(t.TempDir(), "crush.json")
+	configPath := filepath.Join(t.TempDir(), "angela.json")
 	exchange, exchanges, _ := rotatingExchange("rt9", 10)
 	store := newRefreshTestStore(t, configPath, exchange)
 
@@ -280,7 +280,7 @@ func TestRefreshOAuthToken_AdoptsFresherDiskToken(t *testing.T) {
 func TestRefreshOAuthToken_IgnoresOlderDiskToken(t *testing.T) {
 	t.Parallel()
 
-	configPath := filepath.Join(t.TempDir(), "crush.json")
+	configPath := filepath.Join(t.TempDir(), "angela.json")
 	exchange, exchanges, reuse := rotatingExchange("rt0", 1)
 	store := newRefreshTestStore(t, configPath, exchange)
 

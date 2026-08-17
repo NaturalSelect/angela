@@ -4,12 +4,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/ui/anim"
-	"github.com/charmbracelet/crush/internal/ui/attachments"
-	"github.com/charmbracelet/crush/internal/ui/list"
-	"github.com/charmbracelet/crush/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/ui/anim"
+	"github.com/NaturalSelect/angela/internal/ui/attachments"
+	"github.com/NaturalSelect/angela/internal/ui/list"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/stretchr/testify/require"
 )
 

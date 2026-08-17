@@ -17,30 +17,30 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
-	"github.com/charmbracelet/crush/internal/agent"
-	"github.com/charmbracelet/crush/internal/agent/notify"
-	"github.com/charmbracelet/crush/internal/agent/tools/mcp"
-	"github.com/charmbracelet/crush/internal/clipboard"
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/db"
-	"github.com/charmbracelet/crush/internal/event"
-	"github.com/charmbracelet/crush/internal/filetracker"
-	"github.com/charmbracelet/crush/internal/format"
-	"github.com/charmbracelet/crush/internal/herdr"
-	"github.com/charmbracelet/crush/internal/history"
-	"github.com/charmbracelet/crush/internal/log"
-	"github.com/charmbracelet/crush/internal/lsp"
-	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/permission"
-	"github.com/charmbracelet/crush/internal/pubsub"
-	"github.com/charmbracelet/crush/internal/question"
-	"github.com/charmbracelet/crush/internal/session"
-	"github.com/charmbracelet/crush/internal/shell"
-	"github.com/charmbracelet/crush/internal/skills"
-	"github.com/charmbracelet/crush/internal/ui/anim"
-	"github.com/charmbracelet/crush/internal/ui/styles"
-	"github.com/charmbracelet/crush/internal/update"
-	"github.com/charmbracelet/crush/internal/version"
+	"github.com/NaturalSelect/angela/internal/agent"
+	"github.com/NaturalSelect/angela/internal/agent/notify"
+	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
+	"github.com/NaturalSelect/angela/internal/clipboard"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/event"
+	"github.com/NaturalSelect/angela/internal/filetracker"
+	"github.com/NaturalSelect/angela/internal/format"
+	"github.com/NaturalSelect/angela/internal/herdr"
+	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/log"
+	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/pubsub"
+	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/shell"
+	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/ui/anim"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/update"
+	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
 )
@@ -80,7 +80,7 @@ type App struct {
 	// runCompletions is the authoritative per-run completion signal,
 	// emitted once per top-level agent turn after all message
 	// updates have been flushed. Bridged into app.events so SSE
-	// subscribers (notably `crush run` in client/server mode) can
+	// subscribers (notably `angela run` in client/server mode) can
 	// drive their exit on a deterministic, payload-bearing event
 	// instead of guessing from message finish parts.
 	runCompletions *pubsub.Broker[notify.RunComplete]
@@ -638,7 +638,7 @@ func setupSubscriber[T any](
 // app.events broker using PublishMustDeliver instead of Publish. Use
 // this for terminal events that subscribers cannot tolerate losing —
 // notably RunComplete, which is the authoritative end-of-run signal
-// for `crush run`. A lossy fan-in here can drop the only terminal
+// for `angela run`. A lossy fan-in here can drop the only terminal
 // event and hang non-interactive clients waiting on it.
 func setupSubscriberMustDeliver[T any](
 	ctx context.Context,

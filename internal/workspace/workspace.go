@@ -11,18 +11,18 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
-	mcptools "github.com/charmbracelet/crush/internal/agent/tools/mcp"
-	"github.com/charmbracelet/crush/internal/commands"
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/history"
-	"github.com/charmbracelet/crush/internal/lsp"
-	"github.com/charmbracelet/crush/internal/message"
-	"github.com/charmbracelet/crush/internal/oauth"
-	"github.com/charmbracelet/crush/internal/permission"
-	"github.com/charmbracelet/crush/internal/proto"
-	"github.com/charmbracelet/crush/internal/question"
-	"github.com/charmbracelet/crush/internal/session"
-	"github.com/charmbracelet/crush/internal/skills"
+	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
+	"github.com/NaturalSelect/angela/internal/commands"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/oauth"
+	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/skills"
 )
 
 // Reasons the coder agent may be unavailable, returned by
@@ -35,7 +35,7 @@ var (
 	// ErrServerUnreachable means the client could not reach the server
 	// to determine the agent's status (server down, or the workspace was
 	// torn down out from under the client).
-	ErrServerUnreachable = errors.New("lost connection to the crush server")
+	ErrServerUnreachable = errors.New("lost connection to the angela server")
 	// ErrWorkspaceGone means the server is reachable but no longer knows
 	// this client's workspace: it was torn down, or the server was
 	// replaced underneath the client. The subscription loop re-registers

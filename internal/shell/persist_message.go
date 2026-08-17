@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/charmbracelet/crush/internal/message"
+	"github.com/NaturalSelect/angela/internal/message"
 )
 
 // PersistOutput stores a bang-mode shell command result as a user message.

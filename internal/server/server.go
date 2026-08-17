@@ -13,9 +13,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/charmbracelet/crush/internal/backend"
-	"github.com/charmbracelet/crush/internal/config"
-	_ "github.com/charmbracelet/crush/internal/swagger"
+	"github.com/NaturalSelect/angela/internal/backend"
+	"github.com/NaturalSelect/angela/internal/config"
+	_ "github.com/NaturalSelect/angela/internal/swagger"
 	httpswagger "github.com/swaggo/http-swagger/v2"
 )
 
@@ -24,7 +24,7 @@ import (
 // use 104 so the resulting path is portable across both platforms.
 const maxUnixSocketPathLen = 104
 
-// socketDir returns the directory used for the Crush Unix socket.
+// socketDir returns the directory used for the Angela Unix socket.
 // It prefers $XDG_RUNTIME_DIR when set (systemd's per-user runtime
 // directory on Linux), and otherwise falls back to [os.TempDir],
 // which resolves to the per-user private $TMPDIR on macOS and to
@@ -66,16 +66,16 @@ func ParseHostURL(host string) (*url.URL, error) {
 //
 // On Windows the address is a named pipe under \\.\pipe\. On Unix
 // platforms the socket lives in the per-user runtime directory
-// returned by [socketDir] and is named crush-<uid>.sock, falling
-// back to crush.sock when the current uid cannot be determined. If
+// returned by [socketDir] and is named angela-<uid>.sock, falling
+// back to angela.sock when the current uid cannot be determined. If
 // the composed path would exceed [maxUnixSocketPathLen] bytes (the
-// macOS sun_path limit), we fall back to /tmp/crush-<uid>.sock so
+// macOS sun_path limit), we fall back to /tmp/angela-<uid>.sock so
 // the socket remains bindable.
 func DefaultHost() string {
-	sock := "crush.sock"
+	sock := "angela.sock"
 	usr, err := user.Current()
 	if err == nil && usr.Uid != "" {
-		sock = fmt.Sprintf("crush-%s.sock", usr.Uid)
+		sock = fmt.Sprintf("angela-%s.sock", usr.Uid)
 	}
 	if runtime.GOOS == "windows" {
 		return fmt.Sprintf("npipe:////./pipe/%s", sock)
@@ -87,7 +87,7 @@ func DefaultHost() string {
 	return "unix://" + path
 }
 
-// Server represents a Crush server bound to a specific address.
+// Server represents a Angela server bound to a specific address.
 type Server struct {
 	// Addr can be a TCP address, a Unix socket path, or a Windows named pipe.
 	Addr    string

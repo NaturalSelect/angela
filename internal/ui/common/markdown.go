@@ -5,12 +5,12 @@ import (
 	"sync"
 
 	"charm.land/glamour/v2"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/ui/xchroma"
 	"github.com/alecthomas/chroma/v2/formatters"
-	"github.com/charmbracelet/crush/internal/ui/styles"
-	"github.com/charmbracelet/crush/internal/ui/xchroma"
 )
 
-const formatterName = "crush"
+const formatterName = "angela"
 
 func init() {
 	// NOTE: Glamour does not offer us an option to pass the formatter
@@ -38,7 +38,7 @@ var (
 //
 // The returned renderer is NOT safe for concurrent Render calls
 // (goldmark's BlockStack carries state across the public Render
-// API). Crush's TUI is single-threaded so production never
+// API). Angela's TUI is single-threaded so production never
 // contends, but parallel callers (most notably parallel tests)
 // must serialize via [LockMarkdownRenderer]. Treat the renderer
 // as effectively pinned to one goroutine at a time.

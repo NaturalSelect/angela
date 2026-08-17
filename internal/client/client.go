@@ -13,16 +13,16 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/proto"
-	"github.com/charmbracelet/crush/internal/server"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/server"
 	"github.com/google/uuid"
 )
 
 // DummyHost is used to satisfy the http.Client's requirement for a URL.
-const DummyHost = "api.crush.localhost"
+const DummyHost = "api.angela.localhost"
 
-// Client represents an RPC client connected to a Crush server.
+// Client represents an RPC client connected to a Angela server.
 type Client struct {
 	h        *http.Client
 	path     string

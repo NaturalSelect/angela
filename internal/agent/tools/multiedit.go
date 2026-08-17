@@ -10,13 +10,13 @@ import (
 	"strings"
 
 	"charm.land/fantasy"
-	"github.com/charmbracelet/crush/internal/diff"
-	"github.com/charmbracelet/crush/internal/filepathext"
-	"github.com/charmbracelet/crush/internal/filetracker"
-	"github.com/charmbracelet/crush/internal/fsext"
-	"github.com/charmbracelet/crush/internal/history"
-	"github.com/charmbracelet/crush/internal/lsp"
-	"github.com/charmbracelet/crush/internal/permission"
+	"github.com/NaturalSelect/angela/internal/diff"
+	"github.com/NaturalSelect/angela/internal/filepathext"
+	"github.com/NaturalSelect/angela/internal/filetracker"
+	"github.com/NaturalSelect/angela/internal/fsext"
+	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/permission"
 )
 
 type MultiEditOperation struct {

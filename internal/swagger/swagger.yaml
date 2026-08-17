@@ -160,7 +160,7 @@ definitions:
           OAuthCallbackPort pins the localhost port used for the OAuth
           redirect listener. Set this when the OAuth provider requires an
           exact-match callback URL (e.g. GitHub OAuth Apps). When omitted,
-          Crush picks the first free port from its default range.
+          Angela picks the first free port from its default range.
         type: integer
       oauth_client_id:
         description: |-
@@ -307,7 +307,7 @@ definitions:
     - TrailerStyleAssistedBy
   csync.Map-string-config_ProviderConfig:
     type: object
-  github_com_charmbracelet_crush_internal_config.Config:
+  github_com_NaturalSelect_angela_internal_config.Config:
     properties:
       $schema:
         type: string
@@ -332,7 +332,7 @@ definitions:
         description: We currently only support large/small as values here.
         type: object
       options:
-        $ref: '#/definitions/github_com_charmbracelet_crush_internal_config.Options'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Options'
       permissions:
         $ref: '#/definitions/config.Permissions'
       providers:
@@ -349,7 +349,7 @@ definitions:
       tools:
         $ref: '#/definitions/config.Tools'
     type: object
-  github_com_charmbracelet_crush_internal_config.Options:
+  github_com_NaturalSelect_angela_internal_config.Options:
     properties:
       attribution:
         $ref: '#/definitions/config.Attribution'
@@ -361,7 +361,7 @@ definitions:
         type: array
       data_directory:
         description: |-
-          DataDirectory is where Crush keeps per-project state such as
+          DataDirectory is where Angela keeps per-project state such as
           the SQLite database and workspace overrides. Relative paths are
           resolved against the working directory; absolute paths are used
           verbatim. After defaulting the stored value is always absolute.
@@ -403,7 +403,7 @@ definitions:
       tui:
         $ref: '#/definitions/config.TUIOptions'
     type: object
-  github_com_charmbracelet_crush_internal_config.Scope:
+  github_com_NaturalSelect_angela_internal_config.Scope:
     enum:
     - 0
     - 1
@@ -411,12 +411,14 @@ definitions:
     x-enum-varnames:
     - ScopeGlobal
     - ScopeWorkspace
-  github_com_charmbracelet_crush_internal_proto.Message:
+  github_com_NaturalSelect_angela_internal_proto.Message:
     properties:
       created_at:
         type: integer
       id:
         type: string
+      is_summary_message:
+        type: boolean
       model:
         type: string
       parts:
@@ -554,7 +556,7 @@ definitions:
       enabled:
         type: boolean
       scope:
-        $ref: '#/definitions/github_com_charmbracelet_crush_internal_config.Scope'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
   proto.ConfigModelRequest:
     properties:
@@ -563,7 +565,7 @@ definitions:
       model_type:
         $ref: '#/definitions/config.SelectedModelType'
       scope:
-        $ref: '#/definitions/github_com_charmbracelet_crush_internal_config.Scope'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
   proto.ConfigProviderKeyRequest:
     properties:
@@ -576,28 +578,28 @@ definitions:
       provider_id:
         type: string
       scope:
-        $ref: '#/definitions/github_com_charmbracelet_crush_internal_config.Scope'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
   proto.ConfigRefreshOAuthRequest:
     properties:
       provider_id:
         type: string
       scope:
-        $ref: '#/definitions/github_com_charmbracelet_crush_internal_config.Scope'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
   proto.ConfigRemoveRequest:
     properties:
       key:
         type: string
       scope:
-        $ref: '#/definitions/github_com_charmbracelet_crush_internal_config.Scope'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
   proto.ConfigSetRequest:
     properties:
       key:
         type: string
       scope:
-        $ref: '#/definitions/github_com_charmbracelet_crush_internal_config.Scope'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
       value: {}
     type: object
   proto.CurrentSession:
@@ -657,6 +659,14 @@ definitions:
       path:
         type: string
     type: object
+  proto.MCPAuthResponse:
+    properties:
+      auth_url:
+        description: |-
+          AuthURL is the OAuth authorization URL the user must visit, when
+          the flow is still in progress.
+        type: string
+    type: object
   proto.MCPClientInfo:
     properties:
       connected_at:
@@ -692,6 +702,13 @@ definitions:
   proto.MCPNameRequest:
     properties:
       name:
+        type: string
+    type: object
+  proto.MCPPendingAuthServer:
+    properties:
+      name:
+        type: string
+      url:
         type: string
     type: object
   proto.MCPPrompt:
@@ -986,7 +1003,7 @@ definitions:
       client_id:
         type: string
       config:
-        $ref: '#/definitions/github_com_charmbracelet_crush_internal_config.Config'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Config'
       data_dir:
         type: string
       debug:
@@ -1037,13 +1054,13 @@ info:
   contact:
     name: Charm
     url: https://charm.sh
-  description: Crush is a terminal-based AI coding assistant. This API is served over
-    a Unix socket (or Windows named pipe) and provides programmatic access to workspaces,
-    sessions, agents, LSP, MCP, and more.
+  description: Angela is a terminal-based AI coding assistant. This API is served
+    over a Unix socket (or Windows named pipe) and provides programmatic access to
+    workspaces, sessions, agents, LSP, MCP, and more.
   license:
     name: MIT
-    url: https://github.com/charmbracelet/crush/blob/main/LICENSE
-  title: Crush API
+    url: https://github.com/NaturalSelect/angela/blob/main/LICENSE
+  title: Angela API
   version: "1.0"
 paths:
   /clients/{client_id}:
@@ -2063,6 +2080,71 @@ paths:
       summary: Stop all LSP servers
       tags:
       - lsp
+  /workspaces/{id}/mcp/auth:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: MCP name request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.MCPNameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.MCPAuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Authenticate an MCP server
+      tags:
+      - mcp
+  /workspaces/{id}/mcp/auth-url:
+    get:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: MCP server name
+        in: query
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.MCPAuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Get MCP OAuth authorization URL
+      tags:
+      - mcp
   /workspaces/{id}/mcp/docker/disable:
     post:
       parameters:
@@ -2143,6 +2225,34 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Get MCP prompt
+      tags:
+      - mcp
+  /workspaces/{id}/mcp/pending-auth:
+    get:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/proto.MCPPendingAuthServer'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Get MCP servers pending OAuth
       tags:
       - mcp
   /workspaces/{id}/mcp/prompts:
@@ -2356,7 +2466,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_charmbracelet_crush_internal_proto.Message'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Message'
             type: array
         "404":
           description: Not Found
@@ -2878,7 +2988,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_charmbracelet_crush_internal_proto.Message'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Message'
             type: array
         "404":
           description: Not Found
@@ -2911,7 +3021,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_charmbracelet_crush_internal_proto.Message'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Message'
             type: array
         "404":
           description: Not Found

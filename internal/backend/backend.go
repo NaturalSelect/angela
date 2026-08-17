@@ -15,14 +15,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/app"
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/csync"
-	"github.com/charmbracelet/crush/internal/db"
-	"github.com/charmbracelet/crush/internal/proto"
-	"github.com/charmbracelet/crush/internal/skills"
-	"github.com/charmbracelet/crush/internal/ui/util"
-	"github.com/charmbracelet/crush/internal/version"
+	"github.com/NaturalSelect/angela/internal/app"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/ui/util"
+	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/google/uuid"
 )
 
@@ -56,7 +56,7 @@ var DefaultCreateGrace = 30 * time.Second
 // new client can attach to — or create a workspace on — a server that is
 // already tearing down, and then observe its coder agent as "offline".
 // Any workspace create within the window cancels the pending shutdown.
-// Overridable via CRUSH_SERVER_IDLE_TIMEOUT (seconds; 0 restores the
+// Overridable via ANGELA_SERVER_IDLE_TIMEOUT (seconds; 0 restores the
 // old shut-down-immediately behavior).
 var DefaultIdleShutdownDelay = 60 * time.Second
 
@@ -67,14 +67,14 @@ var DefaultIdleShutdownDelay = 60 * time.Second
 // timeout) into a permanently lost workspace: the client's reconnect comes
 // back milliseconds later to an ID the server no longer knows. A client
 // that released its claim first (a clean exit) skips the grace. Overridable
-// via CRUSH_SERVER_DETACH_GRACE (seconds; 0 restores immediate teardown).
+// via ANGELA_SERVER_DETACH_GRACE (seconds; 0 restores immediate teardown).
 var DefaultDetachGrace = 10 * time.Second
 
 // ShutdownFunc is called when the backend needs to trigger a server
 // shutdown (e.g. when the last workspace is removed).
 type ShutdownFunc func()
 
-// Backend provides transport-agnostic business logic for the Crush
+// Backend provides transport-agnostic business logic for the Angela
 // server. It manages workspaces and delegates to [app.App] services.
 //
 // Locking order: when both [Backend.mu] and [Workspace.clientsMu] are
@@ -267,14 +267,14 @@ func New(ctx context.Context, cfg *config.ConfigStore, shutdownFn ShutdownFunc) 
 		shutdownFn:  shutdownFn,
 		createGrace: DefaultCreateGrace,
 		lingerDelay: idleShutdownDelayFromEnv(),
-		detachGrace: durationFromEnv("CRUSH_SERVER_DETACH_GRACE", DefaultDetachGrace),
+		detachGrace: durationFromEnv("ANGELA_SERVER_DETACH_GRACE", DefaultDetachGrace),
 	}
 }
 
 // idleShutdownDelayFromEnv returns the idle-shutdown delay, honoring a
-// CRUSH_SERVER_IDLE_TIMEOUT override (in seconds; 0 disables lingering).
+// ANGELA_SERVER_IDLE_TIMEOUT override (in seconds; 0 disables lingering).
 func idleShutdownDelayFromEnv() time.Duration {
-	return durationFromEnv("CRUSH_SERVER_IDLE_TIMEOUT", DefaultIdleShutdownDelay)
+	return durationFromEnv("ANGELA_SERVER_IDLE_TIMEOUT", DefaultIdleShutdownDelay)
 }
 
 // durationFromEnv reads a whole number of seconds from the named
@@ -419,7 +419,7 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	cfg.Overrides().SkipPermissionRequests = args.YOLO
 	cfg.Overrides().EnabledChannels = args.Channels
 
-	if err := createDotCrushDir(cfg.Config().Options.DataDirectory); err != nil {
+	if err := createDotAngelaDir(cfg.Config().Options.DataDirectory); err != nil {
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create data directory: %w", err)
 	}
 

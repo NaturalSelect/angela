@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"image/color"
 
+	"github.com/NaturalSelect/angela/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/ui/xchroma"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
-	"github.com/charmbracelet/crush/internal/ui/styles"
-	"github.com/charmbracelet/crush/internal/ui/xchroma"
 )
 
 // SyntaxHighlight applies syntax highlighting to the given source code based

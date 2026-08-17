@@ -4,9 +4,9 @@ import (
 	"image/color"
 	"sync"
 
+	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/alecthomas/chroma/v2"
 	chromastyles "github.com/alecthomas/chroma/v2/styles"
-	"github.com/charmbracelet/crush/internal/ui/styles"
 )
 
 // Building a chroma style from a theme (chroma.MustNewStyle) parses every
@@ -35,7 +35,7 @@ func ChromaStyle(st *styles.Styles, bg color.Color) *chroma.Style {
 		chromaStyleByBg = nil
 	}
 	if chromaStyleBase == nil {
-		chromaStyleBase = chroma.MustNewStyle("crush", st.ChromaTheme())
+		chromaStyleBase = chroma.MustNewStyle("angela", st.ChromaTheme())
 	}
 	if bg == nil {
 		return chromaStyleBase

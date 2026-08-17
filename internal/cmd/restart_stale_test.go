@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/charmbracelet/crush/internal/client"
-	"github.com/charmbracelet/crush/internal/proto"
-	"github.com/charmbracelet/crush/internal/version"
+	"github.com/NaturalSelect/angela/internal/client"
+	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )

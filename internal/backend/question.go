@@ -1,8 +1,8 @@
 package backend
 
 import (
-	"github.com/charmbracelet/crush/internal/proto"
-	"github.com/charmbracelet/crush/internal/question"
+	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/question"
 )
 
 // AnswerQuestion submits answers for a question. The returned bool

@@ -10,17 +10,17 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/lock"
-	"github.com/charmbracelet/crush/internal/version"
+	"github.com/NaturalSelect/angela/internal/lock"
+	"github.com/NaturalSelect/angela/internal/version"
 )
 
 // ErrDataDirLocked is returned by Connect when the data directory is
-// already in use by another crush process.
-var ErrDataDirLocked = errors.New("data directory already in use by another crush process")
+// already in use by another angela process.
+var ErrDataDirLocked = errors.New("data directory already in use by another angela process")
 
 // dataDirLockFile is the name of the lock file inside the data
-// directory. It lives next to crush.db so users can `ls` and find it.
-const dataDirLockFile = "crush.lock"
+// directory. It lives next to angela.db so users can `ls` and find it.
+const dataDirLockFile = "angela.lock"
 
 // dataDirOwnerInfo is the JSON payload written into the lock file by
 // the process that currently owns it. It is purely informational; the
@@ -40,12 +40,12 @@ type dataDirLock struct {
 }
 
 // acquireDataDirLock takes an exclusive non-blocking lock on
-// {dataDir}/crush.lock. If the lock is already held by another
+// {dataDir}/angela.lock. If the lock is already held by another
 // process, it returns ErrDataDirLocked wrapped with a diagnostic that
 // includes whatever owner info that process wrote.
 //
 // Acquisition is skipped (returning a no-op lock) when
-// CRUSH_SKIP_DATADIR_LOCK is set to a truthy value. This is intended
+// ANGELA_SKIP_DATADIR_LOCK is set to a truthy value. This is intended
 // as an escape hatch for hostile filesystems that do not implement
 // advisory locking; it should not be used in normal operation.
 func acquireDataDirLock(dataDir string) (*dataDirLock, error) {
@@ -81,7 +81,7 @@ func acquireDataDirLock(dataDir string) (*dataDirLock, error) {
 
 // skipDataDirLock reports whether the data-dir lock should be bypassed.
 func skipDataDirLock() bool {
-	v, _ := strconv.ParseBool(os.Getenv("CRUSH_SKIP_DATADIR_LOCK"))
+	v, _ := strconv.ParseBool(os.Getenv("ANGELA_SKIP_DATADIR_LOCK"))
 	return v
 }
 

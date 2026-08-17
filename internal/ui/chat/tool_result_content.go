@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/charmbracelet/crush/internal/diffdetect"
-	"github.com/charmbracelet/crush/internal/stringext"
-	"github.com/charmbracelet/crush/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/diffdetect"
+	"github.com/NaturalSelect/angela/internal/stringext"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
 )
 
 type toolResultContentWidths struct {

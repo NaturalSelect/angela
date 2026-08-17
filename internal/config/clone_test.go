@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/charmbracelet/crush/internal/csync"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/require"
 )
 

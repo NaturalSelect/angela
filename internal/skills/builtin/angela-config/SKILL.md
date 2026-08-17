@@ -1,36 +1,36 @@
 ---
-name: crush-config
-description: Use when the user needs help configuring Crush — writing crushrc (the Bash config format) or crush.json, setting up providers, models, LSPs, MCP servers, hooks, skills, permissions, or changing Crush behavior.
+name: angela-config
+description: Use when the user needs help configuring Angela — writing angelarc (the Bash config format) or angela.json, setting up providers, models, LSPs, MCP servers, hooks, skills, permissions, or changing Angela behavior.
 ---
 
-# Crush Configuration
+# Angela Configuration
 
-Crush supports two config formats:
+Angela supports two config formats:
 
-- **`crushrc`** — a Bash script that builds config by calling Crush builtins.
+- **`angelarc`** — a Bash script that builds config by calling Angela builtins.
   **Preferred.** Because it is real Bash you get includes, secrets,
   conditionals, and variables for free.
-- **`crush.json`** — static JSON. Fully supported; see
+- **`angela.json`** — static JSON. Fully supported; see
   [Legacy JSON format](#legacy-json-format).
 
 Both are discovered together and deep-merged. Priority (highest to lowest):
 
-1. `.crushrc` / `crushrc` / `.crush.json` / `crush.json` (project-local,
-   closer-to-cwd wins; Windows uses `.\.crushrc` / `.\crushrc`)
-2. `$XDG_CONFIG_HOME/crush/crushrc` or `~/.config/crush/crushrc`
-   (`%XDG_CONFIG_HOME%\crush\crushrc` or
-   `%USERPROFILE%\.config\crush\crushrc` on Windows)
+1. `.angelarc` / `angelarc` / `.angela.json` / `angela.json` (project-local,
+   closer-to-cwd wins; Windows uses `.\.angelarc` / `.\angelarc`)
+2. `$XDG_CONFIG_HOME/angela/angelarc` or `~/.config/angela/angelarc`
+   (`%XDG_CONFIG_HOME%\angela\angelarc` or
+   `%USERPROFILE%\.config\angela\angelarc` on Windows)
 
-Data directories (`~/.local/share/crush` and `%LOCALAPPDATA%\crush`) contain
-machine-owned JSON state only; Crush does not discover or execute a `crushrc`
+Data directories (`~/.local/share/angela` and `%LOCALAPPDATA%\angela`) contain
+machine-owned JSON state only; Angela does not discover or execute an `angelarc`
 from those locations.
 
-If a directory has both `crushrc` and `crush.json`, they merge (`crushrc` wins
-on conflicts) and Crush logs a warning.
+If a directory has both `angelarc` and `angela.json`, they merge (`angelarc` wins
+on conflicts) and Angela logs a warning.
 
-## crushrc at a glance
+## angelarc at a glance
 
-A `crushrc` is a plain Bash script executed at load time with the same embedded
+An `angelarc` is a plain Bash script executed at load time with the same embedded
 shell the `bash` tool uses. It builds config by calling builtins (`provider`,
 `model`, `mcp`, `lsp`, `hook`, `permissions`, `option`). Statements run top to
 bottom; later statements win, and `remove`/`reset` operate on anything defined
@@ -39,7 +39,7 @@ earlier or pulled in via `source`.
 ```bash
 #!/usr/bin/env bash
 # Includes and secrets are just Bash.
-source ~/.config/crush/shared.sh
+source ~/.config/angela/shared.sh
 
 provider add anthropic --api-key "$ANTHROPIC_API_KEY"
 
@@ -53,11 +53,11 @@ permissions allow view ls grep edit
 Values are ordinary Bash — quote and expand normally (`"$VAR"`, `$(cmd)`,
 `${VAR:?required}`). A failing `$(command)` aborts the load.
 
-`CRUSH_VERSION` is exported into the script so you can feature-detect the
-running Crush (it is the literal `devel` for local builds):
+`ANGELA_VERSION` is exported into the script so you can feature-detect the
+running Angela (it is the literal `devel` for local builds):
 
 ```bash
-[[ "$CRUSH_VERSION" != devel ]] && lsp add gopls --command gopls
+[[ "$ANGELA_VERSION" != devel ]] && lsp add gopls --command gopls
 ```
 
 ## Commands
@@ -94,7 +94,7 @@ model large [<provider>/<id>] [flags]  # set the large slot; no arg prints it
 model small [<provider>/<id>] [flags]  # set the small slot; no arg prints it
 ```
 
-- `<provider>/<id>` is the same form `crush models` prints. A missing slash is
+- `<provider>/<id>` is the same form `angela models` prints. A missing slash is
   an error. `model add` requires the provider to already exist.
 - `model add` flags: `--name`, `--context-window N`, `--default-max-tokens N`,
   `--can-reason BOOL`, `--supports-images BOOL`, `--price-input F`,
@@ -157,7 +157,7 @@ intend to remove it later. See [Hooks runtime](#hooks-runtime) for how hooks
 execute (stdin payload, env vars, decisions).
 
 ```bash
-hook add PreToolUse --matcher "^bash$" --command ".crush/hooks/no-haskell.sh" --name no-haskell
+hook add PreToolUse --matcher "^bash$" --command ".angela/hooks/no-haskell.sh" --name no-haskell
 ```
 
 ### permissions
@@ -195,7 +195,7 @@ option reset <list-key>    # clear a list option back to empty
 ```bash
 option progress false
 option skill-path ./skills
-option disable-skill crush-config
+option disable-skill angela-config
 option attribution-trailer-style assisted-by
 option attribution-generated-with true
 option ui compact true
@@ -203,7 +203,7 @@ option ui diff unified
 ```
 
 > [!IMPORTANT] These skill paths are loaded by default and do NOT need
-> `skill-path`: `.agents/skills`, `.crush/skills`, `.claude/skills`,
+> `skill-path`: `.agents/skills`, `.angela/skills`, `.claude/skills`,
 > `.cursor/skills`.
 
 ## Hooks runtime
@@ -239,13 +239,13 @@ Event names are case-insensitive and accept snake_case: `PreToolUse`,
 
 | Variable                     | Description                                       |
 | ---------------------------- | ------------------------------------------------- |
-| `CRUSH_EVENT`                | Event name (e.g. `PreToolUse`)                    |
-| `CRUSH_TOOL_NAME`            | Name of the tool being called                     |
-| `CRUSH_SESSION_ID`           | Current session ID                                |
-| `CRUSH_CWD`                  | Current working directory                         |
-| `CRUSH_PROJECT_DIR`          | Project root directory                            |
-| `CRUSH_TOOL_INPUT_COMMAND`   | Value of `command` from tool input (if present)   |
-| `CRUSH_TOOL_INPUT_FILE_PATH` | Value of `file_path` from tool input (if present) |
+| `ANGELA_EVENT`                | Event name (e.g. `PreToolUse`)                    |
+| `ANGELA_TOOL_NAME`            | Name of the tool being called                     |
+| `ANGELA_SESSION_ID`           | Current session ID                                |
+| `ANGELA_CWD`                  | Current working directory                         |
+| `ANGELA_PROJECT_DIR`          | Project root directory                            |
+| `ANGELA_TOOL_INPUT_COMMAND`   | Value of `command` from tool input (if present)   |
+| `ANGELA_TOOL_INPUT_FILE_PATH` | Value of `file_path` from tool input (if present) |
 
 ### Hook output
 
@@ -273,7 +273,7 @@ Event names are case-insensitive and accept snake_case: `PreToolUse`,
 
 ### Claude Code compatibility
 
-Crush also accepts the Claude Code hook output format, so existing hooks work
+Angela also accepts the Claude Code hook output format, so existing hooks work
 unchanged:
 
 ```json
@@ -306,20 +306,20 @@ user-invocable: true
 
 ## Environment variables
 
-- `CRUSH_VERSION` — exported into `crushrc` at load; the running version (or
+- `ANGELA_VERSION` — exported into `angelarc` at load; the running version (or
   `devel` for local builds).
-- `CRUSH_GLOBAL_CONFIG` — override global config location.
-- `CRUSH_GLOBAL_DATA` — override data directory location.
-- `CRUSH_SKILLS_DIR` — override default skills directory.
+- `ANGELA_GLOBAL_CONFIG` — override global config location.
+- `ANGELA_GLOBAL_DATA` — override data directory location.
+- `ANGELA_SKILLS_DIR` — override default skills directory.
 
 ## Legacy JSON format
 
-`crush.json` is the original static format. It still works and merges with
-`crushrc`. Basic structure:
+`angela.json` is the original static format. It still works and merges with
+`angelarc`. Basic structure:
 
 ```json
 {
-  "$schema": "https://charm.land/crush.json",
+  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
   "models": {},
   "providers": {},
   "mcp": {},
@@ -332,9 +332,9 @@ user-invocable: true
 
 The `$schema` property enables IDE autocomplete but is optional.
 
-### crushrc ↔ crush.json mapping
+### angelarc ↔ angela.json mapping
 
-| crushrc                             | crush.json                                             |
+| angelarc                             | angela.json                                             |
 | ------------------------------------ | ------------------------------------------------------ |
 | `provider add openai --api-key "$K"` | `providers.openai = {"api_key": "$K"}`                 |
 | `model add openai/gpt-x --name X`    | append to `providers.openai.models[]`                  |
@@ -349,10 +349,10 @@ The `$schema` property enables IDE autocomplete but is optional.
 | `option attribution-trailer-style none` | `options.attribution.trailer_style = "none"`        |
 | `option attribution-generated-with false` | `options.attribution.generated_with = false`       |
 
-### Shell expansion in crush.json
+### Shell expansion in angela.json
 
 In JSON, only selected string fields are run through the embedded shell at load
-time (in `crushrc`, everything is native Bash so this table does not apply):
+time (in `angelarc`, everything is native Bash so this table does not apply):
 
 | Surface                                                         | Expansion                          |
 | --------------------------------------------------------------- | ---------------------------------- |
@@ -369,7 +369,7 @@ the request.
 
 ### Security note
 
-Both formats are trusted code. `crushrc` runs entirely, and any `$(...)` in
-`crush.json` runs at load time, with the invoking user's shell privileges,
-before the UI appears. Don't launch Crush in a directory whose config you
+Both formats are trusted code. `angelarc` runs entirely, and any `$(...)` in
+`angela.json` runs at load time, with the invoking user's shell privileges,
+before the UI appears. Don't launch Angela in a directory whose config you
 haven't reviewed.

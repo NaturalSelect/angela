@@ -11,7 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/charmbracelet/crush/internal/pubsub"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -19,7 +19,7 @@ import (
 // The channel contract lets an MCP server push events straight into the
 // session as a <channel> element that the model reads on its next turn. See
 // https://code.claude.com/docs/en/channels-reference for the authoritative
-// spec. Crush plays the client role: it detects the capability a server
+// spec. Angela plays the client role: it detects the capability a server
 // declares, listens for the server-initiated notification, and injects the
 // (validated, escaped) payload into the active session.
 const (

@@ -1,4 +1,4 @@
-module github.com/charmbracelet/crush
+module github.com/NaturalSelect/angela
 
 go 1.26.5
 

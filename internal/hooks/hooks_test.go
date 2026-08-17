@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/crush/internal/config"
-	"github.com/charmbracelet/crush/internal/shell"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/shell"
 	"github.com/stretchr/testify/require"
 )
 
@@ -188,20 +188,20 @@ func TestBuildEnv(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, EventPreToolUse, envMap["CRUSH_EVENT"])
-	require.Equal(t, "bash", envMap["CRUSH_TOOL_NAME"])
-	require.Equal(t, "sess-1", envMap["CRUSH_SESSION_ID"])
-	require.Equal(t, "/work", envMap["CRUSH_CWD"])
-	require.Equal(t, "/project", envMap["CRUSH_PROJECT_DIR"])
-	require.Equal(t, "ls", envMap["CRUSH_TOOL_INPUT_COMMAND"])
-	require.Equal(t, "/tmp/f.txt", envMap["CRUSH_TOOL_INPUT_FILE_PATH"])
+	require.Equal(t, EventPreToolUse, envMap["ANGELA_EVENT"])
+	require.Equal(t, "bash", envMap["ANGELA_TOOL_NAME"])
+	require.Equal(t, "sess-1", envMap["ANGELA_SESSION_ID"])
+	require.Equal(t, "/work", envMap["ANGELA_CWD"])
+	require.Equal(t, "/project", envMap["ANGELA_PROJECT_DIR"])
+	require.Equal(t, "ls", envMap["ANGELA_TOOL_INPUT_COMMAND"])
+	require.Equal(t, "/tmp/f.txt", envMap["ANGELA_TOOL_INPUT_FILE_PATH"])
 
-	// Shared Crush markers must be present so hook-authored scripts can
-	// detect they're running under Crush the same way bash-tool-invoked
+	// Shared Angela markers must be present so hook-authored scripts can
+	// detect they're running under Angela the same way bash-tool-invoked
 	// scripts can.
-	require.Equal(t, "1", envMap["CRUSH"])
-	require.Equal(t, "crush", envMap["AGENT"])
-	require.Equal(t, "crush", envMap["AI_AGENT"])
+	require.Equal(t, "1", envMap["ANGELA"])
+	require.Equal(t, "angela", envMap["AGENT"])
+	require.Equal(t, "angela", envMap["AI_AGENT"])
 }
 
 func splitFirst(s, sep string) []string {
@@ -524,7 +524,7 @@ func TestRunnerParallelExecution(t *testing.T) {
 func TestRunnerEnvVarsPropagated(t *testing.T) {
 	t.Parallel()
 	hookCfg := config.HookConfig{
-		Command: `printf '{"decision":"allow","context":"%s"}' "$CRUSH_TOOL_NAME"`,
+		Command: `printf '{"decision":"allow","context":"%s"}' "$ANGELA_TOOL_NAME"`,
 	}
 	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
@@ -748,7 +748,7 @@ func TestParseStdoutClaudeCodeFormat(t *testing.T) {
 		require.Equal(t, DecisionNone, r.Decision)
 	})
 
-	t.Run("crush format still works", func(t *testing.T) {
+	t.Run("native format still works", func(t *testing.T) {
 		t.Parallel()
 		r := parseStdout(`{"decision":"allow","context":"hello"}`)
 		require.Equal(t, DecisionAllow, r.Decision)

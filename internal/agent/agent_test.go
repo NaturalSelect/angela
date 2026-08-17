@@ -1063,3 +1063,54 @@ func TestProviderRetryLogFields(t *testing.T) {
 		}, fields)
 	})
 }
+
+func TestBuildPromptCacheKey(t *testing.T) {
+	t.Run("format is session hash dash agent name", func(t *testing.T) {
+		key := buildPromptCacheKey("session-1", "Coder")
+		require.Equal(t, session.HashID("session-1")+"-Coder", key)
+	})
+
+	t.Run("same session and agent produce the same key", func(t *testing.T) {
+		require.Equal(t, buildPromptCacheKey("session-1", "Coder"), buildPromptCacheKey("session-1", "Coder"))
+	})
+
+	t.Run("different sessions produce different keys", func(t *testing.T) {
+		require.NotEqual(t, buildPromptCacheKey("session-1", "Coder"), buildPromptCacheKey("session-2", "Coder"))
+	})
+
+	t.Run("different agent names produce different keys", func(t *testing.T) {
+		require.NotEqual(t, buildPromptCacheKey("session-1", "Coder"), buildPromptCacheKey("session-1", "Task"))
+	})
+}
+
+func TestBuildAnthropicUserID(t *testing.T) {
+	// Golden vectors captured from Claude Code's own
+	// deriveClaudeCodeUserID (Node's crypto.createHash), with
+	// promptCacheKey standing in for sessionID.
+	t.Run("matches Claude Code's derivation scheme", func(t *testing.T) {
+		require.Equal(t,
+			"user_5b3871508930b814906b0b0f7b24b267a27836f6f28f4bcb5455a5ec277c5724_account_5fcca72c-0b64-473c-a74c-4e3493865342_session_35f673f9-9259-4666-a19c-a5c3c60a73e4",
+			buildAnthropicUserID("abcd1234-session"))
+		require.Equal(t,
+			"user_4b82e80ed733527de6d70618b9b01a0b824daafbd8ca0528ae6d7ff0a871f2e0_account_5b714859-274b-47e1-8319-e369deea0c9b_session_0a05832c-f017-4f3c-86ff-07efd7c52d31",
+			buildAnthropicUserID("test-cache-key-5-Coder"))
+		require.Equal(t,
+			"user_e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855_account_ccf1f0fb-14c5-4312-bcf6-45205f9091a5_session_0bc8506e-4d85-4e42-b899-63d502c77e41",
+			buildAnthropicUserID(""))
+	})
+
+	t.Run("is shaped like user_<hex>_account_<uuidv4>_session_<uuidv4>", func(t *testing.T) {
+		id := buildAnthropicUserID("session-1-Coder")
+		require.Regexp(t,
+			`^user_[0-9a-f]{64}_account_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}_session_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
+			id)
+	})
+
+	t.Run("same input produces the same id", func(t *testing.T) {
+		require.Equal(t, buildAnthropicUserID("session-1-Coder"), buildAnthropicUserID("session-1-Coder"))
+	})
+
+	t.Run("different inputs produce different ids", func(t *testing.T) {
+		require.NotEqual(t, buildAnthropicUserID("session-1-Coder"), buildAnthropicUserID("session-2-Coder"))
+	})
+}

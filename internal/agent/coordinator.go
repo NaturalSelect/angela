@@ -80,6 +80,23 @@ var copilotResponsesModels = map[string]bool{
 	"gpt-5.6-sol":   true,
 }
 
+// openaiCompatResponsesAPIFunc returns the model filter used to select
+// which models the given openai-compat provider dispatches through the
+// Responses API instead of Chat Completions. The second return value is
+// false when the provider never uses the Responses API. This is the
+// single source of truth consulted both when constructing the provider
+// (to opt into fantasy's Responses API routing) and when building
+// per-call provider options (to know which options[Name] key the
+// request will actually be read from).
+func openaiCompatResponsesAPIFunc(providerID string) (fn func(modelID string) bool, ok bool) {
+	switch providerID {
+	case string(catwalk.InferenceProviderCopilot):
+		return func(modelID string) bool { return copilotResponsesModels[modelID] }, true
+	default:
+		return nil, false
+	}
+}
+
 // OpenCode models that user Anthropic Messages API instead of Chat Completions.
 var opencodeMessagesModels = map[string]bool{
 	"qwen3.7-max": true,
@@ -261,7 +278,8 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 		return nil, errModelProviderNotConfigured
 	}
 
-	mergedOptions, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, providerCfg)
+	mergedOptions, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, providerCfg, buildPromptCacheKey(sessionID, c.currentAgent.AgentName()))
+	summarizeOptions := getProviderOptions(model, providerCfg, buildPromptCacheKey(sessionID, "compact"))
 
 	if err := c.refreshTokenIfExpired(ctx, providerCfg); err != nil {
 		// NOTE(@andreynering): We don't return here because the event handling to ask the user to reauthenticate
@@ -295,20 +313,21 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	runID := RunIDFromContext(ctx)
 	run := func() (*fantasy.AgentResult, error) {
 		return c.currentAgent.Run(ctx, SessionAgentCall{
-			SessionID:        sessionID,
-			RunID:            runID,
-			Prompt:           prompt,
-			Attachments:      attachments,
-			MaxOutputTokens:  maxTokens,
-			ProviderOptions:  mergedOptions,
-			Temperature:      temp,
-			TopP:             topP,
-			TopK:             topK,
-			FrequencyPenalty: freqPenalty,
-			PresencePenalty:  presPenalty,
-			OnComplete:       onComplete,
-			Accepted:         accept,
-			OnAuthRefresh:    c.makeAuthRefreshCallback(providerCfg),
+			SessionID:                sessionID,
+			RunID:                    runID,
+			Prompt:                   prompt,
+			Attachments:              attachments,
+			MaxOutputTokens:          maxTokens,
+			ProviderOptions:          mergedOptions,
+			SummarizeProviderOptions: summarizeOptions,
+			Temperature:              temp,
+			TopP:                     topP,
+			TopK:                     topK,
+			FrequencyPenalty:         freqPenalty,
+			PresencePenalty:          presPenalty,
+			OnComplete:               onComplete,
+			Accepted:                 accept,
+			OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
 		})
 	}
 	beforeLoaded := c.skillTracker.LoadedNames()
@@ -357,7 +376,7 @@ func effectiveReasoningEffort(model Model) string {
 	return ""
 }
 
-func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.ProviderOptions {
+func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCacheKey string) fantasy.ProviderOptions {
 	options := fantasy.ProviderOptions{}
 
 	cfgOpts := []byte("{}")
@@ -416,6 +435,9 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.
 		if !hasReasoningEffort && shouldSetEffort {
 			mergedOptions["reasoning_effort"] = reasoningEffort
 		}
+		if _, hasPromptCacheKey := mergedOptions["prompt_cache_key"]; !hasPromptCacheKey && promptCacheKey != "" {
+			mergedOptions["prompt_cache_key"] = promptCacheKey
+		}
 		if openai.IsResponsesModel(model.CatwalkCfg.ID) {
 			if openai.IsResponsesReasoningModel(model.CatwalkCfg.ID) {
 				mergedOptions["reasoning_summary"] = "auto"
@@ -459,6 +481,14 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.
 				mergedOptions["effort"] = reasoningEffort
 			case !hasThink && model.ModelCfg.Think:
 				mergedOptions["thinking"] = map[string]any{"budget_tokens": 2000}
+			}
+
+			// metadata.user_id is an Anthropic-API-specific anti-abuse field.
+			// Bedrock (a different providerCfg.Type sharing this case) has its own fixed request schema and does not
+			// support it.
+			if providerCfg.Type == anthropic.Name {
+				existingExtraBody, _ := mergedOptions["extra_body"].(map[string]any)
+				mergedOptions["extra_body"] = withAnthropicUserID(existingExtraBody, promptCacheKey)
 			}
 		}
 
@@ -514,7 +544,10 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.
 		}
 
 	case openaicompat.Name, hyper.Name:
-		extraBody := make(map[string]any)
+		extraBody, _ := mergedOptions["extra_body"].(map[string]any)
+		if extraBody == nil {
+			extraBody = make(map[string]any)
+		}
 
 		_, hasReasoningEffort := mergedOptions["reasoning_effort"]
 		if !hasReasoningEffort && shouldSetEffort {
@@ -590,17 +623,33 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.
 			}
 		}
 
-		mergedOptions["extra_body"] = extraBody
+		mergedOptions["extra_body"] = withPromptCacheKey(extraBody, promptCacheKey)
 
 		parsed, err := openaicompat.ParseOptions(mergedOptions)
 		if err == nil {
 			options[openaicompat.Name] = parsed
 		}
 
+		// Some openai-compat providers silently dispatch specific models
+		// to the Responses API even though the provider is configured as
+		// openai-compat, and that path reads options[openai.Name]
+		// instead of options[openaicompat.Name]. Mirror the full
+		// extra_body there too (not just prompt_cache_key), so nothing
+		// configured through it silently disappears from the request.
+		// Fields with no Responses equivalent are dropped by
+		// ParseResponsesOptions like any other unrecognized JSON key.
+		if fn, ok := openaiCompatResponsesAPIFunc(providerCfg.ID); ok && fn(model.CatwalkCfg.ID) {
+			if respParsed, err := openai.ParseResponsesOptions(extraBody); err == nil {
+				options[openai.Name] = respParsed
+			}
+		}
+
 	default:
 		// Known custom providers (litellm, ollama, omlx) are
 		// openai-compat under the hood.
 		if discover.IsKnownCustomProvider(string(providerCfg.Type)) {
+			extraBody, _ := mergedOptions["extra_body"].(map[string]any)
+			mergedOptions["extra_body"] = withPromptCacheKey(extraBody, promptCacheKey)
 			parsed, err := openaicompat.ParseOptions(mergedOptions)
 			if err == nil {
 				options[openaicompat.Name] = parsed
@@ -611,8 +660,45 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig) fantasy.
 	return options
 }
 
-func mergeCallOptions(model Model, cfg config.ProviderConfig) (fantasy.ProviderOptions, *float64, *float64, *int64, *float64, *float64) {
-	modelOptions := getProviderOptions(model, cfg)
+// withPromptCacheKey sets extraBody["prompt_cache_key"] to promptCacheKey,
+// unless the caller already configured one explicitly or promptCacheKey
+// is empty. Used by the openai-compat family, which has no typed
+// PromptCacheKey field and instead relies on the extra_body escape hatch.
+func withPromptCacheKey(extraBody map[string]any, promptCacheKey string) map[string]any {
+	if extraBody == nil {
+		extraBody = make(map[string]any)
+	}
+	if _, ok := extraBody["prompt_cache_key"]; !ok && promptCacheKey != "" {
+		extraBody["prompt_cache_key"] = promptCacheKey
+	}
+	return extraBody
+}
+
+// withAnthropicUserID sets extraBody["metadata"]["user_id"] to a value
+// derived from promptCacheKey, unless the caller already configured a
+// metadata.user_id explicitly or promptCacheKey is empty. Anthropic's
+// ProviderOptions has no typed Metadata field, so this relies on the
+// same extra_body escape hatch as withPromptCacheKey.
+func withAnthropicUserID(extraBody map[string]any, promptCacheKey string) map[string]any {
+	if promptCacheKey == "" {
+		return extraBody
+	}
+	if extraBody == nil {
+		extraBody = make(map[string]any)
+	}
+	metadata, _ := extraBody["metadata"].(map[string]any)
+	if metadata == nil {
+		metadata = make(map[string]any)
+	}
+	if _, ok := metadata["user_id"]; !ok {
+		metadata["user_id"] = buildAnthropicUserID(promptCacheKey)
+	}
+	extraBody["metadata"] = metadata
+	return extraBody
+}
+
+func mergeCallOptions(model Model, cfg config.ProviderConfig, promptCacheKey string) (fantasy.ProviderOptions, *float64, *float64, *int64, *float64, *float64) {
+	modelOptions := getProviderOptions(model, cfg, promptCacheKey)
 	temp := cmp.Or(model.ModelCfg.Temperature, model.CatwalkCfg.Options.Temperature)
 	topP := cmp.Or(model.ModelCfg.TopP, model.CatwalkCfg.Options.TopP)
 	topK := cmp.Or(model.ModelCfg.TopK, model.CatwalkCfg.Options.TopK)
@@ -634,6 +720,7 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 		SystemPromptPrefix:   largeProviderCfg.SystemPromptPrefix,
 		SystemPrompt:         "",
 		IsSubAgent:           isSubAgent,
+		AgentName:            agent.Name,
 		DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
 		IsYolo:               c.permissions.SkipRequests(),
 		Sessions:             c.sessions,
@@ -972,17 +1059,14 @@ func (c *coordinator) buildOpenaiCompatProvider(baseURL, apiKey string, headers 
 		openaicompat.WithAPIKey(apiKey),
 	}
 
+	if fn, ok := openaiCompatResponsesAPIFunc(providerID); ok {
+		opts = append(opts, openaicompat.WithUseResponsesAPI(), openaicompat.WithResponsesAPIFunc(fn))
+	}
+
 	// Set HTTP client based on provider and debug mode.
 	var httpClient *http.Client
 	switch providerID {
 	case string(catwalk.InferenceProviderCopilot):
-		opts = append(
-			opts,
-			openaicompat.WithUseResponsesAPI(),
-			openaicompat.WithResponsesAPIFunc(func(modelID string) bool {
-				return copilotResponsesModels[modelID]
-			}),
-		)
 		httpClient = copilot.NewClient(isSubAgent, c.cfg.Config().Options.Debug)
 	}
 	if httpClient == nil && c.cfg.Config().Options.Debug {
@@ -1246,7 +1330,11 @@ func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 
 	// Auth failures during summarize flow through fantasy's OnAuthRefresh,
 	// the same path used by regular turns.
-	return c.currentAgent.Summarize(ctx, sessionID, getProviderOptions(c.currentAgent.Model(), providerCfg), c.makeAuthRefreshCallback(providerCfg))
+	//
+	// The prompt cache key uses "compact" rather than the running
+	// agent's own name: summarize sends a different system prompt than a
+	// normal turn, so it must not share a cache route with it.
+	return c.currentAgent.Summarize(ctx, sessionID, getProviderOptions(c.currentAgent.Model(), providerCfg, buildPromptCacheKey(sessionID, "compact")), c.makeAuthRefreshCallback(providerCfg))
 }
 
 // GenerateTitle generates a session title using the current agent.
@@ -1428,17 +1516,18 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 	// Run the agent
 	run := func() (*fantasy.AgentResult, error) {
 		return params.Agent.Run(ctx, SessionAgentCall{
-			SessionID:        session.ID,
-			Prompt:           params.Prompt,
-			MaxOutputTokens:  maxTokens,
-			ProviderOptions:  getProviderOptions(model, providerCfg),
-			Temperature:      model.ModelCfg.Temperature,
-			TopP:             model.ModelCfg.TopP,
-			TopK:             model.ModelCfg.TopK,
-			FrequencyPenalty: model.ModelCfg.FrequencyPenalty,
-			PresencePenalty:  model.ModelCfg.PresencePenalty,
-			NonInteractive:   true,
-			OnAuthRefresh:    c.makeAuthRefreshCallback(providerCfg),
+			SessionID:                session.ID,
+			Prompt:                   params.Prompt,
+			MaxOutputTokens:          maxTokens,
+			ProviderOptions:          getProviderOptions(model, providerCfg, buildPromptCacheKey(params.SessionID, params.Agent.AgentName())),
+			SummarizeProviderOptions: getProviderOptions(model, providerCfg, buildPromptCacheKey(params.SessionID, "compact")),
+			Temperature:              model.ModelCfg.Temperature,
+			TopP:                     model.ModelCfg.TopP,
+			TopK:                     model.ModelCfg.TopK,
+			FrequencyPenalty:         model.ModelCfg.FrequencyPenalty,
+			PresencePenalty:          model.ModelCfg.PresencePenalty,
+			NonInteractive:           true,
+			OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
 		})
 	}
 	result, err := run()

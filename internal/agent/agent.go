@@ -10,8 +10,10 @@ package agent
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,17 +85,18 @@ type SessionAgentCall struct {
 	// reliable completion contract (e.g. `angela run` against a
 	// session that may be busy) MUST set it; SessionID alone is
 	// ambiguous when concurrent turns share the same session.
-	RunID            string
-	Prompt           string
-	ProviderOptions  fantasy.ProviderOptions
-	Attachments      []message.Attachment
-	MaxOutputTokens  int64
-	Temperature      *float64
-	TopP             *float64
-	TopK             *int64
-	FrequencyPenalty *float64
-	PresencePenalty  *float64
-	NonInteractive   bool
+	RunID                    string
+	Prompt                   string
+	ProviderOptions          fantasy.ProviderOptions
+	SummarizeProviderOptions fantasy.ProviderOptions
+	Attachments              []message.Attachment
+	MaxOutputTokens          int64
+	Temperature              *float64
+	TopP                     *float64
+	TopK                     *int64
+	FrequencyPenalty         *float64
+	PresencePenalty          *float64
+	NonInteractive           bool
 	// OnComplete, when non-nil, replaces the default RunComplete
 	// publish path: the inner Run hands the terminal payload to this
 	// callback instead of emitting it on the RunComplete broker. The
@@ -147,6 +150,7 @@ type SessionAgent interface {
 	ClearQueue(sessionID string)
 	Summarize(context.Context, string, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error
 	Model() Model
+	AgentName() string
 	GenerateTitle(ctx context.Context, sessionID, userPrompt string)
 }
 
@@ -174,6 +178,7 @@ type sessionAgent struct {
 	tools              *csync.Slice[fantasy.AgentTool]
 
 	isSubAgent           bool
+	agentName            string
 	sessions             session.Service
 	messages             message.Service
 	disableAutoSummarize bool
@@ -228,6 +233,7 @@ type SessionAgentOptions struct {
 	SystemPromptPrefix   string
 	SystemPrompt         string
 	IsSubAgent           bool
+	AgentName            string
 	DisableAutoSummarize bool
 	IsYolo               bool
 	Sessions             session.Service
@@ -246,6 +252,7 @@ func NewSessionAgent(
 		systemPromptPrefix:   csync.NewValue(opts.SystemPromptPrefix),
 		systemPrompt:         csync.NewValue(opts.SystemPrompt),
 		isSubAgent:           opts.IsSubAgent,
+		agentName:            opts.AgentName,
 		sessions:             opts.Sessions,
 		messages:             opts.Messages,
 		disableAutoSummarize: opts.DisableAutoSummarize,
@@ -1191,7 +1198,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	if shouldSummarize {
 		a.activeRequests.Del(call.SessionID)
-		if summarizeErr := a.Summarize(genCtx, call.SessionID, call.ProviderOptions, call.OnAuthRefresh); summarizeErr != nil {
+		if summarizeErr := a.Summarize(genCtx, call.SessionID, call.SummarizeProviderOptions, call.OnAuthRefresh); summarizeErr != nil {
 			return nil, summarizeErr
 		}
 		// If the agent wasn't done...
@@ -1505,6 +1512,39 @@ func sessionHeaders(sessionID string) map[string]string {
 		"x-session-id":       hash,
 		"x-session-affinity": hash,
 	}
+}
+
+func buildPromptCacheKey(sessionID, agentName string) string {
+	return session.HashID(sessionID) + "-" + agentName
+}
+
+// buildAnthropicUserID derives a stable, non-identifying value for the
+// Anthropic Messages API "metadata.user_id" field from promptCacheKey.
+// This mirrors Claude Code's deriveClaudeCodeUserID scheme: three
+// independent SHA-256 digests of promptCacheKey (two of them prefixed
+// to keep the "account" and "session" components distinct) combined
+// into user_<hash>_account_<uuid>_session_<uuid>. The "uuid" parts are
+// not random; toUUID only reshapes a hash to look like a UUIDv4 so
+// systems that validate the format accept it.
+func buildAnthropicUserID(promptCacheKey string) string {
+	hash := sha256Hex(promptCacheKey)
+	accountHash := sha256Hex("account:" + promptCacheKey)
+	sessionHash := sha256Hex("session:" + promptCacheKey)
+	return "user_" + hash + "_account_" + toUUID(accountHash) + "_session_" + toUUID(sessionHash)
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// toUUID reshapes a 64-character hex digest into a UUIDv4-shaped
+// string (xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx). It is deterministic,
+// not random.
+func toUUID(h string) string {
+	nibble, _ := strconv.ParseUint(h[16:17], 16, 8)
+	variant := (nibble & 0x3) | 0x8
+	return fmt.Sprintf("%s-%s-4%s-%x%s-%s", h[0:8], h[8:12], h[13:16], variant, h[17:20], h[20:32])
 }
 
 func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentCall) (message.Message, error) {
@@ -2085,6 +2125,10 @@ func (a *sessionAgent) SetSystemPrompt(systemPrompt string) {
 
 func (a *sessionAgent) Model() Model {
 	return a.largeModel.Get()
+}
+
+func (a *sessionAgent) AgentName() string {
+	return a.agentName
 }
 
 // convertToToolResult converts a fantasy tool result to a message tool result.

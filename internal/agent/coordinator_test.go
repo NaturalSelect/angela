@@ -10,7 +10,9 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/anthropic"
+	"charm.land/fantasy/providers/azure"
 	"charm.land/fantasy/providers/bedrock"
+	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/stretchr/testify/assert"
@@ -20,6 +22,7 @@ import (
 // mockSessionAgent is a minimal mock for the SessionAgent interface.
 type mockSessionAgent struct {
 	model     Model
+	agentName string
 	runFunc   func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error)
 	cancelled []string
 }
@@ -33,6 +36,7 @@ func (m *mockSessionAgent) BeginAccepted(sessionID string) *AcceptedRun {
 }
 
 func (m *mockSessionAgent) Model() Model                        { return m.model }
+func (m *mockSessionAgent) AgentName() string                   { return m.agentName }
 func (m *mockSessionAgent) SetModels(large, small Model)        {}
 func (m *mockSessionAgent) SetTools(tools []fantasy.AgentTool)  {}
 func (m *mockSessionAgent) SetSystemPrompt(systemPrompt string) {}
@@ -513,7 +517,7 @@ func TestGetProviderOptionsReasoningEffort(t *testing.T) {
 			}
 			providerCfg := config.ProviderConfig{ID: "test", Type: tc.providerType}
 
-			opts := getProviderOptions(model, providerCfg)
+			opts := getProviderOptions(model, providerCfg, "")
 
 			raw, ok := opts[anthropic.Name]
 			require.True(t, ok, "options should be keyed under anthropic.Name for type %q", tc.providerType)
@@ -523,6 +527,88 @@ func TestGetProviderOptionsReasoningEffort(t *testing.T) {
 			assert.Equal(t, anthropic.Effort("max"), *parsed.Effort)
 		})
 	}
+}
+
+func TestGetProviderOptionsAnthropicUserID(t *testing.T) {
+	model := Model{
+		CatwalkCfg: catwalk.Model{ID: "claude-opus-4-7"},
+		ModelCfg:   config.SelectedModel{Provider: "test"},
+	}
+
+	t.Run("anthropic sets extra_body.metadata.user_id from the prompt cache key", func(t *testing.T) {
+		providerCfg := config.ProviderConfig{ID: "test", Type: catwalk.Type(anthropic.Name)}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-1")
+
+		raw, ok := opts[anthropic.Name]
+		require.True(t, ok)
+		parsed := raw.(*anthropic.ProviderOptions)
+		metadata, ok := parsed.ExtraBody["metadata"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, buildAnthropicUserID("cache-key-1"), metadata["user_id"])
+	})
+
+	t.Run("bedrock does not get metadata.user_id", func(t *testing.T) {
+		providerCfg := config.ProviderConfig{ID: "test", Type: catwalk.Type(bedrock.Name)}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-2")
+
+		raw, ok := opts[anthropic.Name]
+		require.True(t, ok)
+		parsed := raw.(*anthropic.ProviderOptions)
+		_, hasMetadata := parsed.ExtraBody["metadata"]
+		require.False(t, hasMetadata, "bedrock has a fixed request schema and does not support metadata.user_id")
+	})
+
+	t.Run("alibaba anthropic-compat endpoint does not get metadata.user_id", func(t *testing.T) {
+		providerCfg := config.ProviderConfig{
+			ID:   string(catwalk.InferenceProviderAlibabaSingapore),
+			Type: catwalk.Type(anthropic.Name),
+		}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-3")
+
+		raw, ok := opts[anthropic.Name]
+		require.True(t, ok)
+		parsed := raw.(*anthropic.ProviderOptions)
+		_, hasMetadata := parsed.ExtraBody["metadata"]
+		require.False(t, hasMetadata, "Alibaba's anthropic-compatible endpoint is not official Anthropic")
+	})
+
+	t.Run("empty prompt cache key sets no metadata", func(t *testing.T) {
+		providerCfg := config.ProviderConfig{ID: "test", Type: catwalk.Type(anthropic.Name)}
+
+		opts := getProviderOptions(model, providerCfg, "")
+
+		raw, ok := opts[anthropic.Name]
+		require.True(t, ok)
+		parsed := raw.(*anthropic.ProviderOptions)
+		_, hasMetadata := parsed.ExtraBody["metadata"]
+		require.False(t, hasMetadata)
+	})
+
+	t.Run("does not override a user-configured metadata.user_id", func(t *testing.T) {
+		modelWithOverride := Model{
+			CatwalkCfg: catwalk.Model{ID: "claude-opus-4-7"},
+			ModelCfg: config.SelectedModel{
+				Provider: "test",
+				ProviderOptions: map[string]any{
+					"extra_body": map[string]any{
+						"metadata": map[string]any{"user_id": "user-configured-id"},
+					},
+				},
+			},
+		}
+		providerCfg := config.ProviderConfig{ID: "test", Type: catwalk.Type(anthropic.Name)}
+
+		opts := getProviderOptions(modelWithOverride, providerCfg, "generated-key")
+
+		raw, ok := opts[anthropic.Name]
+		require.True(t, ok)
+		parsed := raw.(*anthropic.ProviderOptions)
+		metadata := parsed.ExtraBody["metadata"].(map[string]any)
+		require.Equal(t, "user-configured-id", metadata["user_id"])
+	})
 }
 
 func TestIsUnauthorized(t *testing.T) {
@@ -567,7 +653,7 @@ func TestGetProviderOptionsReasoningEffortFallback(t *testing.T) {
 		Type: openaicompat.Name,
 	}
 
-	opts := getProviderOptions(model, providerCfg)
+	opts := getProviderOptions(model, providerCfg, "")
 
 	raw, ok := opts[openaicompat.Name]
 	require.True(t, ok)
@@ -579,4 +665,211 @@ func TestGetProviderOptionsReasoningEffortFallback(t *testing.T) {
 	thinking, ok := parsed.ExtraBody["thinking"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "enabled", thinking["type"])
+}
+
+func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
+	t.Run("openai chat completions model sets prompt_cache_key", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "not-a-responses-model"},
+			ModelCfg:   config.SelectedModel{Provider: "openai"},
+		}
+		providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-1")
+
+		raw, ok := opts[openai.Name]
+		require.True(t, ok)
+		parsed, ok := raw.(*openai.ProviderOptions)
+		require.True(t, ok)
+		require.NotNil(t, parsed.PromptCacheKey)
+		require.Equal(t, "cache-key-1", *parsed.PromptCacheKey)
+	})
+
+	t.Run("openai responses model sets prompt_cache_key under the same options key", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "gpt-5.2"},
+			ModelCfg:   config.SelectedModel{Provider: "openai"},
+		}
+		providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-2")
+
+		raw, ok := opts[openai.Name]
+		require.True(t, ok)
+		parsed, ok := raw.(*openai.ResponsesProviderOptions)
+		require.True(t, ok, "responses models must produce *openai.ResponsesProviderOptions")
+		require.NotNil(t, parsed.PromptCacheKey)
+		require.Equal(t, "cache-key-2", *parsed.PromptCacheKey)
+	})
+
+	t.Run("azure shares the openai code path", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "not-a-responses-model"},
+			ModelCfg:   config.SelectedModel{Provider: "azure"},
+		}
+		providerCfg := config.ProviderConfig{ID: "azure", Type: azure.Name}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-3")
+
+		raw, ok := opts[openai.Name]
+		require.True(t, ok, "azure options must be keyed under openai.Name")
+		parsed, ok := raw.(*openai.ProviderOptions)
+		require.True(t, ok)
+		require.NotNil(t, parsed.PromptCacheKey)
+		require.Equal(t, "cache-key-3", *parsed.PromptCacheKey)
+	})
+
+	t.Run("openai does not override a user-configured prompt_cache_key", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "not-a-responses-model"},
+			ModelCfg: config.SelectedModel{
+				Provider:        "openai",
+				ProviderOptions: map[string]any{"prompt_cache_key": "user-key"},
+			},
+		}
+		providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}
+
+		opts := getProviderOptions(model, providerCfg, "generated-key")
+
+		parsed := opts[openai.Name].(*openai.ProviderOptions)
+		require.NotNil(t, parsed.PromptCacheKey)
+		require.Equal(t, "user-key", *parsed.PromptCacheKey)
+	})
+
+	t.Run("openaicompat sets prompt_cache_key via extra_body and does not mirror for non-Copilot providers", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "some-model"},
+			ModelCfg:   config.SelectedModel{Provider: "custom"},
+		}
+		providerCfg := config.ProviderConfig{ID: "custom", Type: openaicompat.Name}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-4")
+
+		raw, ok := opts[openaicompat.Name]
+		require.True(t, ok)
+		parsed := raw.(*openaicompat.ProviderOptions)
+		require.Equal(t, "cache-key-4", parsed.ExtraBody["prompt_cache_key"])
+
+		_, mirrored := opts[openai.Name]
+		require.False(t, mirrored, "non-Copilot openai-compat providers must not get an openai.Name mirror")
+	})
+
+	t.Run("openaicompat does not override a user-configured extra_body prompt_cache_key", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "some-model"},
+			ModelCfg: config.SelectedModel{
+				Provider: "custom",
+				ProviderOptions: map[string]any{
+					"extra_body": map[string]any{"prompt_cache_key": "user-key", "other_field": "keep-me"},
+				},
+			},
+		}
+		providerCfg := config.ProviderConfig{ID: "custom", Type: openaicompat.Name}
+
+		opts := getProviderOptions(model, providerCfg, "generated-key")
+
+		parsed := opts[openaicompat.Name].(*openaicompat.ProviderOptions)
+		require.Equal(t, "user-key", parsed.ExtraBody["prompt_cache_key"])
+		require.Equal(t, "keep-me", parsed.ExtraBody["other_field"], "existing extra_body fields must survive")
+	})
+
+	t.Run("copilot responses model mirrors prompt_cache_key under openai.Name", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "gpt-5.2"},
+			ModelCfg:   config.SelectedModel{Provider: string(catwalk.InferenceProviderCopilot)},
+		}
+		providerCfg := config.ProviderConfig{ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-5")
+
+		compatRaw, ok := opts[openaicompat.Name]
+		require.True(t, ok)
+		compatParsed := compatRaw.(*openaicompat.ProviderOptions)
+		require.Equal(t, "cache-key-5", compatParsed.ExtraBody["prompt_cache_key"])
+
+		respRaw, ok := opts[openai.Name]
+		require.True(t, ok, "Copilot models dispatched via the Responses API must also get options keyed under openai.Name")
+		respParsed, ok := respRaw.(*openai.ResponsesProviderOptions)
+		require.True(t, ok)
+		require.NotNil(t, respParsed.PromptCacheKey)
+		require.Equal(t, "cache-key-5", *respParsed.PromptCacheKey)
+	})
+
+	t.Run("copilot responses model mirrors other extra_body fields too, not just prompt_cache_key", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "gpt-5.2"},
+			ModelCfg: config.SelectedModel{
+				Provider: string(catwalk.InferenceProviderCopilot),
+				ProviderOptions: map[string]any{
+					"extra_body": map[string]any{
+						"metadata":     map[string]any{"tenant": "acme"},
+						"service_tier": "priority",
+					},
+				},
+			},
+		}
+		providerCfg := config.ProviderConfig{ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-7")
+
+		respRaw, ok := opts[openai.Name]
+		require.True(t, ok)
+		respParsed := respRaw.(*openai.ResponsesProviderOptions)
+		require.NotNil(t, respParsed.PromptCacheKey)
+		require.Equal(t, "cache-key-7", *respParsed.PromptCacheKey)
+		require.Equal(t, "acme", respParsed.Metadata["tenant"])
+		require.NotNil(t, respParsed.ServiceTier)
+		require.Equal(t, "priority", string(*respParsed.ServiceTier))
+	})
+
+	t.Run("copilot non-responses model does not get an openai.Name mirror", func(t *testing.T) {
+		model := Model{
+			CatwalkCfg: catwalk.Model{ID: "gpt-4o"}, // not in copilotResponsesModels
+			ModelCfg:   config.SelectedModel{Provider: string(catwalk.InferenceProviderCopilot)},
+		}
+		providerCfg := config.ProviderConfig{ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name}
+
+		opts := getProviderOptions(model, providerCfg, "cache-key-6")
+
+		_, ok := opts[openai.Name]
+		require.False(t, ok, "only models listed in copilotResponsesModels should get the openai.Name mirror")
+	})
+}
+
+func TestOpenaiCompatResponsesAPIFunc(t *testing.T) {
+	t.Run("copilot returns a filter matching its responses models", func(t *testing.T) {
+		fn, ok := openaiCompatResponsesAPIFunc(string(catwalk.InferenceProviderCopilot))
+		require.True(t, ok)
+		require.True(t, fn("gpt-5.2"))
+		require.False(t, fn("gpt-4o"))
+	})
+
+	t.Run("unknown provider has no responses API filter", func(t *testing.T) {
+		_, ok := openaiCompatResponsesAPIFunc("some-other-provider")
+		require.False(t, ok)
+	})
+}
+
+func TestWithPromptCacheKey(t *testing.T) {
+	t.Run("sets the key on a nil map", func(t *testing.T) {
+		result := withPromptCacheKey(nil, "key-1")
+		require.Equal(t, "key-1", result["prompt_cache_key"])
+	})
+
+	t.Run("preserves existing extra_body fields", func(t *testing.T) {
+		result := withPromptCacheKey(map[string]any{"reasoning_effort": "high"}, "key-1")
+		require.Equal(t, "key-1", result["prompt_cache_key"])
+		require.Equal(t, "high", result["reasoning_effort"])
+	})
+
+	t.Run("does not override an existing prompt_cache_key", func(t *testing.T) {
+		result := withPromptCacheKey(map[string]any{"prompt_cache_key": "user-key"}, "generated-key")
+		require.Equal(t, "user-key", result["prompt_cache_key"])
+	})
+
+	t.Run("empty generated key leaves extra_body untouched", func(t *testing.T) {
+		result := withPromptCacheKey(map[string]any{"reasoning_effort": "high"}, "")
+		_, ok := result["prompt_cache_key"]
+		require.False(t, ok)
+	})
 }

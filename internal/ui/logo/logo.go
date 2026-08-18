@@ -25,14 +25,13 @@ type Opts struct {
 	CharmColor   color.Color // Charm™ text color
 	VersionColor color.Color // version text color
 	Width        int         // width of the rendered logo, used for truncation
-	Hyper        bool        // whether it is Angela or Hyperangela
 
 	// When true, stretch a random letterform on each render. Has no effect in
 	// compact mode. Mainly for testing. In production you will want to cache
 	// the stretched letterform to keep the logo from jittering on resize.
 	//
 	// NOTE: currently a no-op — Render doesn't use letterforms while the
-	// ANGELA title is a placeholder (see Render's doc comment).
+	// angela title is a placeholder (see Render's doc comment).
 	Unstable bool
 }
 
@@ -52,30 +51,21 @@ func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
 	}
 
 	// Title.
-	name := "ANGELA"
-	if o.Hyper && !compact {
-		name = "HYPERANGELA"
-	}
+	name := "angela"
 	angela := styles.ApplyForegroundGrad(base, name, o.TitleColorA, o.TitleColorB)
-	if o.Hyper && compact {
-		angela = styles.ApplyForegroundGrad(base, "HYPER", o.TitleColorA, o.TitleColorB) + "\n" + angela
-	}
 	angelaWidth := lipgloss.Width(angela)
 
 	// Version. (There is no Charm™-equivalent mark configured for this
 	// build, so the meta row is just the version, right-aligned to the
 	// title width.)
 	version = ansi.Truncate(version, angelaWidth, "…") // truncate version if too long.
-	if o.Hyper && compact {
-		version += " "
-	}
 	gap := max(0, angelaWidth-lipgloss.Width(version))
 	metaRow := strings.Repeat(" ", gap) + fg(o.VersionColor, version)
 
 	// Join the meta row and big title.
 	angela = strings.TrimSpace(metaRow + "\n" + angela)
 
-	// Narrow version. If this is Hyperangela, this is also a stacked version.
+	// Narrow version.
 	if compact {
 		field := fg(o.FieldColor, strings.Repeat(diag, angelaWidth))
 		return strings.Join([]string{field, field, angela, field, ""}, "\n")
@@ -119,12 +109,8 @@ func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
 
 // SmallRender renders a smaller version of the Angela logo, suitable for
 // smaller windows or sidebar usage.
-func SmallRender(t *styles.Styles, width int, o Opts) string {
-	name := "ANGELA"
-	if o.Hyper {
-		name = "HYPERANGELA"
-	}
-	title := styles.ApplyBoldForegroundGrad(t.Logo.GradCanvas, name, t.Logo.SmallGradFromColor, t.Logo.SmallGradToColor)
+func SmallRender(t *styles.Styles, width int) string {
+	title := styles.ApplyBoldForegroundGrad(t.Logo.GradCanvas, "angela", t.Logo.SmallGradFromColor, t.Logo.SmallGradToColor)
 	remainingWidth := width - lipgloss.Width(title) - 1 // 1 for the space after the name
 	if remainingWidth > 0 {
 		lines := strings.Repeat("╱", remainingWidth)

@@ -83,9 +83,9 @@ type Styles struct {
 		WorkingDir        lipgloss.Style // Style for current working directory
 		Separator         lipgloss.Style // Style for separator dots (•)
 		Wrapper           lipgloss.Style // Outer container for the entire header row
-		LogoGradCanvas    lipgloss.Style // Canvas for the compact "ANGELA" gradient
-		LogoGradFromColor color.Color    // "ANGELA" wordmark gradient start
-		LogoGradToColor   color.Color    // "ANGELA" wordmark gradient end
+		LogoGradCanvas    lipgloss.Style // Canvas for the compact "angela" gradient
+		LogoGradFromColor color.Color    // "angela" wordmark gradient start
+		LogoGradToColor   color.Color    // "angela" wordmark gradient end
 	}
 
 	CompactDetails struct {

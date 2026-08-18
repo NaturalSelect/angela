@@ -31,11 +31,9 @@ func (c *Common) Config() *config.Config {
 	return c.Workspace.Config()
 }
 
-// DefaultCommon returns the default common UI configurations. When the
-// workspace has a large model selected, the theme is chosen based on its
-// provider; otherwise the default theme is used.
+// DefaultCommon returns the default common UI configurations.
 func DefaultCommon(ws workspace.Workspace) *Common {
-	s := styles.ThemeForProvider(largeModelProviderID(ws))
+	s := styles.CharmtonePantera()
 	return &Common{
 		Workspace: ws,
 		Styles:    &s,

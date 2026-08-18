@@ -291,7 +291,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	progress = app.config.Config().Options.Progress == nil || *app.config.Config().Options.Progress
 
 	if !hideSpinner && stderrTTY {
-		t := styles.ThemeForProvider(app.config.Config().Models[config.SelectedModelTypeLarge].Provider)
+		t := styles.CharmtonePantera()
 
 		spinner = format.NewSpinner(ctx, cancel, anim.Settings{
 			Size:        10,

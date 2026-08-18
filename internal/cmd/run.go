@@ -200,7 +200,7 @@ func runNonInteractive(
 	progress = ws.Config.Options.Progress == nil || *ws.Config.Options.Progress
 
 	if !hideSpinner && stderrTTY {
-		t := styles.ThemeForProvider(ws.Config.Models[config.SelectedModelTypeLarge].Provider)
+		t := styles.CharmtonePantera()
 
 		spinner = format.NewSpinner(ctx, cancel, anim.Settings{
 			Size:        10,

@@ -134,6 +134,14 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 		return nil, fmt.Errorf("failed to configure providers: %w", err)
 	}
 
+	// Agent resolution reads only Options and AgentConfigs, so it runs
+	// before the provider check: a fresh install with no provider yet
+	// must still expose the built-in agents (angela agent list, and the
+	// onboarding path that builds the coder agent right after a
+	// provider is chosen). cfg is not published yet, so it is resolved
+	// in place rather than through the store.
+	prepareResolvedConfig(cfg)
+
 	if !cfg.IsConfigured() {
 		slog.Warn("No providers configured")
 		return store, nil
@@ -161,7 +169,6 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 			return nil, fmt.Errorf("failed to update preferred small model: %w", err)
 		}
 	}
-	store.SetupAgents()
 
 	// Capture initial staleness snapshot
 	// Capture initial staleness snapshot. Track every discovered config path,
@@ -605,6 +612,17 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	// Project specific skills dirs.
 	c.Options.SkillsPaths = append(c.Options.SkillsPaths, ProjectSkillsDir(workingDir)...)
 
+	// Rebuild the agent directory list in priority-ascending order:
+	// global defaults, then any user-configured paths (resolved
+	// against workingDir), then project defaults. setDefaults runs
+	// twice during initial load (see Load), so dedupeKeepFirst keeps
+	// the second run's result identical to the first's.
+	agentDirs := make([]string, 0, len(c.Options.AgentPaths)+8)
+	agentDirs = append(agentDirs, GlobalAgentDirs()...)
+	agentDirs = append(agentDirs, resolveAgentDirs(c.Options.AgentPaths, workingDir)...)
+	agentDirs = append(agentDirs, ProjectAgentDirs(workingDir)...)
+	c.Options.AgentPaths = dedupeKeepFirst(agentDirs)
+
 	if str, ok := os.LookupEnv("ANGELA_DISABLE_PROVIDER_AUTO_UPDATE"); ok {
 		c.Options.DisableProviderAutoUpdate, _ = strconv.ParseBool(str)
 	}
@@ -632,6 +650,34 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	}
 
 	c.Options.InitializeAs = cmp.Or(c.Options.InitializeAs, defaultInitializeAs)
+}
+
+// resolveAgentDirs expands "~", environment variables, and
+// working-directory-relative paths in user-configured agent
+// directories.
+func resolveAgentDirs(paths []string, workingDir string) []string {
+	resolved := make([]string, len(paths))
+	for i, p := range paths {
+		p = home.Long(p)
+		p = os.ExpandEnv(p)
+		resolved[i] = filepath.Clean(filepathext.SmartJoin(workingDir, p))
+	}
+	return resolved
+}
+
+// dedupeKeepFirst returns paths with duplicate entries removed,
+// keeping each path at its first occurrence's position.
+func dedupeKeepFirst(paths []string) []string {
+	seen := make(map[string]bool, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
 }
 
 // powernapDefaults caches the powernap default LSP server catalog. The

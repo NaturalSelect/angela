@@ -15,6 +15,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/backend"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/google/uuid"
@@ -82,6 +83,9 @@ func (s *runCoordinator) Summarize(context.Context, string) error {
 func (s *runCoordinator) Model() agent.Model                            { return agent.Model{} }
 func (s *runCoordinator) UpdateModels(context.Context) error            { return nil }
 func (s *runCoordinator) GenerateTitle(context.Context, string, string) {}
+func (s *runCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
+	return config.Agent{}, "", nil
+}
 
 func (s *runCoordinator) capturedCtx() context.Context {
 	s.mu.Lock()

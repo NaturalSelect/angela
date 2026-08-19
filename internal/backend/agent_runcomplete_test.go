@@ -9,6 +9,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/google/uuid"
@@ -48,6 +49,9 @@ func (c *errorCoordinator) Summarize(context.Context, string) error           { 
 func (c *errorCoordinator) Model() agent.Model                                { return agent.Model{} }
 func (c *errorCoordinator) UpdateModels(context.Context) error                { return nil }
 func (c *errorCoordinator) GenerateTitle(context.Context, string, string)     {}
+func (c *errorCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
+	return config.Agent{}, "", nil
+}
 
 // insertRunCompleteWorkspace installs a workspace backed by a real
 // app.App (so the runCompletions broker exists) with the given

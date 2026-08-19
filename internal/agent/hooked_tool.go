@@ -25,11 +25,12 @@ func newHookedTool(inner fantasy.AgentTool, runner *hooks.Runner) *hookedTool {
 }
 
 // wrapToolsWithHooks returns a tool slice with each entry wrapped in a
-// hookedTool. Returns the original slice unchanged when runner is nil or
-// when isSubAgent is true — sub-agents never fire hooks, the top-level
-// invocation of the sub-agent tool itself is wrapped on the caller's side.
-func wrapToolsWithHooks(tools []fantasy.AgentTool, runner *hooks.Runner, isSubAgent bool) []fantasy.AgentTool {
-	if runner == nil || isSubAgent {
+// hookedTool, or the original slice when no hooks are configured. It
+// makes no distinction between the coder and a sub-agent: the runner
+// already carries the agent's identity and depth, so a hook that only
+// wants top-level calls filters on those.
+func wrapToolsWithHooks(tools []fantasy.AgentTool, runner *hooks.Runner) []fantasy.AgentTool {
+	if runner == nil {
 		return tools
 	}
 	out := make([]fantasy.AgentTool, len(tools))

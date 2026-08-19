@@ -3,6 +3,7 @@ package prompt
 import (
 	"cmp"
 	"context"
+	_ "embed"
 	"fmt"
 	"log/slog"
 	"os"
@@ -21,11 +22,12 @@ import (
 
 // Prompt represents a template-based prompt generator.
 type Prompt struct {
-	name       string
-	template   string
-	now        func() time.Time
-	platform   string
-	workingDir string
+	name         string
+	tmpl         *template.Template
+	now          func() time.Time
+	platform     string
+	workingDir   string
+	contextPaths []string
 }
 
 type PromptDat struct {
@@ -67,29 +69,51 @@ func WithWorkingDir(workingDir string) Option {
 	}
 }
 
+// WithContextPaths overrides the context files an agent's prompt
+// loads. When unset, promptData falls back to
+// Config.Options.ContextPaths so built-in agents keep the global
+// behavior.
+func WithContextPaths(paths []string) Option {
+	return func(p *Prompt) {
+		p.contextPaths = paths
+	}
+}
+
+// sharedTemplates holds template definitions every agent prompt can
+// invoke. Keeping the context-file rendering here rather than copied
+// into each agent template is what makes it impossible for a subagent
+// to silently miss the project's AGENTS.md.
+//
+//go:embed templates/context_files.md.tpl
+var sharedTemplates string
+
 func NewPrompt(name, promptTemplate string, opts ...Option) (*Prompt, error) {
 	p := &Prompt{
-		name:     name,
-		template: promptTemplate,
-		now:      time.Now,
+		name: name,
+		now:  time.Now,
 	}
 	for _, opt := range opts {
 		opt(p)
 	}
+	t, err := template.New(name).Parse(sharedTemplates)
+	if err != nil {
+		return nil, fmt.Errorf("parsing shared templates: %w", err)
+	}
+	t, err = t.Parse(promptTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("parsing template: %w", err)
+	}
+	p.tmpl = t
 	return p, nil
 }
 
 func (p *Prompt) Build(ctx context.Context, provider, model string, store *config.ConfigStore) (string, error) {
-	t, err := template.New(p.name).Parse(p.template)
-	if err != nil {
-		return "", fmt.Errorf("parsing template: %w", err)
-	}
 	var sb strings.Builder
 	d, err := p.promptData(ctx, provider, model, store)
 	if err != nil {
 		return "", err
 	}
-	if err := t.Execute(&sb, d); err != nil {
+	if err := p.tmpl.Execute(&sb, d); err != nil {
 		return "", fmt.Errorf("executing template: %w", err)
 	}
 
@@ -167,7 +191,11 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 	platform := cmp.Or(p.platform, runtime.GOOS)
 
 	cfg := store.Config()
-	contextFiles := loadContextFiles(cfg.Options.ContextPaths, store)
+	contextPaths := cfg.Options.ContextPaths
+	if p.contextPaths != nil {
+		contextPaths = p.contextPaths
+	}
+	contextFiles := loadContextFiles(contextPaths, store)
 	globalContextFiles := loadContextFiles(cfg.Options.GlobalContextPaths, store)
 
 	// Discover and load skills metadata.

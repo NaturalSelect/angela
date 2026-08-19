@@ -3,6 +3,112 @@
   "$id": "https://github.com/NaturalSelect/angela/internal/config/config",
   "$ref": "#/$defs/Config",
   "$defs": {
+    "Agent": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the agent"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable display name"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this agent does"
+        },
+        "disabled": {
+          "type": "boolean",
+          "description": "Whether this agent is disabled"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "primary",
+            "subagent"
+          ],
+          "description": "Agent mode: primary or subagent"
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "large",
+            "small"
+          ],
+          "description": "The model type to use for this agent",
+          "default": "large"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Custom system prompt text (Go template)"
+        },
+        "temperature": {
+          "type": "number",
+          "maximum": 1,
+          "minimum": 0,
+          "description": "Sampling temperature override"
+        },
+        "allowed_tools": {
+          "$ref": "#/$defs/AllowedToolSet",
+          "description": "Tools available to this agent: an array of names, \"all\", or \"inherited\""
+        },
+        "disabled_tools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Tools to remove from the allowed set"
+        },
+        "allowed_mcp": {
+          "$ref": "#/$defs/AllowedMCPSet",
+          "description": "MCP servers available to this agent: an object of server names, \"all\", or \"inherited\""
+        },
+        "context_paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Context file paths for this agent"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "AllowedMCPSet": {
+      "oneOf": [
+        {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        {
+          "const": "all"
+        },
+        {
+          "const": "inherited"
+        }
+      ]
+    },
+    "AllowedToolSet": {
+      "oneOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "const": "all"
+        },
+        {
+          "const": "inherited"
+        }
+      ]
+    },
     "Attribution": {
       "properties": {
         "trailer_style": {
@@ -106,6 +212,13 @@
           },
           "type": "object",
           "description": "Environment variables to set on startup"
+        },
+        "agents": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Agent"
+          },
+          "type": "object",
+          "description": "Agent configurations and overrides"
         }
       },
       "additionalProperties": false,
@@ -571,6 +684,17 @@
           },
           "type": "array",
           "description": "List of skill names to disable and hide from the agent"
+        },
+        "agent_paths": {
+          "items": {
+            "type": "string",
+            "examples": [
+              "~/.config/angela/agents",
+              "./agents"
+            ]
+          },
+          "type": "array",
+          "description": "Paths to directories containing agent markdown files"
         }
       },
       "additionalProperties": false,

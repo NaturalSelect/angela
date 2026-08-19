@@ -18,9 +18,9 @@ import (
 //
 // buildAgent starts readiness goroutines that build the system prompt and the
 // initial tool list. Several server entry points build an agent from a
-// short-lived HTTP request context — the InitAgent/UpdateAgent handlers, and
-// the sub-agent build reached through UpdateModels -> buildTools -> agentTool.
-// When that request context was canceled the moment the handler returned, the
+// short-lived HTTP request context, including the InitAgent/UpdateAgent
+// handlers. When that request context was canceled the moment the handler
+// returned, the
 // readyWg errgroup recorded context.Canceled and every later coordinator.run
 // failed at readyWg.Wait() before emitting anything — the session hung with
 // no visible LLM response. (This was made worse while the tool-list goroutine
@@ -61,7 +61,9 @@ func TestBuildAgentReadinessSurvivesCallerCancellation(t *testing.T) {
 		permissions: env.permissions,
 		history:     env.history,
 		filetracker: *env.filetracker,
+		subagents:   newSubagentRegistry(),
 	}
+	coord.reconcileSubagents()
 
 	// Arm the MCP init gate. We never complete init; the readiness goroutines
 	// must not care, since they build the tool list from the registry as it

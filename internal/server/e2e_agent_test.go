@@ -16,6 +16,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/backend"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
@@ -221,6 +222,9 @@ func (c *scriptedCoordinator) Summarize(context.Context, string) error       { r
 func (c *scriptedCoordinator) Model() agent.Model                            { return agent.Model{} }
 func (c *scriptedCoordinator) UpdateModels(context.Context) error            { return nil }
 func (c *scriptedCoordinator) GenerateTitle(context.Context, string, string) {}
+func (c *scriptedCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
+	return config.Agent{}, "", nil
+}
 
 // agentE2EHarness extends the SSE harness with a scripted coordinator
 // wired into the workspace's embedded app.App, so POST /agent drives a

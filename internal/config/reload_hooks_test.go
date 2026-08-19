@@ -60,7 +60,7 @@ func assertHookFilters(t *testing.T, store *config.ConfigStore) {
 	preHooks := store.Config().Hooks[hooks.EventPreToolUse]
 	require.Len(t, preHooks, 1)
 
-	runner := hooks.NewRunner(preHooks, t.TempDir(), t.TempDir())
+	runner := hooks.NewRunner(preHooks, t.TempDir(), t.TempDir(), hooks.AgentIdentity{ID: "coder"})
 
 	nonMatch, err := runner.Run(context.Background(), hooks.EventPreToolUse, "sess", "view", `{}`)
 	require.NoError(t, err)

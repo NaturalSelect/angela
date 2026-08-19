@@ -43,9 +43,10 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
 		permissions: env.permissions,
 		history:     env.history,
 		filetracker: *env.filetracker,
-		agents:      make(map[string]SessionAgent),
+		subagents:   newSubagentRegistry(),
 		interactive: interactive,
 	}
+	coord.reconcileSubagents()
 
 	p, err := coderPrompt(prompt.WithWorkingDir(env.workingDir))
 	require.NoError(t, err)
@@ -54,7 +55,6 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
 	agent, err := coord.buildAgent(context.Background(), p, agentCfg, false)
 	require.NoError(t, err)
 	coord.currentAgent = agent
-	coord.agents[config.AgentCoder] = agent
 
 	return coord
 }

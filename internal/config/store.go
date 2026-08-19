@@ -231,19 +231,35 @@ func (s *ConfigStore) RefetchHyperProvider(ctx context.Context) error {
 		}
 		nc.Providers.Set(string(hyperProvider.ID), pc)
 	}
+	// Finish the clone before it is published: a second setConfig here
+	// would let readers observe nc with the last refetch's Agents for
+	// one window, and calling the public SetupAgents would deadlock
+	// re-acquiring writeMu.
+	prepareResolvedConfig(nc)
 	s.setConfig(nc)
 
 	// Also update the memoized provider list so callers of
 	// config.Providers() (e.g. the models dialog) see fresh data.
 	UpdateProviderInList(hyperProvider)
 
-	s.SetupAgents()
 	return nil
 }
 
-// SetupAgents configures the coder and task agents on the config.
+// SetupAgents resolves the agent set from the live config and
+// publishes it as a new Config value, so concurrent readers of
+// Config() never observe an in-place mutation of Agents.
 func (s *ConfigStore) SetupAgents() {
-	s.Config().SetupAgents()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.setupAgentsLocked()
+}
+
+// setupAgentsLocked is the lock-free core of SetupAgents. Caller must
+// hold writeMu.
+func (s *ConfigStore) setupAgentsLocked() {
+	nc := s.Config().cloneForWrite()
+	prepareResolvedConfig(nc)
+	s.setConfig(nc)
 }
 
 // Overrides returns the runtime overrides for this store.
@@ -1211,17 +1227,6 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 		return fmt.Errorf("invalid hook configuration on reload: %w", err)
 	}
 
-	// Save current state for potential rollback BEFORE configureProviders,
-	// which may write to disk via RemoveConfigField (e.g. removing stale
-	// OAuth providers). Capturing after would snapshot a config that has
-	// already been mutated, and the rollback would restore corrupted state.
-	oldConfig := s.Config()
-	oldLoadedPaths := s.loadedPaths
-	oldResolver := s.resolver
-	oldKnownProviders := s.knownProviders
-	oldOverrides := s.overrides
-	oldWorkspacePath := s.workspacePath
-
 	// Preserve runtime overrides
 	overrides := s.overrides
 
@@ -1252,39 +1257,33 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 		return fmt.Errorf("failed to configure providers during reload: %w", err)
 	}
 
-	// Update store state BEFORE running model/agent setup (so they see new config)
+	// Finish cfg completely before publishing it. Everything below runs
+	// against the local value, so a reader calling Config() concurrently
+	// sees either the previous config or the fully built one, never a
+	// version with models half-written or agents unresolved. A failure
+	// here leaves the store untouched, which is why no rollback of
+	// already-published state is needed.
+	if !cfg.IsConfigured() {
+		slog.Warn("No providers configured after reload")
+	} else {
+		resolved, resolveErr := resolveSelectedModels(cfg, providers)
+		if resolveErr != nil {
+			return fmt.Errorf("failed to configure selected models during reload: %w", resolveErr)
+		}
+		cfg.Models[SelectedModelTypeLarge] = resolved.Large
+		cfg.Models[SelectedModelTypeSmall] = resolved.Small
+	}
+
+	// Agent resolution reads only Options and AgentConfigs, so it runs
+	// regardless of whether any provider is configured.
+	prepareResolvedConfig(cfg)
+
 	s.setConfig(cfg)
 	s.loadedPaths = loadedPaths
 	s.resolver = resolver
 	s.knownProviders = providers
 	s.overrides = overrides
 	s.workspacePath = workspacePath
-
-	// Mirror startup flow: setup models and agents against NEW config.
-	var setupErr error
-	if !cfg.IsConfigured() {
-		slog.Warn("No providers configured after reload")
-	} else {
-		resolved, resolveErr := resolveSelectedModels(cfg, providers)
-		if resolveErr != nil {
-			setupErr = fmt.Errorf("failed to configure selected models during reload: %w", resolveErr)
-		} else {
-			cfg.Models[SelectedModelTypeLarge] = resolved.Large
-			cfg.Models[SelectedModelTypeSmall] = resolved.Small
-			s.SetupAgents()
-		}
-	}
-
-	// Rollback on setup failure
-	if setupErr != nil {
-		s.setConfig(oldConfig)
-		s.loadedPaths = oldLoadedPaths
-		s.resolver = oldResolver
-		s.knownProviders = oldKnownProviders
-		s.overrides = oldOverrides
-		s.workspacePath = oldWorkspacePath
-		return setupErr
-	}
 
 	// Rebuild staleness tracking. Track every discovered config path, not
 	// just the ones that loaded, so a config file created after this reload

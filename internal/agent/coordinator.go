@@ -126,6 +126,7 @@ type Coordinator interface {
 	Model() Model
 	UpdateModels(ctx context.Context) error
 	GenerateTitle(ctx context.Context, sessionID, prompt string)
+	GenerateAgent(ctx context.Context, description string) (config.Agent, string, error)
 }
 
 type coordinator struct {
@@ -142,7 +143,7 @@ type coordinator struct {
 	interactive bool
 
 	currentAgent SessionAgent
-	agents       map[string]SessionAgent
+	subagents    *subagentRegistry
 
 	// Skills discovery results (session-start snapshot).
 	allSkills    []*skills.Skill // Pre-filter: all discovered after dedup.
@@ -195,7 +196,7 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		lspManager:   opts.LSPManager,
 		notify:       opts.Notify,
 		runComplete:  opts.RunComplete,
-		agents:       make(map[string]SessionAgent),
+		subagents:    newSubagentRegistry(),
 		allSkills:    allSkills,
 		activeSkills: activeSkills,
 		skillTracker: skillTracker,
@@ -206,19 +207,27 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 	if !ok {
 		return nil, errCoderAgentNotConfigured
 	}
+	if agentCfg.Mode != config.AgentModePrimary {
+		slog.Warn("Coder agent is not in primary mode; running it as primary anyway",
+			"mode", agentCfg.Mode)
+	}
 
-	// TODO: make this dynamic when we support multiple agents
-	prompt, err := coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
+	// Populate the dispatch table before the coder is built: its
+	// readiness goroutine builds a tool list that reaches agentTool,
+	// which reads this table. Reconcile only snapshots config, so the
+	// subagents themselves are still built lazily on first dispatch.
+	c.reconcileSubagents()
+
+	p, err := agentPrompt(agentCfg, prompt.WithWorkingDir(c.cfg.WorkingDir()))
 	if err != nil {
 		return nil, err
 	}
 
-	agent, err := c.buildAgent(ctx, prompt, agentCfg, false)
+	agent, err := c.buildAgent(ctx, p, agentCfg, false)
 	if err != nil {
 		return nil, err
 	}
 	c.currentAgent = agent
-	c.agents[config.AgentCoder] = agent
 	return c, nil
 }
 
@@ -707,17 +716,27 @@ func mergeCallOptions(model Model, cfg config.ProviderConfig, promptCacheKey str
 	return modelOptions, temp, topP, topK, freqPenalty, presPenalty
 }
 
+// primaryModelType reports which of the two configured model slots an
+// agent runs on: "small" puts it on the small model, anything else
+// (including unset) on the large one.
+func primaryModelType(agent config.Agent) config.SelectedModelType {
+	if agent.Model == config.SelectedModelTypeSmall {
+		return config.SelectedModelTypeSmall
+	}
+	return config.SelectedModelTypeLarge
+}
+
 func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, agent config.Agent, isSubAgent bool) (SessionAgent, error) {
-	large, small, err := c.buildAgentModels(ctx, isSubAgent)
+	primaryModel, secondaryModel, err := c.buildAgentModels(ctx, agent, isSubAgent)
 	if err != nil {
 		return nil, err
 	}
 
-	largeProviderCfg, _ := c.cfg.Config().Providers.Get(large.ModelCfg.Provider)
+	primaryProviderCfg, _ := c.cfg.Config().Providers.Get(primaryModel.ModelCfg.Provider)
 	result := NewSessionAgent(SessionAgentOptions{
-		LargeModel:           large,
-		SmallModel:           small,
-		SystemPromptPrefix:   largeProviderCfg.SystemPromptPrefix,
+		LargeModel:           primaryModel,
+		SmallModel:           secondaryModel,
+		SystemPromptPrefix:   primaryProviderCfg.SystemPromptPrefix,
 		SystemPrompt:         "",
 		IsSubAgent:           isSubAgent,
 		AgentName:            agent.Name,
@@ -733,17 +752,20 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 	// The readiness goroutines below perform one-time setup — building the
 	// system prompt and the initial tool list — whose results the
 	// coordinator needs for its whole lifetime, so they must survive the
-	// caller's context being canceled. Several entry points build an agent
-	// from a short-lived HTTP request context: the server's
-	// InitAgent/UpdateAgent handlers, and UpdateModels -> buildTools ->
-	// agentTool -> buildAgent for the sub-agent. The tool-list build reads
-	// the MCP registry as it stands; servers still connecting are picked up
-	// by later runs. WithoutCancel drops cancellation while keeping context
-	// values; the work is local and always completes.
+	// caller's context being canceled. The server's InitAgent/UpdateAgent
+	// handlers build the coder from a short-lived HTTP request context.
+	// The tool-list build reads the MCP registry as it stands; servers
+	// still connecting are picked up by later runs. WithoutCancel drops
+	// cancellation while keeping context values; the work is local and
+	// always completes.
+	//
+	// Subagents do not come through here — they are built synchronously
+	// on the dispatch path by buildSubAgentSync, so readyWg carries the
+	// coder alone and a broken subagent cannot poison it.
 	initCtx := context.WithoutCancel(ctx)
 
 	c.readyWg.Go(func() error {
-		systemPrompt, err := prompt.Build(initCtx, large.Model.Provider(), large.Model.Model(), c.cfg)
+		systemPrompt, err := prompt.Build(initCtx, primaryModel.Model.Provider(), primaryModel.Model.Model(), c.cfg)
 		if err != nil {
 			return err
 		}
@@ -765,15 +787,21 @@ func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, age
 
 func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubAgent bool) ([]fantasy.AgentTool, error) {
 	var allTools []fantasy.AgentTool
-	if slices.Contains(agent.AllowedTools, AgentToolName) {
-		agentTool, err := c.agentTool(ctx)
-		if err != nil {
-			return nil, err
+	// Sub-agents must not hold any delegation tool that can start another
+	// agent (agent, agentic_fetch), to keep dispatch depth fixed at 1.
+	if !isSubAgent && agent.AllowedTools.Allows(AgentToolName) {
+		if c.subagents.Len() == 0 {
+			slog.Info("No subagents available; omitting the agent tool")
+		} else {
+			agentTool, err := c.agentTool()
+			if err != nil {
+				return nil, err
+			}
+			allTools = append(allTools, agentTool)
 		}
-		allTools = append(allTools, agentTool)
 	}
 
-	if slices.Contains(agent.AllowedTools, tools.AgenticFetchToolName) {
+	if !isSubAgent && agent.AllowedTools.Allows(tools.AgenticFetchToolName) {
 		agenticFetchTool, err := c.agenticFetchTool(ctx, nil)
 		if err != nil {
 			return nil, err
@@ -794,7 +822,12 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 	// Build hook runner if PreToolUse hooks are configured.
 	var hookRunner *hooks.Runner
 	if preToolHooks := c.cfg.Config().Hooks[hooks.EventPreToolUse]; len(preToolHooks) > 0 {
-		hookRunner = hooks.NewRunner(preToolHooks, c.cfg.WorkingDir(), c.cfg.WorkingDir())
+		depth := 0
+		if isSubAgent {
+			depth = 1
+		}
+		hookRunner = hooks.NewRunner(preToolHooks, c.cfg.WorkingDir(), c.cfg.WorkingDir(),
+			hooks.AgentIdentity{ID: agent.ID, Depth: depth})
 	}
 
 	allTools = append(
@@ -847,50 +880,46 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 
 	var filteredTools []fantasy.AgentTool
 	for _, tool := range allTools {
-		if slices.Contains(agent.AllowedTools, tool.Info().Name) {
+		if agent.AllowedTools.Allows(tool.Info().Name) {
 			filteredTools = append(filteredTools, tool)
 		}
 	}
 
 	for _, tool := range tools.GetMCPTools(c.permissions, c.cfg, c.cfg.WorkingDir()) {
-		if agent.AllowedMCP == nil {
-			// No MCP restrictions
+		if agent.AllowedMCP.Allows(tool.MCP(), tool.MCPToolName()) {
 			filteredTools = append(filteredTools, tool)
 			continue
 		}
-		if len(agent.AllowedMCP) == 0 {
-			// No MCPs allowed
-			slog.Debug("No MCPs allowed", "tool", tool.Name(), "agent", agent.Name)
-			break
-		}
-
-		for mcp, tools := range agent.AllowedMCP {
-			if mcp != tool.MCP() {
-				continue
-			}
-			if len(tools) == 0 || slices.Contains(tools, tool.MCPToolName()) {
-				filteredTools = append(filteredTools, tool)
-				break
-			}
-			slog.Debug("MCP not allowed", "tool", tool.Name(), "agent", agent.Name)
-		}
+		slog.Debug("MCP not allowed", "tool", tool.Name(), "agent", agent.Name)
 	}
 	slices.SortFunc(filteredTools, func(a, b fantasy.AgentTool) int {
 		return strings.Compare(a.Info().Name, b.Info().Name)
 	})
 
-	// Wrap tools with hook interception for the top-level agent only.
-	// Sub-agents (the `agent` task tool, `agentic_fetch`, etc.) run
-	// without hook interception to avoid firing the user's hook N times
-	// per delegated turn. The top-level invocation of the sub-agent tool
-	// itself is still wrapped from the coder's side.
-	filteredTools = wrapToolsWithHooks(filteredTools, hookRunner, isSubAgent)
+	// Every tool call runs through the user's PreToolUse hooks, including
+	// the ones a sub-agent makes. A delegated `bash` is still a bash
+	// command on the user's machine, so it must face the same policy as
+	// a top-level one; the payload's agent_id and depth let a hook tell
+	// the two apart. The top-level `agent` call and the tool calls the
+	// sub-agent then makes are distinct events, not duplicates.
+	filteredTools = wrapToolsWithHooks(filteredTools, hookRunner)
 
 	return filteredTools, nil
 }
 
-// TODO: when we support multiple agents we need to change this so that we pass in the agent specific model config
-func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Model, Model, error) {
+// buildAgentModels resolves an agent's two models: the primary one it
+// runs turns on, and the secondary one used for auxiliary work (titles,
+// summarization). Which configured slot is primary follows the agent's
+// own Model preference, so an agent pinned to "small" gets the small
+// model as primary and the large one as its secondary.
+//
+// The provider for the primary model is constructed with the caller's
+// own role, while the secondary is always constructed as a sub-agent
+// because it only ever serves auxiliary turns. Deciding the roles and
+// constructing the providers in one place is what keeps those two
+// consistent: doing it in separate steps is how a "small"-preferring
+// coder ended up with a sub-agent-flagged primary provider.
+func (c *coordinator) buildAgentModels(ctx context.Context, agent config.Agent, isSubAgent bool) (Model, Model, error) {
 	largeModelCfg, ok := c.cfg.Config().Models[config.SelectedModelTypeLarge]
 	if !ok {
 		return Model{}, Model{}, errLargeModelNotSelected
@@ -904,18 +933,19 @@ func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Mo
 	if !ok {
 		return Model{}, Model{}, errLargeModelProviderNotConfigured
 	}
-
-	largeProvider, err := c.buildProvider(largeProviderCfg, largeModelCfg, isSubAgent)
-	if err != nil {
-		return Model{}, Model{}, err
-	}
-
 	smallProviderCfg, ok := c.cfg.Config().Providers.Get(smallModelCfg.Provider)
 	if !ok {
 		return Model{}, Model{}, errSmallModelProviderNotConfigured
 	}
 
-	smallProvider, err := c.buildProvider(smallProviderCfg, smallModelCfg, true)
+	largeIsPrimary := primaryModelType(agent) == config.SelectedModelTypeLarge
+
+	largeProvider, err := c.buildProvider(largeProviderCfg, largeModelCfg, isSubAgent || !largeIsPrimary)
+	if err != nil {
+		return Model{}, Model{}, err
+	}
+
+	smallProvider, err := c.buildProvider(smallProviderCfg, smallModelCfg, isSubAgent || largeIsPrimary)
 	if err != nil {
 		return Model{}, Model{}, err
 	}
@@ -962,17 +992,33 @@ func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Mo
 		return Model{}, Model{}, err
 	}
 
-	return Model{
-			Model:      largeModel,
-			CatwalkCfg: *largeCatwalkModel,
-			ModelCfg:   largeModelCfg,
-			FlatRate:   largeProviderCfg.FlatRate,
-		}, Model{
-			Model:      smallModel,
-			CatwalkCfg: *smallCatwalkModel,
-			ModelCfg:   smallModelCfg,
-			FlatRate:   smallProviderCfg.FlatRate,
-		}, nil
+	large := Model{
+		Model:      largeModel,
+		CatwalkCfg: *largeCatwalkModel,
+		ModelCfg:   largeModelCfg,
+		FlatRate:   largeProviderCfg.FlatRate,
+	}
+	small := Model{
+		Model:      smallModel,
+		CatwalkCfg: *smallCatwalkModel,
+		ModelCfg:   smallModelCfg,
+		FlatRate:   smallProviderCfg.FlatRate,
+	}
+
+	primary, secondary := large, small
+	if !largeIsPrimary {
+		primary, secondary = small, large
+	}
+
+	// Baking the agent's temperature into the primary model's config
+	// lets every downstream reader of Model().ModelCfg.Temperature
+	// (mergeCallOptions, runSubAgent) pick it up without knowing about
+	// the agent at all.
+	if agent.Temperature != nil {
+		primary.ModelCfg.Temperature = agent.Temperature
+	}
+
+	return primary, secondary, nil
 }
 
 func (c *coordinator) buildAnthropicProvider(baseURL, apiKey string, headers map[string]string, providerID string) (fantasy.Provider, error) {
@@ -1290,23 +1336,42 @@ func (c *coordinator) Model() Model {
 }
 
 func (c *coordinator) UpdateModels(ctx context.Context) error {
-	// build the models again so we make sure we get the latest config
-	large, small, err := c.buildAgentModels(ctx, false)
-	if err != nil {
-		return err
-	}
-	c.currentAgent.SetModels(large, small)
-
 	agentCfg, ok := c.cfg.Config().Agents[config.AgentCoder]
 	if !ok {
 		return errCoderAgentNotConfigured
 	}
+
+	// build the models again so we make sure we get the latest config
+	primary, secondary, err := c.buildAgentModels(ctx, agentCfg, false)
+	if err != nil {
+		return err
+	}
+	c.currentAgent.SetModels(primary, secondary)
 
 	tools, err := c.buildTools(ctx, agentCfg, false)
 	if err != nil {
 		return err
 	}
 	c.currentAgent.SetTools(tools)
+
+	// Bring the dispatch table in line with the config as it stands
+	// now. An agent whose permissions changed is replaced wholesale, so
+	// the next dispatch rebuilds it against the new config rather than
+	// reusing a cached agent that still holds revoked tools.
+	c.reconcileSubagents()
+
+	// Agents that survived reconciliation and are already built keep
+	// their prompt and tools, so only their models need refreshing to
+	// pick up a provider or model swap.
+	for id, entry := range c.subagents.Built() {
+		subPrimary, subSecondary, err := c.buildAgentModels(ctx, entry.cfg, true)
+		if err != nil {
+			return err
+		}
+		slog.Debug("Refreshed subagent models", "agent", id)
+		entry.agent.SetModels(subPrimary, subSecondary)
+	}
+
 	return nil
 }
 

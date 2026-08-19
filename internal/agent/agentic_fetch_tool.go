@@ -13,6 +13,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/prompt"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
 )
 
@@ -147,7 +148,8 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 				return fantasy.ToolResponse{}, fmt.Errorf("error creating prompt: %s", err)
 			}
 
-			_, small, err := c.buildAgentModels(ctx, true)
+			// Agentic fetch runs on the small model as a sub-agent.
+			small, _, err := c.buildAgentModels(ctx, config.Agent{Model: config.SelectedModelTypeSmall}, true)
 			if err != nil {
 				return fantasy.ToolResponse{}, fmt.Errorf("error building models: %s", err)
 			}

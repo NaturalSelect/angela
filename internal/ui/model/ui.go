@@ -2323,7 +2323,6 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 
 	if isOnboarding {
 		m.setState(uiLanding, uiFocusEditor)
-		m.com.Config().SetupAgents()
 		if err := m.com.Workspace.InitCoderAgent(context.TODO()); err != nil {
 			cmds = append(cmds, util.ReportError(err))
 		}

@@ -37,6 +37,7 @@ type Runner struct {
 	hooks      []compiledHook
 	cwd        string
 	projectDir string
+	agent      AgentIdentity
 }
 
 // NewRunner creates a Runner from the given hook configs. Each hook's
@@ -44,10 +45,13 @@ type Runner struct {
 // not have to pre-compile matchers on the config, and reloads or merges
 // that rebuild HookConfig values can't silently strip compiled state.
 //
+// agent identifies which agent's tool calls this runner guards, and is
+// reported to every hook it runs.
+//
 // Hooks whose matcher fails to compile are skipped with a warning rather
 // than treated as match-everything. ValidateHooks is expected to have
 // caught syntax errors earlier, so this is defense in depth.
-func NewRunner(hooks []config.HookConfig, cwd, projectDir string) *Runner {
+func NewRunner(hooks []config.HookConfig, cwd, projectDir string, agent AgentIdentity) *Runner {
 	compiled := make([]compiledHook, 0, len(hooks))
 	for _, h := range hooks {
 		ch := compiledHook{cfg: h}
@@ -70,6 +74,7 @@ func NewRunner(hooks []config.HookConfig, cwd, projectDir string) *Runner {
 		hooks:      compiled,
 		cwd:        cwd,
 		projectDir: projectDir,
+		agent:      agent,
 	}
 }
 
@@ -104,8 +109,8 @@ func (r *Runner) Run(ctx context.Context, eventName, sessionID, toolName, toolIn
 		deduped = append(deduped, h)
 	}
 
-	envVars := BuildEnv(eventName, toolName, sessionID, r.cwd, r.projectDir, toolInputJSON)
-	payload := BuildPayload(eventName, sessionID, r.cwd, toolName, toolInputJSON)
+	envVars := BuildEnv(eventName, toolName, sessionID, r.cwd, r.projectDir, toolInputJSON, r.agent)
+	payload := BuildPayload(eventName, sessionID, r.cwd, toolName, toolInputJSON, r.agent)
 
 	results := make([]HookResult, len(deduped))
 	var wg sync.WaitGroup

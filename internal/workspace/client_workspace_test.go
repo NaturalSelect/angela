@@ -428,6 +428,54 @@ func TestClientWorkspace_AgentReadyErr(t *testing.T) {
 	})
 }
 
+// TestClientWorkspace_AgentActiveDefaultHasItsOwnRoute pins A2: the
+// landing screen has no session and asks for the agent a new one would
+// run by passing an empty session ID. Interpolated into the
+// session-scoped path that produced ".../sessions//active-agent", which
+// URL joining collapses into a question about a session literally named
+// "active-agent" — so remote landing showed no agent at all.
+func TestClientWorkspace_AgentActiveDefaultHasItsOwnRoute(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		sessionID string
+		wantPath  string
+	}{
+		{
+			name:     "no session yet",
+			wantPath: "/v1/workspaces/ws-1/agent/active-agent",
+		},
+		{
+			name:      "an open session",
+			sessionID: "s1",
+			wantPath:  "/v1/workspaces/ws-1/agent/sessions/s1/active-agent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, tt.wantPath, r.URL.Path)
+				require.NoError(t, json.NewEncoder(w).Encode(proto.ActiveAgent{AgentID: "coder"}))
+			}))
+			t.Cleanup(srv.Close)
+
+			u, err := url.Parse(srv.URL)
+			require.NoError(t, err)
+			c, err := client.NewClient(t.TempDir(), "tcp", u.Host)
+			require.NoError(t, err)
+
+			active, err := NewClientWorkspace(c, proto.Workspace{ID: "ws-1"}).
+				AgentActive(t.Context(), tt.sessionID)
+			require.NoError(t, err)
+			require.Equal(t, "coder", active.AgentID, "the request must have reached the handler")
+		})
+	}
+}
+
 // agentInfoWorkspace returns a ClientWorkspace whose server answers the
 // agent-info endpoint with the given info.
 func agentInfoWorkspace(t *testing.T, info proto.AgentInfo) *ClientWorkspace {

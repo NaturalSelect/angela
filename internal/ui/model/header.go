@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/common"
@@ -52,9 +51,10 @@ func (h *header) refresh() {
 	h.logo = ""
 }
 
-// drawHeader draws the header for the given session. lspErrorCount comes
-// from the UI's memoized LSP state: drawing runs on every frame and must not
-// probe the workspace (a synchronous HTTP round-trip in client/server mode).
+// drawHeader draws the header for the given session. lspErrorCount and
+// contextWindow come from the UI's memoized state: drawing runs on every
+// frame and must not probe the workspace (a synchronous HTTP round-trip
+// in client/server mode).
 func (h *header) drawHeader(
 	scr uv.Screen,
 	area uv.Rectangle,
@@ -63,7 +63,7 @@ func (h *header) drawHeader(
 	detailsOpen bool,
 	width int,
 	lspErrorCount int,
-	hyperCredits *int,
+	contextWindow int64,
 ) {
 	t := h.com.Styles
 	if width != h.width || compact != h.compact {
@@ -92,7 +92,7 @@ func (h *header) drawHeader(
 		lspErrorCount,
 		detailsOpen,
 		availDetailWidth,
-		hyperCredits,
+		contextWindow,
 	)
 
 	remainingWidth := width -
@@ -124,7 +124,7 @@ func renderHeaderDetails(
 	lspErrorCount int,
 	detailsOpen bool,
 	availWidth int,
-	hyperCredits *int,
+	contextWindow int64,
 ) string {
 	t := com.Styles
 
@@ -134,21 +134,14 @@ func renderHeaderDetails(
 		parts = append(parts, t.LSP.ErrorDiagnostic.Render(fmt.Sprintf("%s%d", styles.LSPErrorIcon, lspErrorCount)))
 	}
 
-	agentCfg := com.Config().Agents[config.AgentCoder]
-	model := com.Config().GetModelByType(agentCfg.Model)
-	if model != nil && model.ContextWindow > 0 {
-		percentage := (float64(session.CompletionTokens+session.PromptTokens) / float64(model.ContextWindow)) * 100
+	if contextWindow > 0 {
+		percentage := (float64(session.CompletionTokens+session.PromptTokens) / float64(contextWindow)) * 100
 		percentageText := fmt.Sprintf("%d%%", int(percentage))
 		if session.EstimatedUsage {
 			percentageText = "~" + percentageText
 		}
 		formattedPercentage := t.Header.Percentage.Render(percentageText)
 		parts = append(parts, formattedPercentage)
-	}
-
-	if com.IsHyper() && hyperCredits != nil {
-		hc := t.Header.HypercreditIcon.Render(styles.HypercreditIcon) + " " + t.Header.Percentage.Render(common.FormatCredits(*hyperCredits))
-		parts = append(parts, hc)
 	}
 
 	const keystroke = "ctrl+d"

@@ -9,6 +9,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/google/uuid"
@@ -45,9 +46,23 @@ func (c *errorCoordinator) QueuedPrompts(string) int                          { 
 func (c *errorCoordinator) QueuedPromptsList(string) []string                 { return nil }
 func (c *errorCoordinator) ClearQueue(string)                                 {}
 func (c *errorCoordinator) Summarize(context.Context, string) error           { return nil }
-func (c *errorCoordinator) Model() agent.Model                                { return agent.Model{} }
-func (c *errorCoordinator) UpdateModels(context.Context) error                { return nil }
-func (c *errorCoordinator) GenerateTitle(context.Context, string, string)     {}
+func (c *errorCoordinator) DefaultModel() agent.Model                         { return agent.Model{} }
+
+func (c *errorCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
+	return config.ActiveAgent{}, nil
+}
+
+func (c *errorCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
+	return config.ActiveAgent{}, agent.Model{}, nil
+}
+func (c *errorCoordinator) UpdateModels(context.Context) error            { return nil }
+func (c *errorCoordinator) GenerateTitle(context.Context, string, string) {}
+func (c *errorCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
+	return config.Agent{}, "", nil
+}
+
+func (c *errorCoordinator) SwitchAgent(context.Context, string, string) error   { return nil }
+func (c *errorCoordinator) SwitchVariant(context.Context, string, string) error { return nil }
 
 // insertRunCompleteWorkspace installs a workspace backed by a real
 // app.App (so the runCompletions broker exists) with the given

@@ -18,26 +18,27 @@ import (
 // modelInfo renders the current model information including reasoning
 // settings and context usage/cost for the sidebar.
 func (m *UI) modelInfo(width int) string {
-	model := m.selectedLargeModel()
+	active := m.activeAgent()
 	reasoningInfo := ""
 	providerName := ""
 
-	if model != nil {
+	if active != nil {
 		// Get provider name first
-		providerConfig, ok := m.com.Config().Providers.Get(model.ModelCfg.Provider)
+		providerConfig, ok := m.com.Config().Providers.Get(active.ModelCfg.Provider)
 		if ok {
 			providerName = providerConfig.Name
 
-			// Only check reasoning if model can reason
-			if model.CatwalkCfg.CanReason {
-				if len(model.CatwalkCfg.ReasoningLevels) == 0 {
-					if model.ModelCfg.Think {
+			// ModelCfg already has the session's preset folded in, so
+			// what is rendered here is what the turn actually runs on.
+			if active.CatwalkCfg.CanReason {
+				if len(active.CatwalkCfg.ReasoningLevels) == 0 {
+					if active.ModelCfg.Think {
 						reasoningInfo = "Thinking On"
 					} else {
 						reasoningInfo = "Thinking Off"
 					}
 				} else {
-					reasoningEffort := cmp.Or(model.ModelCfg.ReasoningEffort, model.CatwalkCfg.DefaultReasoningEffort)
+					reasoningEffort := cmp.Or(active.ModelCfg.ReasoningEffort, active.CatwalkCfg.DefaultReasoningEffort)
 					reasoningInfo = fmt.Sprintf("Reasoning %s", common.FormatReasoningEffort(reasoningEffort))
 				}
 			}
@@ -45,19 +46,19 @@ func (m *UI) modelInfo(width int) string {
 	}
 
 	var modelContext *common.ModelContextInfo
-	if model != nil && m.session != nil {
+	if active != nil && m.session != nil {
 		modelContext = &common.ModelContextInfo{
 			ContextUsed:    m.session.CompletionTokens + m.session.PromptTokens,
 			Cost:           m.session.Cost,
-			ModelContext:   model.CatwalkCfg.ContextWindow,
+			ModelContext:   active.CatwalkCfg.ContextWindow,
 			EstimatedUsage: m.session.EstimatedUsage,
 		}
 	}
 	var modelName string
-	if model != nil {
-		modelName = model.CatwalkCfg.Name
+	if active != nil {
+		modelName = active.CatwalkCfg.Name
 	}
-	return common.ModelInfo(m.com.Styles, modelName, providerName, reasoningInfo, modelContext, width, m.hyperCredits)
+	return common.ModelInfo(m.com.Styles, modelName, providerName, reasoningInfo, modelContext, width)
 }
 
 // updateSidebarScrollState renders the sidebar content and computes scroll

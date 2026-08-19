@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/stretchr/testify/require"
@@ -26,10 +27,6 @@ func (m *mockSessionService) Create(_ context.Context, title string) (session.Se
 	s := session.Session{ID: "new-session-id", Title: title}
 	m.created = append(m.created, s)
 	return s, nil
-}
-
-func (m *mockSessionService) CreateTitleSession(context.Context, string) (session.Session, error) {
-	return session.Session{}, nil
 }
 
 func (m *mockSessionService) CreateTaskSession(context.Context, string, string, string) (session.Session, error) {
@@ -61,6 +58,10 @@ func (m *mockSessionService) Save(_ context.Context, s session.Session) (session
 }
 
 func (m *mockSessionService) UpdateTitleAndUsage(context.Context, string, string, int64, int64, float64) error {
+	return nil
+}
+
+func (m *mockSessionService) UpdateActiveAgent(context.Context, string, config.ActiveAgentState) error {
 	return nil
 }
 

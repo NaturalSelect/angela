@@ -78,77 +78,34 @@ envelopes keep working unchanged. No version bump required.
   (`{"path": "...", "reason": "..."}`) would allow that but complicates the
   schema. Defer until there's a real user need.
 
-## Sub-agent opt-in
+## Sub-agent opt-out
 
-**Status:** not implemented.
+**Status:** not implemented. Supersedes an earlier "sub-agent opt-in"
+proposal, which this repository resolved in the opposite direction.
 
 ### Background
 
-Today hooks fire **only** on the top-level agent's tool calls. Sub-agents
-(`agent` task tool, `agentic_fetch`, future delegated loops) run without hook
-interception so a single delegated turn doesn't trigger the user's hook N times.
+Hooks used to fire only on the top-level agent's tool calls, and the backlog
+item here was an `include_sub_agents` flag to opt individual hooks back in.
+That got it backwards: a delegated `bash` is still a command on the user's
+machine, so exempting it by default meant the agent could route around any
+policy by delegating. The exemption was removed — hooks now fire on every
+tool call — and the payload carries `agent_id` and `depth` so scripts can
+branch on the caller. A hook that only wants top-level calls writes
+`[ "$ANGELA_AGENT_DEPTH" = "0" ] || exit 0`.
 
-The outer sub-agent tool call itself is hooked, so blanket policy like "never
-spawn sub-agents" or "rewrite prompts sent to the task agent" still works from
-the coder's side. The sub-agent's inner loop is the part that's exempt.
+### What might still be wanted
 
-### Why users might want the escape hatch
+The original motivation for the exemption was cost, not safety: a delegated
+turn fires the hook once per tool call, so an expensive hook (a network
+round-trip, a linter over the whole tree) now runs N times where it used to
+run once. Today the fix is the one-line depth guard above, which is fine for
+"top-level only" but cannot express "run at most once per delegated turn".
 
-- Audit logging of every tool call, including delegated ones.
-- Redaction hooks that want to apply uniformly regardless of who called the
-  tool.
-- Policy that cares about the _tool_ not the _caller_: "never fetch from this
-  domain, even in `agentic_fetch`."
-
-Until someone actually asks, don't ship this. YAGNI.
-
-### Proposed shape
-
-Additive, per-hook. Zero-value matches current default (skip sub-agents):
-
-```jsonc
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "^bash$",
-        "command": "./hooks/audit.sh",
-        "include_sub_agents": true, // default false
-      },
-    ],
-  },
-}
-```
-
-Implementation changes where `wrapToolsWithHooks` decides to skip. Instead of a
-single `isSubAgent` bailout, the runner filters per-hook matches by the hook's
-`include_sub_agents` flag. Hooks that opt in get wrapped into sub-agent tool
-slices too; everything else stays skipped.
-
-### Backwards Compatibility
-
-Purely additive. Hooks that don't set `include_sub_agents` get the default
-(`false` = skip sub-agents). No wire format change, no version bump. The initial
-transition from "hooks fire everywhere" to "hooks skip sub-agents by default"
-was a one-time behavior change; adding the opt-in is pure addition.
-
-### Side benefit: payload awareness
-
-Extend the stdin payload with `"is_sub_agent": true|false` so hook scripts that
-opt in can branch on caller type ("audit top-level and sub-agent calls
-differently"). Also purely additive — hooks that don't read the field are
-unaffected.
-
-### Open questions
-
-- Per-hook flag (above) vs a global `hooks.include_sub_agents` default? A global
-  toggle is simpler but coarse-grained; per-hook is more flexible and
-  composable. Start per-hook; a global default can be layered on later with
-  explicit precedence ("per-hook overrides global").
-- Does an opt-in hook see hooks from _nested_ sub-agents too (a sub-agent that
-  itself calls a sub-agent)? Probably yes — once you've opted in you want the
-  full tree. But call it out explicitly in docs so users aren't surprised by N²
-  explosions on pathological configs.
+If that turns out to be a real need, the shape is a per-hook
+`max_depth` (default unbounded) rather than a boolean — depth is already in
+the payload, so this is a filter in the runner and nothing else changes.
+Until someone actually asks, don't ship it. YAGNI.
 
 ## `UserPromptSubmit` event
 

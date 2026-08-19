@@ -113,7 +113,7 @@ func BenchmarkLoadFromConfigPaths_ShellConfig(b *testing.B) {
 
 	rcContent := []byte(`provider add openai --api-key "$OPENAI_API_KEY" --base-url "https://api.openai.com/v1"
 provider add anthropic --api-key "$ANTHROPIC_API_KEY"
-model large openai/gpt-4o --think
+model main openai/gpt-4o --think
 permissions allow bash view
 option data-directory .angela
 option metrics false`)

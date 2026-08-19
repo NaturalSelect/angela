@@ -99,7 +99,11 @@ model small [<provider>/<id>] [flags]  # set the small slot; no arg prints it
 - `model add` flags: `--name`, `--context-window N`, `--default-max-tokens N`,
   `--can-reason BOOL`, `--supports-images BOOL`, `--price-input F`,
   `--price-output F`, `--price-cache-create F`, `--price-cache-hit F`,
-  `--reasoning-effort low|medium|high`.
+  `--reasoning-effort low|medium|high`, `--reasoning-level LEVEL` (repeatable;
+  declares which effort levels the model accepts — required before
+  `--reasoning-effort` on this model or on `model large`/`model small` has
+  any effect, since the request is only sent when the chosen level is in
+  this list).
 - `model large`/`model small` flags: `--think`, `--reasoning-effort`,
   `--max-tokens N`, `--temperature F`, `--top-p F`, `--top-k N`,
   `--frequency-penalty F`, `--presence-penalty F`, `--provider-options JSON`.

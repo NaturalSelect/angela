@@ -367,7 +367,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/workspaces/{id}/agent/default-small-model": {
+        "/workspaces/{id}/agent/active-agent": {
             "get": {
                 "produces": [
                     "application/json"
@@ -375,7 +375,7 @@ const docTemplate = `{
                 "tags": [
                     "agent"
                 ],
-                "summary": "Get default small model",
+                "summary": "Get the default active agent",
                 "parameters": [
                     {
                         "type": "string",
@@ -383,19 +383,13 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Provider ID",
-                        "name": "provider_id",
-                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/proto.ActiveAgent"
                         }
                     },
                     "404": {
@@ -477,6 +471,116 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/proto.AgentSession"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/workspaces/{id}/agent/sessions/{sid}/active-agent": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent"
+                ],
+                "summary": "Get the session's active agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/proto.ActiveAgent"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent"
+                ],
+                "summary": "Edit the session's active agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Active agent edit",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.ActiveAgentEditRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/proto.ActiveAgent"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
                         }
                     },
                     "404": {
@@ -1021,6 +1125,110 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/proto.ConfigProviderKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/workspaces/{id}/config/prune-recent-models": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Prune stale recent models",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Prune recent models request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.ConfigPruneRecentModelsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/workspaces/{id}/config/recent-model": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Record a recently used model",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Config model request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.ConfigModelRequest"
                         }
                     }
                 ],
@@ -3209,6 +3417,145 @@ const docTemplate = `{
                 }
             }
         },
+        "config.ActiveAgentState": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "model": {
+                    "$ref": "#/definitions/config.SelectedModel"
+                },
+                "model_name": {
+                    "$ref": "#/definitions/config.ModelConfigName"
+                },
+                "variant": {
+                    "description": "Variant is the preset the user picked, and is absent when they\nnever picked one. The distinction matters: Agent.Variant also\nholds config-derived defaults, and persisting one of those\nwould freeze it — changing the default in the config file\nwould then never reach this session again. A pointer to the\nempty string is a real pick, namely backing out of a preset.",
+                    "type": "string"
+                }
+            }
+        },
+        "config.Agent": {
+            "type": "object",
+            "properties": {
+                "allowed_mcp": {
+                    "description": "AllowedMCP controls which MCP servers and tools are available,\nwith the same tri-state semantics as AllowedTools. nil means\nthis layer did not mention allowed_mcp.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.AllowedMCPSet"
+                        }
+                    ]
+                },
+                "allowed_tools": {
+                    "description": "AllowedTools controls which tools this layer grants. A nil\nvalue means this layer did not mention allowed_tools (the\nmerge keeps whatever a lower-priority layer set); a non-nil\nvalue is self-describing via its Kind: ToolSetAll grants every\ntool, ToolSetInherited takes the coder's resolved set, and\nToolSetScope grants only Tools. ResolveAgents' output is always\nnon-nil with Kind == ToolSetScope: a fully materialized\nwhitelist with every deny list already applied.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.AllowedToolSet"
+                        }
+                    ]
+                },
+                "context_paths": {
+                    "description": "ContextPaths overrides the context paths for this agent.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "disabled": {
+                    "description": "Disabled uses a pointer so a markdown-layer \"disabled: true\" can\nbe explicitly re-enabled by a higher-priority layer's\n\"disabled: false\", instead of false being indistinguishable\nfrom unset.",
+                    "type": "boolean"
+                },
+                "disabled_tools": {
+                    "description": "DisabledTools removes tools from the resolved whitelist.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "hidden": {
+                    "description": "Hidden keeps an agent out of the agent tool's dispatch list and\nout of UI completion, while leaving it resolvable by ID. It is a\npointer for the same reason as Disabled: so a user can un-hide a\nbuilt-in hidden agent with an explicit \"hidden: false\".\n\nHidden is orthogonal to Mode: whether an agent is internal has\nnothing to do with whether it is primary or a subagent.",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "max_tokens": {
+                    "description": "MaxTokens caps the agent's output tokens. Zero means the model\ndefault applies.",
+                    "type": "integer"
+                },
+                "mode": {
+                    "description": "Mode controls how the agent can be used. Primary agents are\ntop-level; subagents are launched via the agent tool.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.AgentMode"
+                        }
+                    ]
+                },
+                "model": {
+                    "$ref": "#/definitions/config.ModelConfigName"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prompt": {
+                    "description": "Prompt is the system prompt text. When set it replaces the\nbuilt-in template for this agent. The text is parsed as a Go\ntemplate with the same data as built-in templates.",
+                    "type": "string"
+                },
+                "temperature": {
+                    "description": "Temperature overrides the model's default sampling temperature.",
+                    "type": "number"
+                },
+                "variant": {
+                    "description": "Variant names a parameter preset on the model config above.\nUnknown names degrade to the model's baseline parameters.",
+                    "type": "string"
+                }
+            }
+        },
+        "config.AgentMode": {
+            "type": "string",
+            "enum": [
+                "primary",
+                "subagent"
+            ],
+            "x-enum-varnames": [
+                "AgentModePrimary",
+                "AgentModeSubagent"
+            ]
+        },
+        "config.AllowedMCPSet": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "$ref": "#/definitions/config.ToolSetKind"
+                },
+                "servers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "config.AllowedToolSet": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "$ref": "#/definitions/config.ToolSetKind"
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "config.Attribution": {
             "type": "object",
             "properties": {
@@ -3220,6 +3567,23 @@ const docTemplate = `{
                 },
                 "trailer_style": {
                     "$ref": "#/definitions/config.TrailerStyle"
+                }
+            }
+        },
+        "config.CompactionOptions": {
+            "type": "object",
+            "properties": {
+                "auto": {
+                    "type": "boolean"
+                },
+                "large_context_threshold": {
+                    "type": "integer"
+                },
+                "reserved": {
+                    "type": "integer"
+                },
+                "small_context_ratio": {
+                    "type": "number"
                 }
             }
         },
@@ -3401,6 +3765,17 @@ const docTemplate = `{
                 "$ref": "#/definitions/config.MCPConfig"
             }
         },
+        "config.ModelConfigName": {
+            "type": "string",
+            "enum": [
+                "main",
+                "chore"
+            ],
+            "x-enum-varnames": [
+                "ModelMain",
+                "ModelChore"
+            ]
+        },
         "config.Permissions": {
             "type": "object",
             "properties": {
@@ -3454,19 +3829,49 @@ const docTemplate = `{
                 },
                 "top_p": {
                     "type": "number"
+                },
+                "variants": {
+                    "description": "Variants are named parameter presets over the fields above. They\nkeep the model identity and override only the keys they name, so\nN models by M presets stays N+M configs instead of N*M.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.SelectedModelOverride"
+                    }
                 }
             }
         },
-        "config.SelectedModelType": {
-            "type": "string",
-            "enum": [
-                "large",
-                "small"
-            ],
-            "x-enum-varnames": [
-                "SelectedModelTypeLarge",
-                "SelectedModelTypeSmall"
-            ]
+        "config.SelectedModelOverride": {
+            "type": "object",
+            "properties": {
+                "frequency_penalty": {
+                    "type": "number"
+                },
+                "max_tokens": {
+                    "type": "integer"
+                },
+                "presence_penalty": {
+                    "type": "number"
+                },
+                "provider_options": {
+                    "description": "ProviderOptions merges key by key: the keys a variant names win,\nthe baseline's other keys survive.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "reasoning_effort": {
+                    "type": "string"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "think": {
+                    "type": "boolean"
+                },
+                "top_k": {
+                    "type": "integer"
+                },
+                "top_p": {
+                    "type": "number"
+                }
+            }
         },
         "config.TUIOptions": {
             "type": "object",
@@ -3515,6 +3920,20 @@ const docTemplate = `{
                 }
             }
         },
+        "config.ToolSetKind": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+                0,
+                1,
+                2
+            ],
+            "x-enum-varnames": [
+                "ToolSetScope",
+                "ToolSetAll",
+                "ToolSetInherited"
+            ]
+        },
         "config.Tools": {
             "type": "object",
             "properties": {
@@ -3551,6 +3970,13 @@ const docTemplate = `{
                 "$schema": {
                     "type": "string"
                 },
+                "agents": {
+                    "description": "AgentConfigs holds user-defined agent overrides and custom agents.\nThese are merged over built-in defaults during SetupAgents().",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.Agent"
+                    }
+                },
                 "env": {
                     "description": "Env is a map of environment variables set on startup.",
                     "type": "object",
@@ -3574,7 +4000,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/config.MCPs"
                 },
                 "models": {
-                    "description": "We currently only support large/small as values here.",
+                    "description": "Named model configurations. \"main\" and \"chore\" ship as seeds;\nany other name may be defined and referenced by an agent.",
                     "type": "object",
                     "additionalProperties": {
                         "$ref": "#/definitions/config.SelectedModel"
@@ -3612,11 +4038,20 @@ const docTemplate = `{
         "github_com_NaturalSelect_angela_internal_config.Options": {
             "type": "object",
             "properties": {
+                "agent_paths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "attribution": {
                     "$ref": "#/definitions/config.Attribution"
                 },
                 "auto_lsp": {
                     "type": "boolean"
+                },
+                "compaction": {
+                    "$ref": "#/definitions/config.CompactionOptions"
                 },
                 "context_paths": {
                     "type": "array",
@@ -3632,9 +4067,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "debug_lsp": {
-                    "type": "boolean"
-                },
-                "disable_auto_summarize": {
                     "type": "boolean"
                 },
                 "disable_default_providers": {
@@ -3798,6 +4230,61 @@ const docTemplate = `{
                 "APIKeyKindOAuth"
             ]
         },
+        "proto.ActiveAgent": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
+                "agent_name": {
+                    "type": "string"
+                },
+                "catwalk_cfg": {
+                    "$ref": "#/definitions/catwalk.Model"
+                },
+                "model_cfg": {
+                    "$ref": "#/definitions/config.SelectedModel"
+                },
+                "model_name": {
+                    "$ref": "#/definitions/config.ModelConfigName"
+                },
+                "variant": {
+                    "type": "string"
+                }
+            }
+        },
+        "proto.ActiveAgentEditRequest": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "description": "Agent, when non-empty, re-instantiates the session on a\ndifferent primary agent.",
+                    "type": "string"
+                },
+                "model": {
+                    "$ref": "#/definitions/config.SelectedModel"
+                },
+                "model_name": {
+                    "description": "Model, when non-nil, replaces the session's model outright, and\nModelName labels which global slot it was taken from.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.ModelConfigName"
+                        }
+                    ]
+                },
+                "think": {
+                    "description": "Think, when non-nil, sets the thinking flag to an absolute\nvalue. Callers that mean \"flip it\" must use ToggleThink: reading\nthe flag, flipping it locally and writing the result back races\nanother client doing the same, and two flips that should cancel\nout instead both write true.",
+                    "type": "boolean"
+                },
+                "toggle_think": {
+                    "description": "ToggleThink flips the thinking flag against the value held under\nthe session's lock, so the read and the write cannot be split by\nanother edit. It takes precedence over Think.",
+                    "type": "boolean"
+                },
+                "variant": {
+                    "description": "Variant, when non-nil, sets the parameter preset. The empty\nstring selects the model's baseline, which is how a user backs\nout of a preset.",
+                    "type": "string"
+                }
+            }
+        },
         "proto.AgentInfo": {
             "type": "object",
             "properties": {
@@ -3838,6 +4325,12 @@ const docTemplate = `{
         "proto.AgentSession": {
             "type": "object",
             "properties": {
+                "active_agent": {
+                    "$ref": "#/definitions/config.ActiveAgentState"
+                },
+                "agent": {
+                    "type": "string"
+                },
                 "attached_clients": {
                     "type": "integer"
                 },
@@ -3919,8 +4412,8 @@ const docTemplate = `{
                 "model": {
                     "$ref": "#/definitions/config.SelectedModel"
                 },
-                "model_type": {
-                    "$ref": "#/definitions/config.SelectedModelType"
+                "model_name": {
+                    "$ref": "#/definitions/config.ModelConfigName"
                 },
                 "scope": {
                     "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Scope"
@@ -3944,6 +4437,23 @@ const docTemplate = `{
                 },
                 "scope": {
                     "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Scope"
+                }
+            }
+        },
+        "proto.ConfigPruneRecentModelsRequest": {
+            "type": "object",
+            "properties": {
+                "model_name": {
+                    "$ref": "#/definitions/config.ModelConfigName"
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Scope"
+                },
+                "stale": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/config.SelectedModel"
+                    }
                 }
             }
         },
@@ -4396,6 +4906,12 @@ const docTemplate = `{
         "proto.Session": {
             "type": "object",
             "properties": {
+                "active_agent": {
+                    "$ref": "#/definitions/config.ActiveAgentState"
+                },
+                "agent": {
+                    "type": "string"
+                },
                 "attached_clients": {
                     "type": "integer"
                 },

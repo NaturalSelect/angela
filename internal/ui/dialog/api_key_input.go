@@ -38,7 +38,7 @@ type APIKeyInput struct {
 
 	provider  catwalk.Provider
 	model     config.SelectedModel
-	modelType config.SelectedModelType
+	modelType config.ModelConfigName
 
 	width int
 	state APIKeyInputState
@@ -60,7 +60,7 @@ func NewAPIKeyInput(
 	isOnboarding bool,
 	provider catwalk.Provider,
 	model config.SelectedModel,
-	modelType config.SelectedModelType,
+	modelType config.ModelConfigName,
 ) (*APIKeyInput, tea.Cmd) {
 	t := com.Styles
 

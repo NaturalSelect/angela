@@ -4,17 +4,26 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/event"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/google/uuid"
 	"github.com/zeebo/xxh3"
 )
+
+// ErrSessionNotFound reports that a session the caller named does not
+// exist. A write that matches no row is this, not a success, and a read
+// that matches no row is this rather than a bare driver error — callers
+// above this package answer 404 on it and must not have to know that
+// the storage underneath is SQL.
+var ErrSessionNotFound = errors.New("session not found")
 
 type TodoStatus string
 
@@ -48,9 +57,21 @@ func HasIncompleteTodos(todos []Todo) bool {
 }
 
 type Session struct {
-	ID               string
-	ParentSessionID  string
-	Title            string
+	ID              string
+	ParentSessionID string
+	Title           string
+
+	// Agent names the agent the session runs. It is a projection of
+	// ActiveAgent.Agent kept as its own column so callers that only
+	// need the name do not have to decode the JSON; both are written
+	// together by UpdateActiveAgent and cannot drift.
+	Agent string
+
+	// ActiveAgent is the session's own agent instance, reduced to the
+	// part worth keeping: which agent, and which model it was pointed
+	// at. The agent definition is deliberately absent — prompts, tools
+	// and permissions are re-read from the config files on load.
+	ActiveAgent      config.ActiveAgentState
 	MessageCount     int64
 	PromptTokens     int64
 	CompletionTokens int64
@@ -65,13 +86,13 @@ type Session struct {
 type Service interface {
 	pubsub.Subscriber[Session]
 	Create(ctx context.Context, title string) (Session, error)
-	CreateTitleSession(ctx context.Context, parentSessionID string) (Session, error)
 	CreateTaskSession(ctx context.Context, toolCallID, parentSessionID, title string) (Session, error)
 	Get(ctx context.Context, id string) (Session, error)
 	GetLast(ctx context.Context) (Session, error)
 	List(ctx context.Context) ([]Session, error)
 	Save(ctx context.Context, session Session) (Session, error)
 	UpdateTitleAndUsage(ctx context.Context, sessionID, title string, promptTokens, completionTokens int64, cost float64) error
+	UpdateActiveAgent(ctx context.Context, id string, state config.ActiveAgentState) error
 	Rename(ctx context.Context, id string, title string) error
 	Delete(ctx context.Context, id string) error
 
@@ -101,7 +122,10 @@ func (s *service) Create(ctx context.Context, title string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	session := s.fromDBItem(dbSession)
+	session, err := s.fromDBItem(dbSession)
+	if err != nil {
+		return Session{}, err
+	}
 	s.Publish(pubsub.CreatedEvent, session)
 	event.SessionCreated()
 	return session, nil
@@ -116,21 +140,10 @@ func (s *service) CreateTaskSession(ctx context.Context, toolCallID, parentSessi
 	if err != nil {
 		return Session{}, err
 	}
-	session := s.fromDBItem(dbSession)
-	s.Publish(pubsub.CreatedEvent, session)
-	return session, nil
-}
-
-func (s *service) CreateTitleSession(ctx context.Context, parentSessionID string) (Session, error) {
-	dbSession, err := s.q.CreateSession(ctx, db.CreateSessionParams{
-		ID:              "title-" + parentSessionID,
-		ParentSessionID: sql.NullString{String: parentSessionID, Valid: true},
-		Title:           "Generate a title",
-	})
+	session, err := s.fromDBItem(dbSession)
 	if err != nil {
 		return Session{}, err
 	}
-	session := s.fromDBItem(dbSession)
 	s.Publish(pubsub.CreatedEvent, session)
 	return session, nil
 }
@@ -161,7 +174,11 @@ func (s *service) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
-	session := s.fromDBItem(dbSession)
+	// The row is gone, so what it ran is moot: subscribers need the
+	// identity of the session that went away, and refusing to announce
+	// a deletion because the deleted row held a bad blob would leave
+	// every listener holding it forever.
+	session := s.sessionFromRow(dbSession)
 	s.clearEstimatedUsageState(dbSession.ID)
 	s.Publish(pubsub.DeletedEvent, session)
 	event.SessionDeleted()
@@ -171,9 +188,12 @@ func (s *service) Delete(ctx context.Context, id string) error {
 func (s *service) Get(ctx context.Context, id string) (Session, error) {
 	dbSession, err := s.q.GetSessionByID(ctx, id)
 	if err != nil {
+		return Session{}, notFound(err, id)
+	}
+	session, err := s.fromDBItem(dbSession)
+	if err != nil {
 		return Session{}, err
 	}
-	session := s.fromDBItem(dbSession)
 	s.applyEstimatedUsageState(&session)
 	return session, nil
 }
@@ -181,11 +201,27 @@ func (s *service) Get(ctx context.Context, id string) (Session, error) {
 func (s *service) GetLast(ctx context.Context) (Session, error) {
 	dbSession, err := s.q.GetLastSession(ctx)
 	if err != nil {
+		return Session{}, notFound(err, "")
+	}
+	session, err := s.fromDBItem(dbSession)
+	if err != nil {
 		return Session{}, err
 	}
-	session := s.fromDBItem(dbSession)
 	s.applyEstimatedUsageState(&session)
 	return session, nil
+}
+
+// notFound restates "no such row" as this package's own error, so
+// callers can tell a missing session from a database that is broken.
+// Anything else is passed through untouched.
+func notFound(err error, id string) error {
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if id == "" {
+		return ErrSessionNotFound
+	}
+	return fmt.Errorf("%w: %s", ErrSessionNotFound, id)
 }
 
 func (s *service) Save(ctx context.Context, session Session) (Session, error) {
@@ -214,7 +250,10 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 	}
 	estimatedUsage := session.EstimatedUsage
 	s.setEstimatedUsageState(session.ID, estimatedUsage)
-	session = s.fromDBItem(dbSession)
+	session, err = s.fromDBItem(dbSession)
+	if err != nil {
+		return Session{}, err
+	}
 	session.EstimatedUsage = estimatedUsage
 	s.Publish(pubsub.UpdatedEvent, session)
 	return session, nil
@@ -233,6 +272,30 @@ func (s *service) UpdateTitleAndUsage(ctx context.Context, sessionID, title stri
 		return err
 	}
 	s.publishSessionUpdate(ctx, sessionID)
+	return nil
+}
+
+// UpdateActiveAgent records the session's own agent instance. It is
+// deliberately its own method: Save writes the caller's whole in-memory
+// session back, so folding these columns into it would let any stale
+// copy clobber them.
+func (s *service) UpdateActiveAgent(ctx context.Context, id string, state config.ActiveAgentState) error {
+	stateJSON, err := marshalActiveAgent(state)
+	if err != nil {
+		return err
+	}
+	rows, err := s.q.UpdateSessionActiveAgent(ctx, db.UpdateSessionActiveAgentParams{
+		ID:          id,
+		Agent:       sql.NullString{String: state.Agent, Valid: state.Agent != ""},
+		ActiveAgent: sql.NullString{String: stateJSON, Valid: stateJSON != ""},
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: %s", ErrSessionNotFound, id)
+	}
+	s.publishSessionUpdate(ctx, id)
 	return nil
 }
 
@@ -256,7 +319,10 @@ func (s *service) List(ctx context.Context) ([]Session, error) {
 	}
 	sessions := make([]Session, len(dbSessions))
 	for i, dbSession := range dbSessions {
-		sessions[i] = s.fromDBItem(dbSession)
+		sessions[i], err = s.fromDBItem(dbSession)
+		if err != nil {
+			return nil, err
+		}
 		s.applyEstimatedUsageState(&sessions[i])
 	}
 	return sessions, nil
@@ -295,7 +361,26 @@ func (s *service) clearEstimatedUsageState(sessionID string) {
 	s.estimatedUsageMu.Unlock()
 }
 
-func (s *service) fromDBItem(item db.Session) Session {
+// fromDBItem rebuilds a session from its row. A stored active agent
+// that will not decode is reported rather than dropped: the zero value
+// reads downstream as "this session never picked anything", which would
+// silently move a session onto a different agent, model and provider
+// than the one it was running.
+func (s *service) fromDBItem(item db.Session) (Session, error) {
+	session := s.sessionFromRow(item)
+	active, err := unmarshalActiveAgent(item.ActiveAgent.String)
+	if err != nil {
+		return Session{}, fmt.Errorf("decode the active agent of session %s: %w", item.ID, err)
+	}
+	session.ActiveAgent = active
+	return session, nil
+}
+
+// sessionFromRow copies the columns whose loss cannot change what the
+// session runs. Todos are logged rather than reported: an empty list is
+// visible and recoverable, while refusing to load the session over it
+// would strand the user from the conversation itself.
+func (s *service) sessionFromRow(item db.Session) Session {
 	todos, err := unmarshalTodos(item.Todos.String)
 	if err != nil {
 		slog.Error("Failed to unmarshal todos", "session_id", item.ID, "error", err)
@@ -304,6 +389,7 @@ func (s *service) fromDBItem(item db.Session) Session {
 		ID:               item.ID,
 		ParentSessionID:  item.ParentSessionID.String,
 		Title:            item.Title,
+		Agent:            item.Agent.String,
 		MessageCount:     item.MessageCount,
 		PromptTokens:     item.PromptTokens,
 		CompletionTokens: item.CompletionTokens,
@@ -313,6 +399,28 @@ func (s *service) fromDBItem(item db.Session) Session {
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 	}
+}
+
+func marshalActiveAgent(state config.ActiveAgentState) (string, error) {
+	if state.IsZero() {
+		return "", nil
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func unmarshalActiveAgent(data string) (config.ActiveAgentState, error) {
+	if data == "" {
+		return config.ActiveAgentState{}, nil
+	}
+	var state config.ActiveAgentState
+	if err := json.Unmarshal([]byte(data), &state); err != nil {
+		return config.ActiveAgentState{}, err
+	}
+	return state, nil
 }
 
 func marshalTodos(todos []Todo) (string, error) {

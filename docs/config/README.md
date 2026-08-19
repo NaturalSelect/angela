@@ -225,6 +225,7 @@ Flags:
       --price-cache-create float    cache-creation price per 1M tokens
       --price-cache-hit float       cache-hit price per 1M tokens
       --reasoning-effort string     low, medium, or high
+      --reasoning-level string      supported effort level, repeatable
 ```
 
 #### `model remove`

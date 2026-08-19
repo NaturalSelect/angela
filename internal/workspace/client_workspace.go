@@ -103,11 +103,11 @@ func NewClientWorkspace(c *client.Client, ws proto.Workspace) *ClientWorkspace {
 
 // refreshWorkspace re-fetches the workspace from the server, updating
 // the cached snapshot. Called after config-mutating operations.
-func (w *ClientWorkspace) refreshWorkspace() {
+func (w *ClientWorkspace) refreshWorkspace() error {
 	updated, err := w.client.GetWorkspace(context.Background(), w.workspaceID())
 	if err != nil {
 		slog.Error("Failed to refresh workspace", "error", err)
-		return
+		return err
 	}
 	if updated.Config != nil {
 		updated.Config.SetupAgents()
@@ -115,6 +115,22 @@ func (w *ClientWorkspace) refreshWorkspace() {
 	w.mu.Lock()
 	w.ws = *updated
 	w.mu.Unlock()
+	return nil
+}
+
+// refreshAfter re-reads the workspace once a config write has landed. A
+// failed refresh is reported as an error even though the write itself
+// succeeded: the next Config() read would otherwise serve the pre-write
+// snapshot, and these writes are idempotent, so surfacing it lets the
+// caller retry rather than act on a stale value.
+func (w *ClientWorkspace) refreshAfter(err error) error {
+	if err != nil {
+		return err
+	}
+	if err := w.refreshWorkspace(); err != nil {
+		return fmt.Errorf("saved, but refreshing the local config failed: %w", err)
+	}
+	return nil
 }
 
 // cached returns a snapshot of the cached workspace.
@@ -255,17 +271,6 @@ func (w *ClientWorkspace) AgentIsSessionBusy(sessionID string) bool {
 	return info.IsBusy
 }
 
-func (w *ClientWorkspace) AgentModel() AgentModel {
-	info, err := w.client.GetAgentInfo(context.Background(), w.workspaceID())
-	if err != nil {
-		return AgentModel{}
-	}
-	return AgentModel{
-		CatwalkCfg: info.Model,
-		ModelCfg:   info.ModelCfg,
-	}
-}
-
 func (w *ClientWorkspace) AgentIsReady() bool {
 	return w.AgentReadyErr() == nil
 }
@@ -310,6 +315,34 @@ func (w *ClientWorkspace) AgentClearQueue(sessionID string) {
 	_ = w.client.ClearAgentSessionQueuedPrompts(context.Background(), w.workspaceID(), sessionID)
 }
 
+func (w *ClientWorkspace) AgentActive(ctx context.Context, sessionID string) (ActiveAgent, error) {
+	active, err := w.client.AgentGetSessionActive(ctx, w.workspaceID(), sessionID)
+	if err != nil {
+		return ActiveAgent{}, err
+	}
+	return activeAgentFromProto(active), nil
+}
+
+func (w *ClientWorkspace) AgentEditActive(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (ActiveAgent, error) {
+	active, err := w.client.AgentEditSessionActive(ctx, w.workspaceID(), sessionID, edit)
+	if err != nil {
+		return ActiveAgent{}, err
+	}
+	return activeAgentFromProto(active), nil
+}
+
+// activeAgentFromProto restates the wire shape as the one the UI reads.
+func activeAgentFromProto(active proto.ActiveAgent) ActiveAgent {
+	return ActiveAgent{
+		AgentID:    active.AgentID,
+		AgentName:  active.AgentName,
+		ModelName:  active.ModelName,
+		ModelCfg:   active.ModelCfg,
+		CatwalkCfg: active.CatwalkCfg,
+		Variant:    active.Variant,
+	}
+}
+
 func (w *ClientWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
 	return w.client.AgentSummarizeSession(ctx, w.workspaceID(), sessionID)
 }
@@ -324,14 +357,6 @@ func (w *ClientWorkspace) InitCoderAgent(ctx context.Context) error {
 
 func (w *ClientWorkspace) InitCoderAgentNonInteractive(ctx context.Context) error {
 	return w.client.InitiateAgentProcessing(ctx, w.workspaceID(), false)
-}
-
-func (w *ClientWorkspace) GetDefaultSmallModel(providerID string) config.SelectedModel {
-	model, err := w.client.GetDefaultSmallModel(context.Background(), w.workspaceID(), providerID)
-	if err != nil {
-		return config.SelectedModel{}
-	}
-	return *model
 }
 
 // -- Permissions --
@@ -528,44 +553,32 @@ func (w *ClientWorkspace) Resolver() config.VariableResolver {
 
 // -- Config mutations --
 
-func (w *ClientWorkspace) UpdatePreferredModel(scope config.Scope, modelType config.SelectedModelType, model config.SelectedModel) error {
-	err := w.client.UpdatePreferredModel(context.Background(), w.workspaceID(), scope, modelType, model)
-	if err == nil {
-		w.refreshWorkspace()
-	}
-	return err
+func (w *ClientWorkspace) UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+	return w.refreshAfter(w.client.UpdatePreferredModel(context.Background(), w.workspaceID(), scope, name, model))
+}
+
+func (w *ClientWorkspace) RecordRecentModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+	return w.refreshAfter(w.client.RecordRecentModel(context.Background(), w.workspaceID(), scope, name, model))
+}
+
+func (w *ClientWorkspace) PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+	return w.refreshAfter(w.client.PruneRecentModels(context.Background(), w.workspaceID(), scope, name, stale))
 }
 
 func (w *ClientWorkspace) SetCompactMode(scope config.Scope, enabled bool) error {
-	err := w.client.SetCompactMode(context.Background(), w.workspaceID(), scope, enabled)
-	if err == nil {
-		w.refreshWorkspace()
-	}
-	return err
+	return w.refreshAfter(w.client.SetCompactMode(context.Background(), w.workspaceID(), scope, enabled))
 }
 
 func (w *ClientWorkspace) SetProviderAPIKey(scope config.Scope, providerID string, apiKey any) error {
-	err := w.client.SetProviderAPIKey(context.Background(), w.workspaceID(), scope, providerID, apiKey)
-	if err == nil {
-		w.refreshWorkspace()
-	}
-	return err
+	return w.refreshAfter(w.client.SetProviderAPIKey(context.Background(), w.workspaceID(), scope, providerID, apiKey))
 }
 
 func (w *ClientWorkspace) SetConfigField(scope config.Scope, key string, value any) error {
-	err := w.client.SetConfigField(context.Background(), w.workspaceID(), scope, key, value)
-	if err == nil {
-		w.refreshWorkspace()
-	}
-	return err
+	return w.refreshAfter(w.client.SetConfigField(context.Background(), w.workspaceID(), scope, key, value))
 }
 
 func (w *ClientWorkspace) RemoveConfigField(scope config.Scope, key string) error {
-	err := w.client.RemoveConfigField(context.Background(), w.workspaceID(), scope, key)
-	if err == nil {
-		w.refreshWorkspace()
-	}
-	return err
+	return w.refreshAfter(w.client.RemoveConfigField(context.Background(), w.workspaceID(), scope, key))
 }
 
 func (w *ClientWorkspace) ImportCopilot() (*oauth.Token, bool) {
@@ -574,17 +587,14 @@ func (w *ClientWorkspace) ImportCopilot() (*oauth.Token, bool) {
 		return nil, false
 	}
 	if ok {
-		w.refreshWorkspace()
+		// No error channel on this signature; refreshWorkspace logs.
+		_ = w.refreshWorkspace()
 	}
 	return token, ok
 }
 
 func (w *ClientWorkspace) RefreshOAuthToken(ctx context.Context, scope config.Scope, providerID string) error {
-	err := w.client.RefreshOAuthToken(ctx, w.workspaceID(), scope, providerID)
-	if err == nil {
-		w.refreshWorkspace()
-	}
-	return err
+	return w.refreshAfter(w.client.RefreshOAuthToken(ctx, w.workspaceID(), scope, providerID))
 }
 
 // -- Project lifecycle --
@@ -1002,7 +1012,9 @@ func (w *ClientWorkspace) consumeEvents(evc <-chan any, send func(tea.Msg)) {
 		}
 
 		if _, ok := ev.(pubsub.Event[proto.ConfigChanged]); ok {
-			w.refreshWorkspace()
+			// The event stream is the recovery path for a missed
+			// refresh; refreshWorkspace logs its own failure.
+			_ = w.refreshWorkspace()
 			continue
 		}
 		translated := w.translateEvent(ev)
@@ -1235,6 +1247,8 @@ func protoToSession(s proto.Session) session.Session {
 		ID:               s.ID,
 		ParentSessionID:  s.ParentSessionID,
 		Title:            s.Title,
+		Agent:            s.Agent,
+		ActiveAgent:      s.ActiveAgent,
 		SummaryMessageID: s.SummaryMessageID,
 		MessageCount:     s.MessageCount,
 		PromptTokens:     s.PromptTokens,
@@ -1357,6 +1371,8 @@ func sessionToProto(s session.Session) proto.Session {
 		ID:               s.ID,
 		ParentSessionID:  s.ParentSessionID,
 		Title:            s.Title,
+		Agent:            s.Agent,
+		ActiveAgent:      s.ActiveAgent,
 		SummaryMessageID: s.SummaryMessageID,
 		MessageCount:     s.MessageCount,
 		PromptTokens:     s.PromptTokens,

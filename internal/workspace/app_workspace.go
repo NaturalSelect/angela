@@ -177,17 +177,6 @@ func (w *AppWorkspace) AgentIsSessionBusy(sessionID string) bool {
 	return w.app.AgentCoordinator.IsSessionBusy(sessionID)
 }
 
-func (w *AppWorkspace) AgentModel() AgentModel {
-	if w.app.AgentCoordinator == nil {
-		return AgentModel{}
-	}
-	m := w.app.AgentCoordinator.Model()
-	return AgentModel{
-		CatwalkCfg: m.CatwalkCfg,
-		ModelCfg:   m.ModelCfg,
-	}
-}
-
 func (w *AppWorkspace) AgentIsReady() bool {
 	return w.app.AgentCoordinator != nil
 }
@@ -219,6 +208,36 @@ func (w *AppWorkspace) AgentClearQueue(sessionID string) {
 	}
 }
 
+func (w *AppWorkspace) AgentActive(ctx context.Context, sessionID string) (ActiveAgent, error) {
+	if w.app.AgentCoordinator == nil {
+		return ActiveAgent{}, errors.New("agent coordinator not initialized")
+	}
+	active, model, err := w.app.AgentCoordinator.ActiveAgent(ctx, sessionID)
+	if err != nil {
+		return ActiveAgent{}, err
+	}
+	return ActiveAgent{
+		AgentID:    active.Agent.ID,
+		AgentName:  active.Agent.Name,
+		ModelName:  active.ModelName,
+		ModelCfg:   model.ModelCfg,
+		CatwalkCfg: model.CatwalkCfg,
+		Variant:    active.Agent.Variant,
+	}, nil
+}
+
+func (w *AppWorkspace) AgentEditActive(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (ActiveAgent, error) {
+	if w.app.AgentCoordinator == nil {
+		return ActiveAgent{}, errors.New("agent coordinator not initialized")
+	}
+	if _, err := w.app.AgentCoordinator.EditActiveAgent(ctx, sessionID, edit); err != nil {
+		return ActiveAgent{}, err
+	}
+	// Re-read rather than converting the edit's own result: only
+	// AgentActive can fold the preset into the model it reports.
+	return w.AgentActive(ctx, sessionID)
+}
+
 func (w *AppWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
 	if w.app.AgentCoordinator == nil {
 		return errors.New("agent coordinator not initialized")
@@ -236,10 +255,6 @@ func (w *AppWorkspace) InitCoderAgent(ctx context.Context) error {
 
 func (w *AppWorkspace) InitCoderAgentNonInteractive(ctx context.Context) error {
 	return w.app.InitCoderAgentNonInteractive(ctx)
-}
-
-func (w *AppWorkspace) GetDefaultSmallModel(providerID string) config.SelectedModel {
-	return w.app.GetDefaultSmallModel(providerID)
 }
 
 // -- Permissions --
@@ -343,8 +358,16 @@ func (w *AppWorkspace) Resolver() config.VariableResolver {
 
 // -- Config mutations --
 
-func (w *AppWorkspace) UpdatePreferredModel(scope config.Scope, modelType config.SelectedModelType, model config.SelectedModel) error {
-	return w.store.UpdatePreferredModel(scope, modelType, model)
+func (w *AppWorkspace) UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+	return w.store.UpdatePreferredModel(scope, name, model)
+}
+
+func (w *AppWorkspace) RecordRecentModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+	return w.store.RecordRecentModel(scope, name, model)
+}
+
+func (w *AppWorkspace) PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+	return w.store.PruneRecentModels(scope, name, stale)
 }
 
 func (w *AppWorkspace) SetCompactMode(scope config.Scope, enabled bool) error {
@@ -352,11 +375,7 @@ func (w *AppWorkspace) SetCompactMode(scope config.Scope, enabled bool) error {
 }
 
 func (w *AppWorkspace) SetProviderAPIKey(scope config.Scope, providerID string, apiKey any) error {
-	if err := w.store.SetProviderAPIKey(scope, providerID, apiKey); err != nil {
-		return err
-	}
-	w.store.SignalAuthComplete(providerID)
-	return nil
+	return w.store.SetProviderAPIKey(scope, providerID, apiKey)
 }
 
 func (w *AppWorkspace) SetConfigField(scope config.Scope, key string, value any) error {

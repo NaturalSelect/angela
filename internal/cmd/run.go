@@ -184,8 +184,11 @@ func runNonInteractive(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	var mainOverride *config.SelectedModel
 	if largeModel != "" || smallModel != "" {
-		if err := overrideModels(ctx, c, ws, largeModel, smallModel); err != nil {
+		var err error
+		mainOverride, err = applyModelOverrides(ctx, c, ws, largeModel, smallModel)
+		if err != nil {
 			return fmt.Errorf("failed to override models: %w", err)
 		}
 	}
@@ -238,16 +241,19 @@ func runNonInteractive(
 	}
 	if continueSessionID != "" || useLast {
 		slog.Info("Continuing session for non-interactive run", "session_id", sess.ID)
-		// If no explicit model override was requested, restore the
-		// model/provider from the last assistant message in the
-		// session, provided it is still available.
-		if largeModel == "" && smallModel == "" {
-			if err := restoreModelFromSession(ctx, c, ws, sess.ID); err != nil {
-				slog.Warn("Failed to restore model from session", "error", err)
-			}
-		}
 	} else {
 		slog.Info("Created session for non-interactive run", "session_id", sess.ID)
+	}
+
+	// The model override belongs to this run's session, not to the
+	// workspace config: applying it here leaves every other session
+	// alone, and a continued session without an override keeps the model
+	// it was already on.
+	if mainOverride != nil {
+		edit := config.ActiveAgentEdit{ModelName: config.ModelMain, Model: mainOverride}
+		if _, err := c.AgentEditSessionActive(ctx, ws.ID, sess.ID, edit); err != nil {
+			return fmt.Errorf("failed to apply the model override: %w", err)
+		}
 	}
 
 	events, err := c.SubscribeEvents(ctx, ws.ID)
@@ -476,123 +482,81 @@ func waitForAgent(ctx context.Context, c *client.Client, wsID string) error {
 	}
 }
 
-// overrideModels resolves model strings and updates the workspace
-// configuration via the server.
-func overrideModels(
+// applyModelOverrides resolves the --model / --small-model flags and
+// applies what can be applied before a session exists. The main model
+// belongs to the session and is returned for the caller to apply once
+// the session is resolved.
+//
+// NOTE: --small-model still writes workspace config. It serves the
+// internal agents (titling, compaction), which belong to no session, and
+// the server exposes no in-memory override channel the way the
+// in-process path has. This is the one remaining config write driven by
+// a CLI flag.
+func applyModelOverrides(
 	ctx context.Context,
 	c *client.Client,
 	ws *proto.Workspace,
 	largeModel, smallModel string,
-) error {
+) (*config.SelectedModel, error) {
 	cfg, err := c.GetConfig(ctx, ws.ID)
 	if err != nil {
-		return fmt.Errorf("failed to get config: %w", err)
+		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
 
 	providers := cfg.Providers.Copy()
+	small, large, err := resolveModelOverrides(providers, largeModel, smallModel)
+	if err != nil {
+		return nil, err
+	}
 
-	largeMatches, smallMatches := findModelMatches(providers, largeModel, smallModel)
-
-	var largeProviderID string
-
-	if largeModel != "" {
-		found, err := validateModelMatches(largeMatches, largeModel, "large")
-		if err != nil {
-			return err
-		}
-		largeProviderID = found.provider
-		slog.Info("Overriding large model", "provider", found.provider, "model", found.modelID)
-		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeLarge, config.SelectedModel{
-			Provider: found.provider,
-			Model:    found.modelID,
+	if small != nil {
+		slog.Info("Overriding small model", "provider", small.provider, "model", small.modelID)
+		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.ModelChore, config.SelectedModel{
+			Provider: small.provider,
+			Model:    small.modelID,
 		}); err != nil {
-			return fmt.Errorf("failed to set large model: %w", err)
+			return nil, fmt.Errorf("failed to set small model: %w", err)
+		}
+		if err := c.UpdateAgent(ctx, ws.ID); err != nil {
+			return nil, fmt.Errorf("failed to update agent: %w", err)
 		}
 	}
 
-	switch {
-	case smallModel != "":
-		found, err := validateModelMatches(smallMatches, smallModel, "small")
-		if err != nil {
-			return err
-		}
-		slog.Info("Overriding small model", "provider", found.provider, "model", found.modelID)
-		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeSmall, config.SelectedModel{
-			Provider: found.provider,
-			Model:    found.modelID,
-		}); err != nil {
-			return fmt.Errorf("failed to set small model: %w", err)
-		}
-
-	case largeModel != "":
-		sm, err := c.GetDefaultSmallModel(ctx, ws.ID, largeProviderID)
-		if err != nil {
-			slog.Warn("Failed to get default small model", "error", err)
-		} else if sm != nil {
-			if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeSmall, *sm); err != nil {
-				return fmt.Errorf("failed to set small model: %w", err)
-			}
-		}
+	if large == nil {
+		return nil, nil
 	}
-
-	return c.UpdateAgent(ctx, ws.ID)
+	slog.Info("Overriding large model", "provider", large.provider, "model", large.modelID)
+	return &config.SelectedModel{
+		Provider: large.provider,
+		Model:    large.modelID,
+	}, nil
 }
 
-// restoreModelFromSession reads the last assistant message in the
-// session and, if it used a different provider/model than the current
-// config, updates the preferred model on the server provided the
-// provider/model is still available. This ensures that continuing a
-// session uses the same model that produced the last response.
-func restoreModelFromSession(ctx context.Context, c *client.Client, ws *proto.Workspace, sessionID string) error {
-	msgs, err := c.ListMessages(ctx, ws.ID, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to list messages: %w", err)
-	}
+// resolveModelOverrides validates both model flags without applying
+// either. The chore write is persisted server-side, so resolving it and
+// writing it before the main flag is even checked would leave a rejected
+// invocation with a permanently changed config.
+func resolveModelOverrides(
+	providers map[string]config.ProviderConfig,
+	largeModel, smallModel string,
+) (small, large *modelMatch, err error) {
+	largeMatches, smallMatches := findModelMatches(providers, largeModel, smallModel)
 
-	var lastAssistant *proto.Message
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == proto.Assistant && !msgs[i].IsSummaryMessage {
-			lastAssistant = &msgs[i]
-			break
-		}
-	}
-	if lastAssistant == nil || lastAssistant.Provider == "" || lastAssistant.Model == "" {
-		return nil
-	}
-
-	cfg := ws.Config
-	currentLarge := cfg.Models[config.SelectedModelTypeLarge]
-	if currentLarge.Provider == lastAssistant.Provider && currentLarge.Model == lastAssistant.Model {
-		return nil
-	}
-
-	if !cfg.IsModelAvailable(lastAssistant.Provider, lastAssistant.Model) {
-		slog.Debug("Skipping model restoration: provider/model not available",
-			"provider", lastAssistant.Provider,
-			"model", lastAssistant.Model)
-		return nil
-	}
-
-	selectedModel := config.SelectedModel{
-		Provider: lastAssistant.Provider,
-		Model:    lastAssistant.Model,
-	}
-	if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeLarge, selectedModel); err != nil {
-		return fmt.Errorf("failed to set large model: %w", err)
-	}
-
-	if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-		sm, err := c.GetDefaultSmallModel(ctx, ws.ID, lastAssistant.Provider)
+	if smallModel != "" {
+		found, err := validateModelMatches(smallMatches, smallModel, "chore")
 		if err != nil {
-			slog.Warn("Failed to get default small model", "error", err)
-		} else if sm != nil {
-			if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeSmall, *sm); err != nil {
-				slog.Warn("Failed to set small model during session restore", "error", err)
-			}
+			return nil, nil, err
 		}
+		small = &found
 	}
-
-	return c.UpdateAgent(ctx, ws.ID)
+	if largeModel != "" {
+		found, err := validateModelMatches(largeMatches, largeModel, "main")
+		if err != nil {
+			return nil, nil, err
+		}
+		large = &found
+	}
+	return small, large, nil
 }
 
 type modelMatch struct {

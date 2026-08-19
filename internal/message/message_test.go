@@ -9,7 +9,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/pubsub"
-	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,12 +42,24 @@ func newTestService(t *testing.T, opts ...ServiceOption) (Service, string) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	q := db.New(conn)
-	sessions := session.NewService(q, conn)
-	sess, err := sessions.Create(t.Context(), "test")
-	require.NoError(t, err)
+	sess := newTestSession(t, q)
 
 	svc := NewService(q, opts...)
 	return svc, sess.ID
+}
+
+// newTestSession inserts a bare session row and returns it. Messages
+// are foreign-keyed to a session, but nothing here needs the session
+// service, and importing it would pull in config — which imports shell,
+// which imports this package's tests back.
+func newTestSession(t *testing.T, q *db.Queries) db.Session {
+	t.Helper()
+	sess, err := q.CreateSession(t.Context(), db.CreateSessionParams{
+		ID:    uuid.New().String(),
+		Title: "test",
+	})
+	require.NoError(t, err)
+	return sess
 }
 
 // eventCollector consumes broker events into a slice in a goroutine
@@ -89,6 +101,47 @@ func (c *eventCollector) reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.events = nil
+}
+
+func TestCreate_PersistsAgentAttribution(t *testing.T) {
+	t.Parallel()
+
+	svc, sessionID := newTestService(t)
+
+	created, err := svc.Create(t.Context(), sessionID, CreateMessageParams{
+		Role:     Assistant,
+		Parts:    []ContentPart{TextContent{Text: "hi"}},
+		Model:    "some-model",
+		Provider: "some-provider",
+		Agent:    "coder",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "coder", created.Agent)
+
+	listed, err := svc.List(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, "coder", listed[0].Agent)
+
+	fetched, err := svc.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.Equal(t, "coder", fetched.Agent)
+}
+
+func TestCreate_EmptyAgentStaysEmpty(t *testing.T) {
+	t.Parallel()
+
+	svc, sessionID := newTestService(t)
+
+	created, err := svc.Create(t.Context(), sessionID, CreateMessageParams{
+		Role:  User,
+		Parts: []ContentPart{TextContent{Text: "hi"}},
+	})
+	require.NoError(t, err)
+
+	fetched, err := svc.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.Empty(t, fetched.Agent)
 }
 
 func TestUpdate_DebouncesTextDeltas(t *testing.T) {
@@ -490,9 +543,7 @@ func TestFlush_WaitsForInFlightWrite(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	q := db.New(conn)
-	sessions := session.NewService(q, conn)
-	sess, err := sessions.Create(t.Context(), "test")
-	require.NoError(t, err)
+	sess := newTestSession(t, q)
 
 	slow := &slowUpdateQuerier{
 		Querier: q,
@@ -554,9 +605,7 @@ func TestFlushAll_WaitsForInFlightWrite(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	q := db.New(conn)
-	sessions := session.NewService(q, conn)
-	sess, err := sessions.Create(t.Context(), "test")
-	require.NoError(t, err)
+	sess := newTestSession(t, q)
 
 	slow := &slowUpdateQuerier{
 		Querier: q,
@@ -647,9 +696,7 @@ func TestUpdate_StructuralFlushUsesMustDeliver(t *testing.T) {
 			t.Cleanup(func() { _ = conn.Close() })
 
 			q := db.New(conn)
-			sessions := session.NewService(q, conn)
-			sess, err := sessions.Create(t.Context(), "test")
-			require.NoError(t, err)
+			sess := newTestSession(t, q)
 
 			// Replace the default broker with a tiny buffer + short
 			// must-deliver timeout so we can fully saturate from a

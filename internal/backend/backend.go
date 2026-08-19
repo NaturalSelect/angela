@@ -15,11 +15,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/version"
@@ -41,6 +43,22 @@ var (
 	ErrServerNotIdle           = errors.New("server is hosting live workspaces")
 	ErrClientRetired           = errors.New("client has been retired")
 	ErrChannelOptInMismatch    = errors.New("requested channels differ from the existing workspace; channels are an explicit opt-in and are not shared across duplicate creates")
+)
+
+// Errors raised further down that a transport still has to answer for.
+// They are re-exported here so a protocol layer maps every status it
+// returns from one taxonomy, instead of reaching past the backend into
+// the packages behind it.
+var (
+	// ErrSessionNotFound is a missing session: the request named one
+	// that does not exist, which is a 404 rather than a failure.
+	ErrSessionNotFound = session.ErrSessionNotFound
+
+	// The three below are malformed requests: an agent, a preset or a
+	// model slot that does not fit. They are the caller's to correct.
+	ErrAgentNotAvailable   = agent.ErrAgentNotAvailable
+	ErrVariantNotAvailable = agent.ErrVariantNotAvailable
+	ErrModelSlotMismatch   = agent.ErrModelSlotMismatch
 )
 
 // DefaultCreateGrace is the window in which a client must open an SSE

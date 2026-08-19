@@ -23,10 +23,25 @@ type ConfigRemoveRequest struct {
 
 // ConfigModelRequest represents a request to update the preferred model.
 type ConfigModelRequest struct {
-	Scope     config.Scope             `json:"scope"`
-	ModelType config.SelectedModelType `json:"model_type"`
-	Model     config.SelectedModel     `json:"model"`
+	Scope config.Scope           `json:"scope"`
+	Name  config.ModelConfigName `json:"model_name"`
+	Model config.SelectedModel   `json:"model"`
 }
+
+// ConfigPruneRecentModelsRequest represents a request to drop specific
+// recent-model entries. It names the entries to remove rather than the
+// list to keep, so a pick recorded concurrently is not erased.
+type ConfigPruneRecentModelsRequest struct {
+	Scope config.Scope           `json:"scope"`
+	Name  config.ModelConfigName `json:"model_name"`
+	Stale []config.SelectedModel `json:"stale"`
+}
+
+// ActiveAgentEditRequest asks a session to change its own agent
+// instance: its agent, its model, its parameter preset, its thinking
+// flag, or any combination. Every field is optional and a zero request
+// changes nothing.
+type ActiveAgentEditRequest = config.ActiveAgentEdit
 
 // ConfigCompactRequest represents a request to set compact mode.
 type ConfigCompactRequest struct {

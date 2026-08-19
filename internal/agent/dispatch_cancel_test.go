@@ -57,12 +57,12 @@ func (m *finishStreamModel) StreamObject(ctx context.Context, call fantasy.Objec
 	return nil, errors.New("not implemented")
 }
 
-func newStreamTestAgent(t *testing.T) (*sessionAgent, fakeEnv) {
+func newStreamTestAgent(t *testing.T) (*sessionAgent, fakeEnv, resolvedAgent) {
 	t.Helper()
 	env := testEnv(t)
 	model := &finishStreamModel{text: "done"}
-	sa := testSessionAgent(env, model, model, "system").(*sessionAgent)
-	return sa, env
+	saAgent, resolved := testSessionAgent(env, model, model, "system")
+	return saAgent.(*sessionAgent), env, resolved
 }
 
 // TestCancel_ActiveAndAcceptedFiresBothBranches covers the case where a
@@ -135,7 +135,7 @@ func TestRun_BusyWithPendingCancelTakesCancelOnEntry(t *testing.T) {
 // be folded into the active turn as an extra user message.
 func TestRun_PrepareStepDrainSkipsQueuedOnPendingCancel(t *testing.T) {
 	t.Parallel()
-	sa, env := newStreamTestAgent(t)
+	sa, env, resolved := newStreamTestAgent(t)
 
 	sess, err := env.sessions.Create(t.Context(), "session")
 	require.NoError(t, err)
@@ -146,6 +146,7 @@ func TestRun_PrepareStepDrainSkipsQueuedOnPendingCancel(t *testing.T) {
 	sa.cancelMark.Set(sess.ID, 1)
 
 	result, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
 		SessionID: sess.ID,
 		Prompt:    "main",
 	})
@@ -175,7 +176,7 @@ func TestRun_PrepareStepDrainSkipsQueuedOnPendingCancel(t *testing.T) {
 // session, so it cannot catch a future run.
 func TestRun_NormalCompletionClearsStalePendingCancel(t *testing.T) {
 	t.Parallel()
-	sa, env := newStreamTestAgent(t)
+	sa, env, resolved := newStreamTestAgent(t)
 
 	sess, err := env.sessions.Create(t.Context(), "session")
 	require.NoError(t, err)
@@ -184,6 +185,7 @@ func TestRun_NormalCompletionClearsStalePendingCancel(t *testing.T) {
 	sa.cancelMark.Set(sess.ID, 1)
 
 	result, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
 		SessionID: sess.ID,
 		Prompt:    "main",
 	})
@@ -203,7 +205,7 @@ func TestRun_NormalCompletionClearsStalePendingCancel(t *testing.T) {
 // newCancelTestAgentWithRunComplete builds a DB-backed sessionAgent wired
 // to a RunComplete broker so tests can observe the terminal event a
 // RunID-bearing caller (e.g. `angela run`) blocks on.
-func newCancelTestAgentWithRunComplete(t *testing.T) (*sessionAgent, fakeEnv, *pubsub.Broker[notify.RunComplete]) {
+func newCancelTestAgentWithRunComplete(t *testing.T) (*sessionAgent, fakeEnv, *pubsub.Broker[notify.RunComplete], resolvedAgent) {
 	t.Helper()
 	env := testEnv(t)
 	broker := pubsub.NewBroker[notify.RunComplete]()
@@ -213,7 +215,7 @@ func newCancelTestAgentWithRunComplete(t *testing.T) (*sessionAgent, fakeEnv, *p
 		Messages:    env.messages,
 		RunComplete: broker,
 	}).(*sessionAgent)
-	return sa, env, broker
+	return sa, env, broker, resolvedAgent{Model: Model{Model: &finishStreamModel{text: "done"}}}
 }
 
 // TestRun_CancelOnEntryPublishesRunComplete covers the first review
@@ -225,7 +227,7 @@ func newCancelTestAgentWithRunComplete(t *testing.T) (*sessionAgent, fakeEnv, *p
 // the originating RunID.
 func TestRun_CancelOnEntryPublishesRunComplete(t *testing.T) {
 	t.Parallel()
-	sa, env, broker := newCancelTestAgentWithRunComplete(t)
+	sa, env, broker, resolved := newCancelTestAgentWithRunComplete(t)
 
 	sess, err := env.sessions.Create(t.Context(), "session")
 	require.NoError(t, err)
@@ -240,6 +242,7 @@ func TestRun_CancelOnEntryPublishesRunComplete(t *testing.T) {
 	require.True(t, sa.hasPendingCancel(sess.ID))
 
 	result, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
 		SessionID: sess.ID,
 		RunID:     "run-cancel-on-entry",
 		Prompt:    "hello",
@@ -329,7 +332,7 @@ func TestCancel_TwoAcceptedBothObserveCancellation(t *testing.T) {
 // must run normally to completion.
 func TestRun_IdleCancelDoesNotPoisonNextPrompt(t *testing.T) {
 	t.Parallel()
-	sa, env := newStreamTestAgent(t)
+	sa, env, resolved := newStreamTestAgent(t)
 
 	sess, err := env.sessions.Create(t.Context(), "session")
 	require.NoError(t, err)
@@ -342,6 +345,7 @@ func TestRun_IdleCancelDoesNotPoisonNextPrompt(t *testing.T) {
 	// The next accepted prompt must run normally, not cancel on entry.
 	accept := sa.BeginAccepted(sess.ID)
 	result, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
 		SessionID: sess.ID,
 		Prompt:    "next",
 		Accepted:  accept,
@@ -369,7 +373,7 @@ func TestRun_IdleCancelDoesNotPoisonNextPrompt(t *testing.T) {
 // and B are run and must both cancel on entry.
 func TestCancel_AcceptedAfterCancelIsNotPoisoned(t *testing.T) {
 	t.Parallel()
-	sa, env := newStreamTestAgent(t)
+	sa, env, resolved := newStreamTestAgent(t)
 
 	sess, err := env.sessions.Create(t.Context(), "session")
 	require.NoError(t, err)
@@ -392,6 +396,7 @@ func TestCancel_AcceptedAfterCancelIsNotPoisoned(t *testing.T) {
 	// Run C first. It must run normally to completion and must not
 	// consume or clear the cancellation reserved for A and B.
 	rc, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
 		SessionID: sess.ID,
 		Prompt:    "C",
 		Accepted:  acceptC,
@@ -404,6 +409,7 @@ func TestCancel_AcceptedAfterCancelIsNotPoisoned(t *testing.T) {
 	// Now A and B run. Both were accepted before the cancel and must
 	// take the cancel-on-entry path.
 	ra, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
 		SessionID: sess.ID,
 		Prompt:    "A",
 		Accepted:  acceptA,
@@ -412,6 +418,7 @@ func TestCancel_AcceptedAfterCancelIsNotPoisoned(t *testing.T) {
 	require.Nil(t, ra, "A must cancel on entry, not run")
 
 	rb, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
 		SessionID: sess.ID,
 		Prompt:    "B",
 		Accepted:  acceptB,

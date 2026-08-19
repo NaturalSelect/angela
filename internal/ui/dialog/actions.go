@@ -40,8 +40,14 @@ type ActionSelectSession struct {
 type ActionSelectModel struct {
 	Provider       catwalk.Provider
 	Model          config.SelectedModel
-	ModelType      config.SelectedModelType
+	ModelType      config.ModelConfigName
 	ReAuthenticate bool
+}
+
+// ActionSelectAgent is emitted when the user picks the primary agent
+// the session should run on.
+type ActionSelectAgent struct {
+	AgentID string
 }
 
 // Messages for commands
@@ -62,10 +68,10 @@ type (
 	ActionSummarize                   struct {
 		SessionID string
 	}
-	// ActionSelectReasoningEffort is a message indicating a reasoning effort
-	// has been selected.
-	ActionSelectReasoningEffort struct {
-		Effort string
+	// ActionSelectVariant is a message indicating a model variant has
+	// been selected. An empty Variant selects the model's baseline.
+	ActionSelectVariant struct {
+		Variant string
 	}
 	ActionPermissionResponse struct {
 		Permission permission.PermissionRequest

@@ -76,12 +76,39 @@ func (b *Backend) RemoveConfigField(workspaceID string, scope config.Scope, key 
 
 // UpdatePreferredModel updates the preferred model for the given type
 // and persists it to the config file at the given scope.
-func (b *Backend) UpdatePreferredModel(workspaceID string, scope config.Scope, modelType config.SelectedModelType, model config.SelectedModel) error {
+func (b *Backend) UpdatePreferredModel(workspaceID string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return err
 	}
-	if err := ws.Cfg.UpdatePreferredModel(scope, modelType, model); err != nil {
+	if err := ws.Cfg.UpdatePreferredModel(scope, name, model); err != nil {
+		return err
+	}
+	publishConfigChanged(ws)
+	return nil
+}
+
+// RecordRecentModel adds a model to the recent-models list for the given
+// type without changing which model is selected.
+func (b *Backend) RecordRecentModel(workspaceID string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	if err := ws.Cfg.RecordRecentModel(scope, name, model); err != nil {
+		return err
+	}
+	publishConfigChanged(ws)
+	return nil
+}
+
+// PruneRecentModels drops recent-model entries that no longer resolve.
+func (b *Backend) PruneRecentModels(workspaceID string, scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	if err := ws.Cfg.PruneRecentModels(scope, name, stale); err != nil {
 		return err
 	}
 	publishConfigChanged(ws)

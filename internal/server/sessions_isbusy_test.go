@@ -12,6 +12,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/backend"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -50,9 +51,22 @@ func (s *stubCoordinator) ClearQueue(string)                 {}
 func (s *stubCoordinator) Summarize(context.Context, string) error {
 	return nil
 }
-func (s *stubCoordinator) Model() agent.Model                            { return agent.Model{} }
+func (s *stubCoordinator) DefaultModel() agent.Model { return agent.Model{} }
+func (s *stubCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
+	return config.ActiveAgent{}, nil
+}
+
+func (s *stubCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
+	return config.ActiveAgent{}, agent.Model{}, nil
+}
 func (s *stubCoordinator) UpdateModels(context.Context) error            { return nil }
 func (s *stubCoordinator) GenerateTitle(context.Context, string, string) {}
+func (s *stubCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
+	return config.Agent{}, "", nil
+}
+
+func (s *stubCoordinator) SwitchAgent(context.Context, string, string) error   { return nil }
+func (s *stubCoordinator) SwitchVariant(context.Context, string, string) error { return nil }
 
 // stubSessions is a minimal session.Service that returns a fixed list
 // (and supports Get by ID). All other methods return zero values; the

@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
@@ -18,6 +20,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/attachments"
 	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/completions"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/workspace"
 )
@@ -33,9 +36,20 @@ type countingWorkspace struct {
 	agentBusy bool
 	yolo      bool
 	queued    []string
-	model     workspace.AgentModel
+	active    workspace.ActiveAgent
+	// activeErr, when set, makes the agent probe fail the way a dropped
+	// connection would.
+	activeErr error
 	lspStates map[string]workspace.LSPClientInfo
 	lspDiags  map[string]lsp.DiagnosticCounts
+
+	// edits records every AgentEditActive the UI issued, so tests can
+	// assert what was changed and for which session.
+	edits []recordedEdit
+
+	// cfg, when set, is what the UI sees as global config. Most tests
+	// leave it nil: reaching for config is usually the bug they pin.
+	cfg *config.Config
 
 	readyCalls      int
 	agentBusyCalls  int
@@ -48,6 +62,21 @@ type countingWorkspace struct {
 	modelCalls      int
 	lspStateCalls   int
 	lspDiagCalls    int
+
+	recentModelCalls    int
+	preferredModelCalls int
+	initAgentCalls      int
+	listMessageCalls    int
+
+	updateAgentModelCalls int
+	activeAfterRebuild    *workspace.ActiveAgent
+
+	// steps records the config and agent mutations in the order they
+	// land, so tests can assert on sequencing and not just on counts.
+	steps []string
+	// preferredModelErr, when set, makes UpdatePreferredModel fail, so
+	// tests can drive the persistence-failure path.
+	preferredModelErr error
 }
 
 func (w *countingWorkspace) AgentIsReady() bool { w.readyCalls++; return w.ready }
@@ -81,9 +110,35 @@ func (w *countingWorkspace) PermissionSetSkipRequests(skip bool) {
 func (w *countingWorkspace) AgentClearQueue(string) { w.clearQueueCalls++; w.queued = nil }
 func (w *countingWorkspace) AgentCancel(string)     { w.cancelCalls++ }
 
-func (w *countingWorkspace) AgentModel() workspace.AgentModel {
+func (w *countingWorkspace) AgentActive(context.Context, string) (workspace.ActiveAgent, error) {
 	w.modelCalls++
-	return w.model
+	if w.activeErr != nil {
+		return workspace.ActiveAgent{}, w.activeErr
+	}
+	return w.active, nil
+}
+
+// recordedEdit is one AgentEditActive call.
+type recordedEdit struct {
+	sessionID string
+	edit      config.ActiveAgentEdit
+}
+
+// AgentEditActive stands in for the server: it applies the edit to the
+// instance it holds and answers with the result, so a toggle resolves
+// against the stub's value rather than the caller's.
+func (w *countingWorkspace) AgentEditActive(_ context.Context, sessionID string, edit config.ActiveAgentEdit) (workspace.ActiveAgent, error) {
+	w.edits = append(w.edits, recordedEdit{sessionID: sessionID, edit: edit})
+	if w.activeErr != nil {
+		return workspace.ActiveAgent{}, w.activeErr
+	}
+	switch {
+	case edit.ToggleThink:
+		w.active.ModelCfg.Think = !w.active.ModelCfg.Think
+	case edit.Think != nil:
+		w.active.ModelCfg.Think = *edit.Think
+	}
+	return w.active, nil
 }
 
 func (w *countingWorkspace) LSPGetStates() map[string]workspace.LSPClientInfo {
@@ -97,6 +152,7 @@ func (w *countingWorkspace) LSPGetDiagnosticCounts(name string) lsp.DiagnosticCo
 }
 
 func (w *countingWorkspace) ListMessages(context.Context, string) ([]message.Message, error) {
+	w.listMessageCalls++
 	return nil, nil
 }
 
@@ -108,7 +164,47 @@ func (w *countingWorkspace) WorkingDir() string { return "" }
 
 func (w *countingWorkspace) LSPStart(context.Context, string) {}
 
-func (w *countingWorkspace) Config() *config.Config { return nil }
+func (w *countingWorkspace) Config() *config.Config { return w.cfg }
+
+// The three config writes a model pick can make. They are counted apart
+// from syncProbes: that sum is the "no probe on the Update goroutine"
+// invariant, while these pin when the write itself happens.
+func (w *countingWorkspace) RecordRecentModel(config.Scope, config.ModelConfigName, config.SelectedModel) error {
+	w.recentModelCalls++
+	return nil
+}
+
+func (w *countingWorkspace) UpdatePreferredModel(config.Scope, config.ModelConfigName, config.SelectedModel) error {
+	w.preferredModelCalls++
+	if w.preferredModelErr != nil {
+		return w.preferredModelErr
+	}
+	w.steps = append(w.steps, "persist")
+	return nil
+}
+
+func (w *countingWorkspace) InitCoderAgent(context.Context) error {
+	w.initAgentCalls++
+	w.steps = append(w.steps, "init")
+	return nil
+}
+
+func (w *countingWorkspace) MCPGetStates() map[string]mcptools.ClientInfo {
+	return nil
+}
+
+func (w *countingWorkspace) UpdateAgentModel(context.Context) error {
+	w.updateAgentModelCalls++
+	w.steps = append(w.steps, "rebuild")
+	// Rebuilding the agent is what makes a new effective model
+	// observable, so the stub only starts reporting it from here on. A
+	// probe that runs first sees the old value, which is what makes
+	// ordering assertions possible.
+	if w.activeAfterRebuild != nil {
+		w.active = *w.activeAfterRebuild
+	}
+	return nil
+}
 
 // syncProbes sums every synchronous counter; Update/View must keep this at
 // zero — the invariant is that no workspace call ever happens on the Update
@@ -124,15 +220,19 @@ func (w *countingWorkspace) resetCounters() {
 	w.queuedCalls, w.queueListCalls, w.permCalls = 0, 0, 0
 	w.permSetCalls, w.clearQueueCalls, w.cancelCalls = 0, 0, 0
 	w.modelCalls, w.lspStateCalls, w.lspDiagCalls = 0, 0, 0
+	w.listMessageCalls = 0
 }
 
 // newBusyUI builds a UI wired to the stub workspace with an active session
 // "s1", enough state for Update to run end to end.
 func newBusyUI(ws *countingWorkspace) *UI {
 	com := common.DefaultCommon(ws)
+	t := com.Styles
 	return &UI{
 		com:         com,
 		status:      NewStatus(com, nil),
+		header:      newHeader(com),
+		completions: completions.New(t.Completions.Normal, t.Completions.Focused, t.Completions.Match),
 		chat:        NewChat(com, config.ScrollbarDefault),
 		textarea:    textarea.New(),
 		state:       uiChat,
@@ -142,7 +242,14 @@ func newBusyUI(ws *countingWorkspace) *UI {
 		session:     &session.Session{ID: "s1"},
 		keyMap:      DefaultKeyMap(),
 		dialog:      dialog.NewOverlay(),
-		attachments: attachments.New(nil, attachments.Keymap{}),
+		attachments: attachments.New(attachments.NewRenderer(
+			t.Attachments.Normal,
+			t.Attachments.Deleting,
+			t.Attachments.Image,
+			t.Attachments.Text,
+			t.Attachments.Skill,
+			t.Attachments.Remove,
+		), attachments.Keymap{}),
 	}
 }
 
@@ -160,30 +267,65 @@ func pinTTLs(t *testing.T) {
 
 // warmCaches marks all memoized workspace state fresh so only explicit
 // invalidation (not startup staleness) can trigger refresh dispatches.
+// The agent stamp is set to the current session, as a landed probe would
+// leave it.
 func warmCaches(m *UI, busy bool) {
 	m.agentBusyCache.set(busy)
 	m.yoloCache.set(false)
 	m.agentReady = true
+	m.agentActiveKnown = true
+	m.agentActiveSession = m.currentSessionID()
 	m.promptQueueCheckedAt = time.Now()
 	m.lspCheckedAt = time.Now()
 }
 
 // runCmds executes a command tree the way the Bubble Tea runtime would,
-// feeding cache-refresh messages back into Update. Other leaf commands are
-// executed (for their side effects on the stub) but their messages dropped.
-func runCmds(m *UI, cmd tea.Cmd) {
+// feeding cache-refresh messages back into Update. It returns every
+// message the tree produced, so tests can assert on what the user would
+// have been told. Callers that only care about side effects on the stub
+// can ignore the result.
+func runCmds(m *UI, cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {
-		return
+		return nil
 	}
+	var msgs []tea.Msg
 	switch msg := cmd().(type) {
 	case tea.BatchMsg:
 		for _, c := range msg {
-			runCmds(m, c)
+			msgs = append(msgs, runCmds(m, c)...)
 		}
 	case busyStateMsg, promptQueueMsg, agentRunSubmittedMsg, lspStatesMsg, agentModelChangedMsg:
+		msgs = append(msgs, msg)
 		_, next := m.Update(msg)
-		runCmds(m, next)
+		msgs = append(msgs, runCmds(m, next)...)
+	default:
+		if seq := sequencedCmds(msg); seq != nil {
+			for _, c := range seq {
+				msgs = append(msgs, runCmds(m, c)...)
+			}
+			break
+		}
+		if msg != nil {
+			msgs = append(msgs, msg)
+		}
 	}
+	return msgs
+}
+
+// sequencedCmds extracts the commands from a message that is a slice of
+// tea.Cmd. tea.Sequence's message type is unexported and so cannot be
+// named in a type switch; matching on its shape lets the harness run
+// sequenced commands in order, the way the runtime does.
+func sequencedCmds(msg tea.Msg) []tea.Cmd {
+	v := reflect.ValueOf(msg)
+	if v.Kind() != reflect.Slice || v.Type().Elem() != reflect.TypeOf(tea.Cmd(nil)) {
+		return nil
+	}
+	cmds := make([]tea.Cmd, v.Len())
+	for i := range cmds {
+		cmds[i], _ = v.Index(i).Interface().(tea.Cmd)
+	}
+	return cmds
 }
 
 // plainMsg is an arbitrary tea.Msg standing in for keystroke/mouse/tick
@@ -330,6 +472,25 @@ func TestSessionSwitchRefreshesQueueAndBusy(t *testing.T) {
 	runCmds(m, cmd)
 	require.Equal(t, 2, m.promptQueue, "the new session's queue must be fetched")
 	require.Equal(t, []string{"a", "b"}, m.promptQueueItems)
+}
+
+// TestSessionSwitchLoadsTheTranscriptOffThread is B3. Loading a session
+// costs one ListMessages round-trip plus one more per nested agent tool
+// call, and it used to run inline in Update, stalling the render loop
+// for the whole tree.
+func TestSessionSwitchLoadsTheTranscriptOffThread(t *testing.T) {
+	pinTTLs(t)
+
+	ws := &countingWorkspace{ready: true}
+	m := newBusyUI(ws)
+	warmCaches(m, false)
+	ws.resetCounters()
+
+	_, cmd := m.Update(loadSessionMsg{session: &session.Session{ID: "s2"}})
+	require.Equal(t, 0, ws.listMessageCalls, "the transcript must not be fetched on the Update goroutine")
+
+	runCmds(m, cmd)
+	require.Equal(t, 1, ws.listMessageCalls, "the transcript must still be fetched")
 }
 
 // TestToggleYoloWritesThroughCache: both yolo toggle paths share
@@ -492,14 +653,16 @@ func TestSetSessionMessagesGatesAnimationsOnBusy(t *testing.T) {
 		},
 	}
 
-	// When the agent is not busy, setSessionMessages must not start animations.
-	cmd := m.setSessionMessages(msgs)
-	require.Nil(t, cmd, "setSessionMessages must not start animations when agent is idle")
+	// When the agent is not busy, applying items must not start animations.
+	items, _ := m.buildSessionItems(msgs)
+	cmd := m.applySessionItems(items)
+	require.Nil(t, cmd, "applySessionItems must not start animations when agent is idle")
 
 	// When the agent is busy, animations should start.
 	warmCaches(m, true)
-	cmd = m.setSessionMessages(msgs)
-	require.NotNil(t, cmd, "setSessionMessages must start animations when agent is busy")
+	items, _ = m.buildSessionItems(msgs)
+	cmd = m.applySessionItems(items)
+	require.NotNil(t, cmd, "applySessionItems must start animations when agent is busy")
 }
 
 // TestStaleBusyRefreshDiscardedAndReDispatched pins the generation guard for
@@ -594,10 +757,10 @@ func TestStalePromptQueuePreservesSessionScoping(t *testing.T) {
 }
 
 // TestRenderHelpersDoNotProbeWorkspace pins the render-path side of the
-// invariant for the model and LSP info: selectedLargeModel, lspInfo, and
+// invariant for the model and LSP info: activeAgent, lspInfo, and
 // lspErrorCount render from memoized state only. They run on every frame
 // (landing view, sidebar, compact header), and the probes behind them
-// (AgentIsReady, AgentModel, LSPGetStates, LSPGetDiagnosticCounts) are
+// (AgentIsReady, AgentActive, LSPGetStates, LSPGetDiagnosticCounts) are
 // synchronous HTTP round-trips in client/server mode.
 func TestRenderHelpersDoNotProbeWorkspace(t *testing.T) {
 	pinTTLs(t)
@@ -605,6 +768,8 @@ func TestRenderHelpersDoNotProbeWorkspace(t *testing.T) {
 	ws := &countingWorkspace{ready: true}
 	m := newBusyUI(ws)
 	m.agentReady = true
+	m.agentActiveKnown = true
+	m.agentActiveSession = m.currentSessionID()
 	m.lspStates = map[string]workspace.LSPClientInfo{
 		"gopls": {Name: "gopls", State: lsp.StateReady, DiagnosticCount: 3},
 	}
@@ -613,7 +778,7 @@ func TestRenderHelpersDoNotProbeWorkspace(t *testing.T) {
 	}
 
 	for range 10 {
-		require.NotNil(t, m.selectedLargeModel())
+		require.NotNil(t, m.activeAgent())
 		m.lspInfo(40, 5, true)
 		require.Equal(t, 3, m.lspErrorCount())
 	}
@@ -635,35 +800,35 @@ func TestBusyRefreshCarriesReadyAndModel(t *testing.T) {
 	pinTTLs(t)
 
 	ws := &countingWorkspace{
-		ready: true,
-		model: workspace.AgentModel{ModelCfg: config.SelectedModel{Model: "test-model", Provider: "prov"}},
+		ready:  true,
+		active: workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "test-model", Provider: "prov"}},
 	}
 	m := newBusyUI(ws)
-	require.Nil(t, m.selectedLargeModel(), "before any probe the model is unknown")
+	require.Nil(t, m.activeAgent(), "before any probe the model is unknown")
 
 	_, cmd := m.Update(plainMsg{}) // stale caches: the backstop dispatches
 	runCmds(m, cmd)
 
 	require.True(t, m.agentReady, "the probe must land readiness in the cache")
-	sel := m.selectedLargeModel()
+	sel := m.activeAgent()
 	require.NotNil(t, sel)
 	require.Equal(t, "test-model", sel.ModelCfg.Model, "the probe must land the model in the cache")
 }
 
-// TestAgentModelChangedRefreshesModel: after a model change
-// (selection/thinking/reasoning cmds sequence agentModelChangedCmd), the
-// handler must re-fetch ready/model off-thread — no synchronous probe — and
-// the fresh model must replace the memoized one.
+// TestAgentModelChangedRefreshesModel: after a change to the session's
+// agent (selection/thinking/variant cmds sequence agentModelChangedCmd),
+// the handler must re-fetch ready/active off-thread — no synchronous
+// probe — and the fresh model must replace the memoized one.
 func TestAgentModelChangedRefreshesModel(t *testing.T) {
 	pinTTLs(t)
 
 	ws := &countingWorkspace{
-		ready: true,
-		model: workspace.AgentModel{ModelCfg: config.SelectedModel{Model: "new-model"}},
+		ready:  true,
+		active: workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "new-model"}},
 	}
 	m := newBusyUI(ws)
 	warmCaches(m, false)
-	m.agentModel = workspace.AgentModel{ModelCfg: config.SelectedModel{Model: "old-model"}}
+	m.agentActive = workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "old-model"}}
 	ws.resetCounters()
 
 	_, cmd := m.Update(agentModelChangedMsg{})
@@ -671,39 +836,37 @@ func TestAgentModelChangedRefreshesModel(t *testing.T) {
 	require.True(t, m.busyFetchInFlight, "a model change must schedule a ready/model refresh")
 
 	runCmds(m, cmd)
-	require.Equal(t, "new-model", m.agentModel.ModelCfg.Model,
+	require.Equal(t, "new-model", m.agentActive.ModelCfg.Model,
 		"the refreshed model must land in the cache")
 }
 
-// TestMCPStateChangedRefreshesModel pins the fourth UpdateAgentModel call
-// site: an MCP state change rebuilds the agent, which can change the
-// effective model, so the memoized ready/model state must be re-fetched
-// off-thread afterwards — the edge the updateAgentModelCmd helper exists to
-// make unforgettable.
+// TestMCPStateChangedRefreshesModel pins the remaining UpdateAgentModel
+// call site: an MCP state change rebuilds the agent, which can change the
+// effective model, so the memoized ready/active state must be re-fetched
+// off-thread afterwards — the edge the refreshActiveAgentCmd helper exists
+// to make unforgettable.
 func TestMCPStateChangedRefreshesModel(t *testing.T) {
 	pinTTLs(t)
 
 	ws := &countingWorkspace{
-		ready: true,
-		model: workspace.AgentModel{ModelCfg: config.SelectedModel{Model: "post-mcp-model"}},
+		ready:  true,
+		active: workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "pre-mcp-model"}},
+		// Only the rebuild makes the new model observable, so a probe
+		// that runs before it — or a rebuild that never runs — leaves
+		// the memoized model at the old value.
+		activeAfterRebuild: &workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "post-mcp-model"}},
 	}
 	m := newBusyUI(ws)
 	warmCaches(m, false)
-	m.agentModel = workspace.AgentModel{ModelCfg: config.SelectedModel{Model: "pre-mcp-model"}}
+	m.agentActive = workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "pre-mcp-model"}}
 	ws.resetCounters()
 
-	// handleStateChanged sequences the rebuild with agentModelChangedCmd;
-	// tea.Sequence's wrapper msg is unexported, so drive the two steps the
-	// way the runtime would: run the cmd (the stub records the call), then
-	// deliver the invalidation message.
-	_ = m.handleStateChanged()()
-	_, cmd := m.Update(agentModelChangedMsg{})
-	require.True(t, m.busyFetchInFlight, "an MCP state change must schedule a ready/model refresh")
-	runCmds(m, cmd)
+	runCmds(m, m.handleStateChanged())
 
+	require.Equal(t, 1, ws.updateAgentModelCalls, "an MCP state change must rebuild the agent")
 	require.True(t, m.agentReady)
-	require.Equal(t, "post-mcp-model", m.agentModel.ModelCfg.Model,
-		"an MCP state change must refresh the memoized model")
+	require.Equal(t, "post-mcp-model", m.agentActive.ModelCfg.Model,
+		"the refresh must run after the rebuild, or it memoizes the pre-rebuild model")
 }
 
 // TestLSPEventRefreshIsOffThreadAndDeduped pins the LSP side of the

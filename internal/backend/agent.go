@@ -130,7 +130,7 @@ func (b *Backend) GetAgentInfo(workspaceID string) (proto.AgentInfo, error) {
 
 	var agentInfo proto.AgentInfo
 	if ws.AgentCoordinator != nil {
-		m := ws.AgentCoordinator.Model()
+		m := ws.AgentCoordinator.DefaultModel()
 		agentInfo = proto.AgentInfo{
 			Model:    m.CatwalkCfg,
 			ModelCfg: m.ModelCfg,
@@ -178,7 +178,52 @@ func (b *Backend) CancelSession(workspaceID, sessionID string) error {
 	return nil
 }
 
+// EditSessionActiveAgent changes the agent instance a session runs and
+// reports what it ends up running, with the preset folded in.
+func (b *Backend) EditSessionActiveAgent(ctx context.Context, workspaceID, sessionID string, edit config.ActiveAgentEdit) (proto.ActiveAgent, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return proto.ActiveAgent{}, err
+	}
+	if ws.AgentCoordinator == nil {
+		return proto.ActiveAgent{}, ErrAgentNotInitialized
+	}
+	if _, err := ws.AgentCoordinator.EditActiveAgent(ctx, sessionID, edit); err != nil {
+		return proto.ActiveAgent{}, err
+	}
+	// Re-read rather than converting the edit's own result: the
+	// coordinator is the only side that can fold the preset into the
+	// model, and GetSessionActiveAgent already does exactly that.
+	return b.GetSessionActiveAgent(ctx, workspaceID, sessionID)
+}
+
+// GetSessionActiveAgent reports what a session is running, with the
+// session's parameter preset already folded into the model so a client
+// never has to re-derive it.
+func (b *Backend) GetSessionActiveAgent(ctx context.Context, workspaceID, sessionID string) (proto.ActiveAgent, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return proto.ActiveAgent{}, err
+	}
+	if ws.AgentCoordinator == nil {
+		return proto.ActiveAgent{}, ErrAgentNotInitialized
+	}
+	active, model, err := ws.AgentCoordinator.ActiveAgent(ctx, sessionID)
+	if err != nil {
+		return proto.ActiveAgent{}, err
+	}
+	return proto.ActiveAgent{
+		AgentID:    active.Agent.ID,
+		AgentName:  active.Agent.Name,
+		ModelName:  active.ModelName,
+		ModelCfg:   model.ModelCfg,
+		CatwalkCfg: model.CatwalkCfg,
+		Variant:    active.Agent.Variant,
+	}, nil
+}
+
 // SummarizeSession triggers a session summarization.
+
 func (b *Backend) SummarizeSession(ctx context.Context, workspaceID, sessionID string) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
@@ -232,16 +277,6 @@ func (b *Backend) QueuedPromptsList(workspaceID, sessionID string) ([]string, er
 	}
 
 	return ws.AgentCoordinator.QueuedPromptsList(sessionID), nil
-}
-
-// GetDefaultSmallModel returns the default small model for a provider.
-func (b *Backend) GetDefaultSmallModel(workspaceID, providerID string) (config.SelectedModel, error) {
-	ws, err := b.GetWorkspace(workspaceID)
-	if err != nil {
-		return config.SelectedModel{}, err
-	}
-
-	return ws.GetDefaultSmallModel(providerID), nil
 }
 
 // RunShellCommand runs a shell command in the workspace directory and

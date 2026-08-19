@@ -406,6 +406,11 @@ func ExtractMessageItems(sty *styles.Styles, msg *message.Message, toolResults m
 			))
 		}
 		return items
+	case message.System:
+		if msg.Content().Text == "" {
+			return []MessageItem{}
+		}
+		return []MessageItem{NewSystemNoticeItem(sty, msg)}
 	}
 	return []MessageItem{}
 }

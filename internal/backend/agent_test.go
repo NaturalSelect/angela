@@ -9,6 +9,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/google/uuid"
@@ -55,9 +56,23 @@ func (c *blockingCoordinator) QueuedPrompts(string) int                         
 func (c *blockingCoordinator) QueuedPromptsList(string) []string                 { return nil }
 func (c *blockingCoordinator) ClearQueue(string)                                 {}
 func (c *blockingCoordinator) Summarize(context.Context, string) error           { return nil }
-func (c *blockingCoordinator) Model() agent.Model                                { return agent.Model{} }
-func (c *blockingCoordinator) UpdateModels(context.Context) error                { return nil }
-func (c *blockingCoordinator) GenerateTitle(context.Context, string, string)     {}
+func (c *blockingCoordinator) DefaultModel() agent.Model                         { return agent.Model{} }
+
+func (c *blockingCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
+	return config.ActiveAgent{}, nil
+}
+
+func (c *blockingCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
+	return config.ActiveAgent{}, agent.Model{}, nil
+}
+func (c *blockingCoordinator) UpdateModels(context.Context) error            { return nil }
+func (c *blockingCoordinator) GenerateTitle(context.Context, string, string) {}
+func (c *blockingCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
+	return config.Agent{}, "", nil
+}
+
+func (c *blockingCoordinator) SwitchAgent(context.Context, string, string) error   { return nil }
+func (c *blockingCoordinator) SwitchVariant(context.Context, string, string) error { return nil }
 
 // insertAgentWorkspace installs a synthetic workspace with the given
 // coordinator (or none) and a workspace run context, mirroring the

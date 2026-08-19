@@ -7,10 +7,14 @@ INSERT INTO sessions (
     prompt_tokens,
     completion_tokens,
     cost,
+    agent,
+    active_agent,
     summary_message_id,
     updated_at,
     created_at
 ) VALUES (
+    ?,
+    ?,
     ?,
     ?,
     ?,
@@ -59,6 +63,15 @@ SET
     prompt_tokens = prompt_tokens + ?,
     completion_tokens = completion_tokens + ?,
     cost = cost + ?,
+    updated_at = strftime('%s', 'now')
+WHERE id = ?;
+
+
+-- name: UpdateSessionActiveAgent :execrows
+UPDATE sessions
+SET
+    agent = ?,
+    active_agent = ?,
     updated_at = strftime('%s', 'now')
 WHERE id = ?;
 

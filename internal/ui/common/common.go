@@ -50,13 +50,7 @@ func largeModelProviderID(ws workspace.Workspace) string {
 	if cfg == nil {
 		return ""
 	}
-	return cfg.Models[config.SelectedModelTypeLarge].Provider
-}
-
-// IsHyper reports whether the currently selected large model is provided
-// by Hyper.
-func (c *Common) IsHyper() bool {
-	return largeModelProviderID(c.Workspace) == "hyper"
+	return cfg.Models[config.ModelMain].Provider
 }
 
 // CenterRect returns a new [Rectangle] centered within the given area with the

@@ -23,11 +23,11 @@ provider add myllm \
 model add myllm/foo-1 --name "Foo 1" --context-window 8000 \
   --price-input 1.25 --price-output 5 \
   --price-cache-create 2 --price-cache-hit 0.25
-model large myllm/foo-1 \
+model main myllm/foo-1 \
   --top-p 0.9 --top-k 40 \
   --frequency-penalty 0.2 --presence-penalty 0.1 \
   --provider-options '{"routing":{"tier":"fast"}}'
-model large myllm/foo-1 --provider-options '{"timeout":30}'`)
+model main myllm/foo-1 --provider-options '{"timeout":30}'`)
 
 	cfg := store.Config()
 
@@ -52,7 +52,7 @@ model large myllm/foo-1 --provider-options '{"timeout":30}'`)
 	require.Equal(t, 2.0, model.CostPer1MOutCached)
 	require.Equal(t, 0.25, model.CostPer1MInCached)
 
-	large := cfg.Models[config.SelectedModelTypeLarge]
+	large := cfg.Models[config.ModelMain]
 	require.Equal(t, "myllm", large.Provider)
 	require.Equal(t, "foo-1", large.Model)
 	require.NotNil(t, large.TopP)

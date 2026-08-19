@@ -67,7 +67,7 @@ type RuntimeOverrides struct {
 	// persisted or not. They are reapplied after a config reload so that a
 	// selection made here always outranks whatever the shared config file
 	// happens to hold — see pinPreferredModelLocked.
-	Models map[SelectedModelType]SelectedModel
+	Models map[ModelConfigName]SelectedModel
 }
 
 // ConfigStore is the single entry point for all config access. It owns the
@@ -121,12 +121,13 @@ type ConfigStore struct {
 	// back to the real provider clients.
 	exchangeToken func(ctx context.Context, providerID, refreshToken string) (*oauth.Token, error)
 
-	// authSignalMu guards authSignals, which maps provider IDs to
-	// channels that WaitForTokenChange blocks on. SignalAuthComplete
-	// closes the channel to unblock waiters; a new channel is created
-	// on the next wait.
+	// authSignalMu guards authSignals and authGen. authGen counts how
+	// many times each provider's credentials have been replaced;
+	// authSignals holds the broadcast channel current waiters block on,
+	// which SignalAuthComplete closes and drops.
 	authSignalMu sync.Mutex
 	authSignals  map[string]chan struct{}
+	authGen      map[string]uint64
 }
 
 // Config returns the pure-data config struct (read-only after load).
@@ -231,19 +232,35 @@ func (s *ConfigStore) RefetchHyperProvider(ctx context.Context) error {
 		}
 		nc.Providers.Set(string(hyperProvider.ID), pc)
 	}
+	// Finish the clone before it is published: a second setConfig here
+	// would let readers observe nc with the last refetch's Agents for
+	// one window, and calling the public SetupAgents would deadlock
+	// re-acquiring writeMu.
+	prepareResolvedConfig(nc)
 	s.setConfig(nc)
 
 	// Also update the memoized provider list so callers of
 	// config.Providers() (e.g. the models dialog) see fresh data.
 	UpdateProviderInList(hyperProvider)
 
-	s.SetupAgents()
 	return nil
 }
 
-// SetupAgents configures the coder and task agents on the config.
+// SetupAgents resolves the agent set from the live config and
+// publishes it as a new Config value, so concurrent readers of
+// Config() never observe an in-place mutation of Agents.
 func (s *ConfigStore) SetupAgents() {
-	s.Config().SetupAgents()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.setupAgentsLocked()
+}
+
+// setupAgentsLocked is the lock-free core of SetupAgents. Caller must
+// hold writeMu.
+func (s *ConfigStore) setupAgentsLocked() {
+	nc := s.Config().cloneForWrite()
+	prepareResolvedConfig(nc)
+	s.setConfig(nc)
 }
 
 // Overrides returns the runtime overrides for this store.
@@ -437,14 +454,21 @@ func (s *ConfigStore) update(scope Scope, mutate func(*Config) map[string]any) e
 // updateLocked is the lock-free core of update. Caller must hold writeMu.
 func (s *ConfigStore) updateLocked(scope Scope, mutate func(*Config) map[string]any) error {
 	nc := s.Config().cloneForWrite()
+	// mutate may also pin an instance-local model override. Both that
+	// pin and the new snapshot must stay invisible until the write
+	// lands, or a failed write leaves the process running on a
+	// configuration that is not on disk and that a later reload undoes.
+	pinned := maps.Clone(s.overrides.Models)
 	fields := mutate(nc)
-	s.setConfig(nc)
 	if len(fields) == 0 {
+		s.setConfig(nc)
 		return nil
 	}
 	if err := s.writeConfigFields(scope, fields); err != nil {
+		s.overrides.Models = pinned
 		return err
 	}
+	s.setConfig(nc)
 	// Refresh the staleness snapshot so the file watcher does not treat
 	// our own write as an external change. Safe to touch the snapshot map
 	// here because we hold writeMu.
@@ -455,13 +479,18 @@ func (s *ConfigStore) updateLocked(scope Scope, mutate func(*Config) map[string]
 }
 
 // OverridePreferredModel sets the preferred model for the given type in
-// memory only, without persisting. It is for per-run overrides (such as the
-// non-interactive --model flags) that must not be written to the user's
-// config file.
-func (s *ConfigStore) OverridePreferredModel(modelType SelectedModelType, model SelectedModel) {
+// memory only, without persisting.
+//
+// Its one remaining use is the non-interactive --small-model flag. The
+// chore model serves the internal agents (titling, compaction), which
+// instantiate from config rather than from any session and so have no
+// ActiveAgent of their own to edit. Everything session-scoped goes
+// through Coordinator.EditActiveAgent instead: overriding ModelMain here
+// would change the model for every session in the process.
+func (s *ConfigStore) OverridePreferredModel(modelType ModelConfigName, model SelectedModel) {
 	s.mutateInMemory(func(c *Config) {
 		if c.Models == nil {
-			c.Models = make(map[SelectedModelType]SelectedModel)
+			c.Models = make(map[ModelConfigName]SelectedModel)
 		}
 		c.Models[modelType] = model
 		s.pinPreferredModelLocked(modelType, model)
@@ -476,9 +505,9 @@ func (s *ConfigStore) OverridePreferredModel(modelType SelectedModelType, model 
 // switch models out from under the user mid-session.
 //
 // Caller must hold writeMu.
-func (s *ConfigStore) pinPreferredModelLocked(modelType SelectedModelType, model SelectedModel) {
+func (s *ConfigStore) pinPreferredModelLocked(modelType ModelConfigName, model SelectedModel) {
 	if s.overrides.Models == nil {
-		s.overrides.Models = make(map[SelectedModelType]SelectedModel)
+		s.overrides.Models = make(map[ModelConfigName]SelectedModel)
 	}
 	s.overrides.Models[modelType] = model
 }
@@ -515,18 +544,59 @@ func (s *ConfigStore) RemoveConfigField(scope Scope, key string) error {
 // provider catalog and agents on every model switch and dominate selection
 // latency); agents are refreshed separately by the caller (see
 // UpdateAgentModel).
-func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType SelectedModelType, model SelectedModel) error {
+func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType ModelConfigName, model SelectedModel) error {
 	return s.update(scope, func(c *Config) map[string]any {
 		return s.updatePreferredModelFields(c, modelType, model)
+	})
+}
+
+// RecordRecentModel adds a model to the recent-models list for the given
+// type and persists it, without touching which model is selected.
+//
+// It is split from UpdatePreferredModel because the two answer different
+// questions: "what do I run" is owned by the session's ActiveAgent, while
+// "what have I picked lately" is a global list feeding the model dialog.
+// Recording a recent model never changes what any session resolves to.
+func (s *ConfigStore) RecordRecentModel(scope Scope, modelType ModelConfigName, model SelectedModel) error {
+	return s.update(scope, func(c *Config) map[string]any {
+		return recentModelFields(c, modelType, model)
+	})
+}
+
+// PruneRecentModels removes the given entries from the recent-models
+// list for the given type.
+//
+// It takes the entries to drop rather than the list to keep. The caller
+// decided what was stale from a snapshot, and between that decision and
+// this write another client may have recorded a fresh pick; filtering
+// the live list under writeMu preserves it, while writing back a
+// precomputed list would silently erase it.
+func (s *ConfigStore) PruneRecentModels(scope Scope, modelType ModelConfigName, stale []SelectedModel) error {
+	if len(stale) == 0 {
+		return nil
+	}
+	isStale := func(recent SelectedModel) bool {
+		return slices.ContainsFunc(stale, func(dead SelectedModel) bool {
+			return dead.Provider == recent.Provider && dead.Model == recent.Model
+		})
+	}
+	return s.update(scope, func(c *Config) map[string]any {
+		current := c.RecentModels[modelType]
+		kept := slices.DeleteFunc(slices.Clone(current), isStale)
+		if len(kept) == len(current) {
+			return nil
+		}
+		c.RecentModels[modelType] = kept
+		return map[string]any{fmt.Sprintf("recent_models.%s", modelType): kept}
 	})
 }
 
 // updatePreferredModelFields builds the fields map for persisting a preferred
 // model change. Shared between UpdatePreferredModel and direct updateLocked
 // callers (e.g. Load). Caller must hold writeMu.
-func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType SelectedModelType, model SelectedModel) map[string]any {
+func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType ModelConfigName, model SelectedModel) map[string]any {
 	if c.Models == nil {
-		c.Models = make(map[SelectedModelType]SelectedModel)
+		c.Models = make(map[ModelConfigName]SelectedModel)
 	}
 	c.Models[modelType] = model
 	s.pinPreferredModelLocked(modelType, model)
@@ -534,14 +604,23 @@ func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType SelectedMo
 	fields := map[string]any{
 		fmt.Sprintf("models.%s", modelType): model,
 	}
-	if updated, changed := nextRecentModels(c, modelType, model); changed {
-		if c.RecentModels == nil {
-			c.RecentModels = make(map[SelectedModelType][]SelectedModel)
-		}
-		c.RecentModels[modelType] = updated
-		fields[fmt.Sprintf("recent_models.%s", modelType)] = updated
-	}
+	maps.Copy(fields, recentModelFields(c, modelType, model))
 	return fields
+}
+
+// recentModelFields folds a model into the recent-models list and returns
+// the fields to persist, or nothing when the list already had it at the
+// front. Caller must hold writeMu.
+func recentModelFields(c *Config, modelType ModelConfigName, model SelectedModel) map[string]any {
+	updated, changed := nextRecentModels(c, modelType, model)
+	if !changed {
+		return nil
+	}
+	if c.RecentModels == nil {
+		c.RecentModels = make(map[ModelConfigName][]SelectedModel)
+	}
+	c.RecentModels[modelType] = updated
+	return map[string]any{fmt.Sprintf("recent_models.%s", modelType): updated}
 }
 
 // SetCompactMode sets the compact mode setting and persists it.
@@ -549,14 +628,6 @@ func (s *ConfigStore) SetCompactMode(scope Scope, enabled bool) error {
 	return s.update(scope, func(c *Config) map[string]any {
 		c.ensureTUI().CompactMode = enabled
 		return map[string]any{"options.tui.compact_mode": enabled}
-	})
-}
-
-// SetTransparentBackground sets the transparent background setting and persists it.
-func (s *ConfigStore) SetTransparentBackground(scope Scope, enabled bool) error {
-	return s.update(scope, func(c *Config) map[string]any {
-		c.ensureTUI().Transparent = &enabled
-		return map[string]any{"options.tui.transparent": enabled}
 	})
 }
 
@@ -634,6 +705,11 @@ func (s *ConfigStore) SetProviderAPIKey(scope Scope, providerID string, apiKey a
 			slog.Warn("Failed to refetch Hyper provider after auth", "error", refetchErr)
 		}
 	}
+	// Signal here rather than at a caller: this is where a credential
+	// actually lands, and both the in-process workspace and the server's
+	// config endpoint reach it. A turn parked in
+	// WaitForTokenChangeSince is waiting for exactly this.
+	s.SignalAuthComplete(providerID)
 	return nil
 }
 
@@ -748,64 +824,70 @@ func (s *ConfigStore) refreshOAuthTokenLocked(ctx context.Context, scope Scope, 
 	return nil
 }
 
-// WaitForTokenChange blocks until SignalAuthComplete is called for the
-// given provider or the context is cancelled. It is used by OnAuthRefresh
-// callbacks to wait for interactive re-authentication to complete before
-// retrying a failed request. The channel is created atomically with the
-// wait registration so a concurrent SignalAuthComplete cannot miss it.
-func (s *ConfigStore) WaitForTokenChange(ctx context.Context, providerID string) error {
+// AuthGeneration reports how many times the provider's credentials have
+// been replaced. Read it before triggering interactive re-authentication
+// and pass the result to [ConfigStore.WaitForTokenChangeSince]: a
+// completion landing between the two calls still satisfies the wait,
+// while a completion from some earlier, unrelated login does not.
+func (s *ConfigStore) AuthGeneration(providerID string) uint64 {
 	s.authSignalMu.Lock()
+	defer s.authSignalMu.Unlock()
+	return s.authGen[providerID]
+}
+
+// authWaiterLocked returns the broadcast channel waiters block on,
+// creating it for the first waiter. Caller must hold authSignalMu.
+func (s *ConfigStore) authWaiterLocked(providerID string) chan struct{} {
+	if s.authSignals == nil {
+		s.authSignals = make(map[string]chan struct{})
+	}
 	ch, ok := s.authSignals[providerID]
 	if !ok {
 		ch = make(chan struct{})
-		if s.authSignals == nil {
-			s.authSignals = make(map[string]chan struct{})
-		}
 		s.authSignals[providerID] = ch
 	}
-	s.authSignalMu.Unlock()
+	return ch
+}
 
-	select {
-	case <-ch:
-		// Remove the consumed signal so a subsequent
-		// SignalAuthComplete does not close an already-closed
-		// channel.
+// WaitForTokenChangeSince blocks until the provider's credentials have
+// been replaced past the given generation, or ctx is done. It is used by
+// OnAuthRefresh callbacks to wait for interactive re-authentication
+// before retrying a failed request.
+func (s *ConfigStore) WaitForTokenChangeSince(ctx context.Context, providerID string, since uint64) error {
+	for {
 		s.authSignalMu.Lock()
-		if s.authSignals[providerID] == ch {
-			delete(s.authSignals, providerID)
+		if s.authGen[providerID] > since {
+			s.authSignalMu.Unlock()
+			return nil
 		}
+		ch := s.authWaiterLocked(providerID)
 		s.authSignalMu.Unlock()
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+
+		select {
+		case <-ch:
+			// Re-check the generation rather than returning: the
+			// wake-up says something changed, not that it was this
+			// provider's credentials moving past `since`.
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 
-// SignalAuthComplete unblocks any goroutine waiting in WaitForTokenChange
-// for the given provider. If no waiter exists yet, it pre-creates and
-// immediately closes the channel so a subsequent WaitForTokenChange
-// returns without blocking. This eliminates the race where the signal
-// fires before the waiter registers.
+// SignalAuthComplete records that the provider's credentials were
+// replaced and wakes every waiter. Callers do not need to know whether
+// anyone is waiting: the generation carries the fact forward, so a
+// signal that arrives before its waiter is still observed.
 func (s *ConfigStore) SignalAuthComplete(providerID string) {
 	s.authSignalMu.Lock()
 	defer s.authSignalMu.Unlock()
+	if s.authGen == nil {
+		s.authGen = make(map[string]uint64)
+	}
+	s.authGen[providerID]++
 	if ch, ok := s.authSignals[providerID]; ok {
 		delete(s.authSignals, providerID)
-		select {
-		case <-ch:
-			// Already closed by a previous signal; nothing to do.
-		default:
-			close(ch)
-		}
-	} else {
-		// No waiter yet. Pre-create a closed channel so the next
-		// WaitForTokenChange returns immediately.
-		if s.authSignals == nil {
-			s.authSignals = make(map[string]chan struct{})
-		}
-		ch := make(chan struct{})
 		close(ch)
-		s.authSignals[providerID] = ch
 	}
 }
 
@@ -953,7 +1035,7 @@ func (s *ConfigStore) loadTokenFromDisk(scope Scope, providerID string) (*oauth.
 // provided config without persisting anything. It returns the new slice
 // and whether it differs from cfg's current list. Callers fold the result
 // into a clone they are about to publish.
-func nextRecentModels(cfg *Config, modelType SelectedModelType, model SelectedModel) ([]SelectedModel, bool) {
+func nextRecentModels(cfg *Config, modelType ModelConfigName, model SelectedModel) ([]SelectedModel, bool) {
 	if model.Provider == "" || model.Model == "" {
 		return nil, false
 	}
@@ -1211,17 +1293,6 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 		return fmt.Errorf("invalid hook configuration on reload: %w", err)
 	}
 
-	// Save current state for potential rollback BEFORE configureProviders,
-	// which may write to disk via RemoveConfigField (e.g. removing stale
-	// OAuth providers). Capturing after would snapshot a config that has
-	// already been mutated, and the rollback would restore corrupted state.
-	oldConfig := s.Config()
-	oldLoadedPaths := s.loadedPaths
-	oldResolver := s.resolver
-	oldKnownProviders := s.knownProviders
-	oldOverrides := s.overrides
-	oldWorkspacePath := s.workspacePath
-
 	// Preserve runtime overrides
 	overrides := s.overrides
 
@@ -1252,39 +1323,33 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 		return fmt.Errorf("failed to configure providers during reload: %w", err)
 	}
 
-	// Update store state BEFORE running model/agent setup (so they see new config)
+	// Finish cfg completely before publishing it. Everything below runs
+	// against the local value, so a reader calling Config() concurrently
+	// sees either the previous config or the fully built one, never a
+	// version with models half-written or agents unresolved. A failure
+	// here leaves the store untouched, which is why no rollback of
+	// already-published state is needed.
+	if !cfg.IsConfigured() {
+		slog.Warn("No providers configured after reload")
+	} else {
+		resolved, resolveErr := resolveSelectedModels(cfg, providers)
+		if resolveErr != nil {
+			return fmt.Errorf("failed to configure selected models during reload: %w", resolveErr)
+		}
+		cfg.Models[ModelMain] = resolved.Main
+		cfg.Models[ModelChore] = resolved.Chore
+	}
+
+	// Agent resolution reads only Options and AgentConfigs, so it runs
+	// regardless of whether any provider is configured.
+	prepareResolvedConfig(cfg)
+
 	s.setConfig(cfg)
 	s.loadedPaths = loadedPaths
 	s.resolver = resolver
 	s.knownProviders = providers
 	s.overrides = overrides
 	s.workspacePath = workspacePath
-
-	// Mirror startup flow: setup models and agents against NEW config.
-	var setupErr error
-	if !cfg.IsConfigured() {
-		slog.Warn("No providers configured after reload")
-	} else {
-		resolved, resolveErr := resolveSelectedModels(cfg, providers)
-		if resolveErr != nil {
-			setupErr = fmt.Errorf("failed to configure selected models during reload: %w", resolveErr)
-		} else {
-			cfg.Models[SelectedModelTypeLarge] = resolved.Large
-			cfg.Models[SelectedModelTypeSmall] = resolved.Small
-			s.SetupAgents()
-		}
-	}
-
-	// Rollback on setup failure
-	if setupErr != nil {
-		s.setConfig(oldConfig)
-		s.loadedPaths = oldLoadedPaths
-		s.resolver = oldResolver
-		s.knownProviders = oldKnownProviders
-		s.overrides = oldOverrides
-		s.workspacePath = oldWorkspacePath
-		return setupErr
-	}
 
 	// Rebuild staleness tracking. Track every discovered config path, not
 	// just the ones that loaded, so a config file created after this reload

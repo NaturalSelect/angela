@@ -173,6 +173,7 @@ type Message struct {
 	Parts            []ContentPart
 	Model            string
 	Provider         string
+	Agent            string
 	CreatedAt        int64
 	UpdatedAt        int64
 	IsSummaryMessage bool

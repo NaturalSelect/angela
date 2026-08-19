@@ -14,57 +14,19 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/util"
+	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
 )
 
-// ModelType represents the type of model to select.
-type ModelType int
-
-const (
-	ModelTypeLarge ModelType = iota
-	ModelTypeSmall
-)
-
-// String returns the string representation of the [ModelType].
-func (mt ModelType) String() string {
-	switch mt {
-	case ModelTypeLarge:
-		return "Large Task"
-	case ModelTypeSmall:
-		return "Small Task"
-	default:
-		return "Unknown"
-	}
-}
-
-// Config returns the corresponding config model type.
-func (mt ModelType) Config() config.SelectedModelType {
-	switch mt {
-	case ModelTypeLarge:
-		return config.SelectedModelTypeLarge
-	case ModelTypeSmall:
-		return config.SelectedModelTypeSmall
-	default:
-		return ""
-	}
-}
-
-// Placeholder returns the input placeholder for the model type.
-func (mt ModelType) Placeholder() string {
-	switch mt {
-	case ModelTypeLarge:
-		return largeModelInputPlaceholder
-	case ModelTypeSmall:
-		return smallModelInputPlaceholder
-	default:
-		return ""
-	}
+// ModelsCatalogMsg carries the provider catalog to the models dialog
+// once it has been fetched off the Update goroutine.
+type ModelsCatalogMsg struct {
+	Providers []catwalk.Provider
 }
 
 const (
 	onboardingModelInputPlaceholder = "Find your fave"
-	largeModelInputPlaceholder      = "Choose a model for large, complex tasks"
-	smallModelInputPlaceholder      = "Choose a model for small, simple tasks"
+	modelInputPlaceholder           = "Choose a model"
 )
 
 // ModelsID is the identifier for the model selection dialog.
@@ -77,11 +39,24 @@ type Models struct {
 	com          *common.Common
 	isOnboarding bool
 
-	modelType ModelType
+	// modelName is the model config the dialog writes to. Model config
+	// names are an open set; this dialog edits main and leaves the rest
+	// to agent-level config.
+	modelName config.ModelConfigName
 	providers []catwalk.Provider
 
+	// active is the agent the current session runs, or nil when it is
+	// not known yet. It decides which model the list opens on, so the
+	// highlighted entry is the one the session actually runs rather
+	// than the global default.
+	active *workspace.ActiveAgent
+
+	// catalogLoaded reports whether providers arrived. Recents can only
+	// be judged stale against a loaded catalog: pruning them against an
+	// empty one would drop every entry the user has.
+	catalogLoaded bool
+
 	keyMap struct {
-		Tab      key.Binding
 		UpDown   key.Binding
 		Select   key.Binding
 		Edit     key.Binding
@@ -92,16 +67,26 @@ type Models struct {
 	list  *ModelsList
 	input textinput.Model
 	help  help.Model
+
+	// staleRecents are the recent-model entries that no longer resolve
+	// to an available model. Building the item list must not write
+	// config — that is a synchronous HTTP round-trip in client/server
+	// mode — so the removal is deferred to a command.
+	staleRecents []config.SelectedModel
 }
 
 var _ Dialog = (*Models)(nil)
 
-// NewModels creates a new Models dialog.
-func NewModels(com *common.Common, isOnboarding bool) (*Models, error) {
+// NewModels creates a new Models dialog. active is the agent the
+// current session runs, or nil when that is not known yet. The provider
+// catalog is not loaded here — see InitialCmd.
+func NewModels(com *common.Common, isOnboarding bool, active *workspace.ActiveAgent) *Models {
 	t := com.Styles
 	m := &Models{}
 	m.com = com
 	m.isOnboarding = isOnboarding
+	m.modelName = config.ModelMain
+	m.active = active
 
 	help := help.New()
 	help.Styles = t.DialogHelpStyles()
@@ -117,10 +102,6 @@ func NewModels(com *common.Common, isOnboarding bool) (*Models, error) {
 	m.input.SetStyles(com.Styles.TextInput)
 	m.input.Focus()
 
-	m.keyMap.Tab = key.NewBinding(
-		key.WithKeys("tab", "shift+tab"),
-		key.WithHelp("tab", "toggle type"),
-	)
 	m.keyMap.Select = key.NewBinding(
 		key.WithKeys("enter", "ctrl+y"),
 		key.WithHelp("enter", "confirm"),
@@ -143,27 +124,66 @@ func NewModels(com *common.Common, isOnboarding bool) (*Models, error) {
 	)
 	m.keyMap.Close = CloseKey
 
-	// A stale catalog must not keep this dialog from opening: it is the
-	// only way for the user to choose a model.
-	var err error
-	m.providers, err = config.Providers(m.com.Config())
-	if err != nil {
-		if len(m.providers) == 0 {
-			return nil, fmt.Errorf("failed to get providers: %w", err)
-		}
-		slog.Warn("Listing the previously known providers", "error", err)
-	}
+	m.setProviderItems()
 
-	if err := m.setProviderItems(); err != nil {
-		return nil, fmt.Errorf("failed to set provider items: %w", err)
-	}
-
-	return m, nil
+	return m
 }
 
 // ID implements Dialog.
 func (m *Models) ID() string {
 	return ModelsID
+}
+
+// InitialCmd fetches the provider catalog off the Update goroutine.
+// Listing providers can block for as long as a catalog refresh takes,
+// which must never happen on the render loop; until it lands the dialog
+// lists the providers already configured, so it always opens.
+func (m *Models) InitialCmd() tea.Cmd {
+	return m.loadCatalogCmd()
+}
+
+func (m *Models) loadCatalogCmd() tea.Cmd {
+	cfg := m.com.Config()
+	return func() tea.Msg {
+		providers, err := config.Providers(cfg)
+		if err != nil {
+			// A stale catalog must not keep this dialog from working:
+			// it is the only way for the user to choose a model.
+			if len(providers) == 0 {
+				return util.ReportError(fmt.Errorf("failed to get providers: %w", err))()
+			}
+			slog.Warn("Listing the previously known providers", "error", err)
+		}
+		return ModelsCatalogMsg{Providers: providers}
+	}
+}
+
+// SetProviders installs the fetched catalog and rebuilds the list. It
+// returns the command that records any recent-model entries that no
+// longer resolve, or nil when every entry still does.
+func (m *Models) SetProviders(providers []catwalk.Provider) tea.Cmd {
+	m.providers = providers
+	m.catalogLoaded = true
+	m.setProviderItems()
+	return m.pruneRecentsCmd()
+}
+
+// pruneRecentsCmd drops recent-model entries that no longer resolve to
+// an available model. The write is an HTTP round-trip in client/server
+// mode, so it never runs on the Update goroutine. It sends the dead
+// entries rather than the surviving list: a model picked while the
+// catalog was loading must not be erased by this write.
+func (m *Models) pruneRecentsCmd() tea.Cmd {
+	if len(m.staleRecents) == 0 {
+		return nil
+	}
+	stale := m.staleRecents
+	return func() tea.Msg {
+		if err := m.com.Workspace.PruneRecentModels(config.ScopeGlobal, m.modelName, stale); err != nil {
+			return util.ReportError(fmt.Errorf("failed to update recent models: %w", err))()
+		}
+		return nil
+	}
 }
 
 // HandleMsg implements Dialog.
@@ -205,20 +225,8 @@ func (m *Models) HandleMsg(msg tea.Msg) Action {
 			return ActionSelectModel{
 				Provider:       modelItem.prov,
 				Model:          modelItem.SelectedModel(),
-				ModelType:      modelItem.SelectedModelType(),
+				ModelType:      modelItem.ModelConfigName(),
 				ReAuthenticate: isEdit,
-			}
-		case key.Matches(msg, m.keyMap.Tab):
-			if m.isOnboarding {
-				break
-			}
-			if m.modelType == ModelTypeLarge {
-				m.modelType = ModelTypeSmall
-			} else {
-				m.modelType = ModelTypeLarge
-			}
-			if err := m.setProviderItems(); err != nil {
-				return util.ReportError(err)
 			}
 		default:
 			var cmd tea.Cmd
@@ -239,26 +247,6 @@ func (m *Models) Cursor() *tea.Cursor {
 	return InputCursor(m.com.Styles, m.input.Cursor())
 }
 
-// modelTypeRadioView returns the radio view for model type selection.
-func (m *Models) modelTypeRadioView() string {
-	t := m.com.Styles
-	textStyle := t.Radio.Label
-	largeRadioStyle := t.Radio.Off
-	smallRadioStyle := t.Radio.Off
-	if m.modelType == ModelTypeLarge {
-		largeRadioStyle = t.Radio.On
-	} else {
-		smallRadioStyle = t.Radio.On
-	}
-
-	largeRadio := largeRadioStyle.Padding(0, 1).Render()
-	smallRadio := smallRadioStyle.Padding(0, 1).Render()
-
-	return fmt.Sprintf("%s%s  %s%s",
-		largeRadio, textStyle.Render(ModelTypeLarge.String()),
-		smallRadio, textStyle.Render(ModelTypeSmall.String()))
-}
-
 // Draw implements [Dialog].
 func (m *Models) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := m.com.Styles
@@ -271,7 +259,6 @@ func (m *Models) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	rc := NewRenderContext(t, width)
 	rc.Title = "Switch Model"
-	rc.TitleInfo = m.modelTypeRadioView()
 
 	if m.isOnboarding {
 		titleText := t.Dialog.PrimaryText.Render("To start, let's choose a provider and model.")
@@ -281,9 +268,13 @@ func (m *Models) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	inputView := t.Dialog.InputPrompt.Render(m.input.View())
 	rc.AddPart(inputView)
 
-	listView := t.Dialog.List.Height(m.list.Height()).Render(m.list.Render())
-	listView = joinScrollbar(t, listView, listHeight, listTotalHeight, listHeight, m.list.Offset())
-	rc.AddPart(listView)
+	if !m.catalogLoaded && m.list.Len() == 0 {
+		rc.AddPart(t.Dialog.SecondaryText.Render("Loading models…"))
+	} else {
+		listView := t.Dialog.List.Height(m.list.Height()).Render(m.list.Render())
+		listView = joinScrollbar(t, listView, listHeight, listTotalHeight, listHeight, m.list.Offset())
+		rc.AddPart(listView)
+	}
 
 	rc.Help = renderDialogHelp(t, &m.help, m, innerWidth)
 
@@ -313,7 +304,6 @@ func (m *Models) ShortHelp() []key.Binding {
 	}
 	h := []key.Binding{
 		m.keyMap.UpDown,
-		m.keyMap.Tab,
 		m.keyMap.Select,
 	}
 	if m.isSelectedConfigured() {
@@ -343,23 +333,22 @@ func (m *Models) isSelectedConfigured() bool {
 }
 
 // setProviderItems sets the provider items in the list.
-func (m *Models) setProviderItems() error {
+func (m *Models) setProviderItems() {
 	t := m.com.Styles
 	cfg := m.com.Config()
 
 	var selectedItemID string
-	selectedType := m.modelType.Config()
-	currentModel := cfg.Models[selectedType]
-	recentItems := cfg.RecentModels[selectedType]
+	// The list opens on what the session runs, not on the global
+	// default: highlighting the global model makes confirming it look
+	// like a no-op while it silently moves the session off its own.
+	currentModel := cfg.Models[m.modelName]
+	if m.active != nil && m.active.ModelName == m.modelName {
+		currentModel = m.active.ModelCfg
+	}
+	recentItems := cfg.RecentModels[m.modelName]
 
 	// Track providers already added to avoid duplicates
 	addedProviders := make(map[string]bool)
-
-	// Get a list of known providers to compare against
-	knownProviders, err := config.Providers(cfg)
-	if err != nil && len(knownProviders) == 0 {
-		return fmt.Errorf("failed to get providers: %w", err)
-	}
 
 	containsProviderFunc := func(id string) func(p catwalk.Provider) bool {
 		return func(p catwalk.Provider) bool {
@@ -376,8 +365,7 @@ func (m *Models) setProviderItems() error {
 		}
 
 		// Check if this provider is not in the known providers list
-		if !slices.ContainsFunc(knownProviders, containsProviderFunc(id)) ||
-			!slices.ContainsFunc(m.providers, containsProviderFunc(id)) {
+		if !slices.ContainsFunc(m.providers, containsProviderFunc(id)) {
 			provider := p.ToProvider()
 
 			// Add this unknown provider to the list
@@ -387,7 +375,7 @@ func (m *Models) setProviderItems() error {
 
 			group := NewModelGroup(t, name, true)
 			for _, model := range p.Models {
-				item := NewModelItem(t, provider, model, m.modelType, false)
+				item := NewModelItem(t, provider, model, m.modelName, false)
 				group.AppendItems(item)
 				itemsMap[item.ID()] = item
 				if model.ID == currentModel.Model && string(provider.ID) == currentModel.Provider {
@@ -440,7 +428,7 @@ func (m *Models) setProviderItems() error {
 
 		group := NewModelGroup(t, name, providerConfigured)
 		for _, model := range displayProvider.Models {
-			item := NewModelItem(t, provider, model, m.modelType, false)
+			item := NewModelItem(t, provider, model, m.modelName, false)
 			group.AppendItems(item)
 			itemsMap[item.ID()] = item
 			if model.ID == currentModel.Model && string(provider.ID) == currentModel.Provider {
@@ -454,29 +442,29 @@ func (m *Models) setProviderItems() error {
 	if len(recentItems) > 0 {
 		recentGroup := NewModelGroup(t, "Recently used", false)
 
-		var validRecentItems []config.SelectedModel
+		// Recomputed from scratch: this runs again when the catalog
+		// lands, and appending to the previous verdict would double up.
+		m.staleRecents = nil
 		for _, recent := range recentItems {
 			key := modelKey(recent.Provider, recent.Model)
 			item, ok := itemsMap[key]
 			if !ok {
+				// Before the catalog lands the item list is only the
+				// configured providers, so a miss means "not known
+				// yet", not "gone".
+				if m.catalogLoaded {
+					m.staleRecents = append(m.staleRecents, recent)
+				}
 				continue
 			}
 
 			// Show provider for recent items
-			item = NewModelItem(t, item.prov, item.model, m.modelType, true)
+			item = NewModelItem(t, item.prov, item.model, m.modelName, true)
 			item.showProvider = true
 
-			validRecentItems = append(validRecentItems, recent)
 			recentGroup.AppendItems(item)
 			if recent.Model == currentModel.Model && recent.Provider == currentModel.Provider {
 				selectedItemID = item.ID()
-			}
-		}
-
-		if len(validRecentItems) != len(recentItems) {
-			// FIXME: Does this need to be here? Is it mutating the config during a read?
-			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, fmt.Sprintf("recent_models.%s", selectedType), validRecentItems); err != nil {
-				return fmt.Errorf("failed to update recent models: %w", err)
 			}
 		}
 
@@ -496,10 +484,8 @@ func (m *Models) setProviderItems() error {
 
 	// Update placeholder based on model type
 	if !m.isOnboarding {
-		m.input.Placeholder = m.modelType.Placeholder()
+		m.input.Placeholder = modelInputPlaceholder
 	}
-
-	return nil
 }
 
 func modelKey(providerID, modelID string) string {

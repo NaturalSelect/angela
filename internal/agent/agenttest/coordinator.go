@@ -65,7 +65,7 @@ func NewCoordinator(
 	cfg.Config().Models[config.ModelChore] = selected
 	cfg.SetupAgents()
 
-	// Keep buildTools light: no sub-agent or agentic-fetch construction.
+	// Keep buildTools light: no sub-agent construction.
 	coderCfg := cfg.Config().Agents[config.AgentCoder]
 	coderCfg.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope}
 	cfg.Config().Agents[config.AgentCoder] = coderCfg

@@ -323,10 +323,11 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := c.resolveAgent(ctx, active, false)
+	resolved, err := c.resolveAgent(ctx, active, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve the agent: %w", err)
 	}
+	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, sessionID)
 
 	model := resolved.Model
 	maxTokens := resolved.MaxTokens
@@ -394,7 +395,7 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 				if err != nil {
 					return resolvedAgent{}, err
 				}
-				return c.resolveAgent(ctx, active, false)
+				return c.resolveAgent(ctx, active, 0)
 			},
 		})
 	}
@@ -838,15 +839,22 @@ func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
 // the turn actually resolved to; it reaches the bash tool's commit
 // attribution, which must name the model that did the work rather than
 // whatever the global slot happens to point at.
-func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, modelID string, isSubAgent bool) ([]fantasy.AgentTool, error) {
+//
+// depth is this turn's dispatch depth (0 for a primary turn, 1+ for a
+// subagent). It gates both the question tool and, against
+// Options.SubagentMaxDepth, the agent tool: a turn only holds it while
+// it still has delegation budget left, which keeps the dispatch chain
+// from growing past the configured limit.
+func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) ([]fantasy.AgentTool, error) {
 	var allTools []fantasy.AgentTool
-	// Sub-agents must not hold any delegation tool that can start another
-	// agent (agent, agentic_fetch), to keep dispatch depth fixed at 1.
-	if !isSubAgent && agent.AllowedTools.Allows(AgentToolName) {
+	isSubAgent := depth > 0
+	canDelegate := depth < c.cfg.Config().Options.SubagentMaxDepth()
+
+	if canDelegate && agent.AllowedTools.Allows(AgentToolName) {
 		if c.subagents.Len() == 0 {
 			slog.Info("No subagents available; omitting the agent tool")
 		} else {
-			agentTool, err := c.agentTool()
+			agentTool, err := c.agentTool(depth)
 			if err != nil {
 				return nil, err
 			}
@@ -854,23 +862,11 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, modelI
 		}
 	}
 
-	if !isSubAgent && agent.AllowedTools.Allows(tools.AgenticFetchToolName) {
-		agenticFetchTool, err := c.agenticFetchTool(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
-		allTools = append(allTools, agenticFetchTool)
-	}
-
 	logFile := filepath.Join(c.cfg.Config().Options.DataDirectory, "logs", "angela.log")
 
 	// Build hook runner if PreToolUse hooks are configured.
 	var hookRunner *hooks.Runner
 	if preToolHooks := c.cfg.Config().Hooks[hooks.EventPreToolUse]; len(preToolHooks) > 0 {
-		depth := 0
-		if isSubAgent {
-			depth = 1
-		}
 		hookRunner = hooks.NewRunner(preToolHooks, c.cfg.WorkingDir(), c.cfg.WorkingDir(),
 			hooks.AgentIdentity{ID: agent.ID, Depth: depth})
 	}
@@ -886,6 +882,8 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, modelI
 		tools.NewEditTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
 		tools.NewMultiEditTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
 		tools.NewFetchTool(c.permissions, c.cfg.WorkingDir(), nil),
+		tools.NewWebFetchTool(c.permissions, filepath.Join(c.cfg.Config().Options.DataDirectory, "webfetch"), nil),
+		tools.NewWebSearchTool(c.permissions, c.cfg.WorkingDir(), nil),
 		tools.NewGlobTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Glob),
 		tools.NewGrepTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Grep),
 		tools.NewLsTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Config().Tools.Ls),
@@ -950,6 +948,21 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, modelI
 	filteredTools = wrapToolsWithHooks(filteredTools, hookRunner)
 
 	return filteredTools, nil
+}
+
+// removeWebFetchScratch clears the web_fetch pages cached for one
+// session, once that session's turn is done reading them. Sessions
+// that never triggered a large fetch never created the directory, so
+// this is a no-op for them.
+func removeWebFetchScratch(dataDirectory, sessionID string) {
+	dir, err := tools.WebFetchScratchDir(filepath.Join(dataDirectory, "webfetch"), sessionID)
+	if err != nil {
+		slog.Warn("Refusing to remove web_fetch scratch directory", "session", sessionID, "error", err)
+		return
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		slog.Warn("Failed to remove web_fetch scratch directory", "session", sessionID, "error", err)
+	}
 }
 
 // activeIO wires the store to the session record and the config.
@@ -1883,10 +1896,7 @@ type subAgentParams struct {
 	ToolCallID     string
 	Prompt         string
 	SessionTitle   string
-	// SessionSetup is an optional callback invoked after session creation
-	// but before agent execution, for custom session configuration.
-	SessionSetup func(sessionID string)
-	Resolved     resolvedAgent
+	Resolved       resolvedAgent
 }
 
 // runSubAgent runs a sub-agent and handles session management and cost accumulation.
@@ -1899,11 +1909,16 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 	if err != nil {
 		return fantasy.ToolResponse{}, fmt.Errorf("create session: %w", err)
 	}
+	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)
 
-	// Call session setup function if provided
-	if params.SessionSetup != nil {
-		params.SessionSetup(session.ID)
-	}
+	// A child session has no interactive surface of its own: no UI ever
+	// subscribes to its permission events, so a permission-gated tool it
+	// uses (web_fetch, web_search, or anything a "general" dispatch
+	// inherits) would otherwise block until ctx is done instead of ever
+	// resolving. The dispatch that created this session already ran
+	// inside the permission scope the user controls; that covers the
+	// delegated work too.
+	c.permissions.AutoApproveSession(session.ID)
 
 	model := params.Resolved.Model
 	maxTokens := params.Resolved.MaxTokens

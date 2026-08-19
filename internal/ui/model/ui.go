@@ -1540,7 +1540,7 @@ func (m *UI) handleConnectionEvent(msg workspace.ConnectionEvent) []tea.Cmd {
 	return cmds
 }
 
-// loadNestedToolCalls recursively loads nested tool calls for agent/agentic_fetch tools.
+// loadNestedToolCalls recursively loads nested tool calls for the agent tool.
 func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
 	for _, item := range items {
 		nestedContainer, ok := item.(chat.NestedToolContainer)

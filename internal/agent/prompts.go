@@ -26,8 +26,8 @@ var titlePromptTmpl []byte
 //go:embed templates/summary.md
 var summaryPromptTmpl []byte
 
-//go:embed templates/agentic_fetch_prompt.md.tpl
-var agenticFetchPromptTmpl []byte
+//go:embed templates/web_fetch_prompt.md.tpl
+var webFetchPromptTmpl []byte
 
 //go:embed templates/generate_agent.md.tpl
 var generateAgentPromptTmpl []byte
@@ -64,8 +64,8 @@ func compactPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return prompt.NewPrompt(config.AgentCompact, string(summaryPromptTmpl), opts...)
 }
 
-func agenticFetchPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
-	return prompt.NewPrompt(config.AgentAgenticFetch, string(agenticFetchPromptTmpl), opts...)
+func webFetchPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	return prompt.NewPrompt(config.AgentWebFetch, string(webFetchPromptTmpl), opts...)
 }
 
 func generateAgentPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
@@ -85,7 +85,7 @@ var builtinPromptForAgent = map[string]func(...prompt.Option) (*prompt.Prompt, e
 	config.AgentGeneral:       generalPrompt,
 	config.AgentTitle:         titlePrompt,
 	config.AgentCompact:       compactPrompt,
-	config.AgentAgenticFetch:  agenticFetchPrompt,
+	config.AgentWebFetch:      webFetchPrompt,
 	config.AgentGenerateAgent: generateAgentPrompt,
 	config.AgentInitialize:    initializePrompt,
 }
@@ -101,7 +101,7 @@ var builtinPromptTemplateFile = map[string]string{
 	config.AgentGeneral:       "general.md.tpl",
 	config.AgentTitle:         "title.md",
 	config.AgentCompact:       "summary.md",
-	config.AgentAgenticFetch:  "agentic_fetch_prompt.md.tpl",
+	config.AgentWebFetch:      "web_fetch_prompt.md.tpl",
 	config.AgentGenerateAgent: "generate_agent.md.tpl",
 	config.AgentInitialize:    "initialize.md.tpl",
 }

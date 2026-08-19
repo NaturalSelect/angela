@@ -66,7 +66,7 @@ func TestCallerCancellationDoesNotBreakLaterTurns(t *testing.T) {
 	cancel()
 	require.Error(t, ctx.Err(), "sanity check: the building caller's context is dead")
 
-	_, err = coord.resolveAgent(context.Background(), instantiate(t, coord, config.AgentCoder), false)
+	_, err = coord.resolveAgent(context.Background(), instantiate(t, coord, config.AgentCoder), 0)
 	require.NoError(t, err,
 		"a later turn must resolve cleanly after the building caller was canceled")
 }

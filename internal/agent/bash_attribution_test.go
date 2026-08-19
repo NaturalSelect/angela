@@ -44,7 +44,7 @@ func TestBashAttributionNamesTheModelThatRanTheTurn(t *testing.T) {
 
 	active, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	resolved, err := coord.resolveAgent(t.Context(), active, false)
+	resolved, err := coord.resolveAgent(t.Context(), active, 0)
 	require.NoError(t, err)
 	require.Equal(t, "large-model", resolved.Model.ModelCfg.Model,
 		"precondition: the turn runs the session's model")

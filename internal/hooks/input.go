@@ -17,9 +17,11 @@ import (
 const SupportedOutputVersion = 1
 
 // AgentIdentity names the agent whose tool call triggered a hook.
-// Depth is 0 for the top-level agent and 1 for a delegated sub-agent,
-// which is how a hook distinguishes a command the user's agent ran
-// directly from one a sub-agent ran on its behalf.
+// Depth is the dispatch nesting level: 0 for the top-level agent, 1 for
+// a subagent it dispatched, 2 for a subagent that subagent dispatched,
+// and so on up to the configured options.subagent_depth budget. This is
+// how a hook distinguishes a command the user's agent ran directly from
+// one run on its behalf, however many delegation hops away.
 type AgentIdentity struct {
 	ID    string
 	Depth int

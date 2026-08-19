@@ -553,8 +553,10 @@ func (p *Permissions) renderContent(width int) string {
 		return p.renderDownloadContent(width)
 	case tools.FetchToolName:
 		return p.renderFetchContent(width)
-	case tools.AgenticFetchToolName:
-		return p.renderAgenticFetchContent(width)
+	case tools.WebFetchToolName:
+		return p.renderWebFetchContent(width)
+	case tools.WebSearchToolName:
+		return p.renderWebSearchContent(width)
 	case tools.ViewToolName:
 		return p.renderViewContent(width)
 	case tools.LSToolName:
@@ -662,20 +664,22 @@ func (p *Permissions) renderFetchContent(width int) string {
 	return p.renderContentPanel(params.URL, width)
 }
 
-func (p *Permissions) renderAgenticFetchContent(width int) string {
-	params, ok := p.permission.Params.(tools.AgenticFetchPermissionsParams)
+func (p *Permissions) renderWebFetchContent(width int) string {
+	params, ok := p.permission.Params.(tools.WebFetchPermissionsParams)
 	if !ok {
 		return ""
 	}
 
-	var content string
-	if params.URL != "" {
-		content = fmt.Sprintf("URL: %s\n\nPrompt: %s", params.URL, params.Prompt)
-	} else {
-		content = fmt.Sprintf("Prompt: %s", params.Prompt)
+	return p.renderContentPanel(params.URL, width)
+}
+
+func (p *Permissions) renderWebSearchContent(width int) string {
+	params, ok := p.permission.Params.(tools.WebSearchPermissionsParams)
+	if !ok {
+		return ""
 	}
 
-	return p.renderContentPanel(content, width)
+	return p.renderContentPanel(params.Query, width)
 }
 
 func (p *Permissions) renderViewContent(width int) string {

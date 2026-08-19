@@ -209,3 +209,73 @@ func TestOption_UnknownKey(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown key")
 }
+
+func TestOption_Int(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `option subagent-depth 3`
+	path := filepath.Join(dir, "angelarc")
+
+	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &result))
+
+	opts := result["options"].(map[string]any)
+	require.Equal(t, float64(3), opts["subagent_depth"])
+}
+
+func TestOption_IntZero(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `option subagent-depth 0`
+	path := filepath.Join(dir, "angelarc")
+
+	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &result))
+
+	opts := result["options"].(map[string]any)
+	require.Equal(t, float64(0), opts["subagent_depth"])
+}
+
+func TestOption_IntRejectsNegative(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "angelarc")
+	_, err := LoadShellConfig(t.Context(), path, []byte(`option subagent-depth -1`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "non-negative integer")
+}
+
+func TestOption_IntRejectsNonNumeric(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "angelarc")
+	_, err := LoadShellConfig(t.Context(), path, []byte(`option subagent-depth abc`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "non-negative integer")
+}
+
+func TestOption_IntRequiresValue(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "angelarc")
+	_, err := LoadShellConfig(t.Context(), path, []byte(`option subagent-depth`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requires a value")
+}
+
+func TestOption_ResetIntKeyRejected(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "angelarc")
+	_, err := LoadShellConfig(t.Context(), path, []byte(`option reset subagent-depth`))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not one")
+}

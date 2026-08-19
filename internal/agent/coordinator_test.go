@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
@@ -15,6 +16,7 @@ import (
 	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,9 +57,10 @@ func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCf
 	require.NoError(t, err)
 	cfg.Config().Providers.Set(providerID, providerCfg)
 	return &coordinator{
-		cfg:      cfg,
-		sessions: env.sessions,
-		messages: env.messages,
+		cfg:         cfg,
+		sessions:    env.sessions,
+		messages:    env.messages,
+		permissions: env.permissions,
 	}
 }
 
@@ -327,34 +330,6 @@ func TestRunSubAgent(t *testing.T) {
 		assert.Equal(t, "Failed to generate response: provider request failed", resp.Content)
 	})
 
-	t.Run("session setup callback is invoked", func(t *testing.T) {
-		env := testEnv(t)
-		coord := newTestCoordinator(t, env, providerID, providerCfg)
-
-		parentSession, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
-
-		var setupCalledWith string
-		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
-			return agentResultWithText("ok"), nil
-		})
-
-		_, err = coord.runSubAgent(t.Context(), subAgentParams{
-			Agent:          agent,
-			Resolved:       resolved,
-			SessionID:      parentSession.ID,
-			AgentMessageID: "msg-1",
-			ToolCallID:     "call-1",
-			Prompt:         "test",
-			SessionTitle:   "Test",
-			SessionSetup: func(sessionID string) {
-				setupCalledWith = sessionID
-			},
-		})
-		require.NoError(t, err)
-		assert.NotEmpty(t, setupCalledWith, "SessionSetup should have been called")
-	})
-
 	t.Run("cost propagation to parent session", func(t *testing.T) {
 		env := testEnv(t)
 		coord := newTestCoordinator(t, env, providerID, providerCfg)
@@ -390,6 +365,56 @@ func TestRunSubAgent(t *testing.T) {
 		updated, err := env.sessions.Get(t.Context(), parentSession.ID)
 		require.NoError(t, err)
 		assert.InDelta(t, 0.05, updated.Cost, 1e-9)
+	})
+
+	// TestRunSubAgent/child session is pre-approved pins a regression:
+	// the generic dispatch path used to lose agentic_fetch's explicit
+	// AutoApproveSession call on its child session. A child session has
+	// no UI subscriber to ever answer its permission events, so without
+	// this, any permission-gated tool a subagent uses (web_fetch,
+	// web_search, or bash/edit inherited by "general") would block until
+	// ctx is done rather than resolve. env.permissions defaults to
+	// skip=true, which would mask that, so this uses its own
+	// skip=false, allowlist-free service to isolate the child-session
+	// grant from the global YOLO shortcut.
+	t.Run("child session is pre-approved", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+		coord.permissions = permission.NewPermissionService(env.workingDir, false, nil)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		var granted bool
+		agent, resolved := newMockAgent(providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+			ok, err := coord.permissions.Request(ctx, permission.CreatePermissionRequest{
+				SessionID: call.SessionID,
+				ToolName:  "web_fetch",
+				Action:    "fetch",
+				Path:      env.workingDir,
+			})
+			if err != nil {
+				return nil, err
+			}
+			granted = ok
+			return agentResultWithText("fetched"), nil
+		})
+
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
+
+		resp, err := coord.runSubAgent(ctx, subAgentParams{
+			Agent:          agent,
+			Resolved:       resolved,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "fetch it",
+			SessionTitle:   "Test",
+		})
+		require.NoError(t, err)
+		require.False(t, resp.IsError, resp.Content)
+		require.True(t, granted, "child session's permission request must resolve without an interactive prompt")
 	})
 }
 

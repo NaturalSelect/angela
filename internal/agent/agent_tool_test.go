@@ -20,7 +20,7 @@ import (
 func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool()
+	tool, err := coord.agentTool(0)
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -39,7 +39,7 @@ func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 func TestAgentToolUnknownSubagentTypeListsAvailable(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool()
+	tool, err := coord.agentTool(0)
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{

@@ -728,6 +728,15 @@
           },
           "type": "array",
           "description": "Paths to directories containing agent markdown files"
+        },
+        "subagent_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum levels of subagent nesting allowed through the agent tool. 1 (the default) lets a primary agent dispatch a subagent that cannot itself dispatch further subagents, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.",
+          "default": 1,
+          "examples": [
+            2
+          ]
         }
       },
       "additionalProperties": false,

@@ -129,3 +129,29 @@ func TestShellConfigOptionResetRejectsNonList(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not one")
 }
+
+func TestShellConfigOptionSubagentDepth(t *testing.T) {
+	store := loadAngelaSh(t, `option subagent-depth 2`)
+
+	opts := store.Config().Options
+	require.NotNil(t, opts.SubagentDepth)
+	require.Equal(t, 2, *opts.SubagentDepth)
+	require.Equal(t, 2, opts.SubagentMaxDepth())
+}
+
+// Unset must default to 1 (a primary agent may dispatch a subagent that
+// cannot itself dispatch further), which is the pre-existing hardcoded
+// behavior this setting replaces.
+func TestShellConfigOptionSubagentDepthDefaultsToOne(t *testing.T) {
+	store := loadAngelaSh(t, `option debug true`)
+
+	opts := store.Config().Options
+	require.Nil(t, opts.SubagentDepth)
+	require.Equal(t, 1, opts.SubagentMaxDepth())
+}
+
+func TestShellConfigOptionSubagentDepthRejectsNegative(t *testing.T) {
+	_, err := loadAngelaShErr(t, `option subagent-depth -1`)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "non-negative integer")
+}

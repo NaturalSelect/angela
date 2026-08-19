@@ -7,10 +7,13 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"charm.land/fantasy"
+
+	"github.com/NaturalSelect/angela/internal/permission"
 )
 
 //go:embed web_fetch.md.tpl
@@ -21,8 +24,30 @@ var webFetchDescriptionTpl = template.Must(
 		Parse(string(webFetchDescriptionTmpl)),
 )
 
-// NewWebFetchTool creates a simple web fetch tool for sub-agents (no permissions needed).
-func NewWebFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
+// WebFetchScratchDir returns the scratch subdirectory for one
+// session's cached pages under root, or an error if sessionID is not
+// safe to use as a single path component.
+//
+// For delegated agents, sessionID is built from a provider-supplied
+// tool-call ID (coordinator.CreateAgentToolSessionID), which this
+// package cannot trust: filepath.Join normalizes rather than sandboxes,
+// so a value containing a path separator or a "." / ".." segment would
+// otherwise let a malicious provider response point the join outside
+// root. Both the tool that creates this directory and the coordinator
+// that later removes it call this, so neither can disagree with the
+// other about what counts as safe.
+func WebFetchScratchDir(root, sessionID string) (string, error) {
+	if sessionID == "" || sessionID == "." || sessionID == ".." || strings.ContainsAny(sessionID, `/\`) {
+		return "", fmt.Errorf("unsafe session id %q for web_fetch scratch directory", sessionID)
+	}
+	return filepath.Join(root, sessionID), nil
+}
+
+// NewWebFetchTool creates a web fetch tool for sub-agents. scratchDir is
+// the root where large pages get saved for grep/view; each session gets
+// its own subdirectory under it, created on first use, so cleanup can
+// discard one session's pages without touching a concurrent session's.
+func NewWebFetchTool(permissions permission.Service, scratchDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.MaxIdleConns = 100
@@ -43,6 +68,30 @@ func NewWebFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 				return fantasy.NewTextErrorResponse("url is required"), nil
 			}
 
+			sessionID := GetSessionFromContext(ctx)
+			if sessionID == "" {
+				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
+			}
+
+			p, err := permissions.Request(
+				ctx,
+				permission.CreatePermissionRequest{
+					SessionID:   sessionID,
+					Path:        scratchDir,
+					ToolCallID:  call.ID,
+					ToolName:    WebFetchToolName,
+					Action:      "fetch",
+					Description: fmt.Sprintf("Fetch content from URL: %s", params.URL),
+					Params:      WebFetchPermissionsParams(params),
+				},
+			)
+			if err != nil {
+				return fantasy.ToolResponse{}, err
+			}
+			if !p {
+				return NewPermissionDeniedResponse(), nil
+			}
+
 			content, err := FetchURLAndConvert(ctx, client, params.URL)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to fetch URL: %s", err)), nil
@@ -52,7 +101,15 @@ func NewWebFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 			var result strings.Builder
 
 			if hasLargeContent {
-				tempFile, err := os.CreateTemp(workingDir, "page-*.md")
+				sessionScratchDir, err := WebFetchScratchDir(scratchDir, sessionID)
+				if err != nil {
+					return fantasy.ToolResponse{}, err
+				}
+				if err := os.MkdirAll(sessionScratchDir, 0o700); err != nil {
+					return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to create scratch directory: %s", err)), nil
+				}
+
+				tempFile, err := os.CreateTemp(sessionScratchDir, "page-*.md")
 				if err != nil {
 					return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to create temporary file: %s", err)), nil
 				}

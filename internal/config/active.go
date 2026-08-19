@@ -128,7 +128,7 @@ func (e ActiveAgentEdit) IsZero() bool {
 
 // InstantiateFor builds an agent instance that runs on behalf of a
 // host instance, which is how Angela's internal agents (compaction,
-// titling, agentic fetch) inherit the session's model choice.
+// titling, agent generation) inherit the session's model choice.
 //
 // A session's instance is an override of one model role: it says "for
 // this session, ModelMain is really this model". An internal agent on

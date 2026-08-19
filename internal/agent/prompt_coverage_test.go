@@ -14,7 +14,6 @@ import (
 // builtinPromptForAgent.
 var toolDescriptionTemplates = map[string]bool{
 	"agent_tool.md.tpl": true,
-	"agentic_fetch.md":  true,
 }
 
 // TestEveryTemplateIsReachableAsAnAgentPrompt is the standing guard

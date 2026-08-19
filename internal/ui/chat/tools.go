@@ -248,8 +248,6 @@ func NewToolMessageItem(
 		item = NewDiagnosticsToolMessageItem(sty, toolCall, result, canceled)
 	case agent.AgentToolName:
 		item = NewAgentToolMessageItem(sty, toolCall, result, canceled)
-	case tools.AgenticFetchToolName:
-		item = NewAgenticFetchToolMessageItem(sty, toolCall, result, canceled)
 	case tools.WebFetchToolName:
 		item = NewWebFetchToolMessageItem(sty, toolCall, result, canceled)
 	case tools.WebSearchToolName:
@@ -1203,18 +1201,6 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			}
 			return strings.Join(parts, "\n")
 		}
-	case tools.AgenticFetchToolName:
-		var params tools.AgenticFetchParams
-		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
-			var parts []string
-			if params.URL != "" {
-				parts = append(parts, fmt.Sprintf("**URL:** %s", params.URL))
-			}
-			if params.Prompt != "" {
-				parts = append(parts, fmt.Sprintf("**Prompt:** %s", params.Prompt))
-			}
-			return strings.Join(parts, "\n")
-		}
 	case tools.WebFetchToolName:
 		var params tools.WebFetchParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
@@ -1330,8 +1316,6 @@ func (t *baseToolMessageItem) formatResultForCopy() string {
 		return t.formatWriteResultForCopy()
 	case tools.FetchToolName:
 		return t.formatFetchResultForCopy()
-	case tools.AgenticFetchToolName:
-		return t.formatAgenticFetchResultForCopy()
 	case tools.WebFetchToolName:
 		return t.formatWebFetchResultForCopy()
 	case agent.AgentToolName:
@@ -1588,32 +1572,6 @@ func (t *baseToolMessageItem) formatFetchResultForCopy() string {
 	return result.String()
 }
 
-// formatAgenticFetchResultForCopy formats agentic fetch tool results for clipboard.
-func (t *baseToolMessageItem) formatAgenticFetchResultForCopy() string {
-	if t.result == nil {
-		return ""
-	}
-
-	var params tools.AgenticFetchParams
-	if json.Unmarshal([]byte(t.toolCall.Input), &params) != nil {
-		return t.result.Content
-	}
-
-	var result strings.Builder
-	if params.URL != "" {
-		fmt.Fprintf(&result, "URL: %s\n", params.URL)
-	}
-	if params.Prompt != "" {
-		fmt.Fprintf(&result, "Prompt: %s\n\n", params.Prompt)
-	}
-
-	result.WriteString("```markdown\n")
-	result.WriteString(t.result.Content)
-	result.WriteString("\n```")
-
-	return result.String()
-}
-
 // formatWebFetchResultForCopy formats web fetch tool results for clipboard.
 func (t *baseToolMessageItem) formatWebFetchResultForCopy() string {
 	if t.result == nil {
@@ -1668,8 +1626,6 @@ func prettifyToolName(name string) string {
 		return "Multi-Edit"
 	case tools.FetchToolName:
 		return "Fetch"
-	case tools.AgenticFetchToolName:
-		return "Agentic Fetch"
 	case tools.WebFetchToolName:
 		return "Fetch"
 	case tools.WebSearchToolName:

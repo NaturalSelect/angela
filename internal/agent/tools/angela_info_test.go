@@ -182,12 +182,12 @@ func TestAngelaInfo_DisabledTools(t *testing.T) {
 
 	cfg := config.NewTestStore(&config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),
-		Options:   &config.Options{DisabledTools: []string{"sourcegraph", "agentic_fetch"}},
+		Options:   &config.Options{DisabledTools: []string{"sourcegraph", "web_fetch"}},
 	})
 
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
 	require.Contains(t, output, "[tools]")
-	require.Contains(t, output, "disabled = agentic_fetch, sourcegraph")
+	require.Contains(t, output, "disabled = sourcegraph, web_fetch")
 }
 
 var (

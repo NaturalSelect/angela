@@ -8,8 +8,8 @@ description: Use when the user wants to add, write, debug, or configure an Angel
 Hooks are user-defined commands in `angela.json` that fire at specific points
 during execution, giving deterministic control over tool behavior. They run
 **before** permission checks and **only on the top-level agent's** tool calls —
-sub-agent calls (task tool, agentic_fetch, etc.) are not intercepted, though
-the sub-agent tool call itself is.
+tool calls made by a dispatched sub-agent are not intercepted, though the
+`agent` tool call that dispatched it is.
 
 For the full reference, see `docs/hooks/README.md`. This skill covers what you
 need to author correct hooks.

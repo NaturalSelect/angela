@@ -786,11 +786,11 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 	assert.Equal(t, ToolSetScope, coderAgent.AllowedTools.Kind)
-	assert.Equal(t, allToolNames(), coderAgent.AllowedTools.Tools)
+	assert.Equal(t, filterSlice(allToolNames(), []string{"web_fetch", "web_search"}, false), coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"angela_info", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "fetch", "agentic_fetch", "glob", "grep", "ls", "sourcegraph", "view"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"angela_info", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "fetch", "glob", "grep", "ls", "sourcegraph", "view"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
@@ -808,11 +808,11 @@ func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 
-	assert.Equal(t, []string{"agent", "bash", "angela_info", "angela_logs", "job_output", "job_kill", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "lsp_rename", "lsp_replace_symbol", "fetch", "agentic_fetch", "glob", "ls", "question", "sourcegraph", "todos", "view", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"agent", "bash", "angela_info", "angela_logs", "job_output", "job_kill", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "lsp_rename", "lsp_replace_symbol", "fetch", "glob", "ls", "question", "sourcegraph", "todos", "view", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"angela_info", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "fetch", "agentic_fetch", "glob", "ls", "sourcegraph", "view"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"angela_info", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "fetch", "glob", "ls", "sourcegraph", "view"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
@@ -834,12 +834,12 @@ func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	cfg.SetupAgents()
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
-	assert.Equal(t, []string{"agent", "bash", "angela_info", "angela_logs", "job_output", "job_kill", "download", "edit", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_rename", "lsp_replace_symbol", "fetch", "agentic_fetch", "question", "todos", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"agent", "bash", "angela_info", "angela_logs", "job_output", "job_kill", "download", "edit", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_rename", "lsp_replace_symbol", "fetch", "question", "todos", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
 	assert.Equal(t, ToolSetScope, exploreAgent.AllowedTools.Kind)
-	assert.Equal(t, []string{"angela_info", "fetch", "agentic_fetch"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"angela_info", "fetch"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_configureProvidersWithDisabledProvider(t *testing.T) {

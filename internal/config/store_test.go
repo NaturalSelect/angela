@@ -896,3 +896,44 @@ func TestConfigStore_SetConfigFields_concurrentInProcess(t *testing.T) {
 		}
 	}
 }
+
+// TestLoad_RejectsNegativeSubagentDepth pins the JSON-config side of a
+// validation gap: the shell-config option builtin already rejects
+// "option subagent-depth -1", but angela.json had no equivalent check.
+// A negative value flows unchanged through Options.SubagentMaxDepth
+// into coordinator.buildTools's depth < max comparison, which then
+// evaluates false at every depth and silently disables delegation
+// instead of erroring at load time.
+func TestLoad_RejectsNegativeSubagentDepth(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "angela.json")
+
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	resetProviderState()
+	t.Cleanup(resetProviderState)
+
+	require.NoError(t, os.WriteFile(configPath, []byte(`{"options": {"subagent_depth": -1}}`), 0o600))
+
+	_, err := Load(dir, dir, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "subagent_depth")
+}
+
+func TestValidateOptions_RejectsNegativeSubagentDepth(t *testing.T) {
+	t.Parallel()
+
+	negative := -1
+	cfg := &Config{Options: &Options{SubagentDepth: &negative}}
+	require.Error(t, cfg.ValidateOptions())
+
+	zero := 0
+	cfg.Options.SubagentDepth = &zero
+	require.NoError(t, cfg.ValidateOptions())
+
+	cfg.Options.SubagentDepth = nil
+	require.NoError(t, cfg.ValidateOptions())
+
+	cfg.Options = nil
+	require.NoError(t, cfg.ValidateOptions())
+}

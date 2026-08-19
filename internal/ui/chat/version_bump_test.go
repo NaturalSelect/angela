@@ -310,39 +310,6 @@ func TestAgentToolMessageItem_NestedToolMutatorsBumpVersion(t *testing.T) {
 	})
 }
 
-// TestAgenticFetchToolMessageItem_NestedToolMutatorsBumpVersion is
-// the agentic-fetch counterpart to the agent-tool nested mutator
-// bump test above.
-func TestAgenticFetchToolMessageItem_NestedToolMutatorsBumpVersion(t *testing.T) {
-	t.Parallel()
-
-	sty := styles.CharmtonePantera()
-	parent := message.ToolCall{ID: "fetch-parent", Name: "agentic_fetch", Input: `{}`, Finished: false}
-	item := NewAgenticFetchToolMessageItem(&sty, parent, nil, false)
-
-	mkChild := func(id string) ToolMessageItem {
-		tc := message.ToolCall{ID: id, Name: "fetch", Input: `{}`, Finished: false}
-		return NewToolMessageItem(&sty, "msg", tc, nil, false, "")
-	}
-
-	requireBump(t, "AddNestedTool", item, func() {
-		item.AddNestedTool(mkChild("c1"))
-	})
-
-	current := append([]ToolMessageItem(nil), item.NestedTools()...)
-	requireBump(t, "SetNestedTools[pointer-equal]", item, func() {
-		item.SetNestedTools(current)
-	})
-
-	requireBump(t, "SetNestedTools[different]", item, func() {
-		item.SetNestedTools(append(current, mkChild("c2")))
-	})
-
-	requireBump(t, "SetNestedTools[empty]", item, func() {
-		item.SetNestedTools(nil)
-	})
-}
-
 // TestAgentToolMessageItem_NestedChildInPlaceMutationBumpsParent is
 // the T5 regression test: it mirrors the live update flow at
 // internal/ui/model/ui.go:1242-1281 where nested tool calls are
@@ -376,32 +343,6 @@ func TestAgentToolMessageItem_NestedChildInPlaceMutationBumpsParent(t *testing.T
 	item.SetNestedTools(same)
 	require.Greaterf(t, item.Version(), v0,
 		"parent SetNestedTools must bump even when child pointers are unchanged (in-place child mutation invalidates parent's pre-rendered output)")
-}
-
-// TestAgenticFetchToolMessageItem_NestedChildInPlaceMutationBumpsParent
-// is the agentic-fetch counterpart of the T5 regression test.
-func TestAgenticFetchToolMessageItem_NestedChildInPlaceMutationBumpsParent(t *testing.T) {
-	t.Parallel()
-
-	sty := styles.CharmtonePantera()
-	parent := message.ToolCall{ID: "fetch-parent", Name: "agentic_fetch", Input: `{}`, Finished: false}
-	item := NewAgenticFetchToolMessageItem(&sty, parent, nil, false)
-
-	childTC := message.ToolCall{ID: "c1", Name: "fetch", Input: `{}`, Finished: false}
-	child := NewToolMessageItem(&sty, "msg", childTC, nil, false, "")
-	item.AddNestedTool(child)
-
-	v0 := item.Version()
-	childVersionBefore := child.(versionedItem).Version()
-
-	child.SetResult(&message.ToolResult{ToolCallID: "c1", Content: "ok"})
-	require.Greaterf(t, child.(versionedItem).Version(), childVersionBefore,
-		"child SetResult must bump child version")
-
-	same := item.NestedTools()
-	item.SetNestedTools(same)
-	require.Greaterf(t, item.Version(), v0,
-		"parent SetNestedTools must bump even when child pointers are unchanged")
 }
 
 // requireNoBump asserts the supplied mutator leaves the item's
@@ -499,42 +440,6 @@ func TestAgentToolMessageItem_AnimateBumpsVersion(t *testing.T) {
 	})
 
 	// Once the parent has a result, neither branch bumps.
-	parent.SetResult(&message.ToolResult{ToolCallID: parentTC.ID, Content: "done"})
-	requireNoBump(t, "Animate[finished,parent ID]", parent, func() {
-		parent.Animate(anim.StepMsg{ID: parentTC.ID})
-	})
-	requireNoBump(t, "Animate[finished,nested ID]", parent, func() {
-		parent.Animate(anim.StepMsg{ID: childTC.ID})
-	})
-}
-
-// TestAgenticFetchToolMessageItem_AnimateBumpsVersion is the
-// agentic-fetch counterpart of the agent-tool Animate bump test.
-// Without an explicit override the embedded base Animate would
-// drop nested-child StepMsgs at anim.Animate's ID check and never
-// bump the parent on its own ticks; this test locks in the
-// override.
-func TestAgenticFetchToolMessageItem_AnimateBumpsVersion(t *testing.T) {
-	t.Parallel()
-
-	sty := styles.CharmtonePantera()
-	parentTC := message.ToolCall{ID: "fetch-parent", Name: "agentic_fetch", Input: `{}`, Finished: false}
-	parent := NewAgenticFetchToolMessageItem(&sty, parentTC, nil, false)
-
-	childTC := message.ToolCall{ID: "fetch-child", Name: "fetch", Input: `{}`, Finished: false}
-	child := NewToolMessageItem(&sty, "msg", childTC, nil, false, "")
-	parent.AddNestedTool(child)
-
-	requireBump(t, "Animate[spinning,parent ID]", parent, func() {
-		parent.Animate(anim.StepMsg{ID: parentTC.ID})
-	})
-	requireBump(t, "Animate[spinning,nested ID]", parent, func() {
-		parent.Animate(anim.StepMsg{ID: childTC.ID})
-	})
-	requireNoBump(t, "Animate[spinning,foreign ID]", parent, func() {
-		parent.Animate(anim.StepMsg{ID: "unrelated"})
-	})
-
 	parent.SetResult(&message.ToolResult{ToolCallID: parentTC.ID, Content: "done"})
 	requireNoBump(t, "Animate[finished,parent ID]", parent, func() {
 		parent.Animate(anim.StepMsg{ID: parentTC.ID})

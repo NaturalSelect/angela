@@ -34,7 +34,10 @@ const (
 // agents: each subagent is constructed on its first dispatch, so a
 // session that never delegates pays nothing, and a subagent that fails
 // to build only fails its own call.
-func (c *coordinator) agentTool() (fantasy.AgentTool, error) {
+//
+// depth is the dispatch depth of the agent this tool instance belongs
+// to; a dispatch through it runs the new subagent at depth+1.
+func (c *coordinator) agentTool(depth int) (fantasy.AgentTool, error) {
 	description, err := renderAgentToolDescription(c.subagents.Metadata())
 	if err != nil {
 		return nil, fmt.Errorf("render agent tool description: %w", err)
@@ -77,7 +80,7 @@ func (c *coordinator) agentTool() (fantasy.AgentTool, error) {
 			// an unreachable provider. That is this dispatch's problem
 			// alone, so it comes back as a tool error rather than
 			// taking down the coordinator.
-			agent, resolved, err := c.dispatchSubAgent(ctx, entry)
+			agent, resolved, err := c.dispatchSubAgent(ctx, entry, depth+1)
 			if err != nil {
 				slog.Error("Failed to build subagent", "agent", agentType, "error", err)
 				return fantasy.NewTextErrorResponse(

@@ -20,10 +20,12 @@ func toolNames(ra resolvedAgent) []string {
 }
 
 // dispatchTools resolves an entry the way a dispatch does and reports
-// the tool names that dispatch would carry.
+// the tool names that dispatch would carry. It simulates a primary
+// agent (depth 0) dispatching the entry, so the entry resolves at
+// depth 1.
 func dispatchTools(t *testing.T, coord *coordinator, entry *subagentEntry) []string {
 	t.Helper()
-	_, resolved, err := coord.dispatchSubAgent(context.Background(), entry)
+	_, resolved, err := coord.dispatchSubAgent(context.Background(), entry, 1)
 	require.NoError(t, err)
 	return toolNames(resolved)
 }
@@ -124,12 +126,12 @@ func TestDispatchIsolatesExecuteTimeTemplateError(t *testing.T) {
 	broken, ok := coord.subagents.Get("broken")
 	require.True(t, ok, "a broken agent is still registered; it fails on dispatch, not on reconcile")
 
-	_, _, err := coord.dispatchSubAgent(context.Background(), broken)
+	_, _, err := coord.dispatchSubAgent(context.Background(), broken, 1)
 	require.Error(t, err, "an execute-time template error must surface to its own dispatch")
 
 	healthy, ok := coord.subagents.Get(config.AgentExplore)
 	require.True(t, ok)
-	_, _, err = coord.dispatchSubAgent(context.Background(), healthy)
+	_, _, err = coord.dispatchSubAgent(context.Background(), healthy, 1)
 	require.NoError(t, err, "an unrelated subagent must still dispatch")
 
 	// Fixing the prompt takes effect on the next dispatch.
@@ -139,7 +141,7 @@ func TestDispatchIsolatesExecuteTimeTemplateError(t *testing.T) {
 
 	fixed, ok := coord.subagents.Get("broken")
 	require.True(t, ok)
-	_, resolved, err := coord.dispatchSubAgent(context.Background(), fixed)
+	_, resolved, err := coord.dispatchSubAgent(context.Background(), fixed, 1)
 	require.NoError(t, err, "a repaired prompt must dispatch without restarting the process")
 	require.Equal(t, "now valid", resolved.SystemPrompt)
 }
@@ -184,4 +186,21 @@ func TestReconcileExcludesPrimaryAgents(t *testing.T) {
 		"reviewer": {ID: "reviewer", Mode: config.AgentModePrimary},
 	}, nil)
 	require.Empty(t, reg.IDs())
+}
+
+// TestWebFetchSubagentIsRegistered pins the config.AgentWebFetch
+// sub-agent: it must be dispatchable and carry the AI-driven web
+// tools, but neither bash nor the ability to delegate further.
+func TestWebFetchSubagentIsRegistered(t *testing.T) {
+	coord := newGateTestCoordinator(t, false)
+
+	entry, ok := coord.subagents.Get(config.AgentWebFetch)
+	require.True(t, ok, "web-fetch must be a dispatchable sub-agent")
+
+	names := dispatchTools(t, coord, entry)
+	require.Contains(t, names, "web_fetch")
+	require.Contains(t, names, "web_search")
+	require.Contains(t, names, "view")
+	require.NotContains(t, names, "bash")
+	require.NotContains(t, names, AgentToolName)
 }

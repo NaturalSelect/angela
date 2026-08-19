@@ -40,15 +40,22 @@ type resolvedAgent struct {
 // a turn runs on. Every turn calls this, so a config edit takes effect
 // on the next turn without anything being mutated underneath a turn
 // already in flight.
-func (c *coordinator) resolveAgent(ctx context.Context, active config.ActiveAgent, isSubAgent bool) (resolvedAgent, error) {
+//
+// depth is how many delegation hops separate this agent from the
+// top-level primary agent: 0 for a primary turn, 1 for a subagent it
+// dispatched, 2 for a subagent that subagent dispatched, and so on. It
+// drives both isSubAgent-flavored behavior (depth > 0) and, in
+// buildTools, whether this agent is still within its delegation budget.
+func (c *coordinator) resolveAgent(ctx context.Context, active config.ActiveAgent, depth int) (resolvedAgent, error) {
 	agentCfg := active.Agent
+	isSubAgent := depth > 0
 
 	model, err := c.buildModel(ctx, active, isSubAgent)
 	if err != nil {
 		return resolvedAgent{}, err
 	}
 
-	tools, err := c.buildTools(ctx, agentCfg, model.CatwalkCfg.ID, isSubAgent)
+	tools, err := c.buildTools(agentCfg, model.CatwalkCfg.ID, depth)
 	if err != nil {
 		return resolvedAgent{}, err
 	}

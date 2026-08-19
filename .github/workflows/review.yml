@@ -45,12 +45,10 @@ name: review
 #     named "review"). Registered explicitly via `model add` at config
 #     time rather than left to /v1/models discovery, so review does not
 #     depend on the relay implementing model discovery.
-#   - ANGELA_REVIEW_REASONING_EFFORT (optional) one of low/medium/high/max.
-#     Defaults to "max". A custom model has no catalog entry to read
-#     reasoning support from, so `model add` below declares all four
-#     levels up front and this secret just picks which one is requested;
-#     it is a no-op if the actual model/relay doesn't support reasoning
-#     at all.
+#   - ANGELA_REVIEW_EXPLORE_MODEL (optional) model for the explore
+#     sub-agent, same `review/<model-id>` form. Defaults to
+#     ANGELA_REVIEW_MODEL. Set this to point explore at a separate
+#     (e.g. cheaper/faster) model instead of reusing the review model.
 
 on:
   pull_request:
@@ -107,7 +105,7 @@ jobs:
           PROVIDER_TYPE: ${{ secrets.ANGELA_REVIEW_PROVIDER_TYPE || 'anthropic' }}
           BASE_URL: ${{ secrets.ANGELA_REVIEW_BASE_URL || 'https://api.anthropic.com' }}
           REVIEW_MODEL: ${{ secrets.ANGELA_REVIEW_MODEL }}
-          REASONING_EFFORT: ${{ secrets.ANGELA_REVIEW_REASONING_EFFORT || 'max' }}
+          EXPLORE_MODEL: ${{ secrets.ANGELA_REVIEW_EXPLORE_MODEL || secrets.ANGELA_REVIEW_MODEL }}
           ANGELA_REVIEW_API_KEY: ${{ secrets.ANGELA_REVIEW_API_KEY }}
         run: |
           export ANGELA_REVIEW_API_KEY
@@ -120,6 +118,7 @@ jobs:
             exit 1
           fi
           MODEL_ID="${REVIEW_MODEL##*/}"
+          EXPLORE_MODEL_ID="${EXPLORE_MODEL##*/}"
 
           mkdir -p "${RUNNER_TEMP}/angela-config" "${RUNNER_TEMP}/angela-global-data"
           cat > "${RUNNER_TEMP}/angela-config/angelarc" <<CONFIGEOF
@@ -130,12 +129,29 @@ jobs:
           # not every relay implements.
           provider add review --type "${PROVIDER_TYPE}" --base-url "${BASE_URL}" --api-key "${ANGELA_REVIEW_API_KEY}" --discover-models false
           model add "review/${MODEL_ID}" --can-reason true --reasoning-level low --reasoning-level medium --reasoning-level high --reasoning-level max
-          model large "review/${MODEL_ID}" --think --reasoning-effort "${REASONING_EFFORT}"
+          model main "review/${MODEL_ID}"
 
-          permissions allow bash view ls grep glob
-          permissions deny write edit multiedit agent
+          # explore gets its own model slot so ANGELA_REVIEW_EXPLORE_MODEL
+          # can point it at a separate (e.g. cheaper/faster) model; it
+          # falls back to the review model above when unset, in which
+          # case this is a harmless re-registration of the same id.
+          if [ "${EXPLORE_MODEL_ID}" != "${MODEL_ID}" ]; then
+            model add "review/${EXPLORE_MODEL_ID}" --can-reason true --reasoning-level low --reasoning-level medium --reasoning-level high --reasoning-level max
+          fi
+          model chore "review/${EXPLORE_MODEL_ID}"
+
+          # explore uses the chore slot above so codebase searches during
+          # review can run through the fast, read-only explore sub-agent
+          # instead of the reviewer's own turn. general is disabled since
+          # nothing in this review flow needs it; leaving it enabled
+          # would just be an unused agent with standing tool access.
+          agent add explore --model chore
+          agent add general --disabled true
+
+          permissions allow bash view ls grep glob agent
+          permissions deny write edit multiedit
           permissions deny lsp_rename lsp_replace_symbol
-          permissions deny fetch download web_fetch web_search agentic_fetch sourcegraph
+          permissions deny fetch download web_fetch web_search sourcegraph
           permissions deny question
 
           option auto-lsp false

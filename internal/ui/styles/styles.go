@@ -320,7 +320,7 @@ type Styles struct {
 
 		// Tool name styles
 		NameNormal lipgloss.Style // Top-level tool name
-		NameNested lipgloss.Style // Nested child tool name (inside Agent/Agentic Fetch)
+		NameNested lipgloss.Style // Nested child tool name (inside Agent)
 
 		// Parameter list styles
 		ParamMain lipgloss.Style
@@ -370,9 +370,6 @@ type Styles struct {
 		// Agent task styles
 		AgentTaskTag lipgloss.Style // Agent task tag (blue background, bold)
 		AgentPrompt  lipgloss.Style // Agent prompt text
-
-		// Agentic fetch styles
-		AgenticFetchPromptTag lipgloss.Style // Agentic fetch prompt tag (green background, bold)
 
 		// Todo styles
 		TodoRatio          lipgloss.Style // Todo ratio (e.g., "2/5")

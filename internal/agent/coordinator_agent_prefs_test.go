@@ -58,7 +58,7 @@ func newModelPrefTestCoordinator(t *testing.T, temperature *float64) *coordinato
 // resolveCoder resolves the coder agent the way a turn does.
 func resolveCoder(t *testing.T, coord *coordinator) resolvedAgent {
 	t.Helper()
-	resolved, err := coord.resolveAgent(context.Background(), instantiate(t, coord, config.AgentCoder), false)
+	resolved, err := coord.resolveAgent(context.Background(), instantiate(t, coord, config.AgentCoder), 0)
 	require.NoError(t, err)
 	return resolved
 }

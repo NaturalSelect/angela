@@ -140,7 +140,12 @@ func (c *coordinator) reconcileSubagents() {
 // per dispatch and travels on the call. Resolving here rather than at
 // registration also means a dispatch that cannot reach its provider
 // fails as a tool error instead of poisoning the coordinator.
-func (c *coordinator) dispatchSubAgent(ctx context.Context, entry *subagentEntry) (SessionAgent, resolvedAgent, error) {
+//
+// depth is the dispatch depth the new subagent runs at (its dispatcher's
+// depth plus one). It is never baked into the cached executor: the same
+// entry can be reused across dispatches at different depths, and only
+// the per-dispatch resolution (its tool list) is depth-sensitive.
+func (c *coordinator) dispatchSubAgent(ctx context.Context, entry *subagentEntry, depth int) (SessionAgent, resolvedAgent, error) {
 	// A subagent is instantiated fresh for every dispatch and never
 	// stored: it has no session of its own to own an instance, and its
 	// model is whatever config says right now.
@@ -148,7 +153,7 @@ func (c *coordinator) dispatchSubAgent(ctx context.Context, entry *subagentEntry
 	if !ok {
 		return nil, resolvedAgent{}, fmt.Errorf("%w: %q", ErrAgentNotAvailable, entry.cfg.ID)
 	}
-	resolved, err := c.resolveAgent(ctx, active, true)
+	resolved, err := c.resolveAgent(ctx, active, depth)
 	if err != nil {
 		return nil, resolvedAgent{}, err
 	}

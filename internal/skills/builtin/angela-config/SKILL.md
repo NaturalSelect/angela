@@ -43,8 +43,8 @@ source ~/.config/angela/shared.sh
 
 provider add anthropic --api-key "$ANTHROPIC_API_KEY"
 
-model large anthropic/claude-sonnet-4-20250514 --max-tokens 16384
-model small anthropic/claude-haiku-4-20250514
+model main anthropic/claude-sonnet-4-20250514 --max-tokens 16384
+model chore anthropic/claude-haiku-4-20250514
 
 option skill-path ./skills
 permissions allow view ls grep edit
@@ -90,8 +90,8 @@ provider add deepseek \
 ```bash
 model add <provider>/<id> [flags]      # register a custom model (provider must exist)
 model remove <provider>/<id>           # alias: rm
-model large [<provider>/<id>] [flags]  # set the large slot; no arg prints it
-model small [<provider>/<id>] [flags]  # set the small slot; no arg prints it
+model main [<provider>/<id>] [flags]   # set the main slot; no arg prints it
+model chore [<provider>/<id>] [flags]  # set the chore slot; no arg prints it
 ```
 
 - `<provider>/<id>` is the same form `angela models` prints. A missing slash is
@@ -101,16 +101,19 @@ model small [<provider>/<id>] [flags]  # set the small slot; no arg prints it
   `--price-output F`, `--price-cache-create F`, `--price-cache-hit F`,
   `--reasoning-effort low|medium|high`, `--reasoning-level LEVEL` (repeatable;
   declares which effort levels the model accepts — required before
-  `--reasoning-effort` on this model or on `model large`/`model small` has
+  `--reasoning-effort` on this model or on `model main`/`model chore` has
   any effect, since the request is only sent when the chosen level is in
   this list).
-- `model large`/`model small` flags: `--think`, `--reasoning-effort`,
+- `model main`/`model chore` flags: `--think`, `--reasoning-effort`,
   `--max-tokens N`, `--temperature F`, `--top-p F`, `--top-k N`,
   `--frequency-penalty F`, `--presence-penalty F`, `--provider-options JSON`.
-- `model large` with no argument prints the current selection as `provider/id`,
-  usable in `$(model large)`.
+- `model main` with no argument prints the current selection as `provider/id`,
+  usable in `$(model main)`.
 
-`large` is the primary coding model; `small` is used for summarization.
+`main` is the workhorse model used by `coder` and most agents; `chore` is
+the cheap model used for auxiliary work such as titles and web-fetch
+summaries. Other slot names are accepted too, but only take effect if an
+agent's `model` field names them.
 
 ### mcp
 
@@ -187,6 +190,8 @@ option reset <list-key>    # clear a list option back to empty
   `auto-summarize`, `provider-auto-update`,
   `default-providers`. Example: `option metrics false` disables metrics.
 - **String keys**: `data-directory`, `initialize-as`, `notifications`.
+- **Integer keys**: `subagent-depth` (max levels of subagent nesting via the
+  `agent` tool, default 1).
 - **Attribution keys**: `attribution-trailer-style` (`none`, `co-authored-by`,
   `assisted-by`) and `attribution-generated-with` (boolean).
 - **UI settings**: `option ui compact BOOL`, `option ui diff unified|split`,
@@ -204,6 +209,7 @@ option attribution-trailer-style assisted-by
 option attribution-generated-with true
 option ui compact true
 option ui diff unified
+option subagent-depth 2
 ```
 
 > [!IMPORTANT] These skill paths are loaded by default and do NOT need
@@ -342,7 +348,7 @@ The `$schema` property enables IDE autocomplete but is optional.
 | ------------------------------------ | ------------------------------------------------------ |
 | `provider add openai --api-key "$K"` | `providers.openai = {"api_key": "$K"}`                 |
 | `model add openai/gpt-x --name X`    | append to `providers.openai.models[]`                  |
-| `model large openai/gpt-x`           | `models.large = {"provider":"openai","model":"gpt-x"}` |
+| `model main openai/gpt-x`            | `models.main = {"provider":"openai","model":"gpt-x"}`  |
 | `mcp add gh --type http --url U`     | `mcp.gh = {"type":"http","url":"U"}`                   |
 | `lsp add go --command gopls`         | `lsp.go = {"command":"gopls"}`                         |
 | `hook add PreToolUse --command C`    | append to `hooks.PreToolUse[]`                         |

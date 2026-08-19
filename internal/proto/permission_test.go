@@ -144,17 +144,29 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 			},
 		},
 		{
-			name:     "agentic_fetch",
-			toolName: tools.AgenticFetchToolName,
-			params: tools.AgenticFetchPermissionsParams{
-				URL:    "https://example.com",
-				Prompt: "summarize this page",
+			name:     "web_fetch",
+			toolName: tools.WebFetchToolName,
+			params: tools.WebFetchPermissionsParams{
+				URL: "https://example.com",
 			},
 			assert: func(t *testing.T, got any) {
-				v, ok := got.(tools.AgenticFetchPermissionsParams)
-				require.True(t, ok, "params must decode as tools.AgenticFetchPermissionsParams, got %T", got)
+				v, ok := got.(tools.WebFetchPermissionsParams)
+				require.True(t, ok, "params must decode as tools.WebFetchPermissionsParams, got %T", got)
 				require.Equal(t, "https://example.com", v.URL)
-				require.Equal(t, "summarize this page", v.Prompt)
+			},
+		},
+		{
+			name:     "web_search",
+			toolName: tools.WebSearchToolName,
+			params: tools.WebSearchPermissionsParams{
+				Query:      "web fetch permissions",
+				MaxResults: 5,
+			},
+			assert: func(t *testing.T, got any) {
+				v, ok := got.(tools.WebSearchPermissionsParams)
+				require.True(t, ok, "params must decode as tools.WebSearchPermissionsParams, got %T", got)
+				require.Equal(t, "web fetch permissions", v.Query)
+				require.Equal(t, 5, v.MaxResults)
 			},
 		},
 	}

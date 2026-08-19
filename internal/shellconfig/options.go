@@ -31,6 +31,7 @@ import (
 //	option metrics false
 //	option debug true
 //	option auto-lsp false
+//	option subagent-depth 2
 //
 // Boolean shortcuts: for boolean fields, omitting the value sets it to true.
 func handleOption(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -139,6 +140,18 @@ func handleOption(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		slog.Info("Option set in shell config", "key", key, "value", o[spec.jsonKey])
 		return nil
 
+	case optInt:
+		if val == "" {
+			return usage(stderr, fmt.Sprintf("option: %s requires a value", key))
+		}
+		parsed, err := strconv.Atoi(val)
+		if err != nil || parsed < 0 {
+			return usage(stderr, fmt.Sprintf("option: %s expects a non-negative integer, got %q", key, val))
+		}
+		o[spec.jsonKey] = parsed
+		slog.Info("Option set in shell config", "key", key, "value", parsed)
+		return nil
+
 	default: // optString
 		if val == "" {
 			return usage(stderr, fmt.Sprintf("option: %s requires a value", key))
@@ -156,6 +169,7 @@ const (
 	optString optionKind = iota
 	optBool
 	optList
+	optInt
 )
 
 // optionSpec describes one user-facing option key: the JSON field it writes,
@@ -200,6 +214,9 @@ var optionSpecs = map[string]optionSpec{
 	"global-context-path": {jsonKey: "global_context_paths", kind: optList},
 	"skill-path":          {jsonKey: "skills_paths", kind: optList},
 	"disable-skill":       {jsonKey: "disabled_skills", kind: optList},
+
+	// Integer fields.
+	"subagent-depth": {jsonKey: "subagent_depth", kind: optInt},
 }
 
 // optionUI implements "option ui <key> <value>" for TUI-specific settings

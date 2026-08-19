@@ -37,14 +37,15 @@ func TestSecondPrimaryStaysOutOfTheDispatchTable(t *testing.T) {
 
 // TestSecondPrimaryGetsDelegationToolsWhenDriving pins the other half:
 // a second primary drives sessions, so when it runs as one it must get
-// the same delegation tools the coder gets. Dispatch depth is still
-// pinned at 1 by the isSubAgent flag, not by which agent it is.
+// the same delegation tools the coder gets. Dispatch depth is governed
+// by the dispatch chain's length against options.subagent_depth, not by
+// which agent it is.
 func TestSecondPrimaryGetsDelegationToolsWhenDriving(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
 	addReviewerAgent(t, coord)
 
 	resolved, err := coord.resolveAgent(context.Background(),
-		instantiate(t, coord, testReviewerAgent), false)
+		instantiate(t, coord, testReviewerAgent), 0)
 	require.NoError(t, err)
 
 	require.Contains(t, toolNames(resolved), AgentToolName,

@@ -191,7 +191,7 @@ Usage:
 
 ### model
 
-Manage custom models and the large/small model slots. Model references use the
+Manage custom models and the main/chore model slots. Model references use the
 same `<provider>/<id>` form printed by `angela models`.
 
 ```text
@@ -202,8 +202,8 @@ Available Commands:
   add       Register a custom model on an existing provider
   remove    Remove a custom model
   rm        Alias for remove
-  large     Set or print the large model
-  small     Set or print the small model
+  main      Set or print the main model
+  chore     Set or print the chore model
 ```
 
 #### `model add`
@@ -238,15 +238,15 @@ Usage:
   model rm <provider>/<id>
 ```
 
-#### `model large`, `model small`
+#### `model main`, `model chore`
 
-Set the large or small model slot. With no model argument, print the current
+Set the main or chore model slot. With no model argument, print the current
 selection.
 
 ```text
 Usage:
-  model large [<provider>/<id>] [flags]
-  model small [<provider>/<id>] [flags]
+  model main [<provider>/<id>] [flags]
+  model chore [<provider>/<id>] [flags]
 
 Flags:
       --think                       enable thinking mode
@@ -261,8 +261,8 @@ Flags:
 ```
 
 ```bash
-model large openai/gpt-4o --think
-echo "coding with: $(model large)"   # prints: openai/gpt-4o
+model main openai/gpt-4o --think
+echo "coding with: $(model main)"   # prints: openai/gpt-4o
 ```
 
 ### mcp
@@ -488,10 +488,14 @@ String Keys:
   attribution-trailer-style string attribution trailer: none, co-authored-by,
                                    or assisted-by
 
+Integer Keys:
+  subagent-depth int               maximum levels of subagent nesting allowed
+                                   through the agent tool (default 1)
+
 List Keys:
   context-path string             append a project context path
   global-context-path string      append a global context path
-  skill-path string               append a skill directory
+  skill-path string                append a skill directory
   disable-skill string            hide a skill from the agent
 ```
 
@@ -499,6 +503,7 @@ List Keys:
 option progress false
 option skill-path ./skills
 option attribution-trailer-style assisted-by
+option subagent-depth 2
 ```
 
 #### `option reset`
@@ -579,7 +584,7 @@ to Bash-based config.
     "anthropic": { "api_key": "$ANTHROPIC_API_KEY" },
   },
   "models": {
-    "large": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
+    "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
   },
   "permissions": { "allowed_tools": ["view", "ls", "grep"] },
 }

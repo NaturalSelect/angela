@@ -64,9 +64,10 @@ const (
 )
 
 const (
-	AgentCoder   string = "coder"
-	AgentExplore string = "explore"
-	AgentGeneral string = "general"
+	AgentCoder    string = "coder"
+	AgentExplore  string = "explore"
+	AgentGeneral  string = "general"
+	AgentWebFetch string = "web-fetch"
 
 	// The agents below back Angela's own auxiliary LLM calls. They are
 	// hidden — resolvable by ID, but never offered for dispatch or
@@ -74,7 +75,6 @@ const (
 	// them showing up as things to delegate to.
 	AgentTitle         string = "title"
 	AgentCompact       string = "compact"
-	AgentAgenticFetch  string = "agentic-fetch"
 	AgentGenerateAgent string = "generate-agent"
 	AgentInitialize    string = "initialize"
 )
@@ -418,6 +418,37 @@ type Options struct {
 	Notifications             string       `json:"notifications,omitempty" jsonschema:"description=Notification style to use. Options: auto (default)\\, native\\, osc\\, bell\\, disabled. Auto selects based on environment: native for local sessions\\, osc for SSH (with automatic OSC 99/777 detection).,enum=auto,enum=native,enum=osc,enum=bell,enum=disabled,default=auto"`
 	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=angela-config"`
 	AgentPaths                []string     `json:"agent_paths,omitempty" jsonschema:"description=Paths to directories containing agent markdown files,example=~/.config/angela/agents,example=./agents"`
+	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool. 1 (the default) lets a primary agent dispatch a subagent that cannot itself dispatch further subagents\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=1,example=2"`
+}
+
+// DefaultSubagentDepth is the effective subagent dispatch depth when
+// Options.SubagentDepth is unset: a primary agent may dispatch a
+// subagent, but that subagent may not dispatch a further one.
+const DefaultSubagentDepth = 1
+
+// SubagentMaxDepth returns how many levels of subagent nesting are
+// permitted. A nil receiver or unset field means "not configured",
+// which defaults to DefaultSubagentDepth.
+func (o *Options) SubagentMaxDepth() int {
+	if o == nil {
+		return DefaultSubagentDepth
+	}
+	return ptrValOr(o.SubagentDepth, DefaultSubagentDepth)
+}
+
+// ValidateOptions checks Options constraints that would otherwise only
+// surface as confusing runtime behavior. A negative SubagentDepth, for
+// instance, makes SubagentMaxDepth return a negative bound, so
+// coordinator.buildTools's depth < max comparison fails at every depth
+// and silently disables delegation instead of erroring. The shell-config
+// option builtin already rejects a negative value at the source; this
+// runs after config merging so angela.json and workspace overrides get
+// the same guarantee.
+func (c *Config) ValidateOptions() error {
+	if c.Options != nil && c.Options.SubagentDepth != nil && *c.Options.SubagentDepth < 0 {
+		return fmt.Errorf("options.subagent_depth must be non-negative, got %d", *c.Options.SubagentDepth)
+	}
+	return nil
 }
 
 type MCPs map[string]MCPConfig
@@ -941,7 +972,8 @@ func allToolNames() []string {
 		"lsp_rename",
 		"lsp_replace_symbol",
 		"fetch",
-		"agentic_fetch",
+		"web_fetch",
+		"web_search",
 		"glob",
 		"grep",
 		"ls",
@@ -977,10 +1009,20 @@ func filterSlice(data []string, mask []string, include bool) []string {
 
 func exploreToolNames() []string {
 	return []string{
-		"fetch", "agentic_fetch", "angela_info",
+		"fetch", "angela_info",
 		"glob", "grep", "ls",
 		"lsp_call_hierarchy", "lsp_definition", "lsp_symbols",
 		"sourcegraph", "view",
+	}
+}
+
+// webFetchToolNames lists the tools the web-fetch sub-agent gets: raw
+// fetch alongside the AI-driven web_fetch/web_search pair, plus enough
+// code-search tools to follow a link or grep a page it saved to disk.
+func webFetchToolNames() []string {
+	return []string{
+		"fetch", "web_fetch", "web_search",
+		"glob", "grep", "view", "sourcegraph",
 	}
 }
 
@@ -1012,6 +1054,10 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetAll},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetAll},
+			// web_fetch/web_search stay behind the web-fetch sub-agent
+			// so a page fetch always goes through its own delegated
+			// turn rather than the coder reaching for it directly.
+			DisabledTools: []string{"web_fetch", "web_search"},
 		},
 		AgentExplore: {
 			ID:           AgentExplore,
@@ -1035,6 +1081,16 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			AllowedTools:  &AllowedToolSet{Kind: ToolSetInherited},
 			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetInherited},
 			DisabledTools: []string{"todos"},
+		},
+		AgentWebFetch: {
+			ID:           AgentWebFetch,
+			Name:         "WebFetch",
+			Description:  "Fetches and analyzes web pages or searches the web, then answers a question about what it found. Use it instead of the fetch tool when the answer needs extraction, summarization, or following links.",
+			Mode:         AgentModeSubagent,
+			Model:        ModelChore,
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, webFetchToolNames(), true)},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
 		},
 
 		// Internal agents. Each backs one of Angela's own auxiliary LLM
@@ -1061,17 +1117,6 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// summarizing on the cheap model silently degrades the only
 			// context a resumed session gets.
 			Model:        ModelMain,
-			ContextPaths: contextPaths,
-			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
-			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
-		},
-		AgentAgenticFetch: {
-			ID:           AgentAgenticFetch,
-			Name:         "Agentic Fetch",
-			Description:  "Fetches a URL and answers a question about its content.",
-			Mode:         AgentModeSubagent,
-			Hidden:       ptr(true),
-			Model:        ModelChore,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},

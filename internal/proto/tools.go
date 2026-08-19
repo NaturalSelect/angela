@@ -92,12 +92,19 @@ type FetchParams struct {
 // FetchPermissionsParams represents the permission parameters for the fetch tool.
 type FetchPermissionsParams = tools.FetchPermissionsParams
 
-// AgenticFetchToolName is the name of the agentic_fetch tool.
-const AgenticFetchToolName = tools.AgenticFetchToolName
+// WebFetchToolName is the name of the web_fetch tool.
+const WebFetchToolName = tools.WebFetchToolName
 
-// AgenticFetchPermissionsParams represents the permission parameters for the
-// agentic_fetch tool.
-type AgenticFetchPermissionsParams = tools.AgenticFetchPermissionsParams
+// WebFetchPermissionsParams represents the permission parameters for the
+// web_fetch tool.
+type WebFetchPermissionsParams = tools.WebFetchPermissionsParams
+
+// WebSearchToolName is the name of the web_search tool.
+const WebSearchToolName = tools.WebSearchToolName
+
+// WebSearchPermissionsParams represents the permission parameters for the
+// web_search tool.
+type WebSearchPermissionsParams = tools.WebSearchPermissionsParams
 
 const GlobToolName = "glob"
 

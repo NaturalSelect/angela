@@ -22,7 +22,7 @@ import (
 // mockSessionAgent is a minimal mock for the SessionAgent interface.
 type mockSessionAgent struct {
 	model     Model
-	agentName string
+	agentID   string
 	runFunc   func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error)
 	cancelled []string
 }
@@ -35,11 +35,7 @@ func (m *mockSessionAgent) BeginAccepted(sessionID string) *AcceptedRun {
 	return &AcceptedRun{sessionID: sessionID}
 }
 
-func (m *mockSessionAgent) Model() Model                        { return m.model }
-func (m *mockSessionAgent) AgentName() string                   { return m.agentName }
-func (m *mockSessionAgent) SetModels(large, small Model)        {}
-func (m *mockSessionAgent) SetTools(tools []fantasy.AgentTool)  {}
-func (m *mockSessionAgent) SetSystemPrompt(systemPrompt string) {}
+func (m *mockSessionAgent) AgentID() string { return m.agentID }
 func (m *mockSessionAgent) Cancel(sessionID string) {
 	m.cancelled = append(m.cancelled, sessionID)
 }
@@ -49,10 +45,9 @@ func (m *mockSessionAgent) IsBusy() bool                                { return
 func (m *mockSessionAgent) QueuedPrompts(sessionID string) int          { return 0 }
 func (m *mockSessionAgent) QueuedPromptsList(sessionID string) []string { return nil }
 func (m *mockSessionAgent) ClearQueue(sessionID string)                 {}
-func (m *mockSessionAgent) Summarize(context.Context, string, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error {
+func (m *mockSessionAgent) Summarize(context.Context, string, CompactAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error {
 	return nil
 }
-func (m *mockSessionAgent) GenerateTitle(context.Context, string, string) {}
 
 // newTestCoordinator creates a minimal coordinator for unit testing runSubAgent.
 func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCfg config.ProviderConfig) *coordinator {
@@ -66,19 +61,20 @@ func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCf
 	}
 }
 
-// newMockAgent creates a mockSessionAgent with the given provider and run function.
-func newMockAgent(providerID string, maxTokens int64, runFunc func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)) *mockSessionAgent {
-	return &mockSessionAgent{
-		model: Model{
-			CatwalkCfg: catwalk.Model{
-				DefaultMaxTokens: maxTokens,
-			},
-			ModelCfg: config.SelectedModel{
-				Provider: providerID,
-			},
+// newMockAgent creates a mockSessionAgent plus the resolution a
+// dispatch would hand it, since model and token budget now travel on
+// the call rather than living on the agent.
+func newMockAgent(providerID string, maxTokens int64, runFunc func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)) (*mockSessionAgent, resolvedAgent) {
+	model := Model{
+		CatwalkCfg: catwalk.Model{
+			DefaultMaxTokens: maxTokens,
 		},
-		runFunc: runFunc,
+		ModelCfg: config.SelectedModel{
+			Provider: providerID,
+		},
 	}
+	return &mockSessionAgent{runFunc: runFunc},
+		resolvedAgent{Model: model, MaxTokens: maxTokensFor(config.Agent{}, model)}
 }
 
 // agentResultWithText creates a minimal AgentResult with the given text response.
@@ -103,7 +99,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent := newMockAgent(providerID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 			assert.Equal(t, "do something", call.Prompt)
 			assert.Equal(t, int64(4096), call.MaxOutputTokens)
 			return agentResultWithText("done"), nil
@@ -111,6 +107,7 @@ func TestRunSubAgent(t *testing.T) {
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -126,12 +123,13 @@ func TestRunSubAgent(t *testing.T) {
 		env := testEnv(t)
 		coord := newTestCoordinator(t, env, providerID, providerCfg)
 
-		agent := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return agentResultWithText("output before cost failure"), nil
 		})
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      "missing-parent-session",
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -150,12 +148,13 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return agentResultWithText("the answer"), nil
 		})
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -174,12 +173,13 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return nil, nil
 		})
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -198,12 +198,13 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return &fantasy.AgentResult{}, nil
 		})
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -222,24 +223,26 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent := &mockSessionAgent{
-			model: Model{
-				CatwalkCfg: catwalk.Model{
-					DefaultMaxTokens: 4096,
-				},
-				ModelCfg: config.SelectedModel{
-					Provider:  providerID,
-					MaxTokens: 8192,
-				},
+		model := Model{
+			CatwalkCfg: catwalk.Model{
+				DefaultMaxTokens: 4096,
 			},
+			ModelCfg: config.SelectedModel{
+				Provider:  providerID,
+				MaxTokens: 8192,
+			},
+		}
+		agent := &mockSessionAgent{
 			runFunc: func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 				assert.Equal(t, int64(8192), call.MaxOutputTokens)
 				return agentResultWithText("ok"), nil
 			},
 		}
+		resolved := resolvedAgent{Model: model, MaxTokens: maxTokensFor(config.Agent{}, model)}
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -257,7 +260,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent := newMockAgent(providerID, 4096, nil)
+		agent, resolved := newMockAgent(providerID, 4096, nil)
 
 		// Use a canceled context to trigger CreateTaskSession failure.
 		ctx, cancel := context.WithCancel(t.Context())
@@ -265,6 +268,7 @@ func TestRunSubAgent(t *testing.T) {
 
 		_, err = coord.runSubAgent(ctx, subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -282,10 +286,11 @@ func TestRunSubAgent(t *testing.T) {
 		require.NoError(t, err)
 
 		// Agent references a provider that doesn't exist in config.
-		agent := newMockAgent("unknown-provider", 4096, nil)
+		agent, resolved := newMockAgent("unknown-provider", 4096, nil)
 
 		_, err = coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -303,12 +308,13 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return nil, errors.New("provider request failed")
 		})
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -329,12 +335,13 @@ func TestRunSubAgent(t *testing.T) {
 		require.NoError(t, err)
 
 		var setupCalledWith string
-		agent := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return agentResultWithText("ok"), nil
 		})
 
 		_, err = coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",
@@ -355,7 +362,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent := newMockAgent(providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 			// Simulate the agent incurring cost by updating the child session.
 			childSession, err := env.sessions.Get(ctx, call.SessionID)
 			if err != nil {
@@ -371,6 +378,7 @@ func TestRunSubAgent(t *testing.T) {
 
 		_, err = coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
+			Resolved:       resolved,
 			SessionID:      parentSession.ID,
 			AgentMessageID: "msg-1",
 			ToolCallID:     "call-1",

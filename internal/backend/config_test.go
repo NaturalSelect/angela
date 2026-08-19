@@ -94,7 +94,7 @@ func TestUpdatePreferredModel_PublishesConfigChanged(t *testing.T) {
 	b, ws, evc := newPublishingWorkspace(t)
 
 	model := config.SelectedModel{Provider: "openai", Model: "gpt-4"}
-	require.NoError(t, b.UpdatePreferredModel(ws.ID, config.ScopeGlobal, config.SelectedModelTypeLarge, model))
+	require.NoError(t, b.UpdatePreferredModel(ws.ID, config.ScopeGlobal, config.ModelMain, model))
 	awaitConfigChanged(t, evc, ws.ID)
 }
 

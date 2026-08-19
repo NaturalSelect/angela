@@ -89,6 +89,6 @@ permissions deny bash`)
 	// SetupAgents resolves the effective tool set; denied tools are excluded.
 	cfg := store.Config()
 	cfg.SetupAgents()
-	require.NotContains(t, cfg.Agents[config.AgentCoder].AllowedTools, "bash")
-	require.Contains(t, cfg.Agents[config.AgentCoder].AllowedTools, "view")
+	require.NotContains(t, cfg.Agents[config.AgentCoder].AllowedTools.Tools, "bash")
+	require.Contains(t, cfg.Agents[config.AgentCoder].AllowedTools.Tools, "view")
 }

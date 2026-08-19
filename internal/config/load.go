@@ -134,6 +134,14 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 		return nil, fmt.Errorf("failed to configure providers: %w", err)
 	}
 
+	// Agent resolution reads only Options and AgentConfigs, so it runs
+	// before the provider check: a fresh install with no provider yet
+	// must still expose the built-in agents (angela agent list, and the
+	// onboarding path that builds the coder agent right after a
+	// provider is chosen). cfg is not published yet, so it is resolved
+	// in place rather than through the store.
+	prepareResolvedConfig(cfg)
+
 	if !cfg.IsConfigured() {
 		slog.Warn("No providers configured")
 		return store, nil
@@ -143,25 +151,24 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure selected models: %w", err)
 	}
-	cfg.Models[SelectedModelTypeLarge] = resolved.Large
-	cfg.Models[SelectedModelTypeSmall] = resolved.Small
+	cfg.Models[ModelMain] = resolved.Main
+	cfg.Models[ModelChore] = resolved.Chore
 
 	// Persist any fallback corrections while we still hold writeMu.
-	if resolved.LargeFallback {
+	if resolved.MainFallback {
 		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-			return store.updatePreferredModelFields(c, SelectedModelTypeLarge, resolved.Large)
+			return store.updatePreferredModelFields(c, ModelMain, resolved.Main)
 		}); err != nil {
-			return nil, fmt.Errorf("failed to update preferred large model: %w", err)
+			return nil, fmt.Errorf("failed to update preferred main model: %w", err)
 		}
 	}
-	if resolved.SmallFallback {
+	if resolved.ChoreFallback {
 		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-			return store.updatePreferredModelFields(c, SelectedModelTypeSmall, resolved.Small)
+			return store.updatePreferredModelFields(c, ModelChore, resolved.Chore)
 		}); err != nil {
-			return nil, fmt.Errorf("failed to update preferred small model: %w", err)
+			return nil, fmt.Errorf("failed to update preferred chore model: %w", err)
 		}
 	}
-	store.SetupAgents()
 
 	// Capture initial staleness snapshot
 	// Capture initial staleness snapshot. Track every discovered config path,
@@ -567,10 +574,10 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 		c.Providers = csync.NewMap[string, ProviderConfig]()
 	}
 	if c.Models == nil {
-		c.Models = make(map[SelectedModelType]SelectedModel)
+		c.Models = make(map[ModelConfigName]SelectedModel)
 	}
 	if c.RecentModels == nil {
-		c.RecentModels = make(map[SelectedModelType][]SelectedModel)
+		c.RecentModels = make(map[ModelConfigName][]SelectedModel)
 	}
 	if c.MCP == nil {
 		c.MCP = make(map[string]MCPConfig)
@@ -605,6 +612,17 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	// Project specific skills dirs.
 	c.Options.SkillsPaths = append(c.Options.SkillsPaths, ProjectSkillsDir(workingDir)...)
 
+	// Rebuild the agent directory list in priority-ascending order:
+	// global defaults, then any user-configured paths (resolved
+	// against workingDir), then project defaults. setDefaults runs
+	// twice during initial load (see Load), so dedupeKeepFirst keeps
+	// the second run's result identical to the first's.
+	agentDirs := make([]string, 0, len(c.Options.AgentPaths)+8)
+	agentDirs = append(agentDirs, GlobalAgentDirs()...)
+	agentDirs = append(agentDirs, resolveAgentDirs(c.Options.AgentPaths, workingDir)...)
+	agentDirs = append(agentDirs, ProjectAgentDirs(workingDir)...)
+	c.Options.AgentPaths = dedupeKeepFirst(agentDirs)
+
 	if str, ok := os.LookupEnv("ANGELA_DISABLE_PROVIDER_AUTO_UPDATE"); ok {
 		c.Options.DisableProviderAutoUpdate, _ = strconv.ParseBool(str)
 	}
@@ -632,6 +650,34 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	}
 
 	c.Options.InitializeAs = cmp.Or(c.Options.InitializeAs, defaultInitializeAs)
+}
+
+// resolveAgentDirs expands "~", environment variables, and
+// working-directory-relative paths in user-configured agent
+// directories.
+func resolveAgentDirs(paths []string, workingDir string) []string {
+	resolved := make([]string, len(paths))
+	for i, p := range paths {
+		p = home.Long(p)
+		p = os.ExpandEnv(p)
+		resolved[i] = filepath.Clean(filepathext.SmartJoin(workingDir, p))
+	}
+	return resolved
+}
+
+// dedupeKeepFirst returns paths with duplicate entries removed,
+// keeping each path at its first occurrence's position.
+func dedupeKeepFirst(paths []string) []string {
+	seen := make(map[string]bool, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
 }
 
 // powernapDefaults caches the powernap default LSP server catalog. The
@@ -774,10 +820,63 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 // resolvedModels holds the result of resolving user-configured model
 // selections against the provider catalog.
 type resolvedModels struct {
-	Large         SelectedModel
-	Small         SelectedModel
-	LargeFallback bool // true if Large was corrected to a default
-	SmallFallback bool // true if Small was corrected to a default
+	Main          SelectedModel
+	Chore         SelectedModel
+	MainFallback  bool // true if Main was corrected to a default
+	ChoreFallback bool // true if Chore was corrected to a default
+}
+
+// applyModelOverride layers a user-configured selection on top of a
+// default one, resolving the result against the provider catalog. It
+// returns the default untouched and fellBack=true when the requested
+// model does not exist in the catalog.
+func applyModelOverride(cfg *Config, fallback, override SelectedModel) (resolved SelectedModel, fellBack bool) {
+	resolved = fallback
+	if override.Model != "" {
+		resolved.Model = override.Model
+	}
+	if override.Provider != "" {
+		resolved.Provider = override.Provider
+	}
+
+	model := cfg.GetModel(resolved.Provider, resolved.Model)
+	if model == nil {
+		return fallback, true
+	}
+
+	if override.MaxTokens > 0 {
+		resolved.MaxTokens = override.MaxTokens
+	} else {
+		resolved.MaxTokens = model.DefaultMaxTokens
+	}
+	if override.ReasoningEffort != "" {
+		resolved.ReasoningEffort = override.ReasoningEffort
+	} else {
+		resolved.ReasoningEffort = model.DefaultReasoningEffort
+	}
+	resolved.Think = override.Think
+	if override.Temperature != nil {
+		resolved.Temperature = override.Temperature
+	}
+	if override.TopP != nil {
+		resolved.TopP = override.TopP
+	}
+	if override.TopK != nil {
+		resolved.TopK = override.TopK
+	}
+	if override.FrequencyPenalty != nil {
+		resolved.FrequencyPenalty = override.FrequencyPenalty
+	}
+	if override.PresencePenalty != nil {
+		resolved.PresencePenalty = override.PresencePenalty
+	}
+	if override.ProviderOptions != nil {
+		resolved.ProviderOptions = maps.Clone(override.ProviderOptions)
+	}
+	if override.Variants != nil {
+		resolved.Variants = maps.Clone(override.Variants)
+	}
+	return resolved, false
 }
 
 // resolveSelectedModels validates the user's configured model selections
@@ -787,122 +886,40 @@ type resolvedModels struct {
 // fallback corrections as appropriate.
 func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (resolvedModels, error) {
 	var result resolvedModels
-	defaultLarge, defaultSmall, err := cfg.defaultModelSelection(knownProviders)
+	defaultMain, defaultChore, err := cfg.defaultModelSelection(knownProviders)
 	if err != nil {
 		return result, fmt.Errorf("failed to select default models: %w", err)
 	}
-	large, small := defaultLarge, defaultSmall
+	main, chore := defaultMain, defaultChore
 
-	largeModelSelected, largeModelConfigured := cfg.Models[SelectedModelTypeLarge]
-	if largeModelConfigured {
-		if largeModelSelected.Model != "" {
-			large.Model = largeModelSelected.Model
-		}
-		if largeModelSelected.Provider != "" {
-			large.Provider = largeModelSelected.Provider
-		}
-		model := cfg.GetModel(large.Provider, large.Model)
-		if model == nil {
-			large = defaultLarge
-			result.LargeFallback = true
-		} else {
-			if largeModelSelected.MaxTokens > 0 {
-				large.MaxTokens = largeModelSelected.MaxTokens
-			} else {
-				large.MaxTokens = model.DefaultMaxTokens
-			}
-			if largeModelSelected.ReasoningEffort != "" {
-				large.ReasoningEffort = largeModelSelected.ReasoningEffort
-			} else {
-				large.ReasoningEffort = model.DefaultReasoningEffort
-			}
-			large.Think = largeModelSelected.Think
-			if largeModelSelected.Temperature != nil {
-				large.Temperature = largeModelSelected.Temperature
-			}
-			if largeModelSelected.TopP != nil {
-				large.TopP = largeModelSelected.TopP
-			}
-			if largeModelSelected.TopK != nil {
-				large.TopK = largeModelSelected.TopK
-			}
-			if largeModelSelected.FrequencyPenalty != nil {
-				large.FrequencyPenalty = largeModelSelected.FrequencyPenalty
-			}
-			if largeModelSelected.PresencePenalty != nil {
-				large.PresencePenalty = largeModelSelected.PresencePenalty
-			}
-			if largeModelSelected.ProviderOptions != nil {
-				large.ProviderOptions = maps.Clone(largeModelSelected.ProviderOptions)
-			}
-		}
+	if override, configured := cfg.Models[ModelMain]; configured {
+		main, result.MainFallback = applyModelOverride(cfg, defaultMain, override)
 	}
-	smallModelSelected, smallModelConfigured := cfg.Models[SelectedModelTypeSmall]
-	if smallModelConfigured {
-		if smallModelSelected.Model != "" {
-			small.Model = smallModelSelected.Model
-		}
-		if smallModelSelected.Provider != "" {
-			small.Provider = smallModelSelected.Provider
-		}
-
-		model := cfg.GetModel(small.Provider, small.Model)
-		if model == nil {
-			small = defaultSmall
-			result.SmallFallback = true
-		} else {
-			if smallModelSelected.MaxTokens > 0 {
-				small.MaxTokens = smallModelSelected.MaxTokens
-			} else {
-				small.MaxTokens = model.DefaultMaxTokens
-			}
-			if smallModelSelected.ReasoningEffort != "" {
-				small.ReasoningEffort = smallModelSelected.ReasoningEffort
-			} else {
-				small.ReasoningEffort = model.DefaultReasoningEffort
-			}
-			if smallModelSelected.Temperature != nil {
-				small.Temperature = smallModelSelected.Temperature
-			}
-			if smallModelSelected.TopP != nil {
-				small.TopP = smallModelSelected.TopP
-			}
-			if smallModelSelected.TopK != nil {
-				small.TopK = smallModelSelected.TopK
-			}
-			if smallModelSelected.FrequencyPenalty != nil {
-				small.FrequencyPenalty = smallModelSelected.FrequencyPenalty
-			}
-			if smallModelSelected.PresencePenalty != nil {
-				small.PresencePenalty = smallModelSelected.PresencePenalty
-			}
-			if smallModelSelected.ProviderOptions != nil {
-				small.ProviderOptions = maps.Clone(smallModelSelected.ProviderOptions)
-			}
-			small.Think = smallModelSelected.Think
-		}
+	override, choreConfigured := cfg.Models[ModelChore]
+	if choreConfigured {
+		chore, result.ChoreFallback = applyModelOverride(cfg, defaultChore, override)
 	}
 
-	// When small isn't explicitly configured and the provider isn't a
-	// known built-in, use the large model as the small model. This
+	// When chore isn't explicitly configured and the provider isn't a
+	// known built-in, use the main model as the chore model. This
 	// prevents two different models from being requested concurrently
 	// for local/openai-compat providers.
-	if !smallModelConfigured {
+	if !choreConfigured {
 		isKnownProvider := false
 		for _, kp := range knownProviders {
-			if string(kp.ID) == small.Provider {
+			if string(kp.ID) == chore.Provider {
 				isKnownProvider = true
 				break
 			}
 		}
 		if !isKnownProvider {
-			slog.Warn("Using large model as small model for unknown provider", "provider", large.Provider, "model", large.Model)
-			small = large
+			slog.Warn("Using main model as chore model for unknown provider", "provider", main.Provider, "model", main.Model)
+			chore = main
 		}
 	}
 
-	result.Large = large
-	result.Small = small
+	result.Main = main
+	result.Chore = chore
 	return result, nil
 }
 
@@ -1043,7 +1060,17 @@ func loadFromBytes(configs [][]byte) (*Config, error) {
 		return &Config{}, nil
 	}
 
-	data, err := jsons.Merge(configs)
+	// The agent permission fields do not take part in the generic
+	// merge: it concatenates arrays, and it fails outright when one
+	// layer gives a list where another gives "inherited". Take their
+	// values straight from the layers and strip them before merging.
+	permissions := lastAgentPermissionLayer(configs)
+	stripped, err := stripAgentPermissions(configs)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := jsons.Merge(stripped)
 	if err != nil {
 		return nil, err
 	}
@@ -1051,7 +1078,136 @@ func loadFromBytes(configs [][]byte) (*Config, error) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
+	dropAgentsWithUnknownFields(&config, data)
+	if err := applyAgentPermissions(&config, permissions); err != nil {
+		return nil, err
+	}
 	return &config, nil
+}
+
+// dropAgentsWithUnknownFields discards agents carrying keys Angela
+// does not recognize. Silently ignoring them is worse than it sounds:
+// a misspelled "allowed_tool" leaves the agent with no restriction at
+// all, so it inherits the coder's full tool set. Markdown agents
+// already reject unknown frontmatter; this brings JSON in line.
+func dropAgentsWithUnknownFields(cfg *Config, merged []byte) {
+	agents := gjson.GetBytes(merged, "agents")
+	if !agents.Exists() {
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(agents.Raw), &raw); err != nil {
+		return
+	}
+	for id, doc := range raw {
+		decoder := json.NewDecoder(strings.NewReader(string(doc)))
+		decoder.DisallowUnknownFields()
+		var probe Agent
+		if err := decoder.Decode(&probe); err != nil {
+			slog.Warn("Ignoring agent with unrecognized configuration",
+				"agent", id, "error", err)
+			delete(cfg.AgentConfigs, id)
+		}
+	}
+}
+
+// agentPermissionFields are the agent fields whose contract is whole
+// field replacement by the highest-priority layer that names them.
+var agentPermissionFields = []string{"allowed_tools", "disabled_tools", "allowed_mcp"}
+
+// applyAgentPermissions writes the per-layer winners onto the merged
+// config. Without this a layer narrowing allowed_tools would be
+// unioned with the broader list beneath it, silently granting back the
+// tools it meant to remove.
+func applyAgentPermissions(cfg *Config, winners map[string]map[string]json.RawMessage) error {
+	for id, fields := range winners {
+		agent, ok := cfg.AgentConfigs[id]
+		if !ok {
+			continue
+		}
+		for field, raw := range fields {
+			var err error
+			switch field {
+			case "allowed_tools":
+				agent.AllowedTools = nil
+				err = json.Unmarshal(raw, &agent.AllowedTools)
+			case "disabled_tools":
+				agent.DisabledTools = nil
+				err = json.Unmarshal(raw, &agent.DisabledTools)
+			case "allowed_mcp":
+				agent.AllowedMCP = nil
+				err = json.Unmarshal(raw, &agent.AllowedMCP)
+			}
+			if err != nil {
+				return fmt.Errorf("agent %q: invalid %s: %w", id, field, err)
+			}
+		}
+		cfg.AgentConfigs[id] = agent
+	}
+	return nil
+}
+
+// lastAgentPermissionLayer collects, per agent and per permission
+// field, the raw JSON from the last layer that set it. Layers are
+// ordered lowest to highest priority.
+func lastAgentPermissionLayer(layers [][]byte) map[string]map[string]json.RawMessage {
+	winners := make(map[string]map[string]json.RawMessage)
+	for _, layer := range layers {
+		gjson.GetBytes(layer, "agents").ForEach(func(id, agent gjson.Result) bool {
+			for _, field := range agentPermissionFields {
+				value := agent.Get(field)
+				if !value.Exists() {
+					continue
+				}
+				fields, ok := winners[id.String()]
+				if !ok {
+					fields = make(map[string]json.RawMessage)
+					winners[id.String()] = fields
+				}
+				fields[field] = json.RawMessage(value.Raw)
+			}
+			return true
+		})
+	}
+	return winners
+}
+
+// stripAgentPermissions removes the permission fields from every layer
+// so the generic merge never sees them.
+func stripAgentPermissions(layers [][]byte) ([][]byte, error) {
+	stripped := make([][]byte, len(layers))
+	for i, layer := range layers {
+		out := layer
+		var delErr error
+		gjson.GetBytes(layer, "agents").ForEach(func(id, _ gjson.Result) bool {
+			for _, field := range agentPermissionFields {
+				out, delErr = sjson.DeleteBytes(out, "agents."+escapePathKey(id.String())+"."+field)
+				if delErr != nil {
+					return false
+				}
+			}
+			return true
+		})
+		if delErr != nil {
+			return nil, fmt.Errorf("failed to isolate agent permissions: %w", delErr)
+		}
+		stripped[i] = out
+	}
+	return stripped, nil
+}
+
+// escapePathKey quotes the characters gjson and sjson read as path
+// syntax, so an arbitrary agent ID addresses its own key and no other.
+func escapePathKey(key string) string {
+	var b strings.Builder
+	for _, r := range key {
+		switch r {
+		case '.', '*', '?', '\\':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func hasAWSCredentials(env env.Env) bool {

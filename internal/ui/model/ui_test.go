@@ -5,72 +5,72 @@ import (
 
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/stretchr/testify/require"
 )
 
+// TestCurrentModelSupportsImages pins that the file-picker gate reads the
+// agent the session is actually running, from memoized state. Another
+// session may be on a different model, and the probe is off-thread, so
+// "not known yet" must read as "no" rather than as the global default.
 func TestCurrentModelSupportsImages(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns false when config is nil", func(t *testing.T) {
+	t.Run("returns false before the agent has been probed", func(t *testing.T) {
 		t.Parallel()
 
 		ui := newTestUIWithConfig(t, nil)
 		require.False(t, ui.currentModelSupportsImages())
 	})
 
-	t.Run("returns false when coder agent is missing", func(t *testing.T) {
+	t.Run("returns false when the session's model takes no images", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := &config.Config{
-			Providers: csync.NewMap[string, config.ProviderConfig](),
-			Agents:    map[string]config.Agent{},
+		ui := newTestUIWithConfig(t, nil)
+		ui.agentReady = true
+		ui.agentActiveKnown = true
+		ui.agentActive = workspace.ActiveAgent{
+			CatwalkCfg: catwalk.Model{ID: "test-model", SupportsImages: false},
 		}
-		ui := newTestUIWithConfig(t, cfg)
 		require.False(t, ui.currentModelSupportsImages())
 	})
 
-	t.Run("returns false when model is not found", func(t *testing.T) {
+	t.Run("returns true when the session's model supports images", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := &config.Config{
-			Providers: csync.NewMap[string, config.ProviderConfig](),
-			Agents: map[string]config.Agent{
-				config.AgentCoder: {Model: config.SelectedModelTypeLarge},
-			},
+		ui := newTestUIWithConfig(t, nil)
+		ui.agentReady = true
+		ui.agentActiveKnown = true
+		ui.agentActive = workspace.ActiveAgent{
+			CatwalkCfg: catwalk.Model{ID: "test-model", SupportsImages: true},
 		}
-		ui := newTestUIWithConfig(t, cfg)
-		require.False(t, ui.currentModelSupportsImages())
-	})
-
-	t.Run("returns true when current model supports images", func(t *testing.T) {
-		t.Parallel()
-
-		providers := csync.NewMap[string, config.ProviderConfig]()
-		providers.Set("test-provider", config.ProviderConfig{
-			ID: "test-provider",
-			Models: []catwalk.Model{
-				{ID: "test-model", SupportsImages: true},
-			},
-		})
-
-		cfg := &config.Config{
-			Models: map[config.SelectedModelType]config.SelectedModel{
-				config.SelectedModelTypeLarge: {
-					Provider: "test-provider",
-					Model:    "test-model",
-				},
-			},
-			Providers: providers,
-			Agents: map[string]config.Agent{
-				config.AgentCoder: {Model: config.SelectedModelTypeLarge},
-			},
-		}
-
-		ui := newTestUIWithConfig(t, cfg)
 		require.True(t, ui.currentModelSupportsImages())
+	})
+
+	t.Run("returns false when the memoized agent belongs to another session", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newTestUIWithConfig(t, nil)
+		ui.agentReady = true
+		ui.agentActiveKnown = true
+		ui.agentActive = workspace.ActiveAgent{
+			CatwalkCfg: catwalk.Model{ID: "test-model", SupportsImages: true},
+		}
+		ui.agentActiveSession = "some-other-session"
+		require.False(t, ui.currentModelSupportsImages())
+	})
+
+	t.Run("returns false when the probe failed to resolve an agent", func(t *testing.T) {
+		t.Parallel()
+
+		ui := newTestUIWithConfig(t, nil)
+		ui.agentReady = true
+		ui.agentActive = workspace.ActiveAgent{
+			CatwalkCfg: catwalk.Model{ID: "test-model", SupportsImages: true},
+		}
+		require.False(t, ui.currentModelSupportsImages(),
+			"a value the probe never confirmed must not be rendered")
 	})
 }
 

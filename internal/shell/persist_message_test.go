@@ -1,4 +1,4 @@
-package shell
+package shell_test
 
 import (
 	"testing"
@@ -6,6 +6,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/shell"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +21,7 @@ func TestPersistOutput_SkipsMissingSession(t *testing.T) {
 	messages := message.NewService(db.New(conn))
 
 	missingID := uuid.New().String()
-	err = PersistOutput(t.Context(), messages, missingID, "cat file.txt", "hello", 0)
+	err = shell.PersistOutput(t.Context(), messages, missingID, "cat file.txt", "hello", 0)
 	require.NoError(t, err)
 
 	stored, err := messages.List(t.Context(), missingID)
@@ -37,7 +38,7 @@ func TestPersistOutput_NoOpForEmptySessionID(t *testing.T) {
 
 	messages := message.NewService(db.New(conn))
 
-	require.NoError(t, PersistOutput(t.Context(), messages, "", "echo hi", "hi", 0))
+	require.NoError(t, shell.PersistOutput(t.Context(), messages, "", "echo hi", "hi", 0))
 }
 
 func TestPersistOutput_PersistsForExistingSession(t *testing.T) {
@@ -54,7 +55,7 @@ func TestPersistOutput_PersistsForExistingSession(t *testing.T) {
 	sess, err := sessions.Create(t.Context(), "shell test")
 	require.NoError(t, err)
 
-	err = PersistOutput(t.Context(), messages, sess.ID, "cat file.txt", "hello", 0)
+	err = shell.PersistOutput(t.Context(), messages, sess.ID, "cat file.txt", "hello", 0)
 	require.NoError(t, err)
 
 	stored, err := messages.List(t.Context(), sess.ID)

@@ -55,13 +55,19 @@ func NewCoordinator(
 		Models:  []catwalk.Model{{ID: modelID, DefaultMaxTokens: 4096}},
 	})
 	selected := config.SelectedModel{Provider: providerID, Model: modelID}
-	cfg.OverridePreferredModel(config.SelectedModelTypeLarge, selected)
-	cfg.OverridePreferredModel(config.SelectedModelTypeSmall, selected)
+	// Filled directly rather than through OverridePreferredModel, which
+	// is now narrowed to the chore slot: this is test setup writing the
+	// starting config, the same way AllowedTools is set below.
+	if cfg.Config().Models == nil {
+		cfg.Config().Models = make(map[config.ModelConfigName]config.SelectedModel)
+	}
+	cfg.Config().Models[config.ModelMain] = selected
+	cfg.Config().Models[config.ModelChore] = selected
 	cfg.SetupAgents()
 
 	// Keep buildTools light: no sub-agent or agentic-fetch construction.
 	coderCfg := cfg.Config().Agents[config.AgentCoder]
-	coderCfg.AllowedTools = nil
+	coderCfg.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope}
 	cfg.Config().Agents[config.AgentCoder] = coderCfg
 
 	return agent.NewCoordinator(ctx, agent.CoordinatorOptions{

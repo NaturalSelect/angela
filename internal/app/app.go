@@ -15,7 +15,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
@@ -275,8 +274,11 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	var mainOverride *config.SelectedModel
 	if largeModel != "" || smallModel != "" {
-		if err := app.overrideModelsForNonInteractive(ctx, largeModel, smallModel); err != nil {
+		var err error
+		mainOverride, err = app.applyModelOverrides(largeModel, smallModel)
+		if err != nil {
 			return fmt.Errorf("failed to override models: %w", err)
 		}
 	}
@@ -332,16 +334,19 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 
 	if continueSessionID != "" || useLast {
 		slog.Info("Continuing session for non-interactive run", "session_id", sess.ID)
-		// If no explicit model override was requested, restore the
-		// model/provider from the last assistant message in the
-		// session, provided it is still available.
-		if largeModel == "" && smallModel == "" {
-			if err := app.restoreModelFromSession(ctx, sess.ID); err != nil {
-				slog.Warn("Failed to restore model from session", "error", err)
-			}
-		}
 	} else {
 		slog.Info("Created session for non-interactive run", "session_id", sess.ID)
+	}
+
+	// The model override belongs to this run's session, not to the
+	// config: applying it here leaves every other session alone, and a
+	// continued session without an override keeps the model it was
+	// already on.
+	if mainOverride != nil {
+		edit := config.ActiveAgentEdit{ModelName: config.ModelMain, Model: mainOverride}
+		if _, err := app.AgentCoordinator.EditActiveAgent(ctx, sess.ID, edit); err != nil {
+			return fmt.Errorf("failed to apply the model override: %w", err)
+		}
 	}
 
 	// Automatically approve all permission requests for this non-interactive
@@ -444,142 +449,56 @@ func (app *App) UpdateAgentModel(ctx context.Context) error {
 	return app.AgentCoordinator.UpdateModels(ctx)
 }
 
-// restoreModelFromSession reads the last assistant message in the
-// session and, if it used a different provider/model than the current
-// config, overrides the preferred model in-memory (non-persistent)
-// provided the provider/model is still available. This ensures that
-// continuing a session uses the same model that produced the last
-// response.
-func (app *App) restoreModelFromSession(ctx context.Context, sessionID string) error {
-	lastMsg, err := app.Messages.GetLastAssistantMessage(ctx, sessionID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("failed to get last assistant message: %w", err)
-	}
-	if lastMsg.Provider == "" || lastMsg.Model == "" {
-		return nil
-	}
-
-	cfg := app.config.Config()
-	currentLarge := cfg.Models[config.SelectedModelTypeLarge]
-	if currentLarge.Provider == lastMsg.Provider && currentLarge.Model == lastMsg.Model {
-		return nil
-	}
-
-	if !cfg.IsModelAvailable(lastMsg.Provider, lastMsg.Model) {
-		slog.Debug("Skipping model restoration: provider/model not available",
-			"provider", lastMsg.Provider,
-			"model", lastMsg.Model)
-		return nil
-	}
-
-	app.config.OverridePreferredModel(config.SelectedModelTypeLarge, config.SelectedModel{
-		Provider: lastMsg.Provider,
-		Model:    lastMsg.Model,
-	})
-	if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-		smallModel := app.GetDefaultSmallModel(lastMsg.Provider)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, smallModel)
-	}
-	if err := app.AgentCoordinator.UpdateModels(ctx); err != nil {
-		return fmt.Errorf("failed to update agent models: %w", err)
-	}
-	slog.Info("Restored model from session",
-		"provider", lastMsg.Provider,
-		"model", lastMsg.Model)
-	return nil
-}
-
-// overrideModelsForNonInteractive parses the model strings and temporarily
-// overrides the model configurations, then rebuilds the agent.
+// applyModelOverrides resolves the --model / --small-model flags and
+// applies what can be applied before a session exists. The chore model
+// is process-level: it serves the internal agents (titling, compaction),
+// which instantiate from config rather than from any session, so it is
+// overridden in memory here. The main model belongs to the session and
+// is returned for the caller to apply once the session is resolved.
 // Format: "model-name" (searches all providers) or "provider/model-name".
 // Model matching is case-insensitive.
-// If largeModel is provided but smallModel is not, the small model defaults to
-// the provider's default small model.
-func (app *App) overrideModelsForNonInteractive(ctx context.Context, largeModel, smallModel string) error {
+func (app *App) applyModelOverrides(largeModel, smallModel string) (*config.SelectedModel, error) {
 	providers := app.config.Config().Providers.Copy()
 
 	largeMatches, smallMatches, err := findModels(providers, largeModel, smallModel)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	var largeProviderID string
-
-	// Override large model.
+	// Resolve both flags before applying either, so a rejected main
+	// model cannot leave the chore override already in place.
+	var small, large *modelMatch
+	if smallModel != "" {
+		found, err := validateMatches(smallMatches, smallModel, "chore")
+		if err != nil {
+			return nil, err
+		}
+		small = &found
+	}
 	if largeModel != "" {
-		found, err := validateMatches(largeMatches, largeModel, "large")
+		found, err := validateMatches(largeMatches, largeModel, "main")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		largeProviderID = found.provider
-		slog.Info("Overriding large model for non-interactive run", "provider", found.provider, "model", found.modelID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeLarge, config.SelectedModel{
-			Provider: found.provider,
-			Model:    found.modelID,
+		large = &found
+	}
+
+	if small != nil {
+		slog.Info("Overriding small model for non-interactive run", "provider", small.provider, "model", small.modelID)
+		app.config.OverridePreferredModel(config.ModelChore, config.SelectedModel{
+			Provider: small.provider,
+			Model:    small.modelID,
 		})
 	}
 
-	// Override small model.
-	switch {
-	case smallModel != "":
-		found, err := validateMatches(smallMatches, smallModel, "small")
-		if err != nil {
-			return err
-		}
-		slog.Info("Overriding small model for non-interactive run", "provider", found.provider, "model", found.modelID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, config.SelectedModel{
-			Provider: found.provider,
-			Model:    found.modelID,
-		})
-
-	case largeModel != "":
-		// No small model specified, but large model was - use provider's default.
-		smallCfg := app.GetDefaultSmallModel(largeProviderID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, smallCfg)
+	if large == nil {
+		return nil, nil
 	}
-
-	return app.AgentCoordinator.UpdateModels(ctx)
-}
-
-// GetDefaultSmallModel returns the default small model for the given
-// provider. Falls back to the large model if no default is found.
-func (app *App) GetDefaultSmallModel(providerID string) config.SelectedModel {
-	cfg := app.config.Config()
-	largeModelCfg := cfg.Models[config.SelectedModelTypeLarge]
-
-	// Find the provider in the known providers list to get its default small model.
-	knownProviders, _ := config.Providers(cfg)
-	var knownProvider *catwalk.Provider
-	for _, p := range knownProviders {
-		if string(p.ID) == providerID {
-			knownProvider = &p
-			break
-		}
-	}
-
-	// For unknown/local providers, use the large model as small.
-	if knownProvider == nil {
-		slog.Warn("Using large model as small model for unknown provider", "provider", providerID, "model", largeModelCfg.Model)
-		return largeModelCfg
-	}
-
-	defaultSmallModelID := knownProvider.DefaultSmallModelID
-	model := cfg.GetModel(providerID, defaultSmallModelID)
-	if model == nil {
-		slog.Warn("Default small model not found, using large model", "provider", providerID, "model", largeModelCfg.Model)
-		return largeModelCfg
-	}
-
-	slog.Info("Using provider default small model", "provider", providerID, "model", defaultSmallModelID)
-	return config.SelectedModel{
-		Provider:        providerID,
-		Model:           defaultSmallModelID,
-		MaxTokens:       model.DefaultMaxTokens,
-		ReasoningEffort: model.DefaultReasoningEffort,
-	}
+	slog.Info("Overriding large model for non-interactive run", "provider", large.provider, "model", large.modelID)
+	return &config.SelectedModel{
+		Provider: large.provider,
+		Model:    large.modelID,
+	}, nil
 }
 
 func (app *App) setupEvents() {

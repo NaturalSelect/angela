@@ -27,7 +27,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/lipgloss/v2"
-	"github.com/NaturalSelect/angela/internal/agent/hyper"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
@@ -169,12 +168,6 @@ type (
 	// sessionFilesUpdatesMsg is sent when the files for this session have been updated
 	sessionFilesUpdatesMsg struct {
 		sessionFiles []SessionFile
-	}
-	// creditsUpdatedMsg is sent when the remaining Hyper credits have been
-	// fetched from the API. credits is nil when the team has hypercredit
-	// display disabled.
-	creditsUpdatedMsg struct {
-		credits *int
 	}
 )
 
@@ -343,13 +336,28 @@ type UI struct {
 	agentBusyCache    ttlCache
 	yoloCache         ttlCache
 	busyFetchInFlight bool
-	// agentReady / agentModel memoize the coordinator readiness and
-	// selected model (AgentIsReady/AgentModel are synchronous HTTP GETs in
-	// client/server mode, and modelInfo renders them every frame). Seeded
-	// once at construction and refreshed by the same off-thread probe as
-	// agentBusyCache.
-	agentReady bool
-	agentModel workspace.AgentModel
+	// agentReady / agentActive memoize the coordinator readiness and the
+	// agent the session runs on (AgentIsReady/AgentActive are
+	// synchronous HTTP GETs in client/server mode, and modelInfo renders
+	// them every frame). Seeded once at construction and refreshed by
+	// the same off-thread probe as agentBusyCache.
+	agentReady  bool
+	agentActive workspace.ActiveAgent
+	// agentActiveKnown reports that agentActive came from a probe that
+	// resolved. A failed probe leaves it false so the agent reads as
+	// unknown rather than as one running no model.
+	agentActiveKnown bool
+	// agentActiveSession is the session agentActive was probed for. The
+	// agent belongs to a session, so the render path compares this
+	// against the current session and shows nothing on a mismatch
+	// instead of the previous session's agent.
+	agentActiveSession string
+	// pendingReAuth holds the provider from a re-authentication
+	// notification that arrived while the session's agent was still
+	// unknown. The notification is published once and never retried,
+	// so without this the turn would sit blocked behind an auth
+	// dialog that never opened.
+	pendingReAuth string
 	// busyFetchGen is bumped by every busy/permission state transition;
 	// like promptQueueGen it lets a stale in-flight probe result be
 	// discarded and re-fetched instead of clobbering newer state.
@@ -364,11 +372,6 @@ type UI struct {
 	lastClickTime time.Time
 	hoverX        int
 	hoverY        int
-
-	// hyperCredits is the remaining Hyper credits, updated after each prompt.
-	// It is nil when unknown, or when the team has hypercredit display
-	// disabled, and no balance is rendered in either case.
-	hyperCredits *int
 
 	// Prompt history for up/down navigation through previous messages.
 	promptHistory struct {
@@ -457,12 +460,22 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	yolo := com.Workspace.PermissionSkipRequests()
 	ui.yoloCache.set(yolo)
 
-	// Seed the memoized agent ready/model state the same way so the first
-	// frame renders the model info; the busy probe keeps it fresh
-	// afterwards.
+	// Seed the memoized agent ready/active state the same way so the
+	// first frame renders the model info; the busy probe keeps it fresh
+	// afterwards. There is no session yet at construction, so this seeds
+	// the configured default and stamps it for the empty session.
 	if com.Workspace.AgentIsReady() {
 		ui.agentReady = true
-		ui.agentModel = com.Workspace.AgentModel()
+		active, err := com.Workspace.AgentActive(context.Background(), "")
+		if err == nil {
+			ui.agentActive = active
+			// activeAgent() also requires the stamp, not just the
+			// value: without it the seed above is never read and the
+			// first frame falls back to "unknown". The empty session
+			// ID is the right stamp because there is no session yet.
+			ui.agentActiveKnown = true
+			ui.agentActiveSession = ""
+		}
 	}
 	ui.setEditorPrompt(yolo)
 	ui.randomizePlaceholders()
@@ -515,9 +528,6 @@ func (m *UI) Init() tea.Cmd {
 	// load initial session if specified
 	if cmd := m.loadInitialSession(); cmd != nil {
 		cmds = append(cmds, cmd)
-	}
-	if m.com.IsHyper() {
-		cmds = append(cmds, m.fetchHyperCredits())
 	}
 	// Prime the memoized busy/permission state off-thread.
 	if cmd := m.dispatchBusyRefresh(); cmd != nil {
@@ -715,6 +725,24 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.dispatchBusyRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case sessionMessagesMsg:
+		// Drop a load the user has already navigated away from,
+		// otherwise the previous session's transcript lands in the
+		// chat that replaced it.
+		if msg.sessionID != m.currentSessionID() {
+			break
+		}
+		m.lastUserMessageTime = msg.lastUserMessageTime
+		if cmd := m.applySessionItems(msg.items); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case transparentToggledMsg:
+		m.isTransparent = msg.on
+		status := "disabled"
+		if msg.on {
+			status = "enabled"
+		}
+		cmds = append(cmds, util.ReportInfo("Transparent background "+status))
 	case agentRunSubmittedMsg:
 		// A prompt was just accepted (run started or enqueued): fetch the
 		// authoritative busy/queue state to confirm the optimistic values
@@ -751,17 +779,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
-		msgs, err := m.com.Workspace.ListMessages(context.Background(), m.session.ID)
-		if err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-		if cmd := m.setSessionMessages(msgs); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if cmd := m.restoreModelFromSession(msgs); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+		cmds = append(cmds, m.loadSessionMessagesCmd(m.session.ID))
 		if cmd := m.autoExpandPillsIfReasonable(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -1304,8 +1322,15 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.handleSelectModel(msg.action); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case creditsUpdatedMsg:
-		m.hyperCredits = msg.credits
+	case dialog.ModelsCatalogMsg:
+		// Routed here rather than through the overlay: the catalog can
+		// land after another dialog has been stacked on top, and only
+		// the models dialog knows what to do with it.
+		if d, ok := m.dialog.Dialog(dialog.ModelsID).(*dialog.Models); ok {
+			if cmd := d.SetProviders(msg.Providers); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 	case util.InfoMsg:
 		if msg.Type == util.InfoTypeError {
 			slog.Error("Error reported", "error", msg.Msg)
@@ -1386,30 +1411,59 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// setSessionMessages sets the messages for the current session in the chat
-func (m *UI) setSessionMessages(msgs []message.Message) tea.Cmd {
-	var cmds []tea.Cmd
-	// Build tool result map to link tool calls with their results
+// sessionMessagesMsg carries a session's chat items, already built and
+// with nested agent tool calls resolved, back to Update.
+type sessionMessagesMsg struct {
+	sessionID           string
+	items               []chat.MessageItem
+	lastUserMessageTime int64
+}
+
+// loadSessionMessagesCmd fetches a session's transcript and builds its
+// chat items off the Update goroutine. Both halves belong here: the
+// fetch is an HTTP round-trip in client/server mode, and resolving
+// nested agent tool calls costs one more round-trip per nested tool, so
+// doing it inline stalls the render loop for the whole tree.
+func (m *UI) loadSessionMessagesCmd(sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		items, lastUserMessageTime := m.buildSessionItems(msgs)
+		return sessionMessagesMsg{
+			sessionID:           sessionID,
+			items:               items,
+			lastUserMessageTime: lastUserMessageTime,
+		}
+	}
+}
+
+// buildSessionItems turns a transcript into chat items and reports the
+// timestamp of the last user message. It touches no UI state, so it is
+// safe to run from a command.
+func (m *UI) buildSessionItems(msgs []message.Message) ([]chat.MessageItem, int64) {
 	msgPtrs := make([]*message.Message, len(msgs))
 	for i := range msgs {
 		msgPtrs[i] = &msgs[i]
 	}
 	toolResultMap := chat.BuildToolResultMap(msgPtrs)
+
+	var lastUserMessageTime int64
 	if len(msgPtrs) > 0 {
-		m.lastUserMessageTime = msgPtrs[0].CreatedAt
+		lastUserMessageTime = msgPtrs[0].CreatedAt
 	}
 
-	// Add messages to chat with linked tool results
 	items := make([]chat.MessageItem, 0, len(msgs)*2)
 	for _, msg := range msgPtrs {
 		switch msg.Role {
 		case message.User:
-			m.lastUserMessageTime = msg.CreatedAt
+			lastUserMessageTime = msg.CreatedAt
 			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir())...)
 		case message.Assistant:
 			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir())...)
 			if msg.FinishPart() != nil && msg.FinishPart().Reason == message.FinishReasonEndTurn {
-				infoItem := chat.NewAssistantInfoItem(m.com.Styles, msg, m.com.Config(), time.Unix(m.lastUserMessageTime, 0))
+				infoItem := chat.NewAssistantInfoItem(m.com.Styles, msg, m.com.Config(), time.Unix(lastUserMessageTime, 0))
 				items = append(items, infoItem)
 			}
 		default:
@@ -1417,8 +1471,14 @@ func (m *UI) setSessionMessages(msgs []message.Message) tea.Cmd {
 		}
 	}
 
-	// Load nested tool calls for agent/agentic_fetch tools.
 	m.loadNestedToolCalls(items)
+	return items, lastUserMessageTime
+}
+
+// applySessionItems installs prebuilt chat items as the current
+// session's transcript.
+func (m *UI) applySessionItems(items []chat.MessageItem) tea.Cmd {
+	var cmds []tea.Cmd
 
 	// If the user switches between sessions while the agent is working we
 	// want to make sure the animations are shown. Gate on the agent actually
@@ -1598,6 +1658,17 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
+			}
+		}
+	case message.System:
+		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir())
+		if len(items) == 0 {
+			break
+		}
+		m.chat.AppendMessages(items...)
+		if m.chat.Follow() {
+			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+				cmds = append(cmds, cmd)
 			}
 		}
 	case message.Tool:
@@ -1925,50 +1996,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionToggleThinking:
-		cmds = append(cmds, m.updateAgentModelCmd(func() tea.Msg {
-			cfg := m.com.Config()
-			if cfg == nil {
-				return util.ReportError(errors.New("configuration not found"))()
-			}
-
-			agentCfg, ok := cfg.Agents[config.AgentCoder]
-			if !ok {
-				return util.ReportError(errors.New("agent configuration not found"))()
-			}
-
-			currentModel := cfg.Models[agentCfg.Model]
-			currentModel.Think = !currentModel.Think
-			if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, agentCfg.Model, currentModel); err != nil {
-				return util.ReportError(err)()
-			}
-			m.com.Workspace.UpdateAgentModel(context.TODO())
-			status := "disabled"
-			if currentModel.Think {
-				status = "enabled"
-			}
-			return util.NewInfoMsg("Thinking mode " + status)
-		}))
+		cmds = append(cmds, m.toggleThinkingCmd())
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionToggleTransparentBackground:
-		cmds = append(cmds, func() tea.Msg {
-			cfg := m.com.Config()
-			if cfg == nil {
-				return util.ReportError(errors.New("configuration not found"))()
-			}
-
-			isTransparent := cfg.Options != nil && cfg.Options.TUI.Transparent != nil && *cfg.Options.TUI.Transparent
-			newValue := !isTransparent
-			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.transparent", newValue); err != nil {
-				return util.ReportError(err)()
-			}
-			m.isTransparent = newValue
-
-			status := "disabled"
-			if newValue {
-				status = "enabled"
-			}
-			return util.NewInfoMsg("Transparent background " + status)
-		})
+		cmds = append(cmds, m.toggleTransparentCmd())
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionQuit:
 		cmds = append(cmds, tea.Quit)
@@ -1990,36 +2021,14 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if cmd := m.handleSelectModel(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case dialog.ActionSelectReasoningEffort:
-		if m.isAgentBusy() {
-			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait..."))
-			break
+	case dialog.ActionSelectAgent:
+		if cmd := m.handleSelectAgent(msg); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
-
-		cfg := m.com.Config()
-		if cfg == nil {
-			cmds = append(cmds, util.ReportError(errors.New("configuration not found")))
-			break
+	case dialog.ActionSelectVariant:
+		if cmd := m.handleSelectVariant(msg.Variant); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
-
-		agentCfg, ok := cfg.Agents[config.AgentCoder]
-		if !ok {
-			cmds = append(cmds, util.ReportError(errors.New("agent configuration not found")))
-			break
-		}
-
-		currentModel := cfg.Models[agentCfg.Model]
-		currentModel.ReasoningEffort = msg.Effort
-		if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, agentCfg.Model, currentModel); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-
-		cmds = append(cmds, m.updateAgentModelCmd(func() tea.Msg {
-			m.com.Workspace.UpdateAgentModel(context.TODO())
-			return util.NewInfoMsg("Reasoning effort set to " + msg.Effort)
-		}))
-		m.dialog.CloseDialog(dialog.ReasoningID)
 	case dialog.ActionPermissionResponse:
 		m.dialog.CloseDialog(dialog.PermissionsID)
 		switch msg.Action {
@@ -2117,114 +2126,199 @@ func (m *UI) refreshHyperAndRetrySelect(msg dialog.ActionSelectModel) tea.Cmd {
 	}
 }
 
-// fetchHyperCredits returns a command that asynchronously fetches the
-// remaining Hyper credits from the API.
-func (m *UI) fetchHyperCredits() tea.Cmd {
+// modelPickTarget says where picking a model for a slot lands.
+type modelPickTarget int
+
+const (
+	// modelPickGlobal edits the global default: there is no session, or
+	// the slot is one the session's agent does not run on (the chore
+	// model, say).
+	modelPickGlobal modelPickTarget = iota
+	// modelPickSession edits the session's own agent instance.
+	modelPickSession
+	// modelPickUnknown means the session's agent has not been probed
+	// yet, so the other two cannot be told apart. Falling back to
+	// global here would rewrite the default for every future session
+	// on the strength of a probe that simply had not landed.
+	modelPickUnknown
+)
+
+// modelPickScope reports where picking a model for this slot should
+// land. Only the slot the session's agent actually runs on is
+// session-scoped.
+func (m *UI) modelPickScope(slot config.ModelConfigName) modelPickTarget {
+	if m.currentSessionID() == "" {
+		return modelPickGlobal
+	}
+	active := m.activeAgent()
+	if active == nil {
+		return modelPickUnknown
+	}
+	if active.ModelName == slot {
+		return modelPickSession
+	}
+	return modelPickGlobal
+}
+
+// transparentToggledMsg carries the persisted transparency setting back
+// to Update. The command must not apply it directly: Draw reads
+// isTransparent on every frame, so writing it from a command races the
+// render loop.
+type transparentToggledMsg struct{ on bool }
+
+// toggleTransparentCmd flips the global transparent-background option
+// and persists it, reporting the new value for Update to apply.
+func (m *UI) toggleTransparentCmd() tea.Cmd {
 	return func() tea.Msg {
-		var (
-			apiKey      string
-			cfg         *config.Config
-			providerCfg config.ProviderConfig
-		)
-		getAPIKey := func() (ok bool) {
-			if cfg = m.com.Config(); cfg == nil {
-				return false
-			}
-			if providerCfg, ok = cfg.Providers.Get(hyper.Name); !ok {
-				return false
-			}
-			var err error
-			apiKey, err = m.com.Workspace.Resolver().ResolveValue(providerCfg.APIKey)
-			return err == nil && apiKey != ""
+		cfg := m.com.Config()
+		if cfg == nil {
+			return util.ReportError(errors.New("configuration not found"))()
 		}
-		if !getAPIKey() {
-			return nil
+		isTransparent := cfg.Options != nil && cfg.Options.TUI.Transparent != nil && *cfg.Options.TUI.Transparent
+		newValue := !isTransparent
+		if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.tui.transparent", newValue); err != nil {
+			return util.ReportError(err)()
 		}
-
-		if providerCfg.OAuthToken != nil && providerCfg.OAuthToken.IsExpired() {
-			ctxRefresh, cancelRefresh := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancelRefresh()
-			if err := m.com.Workspace.RefreshOAuthToken(ctxRefresh, config.ScopeGlobal, hyper.Name); err != nil {
-				slog.Warn("Hyper OAuth refresh failed before fetching credits, trying with existing token", "error", err)
-			} else if !getAPIKey() {
-				return nil
-			}
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		credits, err := hyper.FetchCredits(ctx, apiKey)
-		if err != nil {
-			slog.Error("Failed to fetch Hyper credits", "error", err)
-			return nil
-		}
-		return creditsUpdatedMsg{credits: credits}
+		return transparentToggledMsg{on: newValue}
 	}
 }
 
-// restoreModelFromSession checks the last assistant message in the
-// loaded session and, if it used a different provider/model than the
-// current config, restores that model/provider provided it is still
-// available. Returns a tea.Cmd that rebuilds the agent models if a
-// switch was made, or nil if no switch was needed.
-func (m *UI) restoreModelFromSession(msgs []message.Message) tea.Cmd {
-	var lastAssistant *message.Message
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == message.Assistant && !msgs[i].IsSummaryMessage {
-			lastAssistant = &msgs[i]
-			break
+// toggleThinkingCmd flips the thinking flag on the session's agent
+// instance. The flag lives on the session, so it takes effect from the
+// next turn and leaves every other session alone.
+func (m *UI) toggleThinkingCmd() tea.Cmd {
+	sessionID := m.currentSessionID()
+	if sessionID == "" {
+		return util.ReportWarn("Start a session before toggling thinking mode.")
+	}
+
+	return m.refreshActiveAgentCmd(func() tea.Msg {
+		// The flip happens under the session's lock rather than here:
+		// two clients toggling from the same cached value would both
+		// write the same absolute result, and the second flip would
+		// not cancel the first.
+		edit := config.ActiveAgentEdit{ToggleThink: true}
+		active, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit)
+		if err != nil {
+			return util.ReportError(err)()
 		}
-	}
-	if lastAssistant == nil || lastAssistant.Provider == "" || lastAssistant.Model == "" {
-		return nil
-	}
-
-	cfg := m.com.Config()
-	if cfg == nil {
-		return nil
-	}
-
-	currentLarge := cfg.Models[config.SelectedModelTypeLarge]
-	if currentLarge.Provider == lastAssistant.Provider && currentLarge.Model == lastAssistant.Model {
-		return nil
-	}
-
-	if !cfg.IsModelAvailable(lastAssistant.Provider, lastAssistant.Model) {
-		slog.Debug("Skipping model restoration: provider/model not available",
-			"provider", lastAssistant.Provider,
-			"model", lastAssistant.Model)
-		return nil
-	}
-
-	selectedModel := config.SelectedModel{
-		Provider: lastAssistant.Provider,
-		Model:    lastAssistant.Model,
-	}
-	if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, config.SelectedModelTypeLarge, selectedModel); err != nil {
-		slog.Error("Failed to restore model from session", "error", err)
-		return nil
-	}
-
-	if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-		smallModel := m.com.Workspace.GetDefaultSmallModel(lastAssistant.Provider)
-		if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, config.SelectedModelTypeSmall, smallModel); err != nil {
-			slog.Error("Failed to set small model during session restore", "error", err)
+		status := "disabled"
+		if active.ModelCfg.Think {
+			status = "enabled"
 		}
-	}
-
-	return m.updateAgentModelCmd(func() tea.Msg {
-		if err := m.com.Workspace.UpdateAgentModel(context.TODO()); err != nil {
-			return util.ReportError(err)
-		}
-		slog.Info("Restored model from session",
-			"provider", lastAssistant.Provider,
-			"model", lastAssistant.Model)
-		return nil
+		return util.NewInfoMsg("Thinking mode " + status)
 	})
 }
 
 // handleSelectModel performs the model selection after any provider
 // pre-checks (such as a silent Hyper OAuth refresh) have completed.
+// handleSelectAgent points the current session at the chosen primary
+// agent. The switch lands on the session's agent instance, so it takes
+// effect from the next turn; a turn already streaming keeps the agent it
+// started on.
+func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
+	m.dialog.CloseDialog(dialog.AgentsID)
+	sessionID := m.currentSessionID()
+	if sessionID == "" {
+		return util.ReportWarn("Start a session before switching agents.")
+	}
+	if active := m.activeAgent(); active != nil && active.AgentID == msg.AgentID {
+		return nil
+	}
+
+	agentID := msg.AgentID
+	return m.refreshActiveAgentCmd(func() tea.Msg {
+		edit := config.ActiveAgentEdit{Agent: agentID}
+		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
+			return util.ReportError(err)()
+		}
+		return nil
+	})
+}
+
+// handleSelectVariant points the session's model at a preset. The
+// variant lives on the session's agent instance, so it takes effect from
+// the next turn and leaves the global config untouched.
+func (m *UI) handleSelectVariant(variant string) tea.Cmd {
+	m.dialog.CloseDialog(dialog.VariantsID)
+	sessionID := m.currentSessionID()
+	if sessionID == "" {
+		return util.ReportWarn("Start a session before switching variants.")
+	}
+	if active := m.activeAgent(); active != nil && active.Variant == variant {
+		return nil
+	}
+
+	return m.refreshActiveAgentCmd(func() tea.Msg {
+		edit := config.ActiveAgentEdit{Variant: &variant}
+		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
+			return util.ReportError(err)()
+		}
+		return util.NewInfoMsg(variantSetMessage(variant))
+	})
+}
+
+// variantSetMessage names what the user just selected. The baseline has
+// no name of its own, so it is described rather than quoted.
+func variantSetMessage(variant string) string {
+	if variant == "" {
+		return "Using the model's baseline parameters"
+	}
+	return "Variant set to " + variant
+}
+
+// cycleVariant steps to the preset after the one in effect, wrapping
+// through the baseline. Cycling is what makes a variant cheap to reach
+// mid-task, so it deliberately skips the dialog.
+func (m *UI) cycleVariant() tea.Cmd {
+	if m.session == nil {
+		return util.ReportWarn("Start a session before switching variants.")
+	}
+	active := m.activeAgent()
+	if active == nil {
+		return util.ReportWarn("The agent is still starting up.")
+	}
+	choices := append([]string{""}, active.ModelCfg.VariantNames(&active.CatwalkCfg)...)
+	if len(choices) < 2 {
+		return util.ReportWarn("This model offers no variants.")
+	}
+	current := slices.Index(choices, active.Variant)
+	if current < 0 {
+		current = 0
+	}
+	return m.handleSelectVariant(choices[(current+1)%len(choices)])
+}
+
+// openVariantsDialog opens the preset picker for the session's model.
+// There is nothing to switch without a session: the variant is recorded
+// on the session, not globally.
+func (m *UI) openVariantsDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.VariantsID) {
+		m.dialog.BringToFront(dialog.VariantsID)
+		return nil
+	}
+	if m.session == nil {
+		return util.ReportWarn("Start a session before switching variants.")
+	}
+	active := m.activeAgent()
+	if active == nil {
+		return util.ReportWarn("The agent is still starting up.")
+	}
+	variants := active.ModelCfg.VariantNames(&active.CatwalkCfg)
+	if len(variants) == 0 {
+		return util.ReportWarn("This model offers no variants.")
+	}
+
+	variantsDialog, err := dialog.NewVariants(m.com,
+		active.CatwalkCfg.Name, variants, active.Variant)
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	m.dialog.OpenDialog(variantsDialog)
+	return nil
+}
+
 func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	var cmds []tea.Cmd
 
@@ -2268,23 +2362,30 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 
-	if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, msg.ModelType, msg.Model); err != nil {
-		cmds = append(cmds, util.ReportError(err))
-	} else {
-		if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-			// Ensure small model is set is unset.
-			smallModel := m.com.Workspace.GetDefaultSmallModel(providerID)
-			if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, config.SelectedModelTypeSmall, smallModel); err != nil {
-				cmds = append(cmds, util.ReportError(err))
-			}
-		}
+	// Picking a model for the role the session's agent runs on edits
+	// that session's instance and leaves the global default alone.
+	// Picking one for any other slot (the chore model, say), or picking
+	// during onboarding when no session exists yet, is a global
+	// preference.
+	sessionID := m.currentSessionID()
+	scope := modelPickGlobal
+	if !isOnboarding {
+		scope = m.modelPickScope(msg.ModelType)
+	}
+	if scope == modelPickUnknown {
+		// Which of the two this is depends on an agent probe that has
+		// not landed. Writing the global default on a guess would
+		// change the model for every future session, so the pick waits
+		// for the probe instead.
+		m.dialog.CloseDialog(dialog.ModelsID)
+		cmds = append(cmds,
+			util.ReportWarn("The agent is still starting up — pick again in a moment."),
+			agentModelChangedCmd,
+		)
+		return tea.Batch(cmds...)
 	}
 
-	cmds = append(cmds, m.updateAgentModelCmd(func() tea.Msg {
-		if err := m.com.Workspace.UpdateAgentModel(context.TODO()); err != nil {
-			return util.ReportError(err)
-		}
-
+	modelChangedMsg := func() tea.Msg {
 		var (
 			modelType = stringext.Capitalize(string(msg.ModelType))
 			modelName = msg.Model.Model
@@ -2292,10 +2393,26 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 		if catwalkModel := cfg.GetModel(msg.Model.Provider, msg.Model.Model); catwalkModel != nil && catwalkModel.Name != "" {
 			modelName = catwalkModel.Name
 		}
-		modelMsg := fmt.Sprintf("%s model changed to %s", modelType, modelName)
+		return util.NewInfoMsg(fmt.Sprintf("%s model changed to %s", modelType, modelName))
+	}
 
-		return util.NewInfoMsg(modelMsg)
-	}))
+	if scope == modelPickSession {
+		editCmd := func() tea.Msg {
+			edit := config.ActiveAgentEdit{ModelName: msg.ModelType, Model: &msg.Model}
+			if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
+				return util.ReportError(err)()
+			}
+			return modelChangedMsg()
+		}
+		cmds = append(cmds, m.refreshActiveAgentCmd(tea.Sequence(
+			m.recordRecentModelCmd(msg.ModelType, msg.Model),
+			editCmd,
+		)))
+	} else {
+		cmds = append(cmds, m.refreshActiveAgentCmd(
+			m.applyGlobalModelCmd(msg.ModelType, msg.Model, isOnboarding, modelChangedMsg),
+		))
+	}
 
 	m.dialog.CloseDialog(dialog.APIKeyInputID)
 	m.dialog.CloseDialog(dialog.OAuthID)
@@ -2303,25 +2420,55 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 
 	if isOnboarding {
 		m.setState(uiLanding, uiFocusEditor)
-		m.com.Config().SetupAgents()
-		if err := m.com.Workspace.InitCoderAgent(context.TODO()); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-		}
-		// The agent just came up: re-fetch the memoized ready/model state
-		// so the landing view shows the selected model without waiting for
-		// the TTL backstop.
-		m.invalidateBusyCaches()
-		if cmd := m.dispatchBusyRefresh(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-	} else if m.com.IsHyper() {
-		cmds = append(cmds, m.fetchHyperCredits())
 	}
 
 	return tea.Batch(cmds...)
 }
 
-func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.SelectedModelType) tea.Cmd {
+// applyGlobalModelCmd persists a global model pick and brings the agent
+// in line with it. The steps live in one command because each depends on
+// the one before having succeeded: tea.Sequence would run them all even
+// after a failure, and tea.Batch would run them concurrently.
+//
+// During onboarding there is no coordinator yet, so starting one is what
+// applies the model; afterwards the existing one is reconciled instead.
+func (m *UI) applyGlobalModelCmd(
+	name config.ModelConfigName,
+	model config.SelectedModel,
+	startAgent bool,
+	done func() tea.Msg,
+) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, name, model); err != nil {
+			return util.ReportError(err)()
+		}
+		if startAgent {
+			if err := m.com.Workspace.InitCoderAgent(context.TODO()); err != nil {
+				return util.ReportError(err)()
+			}
+			return done()
+		}
+		if err := m.com.Workspace.UpdateAgentModel(context.TODO()); err != nil {
+			return util.ReportError(err)()
+		}
+		return done()
+	}
+}
+
+// recordRecentModelCmd records a model in the global "recently used"
+// list. The pick itself may be session-scoped, but recents feed the
+// dialog for every session: recording changes no session's resolution,
+// and omitting it would hide the model the user just picked.
+func (m *UI) recordRecentModelCmd(name config.ModelConfigName, model config.SelectedModel) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.com.Workspace.RecordRecentModel(config.ScopeGlobal, name, model); err != nil {
+			return util.ReportError(err)()
+		}
+		return nil
+	}
+}
+
+func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.ModelConfigName) tea.Cmd {
 	var (
 		dlg dialog.Dialog
 		cmd tea.Cmd
@@ -2368,6 +2515,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return true
 		case key.Matches(msg, m.keyMap.Sessions):
 			if cmd := m.openSessionsDialog(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return true
+		case key.Matches(msg, m.keyMap.CycleVariant):
+			if cmd := m.cycleVariant(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 			return true
@@ -2853,6 +3005,10 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 // drawHeader draws the header section of the UI.
 func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
+	var contextWindow int64
+	if active := m.activeAgent(); active != nil {
+		contextWindow = active.CatwalkCfg.ContextWindow
+	}
 	m.header.drawHeader(
 		scr,
 		area,
@@ -2861,7 +3017,7 @@ func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
 		m.detailsOpen,
 		area.Dx(),
 		m.lspErrorCount(),
-		m.hyperCredits,
+		contextWindow,
 	)
 }
 
@@ -3326,17 +3482,14 @@ func (m *UI) FullHelp() [][]key.Binding {
 	return binds
 }
 
+// currentModelSupportsImages reports whether the model the session is
+// actually running accepts image attachments. It reads the memoized
+// active agent rather than the global config: another session may be on
+// a different model, and the file picker must offer what this one can
+// take.
 func (m *UI) currentModelSupportsImages() bool {
-	cfg := m.com.Config()
-	if cfg == nil {
-		return false
-	}
-	agentCfg, ok := cfg.Agents[config.AgentCoder]
-	if !ok {
-		return false
-	}
-	model := cfg.GetModelByType(agentCfg.Model)
-	return model != nil && model.SupportsImages
+	active := m.activeAgent()
+	return active != nil && active.CatwalkCfg.SupportsImages
 }
 
 // toggleCompactMode toggles compact mode between uiChat and uiChatCompact states.
@@ -4243,8 +4396,12 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openCommandsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case dialog.ReasoningID:
-		if cmd := m.openReasoningDialog(); cmd != nil {
+	case dialog.VariantsID:
+		if cmd := m.openVariantsDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.AgentsID:
+		if cmd := m.openAgentsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case dialog.NotificationsID:
@@ -4288,14 +4445,11 @@ func (m *UI) openModelsDialog() tea.Cmd {
 	}
 
 	isOnboarding := m.state == uiOnboarding
-	modelsDialog, err := dialog.NewModels(m.com, isOnboarding)
-	if err != nil {
-		return util.ReportError(err)
-	}
+	modelsDialog := dialog.NewModels(m.com, isOnboarding, m.activeAgent())
 
 	m.dialog.OpenDialog(modelsDialog)
 
-	return nil
+	return modelsDialog.InitialCmd()
 }
 
 // openCommandsDialog opens the commands dialog.
@@ -4314,7 +4468,7 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	hasTodos := hasSession && hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
 
-	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.customCommands, m.mcpPrompts)
+	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.activeAgent(), m.customCommands, m.mcpPrompts)
 	if err != nil {
 		return util.ReportError(err)
 	}
@@ -4324,19 +4478,28 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	return commands.InitialCmd()
 }
 
-// openReasoningDialog opens the reasoning effort dialog.
-func (m *UI) openReasoningDialog() tea.Cmd {
-	if m.dialog.ContainsDialog(dialog.ReasoningID) {
-		m.dialog.BringToFront(dialog.ReasoningID)
+// openAgentsDialog opens the primary-agent picker for the current
+// session. There is nothing to switch without a session: the agent
+// belongs to the session, not to the global config.
+func (m *UI) openAgentsDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.AgentsID) {
+		m.dialog.BringToFront(dialog.AgentsID)
 		return nil
 	}
+	if m.session == nil {
+		return util.ReportWarn("Start a session before switching agents.")
+	}
+	active := m.activeAgent()
+	if active == nil {
+		return util.ReportWarn("The agent is still starting up.")
+	}
 
-	reasoningDialog, err := dialog.NewReasoning(m.com)
+	agentsDialog, err := dialog.NewAgents(m.com, active.AgentID)
 	if err != nil {
 		return util.ReportError(err)
 	}
 
-	m.dialog.OpenDialog(reasoningDialog)
+	m.dialog.OpenDialog(agentsDialog)
 	return nil
 }
 
@@ -4499,9 +4662,6 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 			Title:   "Angela is waiting...",
 			Message: fmt.Sprintf("Agent's turn completed in \"%s\"", n.SessionTitle),
 		}))
-		if m.com.IsHyper() {
-			cmds = append(cmds, m.fetchHyperCredits())
-		}
 	case notify.TypeAgentError:
 		// Terminal edge like TypeAgentFinished; fall through to the
 		// busy/queue refresh below.
@@ -4529,20 +4689,67 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// handleReAuthenticate opens the auth dialog for a provider, seeded
+// with the model the session is actually running so re-auth returns to
+// that model rather than to whatever the global config names.
+//
+// When that model is not known yet the request is held rather than
+// dropped: the agent probe is off-thread, and a notification that
+// arrives inside that window is the only one there will ever be.
 func (m *UI) handleReAuthenticate(providerID string) tea.Cmd {
+	providerCfg, ok := m.reAuthProvider(providerID)
+	if !ok {
+		return nil
+	}
+	if cmd, opened := m.openReAuthDialog(providerCfg); opened {
+		return cmd
+	}
+	m.pendingReAuth = providerID
+	return m.dispatchBusyRefresh()
+}
+
+// drainPendingReAuth opens an authentication dialog that had to wait
+// for the agent probe. A request that is still undecidable stays armed
+// for the next probe rather than forcing one, so a probe that keeps
+// failing costs nothing.
+func (m *UI) drainPendingReAuth() tea.Cmd {
+	if m.pendingReAuth == "" {
+		return nil
+	}
+	providerCfg, ok := m.reAuthProvider(m.pendingReAuth)
+	if !ok {
+		m.pendingReAuth = ""
+		return nil
+	}
+	cmd, opened := m.openReAuthDialog(providerCfg)
+	if !opened {
+		return nil
+	}
+	m.pendingReAuth = ""
+	return cmd
+}
+
+// reAuthProvider resolves the provider a re-auth request names. A miss
+// is permanent: there is no dialog to open for a provider the config
+// does not describe.
+func (m *UI) reAuthProvider(providerID string) (config.ProviderConfig, bool) {
 	cfg := m.com.Config()
 	if cfg == nil {
-		return nil
+		return config.ProviderConfig{}, false
 	}
-	providerCfg, ok := cfg.Providers.Get(providerID)
-	if !ok {
-		return nil
+	return cfg.Providers.Get(providerID)
+}
+
+// openReAuthDialog seeds the auth dialog with the session's own model.
+// It reports false while that model is unknown, which is a "not yet"
+// rather than a "no" — seeding a zero model would send the user back
+// to nothing once they re-authenticate.
+func (m *UI) openReAuthDialog(providerCfg config.ProviderConfig) (tea.Cmd, bool) {
+	active := m.activeAgent()
+	if active == nil {
+		return nil, false
 	}
-	agentCfg, ok := cfg.Agents[config.AgentCoder]
-	if !ok {
-		return nil
-	}
-	return m.openAuthenticationDialog(providerCfg.ToProvider(), cfg.Models[agentCfg.Model], agentCfg.Model)
+	return m.openAuthenticationDialog(providerCfg.ToProvider(), active.ModelCfg, active.ModelName), true
 }
 
 // handleAWSSSOAuth opens the AWS SSO progress dialog (or updates the SSO URL
@@ -4934,7 +5141,7 @@ func (m *UI) runMCPPrompt(clientID, promptID string, arguments map[string]string
 }
 
 func (m *UI) handleStateChanged() tea.Cmd {
-	return m.updateAgentModelCmd(func() tea.Msg {
+	return m.refreshActiveAgentCmd(func() tea.Msg {
 		m.com.Workspace.UpdateAgentModel(context.Background())
 		return mcpStateChangedMsg{
 			states: m.com.Workspace.MCPGetStates(),

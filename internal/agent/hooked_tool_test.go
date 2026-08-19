@@ -43,7 +43,7 @@ func newRunner(t *testing.T, cmd string) *hooks.Runner {
 		},
 	}
 	require.NoError(t, cfg.ValidateHooks())
-	return hooks.NewRunner(cfg.Hooks[hooks.EventPreToolUse], t.TempDir(), t.TempDir())
+	return hooks.NewRunner(cfg.Hooks[hooks.EventPreToolUse], t.TempDir(), t.TempDir(), hooks.AgentIdentity{ID: "coder"})
 }
 
 func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
@@ -119,9 +119,12 @@ func TestWrapToolsWithHooks(t *testing.T) {
 	runner := newRunner(t, `exit 0`)
 	inputs := []fantasy.AgentTool{&fakeTool{name: "a"}, &fakeTool{name: "b"}}
 
-	t.Run("top-level agent wraps every tool", func(t *testing.T) {
+	// Sub-agents used to be exempt from this wrap, which let a delegated
+	// write reach the disk without ever facing the user's PreToolUse
+	// policy. Every tool a runner guards is wrapped now, whoever calls it.
+	t.Run("every tool is wrapped", func(t *testing.T) {
 		t.Parallel()
-		out := wrapToolsWithHooks(inputs, runner, false)
+		out := wrapToolsWithHooks(inputs, runner)
 		require.Len(t, out, len(inputs))
 		for i, tool := range out {
 			_, ok := tool.(*hookedTool)
@@ -129,19 +132,8 @@ func TestWrapToolsWithHooks(t *testing.T) {
 		}
 	})
 
-	t.Run("sub-agent skips the wrap", func(t *testing.T) {
+	t.Run("nil runner skips the wrap", func(t *testing.T) {
 		t.Parallel()
-		out := wrapToolsWithHooks(inputs, runner, true)
-		require.Equal(t, inputs, out, "sub-agent tools should be returned unwrapped")
-		for _, tool := range out {
-			_, isHooked := tool.(*hookedTool)
-			require.False(t, isHooked, "sub-agent tool should not be wrapped")
-		}
-	})
-
-	t.Run("nil runner skips the wrap for both agent kinds", func(t *testing.T) {
-		t.Parallel()
-		require.Equal(t, inputs, wrapToolsWithHooks(inputs, nil, false))
-		require.Equal(t, inputs, wrapToolsWithHooks(inputs, nil, true))
+		require.Equal(t, inputs, wrapToolsWithHooks(inputs, nil))
 	})
 }

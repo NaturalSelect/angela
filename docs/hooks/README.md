@@ -191,11 +191,19 @@ stuff, and so on.
 > Event names are case insensitive and snake-caseable, so `PreToolUse`,
 > `pretooluse`, `PRETOOLUSE`, `pre_tool_use`, and `PRE_TOOL_USE` all work.
 
-**Scope**: `PreToolUse` only fires on the **top-level agent's** tool calls.
-Sub-agents (the `agent` task tool, `agentic_fetch`, etc.) run without hook
-interception so a single delegated turn doesn't trigger your hook N times. The
-outer sub-agent tool call itself _is_ hooked, so policy like "never let the
-agent spawn sub-agents" still works.
+**Scope**: `PreToolUse` fires on **every** tool call, including the ones a
+sub-agent makes on the coder's behalf. A delegated `bash` is still a command
+on your machine, so it faces the same policy as a top-level one.
+
+The outer `agent` tool call and the calls the sub-agent then makes are
+separate events, not duplicates of each other. Use `agent_id` and `depth` in
+the payload (or `ANGELA_AGENT_ID` / `ANGELA_AGENT_DEPTH`) to tell them apart —
+`depth` is `0` for the top-level agent and `1` for a sub-agent:
+
+```bash
+# Only audit what the top-level agent does directly.
+[ "$ANGELA_AGENT_DEPTH" = "0" ] || exit 0
+```
 
 Hooks are keyed by event name. Only `command` is required, and you can omit
 `matcher` to match all tools.
@@ -242,6 +250,8 @@ The available environment variables are:
 | `ANGELA_SESSION_ID`           | Current session ID.                            |
 | `ANGELA_CWD`                  | Working directory.                             |
 | `ANGELA_PROJECT_DIR`          | Project root directory.                        |
+| `ANGELA_AGENT_ID`             | Agent whose call fired the hook (e.g. `coder`).|
+| `ANGELA_AGENT_DEPTH`          | `0` for the top-level agent, `1` for a sub-agent. |
 | `ANGELA_TOOL_INPUT_COMMAND`   | For `bash` calls: the shell command being run. |
 | `ANGELA_TOOL_INPUT_FILE_PATH` | For file tools: the target file path.          |
 
@@ -260,6 +270,8 @@ Standard input provides the full context as JSON:
   "cwd": "/home/user/project", // Working directory
   "tool_name": "bash", // The tool being called
   "tool_input": { "command": "rm -rf /" }, // The tool's input
+  "agent_id": "coder", // Agent whose call fired the hook
+  "depth": 0, // 0 = top-level agent, 1 = sub-agent
 }
 ```
 
@@ -630,6 +642,13 @@ Present in every hook event:
 
   // string. Working directory when invoked.
   "cwd": "/home/user/project",
+
+  // string. ID of the agent whose call fired the hook, e.g. "coder" or
+  // "explore".
+  "agent_id": "coder",
+
+  // number. 0 for the top-level agent, 1 for a sub-agent it dispatched.
+  "depth": 0,
 }
 ```
 

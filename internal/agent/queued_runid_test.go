@@ -10,6 +10,8 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/require"
@@ -87,15 +89,24 @@ func TestRun_QueuedRunIDPromptRunsRecursivelyAndPublishesRunComplete(t *testing.
 		gate:    make(chan struct{}),
 		entered: make(chan struct{}),
 	}
-	small := &finishStreamModel{text: "title"}
 
+	largeModel := Model{Model: large, CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}
+	titles := &coordinator{sessions: env.sessions, cfg: config.NewTestStore(&config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options:   &config.Options{},
+	})}
+
+	resolved := resolvedAgent{
+		ID:        config.AgentCoder,
+		Model:     largeModel,
+		MaxTokens: largeModel.CatwalkCfg.DefaultMaxTokens,
+	}
 	sa := NewSessionAgent(SessionAgentOptions{
-		LargeModel:  Model{Model: large, CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}},
-		SmallModel:  Model{Model: small, CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}},
-		IsYolo:      true,
-		Sessions:    env.sessions,
-		Messages:    env.messages,
-		RunComplete: broker,
+		IsYolo:        true,
+		Sessions:      env.sessions,
+		Messages:      env.messages,
+		RunComplete:   broker,
+		GenerateTitle: titles.generateSessionTitle,
 	}).(*sessionAgent)
 
 	sess, err := env.sessions.Create(t.Context(), "session")
@@ -109,6 +120,7 @@ func TestRun_QueuedRunIDPromptRunsRecursivelyAndPublishesRunComplete(t *testing.
 	mainDone := make(chan error, 1)
 	go func() {
 		_, runErr := sa.Run(t.Context(), SessionAgentCall{
+			Agent:     resolved,
 			SessionID: sess.ID,
 			RunID:     "run-main",
 			Prompt:    "main",
@@ -126,6 +138,7 @@ func TestRun_QueuedRunIDPromptRunsRecursivelyAndPublishesRunComplete(t *testing.
 
 	// Enqueue a RunID-bearing follow-up behind the busy session.
 	res, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
 		SessionID: sess.ID,
 		RunID:     "run-follow",
 		Prompt:    "follow",

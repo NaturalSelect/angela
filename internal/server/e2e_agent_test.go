@@ -16,6 +16,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/backend"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
@@ -212,15 +213,28 @@ func (c *scriptedCoordinator) CancelAll() {
 	}
 }
 
-func (c *scriptedCoordinator) IsBusy() bool                                  { return false }
-func (c *scriptedCoordinator) IsSessionBusy(string) bool                     { return false }
-func (c *scriptedCoordinator) QueuedPrompts(string) int                      { return 0 }
-func (c *scriptedCoordinator) QueuedPromptsList(string) []string             { return nil }
-func (c *scriptedCoordinator) ClearQueue(string)                             {}
-func (c *scriptedCoordinator) Summarize(context.Context, string) error       { return nil }
-func (c *scriptedCoordinator) Model() agent.Model                            { return agent.Model{} }
+func (c *scriptedCoordinator) IsBusy() bool                            { return false }
+func (c *scriptedCoordinator) IsSessionBusy(string) bool               { return false }
+func (c *scriptedCoordinator) QueuedPrompts(string) int                { return 0 }
+func (c *scriptedCoordinator) QueuedPromptsList(string) []string       { return nil }
+func (c *scriptedCoordinator) ClearQueue(string)                       {}
+func (c *scriptedCoordinator) Summarize(context.Context, string) error { return nil }
+func (c *scriptedCoordinator) DefaultModel() agent.Model               { return agent.Model{} }
+func (c *scriptedCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
+	return config.ActiveAgent{}, nil
+}
+
+func (c *scriptedCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
+	return config.ActiveAgent{}, agent.Model{}, nil
+}
 func (c *scriptedCoordinator) UpdateModels(context.Context) error            { return nil }
 func (c *scriptedCoordinator) GenerateTitle(context.Context, string, string) {}
+func (c *scriptedCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
+	return config.Agent{}, "", nil
+}
+
+func (c *scriptedCoordinator) SwitchAgent(context.Context, string, string) error   { return nil }
+func (c *scriptedCoordinator) SwitchVariant(context.Context, string, string) error { return nil }
 
 // agentE2EHarness extends the SSE harness with a scripted coordinator
 // wired into the workspace's embedded app.App, so POST /agent drives a

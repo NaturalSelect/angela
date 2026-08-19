@@ -87,7 +87,65 @@ func (c *controllerV1) handlePostWorkspaceConfigModel(w http.ResponseWriter, r *
 		return
 	}
 
-	if err := c.backend.UpdatePreferredModel(id, req.Scope, req.ModelType, req.Model); err != nil {
+	if err := c.backend.UpdatePreferredModel(id, req.Scope, req.Name, req.Model); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handlePostWorkspaceConfigRecentModel records a recently used model.
+//
+//	@Summary		Record a recently used model
+//	@Tags			config
+//	@Accept			json
+//	@Param			id		path	string						true	"Workspace ID"
+//	@Param			request	body	proto.ConfigModelRequest	true	"Config model request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/config/recent-model [post]
+func (c *controllerV1) handlePostWorkspaceConfigRecentModel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req proto.ConfigModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if err := c.backend.RecordRecentModel(id, req.Scope, req.Name, req.Model); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handlePostWorkspaceConfigPruneRecentModels drops stale recent models.
+//
+//	@Summary		Prune stale recent models
+//	@Tags			config
+//	@Accept			json
+//	@Param			id		path	string									true	"Workspace ID"
+//	@Param			request	body	proto.ConfigPruneRecentModelsRequest	true	"Prune recent models request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/config/prune-recent-models [post]
+func (c *controllerV1) handlePostWorkspaceConfigPruneRecentModels(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req proto.ConfigPruneRecentModelsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if err := c.backend.PruneRecentModels(id, req.Scope, req.Name, req.Stale); err != nil {
 		c.handleError(w, r, err)
 		return
 	}

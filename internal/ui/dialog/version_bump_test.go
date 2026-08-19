@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -104,7 +105,7 @@ func TestModelItem_MutatorsBumpVersion(t *testing.T) {
 	sty := styles.CharmtonePantera()
 	prov := catwalk.Provider{ID: "openai", Name: "OpenAI"}
 	model := catwalk.Model{ID: "gpt-4", Name: "GPT-4"}
-	item := NewModelItem(&sty, prov, model, ModelTypeLarge, true)
+	item := NewModelItem(&sty, prov, model, config.ModelMain, true)
 
 	requireBump(t, "SetFocused[true]", item, func() {
 		item.SetFocused(true)
@@ -176,15 +177,15 @@ func TestSessionItem_MutatorsBumpVersion(t *testing.T) {
 	})
 }
 
-// TestReasoningItem_MutatorsBumpVersion covers F6 §4.5 for the
-// reasoning effort dialog items.
-func TestReasoningItem_MutatorsBumpVersion(t *testing.T) {
+// TestVariantItem_MutatorsBumpVersion covers F6 §4.5 for the model
+// variant dialog items.
+func TestVariantItem_MutatorsBumpVersion(t *testing.T) {
 	t.Parallel()
 
 	sty := styles.CharmtonePantera()
-	item := &ReasoningItem{
+	item := &VariantItem{
 		Versioned: list.NewVersioned(),
-		effort:    "medium",
+		variant:   "medium",
 		title:     "Medium",
 		t:         &sty,
 	}

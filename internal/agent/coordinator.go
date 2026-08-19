@@ -21,7 +21,6 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/hyper"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
-	"github.com/NaturalSelect/angela/internal/agent/prompt"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -40,7 +39,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
-	"golang.org/x/sync/errgroup"
 
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/azure"
@@ -55,15 +53,21 @@ import (
 )
 
 // Coordinator errors.
+//
+// The exported three are what a caller can get wrong: they name an
+// agent, a preset or a model slot that does not fit. Transports answer
+// them as a bad request, so they have to be nameable from outside this
+// package. The rest describe a broken configuration or a broken
+// process, which is nobody's request to fix.
 var (
-	errCoderAgentNotConfigured         = errors.New("coder agent not configured")
-	errModelProviderNotConfigured      = errors.New("model provider not configured")
-	errLargeModelNotSelected           = errors.New("large model not selected")
-	errSmallModelNotSelected           = errors.New("small model not selected")
-	errLargeModelProviderNotConfigured = errors.New("large model provider not configured")
-	errSmallModelProviderNotConfigured = errors.New("small model provider not configured")
-	errLargeModelNotFound              = errors.New("large model not found in provider config")
-	errSmallModelNotFound              = errors.New("small model not found in provider config")
+	ErrAgentNotAvailable   = errors.New("agent not available")
+	ErrVariantNotAvailable = errors.New("model variant not available")
+	ErrModelSlotMismatch   = errors.New("model slot does not match the agent")
+
+	errCoderAgentNotConfigured    = errors.New("coder agent not configured")
+	errModelProviderNotConfigured = errors.New("model provider not configured")
+	errModelNotSelected           = errors.New("model config not selected")
+	errModelNotFound              = errors.New("model not found in provider config")
 )
 
 // Copilot models that use the Responses API instead of Chat Completions.
@@ -123,9 +127,30 @@ type Coordinator interface {
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
 	Summarize(context.Context, string) error
-	Model() Model
+
+	// DefaultModel reports what a brand new session would run on.
+	// Callers asking what a specific session runs want ActiveAgent.
+	DefaultModel() Model
+
+	// ActiveAgent reports the agent instance a session owns, together
+	// with the model resolved from it. An empty sessionID answers with
+	// the configured default.
+	ActiveAgent(ctx context.Context, sessionID string) (config.ActiveAgent, Model, error)
+
 	UpdateModels(ctx context.Context) error
 	GenerateTitle(ctx context.Context, sessionID, prompt string)
+	GenerateAgent(ctx context.Context, description string) (config.Agent, string, error)
+
+	// SwitchAgent points the session at a different primary agent from
+	// the next turn on, and records the switch in the transcript.
+	SwitchAgent(ctx context.Context, sessionID, agentID string) error
+	SwitchVariant(ctx context.Context, sessionID, variant string) error
+
+	// EditActiveAgent is the general form of the two above: it moves
+	// any combination of the session's agent, model, preset and
+	// thinking flag in one atomic edit, and reports the instance the
+	// session ends up on.
+	EditActiveAgent(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (config.ActiveAgent, error)
 }
 
 type coordinator struct {
@@ -142,14 +167,17 @@ type coordinator struct {
 	interactive bool
 
 	currentAgent SessionAgent
-	agents       map[string]SessionAgent
+	subagents    *subagentRegistry
+
+	// active holds each session's own agent instance. Everything a
+	// user changes at runtime lands here, never in cfg. The zero value
+	// is ready to use.
+	active activeAgentStore
 
 	// Skills discovery results (session-start snapshot).
 	allSkills    []*skills.Skill // Pre-filter: all discovered after dedup.
 	activeSkills []*skills.Skill // Post-filter: active skills only.
 	skillTracker *skills.Tracker
-
-	readyWg errgroup.Group
 }
 
 // CoordinatorOptions holds the dependencies for NewCoordinator. Using a
@@ -195,31 +223,58 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		lspManager:   opts.LSPManager,
 		notify:       opts.Notify,
 		runComplete:  opts.RunComplete,
-		agents:       make(map[string]SessionAgent),
+		subagents:    newSubagentRegistry(),
 		allSkills:    allSkills,
 		activeSkills: activeSkills,
 		skillTracker: skillTracker,
 		interactive:  opts.Interactive,
 	}
 
-	agentCfg, ok := opts.Config.Config().Agents[config.AgentCoder]
+	// No agent is bound here. Which agent drives a turn is read from
+	// the session's own ActiveAgent on every turn, so a session
+	// switched to another primary takes effect without rebuilding
+	// anything. The coder is checked only because it is the fallback
+	// every session lands on when its own agent is unset or has since
+	// disappeared from config.
+	coderCfg, ok := opts.Config.Config().Agents[config.AgentCoder]
 	if !ok {
 		return nil, errCoderAgentNotConfigured
 	}
-
-	// TODO: make this dynamic when we support multiple agents
-	prompt, err := coderPrompt(prompt.WithWorkingDir(c.cfg.WorkingDir()))
-	if err != nil {
-		return nil, err
+	if coderCfg.Mode != config.AgentModePrimary {
+		slog.Warn("Coder agent is not in primary mode; sessions falling back to it will run it as primary anyway",
+			"mode", coderCfg.Mode)
 	}
 
-	agent, err := c.buildAgent(ctx, prompt, agentCfg, false)
-	if err != nil {
-		return nil, err
-	}
-	c.currentAgent = agent
-	c.agents[config.AgentCoder] = agent
+	// Populate the dispatch table before the first turn resolves its
+	// tool list, which reaches agentTool and reads this table.
+	// Reconcile only snapshots config, so the subagents themselves are
+	// still built lazily on first dispatch.
+	c.reconcileSubagents()
+
+	c.currentAgent = c.buildAgent(config.AgentCoder, false)
+	go c.forgetDeletedSessions(ctx, opts.Sessions.Subscribe(ctx))
 	return c, nil
+}
+
+// forgetDeletedSessions evicts a session's cached agent as the session
+// goes away. Deletion runs through several entry points (CLI, workspace
+// and backend), so the store follows the event instead of asking each
+// of them to remember; a surviving entry would keep answering for a
+// session that no longer exists.
+func (c *coordinator) forgetDeletedSessions(ctx context.Context, events <-chan pubsub.Event[session.Session]) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-events:
+			if !ok {
+				return
+			}
+			if ev.Type == pubsub.DeletedEvent {
+				c.active.forget(ev.Payload.ID)
+			}
+		}
+	}
 }
 
 // Run implements Coordinator.
@@ -238,10 +293,6 @@ func (c *coordinator) RunAccepted(ctx context.Context, accept *AcceptedRun, sess
 // dispatchMu; when nil (the in-process/local path) no accept tracking
 // applies.
 func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID string, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error) {
-	if err := c.readyWg.Wait(); err != nil {
-		return nil, err
-	}
-
 	// MCP servers connect asynchronously (see mcp.Initialize).
 	//
 	// Interactive runs never wait for that to finish: the tool list below
@@ -262,24 +313,31 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 		}
 	}
 
-	// refresh models before each run
-	if err := c.UpdateModels(ctx); err != nil {
-		return nil, fmt.Errorf("failed to update models: %w", err)
+	// Bring the dispatch table in line with the config as it stands now.
+	// An agent whose permissions changed is replaced wholesale, so the
+	// next dispatch rebuilds it against the new config rather than
+	// reusing a cached agent that still holds revoked tools.
+	c.reconcileSubagents()
+
+	active, err := c.activeAgentFor(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := c.resolveAgent(ctx, active, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve the agent: %w", err)
 	}
 
-	model := c.currentAgent.Model()
-	maxTokens := model.CatwalkCfg.DefaultMaxTokens
-	if model.ModelCfg.MaxTokens != 0 {
-		maxTokens = model.ModelCfg.MaxTokens
-	}
+	model := resolved.Model
+	maxTokens := resolved.MaxTokens
 
 	providerCfg, ok := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
 	if !ok {
 		return nil, errModelProviderNotConfigured
 	}
 
-	mergedOptions, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, providerCfg, buildPromptCacheKey(sessionID, c.currentAgent.AgentName()))
-	summarizeOptions := getProviderOptions(model, providerCfg, buildPromptCacheKey(sessionID, "compact"))
+	mergedOptions, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, providerCfg, buildPromptCacheKey(sessionID, resolved.ID))
+	compact := c.compactFor(ctx, sessionID, resolved.Host)
 
 	if err := c.refreshTokenIfExpired(ctx, providerCfg); err != nil {
 		// NOTE(@andreynering): We don't return here because the event handling to ask the user to reauthenticate
@@ -314,12 +372,15 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	run := func() (*fantasy.AgentResult, error) {
 		return c.currentAgent.Run(ctx, SessionAgentCall{
 			SessionID:                sessionID,
+			Agent:                    resolved,
 			RunID:                    runID,
 			Prompt:                   prompt,
 			Attachments:              attachments,
 			MaxOutputTokens:          maxTokens,
 			ProviderOptions:          mergedOptions,
-			SummarizeProviderOptions: summarizeOptions,
+			SummarizeProviderOptions: compact.options,
+			Compact:                  compact.agent,
+			SummarizeOnAuthRefresh:   compact.onAuthRefresh,
 			Temperature:              temp,
 			TopP:                     topP,
 			TopK:                     topK,
@@ -328,6 +389,13 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 			OnComplete:               onComplete,
 			Accepted:                 accept,
 			OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
+			Resolve: func(ctx context.Context) (resolvedAgent, error) {
+				active, err := c.activeAgentFor(ctx, sessionID)
+				if err != nil {
+					return resolvedAgent{}, err
+				}
+				return c.resolveAgent(ctx, active, false)
+			},
 		})
 	}
 	beforeLoaded := c.skillTracker.LoadedNames()
@@ -374,6 +442,45 @@ func effectiveReasoningEffort(model Model) string {
 		return model.CatwalkCfg.ReasoningLevels[0]
 	}
 	return ""
+}
+
+// compactCall bundles the compact agent with everything its own
+// stream needs from its provider. Compaction can run on a different
+// provider than the turn that triggers it, so deriving these from the
+// running model would hand one provider's options to another and, on
+// a 401, refresh the wrong credentials while the real failure stands.
+//
+// provider, options and onAuthRefresh are only meaningful when ready
+// is true. A compact agent that did not resolve, or whose provider is
+// not configured, yields the rest zero: a turn still runs, and only
+// compaction itself fails, which is what the previous shape did too.
+type compactCall struct {
+	agent         CompactAgent
+	provider      config.ProviderConfig
+	options       fantasy.ProviderOptions
+	onAuthRefresh func(context.Context, *fantasy.ProviderError) error
+	ready         bool
+}
+
+// compactFor resolves the compact agent for a session and derives the
+// provider settings that belong to it.
+func (c *coordinator) compactFor(ctx context.Context, sessionID string, host config.ActiveAgent) compactCall {
+	call := compactCall{agent: c.buildCompactAgent(ctx, host)}
+	if !call.agent.Available() {
+		return call
+	}
+	providerCfg, ok := c.cfg.Config().Providers.Get(call.agent.Model.ModelCfg.Provider)
+	if !ok {
+		return call
+	}
+	call.provider = providerCfg
+	// The prompt cache key says "compact" rather than the running
+	// agent's own name: summarize sends a different system prompt
+	// than a normal turn, so it must not share a cache route with it.
+	call.options = getProviderOptions(call.agent.Model, providerCfg, buildPromptCacheKey(sessionID, "compact"))
+	call.onAuthRefresh = c.makeAuthRefreshCallback(providerCfg)
+	call.ready = true
+	return call
 }
 
 func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCacheKey string) fantasy.ProviderOptions {
@@ -707,73 +814,47 @@ func mergeCallOptions(model Model, cfg config.ProviderConfig, promptCacheKey str
 	return modelOptions, temp, topP, topK, freqPenalty, presPenalty
 }
 
-func (c *coordinator) buildAgent(ctx context.Context, prompt *prompt.Prompt, agent config.Agent, isSubAgent bool) (SessionAgent, error) {
-	large, small, err := c.buildAgentModels(ctx, isSubAgent)
-	if err != nil {
-		return nil, err
-	}
-
-	largeProviderCfg, _ := c.cfg.Config().Providers.Get(large.ModelCfg.Provider)
-	result := NewSessionAgent(SessionAgentOptions{
-		LargeModel:           large,
-		SmallModel:           small,
-		SystemPromptPrefix:   largeProviderCfg.SystemPromptPrefix,
-		SystemPrompt:         "",
-		IsSubAgent:           isSubAgent,
-		AgentName:            agent.Name,
-		DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
-		IsYolo:               c.permissions.SkipRequests(),
-		Sessions:             c.sessions,
-		Messages:             c.messages,
-		Tools:                nil,
-		Notify:               c.notify,
-		RunComplete:          c.runComplete,
+// buildAgent creates the executor an agent runs on. The model, tools
+// and system prompt are deliberately absent: they are resolved per turn
+// and arrive on the SessionAgentCall, so nothing here can be rewritten
+// underneath a turn already in flight. Only the ID is taken, and it is
+// a label — the primary executor serves whichever agent the session is
+// currently pointed at.
+func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
+	return NewSessionAgent(SessionAgentOptions{
+		IsSubAgent:    isSubAgent,
+		AgentID:       agentID,
+		Compaction:    c.cfg.Config().Options.Compaction,
+		IsYolo:        c.permissions.SkipRequests(),
+		Sessions:      c.sessions,
+		Messages:      c.messages,
+		Notify:        c.notify,
+		RunComplete:   c.runComplete,
+		GenerateTitle: c.generateSessionTitle,
 	})
-
-	// The readiness goroutines below perform one-time setup — building the
-	// system prompt and the initial tool list — whose results the
-	// coordinator needs for its whole lifetime, so they must survive the
-	// caller's context being canceled. Several entry points build an agent
-	// from a short-lived HTTP request context: the server's
-	// InitAgent/UpdateAgent handlers, and UpdateModels -> buildTools ->
-	// agentTool -> buildAgent for the sub-agent. The tool-list build reads
-	// the MCP registry as it stands; servers still connecting are picked up
-	// by later runs. WithoutCancel drops cancellation while keeping context
-	// values; the work is local and always completes.
-	initCtx := context.WithoutCancel(ctx)
-
-	c.readyWg.Go(func() error {
-		systemPrompt, err := prompt.Build(initCtx, large.Model.Provider(), large.Model.Model(), c.cfg)
-		if err != nil {
-			return err
-		}
-		result.SetSystemPrompt(systemPrompt)
-		return nil
-	})
-
-	c.readyWg.Go(func() error {
-		tools, err := c.buildTools(initCtx, agent, isSubAgent)
-		if err != nil {
-			return err
-		}
-		result.SetTools(tools)
-		return nil
-	})
-
-	return result, nil
 }
 
-func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubAgent bool) ([]fantasy.AgentTool, error) {
+// buildTools assembles the tool set for a turn. modelID is the model
+// the turn actually resolved to; it reaches the bash tool's commit
+// attribution, which must name the model that did the work rather than
+// whatever the global slot happens to point at.
+func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, modelID string, isSubAgent bool) ([]fantasy.AgentTool, error) {
 	var allTools []fantasy.AgentTool
-	if slices.Contains(agent.AllowedTools, AgentToolName) {
-		agentTool, err := c.agentTool(ctx)
-		if err != nil {
-			return nil, err
+	// Sub-agents must not hold any delegation tool that can start another
+	// agent (agent, agentic_fetch), to keep dispatch depth fixed at 1.
+	if !isSubAgent && agent.AllowedTools.Allows(AgentToolName) {
+		if c.subagents.Len() == 0 {
+			slog.Info("No subagents available; omitting the agent tool")
+		} else {
+			agentTool, err := c.agentTool()
+			if err != nil {
+				return nil, err
+			}
+			allTools = append(allTools, agentTool)
 		}
-		allTools = append(allTools, agentTool)
 	}
 
-	if slices.Contains(agent.AllowedTools, tools.AgenticFetchToolName) {
+	if !isSubAgent && agent.AllowedTools.Allows(tools.AgenticFetchToolName) {
 		agenticFetchTool, err := c.agenticFetchTool(ctx, nil)
 		if err != nil {
 			return nil, err
@@ -781,20 +862,17 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 		allTools = append(allTools, agenticFetchTool)
 	}
 
-	// Get the model name for the agent
-	modelID := ""
-	if modelCfg, ok := c.cfg.Config().Models[agent.Model]; ok {
-		if model := c.cfg.Config().GetModel(modelCfg.Provider, modelCfg.Model); model != nil {
-			modelID = model.ID
-		}
-	}
-
 	logFile := filepath.Join(c.cfg.Config().Options.DataDirectory, "logs", "angela.log")
 
 	// Build hook runner if PreToolUse hooks are configured.
 	var hookRunner *hooks.Runner
 	if preToolHooks := c.cfg.Config().Hooks[hooks.EventPreToolUse]; len(preToolHooks) > 0 {
-		hookRunner = hooks.NewRunner(preToolHooks, c.cfg.WorkingDir(), c.cfg.WorkingDir())
+		depth := 0
+		if isSubAgent {
+			depth = 1
+		}
+		hookRunner = hooks.NewRunner(preToolHooks, c.cfg.WorkingDir(), c.cfg.WorkingDir(),
+			hooks.AgentIdentity{ID: agent.ID, Depth: depth})
 	}
 
 	allTools = append(
@@ -847,132 +925,415 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 
 	var filteredTools []fantasy.AgentTool
 	for _, tool := range allTools {
-		if slices.Contains(agent.AllowedTools, tool.Info().Name) {
+		if agent.AllowedTools.Allows(tool.Info().Name) {
 			filteredTools = append(filteredTools, tool)
 		}
 	}
 
 	for _, tool := range tools.GetMCPTools(c.permissions, c.cfg, c.cfg.WorkingDir()) {
-		if agent.AllowedMCP == nil {
-			// No MCP restrictions
+		if agent.AllowedMCP.Allows(tool.MCP(), tool.MCPToolName()) {
 			filteredTools = append(filteredTools, tool)
 			continue
 		}
-		if len(agent.AllowedMCP) == 0 {
-			// No MCPs allowed
-			slog.Debug("No MCPs allowed", "tool", tool.Name(), "agent", agent.Name)
-			break
-		}
-
-		for mcp, tools := range agent.AllowedMCP {
-			if mcp != tool.MCP() {
-				continue
-			}
-			if len(tools) == 0 || slices.Contains(tools, tool.MCPToolName()) {
-				filteredTools = append(filteredTools, tool)
-				break
-			}
-			slog.Debug("MCP not allowed", "tool", tool.Name(), "agent", agent.Name)
-		}
+		slog.Debug("MCP not allowed", "tool", tool.Name(), "agent", agent.Name)
 	}
 	slices.SortFunc(filteredTools, func(a, b fantasy.AgentTool) int {
 		return strings.Compare(a.Info().Name, b.Info().Name)
 	})
 
-	// Wrap tools with hook interception for the top-level agent only.
-	// Sub-agents (the `agent` task tool, `agentic_fetch`, etc.) run
-	// without hook interception to avoid firing the user's hook N times
-	// per delegated turn. The top-level invocation of the sub-agent tool
-	// itself is still wrapped from the coder's side.
-	filteredTools = wrapToolsWithHooks(filteredTools, hookRunner, isSubAgent)
+	// Every tool call runs through the user's PreToolUse hooks, including
+	// the ones a sub-agent makes. A delegated `bash` is still a bash
+	// command on the user's machine, so it must face the same policy as
+	// a top-level one; the payload's agent_id and depth let a hook tell
+	// the two apart. The top-level `agent` call and the tool calls the
+	// sub-agent then makes are distinct events, not duplicates.
+	filteredTools = wrapToolsWithHooks(filteredTools, hookRunner)
 
 	return filteredTools, nil
 }
 
-// TODO: when we support multiple agents we need to change this so that we pass in the agent specific model config
-func (c *coordinator) buildAgentModels(ctx context.Context, isSubAgent bool) (Model, Model, error) {
-	largeModelCfg, ok := c.cfg.Config().Models[config.SelectedModelTypeLarge]
-	if !ok {
-		return Model{}, Model{}, errLargeModelNotSelected
+// activeIO wires the store to the session record and the config.
+func (c *coordinator) activeIO() activeAgentIO {
+	return activeAgentIO{
+		load:        c.loadActiveAgent,
+		materialize: c.materializeActiveAgent,
+		save:        c.sessions.UpdateActiveAgent,
 	}
-	smallModelCfg, ok := c.cfg.Config().Models[config.SelectedModelTypeSmall]
-	if !ok {
-		return Model{}, Model{}, errSmallModelNotSelected
-	}
+}
 
-	largeProviderCfg, ok := c.cfg.Config().Providers.Get(largeModelCfg.Provider)
-	if !ok {
-		return Model{}, Model{}, errLargeModelProviderNotConfigured
-	}
-
-	largeProvider, err := c.buildProvider(largeProviderCfg, largeModelCfg, isSubAgent)
+// loadActiveAgent reads a session's persisted delta. A session that
+// cannot be read at all is an error: running a turn on a guessed agent
+// would silently answer as something the user did not pick.
+func (c *coordinator) loadActiveAgent(ctx context.Context, sessionID string) (config.ActiveAgentState, error) {
+	sess, err := c.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return Model{}, Model{}, err
+		return config.ActiveAgentState{}, fmt.Errorf("read session %q: %w", sessionID, err)
 	}
+	return sess.ActiveAgent, nil
+}
 
-	smallProviderCfg, ok := c.cfg.Config().Providers.Get(smallModelCfg.Provider)
+// materializeActiveAgent turns a session's delta into a live instance.
+// The agent definition always comes from the config as it stands now;
+// only the model selection comes from the delta. That split is the
+// point: editing angelarc steers prompts and tools on the next turn,
+// while a model the user picked for this session stays picked.
+//
+// A session with no delta yet runs the coder on the configured default,
+// and keeps following that default until it picks something of its own.
+// A session naming an agent config has since removed, disabled or
+// hidden falls back to the coder — erroring there would strand the
+// session with no way to type the command that fixes it.
+func (c *coordinator) materializeActiveAgent(sessionID string, state config.ActiveAgentState) (config.ActiveAgent, error) {
+	cfg := c.cfg.Config()
+
+	if state.IsZero() {
+		return coderInstance(cfg)
+	}
+	if active, ok := cfg.Restore(state); ok && !active.Agent.IsHidden() {
+		return active, nil
+	}
+	slog.Warn("Session points at an agent that is no longer available; falling back to the coder",
+		"sessionID", sessionID, "agent", state.Agent)
+	return coderInstance(cfg)
+}
+
+func coderInstance(cfg *config.Config) (config.ActiveAgent, error) {
+	active, ok := cfg.InstantiateAgent(config.AgentCoder)
 	if !ok {
-		return Model{}, Model{}, errSmallModelProviderNotConfigured
+		return config.ActiveAgent{}, errCoderAgentNotConfigured
 	}
+	return active, nil
+}
 
-	smallProvider, err := c.buildProvider(smallProviderCfg, smallModelCfg, true)
-	if err != nil {
-		return Model{}, Model{}, err
+// activeAgentFor returns the agent instance this session runs on. The
+// instance is the session's own: editing it never reaches the config
+// every other session reads.
+func (c *coordinator) activeAgentFor(ctx context.Context, sessionID string) (config.ActiveAgent, error) {
+	return c.active.get(ctx, sessionID, c.activeIO())
+}
+
+// editActiveAgent changes a session's own instance under the store's
+// lock, so two concurrent edits cannot lose one another.
+func (c *coordinator) editActiveAgent(
+	ctx context.Context,
+	sessionID string,
+	fn func(config.ActiveAgent) (config.ActiveAgent, bool, error),
+) error {
+	return c.active.edit(ctx, sessionID, c.activeIO(), fn)
+}
+
+// EditActiveAgent changes a session's own agent instance: which agent
+// it runs, which model, which parameter preset, whether it thinks — or
+// any combination, applied atomically. Nothing here reaches the global
+// config; the instance belongs to the session.
+//
+// It returns the instance as it stands after the edit, so a caller that
+// asked for a relative change (toggling thinking) learns the value that
+// was actually reached instead of guessing from what it last read.
+//
+// Identity-level moves leave a trail message so the transcript explains
+// why the assistant's behavior changed mid-session. The trail is
+// written after the edit is durable, and failing to write it never
+// fails the edit.
+func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (config.ActiveAgent, error) {
+	if edit.IsZero() {
+		return c.activeAgentFor(ctx, sessionID)
 	}
-
-	var largeCatwalkModel *catwalk.Model
-	var smallCatwalkModel *catwalk.Model
-
-	for _, m := range largeProviderCfg.Models {
-		if m.ID == largeModelCfg.Model {
-			largeCatwalkModel = &m
+	cfg := c.cfg.Config()
+	if edit.Agent != "" {
+		if err := checkPrimaryAgent(cfg, edit.Agent); err != nil {
+			return config.ActiveAgent{}, err
 		}
 	}
-	for _, m := range smallProviderCfg.Models {
-		if m.ID == smallModelCfg.Model {
-			smallCatwalkModel = &m
+
+	var (
+		change   activeAgentChange
+		switched Model
+		agentID  string
+		result   config.ActiveAgent
+	)
+	err := c.editActiveAgent(ctx, sessionID, func(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
+		result = current
+		next, moved, err := applyActiveAgentEdit(cfg, current, edit)
+		if err != nil || !moved.any() {
+			return current, false, err
+		}
+		model, err := c.buildModel(ctx, next, false)
+		if err != nil {
+			return current, false, fmt.Errorf("resolve the session's model: %w", err)
+		}
+		// An unknown preset is an error here, where the user is
+		// watching and can pick again; per-turn resolution stays
+		// lenient about the same name for the opposite reason.
+		if v := next.Agent.Variant; v != "" && !slices.Contains(model.ModelCfg.VariantNames(&model.CatwalkCfg), v) {
+			return current, false, fmt.Errorf("%w: %q on %q", ErrVariantNotAvailable, v, model.ModelCfg.Model)
+		}
+		change, switched, agentID, result = moved, model, next.Agent.ID, next
+		return next, true, nil
+	})
+	if err != nil {
+		return config.ActiveAgent{}, err
+	}
+	if switched.Model == nil {
+		return result, nil
+	}
+
+	for _, text := range change.trail(switched) {
+		if _, err := c.messages.Create(ctx, sessionID, message.CreateMessageParams{
+			Role:     message.System,
+			Parts:    []message.ContentPart{message.TextContent{Text: text}},
+			Model:    switched.ModelCfg.Model,
+			Provider: switched.ModelCfg.Provider,
+			Agent:    agentID,
+		}); err != nil {
+			// The edit itself is already durable; losing its trail
+			// must not fail it.
+			slog.Warn("Failed to write the active agent trail",
+				"error", err, "sessionID", sessionID)
 		}
 	}
+	return result, nil
+}
 
-	if largeCatwalkModel == nil {
-		return Model{}, Model{}, errLargeModelNotFound
+// SwitchAgent points a session at a different agent from the next turn
+// on. Switching to the agent already in effect is a no-op: it writes no
+// trail, so repeated selection does not litter the transcript.
+func (c *coordinator) SwitchAgent(ctx context.Context, sessionID, agentID string) error {
+	_, err := c.EditActiveAgent(ctx, sessionID, config.ActiveAgentEdit{Agent: agentID})
+	return err
+}
+
+// SwitchVariant points a session at a different parameter preset of the
+// model it already runs on. Nothing about the session's identity moves:
+// same agent, same model, different request parameters. The empty name
+// selects the model's baseline, which is how a user backs out.
+func (c *coordinator) SwitchVariant(ctx context.Context, sessionID, variant string) error {
+	_, err := c.EditActiveAgent(ctx, sessionID, config.ActiveAgentEdit{Variant: &variant})
+	return err
+}
+
+// checkPrimaryAgent rejects the agents a session must not be pointed
+// at: ones config does not have, ones hidden from the user, and
+// subagents, which exist only to be dispatched by a primary.
+func checkPrimaryAgent(cfg *config.Config, agentID string) error {
+	agentCfg, ok := cfg.Agents[agentID]
+	if !ok || agentCfg.IsHidden() {
+		return fmt.Errorf("%w: %q", ErrAgentNotAvailable, agentID)
+	}
+	if agentCfg.Mode != config.AgentModePrimary {
+		return fmt.Errorf("%w: %q is a subagent", ErrAgentNotAvailable, agentID)
+	}
+	return nil
+}
+
+// activeAgentChange records what an edit actually moved. The trail
+// lines cannot be rendered during the fold because they name the
+// resulting model, which is only built afterwards.
+type activeAgentChange struct {
+	agentFrom    string
+	agentTo      config.Agent
+	agentMoved   bool
+	variantFrom  string
+	variantTo    string
+	variantMoved bool
+	modelMoved   bool
+	thinkMoved   bool
+}
+
+func (ch activeAgentChange) any() bool {
+	return ch.agentMoved || ch.variantMoved || ch.modelMoved || ch.thinkMoved
+}
+
+// trail renders the transcript lines this change deserves. Only moves
+// that change how the assistant answers get one; the thinking flag and
+// the model are shown in the UI's own chrome instead.
+func (ch activeAgentChange) trail(model Model) []string {
+	var lines []string
+	if ch.agentMoved {
+		lines = append(lines, agentSwitchedText(ch.agentFrom, ch.agentTo))
+	}
+	if ch.variantMoved {
+		lines = append(lines, variantSwitchedText(ch.variantFrom, ch.variantTo, modelDisplayName(model)))
+	}
+	return lines
+}
+
+// applyActiveAgentEdit folds an edit into an instance and reports what
+// moved. It is pure: the validation that needs a built model happens in
+// the caller, once, on the result.
+//
+// Switching agent takes the new agent's own configured model rather
+// than carrying the old one across: an agent's model is part of what
+// the user picked when they picked the agent.
+func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit config.ActiveAgentEdit) (config.ActiveAgent, activeAgentChange, error) {
+	next := current
+	var change activeAgentChange
+
+	if edit.Agent != "" && edit.Agent != current.Agent.ID {
+		instantiated, ok := cfg.InstantiateAgent(edit.Agent)
+		if !ok {
+			return current, change, fmt.Errorf("%w: %q", ErrAgentNotAvailable, edit.Agent)
+		}
+		next = instantiated
+		change.agentFrom, change.agentTo, change.agentMoved = current.Agent.ID, instantiated.Agent, true
 	}
 
-	if smallCatwalkModel == nil {
-		return Model{}, Model{}, errSmallModelNotFound
+	if edit.Model != nil && !sameModel(*edit.Model, next.Model) {
+		// The slot belongs to the agent, not to the caller: it is what
+		// InstantiateFor matches on to decide whether an internal agent
+		// inherits this model. An omitted name keeps the agent's own; a
+		// name that disagrees would silently break that inheritance, so
+		// it is reported rather than taken.
+		if edit.ModelName != "" && edit.ModelName != next.ModelName {
+			return current, change, fmt.Errorf("%w: %q runs on %q, not %q",
+				ErrModelSlotMismatch, next.Agent.ID, next.ModelName, edit.ModelName)
+		}
+		next.Model = *edit.Model
+		change.modelMoved = true
 	}
 
-	largeModelID := largeModelCfg.Model
-	smallModelID := smallModelCfg.Model
-
-	if largeModelCfg.Provider == openrouter.Name && isExactoSupported(largeModelID) {
-		largeModelID += ":exacto"
+	if edit.Variant != nil {
+		if *edit.Variant != next.Agent.Variant {
+			change.variantFrom, change.variantTo, change.variantMoved = next.Agent.Variant, *edit.Variant, true
+			next.Agent.Variant = *edit.Variant
+		}
+		// Recorded even when it matches what the config says today:
+		// the user picked this preset, so later editing the config's
+		// default must not move them off it.
+		pick := *edit.Variant
+		next.VariantPick = &pick
 	}
 
-	if smallModelCfg.Provider == openrouter.Name && isExactoSupported(smallModelID) {
-		smallModelID += ":exacto"
+	if think, ok := thinkAfter(edit, next.Model.Think); ok {
+		next.Model.Think = think
+		change.thinkMoved = true
 	}
 
-	largeModel, err := largeProvider.LanguageModel(ctx, largeModelID)
+	return next.Clone(), change, nil
+}
+
+// thinkAfter resolves what the thinking flag becomes, given what it is
+// now. A toggle is answered here, where current is the value under the
+// session's lock, rather than by the caller against a value it read
+// some time ago.
+func thinkAfter(edit config.ActiveAgentEdit, current bool) (bool, bool) {
+	switch {
+	case edit.ToggleThink:
+		return !current, true
+	case edit.Think != nil && *edit.Think != current:
+		return *edit.Think, true
+	default:
+		return current, false
+	}
+}
+
+// sameModel reports whether two selections name the same model.
+// SelectedModel carries maps and so cannot be compared directly, and
+// the identity a user means by "the model" is the provider and the
+// model ID anyway — the rest is parameters.
+func sameModel(a, b config.SelectedModel) bool {
+	return a.Provider == b.Provider && a.Model == b.Model
+}
+
+// agentSwitchedText renders the transcript line for a switch. The
+// previous agent is omitted when the session had none recorded, which
+// reads better than naming an empty agent.
+func agentSwitchedText(from string, to config.Agent) string {
+	name := to.Name
+	if name == "" {
+		name = to.ID
+	}
+	if from == "" {
+		return fmt.Sprintf("Switched to the %s agent.", name)
+	}
+	return fmt.Sprintf("Switched from %s to the %s agent.", from, name)
+}
+
+// modelDisplayName prefers the catalog's display name and falls back to
+// the raw ID for models a provider discovered without one.
+func modelDisplayName(model Model) string {
+	return cmp.Or(model.CatwalkCfg.Name, model.ModelCfg.Model)
+}
+
+// variantSwitchedText renders the transcript line for a preset change.
+func variantSwitchedText(from, to, modelName string) string {
+	switch {
+	case to == "":
+		return fmt.Sprintf("Switched %s back to its baseline parameters.", modelName)
+	case from == "":
+		return fmt.Sprintf("Switched %s to the %s preset.", modelName, to)
+	default:
+		return fmt.Sprintf("Switched %s from the %s preset to %s.", modelName, from, to)
+	}
+}
+
+// buildModel resolves the single model an ActiveAgent runs on. The
+// model is already materialized on the instance, so this no longer
+// consults the shared Config.Models table — that lookup, and its
+// fallback for a bad name, moved into config.InstantiateAgent.
+func (c *coordinator) buildModel(ctx context.Context, active config.ActiveAgent, isSubAgent bool) (Model, error) {
+	agent := active.Agent
+	modelCfg := active.Model
+	if modelCfg.Provider == "" || modelCfg.Model == "" {
+		return Model{}, errModelNotSelected
+	}
+
+	providerCfg, ok := c.cfg.Config().Providers.Get(modelCfg.Provider)
+	if !ok {
+		return Model{}, errModelProviderNotConfigured
+	}
+
+	var catwalkModel *catwalk.Model
+	for _, m := range providerCfg.Models {
+		if m.ID == modelCfg.Model {
+			catwalkModel = &m
+		}
+	}
+	if catwalkModel == nil {
+		return Model{}, errModelNotFound
+	}
+
+	// The variant overlay lands before the provider is built so that
+	// provider options a variant sets reach buildProvider too.
+	modelCfg, variantApplied := modelCfg.WithVariant(agent.Variant, catwalkModel)
+	if agent.Variant != "" && !variantApplied {
+		slog.Warn("Unknown model variant; falling back to the model baseline",
+			"agent", agent.ID, "model", active.ModelName, "variant", agent.Variant)
+	}
+
+	provider, err := c.buildProvider(providerCfg, modelCfg, isSubAgent)
 	if err != nil {
-		return Model{}, Model{}, err
-	}
-	smallModel, err := smallProvider.LanguageModel(ctx, smallModelID)
-	if err != nil {
-		return Model{}, Model{}, err
+		return Model{}, err
 	}
 
-	return Model{
-			Model:      largeModel,
-			CatwalkCfg: *largeCatwalkModel,
-			ModelCfg:   largeModelCfg,
-			FlatRate:   largeProviderCfg.FlatRate,
-		}, Model{
-			Model:      smallModel,
-			CatwalkCfg: *smallCatwalkModel,
-			ModelCfg:   smallModelCfg,
-			FlatRate:   smallProviderCfg.FlatRate,
-		}, nil
+	modelID := modelCfg.Model
+	if modelCfg.Provider == openrouter.Name && isExactoSupported(modelID) {
+		modelID += ":exacto"
+	}
+
+	languageModel, err := provider.LanguageModel(ctx, modelID)
+	if err != nil {
+		return Model{}, err
+	}
+
+	resolved := Model{
+		Model:      languageModel,
+		CatwalkCfg: *catwalkModel,
+		ModelCfg:   modelCfg,
+		FlatRate:   providerCfg.FlatRate,
+	}
+	if variantApplied {
+		resolved.Variant = agent.Variant
+	}
+
+	// Baking the agent's temperature into the model's config lets every
+	// downstream reader of Model().ModelCfg.Temperature (mergeCallOptions,
+	// runSubAgent) pick it up without knowing about the agent at all.
+	if agent.Temperature != nil {
+		resolved.ModelCfg.Temperature = agent.Temperature
+	}
+
+	return resolved, nil
 }
 
 func (c *coordinator) buildAnthropicProvider(baseURL, apiKey string, headers map[string]string, providerID string) (fantasy.Provider, error) {
@@ -1229,6 +1590,9 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 			baseURL = hyper.BaseURL() + "/v1"
 			headers["x-angela-id"] = event.GetID()
 		case string(catwalk.InferenceProviderZAI):
+			// providerCfg is a value copy, but ExtraBody still aliases
+			// the published config snapshot that other turns read.
+			providerCfg.ExtraBody = maps.Clone(providerCfg.ExtraBody)
 			if providerCfg.ExtraBody == nil {
 				providerCfg.ExtraBody = map[string]any{}
 			}
@@ -1285,28 +1649,57 @@ func (c *coordinator) IsSessionBusy(sessionID string) bool {
 	return c.currentAgent.IsSessionBusy(sessionID)
 }
 
-func (c *coordinator) Model() Model {
-	return c.currentAgent.Model()
+// DefaultModel reports the model a brand new session would run on. It
+// resolves the coder from config, so it answers "what is configured",
+// not "what is this session running" — callers that mean the latter
+// want ActiveAgent.
+func (c *coordinator) DefaultModel() Model {
+	active, ok := c.cfg.Config().InstantiateAgent(config.AgentCoder)
+	if !ok {
+		return Model{}
+	}
+	model, err := c.buildModel(context.Background(), active, false)
+	if err != nil {
+		slog.Error("Failed to resolve the primary model", "error", err)
+		return Model{}
+	}
+	return model
 }
 
-func (c *coordinator) UpdateModels(ctx context.Context) error {
-	// build the models again so we make sure we get the latest config
-	large, small, err := c.buildAgentModels(ctx, false)
-	if err != nil {
-		return err
+// ActiveAgent reports the agent instance a session runs on, along with
+// the model resolved from it. An empty sessionID answers with the
+// configured default, which is what the landing page shows before any
+// session exists.
+func (c *coordinator) ActiveAgent(ctx context.Context, sessionID string) (config.ActiveAgent, Model, error) {
+	if sessionID == "" {
+		active, ok := c.cfg.Config().InstantiateAgent(config.AgentCoder)
+		if !ok {
+			return config.ActiveAgent{}, Model{}, errCoderAgentNotConfigured
+		}
+		model, err := c.buildModel(ctx, active, false)
+		return active, model, err
 	}
-	c.currentAgent.SetModels(large, small)
 
-	agentCfg, ok := c.cfg.Config().Agents[config.AgentCoder]
-	if !ok {
+	active, err := c.activeAgentFor(ctx, sessionID)
+	if err != nil {
+		return config.ActiveAgent{}, Model{}, err
+	}
+	model, err := c.buildModel(ctx, active, false)
+	if err != nil {
+		return config.ActiveAgent{}, Model{}, err
+	}
+	return active, model, nil
+}
+
+// UpdateModels reconciles the dispatch table against the config as it
+// stands now. It no longer refreshes any model: every turn resolves its
+// own agent, so a config change is picked up by the next turn without
+// anything being mutated in place.
+func (c *coordinator) UpdateModels(ctx context.Context) error {
+	if _, ok := c.cfg.Config().Agents[config.AgentCoder]; !ok {
 		return errCoderAgentNotConfigured
 	}
-
-	tools, err := c.buildTools(ctx, agentCfg, false)
-	if err != nil {
-		return err
-	}
-	c.currentAgent.SetTools(tools)
+	c.reconcileSubagents()
 	return nil
 }
 
@@ -1319,30 +1712,35 @@ func (c *coordinator) QueuedPromptsList(sessionID string) []string {
 }
 
 func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
-	providerCfg, ok := c.cfg.Config().Providers.Get(c.currentAgent.Model().ModelCfg.Provider)
-	if !ok {
+	// The compact agent is resolved first because it decides which
+	// provider this call talks to. Taking the provider from the
+	// primary model instead would refresh credentials for one provider
+	// and then send the request to another.
+	active, err := c.activeAgentFor(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	compact := c.compactFor(ctx, sessionID, active)
+	if !compact.agent.Available() {
+		return fmt.Errorf("resolve the compact agent: %w", compact.agent.Err)
+	}
+	if !compact.ready {
 		return errModelProviderNotConfigured
 	}
 
-	if err := c.refreshTokenIfExpired(ctx, providerCfg); err != nil {
+	if err := c.refreshTokenIfExpired(ctx, compact.provider); err != nil {
 		slog.Error("Failed to refresh OAuth2 token before summarize. Proceeding with existing token.", "error", err)
 	}
 
 	// Auth failures during summarize flow through fantasy's OnAuthRefresh,
 	// the same path used by regular turns.
-	//
-	// The prompt cache key uses "compact" rather than the running
-	// agent's own name: summarize sends a different system prompt than a
-	// normal turn, so it must not share a cache route with it.
-	return c.currentAgent.Summarize(ctx, sessionID, getProviderOptions(c.currentAgent.Model(), providerCfg, buildPromptCacheKey(sessionID, "compact")), c.makeAuthRefreshCallback(providerCfg))
+	return c.currentAgent.Summarize(ctx, sessionID, compact.agent, compact.options, compact.onAuthRefresh)
 }
 
-// GenerateTitle generates a session title using the current agent.
+// GenerateTitle names a session from a user prompt, using the title
+// agent's own model and system prompt.
 func (c *coordinator) GenerateTitle(ctx context.Context, sessionID, prompt string) {
-	if c.currentAgent == nil {
-		return
-	}
-	c.currentAgent.GenerateTitle(ctx, sessionID, prompt)
+	c.generateSessionTitle(ctx, sessionID, prompt)
 }
 
 // refreshTokenIfExpired proactively refreshes the OAuth token if it has expired.
@@ -1369,11 +1767,15 @@ func (c *coordinator) retryAfterUnauthorized(ctx context.Context, providerCfg co
 			var exchangeErr *oauth.TokenExchangeError
 			if c.notify != nil && errors.As(err, &exchangeErr) && exchangeErr.IsRefreshTokenRevoked() {
 				slog.Info("Refresh token revoked, waiting for re-authentication", "provider", providerCfg.ID)
+				// Read the generation before publishing: the user can
+				// finish authenticating before the wait starts, and
+				// that completion must still count.
+				since := c.cfg.AuthGeneration(providerCfg.ID)
 				c.notify.Publish(pubsub.CreatedEvent, notify.Notification{
 					Type:       notify.TypeReAuthenticate,
 					ProviderID: providerCfg.ID,
 				})
-				return c.waitForInteractiveReauth(ctx, providerCfg.ID)
+				return c.waitForInteractiveReauth(ctx, providerCfg.ID, since)
 			}
 			return err
 		}
@@ -1398,15 +1800,15 @@ var errNoInteractiveAuth = errors.New("interactive authentication unavailable")
 // provider completes (signalled via SignalAuthComplete) or the context is
 // cancelled, then rebuilds models so the next attempt picks up fresh
 // credentials. Returns nil when the caller should retry.
-func (c *coordinator) waitForInteractiveReauth(ctx context.Context, providerID string) error {
+func (c *coordinator) waitForInteractiveReauth(ctx context.Context, providerID string, since uint64) error {
 	// Use a detached context with a generous timeout so the wait survives
 	// agent run cancellation. The user needs time to complete browser-based
 	// authentication.
 	waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
 	defer waitCancel()
-	slog.Info("Blocking on WaitForTokenChange", "provider", providerID)
-	if waitErr := c.cfg.WaitForTokenChange(waitCtx, providerID); waitErr != nil {
-		slog.Info("WaitForTokenChange returned error", "provider", providerID, "error", waitErr)
+	slog.Info("Blocking on WaitForTokenChangeSince", "provider", providerID)
+	if waitErr := c.cfg.WaitForTokenChangeSince(waitCtx, providerID, since); waitErr != nil {
+		slog.Info("WaitForTokenChangeSince returned error", "provider", providerID, "error", waitErr)
 		return waitErr
 	}
 	// If the original context was cancelled during the wait, fantasy's retry
@@ -1416,12 +1818,13 @@ func (c *coordinator) waitForInteractiveReauth(ctx context.Context, providerID s
 			"provider", providerID, "ctx_err", ctx.Err())
 		return ctx.Err()
 	}
-	// Rebuild models so ModelProvider picks up the fresh credentials.
+	// Reconcile the dispatch table; the in-flight turn picks up the new
+	// credentials through its own model rebuild on retry.
 	if updateErr := c.UpdateModels(waitCtx); updateErr != nil {
 		slog.Error("Failed to update models after re-authentication", "error", updateErr)
 		return updateErr
 	}
-	slog.Info("Models updated, returning nil to retry", "provider", providerID)
+	slog.Info("Reconciled after re-authentication, returning nil to retry", "provider", providerID)
 	return nil
 }
 
@@ -1483,6 +1886,7 @@ type subAgentParams struct {
 	// SessionSetup is an optional callback invoked after session creation
 	// but before agent execution, for custom session configuration.
 	SessionSetup func(sessionID string)
+	Resolved     resolvedAgent
 }
 
 // runSubAgent runs a sub-agent and handles session management and cost accumulation.
@@ -1501,12 +1905,8 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 		params.SessionSetup(session.ID)
 	}
 
-	// Get model configuration
-	model := params.Agent.Model()
-	maxTokens := model.CatwalkCfg.DefaultMaxTokens
-	if model.ModelCfg.MaxTokens != 0 {
-		maxTokens = model.ModelCfg.MaxTokens
-	}
+	model := params.Resolved.Model
+	maxTokens := params.Resolved.MaxTokens
 
 	providerCfg, ok := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
 	if !ok {
@@ -1514,13 +1914,17 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 	}
 
 	// Run the agent
+	compact := c.compactFor(ctx, params.SessionID, params.Resolved.Host)
 	run := func() (*fantasy.AgentResult, error) {
 		return params.Agent.Run(ctx, SessionAgentCall{
 			SessionID:                session.ID,
+			Agent:                    params.Resolved,
 			Prompt:                   params.Prompt,
 			MaxOutputTokens:          maxTokens,
-			ProviderOptions:          getProviderOptions(model, providerCfg, buildPromptCacheKey(params.SessionID, params.Agent.AgentName())),
-			SummarizeProviderOptions: getProviderOptions(model, providerCfg, buildPromptCacheKey(params.SessionID, "compact")),
+			ProviderOptions:          getProviderOptions(model, providerCfg, buildPromptCacheKey(params.SessionID, params.Resolved.ID)),
+			SummarizeProviderOptions: compact.options,
+			Compact:                  compact.agent,
+			SummarizeOnAuthRefresh:   compact.onAuthRefresh,
 			Temperature:              model.ModelCfg.Temperature,
 			TopP:                     model.ModelCfg.TopP,
 			TopK:                     model.ModelCfg.TopK,

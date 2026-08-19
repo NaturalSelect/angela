@@ -138,6 +138,120 @@ func TestConfigStore_RuntimeOverrides_MutableViaPointer(t *testing.T) {
 	require.True(t, store.Overrides().SkipPermissionRequests)
 }
 
+// TestConfigStore_SetupAgentsDoesNotMutatePublishedConfig locks in the
+// H7 fix: SetupAgents must publish a freshly resolved Config rather
+// than writing Agents through the pointer a concurrent reader may
+// already be holding. Regressing to `s.Config().SetupAgents()` would
+// make before and after the same pointer and let the sentinel leak
+// into the resolved map, failing every assertion below.
+func TestConfigStore_SetupAgentsDoesNotMutatePublishedConfig(t *testing.T) {
+	t.Parallel()
+
+	store := &ConfigStore{config: newAgentTestConfig(t, nil)}
+
+	before := store.Config()
+	before.Agents = map[string]Agent{"stale-sentinel": {}}
+
+	store.SetupAgents()
+
+	after := store.Config()
+	require.NotSame(t, before, after, "SetupAgents must publish a new Config value, not mutate the live one")
+	require.Contains(t, before.Agents, "stale-sentinel", "the previously published Config must be left untouched")
+	require.NotContains(t, after.Agents, "stale-sentinel")
+	require.Contains(t, after.Agents, AgentCoder)
+}
+
+// TestReloadFromDisk_PublishesAgentsExactlyOnce locks the single-publish
+// refactor. The previous shape published a half-built Config (models and
+// agents not yet resolved) and then published again after resolution, so
+// a subscriber could observe an agent-less config mid-reload.
+func TestReloadFromDisk_PublishesAgentsExactlyOnce(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "angela.json")
+
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	resetProviderState()
+	t.Cleanup(resetProviderState)
+
+	initial := `{
+		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
+		"providers": {"openai": {"api_key": "test-key", "models": [{"id": "gpt-4", "name": "GPT-4"}]}}
+	}`
+	require.NoError(t, os.WriteFile(configPath, []byte(initial), 0o600))
+
+	store, err := Load(dir, dir, false)
+	require.NoError(t, err)
+	store.globalDataPath = configPath
+	store.CaptureStalenessSnapshot([]string{configPath})
+
+	// Hammer Config() across the reload: every snapshot a concurrent
+	// reader can observe must already carry resolved agents.
+	var (
+		observed []map[string]Agent
+		seen     = map[*Config]bool{}
+		stop     = make(chan struct{})
+		done     = make(chan struct{})
+	)
+	go func() {
+		defer close(done)
+		for {
+			cfg := store.Config()
+			if !seen[cfg] {
+				seen[cfg] = true
+				observed = append(observed, cfg.Agents)
+			}
+			select {
+			case <-stop:
+				return
+			default:
+			}
+		}
+	}()
+
+	updated := `{
+		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
+		"providers": {"openai": {"api_key": "test-key", "models": [{"id": "gpt-4", "name": "GPT-4"}]}},
+		"agents": {"reviewer": {"description": "Reviews code"}}
+	}`
+	time.Sleep(10 * time.Millisecond)
+	require.NoError(t, os.WriteFile(configPath, []byte(updated), 0o600))
+
+	require.NoError(t, store.ReloadFromDisk(context.Background()))
+	close(stop)
+	<-done
+
+	require.NotEmpty(t, observed)
+	for i, agents := range observed {
+		require.Containsf(t, agents, AgentCoder, "snapshot #%d exposed a config without resolved agents", i)
+		require.NotNilf(t, agents[AgentCoder].AllowedTools,
+			"snapshot #%d exposed an unmaterialized coder", i)
+	}
+	require.Contains(t, store.Config().Agents, "reviewer")
+}
+
+// TestLoad_ResolvesAgentsWithoutProvider covers first-run: no provider is
+// configured yet, but the agent registry must still exist so the UI can
+// list agents instead of rendering an empty picker.
+func TestLoad_ResolvesAgentsWithoutProvider(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	resetProviderState()
+	t.Cleanup(resetProviderState)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"), []byte(`{}`), 0o600))
+
+	store, err := Load(dir, dir, false)
+	require.NoError(t, err)
+
+	cfg := store.Config()
+	require.False(t, cfg.IsConfigured(), "the test premise is an unconfigured install")
+	require.Contains(t, cfg.Agents, AgentCoder)
+	require.Equal(t, ToolSetScope, cfg.Agents[AgentCoder].AllowedTools.Kind)
+}
+
 func TestGlobalWorkspaceDir(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_DATA", dir)
@@ -333,7 +447,7 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	// Create initial config with one model preference
 	initialConfig := `{
 		"models": {
-			"large": {"provider": "openai", "model": "gpt-4"}
+			"main": {"provider": "openai", "model": "gpt-4"}
 		},
 		"providers": {
 			"openai": {
@@ -353,13 +467,13 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	store.CaptureStalenessSnapshot([]string{configPath})
 
 	// Verify initial model
-	require.Equal(t, "openai", store.config.Models[SelectedModelTypeLarge].Provider)
-	require.Equal(t, "gpt-4", store.config.Models[SelectedModelTypeLarge].Model)
+	require.Equal(t, "openai", store.config.Models[ModelMain].Provider)
+	require.Equal(t, "gpt-4", store.config.Models[ModelMain].Model)
 
 	// Modify config on disk to change model
 	updatedConfig := `{
 		"models": {
-			"large": {"provider": "anthropic", "model": "claude-3"}
+			"main": {"provider": "anthropic", "model": "claude-3"}
 		},
 		"providers": {
 			"openai": {
@@ -381,8 +495,8 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the NEW config values are now in effect (regression check)
-	require.Equal(t, "anthropic", store.config.Models[SelectedModelTypeLarge].Provider)
-	require.Equal(t, "claude-3", store.config.Models[SelectedModelTypeLarge].Model)
+	require.Equal(t, "anthropic", store.config.Models[ModelMain].Provider)
+	require.Equal(t, "claude-3", store.config.Models[ModelMain].Model)
 }
 
 // TestSetConfigField_AutoReloads verifies that SetConfigField automatically
@@ -741,7 +855,7 @@ func TestConfigStore_SetConfigFields_concurrentInProcess(t *testing.T) {
 	store := &ConfigStore{
 		config: &Config{
 			Providers: csync.NewMap[string, ProviderConfig](),
-			Models:    make(map[SelectedModelType]SelectedModel),
+			Models:    make(map[ModelConfigName]SelectedModel),
 		},
 		globalDataPath: configPath,
 		workingDir:     dir,

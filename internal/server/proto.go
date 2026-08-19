@@ -949,6 +949,88 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionSummarize(w http.ResponseW
 	w.WriteHeader(http.StatusOK)
 }
 
+// handleGetWorkspaceAgentDefaultActiveAgent reports the agent a new
+// session would run. The landing screen has no session yet, and a
+// session-scoped path cannot express that: an empty path segment
+// collapses and names "active-agent" as the session ID.
+//
+//	@Summary		Get the default active agent
+//	@Tags			agent
+//	@Produce		json
+//	@Param			id	path		string	true	"Workspace ID"
+//	@Success		200	{object}	proto.ActiveAgent
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/active-agent [get]
+func (c *controllerV1) handleGetWorkspaceAgentDefaultActiveAgent(w http.ResponseWriter, r *http.Request) {
+	active, err := c.backend.GetSessionActiveAgent(r.Context(), r.PathValue("id"), "")
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, active)
+}
+
+// handleGetWorkspaceAgentSessionActiveAgent reports the agent instance
+// a session is running.
+//
+//	@Summary		Get the session's active agent
+//	@Tags			agent
+//	@Produce		json
+//	@Param			id	path		string	true	"Workspace ID"
+//	@Param			sid	path		string	true	"Session ID"
+//	@Success		200	{object}	proto.ActiveAgent
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/active-agent [get]
+func (c *controllerV1) handleGetWorkspaceAgentSessionActiveAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+
+	active, err := c.backend.GetSessionActiveAgent(r.Context(), id, sid)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, active)
+}
+
+// handlePostWorkspaceAgentSessionActiveAgent edits the agent instance a
+// session runs: its agent, model, parameter preset or thinking flag, in
+// any combination. It answers with the resulting instance so a relative
+// edit reports the value it reached.
+//
+//	@Summary		Edit the session's active agent
+//	@Tags			agent
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string							true	"Workspace ID"
+//	@Param			sid		path	string							true	"Session ID"
+//	@Param			request	body	proto.ActiveAgentEditRequest	true	"Active agent edit"
+//	@Success		200	{object}	proto.ActiveAgent
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/active-agent [post]
+func (c *controllerV1) handlePostWorkspaceAgentSessionActiveAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+
+	var req proto.ActiveAgentEditRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	active, err := c.backend.EditSessionActiveAgent(r.Context(), id, sid, req)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, active)
+}
+
 // handlePostWorkspaceAgentSessionShell runs a shell command in the workspace.
 //
 //	@Summary		Run shell command
@@ -1003,28 +1085,6 @@ func (c *controllerV1) handleGetWorkspaceAgentSessionPromptList(w http.ResponseW
 		return
 	}
 	jsonEncode(w, prompts)
-}
-
-// handleGetWorkspaceAgentDefaultSmallModel returns the default small model for a provider.
-//
-//	@Summary		Get default small model
-//	@Tags			agent
-//	@Produce		json
-//	@Param			id			path		string	true	"Workspace ID"
-//	@Param			provider_id	query		string	false	"Provider ID"
-//	@Success		200			{object}	object
-//	@Failure		404			{object}	proto.Error
-//	@Failure		500			{object}	proto.Error
-//	@Router			/workspaces/{id}/agent/default-small-model [get]
-func (c *controllerV1) handleGetWorkspaceAgentDefaultSmallModel(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	providerID := r.URL.Query().Get("provider_id")
-	model, err := c.backend.GetDefaultSmallModel(id, providerID)
-	if err != nil {
-		c.handleError(w, r, err)
-		return
-	}
-	jsonEncode(w, model)
 }
 
 // handlePostWorkspacePermissionsGrant grants a permission request.
@@ -1174,6 +1234,15 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 		status = http.StatusNotFound
 	case errors.Is(err, backend.ErrLSPClientNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, backend.ErrSessionNotFound):
+		status = http.StatusNotFound
+	case errors.Is(err, backend.ErrAgentNotAvailable),
+		errors.Is(err, backend.ErrVariantNotAvailable),
+		errors.Is(err, backend.ErrModelSlotMismatch):
+		// The request named something that does not fit, which the
+		// caller can correct. A 500 here would tell them to retry an
+		// edit that will never be accepted.
+		status = http.StatusBadRequest
 	case errors.Is(err, backend.ErrAgentNotInitialized):
 		status = http.StatusBadRequest
 	case errors.Is(err, backend.ErrPathRequired):

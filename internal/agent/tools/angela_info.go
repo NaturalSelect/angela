@@ -101,7 +101,7 @@ func writeModels(b *strings.Builder, cfg *config.ConfigStore) {
 		return
 	}
 	b.WriteString("[model]\n")
-	for _, typ := range []config.SelectedModelType{config.SelectedModelTypeLarge, config.SelectedModelTypeSmall} {
+	for _, typ := range []config.ModelConfigName{config.ModelMain, config.ModelChore} {
 		m, ok := c.Models[typ]
 		if !ok {
 			continue
@@ -396,7 +396,7 @@ func writeOptions(b *strings.Builder, cfg *config.ConfigStore) {
 	opts = append(opts, kv{"debug", fmt.Sprintf("%v", c.Options.Debug)})
 	autoLSP := c.Options.AutoLSP == nil || *c.Options.AutoLSP
 	opts = append(opts, kv{"auto_lsp", fmt.Sprintf("%v", autoLSP)})
-	autoSummarize := !c.Options.DisableAutoSummarize
+	autoSummarize := c.Options.Compaction.AutoCompact()
 	opts = append(opts, kv{"auto_summarize", fmt.Sprintf("%v", autoSummarize)})
 
 	slices.SortFunc(opts, func(a, b kv) int { return strings.Compare(a.key, b.key) })

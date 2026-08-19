@@ -178,7 +178,8 @@ func TestParseStdout(t *testing.T) {
 func TestBuildEnv(t *testing.T) {
 	t.Parallel()
 
-	env := BuildEnv(EventPreToolUse, "bash", "sess-1", "/work", "/project", `{"command":"ls","file_path":"/tmp/f.txt"}`)
+	env := BuildEnv(EventPreToolUse, "bash", "sess-1", "/work", "/project", `{"command":"ls","file_path":"/tmp/f.txt"}`,
+		AgentIdentity{ID: "explore", Depth: 1})
 
 	envMap := make(map[string]string)
 	for _, e := range env {
@@ -195,6 +196,10 @@ func TestBuildEnv(t *testing.T) {
 	require.Equal(t, "/project", envMap["ANGELA_PROJECT_DIR"])
 	require.Equal(t, "ls", envMap["ANGELA_TOOL_INPUT_COMMAND"])
 	require.Equal(t, "/tmp/f.txt", envMap["ANGELA_TOOL_INPUT_FILE_PATH"])
+
+	// A hook needs to tell a delegated tool call from a top-level one.
+	require.Equal(t, "explore", envMap["ANGELA_AGENT_ID"])
+	require.Equal(t, "1", envMap["ANGELA_AGENT_DEPTH"])
 
 	// Shared Angela markers must be present so hook-authored scripts can
 	// detect they're running under Angela the same way bash-tool-invoked
@@ -214,12 +219,25 @@ func splitFirst(s, sep string) []string {
 
 func TestBuildPayload(t *testing.T) {
 	t.Parallel()
-	payload := BuildPayload(EventPreToolUse, "sess-1", "/work", "bash", `{"command":"ls"}`)
+	payload := BuildPayload(EventPreToolUse, "sess-1", "/work", "bash", `{"command":"ls"}`,
+		AgentIdentity{ID: "explore", Depth: 1})
 	s := string(payload)
 	require.Contains(t, s, `"event":"`+EventPreToolUse+`"`)
 	require.Contains(t, s, `"tool_name":"bash"`)
 	// tool_input should be an object, not a string.
 	require.Contains(t, s, `"tool_input":{"command":"ls"}`)
+	require.Contains(t, s, `"agent_id":"explore"`)
+	require.Contains(t, s, `"depth":1`)
+}
+
+// TestBuildPayload_TopLevelAgent pins that the coder's own calls report
+// depth 0, so a hook can gate on "delegated or not" without guessing.
+func TestBuildPayload_TopLevelAgent(t *testing.T) {
+	t.Parallel()
+	payload := BuildPayload(EventPreToolUse, "sess-1", "/work", "bash", `{"command":"ls"}`,
+		AgentIdentity{ID: "coder", Depth: 0})
+	require.Contains(t, string(payload), `"agent_id":"coder"`)
+	require.Contains(t, string(payload), `"depth":0`)
 }
 
 func TestRunnerExitCode0Allow(t *testing.T) {
@@ -227,7 +245,7 @@ func TestRunnerExitCode0Allow(t *testing.T) {
 	hookCfg := config.HookConfig{
 		Command: `echo '{"decision":"allow","context":"ok"}'`,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.Equal(t, DecisionAllow, result.Decision)
@@ -239,7 +257,7 @@ func TestRunnerExitCode2Deny(t *testing.T) {
 	hookCfg := config.HookConfig{
 		Command: `echo "forbidden" >&2; exit 2`,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.Equal(t, DecisionDeny, result.Decision)
@@ -252,7 +270,7 @@ func TestRunnerExitCode49Halt(t *testing.T) {
 	hookCfg := config.HookConfig{
 		Command: `echo "stop the turn" >&2; exit 49`,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.True(t, result.Halt)
@@ -265,7 +283,7 @@ func TestRunnerHaltViaJSON(t *testing.T) {
 	hookCfg := config.HookConfig{
 		Command: `echo '{"halt":true,"reason":"via json"}'`,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.True(t, result.Halt)
@@ -277,7 +295,7 @@ func TestRunnerExitCodeOtherNonBlocking(t *testing.T) {
 	hookCfg := config.HookConfig{
 		Command: `exit 1`,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.Equal(t, DecisionNone, result.Decision)
@@ -289,7 +307,7 @@ func TestRunnerTimeout(t *testing.T) {
 		Command: `sleep 10`,
 		Timeout: 1,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	start := time.Now()
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	elapsed := time.Since(start)
@@ -304,7 +322,7 @@ func TestRunnerDeduplication(t *testing.T) {
 	hookCfg := config.HookConfig{
 		Command: `echo '{"decision":"allow"}'`,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg, hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg, hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.Equal(t, DecisionAllow, result.Decision)
@@ -313,7 +331,7 @@ func TestRunnerDeduplication(t *testing.T) {
 func TestRunnerNoMatchingHooks(t *testing.T) {
 	t.Parallel()
 	// Hooks are empty.
-	r := NewRunner(nil, t.TempDir(), t.TempDir())
+	r := NewRunner(nil, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.Equal(t, DecisionNone, result.Decision)
@@ -340,7 +358,7 @@ func TestRunnerMatcherFiltering(t *testing.T) {
 		hooks := validatedHooks(t, []config.HookConfig{
 			{Command: `echo '{"decision":"deny","reason":"blocked"}'`, Matcher: "^bash$"},
 		})
-		r := NewRunner(hooks, t.TempDir(), t.TempDir())
+		r := NewRunner(hooks, t.TempDir(), t.TempDir(), AgentIdentity{})
 		result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 		require.NoError(t, err)
 		require.Equal(t, DecisionDeny, result.Decision)
@@ -351,7 +369,7 @@ func TestRunnerMatcherFiltering(t *testing.T) {
 		hooks := validatedHooks(t, []config.HookConfig{
 			{Command: `echo '{"decision":"deny","reason":"blocked"}'`, Matcher: "^edit$"},
 		})
-		r := NewRunner(hooks, t.TempDir(), t.TempDir())
+		r := NewRunner(hooks, t.TempDir(), t.TempDir(), AgentIdentity{})
 		result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 		require.NoError(t, err)
 		require.Equal(t, DecisionNone, result.Decision)
@@ -362,7 +380,7 @@ func TestRunnerMatcherFiltering(t *testing.T) {
 		hooks := validatedHooks(t, []config.HookConfig{
 			{Command: `echo '{"decision":"allow"}'`},
 		})
-		r := NewRunner(hooks, t.TempDir(), t.TempDir())
+		r := NewRunner(hooks, t.TempDir(), t.TempDir(), AgentIdentity{})
 		result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 		require.NoError(t, err)
 		require.Equal(t, DecisionAllow, result.Decision)
@@ -373,7 +391,7 @@ func TestRunnerMatcherFiltering(t *testing.T) {
 		hooks := validatedHooks(t, []config.HookConfig{
 			{Command: `echo '{"decision":"deny","reason":"mcp blocked"}'`, Matcher: "^mcp_"},
 		})
-		r := NewRunner(hooks, t.TempDir(), t.TempDir())
+		r := NewRunner(hooks, t.TempDir(), t.TempDir(), AgentIdentity{})
 
 		result, err := r.Run(context.Background(), EventPreToolUse, "sess", "mcp_github_get_me", `{}`)
 		require.NoError(t, err)
@@ -392,7 +410,7 @@ func TestRunnerMatcherFiltering(t *testing.T) {
 		raw := []config.HookConfig{
 			{Command: `echo '{"decision":"deny","reason":"blocked"}'`, Matcher: "^bash$"},
 		}
-		r := NewRunner(raw, t.TempDir(), t.TempDir())
+		r := NewRunner(raw, t.TempDir(), t.TempDir(), AgentIdentity{})
 
 		deny, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 		require.NoError(t, err)
@@ -410,7 +428,7 @@ func TestRunnerMatcherFiltering(t *testing.T) {
 		raw := []config.HookConfig{
 			{Command: `echo '{"decision":"deny","reason":"should not fire"}'`, Matcher: "[invalid"},
 		}
-		r := NewRunner(raw, t.TempDir(), t.TempDir())
+		r := NewRunner(raw, t.TempDir(), t.TempDir(), AgentIdentity{})
 
 		result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 		require.NoError(t, err)
@@ -485,7 +503,7 @@ func TestRunnerHookNameUsesDisplayName(t *testing.T) {
 			Name:    "my-hook",
 			Command: `echo '{"decision":"allow"}'`,
 		}
-		r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+		r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 		result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 		require.NoError(t, err)
 		require.Equal(t, DecisionAllow, result.Decision)
@@ -498,7 +516,7 @@ func TestRunnerHookNameUsesDisplayName(t *testing.T) {
 		hookCfg := config.HookConfig{
 			Command: `echo '{"decision":"allow"}'`,
 		}
-		r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+		r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 		result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 		require.NoError(t, err)
 		require.Equal(t, DecisionAllow, result.Decision)
@@ -514,7 +532,7 @@ func TestRunnerParallelExecution(t *testing.T) {
 		{Command: `echo '{"decision":"allow","context":"hook1"}'`},
 		{Command: `echo '{"decision":"deny","reason":"nope"}' ; exit 0`},
 	}
-	r := NewRunner(hooks, t.TempDir(), t.TempDir())
+	r := NewRunner(hooks, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.Equal(t, DecisionDeny, result.Decision)
@@ -526,7 +544,7 @@ func TestRunnerEnvVarsPropagated(t *testing.T) {
 	hookCfg := config.HookConfig{
 		Command: `printf '{"decision":"allow","context":"%s"}' "$ANGELA_TOOL_NAME"`,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)
 	require.Equal(t, DecisionAllow, result.Decision)
@@ -688,7 +706,7 @@ func TestRunnerAbandonRaceSafety(t *testing.T) {
 		Command: "# irrelevant; runShell is stubbed",
 		Timeout: 1,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 
 	start := time.Now()
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{}`)
@@ -707,7 +725,7 @@ func TestRunnerUpdatedInput(t *testing.T) {
 	hookCfg := config.HookConfig{
 		Command: `echo '{"decision":"allow","updated_input":{"command":"echo rewritten"}}'`,
 	}
-	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir())
+	r := NewRunner([]config.HookConfig{hookCfg}, t.TempDir(), t.TempDir(), AgentIdentity{})
 	result, err := r.Run(context.Background(), EventPreToolUse, "sess", "bash", `{"command":"echo original","timeout":60}`)
 	require.NoError(t, err)
 	require.Equal(t, DecisionAllow, result.Decision)

@@ -204,6 +204,8 @@ func sessionToProto(s session.Session) proto.Session {
 		ID:               s.ID,
 		ParentSessionID:  s.ParentSessionID,
 		Title:            s.Title,
+		Agent:            s.Agent,
+		ActiveAgent:      s.ActiveAgent,
 		SummaryMessageID: s.SummaryMessageID,
 		MessageCount:     s.MessageCount,
 		PromptTokens:     s.PromptTokens,

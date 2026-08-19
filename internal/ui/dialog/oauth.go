@@ -47,7 +47,7 @@ type OAuth struct {
 
 	provider      catwalk.Provider
 	model         config.SelectedModel
-	modelType     config.SelectedModelType
+	modelType     config.ModelConfigName
 	oAuthProvider OAuthProvider
 
 	State OAuthState
@@ -79,7 +79,7 @@ func newOAuth(
 	isOnboarding bool,
 	provider catwalk.Provider,
 	model config.SelectedModel,
-	modelType config.SelectedModelType,
+	modelType config.ModelConfigName,
 	oAuthProvider OAuthProvider,
 ) (*OAuth, tea.Cmd) {
 	t := com.Styles

@@ -10,7 +10,7 @@ package model
 // yolo and ready/model caches synchronously so the first frame has values to
 // render; Init then refreshes them off-thread.)
 //
-//   - Reads (isAgentBusy, yoloModeCached, promptQueue, selectedLargeModel,
+//   - Reads (isAgentBusy, yoloModeCached, promptQueue, activeAgent,
 //     lspInfo) always return the memoized value, stale or not.
 //   - State edges (message created, agent finished/errored, prompt
 //     submitted, cancel, session switch, yolo toggle, model change, LSP
@@ -25,6 +25,8 @@ package model
 // Update, no model mutation inside commands).
 
 import (
+	"context"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -75,10 +77,21 @@ type busyStateMsg struct {
 	ready     bool
 	agentBusy bool
 	yolo      bool
-	// model is the coordinator's selected model, fetched by the same probe
-	// so the sidebar/landing model info renders from memoized state. Zero
-	// (and ignored) when ready is false.
-	model workspace.AgentModel
+	// forSession is the session the agent probe was scoped to. The agent
+	// instance belongs to a session, so a result that raced a session
+	// switch describes the wrong one; applyBusyState stamps it and the
+	// render path refuses to display a stamp that is not the current
+	// session. Empty means the landing screen's configured default.
+	forSession string
+	// active is the agent the probed session runs on, with its model
+	// already resolved. Zero (and ignored) when ready is false.
+	active workspace.ActiveAgent
+	// activeKnown reports that the agent probe actually resolved. A
+	// failed probe leaves active zero, which has to read as "not known
+	// yet" rather than as an agent running no model at all — the model
+	// picker decides between editing the session and editing the global
+	// default on exactly that distinction.
+	activeKnown bool
 }
 
 // promptQueueMsg delivers the queued prompts fetched off-thread.
@@ -98,15 +111,16 @@ type promptQueueMsg struct {
 // be re-fetched.
 type agentRunSubmittedMsg struct{}
 
-// agentModelChangedMsg reports that the coordinator's model was updated
-// (model selection, thinking toggle, reasoning effort), so the memoized
-// ready/model state should be re-fetched without waiting for the TTL.
+// agentModelChangedMsg reports that the agent a session runs on was
+// changed (agent switch, model selection, preset, thinking toggle) or
+// rebuilt, so the memoized ready/active state should be re-fetched
+// without waiting for the TTL.
 type agentModelChangedMsg struct{}
 
-// agentModelChangedCmd is sequenced after cmds that call UpdateAgentModel so
-// the refresh probes the coordinator only once the update has completed.
-// Callers should reach for updateAgentModelCmd rather than sequencing this
-// by hand.
+// agentModelChangedCmd is sequenced after cmds that edit or rebuild the
+// agent so the refresh probes it only once the change has completed.
+// Callers should reach for refreshActiveAgentCmd rather than sequencing
+// this by hand.
 func agentModelChangedCmd() tea.Msg { return agentModelChangedMsg{} }
 
 // currentSessionID returns the active session's ID, or "" when none.
@@ -146,25 +160,35 @@ func (m *UI) dispatchBusyRefresh() tea.Cmd {
 	m.busyFetchInFlight = true
 	ws := m.com.Workspace
 	gen := m.busyFetchGen
+	sessionID := m.currentSessionID()
 	return func() tea.Msg {
-		st := busyStateMsg{gen: gen}
+		st := busyStateMsg{gen: gen, forSession: sessionID}
 		if ws.AgentIsReady() {
 			st.ready = true
 			st.agentBusy = ws.AgentIsBusy()
-			st.model = ws.AgentModel()
+			active, err := ws.AgentActive(context.Background(), sessionID)
+			if err != nil {
+				// Leaving activeKnown false renders as blank and keeps
+				// the model picker from mistaking an unprobed session
+				// for one whose pick belongs in the global config.
+				slog.Warn("Failed to probe the session's active agent",
+					"session", sessionID, "error", err)
+			} else {
+				st.active, st.activeKnown = active, true
+			}
 		}
 		st.yolo = ws.PermissionSkipRequests()
 		return st
 	}
 }
 
-// updateAgentModelCmd sequences a coordinator model rebuild
-// (UpdateAgentModel) with the invalidation of the memoized ready/model
-// state. Callers wrap their pre-work in pre; the memoized model must only
-// be re-probed after the rebuild lands (a synchronous HTTP round-trip in
-// client/server mode), so the message drives the refresh instead of each
-// call site remembering to.
-func (m *UI) updateAgentModelCmd(pre tea.Cmd) tea.Cmd {
+// refreshActiveAgentCmd sequences a change to the session's agent (an
+// AgentEditActive, or a coordinator rebuild via UpdateAgentModel) with a
+// re-probe of the memoized ready/active state. Callers wrap their work
+// in pre; the memoized agent must only be re-probed after the change
+// lands (a synchronous HTTP round-trip in client/server mode), so the
+// message drives the refresh instead of each call site remembering to.
+func (m *UI) refreshActiveAgentCmd(pre tea.Cmd) tea.Cmd {
 	return tea.Sequence(pre, agentModelChangedCmd)
 }
 
@@ -187,7 +211,9 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 	m.agentBusyCache.set(msg.agentBusy)
 	m.yoloCache.set(msg.yolo)
 	m.agentReady = msg.ready
-	m.agentModel = msg.model
+	m.agentActive = msg.active
+	m.agentActiveKnown = msg.activeKnown
+	m.agentActiveSession = msg.forSession
 	if prevYolo != msg.yolo {
 		// A remote/async toggle changed yolo mode: update the editor
 		// prompt function so the prompt icon/style tracks the new mode.
@@ -207,6 +233,9 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 	}
 	if prevBusy != busy {
 		m.renderPills()
+	}
+	if cmd := m.drainPendingReAuth(); cmd != nil {
+		cmds = append(cmds, cmd)
 	}
 	return cmds
 }

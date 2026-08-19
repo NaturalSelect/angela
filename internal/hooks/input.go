@@ -16,6 +16,15 @@ import (
 // an older version. Unknown higher versions are still parsed but logged.
 const SupportedOutputVersion = 1
 
+// AgentIdentity names the agent whose tool call triggered a hook.
+// Depth is 0 for the top-level agent and 1 for a delegated sub-agent,
+// which is how a hook distinguishes a command the user's agent ran
+// directly from one a sub-agent ran on its behalf.
+type AgentIdentity struct {
+	ID    string
+	Depth int
+}
+
 // Payload is the JSON structure piped to hook commands via stdin.
 // ToolInput is emitted as a parsed JSON object for compatibility with
 // Claude Code hooks (which expect tool_input to be an object, not a
@@ -26,10 +35,12 @@ type Payload struct {
 	CWD       string          `json:"cwd"`
 	ToolName  string          `json:"tool_name"`
 	ToolInput json.RawMessage `json:"tool_input"`
+	AgentID   string          `json:"agent_id"`
+	Depth     int             `json:"depth"`
 }
 
 // BuildPayload constructs the JSON stdin payload for a hook command.
-func BuildPayload(eventName, sessionID, cwd, toolName, toolInputJSON string) []byte {
+func BuildPayload(eventName, sessionID, cwd, toolName, toolInputJSON string, agent AgentIdentity) []byte {
 	toolInput := json.RawMessage(toolInputJSON)
 	if !json.Valid(toolInput) {
 		toolInput = json.RawMessage("{}")
@@ -40,6 +51,8 @@ func BuildPayload(eventName, sessionID, cwd, toolName, toolInputJSON string) []b
 		CWD:       cwd,
 		ToolName:  toolName,
 		ToolInput: toolInput,
+		AgentID:   agent.ID,
+		Depth:     agent.Depth,
 	}
 	data, err := json.Marshal(p)
 	if err != nil {
@@ -50,7 +63,7 @@ func BuildPayload(eventName, sessionID, cwd, toolName, toolInputJSON string) []b
 
 // BuildEnv constructs the environment variable slice for a hook command.
 // It includes all current process env vars plus hook-specific ones.
-func BuildEnv(eventName, toolName, sessionID, cwd, projectDir, toolInputJSON string) []string {
+func BuildEnv(eventName, toolName, sessionID, cwd, projectDir, toolInputJSON string, agent AgentIdentity) []string {
 	env := os.Environ()
 	env = append(env, shell.AngelaEnvMarkers()...)
 	env = append(
@@ -60,6 +73,8 @@ func BuildEnv(eventName, toolName, sessionID, cwd, projectDir, toolInputJSON str
 		fmt.Sprintf("ANGELA_SESSION_ID=%s", sessionID),
 		fmt.Sprintf("ANGELA_CWD=%s", cwd),
 		fmt.Sprintf("ANGELA_PROJECT_DIR=%s", projectDir),
+		fmt.Sprintf("ANGELA_AGENT_ID=%s", agent.ID),
+		fmt.Sprintf("ANGELA_AGENT_DEPTH=%d", agent.Depth),
 	)
 
 	// Extract tool-specific env vars from the JSON input.

@@ -71,7 +71,7 @@ type ModelItem struct {
 
 	prov      catwalk.Provider
 	model     catwalk.Model
-	modelType ModelType
+	modelName config.ModelConfigName
 
 	cache        map[int]string
 	t            *styles.Styles
@@ -96,20 +96,20 @@ func (m *ModelItem) SelectedModel() config.SelectedModel {
 	}
 }
 
-// SelectedModelType returns the type of model represented by this item.
-func (m *ModelItem) SelectedModelType() config.SelectedModelType {
-	return m.modelType.Config()
+// ModelConfigName returns the model config name this item writes to.
+func (m *ModelItem) ModelConfigName() config.ModelConfigName {
+	return m.modelName
 }
 
 var _ ListItem = &ModelItem{}
 
 // NewModelItem creates a new ModelItem.
-func NewModelItem(t *styles.Styles, prov catwalk.Provider, model catwalk.Model, typ ModelType, showProvider bool) *ModelItem {
+func NewModelItem(t *styles.Styles, prov catwalk.Provider, model catwalk.Model, name config.ModelConfigName, showProvider bool) *ModelItem {
 	return &ModelItem{
 		Versioned:    list.NewVersioned(),
 		prov:         prov,
 		model:        model,
-		modelType:    typ,
+		modelName:    name,
 		t:            t,
 		cache:        make(map[int]string),
 		showProvider: showProvider,

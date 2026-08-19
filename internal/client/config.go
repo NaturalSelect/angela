@@ -45,18 +45,52 @@ func (c *Client) RemoveConfigField(ctx context.Context, id string, scope config.
 }
 
 // UpdatePreferredModel updates the preferred model on the server.
-func (c *Client) UpdatePreferredModel(ctx context.Context, id string, scope config.Scope, modelType config.SelectedModelType, model config.SelectedModel) error {
+func (c *Client) UpdatePreferredModel(ctx context.Context, id string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/model", id), nil, jsonBody(struct {
-		Scope     config.Scope             `json:"scope"`
-		ModelType config.SelectedModelType `json:"model_type"`
-		Model     config.SelectedModel     `json:"model"`
-	}{Scope: scope, ModelType: modelType, Model: model}), http.Header{"Content-Type": []string{"application/json"}})
+		Scope config.Scope           `json:"scope"`
+		Name  config.ModelConfigName `json:"model_name"`
+		Model config.SelectedModel   `json:"model"`
+	}{Scope: scope, Name: name, Model: model}), http.Header{"Content-Type": []string{"application/json"}})
 	if err != nil {
 		return fmt.Errorf("failed to update preferred model: %w", err)
 	}
 	defer rsp.Body.Close()
 	if rsp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to update preferred model: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
+// RecordRecentModel records a recently used model on the server.
+func (c *Client) RecordRecentModel(ctx context.Context, id string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/recent-model", id), nil, jsonBody(struct {
+		Scope config.Scope           `json:"scope"`
+		Name  config.ModelConfigName `json:"model_name"`
+		Model config.SelectedModel   `json:"model"`
+	}{Scope: scope, Name: name, Model: model}), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to record recent model: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return fmt.Errorf("failed to record recent model: %w", err)
+	}
+	return nil
+}
+
+// PruneRecentModels removes stale recent-model entries on the server.
+func (c *Client) PruneRecentModels(ctx context.Context, id string, scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/prune-recent-models", id), nil, jsonBody(struct {
+		Scope config.Scope           `json:"scope"`
+		Name  config.ModelConfigName `json:"model_name"`
+		Stale []config.SelectedModel `json:"stale"`
+	}{Scope: scope, Name: name, Stale: stale}), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to prune recent models: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return fmt.Errorf("failed to prune recent models: %w", err)
 	}
 	return nil
 }

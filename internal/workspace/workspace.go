@@ -104,10 +104,16 @@ type LSPEvent struct {
 	DiagnosticCount int
 }
 
-// AgentModel holds the model information exposed to the UI.
-type AgentModel struct {
+// ActiveAgent is what a session is currently running, as the UI needs to
+// display it: the agent it belongs to, and the model resolved from that
+// agent with the session's preset already folded in.
+type ActiveAgent struct {
+	AgentID    string
+	AgentName  string
+	ModelName  config.ModelConfigName
 	CatwalkCfg catwalk.Model
 	ModelCfg   config.SelectedModel
+	Variant    string
 }
 
 // Workspace is the main abstraction consumed by the TUI and CLI. It
@@ -141,7 +147,6 @@ type Workspace interface {
 	AgentCancel(sessionID string)
 	AgentIsBusy() bool
 	AgentIsSessionBusy(sessionID string) bool
-	AgentModel() AgentModel
 	AgentIsReady() bool
 	// AgentReadyErr reports nil when the coder agent is ready to accept
 	// work, or a descriptive error otherwise: ErrAgentNotInitialized
@@ -154,10 +159,20 @@ type Workspace interface {
 	AgentQueuedPromptsList(sessionID string) []string
 	AgentClearQueue(sessionID string)
 	AgentSummarize(ctx context.Context, sessionID string) error
+
+	// AgentActive reports what a session is running, with its
+	// parameter preset already folded into the model. An empty
+	// sessionID answers with the configured default, which is what the
+	// landing screen shows before any session exists.
+	AgentActive(ctx context.Context, sessionID string) (ActiveAgent, error)
+	// AgentEditActive changes the agent instance a session runs: its
+	// agent, model, preset or thinking flag, in any combination, and
+	// answers with the instance the session ends up on so a relative
+	// change reports the value it actually reached.
+	AgentEditActive(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (ActiveAgent, error)
 	UpdateAgentModel(ctx context.Context) error
 	InitCoderAgent(ctx context.Context) error
 	InitCoderAgentNonInteractive(ctx context.Context) error
-	GetDefaultSmallModel(providerID string) config.SelectedModel
 
 	// Permissions
 	//
@@ -202,7 +217,15 @@ type Workspace interface {
 	Resolver() config.VariableResolver
 
 	// Config mutations (proxied to server in client mode)
-	UpdatePreferredModel(scope config.Scope, modelType config.SelectedModelType, model config.SelectedModel) error
+	UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error
+	// RecordRecentModel adds a model to the recent-models list without
+	// changing which model is selected. Picking a model for a session
+	// still belongs in that session's "recently used" list.
+	RecordRecentModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error
+	// PruneRecentModels drops recent-model entries that no longer
+	// resolve. It names the entries to remove rather than the list to
+	// keep, so a pick recorded while the caller was deciding survives.
+	PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error
 	SetCompactMode(scope config.Scope, enabled bool) error
 	SetProviderAPIKey(scope config.Scope, providerID string, apiKey any) error
 	SetConfigField(scope config.Scope, key string, value any) error

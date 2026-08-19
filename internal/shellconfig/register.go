@@ -19,6 +19,7 @@ import (
 )
 
 func init() {
+	shell.RegisterBuiltin("agent", handleAgent)
 	shell.RegisterBuiltin("provider", handleProvider)
 	shell.RegisterBuiltin("model", handleModel)
 	shell.RegisterBuiltin("mcp", handleMCP)

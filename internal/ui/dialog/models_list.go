@@ -39,19 +39,12 @@ func (f *ModelsList) Len() int {
 	return n
 }
 
-// SetGroups sets the model groups and updates the list items.
+// SetGroups sets the model groups and updates the list items. It routes
+// through VisibleItems so an active filter survives the swap: the
+// catalog arrives asynchronously and can land after the user has typed.
 func (f *ModelsList) SetGroups(groups ...ModelGroup) {
 	f.groups = groups
-	items := []list.Item{}
-	for _, g := range f.groups {
-		items = append(items, &g)
-		for _, item := range g.Items {
-			items = append(items, item)
-		}
-		// Add a space separator after each provider section
-		items = append(items, list.NewSpacerItem(1))
-	}
-	f.SetItems(items...)
+	f.SetItems(f.VisibleItems()...)
 }
 
 // SetFilter sets the filter query and updates the list items.

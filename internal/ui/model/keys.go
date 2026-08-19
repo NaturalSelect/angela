@@ -69,6 +69,10 @@ type KeyMap struct {
 	Sessions   key.Binding
 	Tab        key.Binding
 	ToggleYolo key.Binding
+	// CycleVariant steps to the next parameter preset of the current
+	// model without opening a dialog, which is the point of variants:
+	// raising reasoning effort mid-task should cost one keystroke.
+	CycleVariant key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -104,6 +108,10 @@ func DefaultKeyMap() KeyMap {
 		ToggleYolo: key.NewBinding(
 			key.WithKeys("ctrl+y"),
 			key.WithHelp("ctrl+y", "toggle yolo"),
+		),
+		CycleVariant: key.NewBinding(
+			key.WithKeys("ctrl+e"),
+			key.WithHelp("ctrl+e", "cycle variant"),
 		),
 	}
 

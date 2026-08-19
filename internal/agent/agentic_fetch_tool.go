@@ -13,6 +13,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/prompt"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
 )
 
@@ -46,9 +47,6 @@ func validateAgenticFetchParams(ctx context.Context, params tools.AgenticFetchPa
 		AgentMessageID: agentMessageID,
 	}, nil
 }
-
-//go:embed templates/agentic_fetch_prompt.md.tpl
-var agenticFetchPromptTmpl []byte
 
 func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (fantasy.AgentTool, error) {
 	if client == nil {
@@ -138,29 +136,20 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 				fullPrompt = fmt.Sprintf("%s\n\nUse the web_search tool to find relevant information. Break down the question into smaller, focused searches if needed. After searching, use web_fetch to get detailed content from the most relevant results.", params.Prompt)
 			}
 
-			promptOpts := []prompt.Option{
-				prompt.WithWorkingDir(tmpDir),
-			}
-
-			promptTemplate, err := prompt.NewPrompt("agentic_fetch", string(agenticFetchPromptTmpl), promptOpts...)
+			// Agentic fetch is an internal agent: resolved from config
+			// each call so a user's model and prompt overrides apply,
+			// and resolved against the calling session so it inherits
+			// that session's model where they share a model role.
+			host, err := c.activeAgentFor(ctx, validationResult.SessionID)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error creating prompt: %s", err)
+				return fantasy.ToolResponse{}, fmt.Errorf("error resolving the calling session's agent: %w", err)
 			}
-
-			_, small, err := c.buildAgentModels(ctx, true)
+			active, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentAgenticFetch, host,
+				prompt.WithWorkingDir(tmpDir))
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error building models: %s", err)
+				return fantasy.ToolResponse{}, fmt.Errorf("error resolving the agentic fetch agent: %w", err)
 			}
-
-			systemPrompt, err := promptTemplate.Build(ctx, small.Model.Provider(), small.Model.Model(), c.cfg)
-			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error building system prompt: %s", err)
-			}
-
-			smallProviderCfg, ok := c.cfg.Config().Providers.Get(small.ModelCfg.Provider)
-			if !ok {
-				return fantasy.ToolResponse{}, errors.New("small model provider not configured")
-			}
+			providerCfg, _ := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
 
 			webFetchTool := tools.NewWebFetchTool(tmpDir, client)
 			webSearchTool := tools.NewWebSearchTool(client)
@@ -179,20 +168,32 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 			// the user's hooks N times per delegated turn.
 
 			agent := NewSessionAgent(SessionAgentOptions{
-				LargeModel:           small, // Use small model for both (fetch doesn't need large)
-				SmallModel:           small,
-				SystemPromptPrefix:   smallProviderCfg.SystemPromptPrefix,
-				SystemPrompt:         systemPrompt,
-				AgentName:            tools.AgenticFetchToolName,
-				DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
-				IsYolo:               c.permissions.SkipRequests(),
-				Sessions:             c.sessions,
-				Messages:             c.messages,
-				Tools:                fetchTools,
+				IsSubAgent:    true,
+				AgentID:       config.AgentAgenticFetch,
+				Compaction:    c.cfg.Config().Options.Compaction,
+				IsYolo:        c.permissions.SkipRequests(),
+				Sessions:      c.sessions,
+				Messages:      c.messages,
+				GenerateTitle: c.generateSessionTitle,
 			})
+
+			// The tool list is built here rather than resolved from
+			// config: every tool above is bound to tmpDir, this call's
+			// own scratch directory. That is why agentic_fetch's model
+			// and prompt are user-overridable but its tools are not.
+			resolved := resolvedAgent{
+				ID:                 config.AgentAgenticFetch,
+				Name:               active.Agent.Name,
+				Model:              model,
+				Tools:              fetchTools,
+				SystemPrompt:       systemPrompt,
+				SystemPromptPrefix: providerCfg.SystemPromptPrefix,
+				MaxTokens:          maxTokensFor(active.Agent, model),
+			}
 
 			return c.runSubAgent(ctx, subAgentParams{
 				Agent:          agent,
+				Resolved:       resolved,
 				SessionID:      validationResult.SessionID,
 				AgentMessageID: validationResult.AgentMessageID,
 				ToolCallID:     call.ID,

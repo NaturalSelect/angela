@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
 )
 
@@ -58,6 +59,11 @@ type Commands struct {
 	hasTodos   bool
 	hasQueue   bool
 	selected   CommandType
+	// active is the agent the session runs on, or nil when it is not
+	// known yet. The model-dependent commands (thinking, variants, file
+	// picker) are gated on it rather than on the global config, so the
+	// menu offers what this session can actually do.
+	active *workspace.ActiveAgent
 
 	spinner spinner.Model
 	loading bool
@@ -78,7 +84,7 @@ type Commands struct {
 var _ Dialog = (*Commands)(nil)
 
 // NewCommands creates a new commands dialog.
-func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue bool, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
+func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue bool, active *workspace.ActiveAgent, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
 	c := &Commands{
 		com:            com,
 		selected:       SystemCommands,
@@ -86,6 +92,7 @@ func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, has
 		hasSession:     hasSession,
 		hasTodos:       hasTodos,
 		hasQueue:       hasQueue,
+		active:         active,
 		customCommands: customCommands,
 		mcpPrompts:     mcpPrompts,
 	}
@@ -448,6 +455,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		NewCommandItem(c.com.Styles, "new_session", "New Session", "ctrl+n", ActionNewSession{}).WithAliases("clear"),
 		NewCommandItem(c.com.Styles, "switch_session", "Sessions", "ctrl+s", ActionOpenDialog{SessionsID}),
 		NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}),
+		NewCommandItem(c.com.Styles, "switch_agent", "Switch Agent", "", ActionOpenDialog{AgentsID}).WithAliases("agent"),
 	}
 
 	// Only show compact command if there's an active session
@@ -455,44 +463,33 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}))
 	}
 
-	// Add reasoning toggle for models that support it
-	cfg := c.com.Config()
-	if agentCfg, ok := cfg.Agents[config.AgentCoder]; ok {
-		providerCfg := cfg.GetProviderForModel(agentCfg.Model)
-		model := cfg.GetModelByType(agentCfg.Model)
-		if providerCfg != nil && model != nil && model.CanReason {
-			selectedModel := cfg.Models[agentCfg.Model]
-
-			// Anthropic models: thinking toggle
-			if model.CanReason && len(model.ReasoningLevels) == 0 {
-				status := "Enable"
-				if selectedModel.Think {
-					status = "Disable"
-				}
-				commands = append(commands, NewCommandItem(c.com.Styles, "toggle_thinking", status+" Thinking Mode", "", ActionToggleThinking{}))
+	if c.active != nil {
+		// A model that reasons without naming levels has one knob
+		// and no presets to seed, so it keeps its own toggle.
+		if c.active.CatwalkCfg.CanReason && len(c.active.CatwalkCfg.ReasoningLevels) == 0 {
+			status := "Enable"
+			if c.active.ModelCfg.Think {
+				status = "Disable"
 			}
+			commands = append(commands, NewCommandItem(c.com.Styles, "toggle_thinking", status+" Thinking Mode", "", ActionToggleThinking{}))
+		}
 
-			// OpenAI models: reasoning effort dialog
-			if len(model.ReasoningLevels) > 0 {
-				commands = append(commands, NewCommandItem(c.com.Styles, "select_reasoning_effort", "Select Reasoning Effort", "", ActionOpenDialog{
-					DialogID: ReasoningID,
-				}))
-			}
+		// Everything else picks a preset, reasoning levels included:
+		// they seed variants of the same name.
+		if len(c.active.ModelCfg.VariantNames(&c.active.CatwalkCfg)) > 0 {
+			commands = append(commands, NewCommandItem(c.com.Styles, "select_variant", "Select Variant", "ctrl+e", ActionOpenDialog{
+				DialogID: VariantsID,
+			}))
 		}
 	}
 	// Only show toggle compact mode command if window width is larger than compact breakpoint (120)
 	if c.windowWidth >= sidebarCompactModeBreakpoint && c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_sidebar", "Toggle Sidebar", "", ActionToggleCompactMode{}))
 	}
-	if c.hasSession {
-		cfgPrime := c.com.Config()
-		agentCfg := cfgPrime.Agents[config.AgentCoder]
-		model := cfgPrime.GetModelByType(agentCfg.Model)
-		if model != nil && model.SupportsImages {
-			commands = append(commands, NewCommandItem(c.com.Styles, "file_picker", "Open File Picker", "ctrl+f", ActionOpenDialog{
-				DialogID: FilePickerID,
-			}))
-		}
+	if c.hasSession && c.active != nil && c.active.CatwalkCfg.SupportsImages {
+		commands = append(commands, NewCommandItem(c.com.Styles, "file_picker", "Open File Picker", "ctrl+f", ActionOpenDialog{
+			DialogID: FilePickerID,
+		}))
 	}
 
 	// Add external editor command if $EDITOR is available.
@@ -503,6 +500,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	if os.Getenv("EDITOR") != "" {
 		commands = append(commands, NewCommandItem(c.com.Styles, "open_external_editor", "Open External Editor", "ctrl+o", ActionExternalEditor{}))
 	}
+
+	// The remaining toggles are genuinely global options rather than
+	// anything the session's agent owns.
+	cfg := c.com.Config()
 
 	// Add Docker MCP command if available and not already enabled.
 	if !cfg.IsDockerMCPEnabled() && c.dockerMCPAvailable != nil && *c.dockerMCPAvailable {

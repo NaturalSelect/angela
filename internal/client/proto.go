@@ -573,6 +573,53 @@ func (c *Client) AgentSummarizeSession(ctx context.Context, id string, sessionID
 	return nil
 }
 
+// AgentEditSessionActive changes the agent instance a session runs:
+// its agent, model, parameter preset or thinking flag, in any
+// combination. It answers with the instance the session ends up on, so
+// a relative edit (toggling thinking) reports the value it reached
+// rather than the caller's guess.
+func (c *Client) AgentEditSessionActive(ctx context.Context, id, sessionID string, edit proto.ActiveAgentEditRequest) (proto.ActiveAgent, error) {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/active-agent", id, sessionID),
+		nil, jsonBody(edit),
+		http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return proto.ActiveAgent{}, fmt.Errorf("failed to edit the active agent: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return proto.ActiveAgent{}, fmt.Errorf("failed to edit the active agent: %w", err)
+	}
+	var active proto.ActiveAgent
+	if err := json.NewDecoder(rsp.Body).Decode(&active); err != nil {
+		return proto.ActiveAgent{}, fmt.Errorf("failed to decode the active agent: %w", err)
+	}
+	return active, nil
+}
+
+// AgentGetSessionActive reports what a session is running. An empty
+// sessionID asks for the agent a new session would run, which has its
+// own route: joining an empty segment into the session-scoped path
+// would silently ask about a session named "active-agent".
+func (c *Client) AgentGetSessionActive(ctx context.Context, id, sessionID string) (proto.ActiveAgent, error) {
+	path := fmt.Sprintf("/workspaces/%s/agent/active-agent", id)
+	if sessionID != "" {
+		path = fmt.Sprintf("/workspaces/%s/agent/sessions/%s/active-agent", id, sessionID)
+	}
+	rsp, err := c.get(ctx, path, nil, nil)
+	if err != nil {
+		return proto.ActiveAgent{}, fmt.Errorf("failed to get the active agent: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return proto.ActiveAgent{}, fmt.Errorf("failed to get the active agent: %w", err)
+	}
+	var active proto.ActiveAgent
+	if err := json.NewDecoder(rsp.Body).Decode(&active); err != nil {
+		return proto.ActiveAgent{}, fmt.Errorf("failed to decode the active agent: %w", err)
+	}
+	return active, nil
+}
+
 // InitiateAgentProcessing triggers agent initialization on the server.
 func (c *Client) InitiateAgentProcessing(ctx context.Context, id string, interactive bool) error {
 	body := jsonBody(proto.AgentInitRequest{Interactive: interactive})
@@ -878,23 +925,6 @@ func (c *Client) GetAgentSessionQueuedPromptsList(ctx context.Context, id string
 		return nil, fmt.Errorf("failed to decode queued prompts list: %w", err)
 	}
 	return prompts, nil
-}
-
-// GetDefaultSmallModel retrieves the default small model for a provider.
-func (c *Client) GetDefaultSmallModel(ctx context.Context, id string, providerID string) (*config.SelectedModel, error) {
-	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/agent/default-small-model", id), url.Values{"provider_id": []string{providerID}}, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default small model: %w", err)
-	}
-	defer rsp.Body.Close()
-	if rsp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get default small model: status code %d", rsp.StatusCode)
-	}
-	var model config.SelectedModel
-	if err := json.NewDecoder(rsp.Body).Decode(&model); err != nil {
-		return nil, fmt.Errorf("failed to decode default small model: %w", err)
-	}
-	return &model, nil
 }
 
 // FileTrackerRecordRead records a file read for a session.

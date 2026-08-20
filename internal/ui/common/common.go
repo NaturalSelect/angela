@@ -52,7 +52,7 @@ func largeModelProviderID(ws workspace.Workspace) string {
 	if cfg == nil {
 		return ""
 	}
-	return cfg.Models[config.SelectedModelTypeLarge].Provider
+	return cfg.Models[config.ModelMain].Provider
 }
 
 // IsHyper reports whether the currently selected large model is provided

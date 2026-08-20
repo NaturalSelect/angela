@@ -19,10 +19,11 @@ const PrimaryAgent = "coder"
 // Usage:
 //
 //	agent add <name> [--description DESC] [--mode primary|subagent]
-//	    [--model large|small] [--prompt TEXT] [--temperature T]
+//	    [--model NAME] [--prompt TEXT] [--temperature T]
 //	    [--tool TOOL ...] [--tools all|inherited]
 //	    [--disable-tool TOOL ...] [--mcp all|inherited]
 //	    [--mcp-scope JSON] [--disabled true|false]
+//	    [--hidden true|false] [--max-tokens N]
 //	agent remove <name>   (alias: rm)
 func handleAgent(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	b := configBuilderFromCtx(ctx)
@@ -71,15 +72,8 @@ var agentAddFlags = []flagSpec{
 			return fmt.Errorf("mode must be primary or subagent; got %q", s)
 		}
 	}},
-	{name: "--model", jsonKey: "model", kind: flagString, op: opSet, validate: func(v any) error {
-		s, _ := v.(string)
-		switch s {
-		case "large", "small":
-			return nil
-		default:
-			return fmt.Errorf("model must be large or small; got %q", s)
-		}
-	}},
+	{name: "--model", jsonKey: "model", kind: flagString, op: opSet},
+	{name: "--variant", jsonKey: "variant", kind: flagString, op: opSet},
 	{name: "--prompt", jsonKey: "prompt", kind: flagString, op: opSet},
 	{name: "--temperature", jsonKey: "temperature", kind: flagFloat, op: opSet, validate: func(v any) error {
 		f, _ := v.(float64)
@@ -96,11 +90,13 @@ var agentAddFlags = []flagSpec{
 	{name: "--mcp", jsonKey: "allowed_mcp", kind: flagString, op: opSet, validate: agentSetLiteral("mcp")},
 	{name: "--mcp-scope", jsonKey: "allowed_mcp", kind: flagJSONObject, op: opSet},
 	{name: "--disabled", jsonKey: "disabled", kind: flagBool, op: opSet},
+	{name: "--hidden", jsonKey: "hidden", kind: flagBool, op: opSet},
+	{name: "--max-tokens", jsonKey: "max_tokens", kind: flagInt, op: opSet},
 }
 
 func agentAdd(b *ConfigBuilder, args []string, stderr io.Writer) error {
 	if len(args) < 3 {
-		return usage(stderr, "usage: agent add <name> [--description DESC] [--mode primary|subagent] [--model large|small] [--prompt TEXT] [--temperature T] [--tool TOOL ...] [--tools all|inherited] [--disable-tool TOOL ...] [--mcp all|inherited] [--mcp-scope JSON] [--disabled true|false]")
+		return usage(stderr, "usage: agent add <name> [--description DESC] [--mode primary|subagent] [--model NAME] [--variant NAME] [--prompt TEXT] [--temperature T] [--tool TOOL ...] [--tools all|inherited] [--disable-tool TOOL ...] [--mcp all|inherited] [--mcp-scope JSON] [--disabled true|false] [--hidden true|false] [--max-tokens N]")
 	}
 	name := args[2]
 	slog.Info("Agent defined in shell config", "name", name)

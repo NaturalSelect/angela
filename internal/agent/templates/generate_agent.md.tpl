@@ -27,4 +27,4 @@ Key principles:
 - Balance comprehensiveness with clarity
 - Make the agent proactive in seeking clarification when needed
 
-Existing agent identifiers that must NOT be reused: {{.ExistingIDs}}
+Existing agent identifiers that must NOT be reused: {{.Extra.ExistingIDs}}

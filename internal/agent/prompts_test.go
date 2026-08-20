@@ -43,7 +43,6 @@ func TestAgentPrompt_SubagentTemplatesRenderContextFiles(t *testing.T) {
 
 	for _, id := range []string{
 		config.AgentCoder,
-		config.AgentTask,
 		config.AgentExplore,
 		config.AgentGeneral,
 	} {
@@ -97,4 +96,52 @@ func TestAgentPrompt_UnknownAgentRendersContextFiles(t *testing.T) {
 	out, err := p.Build(context.Background(), "", "", store)
 	require.NoError(t, err)
 	require.Contains(t, out, marker)
+}
+
+// TestInitializePrompt_OverridableViaConfig pins step 2.8's whole
+// point: initialize makes no LLM call of its own, so its prompt is the
+// only thing it owns — and that prompt must be reachable through the
+// normal agent config path rather than frozen in the binary.
+func TestInitializePrompt_OverridableViaConfig(t *testing.T) {
+	const marker = "CUSTOM INITIALIZE MARKER"
+
+	globalDir := t.TempDir()
+	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
+	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+
+	t.Run("override wins", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
+			[]byte(`{
+				"options": {"disable_default_providers": true},
+				"providers": {"test": {"base_url": "http://127.0.0.1:0/v1", "api_key": "test",
+					"models": [{"id": "test-model", "name": "Test"}]}},
+				"agents": {"initialize": {"prompt": "`+marker+`"}}
+			}`), 0o644))
+
+		store, err := config.Init(dir, "", false)
+		require.NoError(t, err)
+
+		out, err := InitializePrompt(store)
+		require.NoError(t, err)
+		require.Contains(t, out, marker)
+	})
+
+	t.Run("built-in template by default", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
+			[]byte(`{
+				"options": {"disable_default_providers": true},
+				"providers": {"test": {"base_url": "http://127.0.0.1:0/v1", "api_key": "test",
+					"models": [{"id": "test-model", "name": "Test"}]}}
+			}`), 0o644))
+
+		store, err := config.Init(dir, "", false)
+		require.NoError(t, err)
+
+		out, err := InitializePrompt(store)
+		require.NoError(t, err)
+		require.NotContains(t, out, marker)
+		require.NotEmpty(t, out)
+	})
 }

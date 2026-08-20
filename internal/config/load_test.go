@@ -788,9 +788,9 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 	assert.Equal(t, ToolSetScope, coderAgent.AllowedTools.Kind)
 	assert.Equal(t, allToolNames(), coderAgent.AllowedTools.Tools)
 
-	taskAgent, ok := cfg.Agents[AgentTask]
+	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "glob", "grep", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"angela_info", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "fetch", "agentic_fetch", "glob", "grep", "ls", "sourcegraph", "view"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
@@ -810,9 +810,9 @@ func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 
 	assert.Equal(t, []string{"agent", "bash", "angela_info", "angela_logs", "job_output", "job_kill", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "lsp_rename", "lsp_replace_symbol", "fetch", "agentic_fetch", "glob", "ls", "question", "sourcegraph", "todos", "view", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools.Tools)
 
-	taskAgent, ok := cfg.Agents[AgentTask]
+	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "glob", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"angela_info", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "fetch", "agentic_fetch", "glob", "ls", "sourcegraph", "view"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
@@ -836,10 +836,10 @@ func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{"agent", "bash", "angela_info", "angela_logs", "job_output", "job_kill", "download", "edit", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_rename", "lsp_replace_symbol", "fetch", "agentic_fetch", "question", "todos", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools.Tools)
 
-	taskAgent, ok := cfg.Agents[AgentTask]
+	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, ToolSetScope, taskAgent.AllowedTools.Kind)
-	assert.Len(t, taskAgent.AllowedTools.Tools, 0)
+	assert.Equal(t, ToolSetScope, exploreAgent.AllowedTools.Kind)
+	assert.Equal(t, []string{"angela_info", "fetch", "agentic_fetch"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_configureProvidersWithDisabledProvider(t *testing.T) {
@@ -1763,7 +1763,7 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 	t.Run("reload mode should not persist fallback defaults", func(t *testing.T) {
 		dir := t.TempDir()
 		globalPath := filepath.Join(dir, "angela.json")
-		require.NoError(t, os.WriteFile(globalPath, []byte(`{"models":{"large":{"provider":"ghost","model":"missing"}}}`), 0o600))
+		require.NoError(t, os.WriteFile(globalPath, []byte(`{"models":{"main":{"provider":"ghost","model":"missing"}}}`), 0o600))
 
 		knownProviders := []catwalk.Provider{
 			{
@@ -1779,8 +1779,8 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 		}
 
 		cfg := &Config{
-			Models: map[SelectedModelType]SelectedModel{
-				SelectedModelTypeLarge: {Provider: "ghost", Model: "missing"},
+			Models: map[ModelConfigName]SelectedModel{
+				ModelMain: {Provider: "ghost", Model: "missing"},
 			},
 		}
 		cfg.setDefaults(dir, "")
@@ -1792,13 +1792,13 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 
 		resolved, resolveErr := resolveSelectedModels(cfg, knownProviders)
 		require.NoError(t, resolveErr)
-		cfg.Models[SelectedModelTypeLarge] = resolved.Large
-		cfg.Models[SelectedModelTypeSmall] = resolved.Small
+		cfg.Models[ModelMain] = resolved.Main
+		cfg.Models[ModelChore] = resolved.Chore
 
 		// In-memory falls back to default.
-		require.True(t, resolved.LargeFallback)
-		require.Equal(t, "openai", cfg.Models[SelectedModelTypeLarge].Provider)
-		require.Equal(t, "large-model", cfg.Models[SelectedModelTypeLarge].Model)
+		require.True(t, resolved.MainFallback)
+		require.Equal(t, "openai", cfg.Models[ModelMain].Provider)
+		require.Equal(t, "large-model", cfg.Models[ModelMain].Model)
 
 		// Disk remains unchanged (resolveSelectedModels never persists).
 		data, readErr := os.ReadFile(globalPath)
@@ -1831,8 +1831,8 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 		}
 
 		cfg := &Config{
-			Models: map[SelectedModelType]SelectedModel{
-				"large": {
+			Models: map[ModelConfigName]SelectedModel{
+				"main": {
 					Model: "larger-model",
 				},
 			},
@@ -1845,10 +1845,10 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 
 		resolved, resolveErr := resolveSelectedModels(cfg, knownProviders)
 		require.NoError(t, resolveErr)
-		cfg.Models[SelectedModelTypeLarge] = resolved.Large
-		cfg.Models[SelectedModelTypeSmall] = resolved.Small
-		large := cfg.Models[SelectedModelTypeLarge]
-		small := cfg.Models[SelectedModelTypeSmall]
+		cfg.Models[ModelMain] = resolved.Main
+		cfg.Models[ModelChore] = resolved.Chore
+		large := cfg.Models[ModelMain]
+		small := cfg.Models[ModelChore]
 		require.Equal(t, "larger-model", large.Model)
 		require.Equal(t, "openai", large.Provider)
 		require.Equal(t, int64(2000), large.MaxTokens)
@@ -1893,8 +1893,8 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 		}
 
 		cfg := &Config{
-			Models: map[SelectedModelType]SelectedModel{
-				"small": {
+			Models: map[ModelConfigName]SelectedModel{
+				"chore": {
 					Model:     "a-small-model",
 					Provider:  "anthropic",
 					MaxTokens: 300,
@@ -1909,10 +1909,10 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 
 		resolved, resolveErr := resolveSelectedModels(cfg, knownProviders)
 		require.NoError(t, resolveErr)
-		cfg.Models[SelectedModelTypeLarge] = resolved.Large
-		cfg.Models[SelectedModelTypeSmall] = resolved.Small
-		large := cfg.Models[SelectedModelTypeLarge]
-		small := cfg.Models[SelectedModelTypeSmall]
+		cfg.Models[ModelMain] = resolved.Main
+		cfg.Models[ModelChore] = resolved.Chore
+		large := cfg.Models[ModelMain]
+		small := cfg.Models[ModelChore]
 		require.Equal(t, "large-model", large.Model)
 		require.Equal(t, "openai", large.Provider)
 		require.Equal(t, int64(1000), large.MaxTokens)
@@ -1942,8 +1942,8 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 		}
 
 		cfg := &Config{
-			Models: map[SelectedModelType]SelectedModel{
-				"large": {
+			Models: map[ModelConfigName]SelectedModel{
+				"main": {
 					MaxTokens: 100,
 				},
 			},
@@ -1956,9 +1956,9 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 
 		resolved, resolveErr := resolveSelectedModels(cfg, knownProviders)
 		require.NoError(t, resolveErr)
-		cfg.Models[SelectedModelTypeLarge] = resolved.Large
-		cfg.Models[SelectedModelTypeSmall] = resolved.Small
-		large := cfg.Models[SelectedModelTypeLarge]
+		cfg.Models[ModelMain] = resolved.Main
+		cfg.Models[ModelChore] = resolved.Chore
+		large := cfg.Models[ModelMain]
 		require.Equal(t, "large-model", large.Model)
 		require.Equal(t, "openai", large.Provider)
 		require.Equal(t, int64(100), large.MaxTokens)
@@ -1982,9 +1982,9 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 		}
 
 		cfg := &Config{
-			Models: map[SelectedModelType]SelectedModel{
-				SelectedModelTypeLarge: {Provider: "openai", Model: "this-model-does-not-exist"},
-				SelectedModelTypeSmall: {Provider: "openai", Model: "also-does-not-exist"},
+			Models: map[ModelConfigName]SelectedModel{
+				ModelMain:  {Provider: "openai", Model: "this-model-does-not-exist"},
+				ModelChore: {Provider: "openai", Model: "also-does-not-exist"},
 			},
 		}
 		cfg.setDefaults(dir, "")
@@ -2005,22 +2005,22 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 				done <- resolveErr
 				return
 			}
-			cfg.Models[SelectedModelTypeLarge] = resolved.Large
-			cfg.Models[SelectedModelTypeSmall] = resolved.Small
+			cfg.Models[ModelMain] = resolved.Main
+			cfg.Models[ModelChore] = resolved.Chore
 
 			store.writeMu.Lock()
 			defer store.writeMu.Unlock()
-			if resolved.LargeFallback {
+			if resolved.MainFallback {
 				if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-					return store.updatePreferredModelFields(c, SelectedModelTypeLarge, resolved.Large)
+					return store.updatePreferredModelFields(c, ModelMain, resolved.Main)
 				}); err != nil {
 					done <- err
 					return
 				}
 			}
-			if resolved.SmallFallback {
+			if resolved.ChoreFallback {
 				if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-					return store.updatePreferredModelFields(c, SelectedModelTypeSmall, resolved.Small)
+					return store.updatePreferredModelFields(c, ModelChore, resolved.Chore)
 				}); err != nil {
 					done <- err
 					return
@@ -2033,8 +2033,8 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 		case err := <-done:
 			require.NoError(t, err)
 			// Should have fallen back to defaults.
-			require.Equal(t, "large-model", cfg.Models[SelectedModelTypeLarge].Model)
-			require.Equal(t, "small-model", cfg.Models[SelectedModelTypeSmall].Model)
+			require.Equal(t, "large-model", cfg.Models[ModelMain].Model)
+			require.Equal(t, "small-model", cfg.Models[ModelChore].Model)
 		case <-time.After(5 * time.Second):
 			t.Fatal("resolve + persist deadlocked under writeMu")
 		}

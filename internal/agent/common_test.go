@@ -96,7 +96,7 @@ func testEnv(t *testing.T) fakeEnv {
 	}
 }
 
-func testSessionAgent(env fakeEnv, large, small fantasy.LanguageModel, systemPrompt string, tools ...fantasy.AgentTool) SessionAgent {
+func testSessionAgent(env fakeEnv, large, small fantasy.LanguageModel, systemPrompt string, tools ...fantasy.AgentTool) (SessionAgent, resolvedAgent) {
 	largeModel := Model{
 		Model: large,
 		CatwalkCfg: catwalk.Model{
@@ -104,26 +104,30 @@ func testSessionAgent(env fakeEnv, large, small fantasy.LanguageModel, systemPro
 			DefaultMaxTokens: 10000,
 		},
 	}
-	smallModel := Model{
-		Model: small,
-		CatwalkCfg: catwalk.Model{
-			ContextWindow:    200000,
-			DefaultMaxTokens: 10000,
-		},
-	}
+	// Title generation lives on the coordinator. These tests are about
+	// run semantics, not title text: the store below has no title agent
+	// to resolve, so generateSessionTitle takes its fallback path and
+	// names the session without an LLM call.
+	titles := &coordinator{sessions: env.sessions, cfg: config.NewTestStore(&config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options:   &config.Options{},
+	})}
 	agent := NewSessionAgent(SessionAgentOptions{
-		LargeModel:   largeModel,
-		SmallModel:   smallModel,
-		SystemPrompt: systemPrompt,
-		IsYolo:       true,
-		Sessions:     env.sessions,
-		Messages:     env.messages,
-		Tools:        tools,
+		IsYolo:        true,
+		Sessions:      env.sessions,
+		Messages:      env.messages,
+		GenerateTitle: titles.generateSessionTitle,
 	})
-	return agent
+	return agent, resolvedAgent{
+		ID:           config.AgentCoder,
+		Model:        largeModel,
+		Tools:        tools,
+		SystemPrompt: systemPrompt,
+		MaxTokens:    largeModel.CatwalkCfg.DefaultMaxTokens,
+	}
 }
 
-func coderAgent(r *vcr.Recorder, env fakeEnv, large, small fantasy.LanguageModel) (SessionAgent, error) {
+func coderAgent(r *vcr.Recorder, env fakeEnv, large, small fantasy.LanguageModel) (SessionAgent, resolvedAgent, error) {
 	fixedTime := func() time.Time {
 		t, _ := time.Parse("1/2/2006", "1/1/2025")
 		return t
@@ -134,11 +138,11 @@ func coderAgent(r *vcr.Recorder, env fakeEnv, large, small fantasy.LanguageModel
 		prompt.WithWorkingDir(filepath.ToSlash(env.workingDir)),
 	)
 	if err != nil {
-		return nil, err
+		return nil, resolvedAgent{}, err
 	}
 	cfg, err := config.Init(env.workingDir, "", false)
 	if err != nil {
-		return nil, err
+		return nil, resolvedAgent{}, err
 	}
 
 	// NOTE(@andreynering): Set a fixed config to ensure cassettes match
@@ -157,7 +161,7 @@ func coderAgent(r *vcr.Recorder, env fakeEnv, large, small fantasy.LanguageModel
 
 	systemPrompt, err := prompt.Build(context.TODO(), large.Provider(), large.Model(), cfg)
 	if err != nil {
-		return nil, err
+		return nil, resolvedAgent{}, err
 	}
 
 	// Get the model name for the bash tool
@@ -180,7 +184,8 @@ func coderAgent(r *vcr.Recorder, env fakeEnv, large, small fantasy.LanguageModel
 		tools.NewWriteTool(nil, env.permissions, env.history, *env.filetracker, env.workingDir),
 	}
 
-	return testSessionAgent(env, large, small, systemPrompt, allTools...), nil
+	sa, ra := testSessionAgent(env, large, small, systemPrompt, allTools...)
+	return sa, ra, nil
 }
 
 // createSimpleGoProject creates a simple Go project structure in the given directory.

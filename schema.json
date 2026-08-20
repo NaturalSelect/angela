@@ -21,6 +21,10 @@
           "type": "boolean",
           "description": "Whether this agent is disabled"
         },
+        "hidden": {
+          "type": "boolean",
+          "description": "Keep this agent out of the agent tool's dispatch list and UI completion"
+        },
         "mode": {
           "type": "string",
           "enum": [
@@ -31,12 +35,16 @@
         },
         "model": {
           "type": "string",
-          "enum": [
-            "large",
-            "small"
-          ],
-          "description": "The model type to use for this agent",
-          "default": "large"
+          "description": "Name of the model config to use",
+          "default": "main"
+        },
+        "variant": {
+          "type": "string",
+          "description": "Name of a variant on the model config"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "description": "Cap on the agent's output tokens; zero means the model default"
         },
         "prompt": {
           "type": "string",
@@ -135,6 +143,32 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "CompactionOptions": {
+      "properties": {
+        "auto": {
+          "type": "boolean",
+          "description": "Automatically compact when the context fills up",
+          "default": true
+        },
+        "large_context_threshold": {
+          "type": "integer",
+          "description": "Context window size above which Reserved is used instead of SmallContextRatio",
+          "default": 200000
+        },
+        "reserved": {
+          "type": "integer",
+          "description": "Tokens kept free for the next turn on a large context window",
+          "default": 20000
+        },
+        "small_context_ratio": {
+          "type": "number",
+          "description": "Proportion of a small context window kept free for the next turn",
+          "default": 0.2
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Completions": {
       "properties": {
         "max_depth": {
@@ -167,7 +201,7 @@
             "$ref": "#/$defs/SelectedModel"
           },
           "type": "object",
-          "description": "Model configurations for different model types"
+          "description": "Named model configurations"
         },
         "providers": {
           "additionalProperties": {
@@ -589,6 +623,10 @@
           "$ref": "#/$defs/TUIOptions",
           "description": "Terminal user interface options"
         },
+        "compaction": {
+          "$ref": "#/$defs/CompactionOptions",
+          "description": "Conversation compaction options"
+        },
         "debug": {
           "type": "boolean",
           "description": "Enable debug logging",
@@ -597,11 +635,6 @@
         "debug_lsp": {
           "type": "boolean",
           "description": "Enable debug logging for LSP servers",
-          "default": false
-        },
-        "disable_auto_summarize": {
-          "type": "boolean",
-          "description": "Disable automatic conversation summarization",
           "default": false
         },
         "data_directory": {
@@ -892,6 +925,13 @@
         "provider_options": {
           "type": "object",
           "description": "Additional provider-specific options for the model"
+        },
+        "variants": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SelectedModelOverride"
+          },
+          "type": "object",
+          "description": "Named parameter presets layered over this model config"
         }
       },
       "additionalProperties": false,
@@ -900,6 +940,58 @@
         "model",
         "provider"
       ]
+    },
+    "SelectedModelOverride": {
+      "properties": {
+        "reasoning_effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "description": "Reasoning effort override"
+        },
+        "think": {
+          "type": "boolean",
+          "description": "Thinking mode override for Anthropic models that can reason"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "maximum": 200000,
+          "description": "Maximum number of tokens for model responses"
+        },
+        "temperature": {
+          "type": "number",
+          "maximum": 1,
+          "minimum": 0,
+          "description": "Sampling temperature"
+        },
+        "top_p": {
+          "type": "number",
+          "maximum": 1,
+          "minimum": 0,
+          "description": "Top-p (nucleus) sampling parameter"
+        },
+        "top_k": {
+          "type": "integer",
+          "description": "Top-k sampling parameter"
+        },
+        "frequency_penalty": {
+          "type": "number",
+          "description": "Frequency penalty to reduce repetition"
+        },
+        "presence_penalty": {
+          "type": "number",
+          "description": "Presence penalty to increase topic diversity"
+        },
+        "provider_options": {
+          "type": "object",
+          "description": "Provider-specific options merged over the model's own"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
     },
     "TUIOptions": {
       "properties": {

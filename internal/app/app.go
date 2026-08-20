@@ -15,7 +15,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
@@ -291,7 +290,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	progress = app.config.Config().Options.Progress == nil || *app.config.Config().Options.Progress
 
 	if !hideSpinner && stderrTTY {
-		t := styles.ThemeForProvider(app.config.Config().Models[config.SelectedModelTypeLarge].Provider)
+		t := styles.ThemeForProvider(app.config.Config().Models[config.ModelMain].Provider)
 
 		spinner = format.NewSpinner(ctx, cancel, anim.Settings{
 			Size:        10,
@@ -463,7 +462,7 @@ func (app *App) restoreModelFromSession(ctx context.Context, sessionID string) e
 	}
 
 	cfg := app.config.Config()
-	currentLarge := cfg.Models[config.SelectedModelTypeLarge]
+	currentLarge := cfg.Models[config.ModelMain]
 	if currentLarge.Provider == lastMsg.Provider && currentLarge.Model == lastMsg.Model {
 		return nil
 	}
@@ -475,14 +474,10 @@ func (app *App) restoreModelFromSession(ctx context.Context, sessionID string) e
 		return nil
 	}
 
-	app.config.OverridePreferredModel(config.SelectedModelTypeLarge, config.SelectedModel{
+	app.config.OverridePreferredModel(config.ModelMain, config.SelectedModel{
 		Provider: lastMsg.Provider,
 		Model:    lastMsg.Model,
 	})
-	if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-		smallModel := app.GetDefaultSmallModel(lastMsg.Provider)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, smallModel)
-	}
 	if err := app.AgentCoordinator.UpdateModels(ctx); err != nil {
 		return fmt.Errorf("failed to update agent models: %w", err)
 	}
@@ -495,9 +490,8 @@ func (app *App) restoreModelFromSession(ctx context.Context, sessionID string) e
 // overrideModelsForNonInteractive parses the model strings and temporarily
 // overrides the model configurations, then rebuilds the agent.
 // Format: "model-name" (searches all providers) or "provider/model-name".
-// Model matching is case-insensitive.
-// If largeModel is provided but smallModel is not, the small model defaults to
-// the provider's default small model.
+// Model matching is case-insensitive. Each flag writes only the config
+// name it names; naming one no longer derives the other.
 func (app *App) overrideModelsForNonInteractive(ctx context.Context, largeModel, smallModel string) error {
 	providers := app.config.Config().Providers.Copy()
 
@@ -506,80 +500,33 @@ func (app *App) overrideModelsForNonInteractive(ctx context.Context, largeModel,
 		return err
 	}
 
-	var largeProviderID string
-
 	// Override large model.
 	if largeModel != "" {
-		found, err := validateMatches(largeMatches, largeModel, "large")
+		found, err := validateMatches(largeMatches, largeModel, "main")
 		if err != nil {
 			return err
 		}
-		largeProviderID = found.provider
 		slog.Info("Overriding large model for non-interactive run", "provider", found.provider, "model", found.modelID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeLarge, config.SelectedModel{
+		app.config.OverridePreferredModel(config.ModelMain, config.SelectedModel{
 			Provider: found.provider,
 			Model:    found.modelID,
 		})
 	}
 
 	// Override small model.
-	switch {
-	case smallModel != "":
-		found, err := validateMatches(smallMatches, smallModel, "small")
+	if smallModel != "" {
+		found, err := validateMatches(smallMatches, smallModel, "chore")
 		if err != nil {
 			return err
 		}
 		slog.Info("Overriding small model for non-interactive run", "provider", found.provider, "model", found.modelID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, config.SelectedModel{
+		app.config.OverridePreferredModel(config.ModelChore, config.SelectedModel{
 			Provider: found.provider,
 			Model:    found.modelID,
 		})
-
-	case largeModel != "":
-		// No small model specified, but large model was - use provider's default.
-		smallCfg := app.GetDefaultSmallModel(largeProviderID)
-		app.config.OverridePreferredModel(config.SelectedModelTypeSmall, smallCfg)
 	}
 
 	return app.AgentCoordinator.UpdateModels(ctx)
-}
-
-// GetDefaultSmallModel returns the default small model for the given
-// provider. Falls back to the large model if no default is found.
-func (app *App) GetDefaultSmallModel(providerID string) config.SelectedModel {
-	cfg := app.config.Config()
-	largeModelCfg := cfg.Models[config.SelectedModelTypeLarge]
-
-	// Find the provider in the known providers list to get its default small model.
-	knownProviders, _ := config.Providers(cfg)
-	var knownProvider *catwalk.Provider
-	for _, p := range knownProviders {
-		if string(p.ID) == providerID {
-			knownProvider = &p
-			break
-		}
-	}
-
-	// For unknown/local providers, use the large model as small.
-	if knownProvider == nil {
-		slog.Warn("Using large model as small model for unknown provider", "provider", providerID, "model", largeModelCfg.Model)
-		return largeModelCfg
-	}
-
-	defaultSmallModelID := knownProvider.DefaultSmallModelID
-	model := cfg.GetModel(providerID, defaultSmallModelID)
-	if model == nil {
-		slog.Warn("Default small model not found, using large model", "provider", providerID, "model", largeModelCfg.Model)
-		return largeModelCfg
-	}
-
-	slog.Info("Using provider default small model", "provider", providerID, "model", defaultSmallModelID)
-	return config.SelectedModel{
-		Provider:        providerID,
-		Model:           defaultSmallModelID,
-		MaxTokens:       model.DefaultMaxTokens,
-		ReasoningEffort: model.DefaultReasoningEffort,
-	}
 }
 
 func (app *App) setupEvents() {

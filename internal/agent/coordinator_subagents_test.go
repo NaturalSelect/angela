@@ -11,16 +11,21 @@ import (
 // toolNames lists the tools a built agent ended up with, so tests can
 // assert on the permission set that actually reached it rather than on
 // the config it was supposed to come from.
-func toolNames(a SessionAgent) []string {
-	sa, ok := a.(*sessionAgent)
-	if !ok {
-		return nil
-	}
+func toolNames(ra resolvedAgent) []string {
 	var names []string
-	for _, tool := range sa.tools.Copy() {
+	for _, tool := range ra.Tools {
 		names = append(names, tool.Info().Name)
 	}
 	return names
+}
+
+// dispatchTools resolves an entry the way a dispatch does and reports
+// the tool names that dispatch would carry.
+func dispatchTools(t *testing.T, coord *coordinator, entry *subagentEntry) []string {
+	t.Helper()
+	_, resolved, err := coord.dispatchSubAgent(context.Background(), entry)
+	require.NoError(t, err)
+	return toolNames(resolved)
 }
 
 // TestUpdateModelsReconcilesSubagentsAfterConfigChange pins the
@@ -30,17 +35,12 @@ func toolNames(a SessionAgent) []string {
 // and did not. Narrowing an agent's whitelist must replace its entry.
 func TestUpdateModelsReconcilesSubagentsAfterConfigChange(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
-	require.NoError(t, coord.readyWg.Wait())
 
 	before, ok := coord.subagents.Get(config.AgentGeneral)
 	require.True(t, ok)
 
-	// Force the entry to be built so a stale agent would be observable.
-	_, err := before.resolve(func(cfg config.Agent) (SessionAgent, error) {
-		return coord.buildSubAgentSync(context.Background(), cfg)
-	})
-	require.NoError(t, err)
-	require.Contains(t, toolNames(before.agent), "bash", "sanity check: general starts with bash")
+	require.Contains(t, dispatchTools(t, coord, before), "bash",
+		"sanity check: general starts with bash")
 
 	agents := coord.cfg.Config().Agents
 	narrowed := agents[config.AgentGeneral]
@@ -53,11 +53,7 @@ func TestUpdateModelsReconcilesSubagentsAfterConfigChange(t *testing.T) {
 	require.True(t, ok)
 	require.NotSame(t, before, after, "a permission change must replace the cached entry")
 
-	rebuilt, err := after.resolve(func(cfg config.Agent) (SessionAgent, error) {
-		return coord.buildSubAgentSync(context.Background(), cfg)
-	})
-	require.NoError(t, err)
-	require.NotContains(t, toolNames(rebuilt), "bash",
+	require.NotContains(t, dispatchTools(t, coord, after), "bash",
 		"a revoked tool must be gone from the rebuilt subagent")
 }
 
@@ -66,7 +62,6 @@ func TestUpdateModelsReconcilesSubagentsAfterConfigChange(t *testing.T) {
 // templates and reconstruct providers on the run hot path.
 func TestUpdateModelsKeepsUnchangedSubagents(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
-	require.NoError(t, coord.readyWg.Wait())
 
 	before := map[string]*subagentEntry{}
 	for _, id := range coord.subagents.IDs() {
@@ -91,7 +86,6 @@ func TestUpdateModelsKeepsUnchangedSubagents(t *testing.T) {
 // an agent the user disables at runtime must stop being dispatchable.
 func TestUpdateModelsDropsDisabledSubagent(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
-	require.NoError(t, coord.readyWg.Wait())
 
 	_, ok := coord.subagents.Get(config.AgentExplore)
 	require.True(t, ok, "sanity check: explore starts dispatchable")
@@ -105,14 +99,17 @@ func TestUpdateModelsDropsDisabledSubagent(t *testing.T) {
 
 // TestDispatchIsolatesExecuteTimeTemplateError pins the blast radius of
 // a broken subagent. Its prompt parses, so the failure only surfaces
-// when the template is executed — which now happens on its own dispatch
-// path. It must fail that one call and leave the coordinator's readiness
-// group and every other subagent untouched.
+// when the template is executed — which happens on its own dispatch
+// path. It must fail that one dispatch and leave every other subagent
+// dispatchable.
+//
+// The failure is not cached: resolution runs per dispatch, so fixing
+// the prompt takes effect on the next call instead of staying broken
+// for the life of the process.
 func TestDispatchIsolatesExecuteTimeTemplateError(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
-	require.NoError(t, coord.readyWg.Wait())
 
-	coord.cfg.Config().Agents["broken"] = config.Agent{
+	brokenCfg := config.Agent{
 		ID:           "broken",
 		Name:         "Broken",
 		Description:  "parses fine, fails at execute time",
@@ -121,32 +118,30 @@ func TestDispatchIsolatesExecuteTimeTemplateError(t *testing.T) {
 		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{"view"}},
 		AllowedMCP:   &config.AllowedMCPSet{Kind: config.ToolSetScope},
 	}
+	coord.cfg.Config().Agents["broken"] = brokenCfg
 	coord.reconcileSubagents()
 
 	broken, ok := coord.subagents.Get("broken")
 	require.True(t, ok, "a broken agent is still registered; it fails on dispatch, not on reconcile")
 
-	_, err := broken.resolve(func(cfg config.Agent) (SessionAgent, error) {
-		return coord.buildSubAgentSync(context.Background(), cfg)
-	})
+	_, _, err := coord.dispatchSubAgent(context.Background(), broken)
 	require.Error(t, err, "an execute-time template error must surface to its own dispatch")
 
-	// The cached failure is returned again rather than retried.
-	_, again := broken.resolve(func(cfg config.Agent) (SessionAgent, error) {
-		t.Fatal("a failed subagent must not be rebuilt on the next dispatch")
-		return nil, nil
-	})
-	require.Equal(t, err, again)
-
-	require.NoError(t, coord.readyWg.Wait(),
-		"a broken subagent must not poison the coordinator's readiness group")
-
-	healthy, ok := coord.subagents.Get(config.AgentTask)
+	healthy, ok := coord.subagents.Get(config.AgentExplore)
 	require.True(t, ok)
-	_, err = healthy.resolve(func(cfg config.Agent) (SessionAgent, error) {
-		return coord.buildSubAgentSync(context.Background(), cfg)
-	})
-	require.NoError(t, err, "an unrelated subagent must still build")
+	_, _, err = coord.dispatchSubAgent(context.Background(), healthy)
+	require.NoError(t, err, "an unrelated subagent must still dispatch")
+
+	// Fixing the prompt takes effect on the next dispatch.
+	brokenCfg.Prompt = "now valid"
+	coord.cfg.Config().Agents["broken"] = brokenCfg
+	coord.reconcileSubagents()
+
+	fixed, ok := coord.subagents.Get("broken")
+	require.True(t, ok)
+	_, resolved, err := coord.dispatchSubAgent(context.Background(), fixed)
+	require.NoError(t, err, "a repaired prompt must dispatch without restarting the process")
+	require.Equal(t, "now valid", resolved.SystemPrompt)
 }
 
 // TestReconcileReplacesEntriesWhenHooksChange pins the second staleness

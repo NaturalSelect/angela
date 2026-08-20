@@ -28,10 +28,6 @@ func (m *mockSessionService) Create(_ context.Context, title string) (session.Se
 	return s, nil
 }
 
-func (m *mockSessionService) CreateTitleSession(context.Context, string) (session.Session, error) {
-	return session.Session{}, nil
-}
-
 func (m *mockSessionService) CreateTaskSession(context.Context, string, string, string) (session.Session, error) {
 	return session.Session{}, nil
 }
@@ -61,6 +57,10 @@ func (m *mockSessionService) Save(_ context.Context, s session.Session) (session
 }
 
 func (m *mockSessionService) UpdateTitleAndUsage(context.Context, string, string, int64, int64, float64) error {
+	return nil
+}
+
+func (m *mockSessionService) UpdateAgentAndModel(context.Context, string, string, session.ModelRef) error {
 	return nil
 }
 

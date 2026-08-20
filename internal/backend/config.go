@@ -76,12 +76,12 @@ func (b *Backend) RemoveConfigField(workspaceID string, scope config.Scope, key 
 
 // UpdatePreferredModel updates the preferred model for the given type
 // and persists it to the config file at the given scope.
-func (b *Backend) UpdatePreferredModel(workspaceID string, scope config.Scope, modelType config.SelectedModelType, model config.SelectedModel) error {
+func (b *Backend) UpdatePreferredModel(workspaceID string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return err
 	}
-	if err := ws.Cfg.UpdatePreferredModel(scope, modelType, model); err != nil {
+	if err := ws.Cfg.UpdatePreferredModel(scope, name, model); err != nil {
 		return err
 	}
 	publishConfigChanged(ws)

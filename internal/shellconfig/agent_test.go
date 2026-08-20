@@ -15,7 +15,7 @@ func TestLoadShellConfig_AgentAdd(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	script := `agent add reviewer --description "Reviews code" --mode subagent --model small --prompt "Review the diff." --temperature 0.3 --tool bash --tool view --disable-tool sourcegraph`
+	script := `agent add reviewer --description "Reviews code" --mode subagent --model chore --prompt "Review the diff." --temperature 0.3 --tool bash --tool view --disable-tool sourcegraph`
 	path := filepath.Join(dir, "angelarc")
 
 	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
@@ -28,7 +28,7 @@ func TestLoadShellConfig_AgentAdd(t *testing.T) {
 	reviewer := agents["reviewer"].(map[string]any)
 	require.Equal(t, "Reviews code", reviewer["description"])
 	require.Equal(t, "subagent", reviewer["mode"])
-	require.Equal(t, "small", reviewer["model"])
+	require.Equal(t, "chore", reviewer["model"])
 	require.Equal(t, "Review the diff.", reviewer["prompt"])
 	require.InDelta(t, 0.3, reviewer["temperature"], 0.0001)
 	require.Equal(t, []any{"bash", "view"}, reviewer["allowed_tools"])
@@ -57,6 +57,76 @@ func TestLoadShellConfig_AgentAddDisabledFalse(t *testing.T) {
 	reviewer := agents["reviewer"].(map[string]any)
 	require.Contains(t, reviewer, "disabled", "an explicit --disabled false must still write the key")
 	require.Equal(t, false, reviewer["disabled"])
+}
+
+// TestLoadShellConfig_AgentAddHiddenAndMaxTokens covers the two flags an
+// internal agent needs: --hidden keeps it out of dispatch, --max-tokens
+// caps its output. Like --disabled, an explicit `--hidden false` must
+// serialize as a present key so it can un-hide a built-in.
+func TestLoadShellConfig_AgentAddHiddenAndMaxTokens(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `agent add foo --hidden true --max-tokens 40`
+	path := filepath.Join(dir, "angelarc")
+
+	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &result))
+
+	agents := result["agents"].(map[string]any)
+	foo := agents["foo"].(map[string]any)
+	require.Equal(t, true, foo["hidden"])
+	require.InDelta(t, 40, foo["max_tokens"], 0.0001)
+}
+
+func TestLoadShellConfig_AgentAddHiddenFalse(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `agent add foo --hidden false`
+	path := filepath.Join(dir, "angelarc")
+
+	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &result))
+
+	agents := result["agents"].(map[string]any)
+	foo := agents["foo"].(map[string]any)
+	require.Contains(t, foo, "hidden", "an explicit --hidden false must still write the key")
+	require.Equal(t, false, foo["hidden"])
+}
+
+// TestLoadShellConfig_AgentModelIsOpenValueDomain pins that model config
+// names are user-defined: `model <name>` declares one and an agent may
+// point at any name, including one that ships as a seed.
+func TestLoadShellConfig_AgentModelIsOpenValueDomain(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := "provider add anthropic\nmodel add anthropic/x\nmodel main anthropic/x --think\nagent add coder --model main\nagent add odd --model medium"
+	path := filepath.Join(dir, "angelarc")
+
+	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &result))
+
+	models := result["models"].(map[string]any)
+	main := models["main"].(map[string]any)
+	require.Equal(t, "anthropic", main["provider"])
+	require.Equal(t, "x", main["model"])
+	require.Equal(t, true, main["think"])
+
+	agents := result["agents"].(map[string]any)
+	require.Equal(t, "main", agents["coder"].(map[string]any)["model"])
+	require.Equal(t, "medium", agents["odd"].(map[string]any)["model"],
+		"an arbitrary model config name must parse, not be rejected")
 }
 
 // TestLoadShellConfig_AgentRemove verifies remove/rm writes a disable

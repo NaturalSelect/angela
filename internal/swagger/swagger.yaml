@@ -47,6 +47,111 @@ definitions:
       top_p:
         type: number
     type: object
+  config.Agent:
+    properties:
+      allowed_mcp:
+        allOf:
+        - $ref: '#/definitions/config.AllowedMCPSet'
+        description: |-
+          AllowedMCP controls which MCP servers and tools are available,
+          with the same tri-state semantics as AllowedTools. nil means
+          this layer did not mention allowed_mcp.
+      allowed_tools:
+        allOf:
+        - $ref: '#/definitions/config.AllowedToolSet'
+        description: |-
+          AllowedTools controls which tools this layer grants. A nil
+          value means this layer did not mention allowed_tools (the
+          merge keeps whatever a lower-priority layer set); a non-nil
+          value is self-describing via its Kind: ToolSetAll grants every
+          tool, ToolSetInherited takes the coder's resolved set, and
+          ToolSetScope grants only Tools. ResolveAgents' output is always
+          non-nil with Kind == ToolSetScope: a fully materialized
+          whitelist with every deny list already applied.
+      context_paths:
+        description: ContextPaths overrides the context paths for this agent.
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      disabled:
+        description: |-
+          Disabled uses a pointer so a markdown-layer "disabled: true" can
+          be explicitly re-enabled by a higher-priority layer's
+          "disabled: false", instead of false being indistinguishable
+          from unset.
+        type: boolean
+      disabled_tools:
+        description: DisabledTools removes tools from the resolved whitelist.
+        items:
+          type: string
+        type: array
+      hidden:
+        description: |-
+          Hidden keeps an agent out of the agent tool's dispatch list and
+          out of UI completion, while leaving it resolvable by ID. It is a
+          pointer for the same reason as Disabled: so a user can un-hide a
+          built-in hidden agent with an explicit "hidden: false".
+
+          Hidden is orthogonal to Mode: whether an agent is internal has
+          nothing to do with whether it is primary or a subagent.
+        type: boolean
+      id:
+        type: string
+      max_tokens:
+        description: |-
+          MaxTokens caps the agent's output tokens. Zero means the model
+          default applies.
+        type: integer
+      mode:
+        allOf:
+        - $ref: '#/definitions/config.AgentMode'
+        description: |-
+          Mode controls how the agent can be used. Primary agents are
+          top-level; subagents are launched via the agent tool.
+      model:
+        $ref: '#/definitions/config.ModelConfigName'
+      name:
+        type: string
+      prompt:
+        description: |-
+          Prompt is the system prompt text. When set it replaces the
+          built-in template for this agent. The text is parsed as a Go
+          template with the same data as built-in templates.
+        type: string
+      temperature:
+        description: Temperature overrides the model's default sampling temperature.
+        type: number
+    type: object
+  config.AgentMode:
+    enum:
+    - primary
+    - subagent
+    type: string
+    x-enum-varnames:
+    - AgentModePrimary
+    - AgentModeSubagent
+  config.AllowedMCPSet:
+    properties:
+      kind:
+        $ref: '#/definitions/config.ToolSetKind'
+      servers:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+    type: object
+  config.AllowedToolSet:
+    properties:
+      kind:
+        $ref: '#/definitions/config.ToolSetKind'
+      tools:
+        items:
+          type: string
+        type: array
+    type: object
   config.Attribution:
     properties:
       co_authored_by:
@@ -55,6 +160,17 @@ definitions:
         type: boolean
       trailer_style:
         $ref: '#/definitions/config.TrailerStyle'
+    type: object
+  config.CompactionOptions:
+    properties:
+      auto:
+        type: boolean
+      large_context_threshold:
+        type: integer
+      reserved:
+        type: integer
+      small_context_ratio:
+        type: number
     type: object
   config.Completions:
     properties:
@@ -203,6 +319,14 @@ definitions:
     additionalProperties:
       $ref: '#/definitions/config.MCPConfig'
     type: object
+  config.ModelConfigName:
+    enum:
+    - main
+    - chore
+    type: string
+    x-enum-varnames:
+    - ModelMain
+    - ModelChore
   config.Permissions:
     properties:
       allowed_tools:
@@ -248,14 +372,6 @@ definitions:
       top_p:
         type: number
     type: object
-  config.SelectedModelType:
-    enum:
-    - large
-    - small
-    type: string
-    x-enum-varnames:
-    - SelectedModelTypeLarge
-    - SelectedModelTypeSmall
   config.TUIOptions:
     properties:
       compact_mode:
@@ -286,6 +402,17 @@ definitions:
       max_items:
         type: integer
     type: object
+  config.ToolSetKind:
+    enum:
+    - 0
+    - 1
+    - 2
+    format: int32
+    type: integer
+    x-enum-varnames:
+    - ToolSetScope
+    - ToolSetAll
+    - ToolSetInherited
   config.Tools:
     properties:
       glob:
@@ -311,6 +438,13 @@ definitions:
     properties:
       $schema:
         type: string
+      agents:
+        additionalProperties:
+          $ref: '#/definitions/config.Agent'
+        description: |-
+          AgentConfigs holds user-defined agent overrides and custom agents.
+          These are merged over built-in defaults during SetupAgents().
+        type: object
       env:
         additionalProperties:
           type: string
@@ -329,7 +463,9 @@ definitions:
       models:
         additionalProperties:
           $ref: '#/definitions/config.SelectedModel'
-        description: We currently only support large/small as values here.
+        description: |-
+          Named model configurations. "main" and "chore" ship as seeds;
+          any other name may be defined and referenced by an agent.
         type: object
       options:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Options'
@@ -351,10 +487,16 @@ definitions:
     type: object
   github_com_NaturalSelect_angela_internal_config.Options:
     properties:
+      agent_paths:
+        items:
+          type: string
+        type: array
       attribution:
         $ref: '#/definitions/config.Attribution'
       auto_lsp:
         type: boolean
+      compaction:
+        $ref: '#/definitions/config.CompactionOptions'
       context_paths:
         items:
           type: string
@@ -369,8 +511,6 @@ definitions:
       debug:
         type: boolean
       debug_lsp:
-        type: boolean
-      disable_auto_summarize:
         type: boolean
       disable_default_providers:
         type: boolean
@@ -509,6 +649,8 @@ definitions:
     type: object
   proto.AgentSession:
     properties:
+      agent:
+        type: string
       attached_clients:
         type: integer
       completion_tokens:
@@ -523,6 +665,8 @@ definitions:
         type: boolean
       message_count:
         type: integer
+      model:
+        $ref: '#/definitions/proto.ModelRef'
       parent_session_id:
         type: string
       prompt_tokens:
@@ -537,6 +681,11 @@ definitions:
         type: array
       updated_at:
         type: integer
+    type: object
+  proto.AgentSwitchRequest:
+    properties:
+      agent:
+        type: string
     type: object
   proto.Attachment:
     properties:
@@ -562,8 +711,8 @@ definitions:
     properties:
       model:
         $ref: '#/definitions/config.SelectedModel'
-      model_type:
-        $ref: '#/definitions/config.SelectedModelType'
+      model_name:
+        $ref: '#/definitions/config.ModelConfigName'
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
@@ -772,6 +921,15 @@ definitions:
     - User
     - System
     - Tool
+  proto.ModelRef:
+    properties:
+      model:
+        type: string
+      provider:
+        type: string
+      variant:
+        type: string
+    type: object
   proto.PermissionAction:
     enum:
     - allow
@@ -879,6 +1037,8 @@ definitions:
     type: object
   proto.Session:
     properties:
+      agent:
+        type: string
       attached_clients:
         type: integer
       completion_tokens:
@@ -893,6 +1053,8 @@ definitions:
         type: boolean
       message_count:
         type: integer
+      model:
+        $ref: '#/definitions/proto.ModelRef'
       parent_session_id:
         type: string
       prompt_tokens:
@@ -1286,36 +1448,6 @@ paths:
       summary: Send message to agent
       tags:
       - agent
-  /workspaces/{id}/agent/default-small-model:
-    get:
-      parameters:
-      - description: Workspace ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Provider ID
-        in: query
-        name: provider_id
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/proto.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/proto.Error'
-      summary: Get default small model
-      tags:
-      - agent
   /workspaces/{id}/agent/init:
     post:
       parameters:
@@ -1367,6 +1499,45 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Get agent session
+      tags:
+      - agent
+  /workspaces/{id}/agent/sessions/{sid}/agent:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: Agent switch request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.AgentSwitchRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Switch the session's agent
       tags:
       - agent
   /workspaces/{id}/agent/sessions/{sid}/cancel:

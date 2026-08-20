@@ -200,7 +200,7 @@ func runNonInteractive(
 	progress = ws.Config.Options.Progress == nil || *ws.Config.Options.Progress
 
 	if !hideSpinner && stderrTTY {
-		t := styles.ThemeForProvider(ws.Config.Models[config.SelectedModelTypeLarge].Provider)
+		t := styles.ThemeForProvider(ws.Config.Models[config.ModelMain].Provider)
 
 		spinner = format.NewSpinner(ctx, cancel, anim.Settings{
 			Size:        10,
@@ -493,16 +493,13 @@ func overrideModels(
 
 	largeMatches, smallMatches := findModelMatches(providers, largeModel, smallModel)
 
-	var largeProviderID string
-
 	if largeModel != "" {
-		found, err := validateModelMatches(largeMatches, largeModel, "large")
+		found, err := validateModelMatches(largeMatches, largeModel, "main")
 		if err != nil {
 			return err
 		}
-		largeProviderID = found.provider
 		slog.Info("Overriding large model", "provider", found.provider, "model", found.modelID)
-		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeLarge, config.SelectedModel{
+		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.ModelMain, config.SelectedModel{
 			Provider: found.provider,
 			Model:    found.modelID,
 		}); err != nil {
@@ -510,28 +507,17 @@ func overrideModels(
 		}
 	}
 
-	switch {
-	case smallModel != "":
-		found, err := validateModelMatches(smallMatches, smallModel, "small")
+	if smallModel != "" {
+		found, err := validateModelMatches(smallMatches, smallModel, "chore")
 		if err != nil {
 			return err
 		}
 		slog.Info("Overriding small model", "provider", found.provider, "model", found.modelID)
-		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeSmall, config.SelectedModel{
+		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.ModelChore, config.SelectedModel{
 			Provider: found.provider,
 			Model:    found.modelID,
 		}); err != nil {
 			return fmt.Errorf("failed to set small model: %w", err)
-		}
-
-	case largeModel != "":
-		sm, err := c.GetDefaultSmallModel(ctx, ws.ID, largeProviderID)
-		if err != nil {
-			slog.Warn("Failed to get default small model", "error", err)
-		} else if sm != nil {
-			if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeSmall, *sm); err != nil {
-				return fmt.Errorf("failed to set small model: %w", err)
-			}
 		}
 	}
 
@@ -561,7 +547,7 @@ func restoreModelFromSession(ctx context.Context, c *client.Client, ws *proto.Wo
 	}
 
 	cfg := ws.Config
-	currentLarge := cfg.Models[config.SelectedModelTypeLarge]
+	currentLarge := cfg.Models[config.ModelMain]
 	if currentLarge.Provider == lastAssistant.Provider && currentLarge.Model == lastAssistant.Model {
 		return nil
 	}
@@ -577,19 +563,8 @@ func restoreModelFromSession(ctx context.Context, c *client.Client, ws *proto.Wo
 		Provider: lastAssistant.Provider,
 		Model:    lastAssistant.Model,
 	}
-	if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeLarge, selectedModel); err != nil {
+	if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.ModelMain, selectedModel); err != nil {
 		return fmt.Errorf("failed to set large model: %w", err)
-	}
-
-	if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-		sm, err := c.GetDefaultSmallModel(ctx, ws.ID, lastAssistant.Provider)
-		if err != nil {
-			slog.Warn("Failed to get default small model", "error", err)
-		} else if sm != nil {
-			if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SelectedModelTypeSmall, *sm); err != nil {
-				slog.Warn("Failed to set small model during session restore", "error", err)
-			}
-		}
 	}
 
 	return c.UpdateAgent(ctx, ws.ID)

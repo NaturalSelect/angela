@@ -49,16 +49,16 @@ func TestAngelaInfo_Models(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.NewTestStore(&config.Config{
-		Models: map[config.SelectedModelType]config.SelectedModel{
-			config.SelectedModelTypeLarge: {Model: "claude-sonnet-4-20250514", Provider: "anthropic"},
-			config.SelectedModelTypeSmall: {Model: "claude-haiku-3-20250307", Provider: "anthropic"},
+		Models: map[config.ModelConfigName]config.SelectedModel{
+			config.ModelMain:  {Model: "claude-sonnet-4-20250514", Provider: "anthropic"},
+			config.ModelChore: {Model: "claude-haiku-3-20250307", Provider: "anthropic"},
 		},
 		Providers: csync.NewMap[string, config.ProviderConfig](),
 	})
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
 	require.Contains(t, output, "[model]")
-	require.Contains(t, output, "large = claude-sonnet-4-20250514 (anthropic)")
-	require.Contains(t, output, "small = claude-haiku-3-20250307 (anthropic)")
+	require.Contains(t, output, "main = claude-sonnet-4-20250514 (anthropic)")
+	require.Contains(t, output, "chore = claude-haiku-3-20250307 (anthropic)")
 }
 
 func TestAngelaInfo_Providers(t *testing.T) {
@@ -190,15 +190,20 @@ func TestAngelaInfo_DisabledTools(t *testing.T) {
 	require.Contains(t, output, "disabled = agentic_fetch, sourcegraph")
 }
 
+var (
+	autoOff = false
+	autoOn  = true
+)
+
 func TestAngelaInfo_Options(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.NewTestStore(&config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),
 		Options: &config.Options{
-			DataDirectory:        "/Users/user/project/.angela",
-			Debug:                true,
-			DisableAutoSummarize: true,
+			DataDirectory: "/Users/user/project/.angela",
+			Debug:         true,
+			Compaction:    &config.CompactionOptions{Auto: &autoOff},
 		},
 	})
 
@@ -215,14 +220,14 @@ func TestAngelaInfo_AutoSummarizeInversion(t *testing.T) {
 
 	cfgFalse := config.NewTestStore(&config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),
-		Options:   &config.Options{DisableAutoSummarize: true},
+		Options:   &config.Options{Compaction: &config.CompactionOptions{Auto: &autoOff}},
 	})
 	outputFalse := buildAngelaInfo(cfgFalse, nil, nil, nil, nil)
 	require.Contains(t, outputFalse, "auto_summarize = false")
 
 	cfgTrue := config.NewTestStore(&config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),
-		Options:   &config.Options{DisableAutoSummarize: false},
+		Options:   &config.Options{Compaction: &config.CompactionOptions{Auto: &autoOn}},
 	})
 	outputTrue := buildAngelaInfo(cfgTrue, nil, nil, nil, nil)
 	require.Contains(t, outputTrue, "auto_summarize = true")

@@ -204,6 +204,8 @@ func sessionToProto(s session.Session) proto.Session {
 		ID:               s.ID,
 		ParentSessionID:  s.ParentSessionID,
 		Title:            s.Title,
+		Agent:            s.Agent,
+		Model:            modelRefToProto(s.Model),
 		SummaryMessageID: s.SummaryMessageID,
 		MessageCount:     s.MessageCount,
 		PromptTokens:     s.PromptTokens,
@@ -251,6 +253,14 @@ func todosToProto(todos []session.Todo) []proto.Todo {
 		}
 	}
 	return out
+}
+
+func modelRefToProto(m session.ModelRef) proto.ModelRef {
+	return proto.ModelRef{
+		Provider: m.Provider,
+		Model:    m.Model,
+		Variant:  m.Variant,
+	}
 }
 
 func fileToProto(f history.File) proto.File {

@@ -32,14 +32,14 @@ func TestResolveAgents_ThreeLayerOverride(t *testing.T) {
 		"explore": "---\ndescription: Custom explore description\n---\n",
 	})
 	cfg.AgentConfigs = map[string]Agent{
-		AgentExplore: {Model: SelectedModelTypeSmall},
+		AgentExplore: {Model: ModelChore},
 	}
 
 	agents := cfg.ResolveAgents()
 	explore, ok := agents[AgentExplore]
 	require.True(t, ok)
 	require.Equal(t, "Custom explore description", explore.Description, "markdown layer should win for description")
-	require.Equal(t, SelectedModelTypeSmall, explore.Model, "JSON layer should win for model")
+	require.Equal(t, ModelChore, explore.Model, "JSON layer should win for model")
 	require.Equal(t, AgentModeSubagent, explore.Mode, "builtin default should survive when no layer overrides it")
 }
 
@@ -83,7 +83,12 @@ func TestResolveAgents_CustomAgentDefaultsToBaseTools(t *testing.T) {
 	require.ElementsMatch(t, allToolNames(), reviewer.AllowedTools.Tools)
 }
 
-func TestResolveAgents_NonCoderPrimaryDowngradedToSubagent(t *testing.T) {
+// TestResolveAgents_CustomPrimaryIsNotDowngraded pins that primary mode
+// is no longer reserved for the coder. A user agent declaring
+// "mode: primary" is one a session can be switched to, so silently
+// rewriting it to a subagent made the declaration a lie: the agent
+// showed up as a delegation target instead of a session driver.
+func TestResolveAgents_CustomPrimaryIsNotDowngraded(t *testing.T) {
 	cfg := &Config{
 		Options: &Options{},
 		AgentConfigs: map[string]Agent{
@@ -94,7 +99,25 @@ func TestResolveAgents_NonCoderPrimaryDowngradedToSubagent(t *testing.T) {
 	agents := cfg.ResolveAgents()
 	reviewer, ok := agents["reviewer"]
 	require.True(t, ok)
-	require.Equal(t, AgentModeSubagent, reviewer.Mode, "only coder may run as primary; others are downgraded")
+	require.Equal(t, AgentModePrimary, reviewer.Mode,
+		"a custom agent that declares primary mode must keep it")
+	require.Equal(t, AgentModePrimary, agents[AgentCoder].Mode,
+		"a second primary must not cost the coder its own primary mode")
+}
+
+// TestResolveAgents_DefaultModeIsSubagent pins the other half: primary
+// has to be asked for. An agent that says nothing about mode is a
+// delegation target, not a session driver.
+func TestResolveAgents_DefaultModeIsSubagent(t *testing.T) {
+	cfg := &Config{
+		Options: &Options{},
+		AgentConfigs: map[string]Agent{
+			"reviewer": {Description: "x"},
+		},
+	}
+
+	agents := cfg.ResolveAgents()
+	require.Equal(t, AgentModeSubagent, agents["reviewer"].Mode)
 }
 
 func TestResolveAgents_ExploreHasNoBash(t *testing.T) {
@@ -196,6 +219,76 @@ func TestResolveAgents_DisabledTriState(t *testing.T) {
 	})
 }
 
+// TestResolveAgents_HiddenTriState mirrors the Disabled tri-state: a
+// hidden agent stays resolvable (unlike a disabled one, which is
+// dropped), so the coordinator can still build it by ID. What Hidden
+// controls is dispatch and completion visibility, not existence.
+func TestResolveAgents_HiddenTriState(t *testing.T) {
+	t.Run("markdown hidden true is resolvable but marked hidden", func(t *testing.T) {
+		cfg := newAgentTestConfig(t, map[string]string{
+			"reviewer": "---\ndescription: x\nhidden: true\n---\nbody",
+		})
+
+		agents := cfg.ResolveAgents()
+		got, ok := agents["reviewer"]
+		require.True(t, ok, "hidden agents must stay resolvable")
+		require.True(t, got.IsHidden())
+	})
+
+	t.Run("explicit JSON false un-hides a markdown-hidden agent", func(t *testing.T) {
+		cfg := newAgentTestConfig(t, map[string]string{
+			"reviewer": "---\ndescription: x\nhidden: true\n---\nbody",
+		})
+		visible := false
+		cfg.AgentConfigs = map[string]Agent{"reviewer": {Hidden: &visible}}
+
+		agents := cfg.ResolveAgents()
+		got, ok := agents["reviewer"]
+		require.True(t, ok)
+		require.False(t, got.IsHidden(), "explicit hidden: false in a higher layer should un-hide")
+	})
+
+	t.Run("explicit JSON true hides a visible agent", func(t *testing.T) {
+		cfg := newAgentTestConfig(t, map[string]string{
+			"reviewer": "---\ndescription: x\n---\nbody",
+		})
+		hidden := true
+		cfg.AgentConfigs = map[string]Agent{"reviewer": {Hidden: &hidden}}
+
+		agents := cfg.ResolveAgents()
+		got, ok := agents["reviewer"]
+		require.True(t, ok)
+		require.True(t, got.IsHidden())
+	})
+
+	t.Run("unset stays visible", func(t *testing.T) {
+		cfg := newAgentTestConfig(t, map[string]string{
+			"reviewer": "---\ndescription: x\n---\nbody",
+		})
+
+		agents := cfg.ResolveAgents()
+		got, ok := agents["reviewer"]
+		require.True(t, ok)
+		require.False(t, got.IsHidden())
+	})
+}
+
+func TestResolveAgents_MaxTokensOverride(t *testing.T) {
+	t.Parallel()
+
+	cfg := newAgentTestConfig(t, map[string]string{
+		"reviewer": "---\ndescription: x\n---\nbody",
+	})
+	maxTokens := int64(40)
+	cfg.AgentConfigs = map[string]Agent{"reviewer": {MaxTokens: &maxTokens}}
+
+	agents := cfg.ResolveAgents()
+	got, ok := agents["reviewer"]
+	require.True(t, ok)
+	require.NotNil(t, got.MaxTokens)
+	require.Equal(t, int64(40), *got.MaxTokens)
+}
+
 // TestResolveAgents_ShellConfigTombstoneRemovesMarkdownAgent covers what
 // `agent remove` in an angelarc produces: a disable tombstone in the
 // JSON layer must suppress an agent defined by a markdown file, which
@@ -254,7 +347,7 @@ func TestResolveAgents_ExplicitScopeIsNotWidenedByInheritance(t *testing.T) {
 
 	// task/explore declare their own scope, so a permissive coder must
 	// not widen them.
-	require.NotContains(t, agents[AgentTask].AllowedTools.Tools, "bash")
+	require.NotContains(t, agents[AgentExplore].AllowedTools.Tools, "bash")
 	require.NotContains(t, agents[AgentExplore].AllowedTools.Tools, "write")
 }
 
@@ -310,7 +403,7 @@ func TestResolveAgents_ReadOnlyAgentsGetNoMCP(t *testing.T) {
 
 	agents := (&Config{Options: &Options{}}).ResolveAgents()
 
-	for _, id := range []string{AgentTask, AgentExplore} {
+	for _, id := range []string{AgentExplore} {
 		require.Equal(t, ToolSetScope, agents[id].AllowedMCP.Kind)
 		require.False(t, agents[id].AllowedMCP.Allows("github", "create_issue"),
 			"%s must not reach any MCP server", id)
@@ -340,7 +433,6 @@ func TestResolveAgents_RejectsInvalidJSONAgent(t *testing.T) {
 		agent Agent
 	}{
 		{"unknown mode", Agent{Description: "x", Mode: AgentMode("primray")}},
-		{"unknown model", Agent{Description: "x", Model: SelectedModelType("medium")}},
 		{"NaN temperature", Agent{Description: "x", Temperature: &nan}},
 	}
 
@@ -356,6 +448,24 @@ func TestResolveAgents_RejectsInvalidJSONAgent(t *testing.T) {
 				"an invalid JSON agent must be skipped, not run with unexpected settings")
 		})
 	}
+}
+
+// TestResolveAgents_ArbitraryModelNameAccepted pins the open value
+// domain for Agent.Model: model config names are user-defined, so
+// validation must not gate on a fixed set. An unknown name is a
+// resolution-time warning, not a config error.
+func TestResolveAgents_ArbitraryModelNameAccepted(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Options:      &Options{},
+		AgentConfigs: map[string]Agent{"reviewer": {Description: "x", Model: ModelConfigName("medium")}},
+	}
+
+	agents := cfg.ResolveAgents()
+	got, ok := agents["reviewer"]
+	require.True(t, ok, "an unknown model config name must not disqualify the agent")
+	require.Equal(t, ModelConfigName("medium"), got.Model)
 }
 
 func TestResolveAgents_InvalidJSONAgentDoesNotDropBuiltins(t *testing.T) {

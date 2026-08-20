@@ -33,7 +33,7 @@ func TestSubagentsHaveNoDelegationTools(t *testing.T) {
 		return names
 	}
 
-	for _, id := range []string{config.AgentTask, config.AgentExplore, config.AgentGeneral} {
+	for _, id := range []string{config.AgentExplore, config.AgentGeneral} {
 		t.Run(id, func(t *testing.T) {
 			names := toolNames(t, id, true)
 			require.NotContains(t, names, AgentToolName, "sub-agent %q must not hold the agent tool", id)
@@ -59,7 +59,6 @@ func TestSubagentsHaveNoDelegationTools(t *testing.T) {
 // list; the tool is simply left out instead.
 func TestBuildToolsOmitsAgentToolWhenNoSubagents(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
-	require.NoError(t, coord.readyWg.Wait())
 
 	agents := coord.cfg.Config().Agents
 	for id, agentCfg := range agents {
@@ -87,7 +86,6 @@ func TestBuildToolsOmitsAgentToolWhenNoSubagents(t *testing.T) {
 // the coder and its sub-agents run through the same wrapper now.
 func TestSubagentToolsAreHookWrapped(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
-	require.NoError(t, coord.readyWg.Wait())
 
 	cfg := coord.cfg.Config()
 	cfg.Hooks = map[string][]config.HookConfig{
@@ -129,7 +127,6 @@ func TestSubagentToolsAreHookWrapped(t *testing.T) {
 // differently from a top-level one.
 func TestHookRunnerCarriesAgentIdentity(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
-	require.NoError(t, coord.readyWg.Wait())
 
 	cfg := coord.cfg.Config()
 	cfg.Hooks = map[string][]config.HookConfig{

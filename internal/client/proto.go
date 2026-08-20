@@ -573,6 +573,21 @@ func (c *Client) AgentSummarizeSession(ctx context.Context, id string, sessionID
 	return nil
 }
 
+// AgentSwitchSessionAgent points a session at a different primary agent.
+func (c *Client) AgentSwitchSessionAgent(ctx context.Context, id, sessionID, agentID string) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/agent", id, sessionID),
+		nil, jsonBody(proto.AgentSwitchRequest{Agent: agentID}),
+		http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to switch agent: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to switch agent: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
 // InitiateAgentProcessing triggers agent initialization on the server.
 func (c *Client) InitiateAgentProcessing(ctx context.Context, id string, interactive bool) error {
 	body := jsonBody(proto.AgentInitRequest{Interactive: interactive})
@@ -878,23 +893,6 @@ func (c *Client) GetAgentSessionQueuedPromptsList(ctx context.Context, id string
 		return nil, fmt.Errorf("failed to decode queued prompts list: %w", err)
 	}
 	return prompts, nil
-}
-
-// GetDefaultSmallModel retrieves the default small model for a provider.
-func (c *Client) GetDefaultSmallModel(ctx context.Context, id string, providerID string) (*config.SelectedModel, error) {
-	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/agent/default-small-model", id), url.Values{"provider_id": []string{providerID}}, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default small model: %w", err)
-	}
-	defer rsp.Body.Close()
-	if rsp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get default small model: status code %d", rsp.StatusCode)
-	}
-	var model config.SelectedModel
-	if err := json.NewDecoder(rsp.Body).Decode(&model); err != nil {
-		return nil, fmt.Errorf("failed to decode default small model: %w", err)
-	}
-	return &model, nil
 }
 
 // FileTrackerRecordRead records a file read for a session.

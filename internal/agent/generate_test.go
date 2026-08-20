@@ -49,7 +49,7 @@ func TestWriteGeneratedAgent_RejectsPathTraversal(t *testing.T) {
 func TestWriteGeneratedAgent_RejectsCollisionWithBuiltin(t *testing.T) {
 	coord := newGenerateTestCoordinator(t)
 	_, _, err := coord.writeGeneratedAgent(GeneratedAgent{
-		Identifier:   config.AgentTask,
+		Identifier:   config.AgentExplore,
 		WhenToUse:    "Use when testing",
 		SystemPrompt: "You are a test agent.",
 	})

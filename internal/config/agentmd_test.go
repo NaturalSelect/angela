@@ -161,11 +161,6 @@ func TestParseAgentFile_Validation(t *testing.T) {
 			wantErr: "invalid mode",
 		},
 		{
-			name:    "invalid model",
-			content: "---\nmodel: smal\n---\nbody",
-			wantErr: "invalid model",
-		},
-		{
 			name:    "temperature out of range",
 			content: "---\ntemperature: 1.5\n---\nbody",
 			wantErr: "invalid temperature",
@@ -176,7 +171,7 @@ func TestParseAgentFile_Validation(t *testing.T) {
 				"name: Reviewer\n" +
 				"description: Reviews code\n" +
 				"mode: subagent\n" +
-				"model: small\n" +
+				"model: chore\n" +
 				"temperature: 0.2\n" +
 				"allowed_tools: [view, grep]\n" +
 				"disabled_tools: [bash]\n" +
@@ -204,7 +199,7 @@ func TestParseAgentFile_Validation(t *testing.T) {
 			require.Equal(t, "Reviewer", agent.Name)
 			require.Equal(t, "Reviews code", agent.Description)
 			require.Equal(t, AgentModeSubagent, agent.Mode)
-			require.Equal(t, SelectedModelTypeSmall, agent.Model)
+			require.Equal(t, ModelChore, agent.Model)
 			require.NotNil(t, agent.Temperature)
 			require.InDelta(t, 0.2, *agent.Temperature, 0.0001)
 			require.Equal(t, &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view", "grep"}}, agent.AllowedTools)
@@ -253,7 +248,7 @@ func TestRenderAgentFile_RoundTrip(t *testing.T) {
 		Name:          "Reviewer",
 		Description:   "Use when: reviewing API changes",
 		Mode:          "subagent",
-		Model:         "small",
+		Model:         "chore",
 		Temperature:   &temp,
 		AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view", "grep"}},
 		DisabledTools: []string{"bash"},
@@ -271,7 +266,7 @@ func TestRenderAgentFile_RoundTrip(t *testing.T) {
 	require.Equal(t, "Reviewer", agent.Name)
 	require.Equal(t, "Use when: reviewing API changes", agent.Description)
 	require.Equal(t, AgentModeSubagent, agent.Mode)
-	require.Equal(t, SelectedModelTypeSmall, agent.Model)
+	require.Equal(t, ModelChore, agent.Model)
 	require.InDelta(t, 0.3, *agent.Temperature, 0.0001)
 	require.Equal(t, &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view", "grep"}}, agent.AllowedTools)
 	require.Equal(t, []string{"bash"}, agent.DisabledTools)
@@ -337,7 +332,6 @@ func TestParseAgentContent_RejectsInvalidFieldValues(t *testing.T) {
 	}{
 		{"mode all was removed", "---\ndescription: x\nmode: all\n---\nbody"},
 		{"unknown mode", "---\ndescription: x\nmode: primray\n---\nbody"},
-		{"unknown model", "---\ndescription: x\nmodel: medium\n---\nbody"},
 		{"NaN temperature", "---\ndescription: x\ntemperature: .nan\n---\nbody"},
 		{"infinite temperature", "---\ndescription: x\ntemperature: .inf\n---\nbody"},
 		{"temperature above range", "---\ndescription: x\ntemperature: 1.5\n---\nbody"},
@@ -380,5 +374,6 @@ func TestValidateAgent_RejectsInvalidValues(t *testing.T) {
 	require.Error(t, ValidateAgent("reviewer", Agent{Temperature: &inf}))
 	require.Error(t, ValidateAgent("reviewer", Agent{Temperature: &tooHot}))
 	require.Error(t, ValidateAgent("reviewer", Agent{Mode: AgentMode("all")}))
-	require.Error(t, ValidateAgent("reviewer", Agent{Model: SelectedModelType("medium")}))
+	require.NoError(t, ValidateAgent("reviewer", Agent{Model: ModelConfigName("medium")}),
+		"model config names are user-defined, so any name must pass validation")
 }

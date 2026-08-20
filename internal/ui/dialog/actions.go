@@ -40,8 +40,14 @@ type ActionSelectSession struct {
 type ActionSelectModel struct {
 	Provider       catwalk.Provider
 	Model          config.SelectedModel
-	ModelType      config.SelectedModelType
+	ModelType      config.ModelConfigName
 	ReAuthenticate bool
+}
+
+// ActionSelectAgent is emitted when the user picks the primary agent
+// the session should run on.
+type ActionSelectAgent struct {
+	AgentID string
 }
 
 // Messages for commands

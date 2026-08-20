@@ -26,11 +26,14 @@ type AgentFrontmatter struct {
 	Description   string          `yaml:"description,omitempty"`
 	Mode          string          `yaml:"mode,omitempty"`
 	Model         string          `yaml:"model,omitempty"`
+	Variant       string          `yaml:"variant,omitempty"`
 	Temperature   *float64        `yaml:"temperature,omitempty"`
 	AllowedTools  *AllowedToolSet `yaml:"allowed_tools,omitempty"`
 	DisabledTools []string        `yaml:"disabled_tools,omitempty"`
 	AllowedMCP    *AllowedMCPSet  `yaml:"allowed_mcp,omitempty"`
 	Disabled      *bool           `yaml:"disabled,omitempty"`
+	Hidden        *bool           `yaml:"hidden,omitempty"`
+	MaxTokens     *int64          `yaml:"max_tokens,omitempty"`
 }
 
 // agentIDPattern is a strict allowlist: lowercase alphanumeric
@@ -230,12 +233,15 @@ func ParseAgentContent(content string) (Agent, error) {
 		agent.Name = fm.Name
 		agent.Description = fm.Description
 		agent.Mode = AgentMode(fm.Mode)
-		agent.Model = SelectedModelType(fm.Model)
+		agent.Model = ModelConfigName(fm.Model)
+		agent.Variant = fm.Variant
 		agent.Temperature = fm.Temperature
 		agent.AllowedTools = fm.AllowedTools
 		agent.DisabledTools = fm.DisabledTools
 		agent.AllowedMCP = fm.AllowedMCP
 		agent.Disabled = fm.Disabled
+		agent.Hidden = fm.Hidden
+		agent.MaxTokens = fm.MaxTokens
 		if err := validateAgentFields(agent); err != nil {
 			return Agent{}, err
 		}
@@ -290,11 +296,9 @@ func validateAgentFields(a Agent) error {
 	default:
 		return fmt.Errorf("invalid mode %q: must be one of %s, %s", a.Mode, AgentModePrimary, AgentModeSubagent)
 	}
-	switch a.Model {
-	case "", SelectedModelTypeLarge, SelectedModelTypeSmall:
-	default:
-		return fmt.Errorf("invalid model %q: must be one of %s, %s", a.Model, SelectedModelTypeLarge, SelectedModelTypeSmall)
-	}
+	// Agent.Model is an open value domain: any model config name is
+	// accepted here, and an unknown one is warned about and falls back
+	// to ModelMain at resolution time.
 	if a.Temperature != nil {
 		t := *a.Temperature
 		// NaN fails both comparisons of a plain range check, so it

@@ -13,58 +13,12 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/common"
-	"github.com/NaturalSelect/angela/internal/ui/util"
 	uv "github.com/charmbracelet/ultraviolet"
 )
 
-// ModelType represents the type of model to select.
-type ModelType int
-
-const (
-	ModelTypeLarge ModelType = iota
-	ModelTypeSmall
-)
-
-// String returns the string representation of the [ModelType].
-func (mt ModelType) String() string {
-	switch mt {
-	case ModelTypeLarge:
-		return "Large Task"
-	case ModelTypeSmall:
-		return "Small Task"
-	default:
-		return "Unknown"
-	}
-}
-
-// Config returns the corresponding config model type.
-func (mt ModelType) Config() config.SelectedModelType {
-	switch mt {
-	case ModelTypeLarge:
-		return config.SelectedModelTypeLarge
-	case ModelTypeSmall:
-		return config.SelectedModelTypeSmall
-	default:
-		return ""
-	}
-}
-
-// Placeholder returns the input placeholder for the model type.
-func (mt ModelType) Placeholder() string {
-	switch mt {
-	case ModelTypeLarge:
-		return largeModelInputPlaceholder
-	case ModelTypeSmall:
-		return smallModelInputPlaceholder
-	default:
-		return ""
-	}
-}
-
 const (
 	onboardingModelInputPlaceholder = "Find your fave"
-	largeModelInputPlaceholder      = "Choose a model for large, complex tasks"
-	smallModelInputPlaceholder      = "Choose a model for small, simple tasks"
+	modelInputPlaceholder           = "Choose a model"
 )
 
 // ModelsID is the identifier for the model selection dialog.
@@ -77,11 +31,13 @@ type Models struct {
 	com          *common.Common
 	isOnboarding bool
 
-	modelType ModelType
+	// modelName is the model config the dialog writes to. Model config
+	// names are an open set; this dialog edits main and leaves the rest
+	// to agent-level config.
+	modelName config.ModelConfigName
 	providers []catwalk.Provider
 
 	keyMap struct {
-		Tab      key.Binding
 		UpDown   key.Binding
 		Select   key.Binding
 		Edit     key.Binding
@@ -102,6 +58,7 @@ func NewModels(com *common.Common, isOnboarding bool) (*Models, error) {
 	m := &Models{}
 	m.com = com
 	m.isOnboarding = isOnboarding
+	m.modelName = config.ModelMain
 
 	help := help.New()
 	help.Styles = t.DialogHelpStyles()
@@ -117,10 +74,6 @@ func NewModels(com *common.Common, isOnboarding bool) (*Models, error) {
 	m.input.SetStyles(com.Styles.TextInput)
 	m.input.Focus()
 
-	m.keyMap.Tab = key.NewBinding(
-		key.WithKeys("tab", "shift+tab"),
-		key.WithHelp("tab", "toggle type"),
-	)
 	m.keyMap.Select = key.NewBinding(
 		key.WithKeys("enter", "ctrl+y"),
 		key.WithHelp("enter", "confirm"),
@@ -205,20 +158,8 @@ func (m *Models) HandleMsg(msg tea.Msg) Action {
 			return ActionSelectModel{
 				Provider:       modelItem.prov,
 				Model:          modelItem.SelectedModel(),
-				ModelType:      modelItem.SelectedModelType(),
+				ModelType:      modelItem.ModelConfigName(),
 				ReAuthenticate: isEdit,
-			}
-		case key.Matches(msg, m.keyMap.Tab):
-			if m.isOnboarding {
-				break
-			}
-			if m.modelType == ModelTypeLarge {
-				m.modelType = ModelTypeSmall
-			} else {
-				m.modelType = ModelTypeLarge
-			}
-			if err := m.setProviderItems(); err != nil {
-				return util.ReportError(err)
 			}
 		default:
 			var cmd tea.Cmd
@@ -239,26 +180,6 @@ func (m *Models) Cursor() *tea.Cursor {
 	return InputCursor(m.com.Styles, m.input.Cursor())
 }
 
-// modelTypeRadioView returns the radio view for model type selection.
-func (m *Models) modelTypeRadioView() string {
-	t := m.com.Styles
-	textStyle := t.Radio.Label
-	largeRadioStyle := t.Radio.Off
-	smallRadioStyle := t.Radio.Off
-	if m.modelType == ModelTypeLarge {
-		largeRadioStyle = t.Radio.On
-	} else {
-		smallRadioStyle = t.Radio.On
-	}
-
-	largeRadio := largeRadioStyle.Padding(0, 1).Render()
-	smallRadio := smallRadioStyle.Padding(0, 1).Render()
-
-	return fmt.Sprintf("%s%s  %s%s",
-		largeRadio, textStyle.Render(ModelTypeLarge.String()),
-		smallRadio, textStyle.Render(ModelTypeSmall.String()))
-}
-
 // Draw implements [Dialog].
 func (m *Models) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := m.com.Styles
@@ -271,7 +192,6 @@ func (m *Models) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	rc := NewRenderContext(t, width)
 	rc.Title = "Switch Model"
-	rc.TitleInfo = m.modelTypeRadioView()
 
 	if m.isOnboarding {
 		titleText := t.Dialog.PrimaryText.Render("To start, let's choose a provider and model.")
@@ -313,7 +233,6 @@ func (m *Models) ShortHelp() []key.Binding {
 	}
 	h := []key.Binding{
 		m.keyMap.UpDown,
-		m.keyMap.Tab,
 		m.keyMap.Select,
 	}
 	if m.isSelectedConfigured() {
@@ -348,9 +267,8 @@ func (m *Models) setProviderItems() error {
 	cfg := m.com.Config()
 
 	var selectedItemID string
-	selectedType := m.modelType.Config()
-	currentModel := cfg.Models[selectedType]
-	recentItems := cfg.RecentModels[selectedType]
+	currentModel := cfg.Models[m.modelName]
+	recentItems := cfg.RecentModels[m.modelName]
 
 	// Track providers already added to avoid duplicates
 	addedProviders := make(map[string]bool)
@@ -387,7 +305,7 @@ func (m *Models) setProviderItems() error {
 
 			group := NewModelGroup(t, name, true)
 			for _, model := range p.Models {
-				item := NewModelItem(t, provider, model, m.modelType, false)
+				item := NewModelItem(t, provider, model, m.modelName, false)
 				group.AppendItems(item)
 				itemsMap[item.ID()] = item
 				if model.ID == currentModel.Model && string(provider.ID) == currentModel.Provider {
@@ -440,7 +358,7 @@ func (m *Models) setProviderItems() error {
 
 		group := NewModelGroup(t, name, providerConfigured)
 		for _, model := range displayProvider.Models {
-			item := NewModelItem(t, provider, model, m.modelType, false)
+			item := NewModelItem(t, provider, model, m.modelName, false)
 			group.AppendItems(item)
 			itemsMap[item.ID()] = item
 			if model.ID == currentModel.Model && string(provider.ID) == currentModel.Provider {
@@ -463,7 +381,7 @@ func (m *Models) setProviderItems() error {
 			}
 
 			// Show provider for recent items
-			item = NewModelItem(t, item.prov, item.model, m.modelType, true)
+			item = NewModelItem(t, item.prov, item.model, m.modelName, true)
 			item.showProvider = true
 
 			validRecentItems = append(validRecentItems, recent)
@@ -475,7 +393,7 @@ func (m *Models) setProviderItems() error {
 
 		if len(validRecentItems) != len(recentItems) {
 			// FIXME: Does this need to be here? Is it mutating the config during a read?
-			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, fmt.Sprintf("recent_models.%s", selectedType), validRecentItems); err != nil {
+			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, fmt.Sprintf("recent_models.%s", m.modelName), validRecentItems); err != nil {
 				return fmt.Errorf("failed to update recent models: %w", err)
 			}
 		}
@@ -496,7 +414,7 @@ func (m *Models) setProviderItems() error {
 
 	// Update placeholder based on model type
 	if !m.isOnboarding {
-		m.input.Placeholder = m.modelType.Placeholder()
+		m.input.Placeholder = modelInputPlaceholder
 	}
 
 	return nil

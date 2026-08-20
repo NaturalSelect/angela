@@ -53,6 +53,8 @@ func (c *errorCoordinator) GenerateAgent(context.Context, string) (config.Agent,
 	return config.Agent{}, "", nil
 }
 
+func (c *errorCoordinator) SwitchAgent(context.Context, string, string) error { return nil }
+
 // insertRunCompleteWorkspace installs a workspace backed by a real
 // app.App (so the runCompletions broker exists) with the given
 // coordinator and a workspace run context derived from base.

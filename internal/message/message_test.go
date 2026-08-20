@@ -91,6 +91,47 @@ func (c *eventCollector) reset() {
 	c.events = nil
 }
 
+func TestCreate_PersistsAgentAttribution(t *testing.T) {
+	t.Parallel()
+
+	svc, sessionID := newTestService(t)
+
+	created, err := svc.Create(t.Context(), sessionID, CreateMessageParams{
+		Role:     Assistant,
+		Parts:    []ContentPart{TextContent{Text: "hi"}},
+		Model:    "some-model",
+		Provider: "some-provider",
+		Agent:    "coder",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "coder", created.Agent)
+
+	listed, err := svc.List(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, "coder", listed[0].Agent)
+
+	fetched, err := svc.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.Equal(t, "coder", fetched.Agent)
+}
+
+func TestCreate_EmptyAgentStaysEmpty(t *testing.T) {
+	t.Parallel()
+
+	svc, sessionID := newTestService(t)
+
+	created, err := svc.Create(t.Context(), sessionID, CreateMessageParams{
+		Role:  User,
+		Parts: []ContentPart{TextContent{Text: "hi"}},
+	})
+	require.NoError(t, err)
+
+	fetched, err := svc.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.Empty(t, fetched.Agent)
+}
+
 func TestUpdate_DebouncesTextDeltas(t *testing.T) {
 	t.Parallel()
 

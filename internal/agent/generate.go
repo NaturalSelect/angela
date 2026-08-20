@@ -1,9 +1,7 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +10,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"text/template"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/schema"
@@ -20,9 +17,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/prompt"
 	"github.com/NaturalSelect/angela/internal/config"
 )
-
-//go:embed templates/generate_agent.md.tpl
-var generateAgentTmpl string
 
 // GeneratedAgent is the structured output schema for LLM-based agent
 // generation.
@@ -36,17 +30,6 @@ type GeneratedAgent struct {
 // natural language description. It writes the result as a markdown
 // file and returns the agent config and file path.
 func (c *coordinator) GenerateAgent(ctx context.Context, description string) (config.Agent, string, error) {
-	// Generation runs on the coder's own model selection, as a
-	// top-level operation rather than a delegated one.
-	coderCfg, ok := c.cfg.Config().Agents[config.AgentCoder]
-	if !ok {
-		return config.Agent{}, "", errCoderAgentNotConfigured
-	}
-	large, _, err := c.buildAgentModels(ctx, coderCfg, false)
-	if err != nil {
-		return config.Agent{}, "", fmt.Errorf("build models: %w", err)
-	}
-
 	// Collect existing agent IDs to prevent collisions.
 	existingIDs := make([]string, 0, len(c.cfg.Config().Agents))
 	for id := range c.cfg.Config().Agents {
@@ -54,22 +37,18 @@ func (c *coordinator) GenerateAgent(ctx context.Context, description string) (co
 	}
 	sort.Strings(existingIDs)
 
-	// Render the system prompt template.
-	tmpl, err := template.New("generate_agent").Parse(generateAgentTmpl)
+	_, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentGenerateAgent,
+		prompt.WithWorkingDir(c.cfg.WorkingDir()),
+		prompt.WithExtra(map[string]any{"ExistingIDs": strings.Join(existingIDs, ", ")}),
+	)
 	if err != nil {
-		return config.Agent{}, "", fmt.Errorf("parse template: %w", err)
-	}
-	var systemBuf bytes.Buffer
-	if err := tmpl.Execute(&systemBuf, map[string]string{
-		"ExistingIDs": strings.Join(existingIDs, ", "),
-	}); err != nil {
-		return config.Agent{}, "", fmt.Errorf("execute template: %w", err)
+		return config.Agent{}, "", fmt.Errorf("resolve the generate-agent agent: %w", err)
 	}
 
 	// Call the LLM for structured output.
-	resp, err := large.Model.GenerateObject(ctx, fantasy.ObjectCall{
+	resp, err := model.Model.GenerateObject(ctx, fantasy.ObjectCall{
 		Prompt: fantasy.Prompt{
-			fantasy.NewSystemMessage(systemBuf.String()),
+			fantasy.NewSystemMessage(systemPrompt),
 			fantasy.NewUserMessage(fmt.Sprintf("Create an agent configuration based on this request: %q", description)),
 		},
 		Schema:     schema.Generate(reflect.TypeOf(GeneratedAgent{})),

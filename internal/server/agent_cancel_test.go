@@ -87,6 +87,8 @@ func (s *runCoordinator) GenerateAgent(context.Context, string) (config.Agent, s
 	return config.Agent{}, "", nil
 }
 
+func (s *runCoordinator) SwitchAgent(context.Context, string, string) error { return nil }
+
 func (s *runCoordinator) capturedCtx() context.Context {
 	s.mu.Lock()
 	defer s.mu.Unlock()

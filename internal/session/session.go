@@ -47,10 +47,26 @@ func HasIncompleteTodos(todos []Todo) bool {
 	return false
 }
 
+// ModelRef points at the model a session or turn ran on. It is a
+// reference, not a copy of the model config: the config itself lives in
+// the config layer and is resolved fresh each turn.
+type ModelRef struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Variant  string `json:"variant,omitempty"`
+}
+
+// IsZero reports whether the reference points at nothing.
+func (m ModelRef) IsZero() bool {
+	return m.Provider == "" && m.Model == "" && m.Variant == ""
+}
+
 type Session struct {
 	ID               string
 	ParentSessionID  string
 	Title            string
+	Agent            string
+	Model            ModelRef
 	MessageCount     int64
 	PromptTokens     int64
 	CompletionTokens int64
@@ -65,13 +81,13 @@ type Session struct {
 type Service interface {
 	pubsub.Subscriber[Session]
 	Create(ctx context.Context, title string) (Session, error)
-	CreateTitleSession(ctx context.Context, parentSessionID string) (Session, error)
 	CreateTaskSession(ctx context.Context, toolCallID, parentSessionID, title string) (Session, error)
 	Get(ctx context.Context, id string) (Session, error)
 	GetLast(ctx context.Context) (Session, error)
 	List(ctx context.Context) ([]Session, error)
 	Save(ctx context.Context, session Session) (Session, error)
 	UpdateTitleAndUsage(ctx context.Context, sessionID, title string, promptTokens, completionTokens int64, cost float64) error
+	UpdateAgentAndModel(ctx context.Context, id string, agent string, model ModelRef) error
 	Rename(ctx context.Context, id string, title string) error
 	Delete(ctx context.Context, id string) error
 
@@ -112,20 +128,6 @@ func (s *service) CreateTaskSession(ctx context.Context, toolCallID, parentSessi
 		ID:              toolCallID,
 		ParentSessionID: sql.NullString{String: parentSessionID, Valid: true},
 		Title:           title,
-	})
-	if err != nil {
-		return Session{}, err
-	}
-	session := s.fromDBItem(dbSession)
-	s.Publish(pubsub.CreatedEvent, session)
-	return session, nil
-}
-
-func (s *service) CreateTitleSession(ctx context.Context, parentSessionID string) (Session, error) {
-	dbSession, err := s.q.CreateSession(ctx, db.CreateSessionParams{
-		ID:              "title-" + parentSessionID,
-		ParentSessionID: sql.NullString{String: parentSessionID, Valid: true},
-		Title:           "Generate a title",
 	})
 	if err != nil {
 		return Session{}, err
@@ -236,6 +238,26 @@ func (s *service) UpdateTitleAndUsage(ctx context.Context, sessionID, title stri
 	return nil
 }
 
+// UpdateAgentAndModel records which agent and model a session is bound
+// to. It is deliberately its own method: Save writes the caller's whole
+// in-memory session back, so folding these two columns into it would let
+// any stale copy clobber them.
+func (s *service) UpdateAgentAndModel(ctx context.Context, id string, agent string, model ModelRef) error {
+	modelJSON, err := marshalModelRef(model)
+	if err != nil {
+		return err
+	}
+	if err := s.q.UpdateSessionAgentAndModel(ctx, db.UpdateSessionAgentAndModelParams{
+		ID:    id,
+		Agent: sql.NullString{String: agent, Valid: agent != ""},
+		Model: sql.NullString{String: modelJSON, Valid: modelJSON != ""},
+	}); err != nil {
+		return err
+	}
+	s.publishSessionUpdate(ctx, id)
+	return nil
+}
+
 // Rename updates only the title of a session without touching updated_at or
 // usage fields.
 func (s *service) Rename(ctx context.Context, id string, title string) error {
@@ -300,10 +322,16 @@ func (s *service) fromDBItem(item db.Session) Session {
 	if err != nil {
 		slog.Error("Failed to unmarshal todos", "session_id", item.ID, "error", err)
 	}
+	model, err := unmarshalModelRef(item.Model.String)
+	if err != nil {
+		slog.Error("Failed to unmarshal session model", "session_id", item.ID, "error", err)
+	}
 	return Session{
 		ID:               item.ID,
 		ParentSessionID:  item.ParentSessionID.String,
 		Title:            item.Title,
+		Agent:            item.Agent.String,
+		Model:            model,
 		MessageCount:     item.MessageCount,
 		PromptTokens:     item.PromptTokens,
 		CompletionTokens: item.CompletionTokens,
@@ -313,6 +341,28 @@ func (s *service) fromDBItem(item db.Session) Session {
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 	}
+}
+
+func marshalModelRef(model ModelRef) (string, error) {
+	if model.IsZero() {
+		return "", nil
+	}
+	data, err := json.Marshal(model)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func unmarshalModelRef(data string) (ModelRef, error) {
+	if data == "" {
+		return ModelRef{}, nil
+	}
+	var model ModelRef
+	if err := json.Unmarshal([]byte(data), &model); err != nil {
+		return ModelRef{}, err
+	}
+	return model, nil
 }
 
 func marshalTodos(todos []Todo) (string, error) {

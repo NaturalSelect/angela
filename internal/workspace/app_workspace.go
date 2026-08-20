@@ -219,6 +219,13 @@ func (w *AppWorkspace) AgentClearQueue(sessionID string) {
 	}
 }
 
+func (w *AppWorkspace) AgentSwitch(ctx context.Context, sessionID, agentID string) error {
+	if w.app.AgentCoordinator == nil {
+		return errors.New("agent coordinator not initialized")
+	}
+	return w.app.AgentCoordinator.SwitchAgent(ctx, sessionID, agentID)
+}
+
 func (w *AppWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
 	if w.app.AgentCoordinator == nil {
 		return errors.New("agent coordinator not initialized")
@@ -236,10 +243,6 @@ func (w *AppWorkspace) InitCoderAgent(ctx context.Context) error {
 
 func (w *AppWorkspace) InitCoderAgentNonInteractive(ctx context.Context) error {
 	return w.app.InitCoderAgentNonInteractive(ctx)
-}
-
-func (w *AppWorkspace) GetDefaultSmallModel(providerID string) config.SelectedModel {
-	return w.app.GetDefaultSmallModel(providerID)
 }
 
 // -- Permissions --
@@ -343,8 +346,8 @@ func (w *AppWorkspace) Resolver() config.VariableResolver {
 
 // -- Config mutations --
 
-func (w *AppWorkspace) UpdatePreferredModel(scope config.Scope, modelType config.SelectedModelType, model config.SelectedModel) error {
-	return w.store.UpdatePreferredModel(scope, modelType, model)
+func (w *AppWorkspace) UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+	return w.store.UpdatePreferredModel(scope, name, model)
 }
 
 func (w *AppWorkspace) SetCompactMode(scope config.Scope, enabled bool) error {

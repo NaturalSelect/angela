@@ -183,7 +183,7 @@ func TestFindModels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			providers := tt.setupProviders()
 
-			// Use findModels with the model as "large" and empty "small".
+			// Use findModels with the model as "main" and empty "chore".
 			matches, _, err := findModels(providers, tt.modelStr, "")
 			if err != nil {
 				if tt.expectError {
@@ -195,7 +195,7 @@ func TestFindModels(t *testing.T) {
 			}
 
 			// Validate the matches.
-			match, err := validateMatches(matches, tt.modelStr, "large")
+			match, err := validateMatches(matches, tt.modelStr, "main")
 
 			if tt.expectError {
 				require.Error(t, err)

@@ -448,6 +448,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		NewCommandItem(c.com.Styles, "new_session", "New Session", "ctrl+n", ActionNewSession{}).WithAliases("clear"),
 		NewCommandItem(c.com.Styles, "switch_session", "Sessions", "ctrl+s", ActionOpenDialog{SessionsID}),
 		NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}),
+		NewCommandItem(c.com.Styles, "switch_agent", "Switch Agent", "", ActionOpenDialog{AgentsID}).WithAliases("agent"),
 	}
 
 	// Only show compact command if there's an active session
@@ -458,8 +459,8 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	// Add reasoning toggle for models that support it
 	cfg := c.com.Config()
 	if agentCfg, ok := cfg.Agents[config.AgentCoder]; ok {
-		providerCfg := cfg.GetProviderForModel(agentCfg.Model)
-		model := cfg.GetModelByType(agentCfg.Model)
+		providerCfg := cfg.GetProviderForModelName(agentCfg.Model)
+		model := cfg.GetModelByName(agentCfg.Model)
 		if providerCfg != nil && model != nil && model.CanReason {
 			selectedModel := cfg.Models[agentCfg.Model]
 
@@ -487,7 +488,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	if c.hasSession {
 		cfgPrime := c.com.Config()
 		agentCfg := cfgPrime.Agents[config.AgentCoder]
-		model := cfgPrime.GetModelByType(agentCfg.Model)
+		model := cfgPrime.GetModelByName(agentCfg.Model)
 		if model != nil && model.SupportsImages {
 			commands = append(commands, NewCommandItem(c.com.Styles, "file_picker", "Open File Picker", "ctrl+f", ActionOpenDialog{
 				DialogID: FilePickerID,

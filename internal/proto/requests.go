@@ -23,9 +23,15 @@ type ConfigRemoveRequest struct {
 
 // ConfigModelRequest represents a request to update the preferred model.
 type ConfigModelRequest struct {
-	Scope     config.Scope             `json:"scope"`
-	ModelType config.SelectedModelType `json:"model_type"`
-	Model     config.SelectedModel     `json:"model"`
+	Scope config.Scope           `json:"scope"`
+	Name  config.ModelConfigName `json:"model_name"`
+	Model config.SelectedModel   `json:"model"`
+}
+
+// AgentSwitchRequest asks the session to run on a different primary
+// agent from the next turn on.
+type AgentSwitchRequest struct {
+	Agent string `json:"agent"`
 }
 
 // ConfigCompactRequest represents a request to set compact mode.

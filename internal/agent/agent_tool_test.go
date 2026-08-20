@@ -50,7 +50,7 @@ func TestAgentToolUnknownSubagentTypeListsAvailable(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "bogus-type")
-	for _, id := range []string{config.AgentTask, config.AgentExplore, config.AgentGeneral} {
+	for _, id := range []string{config.AgentExplore, config.AgentGeneral} {
 		require.Contains(t, resp.Content, id)
 	}
 }
@@ -64,7 +64,7 @@ func TestBuildSubagentsExcludesPrimaryMode(t *testing.T) {
 
 	_, ok := coord.subagents.Get(config.AgentCoder)
 	require.False(t, ok, "the primary agent must not be dispatchable")
-	for _, id := range []string{config.AgentTask, config.AgentExplore, config.AgentGeneral} {
+	for _, id := range []string{config.AgentExplore, config.AgentGeneral} {
 		_, ok := coord.subagents.Get(id)
 		require.Truef(t, ok, "%s should be dispatchable", id)
 	}

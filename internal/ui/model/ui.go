@@ -459,7 +459,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	// Seed the active theme key from the large model provider so the
 	// first model selection can correctly skip a redundant theme swap.
 	if cfg := com.Config(); cfg != nil {
-		ui.themeKey = styles.ThemeKeyForProvider(cfg.Models[config.SelectedModelTypeLarge].Provider)
+		ui.themeKey = styles.ThemeKeyForProvider(cfg.Models[config.ModelMain].Provider)
 	}
 
 	// Seed the yolo cache once at construction; afterwards it is kept
@@ -1611,6 +1611,17 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 				}
 			}
 		}
+	case message.System:
+		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir())
+		if len(items) == 0 {
+			break
+		}
+		m.chat.AppendMessages(items...)
+		if m.chat.Follow() {
+			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 	case message.Tool:
 		for _, tr := range msg.ToolResults() {
 			toolItem := m.chat.MessageItem(tr.ToolCallID)
@@ -2001,6 +2012,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if cmd := m.handleSelectModel(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.ActionSelectAgent:
+		if cmd := m.handleSelectAgent(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.ActionSelectReasoningEffort:
 		if m.isAgentBusy() {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait..."))
@@ -2195,7 +2210,7 @@ func (m *UI) restoreModelFromSession(msgs []message.Message) tea.Cmd {
 		return nil
 	}
 
-	currentLarge := cfg.Models[config.SelectedModelTypeLarge]
+	currentLarge := cfg.Models[config.ModelMain]
 	if currentLarge.Provider == lastAssistant.Provider && currentLarge.Model == lastAssistant.Model {
 		return nil
 	}
@@ -2211,19 +2226,12 @@ func (m *UI) restoreModelFromSession(msgs []message.Message) tea.Cmd {
 		Provider: lastAssistant.Provider,
 		Model:    lastAssistant.Model,
 	}
-	if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, config.SelectedModelTypeLarge, selectedModel); err != nil {
+	if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, config.ModelMain, selectedModel); err != nil {
 		slog.Error("Failed to restore model from session", "error", err)
 		return nil
 	}
 
 	m.applyThemeForProvider(lastAssistant.Provider)
-
-	if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-		smallModel := m.com.Workspace.GetDefaultSmallModel(lastAssistant.Provider)
-		if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, config.SelectedModelTypeSmall, smallModel); err != nil {
-			slog.Error("Failed to set small model during session restore", "error", err)
-		}
-	}
 
 	return m.updateAgentModelCmd(func() tea.Msg {
 		if err := m.com.Workspace.UpdateAgentModel(context.TODO()); err != nil {
@@ -2238,6 +2246,28 @@ func (m *UI) restoreModelFromSession(msgs []message.Message) tea.Cmd {
 
 // handleSelectModel performs the model selection after any provider
 // pre-checks (such as a silent Hyper OAuth refresh) have completed.
+// handleSelectAgent points the current session at the chosen primary
+// agent. The switch lands on the session record, so it takes effect from
+// the next turn; a turn already streaming keeps the agent it started on.
+func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
+	m.dialog.CloseDialog(dialog.AgentsID)
+	if m.session == nil {
+		return util.ReportWarn("Start a session before switching agents.")
+	}
+	if m.session.Agent == msg.AgentID {
+		return nil
+	}
+
+	sessionID := m.session.ID
+	agentID := msg.AgentID
+	return func() tea.Msg {
+		if err := m.com.Workspace.AgentSwitch(context.Background(), sessionID, agentID); err != nil {
+			return util.ReportError(err)()
+		}
+		return nil
+	}
+}
+
 func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	var cmds []tea.Cmd
 
@@ -2284,19 +2314,12 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, msg.ModelType, msg.Model); err != nil {
 		cmds = append(cmds, util.ReportError(err))
 	} else {
-		if msg.ModelType == config.SelectedModelTypeLarge {
+		if msg.ModelType == config.ModelMain {
 			// Swap the theme live based on the newly selected large
 			// model's provider. Skipped when the provider resolves to
 			// the already-active theme, which avoids a full markdown
 			// re-render of the transcript on every selection.
 			m.applyThemeForProvider(providerID)
-		}
-		if _, ok := cfg.Models[config.SelectedModelTypeSmall]; !ok {
-			// Ensure small model is set is unset.
-			smallModel := m.com.Workspace.GetDefaultSmallModel(providerID)
-			if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, config.SelectedModelTypeSmall, smallModel); err != nil {
-				cmds = append(cmds, util.ReportError(err))
-			}
 		}
 	}
 
@@ -2340,7 +2363,7 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.SelectedModelType) tea.Cmd {
+func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.ModelConfigName) tea.Cmd {
 	var (
 		dlg dialog.Dialog
 		cmd tea.Cmd
@@ -3354,7 +3377,7 @@ func (m *UI) currentModelSupportsImages() bool {
 	if !ok {
 		return false
 	}
-	model := cfg.GetModelByType(agentCfg.Model)
+	model := cfg.GetModelByName(agentCfg.Model)
 	return model != nil && model.SupportsImages
 }
 
@@ -4313,6 +4336,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openReasoningDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.AgentsID:
+		if cmd := m.openAgentsDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.NotificationsID:
 		if cmd := m.openNotificationsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -4403,6 +4430,27 @@ func (m *UI) openReasoningDialog() tea.Cmd {
 	}
 
 	m.dialog.OpenDialog(reasoningDialog)
+	return nil
+}
+
+// openAgentsDialog opens the primary-agent picker for the current
+// session. There is nothing to switch without a session: the agent is
+// recorded on the session, not globally.
+func (m *UI) openAgentsDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.AgentsID) {
+		m.dialog.BringToFront(dialog.AgentsID)
+		return nil
+	}
+	if m.session == nil {
+		return util.ReportWarn("Start a session before switching agents.")
+	}
+
+	agentsDialog, err := dialog.NewAgents(m.com, m.session.Agent)
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	m.dialog.OpenDialog(agentsDialog)
 	return nil
 }
 

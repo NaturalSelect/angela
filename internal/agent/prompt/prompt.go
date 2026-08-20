@@ -28,6 +28,7 @@ type Prompt struct {
 	platform     string
 	workingDir   string
 	contextPaths []string
+	extra        map[string]any
 }
 
 type PromptDat struct {
@@ -42,6 +43,10 @@ type PromptDat struct {
 	ContextFiles       []ContextFile
 	GlobalContextFiles []ContextFile
 	AvailSkillXML      string
+	// Extra carries per-call values a specific agent's template needs
+	// and no other does. It stays a bag rather than typed fields so
+	// adding one does not widen the struct every agent renders.
+	Extra map[string]any
 }
 
 type ContextFile struct {
@@ -76,6 +81,13 @@ func WithWorkingDir(workingDir string) Option {
 func WithContextPaths(paths []string) Option {
 	return func(p *Prompt) {
 		p.contextPaths = paths
+	}
+}
+
+// WithExtra supplies values reachable from a template as {{.Extra.Key}}.
+func WithExtra(extra map[string]any) Option {
+	return func(p *Prompt) {
+		p.extra = extra
 	}
 }
 
@@ -242,6 +254,7 @@ func (p *Prompt) promptData(ctx context.Context, provider, model string, store *
 		Platform:      platform,
 		Date:          p.now().Format("1/2/2006"),
 		AvailSkillXML: availSkillXML,
+		Extra:         p.extra,
 	}
 	if isGit {
 		var err error

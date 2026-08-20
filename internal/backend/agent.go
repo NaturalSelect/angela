@@ -7,7 +7,6 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
-	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/shell"
@@ -179,6 +178,18 @@ func (b *Backend) CancelSession(workspaceID, sessionID string) error {
 }
 
 // SummarizeSession triggers a session summarization.
+// SwitchSessionAgent points a session at a different primary agent.
+func (b *Backend) SwitchSessionAgent(ctx context.Context, workspaceID, sessionID, agentID string) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	if ws.AgentCoordinator == nil {
+		return ErrAgentNotInitialized
+	}
+	return ws.AgentCoordinator.SwitchAgent(ctx, sessionID, agentID)
+}
+
 func (b *Backend) SummarizeSession(ctx context.Context, workspaceID, sessionID string) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
@@ -232,16 +243,6 @@ func (b *Backend) QueuedPromptsList(workspaceID, sessionID string) ([]string, er
 	}
 
 	return ws.AgentCoordinator.QueuedPromptsList(sessionID), nil
-}
-
-// GetDefaultSmallModel returns the default small model for a provider.
-func (b *Backend) GetDefaultSmallModel(workspaceID, providerID string) (config.SelectedModel, error) {
-	ws, err := b.GetWorkspace(workspaceID)
-	if err != nil {
-		return config.SelectedModel{}, err
-	}
-
-	return ws.GetDefaultSmallModel(providerID), nil
 }
 
 // RunShellCommand runs a shell command in the workspace directory and

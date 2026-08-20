@@ -67,7 +67,7 @@ type RuntimeOverrides struct {
 	// persisted or not. They are reapplied after a config reload so that a
 	// selection made here always outranks whatever the shared config file
 	// happens to hold — see pinPreferredModelLocked.
-	Models map[SelectedModelType]SelectedModel
+	Models map[ModelConfigName]SelectedModel
 }
 
 // ConfigStore is the single entry point for all config access. It owns the
@@ -474,10 +474,10 @@ func (s *ConfigStore) updateLocked(scope Scope, mutate func(*Config) map[string]
 // memory only, without persisting. It is for per-run overrides (such as the
 // non-interactive --model flags) that must not be written to the user's
 // config file.
-func (s *ConfigStore) OverridePreferredModel(modelType SelectedModelType, model SelectedModel) {
+func (s *ConfigStore) OverridePreferredModel(modelType ModelConfigName, model SelectedModel) {
 	s.mutateInMemory(func(c *Config) {
 		if c.Models == nil {
-			c.Models = make(map[SelectedModelType]SelectedModel)
+			c.Models = make(map[ModelConfigName]SelectedModel)
 		}
 		c.Models[modelType] = model
 		s.pinPreferredModelLocked(modelType, model)
@@ -492,9 +492,9 @@ func (s *ConfigStore) OverridePreferredModel(modelType SelectedModelType, model 
 // switch models out from under the user mid-session.
 //
 // Caller must hold writeMu.
-func (s *ConfigStore) pinPreferredModelLocked(modelType SelectedModelType, model SelectedModel) {
+func (s *ConfigStore) pinPreferredModelLocked(modelType ModelConfigName, model SelectedModel) {
 	if s.overrides.Models == nil {
-		s.overrides.Models = make(map[SelectedModelType]SelectedModel)
+		s.overrides.Models = make(map[ModelConfigName]SelectedModel)
 	}
 	s.overrides.Models[modelType] = model
 }
@@ -531,7 +531,7 @@ func (s *ConfigStore) RemoveConfigField(scope Scope, key string) error {
 // provider catalog and agents on every model switch and dominate selection
 // latency); agents are refreshed separately by the caller (see
 // UpdateAgentModel).
-func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType SelectedModelType, model SelectedModel) error {
+func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType ModelConfigName, model SelectedModel) error {
 	return s.update(scope, func(c *Config) map[string]any {
 		return s.updatePreferredModelFields(c, modelType, model)
 	})
@@ -540,9 +540,9 @@ func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType SelectedModelT
 // updatePreferredModelFields builds the fields map for persisting a preferred
 // model change. Shared between UpdatePreferredModel and direct updateLocked
 // callers (e.g. Load). Caller must hold writeMu.
-func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType SelectedModelType, model SelectedModel) map[string]any {
+func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType ModelConfigName, model SelectedModel) map[string]any {
 	if c.Models == nil {
-		c.Models = make(map[SelectedModelType]SelectedModel)
+		c.Models = make(map[ModelConfigName]SelectedModel)
 	}
 	c.Models[modelType] = model
 	s.pinPreferredModelLocked(modelType, model)
@@ -552,7 +552,7 @@ func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType SelectedMo
 	}
 	if updated, changed := nextRecentModels(c, modelType, model); changed {
 		if c.RecentModels == nil {
-			c.RecentModels = make(map[SelectedModelType][]SelectedModel)
+			c.RecentModels = make(map[ModelConfigName][]SelectedModel)
 		}
 		c.RecentModels[modelType] = updated
 		fields[fmt.Sprintf("recent_models.%s", modelType)] = updated
@@ -969,7 +969,7 @@ func (s *ConfigStore) loadTokenFromDisk(scope Scope, providerID string) (*oauth.
 // provided config without persisting anything. It returns the new slice
 // and whether it differs from cfg's current list. Callers fold the result
 // into a clone they are about to publish.
-func nextRecentModels(cfg *Config, modelType SelectedModelType, model SelectedModel) ([]SelectedModel, bool) {
+func nextRecentModels(cfg *Config, modelType ModelConfigName, model SelectedModel) ([]SelectedModel, bool) {
 	if model.Provider == "" || model.Model == "" {
 		return nil, false
 	}
@@ -1270,8 +1270,8 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 		if resolveErr != nil {
 			return fmt.Errorf("failed to configure selected models during reload: %w", resolveErr)
 		}
-		cfg.Models[SelectedModelTypeLarge] = resolved.Large
-		cfg.Models[SelectedModelTypeSmall] = resolved.Small
+		cfg.Models[ModelMain] = resolved.Main
+		cfg.Models[ModelChore] = resolved.Chore
 	}
 
 	// Agent resolution reads only Options and AgentConfigs, so it runs

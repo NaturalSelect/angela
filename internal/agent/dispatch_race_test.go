@@ -117,7 +117,8 @@ func TestRun_ConcurrentInProcessDispatchStartsOneRun(t *testing.T) {
 		entered: make(chan struct{}, 1),
 		release: make(chan struct{}),
 	}
-	sa := testSessionAgent(env, model, fastModel{}, "system").(*sessionAgent)
+	saAgent, resolved := testSessionAgent(env, model, fastModel{}, "system")
+	sa := saAgent.(*sessionAgent)
 
 	sess, err := env.sessions.Create(t.Context(), "session")
 	require.NoError(t, err)
@@ -129,6 +130,7 @@ func TestRun_ConcurrentInProcessDispatchStartsOneRun(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, _ = sa.Run(t.Context(), SessionAgentCall{
+				Agent:     resolved,
 				SessionID: sess.ID,
 				Prompt:    "event",
 			})

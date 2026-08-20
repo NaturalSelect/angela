@@ -67,7 +67,7 @@ angela agent list`,
 			}
 			model := string(a.Model)
 			if model == "" {
-				model = "large"
+				model = "main"
 			}
 			fmt.Printf("%-15s %-12s %-8s %s\n", id, mode, model, truncateDescription(a.Description))
 		}

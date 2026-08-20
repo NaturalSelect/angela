@@ -43,8 +43,8 @@ func testStoreWithPath(cfg *Config, dir string) *ConfigStore {
 // the large type, for exercising the pure nextRecentModels helper.
 func configWithRecents(recents ...SelectedModel) *Config {
 	return &Config{
-		RecentModels: map[SelectedModelType][]SelectedModel{
-			SelectedModelTypeLarge: recents,
+		RecentModels: map[ModelConfigName][]SelectedModel{
+			ModelMain: recents,
 		},
 	}
 }
@@ -53,7 +53,7 @@ func TestNextRecentModels_AddsToFront(t *testing.T) {
 	t.Parallel()
 
 	cfg := configWithRecents()
-	updated, changed := nextRecentModels(cfg, SelectedModelTypeLarge, SelectedModel{Provider: "openai", Model: "gpt-4o"})
+	updated, changed := nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "openai", Model: "gpt-4o"})
 	require.True(t, changed)
 	require.Equal(t, []SelectedModel{{Provider: "openai", Model: "gpt-4o"}}, updated)
 }
@@ -65,7 +65,7 @@ func TestNextRecentModels_DedupeAndMoveToFront(t *testing.T) {
 		SelectedModel{Provider: "anthropic", Model: "claude"},
 		SelectedModel{Provider: "openai", Model: "gpt-4o"},
 	)
-	updated, changed := nextRecentModels(cfg, SelectedModelTypeLarge, SelectedModel{Provider: "openai", Model: "gpt-4o"})
+	updated, changed := nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "openai", Model: "gpt-4o"})
 	require.True(t, changed)
 	require.Equal(t, []SelectedModel{
 		{Provider: "openai", Model: "gpt-4o"},
@@ -82,7 +82,7 @@ func TestNextRecentModels_TrimsToMax(t *testing.T) {
 	}
 	cfg := configWithRecents(seed...)
 
-	updated, changed := nextRecentModels(cfg, SelectedModelTypeLarge, SelectedModel{Provider: "p", Model: "m6"})
+	updated, changed := nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "p", Model: "m6"})
 	require.True(t, changed)
 	require.Len(t, updated, maxRecentModelsPerType)
 	require.Equal(t, SelectedModel{Provider: "p", Model: "m6"}, updated[0])
@@ -93,9 +93,9 @@ func TestNextRecentModels_SkipsEmptyValues(t *testing.T) {
 	t.Parallel()
 
 	cfg := configWithRecents()
-	_, changed := nextRecentModels(cfg, SelectedModelTypeLarge, SelectedModel{Provider: "", Model: "m"})
+	_, changed := nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "", Model: "m"})
 	require.False(t, changed)
-	_, changed = nextRecentModels(cfg, SelectedModelTypeLarge, SelectedModel{Provider: "p", Model: ""})
+	_, changed = nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "p", Model: ""})
 	require.False(t, changed)
 }
 
@@ -104,7 +104,7 @@ func TestNextRecentModels_NoChangeWhenAlreadyFront(t *testing.T) {
 
 	entry := SelectedModel{Provider: "openai", Model: "gpt-4o"}
 	cfg := configWithRecents(entry)
-	_, changed := nextRecentModels(cfg, SelectedModelTypeLarge, entry)
+	_, changed := nextRecentModels(cfg, ModelMain, entry)
 	require.False(t, changed)
 }
 
@@ -117,16 +117,16 @@ func TestUpdatePreferredModel_PersistsModelAndRecents(t *testing.T) {
 	store := testStoreWithPath(cfg, dir)
 
 	sel := SelectedModel{Provider: "openai", Model: "gpt-4o"}
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SelectedModelTypeLarge, sel))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelMain, sel))
 
 	// in-memory state (read through the store; copy-on-write publishes a
 	// new Config, so the seed cfg pointer is intentionally unchanged).
-	require.Equal(t, sel, store.Config().Models[SelectedModelTypeLarge])
-	require.Len(t, store.Config().RecentModels[SelectedModelTypeLarge], 1)
+	require.Equal(t, sel, store.Config().Models[ModelMain])
+	require.Len(t, store.Config().RecentModels[ModelMain], 1)
 
 	// persisted state
 	rm := readRecentModels(t, store.globalDataPath)
-	large, ok := rm[string(SelectedModelTypeLarge)].([]any)
+	large, ok := rm[string(ModelMain)].([]any)
 	require.True(t, ok)
 	require.Len(t, large, 1)
 	item := large[0].(map[string]any)
@@ -144,15 +144,15 @@ func TestUpdatePreferredModel_TypeIsolation(t *testing.T) {
 
 	largeModel := SelectedModel{Provider: "openai", Model: "gpt-4o"}
 	smallModel := SelectedModel{Provider: "anthropic", Model: "claude"}
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SelectedModelTypeLarge, largeModel))
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SelectedModelTypeSmall, smallModel))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelMain, largeModel))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelChore, smallModel))
 
 	// Adding to large leaves small untouched.
 	anotherLarge := SelectedModel{Provider: "google", Model: "gemini"}
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SelectedModelTypeLarge, anotherLarge))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelMain, anotherLarge))
 
-	require.Len(t, store.Config().RecentModels[SelectedModelTypeLarge], 2)
-	require.Equal(t, anotherLarge, store.Config().RecentModels[SelectedModelTypeLarge][0])
-	require.Len(t, store.Config().RecentModels[SelectedModelTypeSmall], 1)
-	require.Equal(t, smallModel, store.Config().RecentModels[SelectedModelTypeSmall][0])
+	require.Len(t, store.Config().RecentModels[ModelMain], 2)
+	require.Equal(t, anotherLarge, store.Config().RecentModels[ModelMain][0])
+	require.Len(t, store.Config().RecentModels[ModelChore], 1)
+	require.Equal(t, smallModel, store.Config().RecentModels[ModelChore][0])
 }

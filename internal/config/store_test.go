@@ -175,7 +175,7 @@ func TestReloadFromDisk_PublishesAgentsExactlyOnce(t *testing.T) {
 	t.Cleanup(resetProviderState)
 
 	initial := `{
-		"models": {"large": {"provider": "openai", "model": "gpt-4"}},
+		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
 		"providers": {"openai": {"api_key": "test-key", "models": [{"id": "gpt-4", "name": "GPT-4"}]}}
 	}`
 	require.NoError(t, os.WriteFile(configPath, []byte(initial), 0o600))
@@ -210,7 +210,7 @@ func TestReloadFromDisk_PublishesAgentsExactlyOnce(t *testing.T) {
 	}()
 
 	updated := `{
-		"models": {"large": {"provider": "openai", "model": "gpt-4"}},
+		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
 		"providers": {"openai": {"api_key": "test-key", "models": [{"id": "gpt-4", "name": "GPT-4"}]}},
 		"agents": {"reviewer": {"description": "Reviews code"}}
 	}`
@@ -447,7 +447,7 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	// Create initial config with one model preference
 	initialConfig := `{
 		"models": {
-			"large": {"provider": "openai", "model": "gpt-4"}
+			"main": {"provider": "openai", "model": "gpt-4"}
 		},
 		"providers": {
 			"openai": {
@@ -467,13 +467,13 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	store.CaptureStalenessSnapshot([]string{configPath})
 
 	// Verify initial model
-	require.Equal(t, "openai", store.config.Models[SelectedModelTypeLarge].Provider)
-	require.Equal(t, "gpt-4", store.config.Models[SelectedModelTypeLarge].Model)
+	require.Equal(t, "openai", store.config.Models[ModelMain].Provider)
+	require.Equal(t, "gpt-4", store.config.Models[ModelMain].Model)
 
 	// Modify config on disk to change model
 	updatedConfig := `{
 		"models": {
-			"large": {"provider": "anthropic", "model": "claude-3"}
+			"main": {"provider": "anthropic", "model": "claude-3"}
 		},
 		"providers": {
 			"openai": {
@@ -495,8 +495,8 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the NEW config values are now in effect (regression check)
-	require.Equal(t, "anthropic", store.config.Models[SelectedModelTypeLarge].Provider)
-	require.Equal(t, "claude-3", store.config.Models[SelectedModelTypeLarge].Model)
+	require.Equal(t, "anthropic", store.config.Models[ModelMain].Provider)
+	require.Equal(t, "claude-3", store.config.Models[ModelMain].Model)
 }
 
 // TestSetConfigField_AutoReloads verifies that SetConfigField automatically
@@ -855,7 +855,7 @@ func TestConfigStore_SetConfigFields_concurrentInProcess(t *testing.T) {
 	store := &ConfigStore{
 		config: &Config{
 			Providers: csync.NewMap[string, ProviderConfig](),
-			Models:    make(map[SelectedModelType]SelectedModel),
+			Models:    make(map[ModelConfigName]SelectedModel),
 		},
 		globalDataPath: configPath,
 		workingDir:     dir,

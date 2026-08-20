@@ -42,13 +42,11 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/stringext"
 	"github.com/NaturalSelect/angela/internal/version"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/exp/charmtone"
 )
 
@@ -56,18 +54,9 @@ const (
 	DefaultSessionName = "Untitled Session"
 
 	// Constants for auto-summarization thresholds
-	largeContextWindowThreshold = 200_000
-	largeContextWindowBuffer    = 20_000
-	smallContextWindowRatio     = 0.2
 )
 
 var userAgent = fmt.Sprintf("Angela/%s (https://github.com/NaturalSelect/angela)", version.Version)
-
-//go:embed templates/title.md
-var titlePrompt []byte
-
-//go:embed templates/summary.md
-var summaryPrompt []byte
 
 // Used to remove <think> tags from generated titles.
 var (
@@ -77,6 +66,10 @@ var (
 
 type SessionAgentCall struct {
 	SessionID string
+	// Agent is the immutable agent this turn runs on, resolved by the
+	// coordinator when the turn was dispatched. Nothing may mutate it
+	// mid-turn; a config change lands on the next turn's resolution.
+	Agent resolvedAgent
 	// RunID, when non-empty, is the caller-supplied correlator that
 	// gets echoed back on the notify.RunComplete event emitted for
 	// this turn. It is preserved when the call is enqueued behind a
@@ -89,14 +82,17 @@ type SessionAgentCall struct {
 	Prompt                   string
 	ProviderOptions          fantasy.ProviderOptions
 	SummarizeProviderOptions fantasy.ProviderOptions
-	Attachments              []message.Attachment
-	MaxOutputTokens          int64
-	Temperature              *float64
-	TopP                     *float64
-	TopK                     *int64
-	FrequencyPenalty         *float64
-	PresencePenalty          *float64
-	NonInteractive           bool
+	// Compact carries the model and system prompt used when this turn
+	// overflows the context window and auto-summarization kicks in.
+	Compact          CompactAgent
+	Attachments      []message.Attachment
+	MaxOutputTokens  int64
+	Temperature      *float64
+	TopP             *float64
+	TopK             *int64
+	FrequencyPenalty *float64
+	PresencePenalty  *float64
+	NonInteractive   bool
 	// OnComplete, when non-nil, replaces the default RunComplete
 	// publish path: the inner Run hands the terminal payload to this
 	// callback instead of emitting it on the RunComplete broker. The
@@ -138,9 +134,6 @@ type SessionAgentCall struct {
 type SessionAgent interface {
 	Run(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)
 	BeginAccepted(sessionID string) *AcceptedRun
-	SetModels(large Model, small Model)
-	SetTools(tools []fantasy.AgentTool)
-	SetSystemPrompt(systemPrompt string)
 	Cancel(sessionID string)
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
@@ -148,10 +141,22 @@ type SessionAgent interface {
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
-	Summarize(context.Context, string, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error
-	Model() Model
-	AgentName() string
-	GenerateTitle(ctx context.Context, sessionID, userPrompt string)
+	Summarize(context.Context, string, CompactAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error
+	AgentID() string
+}
+
+// CompactAgent carries the model and system prompt a compaction run uses.
+// They are injected per call instead of living on the session agent so
+// that the agent stays bound to exactly one model.
+//
+// The user-side prompt is deliberately absent: it is derived from live
+// session state (todos) and must be built when compaction fires, not
+// when the call is dispatched — a turn can change the todo list before
+// it overflows.
+type CompactAgent struct {
+	Model              Model
+	SystemPrompt       string
+	SystemPromptPrefix string
 }
 
 type Model struct {
@@ -159,6 +164,21 @@ type Model struct {
 	CatwalkCfg catwalk.Model
 	ModelCfg   config.SelectedModel
 	FlatRate   bool
+
+	// Variant is the name of the parameter preset already folded into
+	// ModelCfg, kept so the session record can name what ran. It is
+	// empty when the model ran on its baseline parameters.
+	Variant string
+}
+
+// Ref returns the reference a session or message stores to name what
+// this turn ran on.
+func (m Model) Ref() session.ModelRef {
+	return session.ModelRef{
+		Provider: m.ModelCfg.Provider,
+		Model:    m.ModelCfg.Model,
+		Variant:  m.Variant,
+	}
 }
 
 // activeCancel wraps a context.CancelFunc with a unique pointer identity.
@@ -171,100 +191,54 @@ type activeCancel struct {
 }
 
 type sessionAgent struct {
-	largeModel         *csync.Value[Model]
-	smallModel         *csync.Value[Model]
-	systemPromptPrefix *csync.Value[string]
-	systemPrompt       *csync.Value[string]
-	tools              *csync.Slice[fantasy.AgentTool]
+	isSubAgent  bool
+	agentID     string
+	sessions    session.Service
+	messages    message.Service
+	compaction  *config.CompactionOptions
+	isYolo      bool
+	notify      pubsub.Publisher[notify.Notification]
+	runComplete pubsub.Publisher[notify.RunComplete]
 
-	isSubAgent           bool
-	agentName            string
-	sessions             session.Service
-	messages             message.Service
-	disableAutoSummarize bool
-	isYolo               bool
-	notify               pubsub.Publisher[notify.Notification]
-	runComplete          pubsub.Publisher[notify.RunComplete]
+	// generateTitle, when non-nil, is fired once per session on the
+	// first user prompt. The agent decides when a title is needed; the
+	// caller owns which model and prompt produce it.
+	generateTitle func(ctx context.Context, sessionID, userPrompt string)
 
-	messageQueue   *csync.Map[string, []SessionAgentCall]
-	activeRequests *csync.Map[string, *activeCancel]
-
-	// dispatchMu holds a per-session mutex that serializes the
-	// accepted -> (cancel-on-entry | queued | active) transition in
-	// Run against a concurrent Cancel. The lock is held only during
-	// the brief handoff (no DB or LLM I/O under the lock).
-	dispatchMu *csync.Map[string, *sync.Mutex]
-	// acceptedRuns counts dispatched-but-not-yet-active runs per
-	// session. A counter > 0 means a dispatched prompt is in flight
-	// and has not yet completed the dispatch handoff in Run. Only
-	// BeginAccepted increments it; only AcceptedRun.Close decrements
-	// it.
-	acceptedRuns *csync.Map[string, int]
-	// cancelMark records, per session, a high-water accept sequence: an
-	// accepted handle is canceled by it iff the handle's sequence is at
-	// or below the mark. Cancel raises the mark to the latest sequence
-	// assigned at cancel time, so a single Cancel covers every prompt
-	// accepted-but-not-yet-active then, while a prompt accepted later
-	// (higher sequence) is never poisoned. Absent or 0 means no pending
-	// cancel. It is only raised by Cancel when acceptedRuns > 0, so an
-	// idle Escape never records a mark.
-	cancelMark *csync.Map[string, uint64]
-	// dispatchMuCreate guards lazy creation of per-session entries in
-	// dispatchMu so two goroutines can't race to lock different mutex
-	// instances for the same session.
-	dispatchMuCreate sync.Mutex
-	// acceptedMu serializes increments/decrements of acceptedRuns and
-	// the assignment of accept sequence numbers from acceptSeqGen. It
-	// is separate from dispatchMu so AcceptedRun.Close (which may run
-	// while Run holds dispatchMu for the same session) does not
-	// deadlock by re-entering the dispatch lock.
-	acceptedMu sync.Mutex
-	// acceptSeqGen is the monotonic source of accept sequence numbers.
-	// Each BeginAccepted increments it under acceptedMu and stamps the
-	// returned handle, so sequences strictly increase in accept order
-	// across the agent. Cancel uses its current value as the per-session
-	// high-water mark.
-	acceptSeqGen uint64
+	// runState carries everything keyed by session ID that decides
+	// whether a prompt runs now, queues, or is dropped by a cancel.
+	*runState
 }
 
 type SessionAgentOptions struct {
-	LargeModel           Model
-	SmallModel           Model
-	SystemPromptPrefix   string
-	SystemPrompt         string
-	IsSubAgent           bool
-	AgentName            string
-	DisableAutoSummarize bool
-	IsYolo               bool
-	Sessions             session.Service
-	Messages             message.Service
-	Tools                []fantasy.AgentTool
-	Notify               pubsub.Publisher[notify.Notification]
-	RunComplete          pubsub.Publisher[notify.RunComplete]
+	IsSubAgent  bool
+	AgentID     string
+	Compaction  *config.CompactionOptions
+	IsYolo      bool
+	Sessions    session.Service
+	Messages    message.Service
+	Notify      pubsub.Publisher[notify.Notification]
+	RunComplete pubsub.Publisher[notify.RunComplete]
+
+	// GenerateTitle, when non-nil, is called once per session on the
+	// first user prompt.
+	GenerateTitle func(ctx context.Context, sessionID, userPrompt string)
 }
 
 func NewSessionAgent(
 	opts SessionAgentOptions,
 ) SessionAgent {
 	return &sessionAgent{
-		largeModel:           csync.NewValue(opts.LargeModel),
-		smallModel:           csync.NewValue(opts.SmallModel),
-		systemPromptPrefix:   csync.NewValue(opts.SystemPromptPrefix),
-		systemPrompt:         csync.NewValue(opts.SystemPrompt),
-		isSubAgent:           opts.IsSubAgent,
-		agentName:            opts.AgentName,
-		sessions:             opts.Sessions,
-		messages:             opts.Messages,
-		disableAutoSummarize: opts.DisableAutoSummarize,
-		tools:                csync.NewSliceFrom(opts.Tools),
-		isYolo:               opts.IsYolo,
-		notify:               opts.Notify,
-		runComplete:          opts.RunComplete,
-		messageQueue:         csync.NewMap[string, []SessionAgentCall](),
-		activeRequests:       csync.NewMap[string, *activeCancel](),
-		dispatchMu:           csync.NewMap[string, *sync.Mutex](),
-		acceptedRuns:         csync.NewMap[string, int](),
-		cancelMark:           csync.NewMap[string, uint64](),
+		isSubAgent:    opts.IsSubAgent,
+		agentID:       opts.AgentID,
+		sessions:      opts.Sessions,
+		messages:      opts.Messages,
+		compaction:    opts.Compaction,
+		isYolo:        opts.IsYolo,
+		notify:        opts.Notify,
+		runComplete:   opts.RunComplete,
+		generateTitle: opts.GenerateTitle,
+		runState:      newRunState(),
 	}
 }
 
@@ -275,7 +249,7 @@ func NewSessionAgent(
 // completed the dispatch handoff in Run. Close is the only way to
 // release the reservation and is idempotent.
 type AcceptedRun struct {
-	agent     *sessionAgent
+	state     *runState
 	sessionID string
 	// seq is the monotonic accept sequence stamped by BeginAccepted. A
 	// cancel covers this handle iff seq is at or below the session's
@@ -294,7 +268,7 @@ func (r *AcceptedRun) Close() {
 	if !r.done.CompareAndSwap(false, true) {
 		return
 	}
-	r.agent.endAccepted(r.sessionID)
+	r.state.endAccepted(r.sessionID)
 }
 
 // SessionID exposes the session this reservation is for so the run path
@@ -304,130 +278,6 @@ func (r *AcceptedRun) SessionID() string {
 		return ""
 	}
 	return r.sessionID
-}
-
-// BeginAccepted increments the accept counter for sessionID and returns
-// a handle whose Close is the only way to decrement it. It is the only
-// entry point that mutates acceptedRuns.
-func (a *sessionAgent) BeginAccepted(sessionID string) *AcceptedRun {
-	a.acceptedMu.Lock()
-	defer a.acceptedMu.Unlock()
-	count, _ := a.acceptedRuns.Get(sessionID)
-	a.acceptedRuns.Set(sessionID, count+1)
-	a.acceptSeqGen++
-	return &AcceptedRun{agent: a, sessionID: sessionID, seq: a.acceptSeqGen}
-}
-
-// endAccepted decrements the accept counter for sessionID. It is only
-// called via AcceptedRun.Close. It uses a dedicated lock (not the
-// per-session dispatch mutex) so it can run while Run holds dispatchMu
-// for the same session without deadlocking.
-//
-// When the count reaches zero the session's cancel mark is dropped: no
-// accepted handle remains for it to cover, and any handle accepted later
-// gets a strictly higher sequence that the mark would not match anyway.
-// Handles canceled on entry never reach RunComplete, so this is the only
-// place that clears the mark for an all-canceled batch. Sibling handles
-// covered by the same mark are serialized on the per-session dispatch
-// mutex and read the mark before they Close, so this never clears it out
-// from under a covered handle still waiting to enter Run.
-func (a *sessionAgent) endAccepted(sessionID string) {
-	a.acceptedMu.Lock()
-	defer a.acceptedMu.Unlock()
-	count, ok := a.acceptedRuns.Get(sessionID)
-	if !ok || count <= 1 {
-		a.acceptedRuns.Del(sessionID)
-		a.cancelMark.Del(sessionID)
-		return
-	}
-	a.acceptedRuns.Set(sessionID, count-1)
-}
-
-// sessionMu returns the per-session dispatch mutex, creating it on first
-// use. Creation is guarded so concurrent callers always observe the same
-// mutex instance for a given session.
-func (a *sessionAgent) sessionMu(sessionID string) *sync.Mutex {
-	if mu, ok := a.dispatchMu.Get(sessionID); ok {
-		return mu
-	}
-	a.dispatchMuCreate.Lock()
-	defer a.dispatchMuCreate.Unlock()
-	if mu, ok := a.dispatchMu.Get(sessionID); ok {
-		return mu
-	}
-	mu := &sync.Mutex{}
-	a.dispatchMu.Set(sessionID, mu)
-	return mu
-}
-
-// enqueueCall appends call to the session's message queue. The
-// OnComplete hook is stripped: the caller that supplied it (typically
-// coordinator.Run) has its own retry/coalesce scope that ends when it
-// returns, so by the time the queue drains nobody is left to consume the
-// buffered terminal event. The recursive Run falls back to the default
-// broker publish, which is what existing subscribers expect for queued
-// turns.
-func (a *sessionAgent) enqueueCall(call SessionAgentCall) {
-	existing, ok := a.messageQueue.Get(call.SessionID)
-	if !ok {
-		existing = []SessionAgentCall{}
-	}
-	queued := call
-	if call.Accepted != nil {
-		// Preserve the accept sequence after the handle is stripped so
-		// the queue-drain paths can tell a follow-up queued before a
-		// cancel (covered by the mark) from one queued after it.
-		queued.acceptSeq = call.Accepted.seq
-	}
-	queued.OnComplete = nil
-	queued.Accepted = nil
-	existing = append(existing, queued)
-	a.messageQueue.Set(call.SessionID, existing)
-}
-
-// drainQueueForStep partitions the session's queued calls for the current
-// streaming step under the per-session dispatch mutex so the filtering is
-// atomic against a concurrent Cancel: canceledBySeq requires the caller to
-// hold that mutex, and evaluating it here (rather than after unlocking)
-// prevents a cancel recorded between the drain and the check from being
-// observed inconsistently.
-//
-// Calls covered by a pending cancel are dropped; the dropped ones that
-// carry a RunID are returned in canceledWithRunID so the caller can
-// publish their terminal cancelled RunComplete (a caller waiting on that
-// RunID, e.g. `angela run`, would otherwise hang). Uncanceled calls without
-// a RunID are returned in fold to be folded into the active turn,
-// preserving the existing follow-up behavior. Uncanceled calls that carry
-// a RunID are left in the queue so each runs as its own turn via the
-// recursive run path and publishes its own RunComplete, giving every
-// RunID-bearing prompt an explicit lifecycle instead of being silently
-// absorbed into another turn. fold is processed by the caller without the
-// lock held.
-func (a *sessionAgent) drainQueueForStep(sessionID string) (fold, canceledWithRunID []SessionAgentCall) {
-	dispatchLock := a.sessionMu(sessionID)
-	dispatchLock.Lock()
-	defer dispatchLock.Unlock()
-	queuedCalls, _ := a.messageQueue.Get(sessionID)
-	var keep []SessionAgentCall
-	for _, queued := range queuedCalls {
-		if a.canceledBySeq(sessionID, queued.acceptSeq) {
-			if queued.RunID != "" {
-				canceledWithRunID = append(canceledWithRunID, queued)
-			}
-			continue
-		}
-		if queued.RunID != "" {
-			keep = append(keep, queued)
-			continue
-		}
-		fold = append(fold, queued)
-	}
-	if len(keep) == 0 {
-		a.messageQueue.Del(sessionID)
-	} else {
-		a.messageQueue.Set(sessionID, keep)
-	}
-	return fold, canceledWithRunID
 }
 
 // publishCanceledQueueDrops emits a terminal cancelled RunComplete for
@@ -477,34 +327,6 @@ func (a *sessionAgent) clearQueueAndNotify(sessionID string) {
 	a.publishCanceledQueueDrops(queued)
 }
 
-// clearPendingCancel removes any pending-cancel mark for sessionID. It
-// takes the per-session dispatch lock so it is ordered against Cancel
-// and the dispatch handoff.
-func (a *sessionAgent) clearPendingCancel(sessionID string) {
-	mu := a.sessionMu(sessionID)
-	mu.Lock()
-	defer mu.Unlock()
-	a.cancelMark.Del(sessionID)
-}
-
-// canceledBySeq reports whether an accepted handle or queued call with
-// the given accept sequence is covered by a pending cancel for the
-// session. Callers must hold the session's dispatch mutex. A tracked
-// sequence (seq > 0) is covered only when it is at or below the cancel
-// high-water mark, so a prompt accepted after the cancel (higher seq) is
-// never poisoned. An untracked sequence (seq == 0, an in-process enqueue
-// with no accept reservation) is covered whenever any mark is present,
-// preserving the pre-sequence behavior. The mark is not consumed: it
-// stays so every sibling handle it covers observes the same cancel, and
-// a later handle (higher seq) ignores it regardless.
-func (a *sessionAgent) canceledBySeq(sessionID string, seq uint64) bool {
-	mark, ok := a.cancelMark.Get(sessionID)
-	if !ok || mark == 0 {
-		return false
-	}
-	return seq == 0 || seq <= mark
-}
-
 // persistCanceledTurn writes the user/assistant records for a turn that
 // was canceled before (or just as) streaming would have produced them.
 // It creates the user message only when it was not already created by an
@@ -520,12 +342,13 @@ func (a *sessionAgent) persistCanceledTurn(ctx context.Context, call SessionAgen
 			return err
 		}
 	}
-	largeModel := a.largeModel.Get()
+	model := call.Agent.Model
 	assistant, err := a.messages.Create(writeCtx, call.SessionID, message.CreateMessageParams{
 		Role:     message.Assistant,
 		Parts:    []message.ContentPart{},
-		Model:    largeModel.ModelCfg.Model,
-		Provider: largeModel.ModelCfg.Provider,
+		Model:    model.ModelCfg.Model,
+		Provider: model.ModelCfg.Provider,
+		Agent:    call.Agent.ID,
 	})
 	if err != nil {
 		return err
@@ -663,11 +486,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// the new run's cancel and breaking cancellation.
 	defer a.activeRequests.CompareAndDelete(call.SessionID, ac)
 
-	// Copy mutable fields under lock to avoid races with SetTools/SetModels.
-	agentTools := a.tools.Copy()
-	largeModel := a.largeModel.Get()
-	systemPrompt := a.systemPrompt.Get()
-	promptPrefix := a.systemPromptPrefix.Get()
+	agentTools := call.Agent.Tools
+	runModel := call.Agent.Model
+	systemPrompt := call.Agent.SystemPrompt
+	promptPrefix := call.Agent.SystemPromptPrefix
 	var instructions strings.Builder
 
 	for _, server := range mcp.GetStates() {
@@ -690,7 +512,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	}
 
 	agent := fantasy.NewAgent(
-		largeModel.Model,
+		runModel.Model,
 		fantasy.WithSystemPrompt(systemPrompt),
 		fantasy.WithTools(agentTools...),
 		fantasy.WithUserAgent(userAgent),
@@ -711,9 +533,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// can take tens of seconds. Blocking Run on it delays the
 	// response to the caller. Use a detached context so the title
 	// goroutine survives Run's cancel.
-	if !hasUserTextMessage(msgs) {
+	if !hasUserTextMessage(msgs) && a.generateTitle != nil {
 		titleCtx := context.WithoutCancel(ctx)
-		go a.GenerateTitle(titleCtx, call.SessionID, call.Prompt)
+		go a.generateTitle(titleCtx, call.SessionID, call.Prompt)
 	}
 
 	// Add the user message to the session.
@@ -787,10 +609,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		a.publishRunComplete(ctx, call, complete)
 	}()
 
-	history, files := a.preparePrompt(msgs, largeModel.CatwalkCfg.SupportsImages, call.Attachments...)
+	history, files := a.preparePrompt(msgs, runModel.CatwalkCfg.SupportsImages, call.Attachments...)
 
 	startTime := time.Now()
-	a.eventPromptSent(call.SessionID)
+	a.eventPromptSent(call.SessionID, runModel)
 
 	var stepMessages []fantasy.Message
 	var shouldSummarize bool
@@ -819,7 +641,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			}
 
 			// Use latest tools (updated by SetTools when MCP tools change).
-			prepared.Tools = a.tools.Copy()
+			prepared.Tools = call.Agent.Tools
 
 			// Drain queued follow-up prompts for this step. Calls covered
 			// by a cancel recorded while they sat in the queue are dropped:
@@ -842,7 +664,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				prepared.Messages = append(prepared.Messages, userMessage.ToAIMessage()...)
 			}
 
-			prepared.Messages = a.workaroundProviderMediaLimitations(prepared.Messages, largeModel)
+			prepared.Messages = a.workaroundProviderMediaLimitations(prepared.Messages, runModel)
 
 			lastSystemRoleInx := 0
 			systemMessageUpdated := false
@@ -872,15 +694,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			assistantMsg, err = a.messages.Create(callContext, call.SessionID, message.CreateMessageParams{
 				Role:     message.Assistant,
 				Parts:    []message.ContentPart{},
-				Model:    largeModel.ModelCfg.Model,
-				Provider: largeModel.ModelCfg.Provider,
+				Model:    runModel.ModelCfg.Model,
+				Provider: runModel.ModelCfg.Provider,
+				Agent:    call.Agent.ID,
 			})
 			if err != nil {
 				return callContext, prepared, err
 			}
 			callContext = context.WithValue(callContext, tools.MessageIDContextKey, assistantMsg.ID)
-			callContext = context.WithValue(callContext, tools.SupportsImagesContextKey, largeModel.CatwalkCfg.SupportsImages)
-			callContext = context.WithValue(callContext, tools.ModelNameContextKey, largeModel.CatwalkCfg.Name)
+			callContext = context.WithValue(callContext, tools.SupportsImagesContextKey, runModel.CatwalkCfg.SupportsImages)
+			callContext = context.WithValue(callContext, tools.ModelNameContextKey, runModel.CatwalkCfg.Name)
 			currentAssistant = &assistantMsg
 			return callContext, prepared, err
 		},
@@ -948,7 +771,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		},
 		OnAuthRefresh: call.OnAuthRefresh,
 		ModelProvider: func() fantasy.LanguageModel {
-			m := a.largeModel.Get()
+			m := call.Agent.Model
 			slog.Info("ModelProvider called",
 				"provider", m.ModelCfg.Provider,
 				"model", m.ModelCfg.Model)
@@ -1032,7 +855,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				return getSessionErr
 			}
 			usage, estimated := fallbackStepUsage(stepMessages, stepResult)
-			a.updateSessionUsage(largeModel, &updatedSession, usage, a.openrouterCost(stepResult.ProviderMetadata), estimated)
+			a.updateSessionUsage(runModel, &updatedSession, usage, openrouterCost(stepResult.ProviderMetadata), estimated)
 			extractHyperCredits(stepResult.ProviderMetadata)
 			_, sessionErr := a.sessions.Save(ctx, updatedSession)
 			if sessionErr != nil {
@@ -1043,7 +866,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		},
 		StopWhen: []fantasy.StopCondition{
 			func(_ []fantasy.StepResult) bool {
-				cw := int64(largeModel.CatwalkCfg.ContextWindow)
+				cw := int64(runModel.CatwalkCfg.ContextWindow)
 				// If context window is unknown (0), skip auto-summarize
 				// to avoid immediately truncating custom/local models.
 				if cw == 0 {
@@ -1051,13 +874,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				}
 				tokens := currentSession.CompletionTokens + currentSession.PromptTokens
 				remaining := cw - tokens
-				var threshold int64
-				if cw > largeContextWindowThreshold {
-					threshold = largeContextWindowBuffer
-				} else {
-					threshold = int64(float64(cw) * smallContextWindowRatio)
-				}
-				if (remaining <= threshold) && !a.disableAutoSummarize {
+				if remaining <= a.compaction.ReserveFor(cw) && a.compaction.AutoCompact() {
 					shouldSummarize = true
 					return true
 				}
@@ -1069,10 +886,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		},
 	})
 
-	a.eventPromptResponded(call.SessionID, time.Since(startTime).Truncate(time.Second))
+	a.eventPromptResponded(call.SessionID, runModel, time.Since(startTime).Truncate(time.Second))
 
 	if err != nil {
-		isHyper := largeModel.ModelCfg.Provider == hyper.Name
+		isHyper := runModel.ModelCfg.Provider == hyper.Name
 		isCancelErr := errors.Is(err, context.Canceled)
 		slog.Info("Agent stream returned error",
 			"error", err.Error(),
@@ -1174,7 +991,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				currentAssistant.AddFinish(
 					message.FinishReasonError,
 					"Copilot model not enabled",
-					fmt.Sprintf("%q is not enabled in Copilot. Go to the following page to enable it. Then, wait 5 minutes before trying again. %s", largeModel.CatwalkCfg.Name, link),
+					fmt.Sprintf("%q is not enabled in Copilot. Go to the following page to enable it. Then, wait 5 minutes before trying again. %s", runModel.CatwalkCfg.Name, link),
 				)
 			} else {
 				currentAssistant.AddFinish(message.FinishReasonError, cmp.Or(stringext.Capitalize(providerErr.Title), defaultTitle), providerErr.Message)
@@ -1198,7 +1015,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	if shouldSummarize {
 		a.activeRequests.Del(call.SessionID)
-		if summarizeErr := a.Summarize(genCtx, call.SessionID, call.SummarizeProviderOptions, call.OnAuthRefresh); summarizeErr != nil {
+		if summarizeErr := a.Summarize(genCtx, call.SessionID, call.Compact, call.SummarizeProviderOptions, call.OnAuthRefresh); summarizeErr != nil {
 			return nil, summarizeErr
 		}
 		// If the agent wasn't done...
@@ -1333,14 +1150,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	return a.Run(ctx, firstQueuedMessage)
 }
 
-func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
+func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact CompactAgent, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
 	if a.IsSessionBusy(sessionID) {
 		return ErrSessionBusy
 	}
 
-	// Copy mutable fields under lock to avoid races with SetModels.
-	largeModel := a.largeModel.Get()
-	systemPromptPrefix := a.systemPromptPrefix.Get()
+	systemPromptPrefix := compact.SystemPromptPrefix
 
 	currentSession, err := a.sessions.Get(ctx, sessionID)
 	if err != nil {
@@ -1355,7 +1170,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		return nil
 	}
 
-	aiMsgs, _ := a.preparePrompt(msgs, largeModel.CatwalkCfg.SupportsImages)
+	aiMsgs, _ := a.preparePrompt(msgs, compact.Model.CatwalkCfg.SupportsImages)
 
 	genCtx, cancel := context.WithCancel(ctx)
 	ac := &activeCancel{cancel: cancel}
@@ -1369,14 +1184,15 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 	}()
 
 	agent := fantasy.NewAgent(
-		largeModel.Model,
-		fantasy.WithSystemPrompt(string(summaryPrompt)),
+		compact.Model.Model,
+		fantasy.WithSystemPrompt(compact.SystemPrompt),
 		fantasy.WithUserAgent(userAgent),
 	)
 	summaryMessage, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:             message.Assistant,
-		Model:            largeModel.ModelCfg.Model,
-		Provider:         largeModel.ModelCfg.Provider,
+		Model:            compact.Model.ModelCfg.Model,
+		Provider:         compact.Model.ModelCfg.Provider,
+		Agent:            config.AgentCompact,
 		IsSummaryMessage: true,
 	})
 	if err != nil {
@@ -1392,7 +1208,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		ProviderOptions: opts,
 		OnAuthRefresh:   onAuthRefresh,
 		ModelProvider: func() fantasy.LanguageModel {
-			return a.largeModel.Get().Model
+			return compact.Model.Model
 		},
 		PrepareStep: func(callContext context.Context, options fantasy.PrepareStepFunctionOptions) (_ context.Context, prepared fantasy.PrepareStepResult, err error) {
 			prepared.Messages = options.Messages
@@ -1442,20 +1258,20 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, opts fan
 		return err
 	}
 
-	var openrouterCost *float64
+	var costOverride *float64
 	for _, step := range resp.Steps {
-		stepCost := a.openrouterCost(step.ProviderMetadata)
+		stepCost := openrouterCost(step.ProviderMetadata)
 		if stepCost != nil {
 			newCost := *stepCost
-			if openrouterCost != nil {
-				newCost += *openrouterCost
+			if costOverride != nil {
+				newCost += *costOverride
 			}
-			openrouterCost = &newCost
+			costOverride = &newCost
 		}
 		extractHyperCredits(step.ProviderMetadata)
 	}
 
-	a.updateSessionUsage(largeModel, &currentSession, resp.TotalUsage, openrouterCost, false)
+	a.updateSessionUsage(compact.Model, &currentSession, resp.TotalUsage, costOverride, false)
 
 	// Just in case, get just the last usage info.
 	usage := resp.Response.Usage
@@ -1764,154 +1580,7 @@ func hasUserTextMessage(msgs []message.Message) bool {
 	return false
 }
 
-// GenerateTitle generates a session title based on the initial prompt.
-func (a *sessionAgent) GenerateTitle(ctx context.Context, sessionID string, userPrompt string) {
-	if userPrompt == "" {
-		return
-	}
-
-	// Ensure the session always gets a title even if every path below
-	// fails or the context is cancelled before we finish.
-	var titleSaved bool
-	defer func() {
-		if !titleSaved {
-			fallbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			defer cancel()
-			if err := a.sessions.Rename(fallbackCtx, sessionID, DefaultSessionName); err != nil {
-				slog.Error("Failed to save fallback session title", "error", err)
-			}
-		}
-	}()
-
-	smallModel := a.smallModel.Get()
-	largeModel := a.largeModel.Get()
-	systemPromptPrefix := a.systemPromptPrefix.Get()
-
-	newAgent := func(m fantasy.LanguageModel, p []byte, tok int64) fantasy.Agent {
-		return fantasy.NewAgent(
-			m,
-			fantasy.WithSystemPrompt(string(p)+"\n /no_think"),
-			fantasy.WithMaxOutputTokens(tok),
-			fantasy.WithUserAgent(userAgent),
-		)
-	}
-
-	streamCall := fantasy.AgentStreamCall{
-		Prompt:  fmt.Sprintf("Generate a concise title for the following content:\n\n%s\n <think>\n\n</think>", userPrompt),
-		Headers: sessionHeaders(sessionID),
-		PrepareStep: func(callCtx context.Context, opts fantasy.PrepareStepFunctionOptions) (_ context.Context, prepared fantasy.PrepareStepResult, err error) {
-			prepared.Messages = opts.Messages
-			if systemPromptPrefix != "" {
-				prepared.Messages = append([]fantasy.Message{
-					fantasy.NewSystemMessage(systemPromptPrefix),
-				}, prepared.Messages...)
-			}
-			return callCtx, prepared, nil
-		},
-	}
-
-	type modelAttempt struct {
-		name  string
-		model Model
-	}
-	attempts := []modelAttempt{
-		{"small", smallModel},
-		{"large", largeModel},
-	}
-
-	var resp *fantasy.AgentResult
-	var err error
-	var model Model
-	var success bool
-	for _, attempt := range attempts {
-		tok := int64(40)
-		if attempt.model.CatwalkCfg.CanReason {
-			tok = attempt.model.CatwalkCfg.DefaultMaxTokens
-		}
-		agent := newAgent(attempt.model.Model, titlePrompt, tok)
-		resp, err = agent.Stream(ctx, streamCall)
-		if err == nil && resp.Response.FinishReason != fantasy.FinishReasonLength {
-			model = attempt.model
-			slog.Debug("Generated title with " + attempt.name + " model")
-			success = true
-			break
-		}
-		if err != nil {
-			slog.Error("Error generating title with "+attempt.name+" model; trying next", "err", err)
-		} else {
-			slog.Error("Title generation hit token limit with " + attempt.name + " model; trying next")
-		}
-	}
-	if !success {
-		// The deferred fallback will save the default session name.
-		return
-	}
-
-	// Clean up title.
-	var title string
-	title = strings.ReplaceAll(resp.Response.Content.Text(), "\n", " ")
-
-	// Remove thinking tags if present.
-	title = thinkTagRegex.ReplaceAllString(title, "")
-	title = orphanThinkTagRegex.ReplaceAllString(title, "")
-
-	title = strings.TrimSpace(title)
-	if title == "" {
-		// LLM returned empty content. Use the prompt itself as a
-		// fallback title, truncated to 50 chars, before resorting to
-		// the generic default.
-		fallback := strings.ReplaceAll(userPrompt, "\n", " ")
-		fallback = strings.TrimSpace(fallback)
-		if len(fallback) > 50 {
-			fallback = ansi.Truncate(fallback, 50, "…")
-		}
-		title = cmp.Or(fallback, DefaultSessionName)
-	}
-
-	// Calculate usage and cost.
-	var openrouterCost *float64
-	for _, step := range resp.Steps {
-		stepCost := a.openrouterCost(step.ProviderMetadata)
-		if stepCost != nil {
-			newCost := *stepCost
-			if openrouterCost != nil {
-				newCost += *openrouterCost
-			}
-			openrouterCost = &newCost
-		}
-		extractHyperCredits(step.ProviderMetadata)
-	}
-
-	modelConfig := model.CatwalkCfg
-	cost := modelConfig.CostPer1MInCached/1e6*float64(resp.TotalUsage.CacheCreationTokens) +
-		modelConfig.CostPer1MOutCached/1e6*float64(resp.TotalUsage.CacheReadTokens) +
-		modelConfig.CostPer1MIn/1e6*float64(resp.TotalUsage.InputTokens) +
-		modelConfig.CostPer1MOut/1e6*float64(resp.TotalUsage.OutputTokens)
-
-	// Use override cost if available (e.g., from OpenRouter).
-	if openrouterCost != nil {
-		cost = *openrouterCost
-	}
-
-	// Skip cost accumulation
-	if model.FlatRate {
-		cost = 0
-	}
-
-	promptTokens := resp.TotalUsage.InputTokens + resp.TotalUsage.CacheCreationTokens
-	completionTokens := resp.TotalUsage.OutputTokens
-
-	// Atomically update only title and usage fields to avoid overriding other
-	// concurrent session updates.
-	saveErr := a.sessions.UpdateTitleAndUsage(ctx, sessionID, title, promptTokens, completionTokens, cost)
-	if saveErr != nil {
-		slog.Error("Failed to save session title and usage", "error", saveErr)
-		return
-	}
-	titleSaved = true
-}
-
-func (a *sessionAgent) openrouterCost(metadata fantasy.ProviderMetadata) *float64 {
+func openrouterCost(metadata fantasy.ProviderMetadata) *float64 {
 	openrouterMetadata, ok := metadata[openrouter.Name]
 	if !ok {
 		return nil
@@ -2074,61 +1743,8 @@ func (a *sessionAgent) CancelAll() {
 	}
 }
 
-func (a *sessionAgent) IsBusy() bool {
-	var busy bool
-	for ac := range a.activeRequests.Seq() {
-		if ac != nil {
-			busy = true
-			break
-		}
-	}
-	return busy
-}
-
-func (a *sessionAgent) IsSessionBusy(sessionID string) bool {
-	_, busy := a.activeRequests.Get(sessionID)
-	return busy
-}
-
-func (a *sessionAgent) QueuedPrompts(sessionID string) int {
-	l, ok := a.messageQueue.Get(sessionID)
-	if !ok {
-		return 0
-	}
-	return len(l)
-}
-
-func (a *sessionAgent) QueuedPromptsList(sessionID string) []string {
-	l, ok := a.messageQueue.Get(sessionID)
-	if !ok {
-		return nil
-	}
-	prompts := make([]string, len(l))
-	for i, call := range l {
-		prompts[i] = call.Prompt
-	}
-	return prompts
-}
-
-func (a *sessionAgent) SetModels(large Model, small Model) {
-	a.largeModel.Set(large)
-	a.smallModel.Set(small)
-}
-
-func (a *sessionAgent) SetTools(tools []fantasy.AgentTool) {
-	a.tools.SetSlice(tools)
-}
-
-func (a *sessionAgent) SetSystemPrompt(systemPrompt string) {
-	a.systemPrompt.Set(systemPrompt)
-}
-
-func (a *sessionAgent) Model() Model {
-	return a.largeModel.Get()
-}
-
-func (a *sessionAgent) AgentName() string {
-	return a.agentName
+func (a *sessionAgent) AgentID() string {
+	return a.agentID
 }
 
 // convertToToolResult converts a fantasy tool result to a message tool result.
@@ -2195,16 +1811,16 @@ func (a *sessionAgent) convertToToolResult(result fantasy.ToolResultContent) mes
 //
 //	BEFORE: [tool result: image data]
 //	AFTER:  [tool result: "Image loaded - see attached"], [user: image attachment]
-func (a *sessionAgent) workaroundProviderMediaLimitations(messages []fantasy.Message, largeModel Model) []fantasy.Message {
-	providerSupportsMedia := largeModel.ModelCfg.Provider == string(catwalk.InferenceProviderAnthropic) ||
-		largeModel.ModelCfg.Provider == string(catwalk.InferenceProviderBedrock) ||
-		largeModel.ModelCfg.Provider == string(catwalk.InferenceProviderBedrockEurope)
+func (a *sessionAgent) workaroundProviderMediaLimitations(messages []fantasy.Message, model Model) []fantasy.Message {
+	providerSupportsMedia := model.ModelCfg.Provider == string(catwalk.InferenceProviderAnthropic) ||
+		model.ModelCfg.Provider == string(catwalk.InferenceProviderBedrock) ||
+		model.ModelCfg.Provider == string(catwalk.InferenceProviderBedrockEurope)
 
 	if providerSupportsMedia {
 		return messages
 	}
 
-	supportsImages := largeModel.CatwalkCfg.SupportsImages
+	supportsImages := model.CatwalkCfg.SupportsImages
 
 	convertedMessages := make([]fantasy.Message, 0, len(messages))
 

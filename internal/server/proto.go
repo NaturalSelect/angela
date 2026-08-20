@@ -949,6 +949,37 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionSummarize(w http.ResponseW
 	w.WriteHeader(http.StatusOK)
 }
 
+// handlePostWorkspaceAgentSessionAgent switches the session's agent.
+//
+//	@Summary		Switch the session's agent
+//	@Tags			agent
+//	@Accept			json
+//	@Param			id		path	string						true	"Workspace ID"
+//	@Param			sid		path	string						true	"Session ID"
+//	@Param			request	body	proto.AgentSwitchRequest	true	"Agent switch request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/agent [post]
+func (c *controllerV1) handlePostWorkspaceAgentSessionAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+
+	var req proto.AgentSwitchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if err := c.backend.SwitchSessionAgent(r.Context(), id, sid, req.Agent); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handlePostWorkspaceAgentSessionShell runs a shell command in the workspace.
 //
 //	@Summary		Run shell command
@@ -1003,28 +1034,6 @@ func (c *controllerV1) handleGetWorkspaceAgentSessionPromptList(w http.ResponseW
 		return
 	}
 	jsonEncode(w, prompts)
-}
-
-// handleGetWorkspaceAgentDefaultSmallModel returns the default small model for a provider.
-//
-//	@Summary		Get default small model
-//	@Tags			agent
-//	@Produce		json
-//	@Param			id			path		string	true	"Workspace ID"
-//	@Param			provider_id	query		string	false	"Provider ID"
-//	@Success		200			{object}	object
-//	@Failure		404			{object}	proto.Error
-//	@Failure		500			{object}	proto.Error
-//	@Router			/workspaces/{id}/agent/default-small-model [get]
-func (c *controllerV1) handleGetWorkspaceAgentDefaultSmallModel(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	providerID := r.URL.Query().Get("provider_id")
-	model, err := c.backend.GetDefaultSmallModel(id, providerID)
-	if err != nil {
-		c.handleError(w, r, err)
-		return
-	}
-	jsonEncode(w, model)
 }
 
 // handlePostWorkspacePermissionsGrant grants a permission request.

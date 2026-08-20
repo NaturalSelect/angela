@@ -25,6 +25,7 @@ type CreateMessageParams struct {
 	Parts            []ContentPart
 	Model            string
 	Provider         string
+	Agent            string
 	IsSummaryMessage bool
 }
 
@@ -181,6 +182,7 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 		Parts:            string(partsJSON),
 		Model:            sql.NullString{String: string(params.Model), Valid: true},
 		Provider:         sql.NullString{String: params.Provider, Valid: params.Provider != ""},
+		Agent:            sql.NullString{String: params.Agent, Valid: params.Agent != ""},
 		IsSummaryMessage: isSummary,
 	})
 	if err != nil {
@@ -519,6 +521,7 @@ func (s *service) fromDBItem(item db.Message) (Message, error) {
 		Parts:            parts,
 		Model:            item.Model.String,
 		Provider:         item.Provider.String,
+		Agent:            item.Agent.String,
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 		IsSummaryMessage: item.IsSummaryMessage != 0,

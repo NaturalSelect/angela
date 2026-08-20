@@ -6,7 +6,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/NaturalSelect/angela/internal/agent/prompt"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/hooks"
 )
@@ -25,18 +24,17 @@ type subagentEntry struct {
 	cfg   config.Agent
 	once  sync.Once
 	agent SessionAgent
-	err   error
 }
 
-// resolve builds the agent on first call and caches the outcome,
-// including failure. A build error is returned to every later dispatch
-// instead of being retried, matching the previous behaviour where a
-// broken agent was skipped once at construction time.
-func (e *subagentEntry) resolve(build func(config.Agent) (SessionAgent, error)) (SessionAgent, error) {
+// executor returns the entry's SessionAgent, building it on first call.
+// It holds only run state — queues, active requests, accept bookkeeping
+// — so it is shared across dispatches; everything config-derived is
+// resolved per dispatch instead.
+func (e *subagentEntry) executor(build func(config.Agent) SessionAgent) SessionAgent {
 	e.once.Do(func() {
-		e.agent, e.err = build(e.cfg)
+		e.agent = build(e.cfg)
 	})
-	return e.agent, e.err
+	return e.agent
 }
 
 // subagentRegistry is the coordinator's dispatch table. It is rebuilt
@@ -68,7 +66,7 @@ func (r *subagentRegistry) Reconcile(agents map[string]config.Agent, preToolHook
 	r.hooks = preToolHooks
 
 	for id, cfg := range agents {
-		if cfg.Mode == config.AgentModePrimary {
+		if cfg.Mode == config.AgentModePrimary || cfg.IsHidden() {
 			continue
 		}
 		if existing, ok := r.entries[id]; ok && !hooksChanged && reflect.DeepEqual(existing.cfg, cfg) {
@@ -78,7 +76,7 @@ func (r *subagentRegistry) Reconcile(agents map[string]config.Agent, preToolHook
 	}
 
 	for id := range r.entries {
-		if cfg, ok := agents[id]; !ok || cfg.Mode == config.AgentModePrimary {
+		if cfg, ok := agents[id]; !ok || cfg.Mode == config.AgentModePrimary || cfg.IsHidden() {
 			delete(r.entries, id)
 		}
 	}
@@ -146,50 +144,23 @@ func (c *coordinator) reconcileSubagents() {
 	c.subagents.Reconcile(cfg.Agents, cfg.Hooks[hooks.EventPreToolUse])
 }
 
-// buildSubAgentSync builds a subagent to completion. Unlike buildAgent
-// it does not defer prompt and tool construction to the coordinator's
-// readiness group: a subagent is built lazily on the dispatch path,
-// where the caller can surface the error, and a failure here must
-// poison only its own dispatch rather than the whole coordinator.
-func (c *coordinator) buildSubAgentSync(ctx context.Context, agentCfg config.Agent) (SessionAgent, error) {
-	p, err := agentPrompt(agentCfg, prompt.WithWorkingDir(c.cfg.WorkingDir()))
+// dispatchSubAgent produces what a dispatch needs: the cached executor
+// for this agent, plus a resolution made fresh for this dispatch.
+//
+// The split matters. The executor holds per-session run state (queues,
+// active requests, accept bookkeeping) and must survive across
+// dispatches, so it is cached on the registry entry. The resolution
+// holds model, tools and prompt and must not be shared, so it is built
+// per dispatch and travels on the call. Resolving here rather than at
+// registration also means a dispatch that cannot reach its provider
+// fails as a tool error instead of poisoning the coordinator.
+func (c *coordinator) dispatchSubAgent(ctx context.Context, entry *subagentEntry) (SessionAgent, resolvedAgent, error) {
+	resolved, err := c.resolveAgent(ctx, entry.cfg, true)
 	if err != nil {
-		return nil, err
+		return nil, resolvedAgent{}, err
 	}
-
-	primary, secondary, err := c.buildAgentModels(ctx, agentCfg, true)
-	if err != nil {
-		return nil, err
-	}
-
-	primaryProviderCfg, _ := c.cfg.Config().Providers.Get(primary.ModelCfg.Provider)
-	result := NewSessionAgent(SessionAgentOptions{
-		LargeModel:           primary,
-		SmallModel:           secondary,
-		SystemPromptPrefix:   primaryProviderCfg.SystemPromptPrefix,
-		SystemPrompt:         "",
-		IsSubAgent:           true,
-		AgentName:            agentCfg.Name,
-		DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
-		IsYolo:               c.permissions.SkipRequests(),
-		Sessions:             c.sessions,
-		Messages:             c.messages,
-		Tools:                nil,
-		Notify:               c.notify,
-		RunComplete:          c.runComplete,
+	executor := entry.executor(func(agentCfg config.Agent) SessionAgent {
+		return c.buildAgent(agentCfg.ID, true)
 	})
-
-	systemPrompt, err := p.Build(ctx, primary.Model.Provider(), primary.Model.Model(), c.cfg)
-	if err != nil {
-		return nil, err
-	}
-	result.SetSystemPrompt(systemPrompt)
-
-	agentTools, err := c.buildTools(ctx, agentCfg, true)
-	if err != nil {
-		return nil, err
-	}
-	result.SetTools(agentTools)
-
-	return result, nil
+	return executor, resolved, nil
 }

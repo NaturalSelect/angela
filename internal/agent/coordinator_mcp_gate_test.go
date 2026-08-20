@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NaturalSelect/angela/internal/agent/prompt"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/stretchr/testify/require"
@@ -27,8 +26,8 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
   "providers": {"mock": {"id": "mock", "name": "Mock", "type": "openai",
     "base_url": "http://127.0.0.1:9/v1", "api_key": "test-key",
     "models": [{"id": "mock-model", "name": "Mock", "context_window": 8192, "default_max_tokens": 128}]}},
-  "models": {"large": {"provider": "mock", "model": "mock-model"},
-             "small": {"provider": "mock", "model": "mock-model"}}
+  "models": {"main": {"provider": "mock", "model": "mock-model"},
+             "chore": {"provider": "mock", "model": "mock-model"}}
 }`
 	require.NoError(t, os.WriteFile(filepath.Join(env.workingDir, "angela.json"), []byte(angelaJSON), 0o644))
 
@@ -48,13 +47,8 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
 	}
 	coord.reconcileSubagents()
 
-	p, err := coderPrompt(prompt.WithWorkingDir(env.workingDir))
-	require.NoError(t, err)
 	agentCfg := cfg.Config().Agents[config.AgentCoder]
-
-	agent, err := coord.buildAgent(context.Background(), p, agentCfg, false)
-	require.NoError(t, err)
-	coord.currentAgent = agent
+	coord.currentAgent = coord.buildAgent(agentCfg.ID, false)
 
 	return coord
 }

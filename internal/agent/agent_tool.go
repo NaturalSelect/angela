@@ -48,10 +48,11 @@ func (c *coordinator) agentTool() (fantasy.AgentTool, error) {
 				return fantasy.NewTextErrorResponse("prompt is required"), nil
 			}
 
-			// Default to task agent for backward compatibility.
+			// A call with no subagent_type is almost always a search
+			// need, and explore is read-only, so it is the safe default.
 			agentType := params.SubagentType
 			if agentType == "" {
-				agentType = config.AgentTask
+				agentType = config.AgentExplore
 			}
 
 			entry, ok := c.subagents.Get(agentType)
@@ -76,9 +77,7 @@ func (c *coordinator) agentTool() (fantasy.AgentTool, error) {
 			// an unreachable provider. That is this dispatch's problem
 			// alone, so it comes back as a tool error rather than
 			// taking down the coordinator.
-			agent, err := entry.resolve(func(agentCfg config.Agent) (SessionAgent, error) {
-				return c.buildSubAgentSync(ctx, agentCfg)
-			})
+			agent, resolved, err := c.dispatchSubAgent(ctx, entry)
 			if err != nil {
 				slog.Error("Failed to build subagent", "agent", agentType, "error", err)
 				return fantasy.NewTextErrorResponse(
@@ -93,6 +92,7 @@ func (c *coordinator) agentTool() (fantasy.AgentTool, error) {
 
 			return c.runSubAgent(ctx, subAgentParams{
 				Agent:          agent,
+				Resolved:       resolved,
 				SessionID:      sessionID,
 				AgentMessageID: agentMessageID,
 				ToolCallID:     call.ID,

@@ -151,22 +151,22 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure selected models: %w", err)
 	}
-	cfg.Models[SelectedModelTypeLarge] = resolved.Large
-	cfg.Models[SelectedModelTypeSmall] = resolved.Small
+	cfg.Models[ModelMain] = resolved.Main
+	cfg.Models[ModelChore] = resolved.Chore
 
 	// Persist any fallback corrections while we still hold writeMu.
-	if resolved.LargeFallback {
+	if resolved.MainFallback {
 		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-			return store.updatePreferredModelFields(c, SelectedModelTypeLarge, resolved.Large)
+			return store.updatePreferredModelFields(c, ModelMain, resolved.Main)
 		}); err != nil {
-			return nil, fmt.Errorf("failed to update preferred large model: %w", err)
+			return nil, fmt.Errorf("failed to update preferred main model: %w", err)
 		}
 	}
-	if resolved.SmallFallback {
+	if resolved.ChoreFallback {
 		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-			return store.updatePreferredModelFields(c, SelectedModelTypeSmall, resolved.Small)
+			return store.updatePreferredModelFields(c, ModelChore, resolved.Chore)
 		}); err != nil {
-			return nil, fmt.Errorf("failed to update preferred small model: %w", err)
+			return nil, fmt.Errorf("failed to update preferred chore model: %w", err)
 		}
 	}
 
@@ -574,10 +574,10 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 		c.Providers = csync.NewMap[string, ProviderConfig]()
 	}
 	if c.Models == nil {
-		c.Models = make(map[SelectedModelType]SelectedModel)
+		c.Models = make(map[ModelConfigName]SelectedModel)
 	}
 	if c.RecentModels == nil {
-		c.RecentModels = make(map[SelectedModelType][]SelectedModel)
+		c.RecentModels = make(map[ModelConfigName][]SelectedModel)
 	}
 	if c.MCP == nil {
 		c.MCP = make(map[string]MCPConfig)
@@ -820,10 +820,60 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 // resolvedModels holds the result of resolving user-configured model
 // selections against the provider catalog.
 type resolvedModels struct {
-	Large         SelectedModel
-	Small         SelectedModel
-	LargeFallback bool // true if Large was corrected to a default
-	SmallFallback bool // true if Small was corrected to a default
+	Main          SelectedModel
+	Chore         SelectedModel
+	MainFallback  bool // true if Main was corrected to a default
+	ChoreFallback bool // true if Chore was corrected to a default
+}
+
+// applyModelOverride layers a user-configured selection on top of a
+// default one, resolving the result against the provider catalog. It
+// returns the default untouched and fellBack=true when the requested
+// model does not exist in the catalog.
+func applyModelOverride(cfg *Config, fallback, override SelectedModel) (resolved SelectedModel, fellBack bool) {
+	resolved = fallback
+	if override.Model != "" {
+		resolved.Model = override.Model
+	}
+	if override.Provider != "" {
+		resolved.Provider = override.Provider
+	}
+
+	model := cfg.GetModel(resolved.Provider, resolved.Model)
+	if model == nil {
+		return fallback, true
+	}
+
+	if override.MaxTokens > 0 {
+		resolved.MaxTokens = override.MaxTokens
+	} else {
+		resolved.MaxTokens = model.DefaultMaxTokens
+	}
+	if override.ReasoningEffort != "" {
+		resolved.ReasoningEffort = override.ReasoningEffort
+	} else {
+		resolved.ReasoningEffort = model.DefaultReasoningEffort
+	}
+	resolved.Think = override.Think
+	if override.Temperature != nil {
+		resolved.Temperature = override.Temperature
+	}
+	if override.TopP != nil {
+		resolved.TopP = override.TopP
+	}
+	if override.TopK != nil {
+		resolved.TopK = override.TopK
+	}
+	if override.FrequencyPenalty != nil {
+		resolved.FrequencyPenalty = override.FrequencyPenalty
+	}
+	if override.PresencePenalty != nil {
+		resolved.PresencePenalty = override.PresencePenalty
+	}
+	if override.ProviderOptions != nil {
+		resolved.ProviderOptions = maps.Clone(override.ProviderOptions)
+	}
+	return resolved, false
 }
 
 // resolveSelectedModels validates the user's configured model selections
@@ -833,122 +883,40 @@ type resolvedModels struct {
 // fallback corrections as appropriate.
 func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (resolvedModels, error) {
 	var result resolvedModels
-	defaultLarge, defaultSmall, err := cfg.defaultModelSelection(knownProviders)
+	defaultMain, defaultChore, err := cfg.defaultModelSelection(knownProviders)
 	if err != nil {
 		return result, fmt.Errorf("failed to select default models: %w", err)
 	}
-	large, small := defaultLarge, defaultSmall
+	main, chore := defaultMain, defaultChore
 
-	largeModelSelected, largeModelConfigured := cfg.Models[SelectedModelTypeLarge]
-	if largeModelConfigured {
-		if largeModelSelected.Model != "" {
-			large.Model = largeModelSelected.Model
-		}
-		if largeModelSelected.Provider != "" {
-			large.Provider = largeModelSelected.Provider
-		}
-		model := cfg.GetModel(large.Provider, large.Model)
-		if model == nil {
-			large = defaultLarge
-			result.LargeFallback = true
-		} else {
-			if largeModelSelected.MaxTokens > 0 {
-				large.MaxTokens = largeModelSelected.MaxTokens
-			} else {
-				large.MaxTokens = model.DefaultMaxTokens
-			}
-			if largeModelSelected.ReasoningEffort != "" {
-				large.ReasoningEffort = largeModelSelected.ReasoningEffort
-			} else {
-				large.ReasoningEffort = model.DefaultReasoningEffort
-			}
-			large.Think = largeModelSelected.Think
-			if largeModelSelected.Temperature != nil {
-				large.Temperature = largeModelSelected.Temperature
-			}
-			if largeModelSelected.TopP != nil {
-				large.TopP = largeModelSelected.TopP
-			}
-			if largeModelSelected.TopK != nil {
-				large.TopK = largeModelSelected.TopK
-			}
-			if largeModelSelected.FrequencyPenalty != nil {
-				large.FrequencyPenalty = largeModelSelected.FrequencyPenalty
-			}
-			if largeModelSelected.PresencePenalty != nil {
-				large.PresencePenalty = largeModelSelected.PresencePenalty
-			}
-			if largeModelSelected.ProviderOptions != nil {
-				large.ProviderOptions = maps.Clone(largeModelSelected.ProviderOptions)
-			}
-		}
+	if override, configured := cfg.Models[ModelMain]; configured {
+		main, result.MainFallback = applyModelOverride(cfg, defaultMain, override)
 	}
-	smallModelSelected, smallModelConfigured := cfg.Models[SelectedModelTypeSmall]
-	if smallModelConfigured {
-		if smallModelSelected.Model != "" {
-			small.Model = smallModelSelected.Model
-		}
-		if smallModelSelected.Provider != "" {
-			small.Provider = smallModelSelected.Provider
-		}
-
-		model := cfg.GetModel(small.Provider, small.Model)
-		if model == nil {
-			small = defaultSmall
-			result.SmallFallback = true
-		} else {
-			if smallModelSelected.MaxTokens > 0 {
-				small.MaxTokens = smallModelSelected.MaxTokens
-			} else {
-				small.MaxTokens = model.DefaultMaxTokens
-			}
-			if smallModelSelected.ReasoningEffort != "" {
-				small.ReasoningEffort = smallModelSelected.ReasoningEffort
-			} else {
-				small.ReasoningEffort = model.DefaultReasoningEffort
-			}
-			if smallModelSelected.Temperature != nil {
-				small.Temperature = smallModelSelected.Temperature
-			}
-			if smallModelSelected.TopP != nil {
-				small.TopP = smallModelSelected.TopP
-			}
-			if smallModelSelected.TopK != nil {
-				small.TopK = smallModelSelected.TopK
-			}
-			if smallModelSelected.FrequencyPenalty != nil {
-				small.FrequencyPenalty = smallModelSelected.FrequencyPenalty
-			}
-			if smallModelSelected.PresencePenalty != nil {
-				small.PresencePenalty = smallModelSelected.PresencePenalty
-			}
-			if smallModelSelected.ProviderOptions != nil {
-				small.ProviderOptions = maps.Clone(smallModelSelected.ProviderOptions)
-			}
-			small.Think = smallModelSelected.Think
-		}
+	override, choreConfigured := cfg.Models[ModelChore]
+	if choreConfigured {
+		chore, result.ChoreFallback = applyModelOverride(cfg, defaultChore, override)
 	}
 
-	// When small isn't explicitly configured and the provider isn't a
-	// known built-in, use the large model as the small model. This
+	// When chore isn't explicitly configured and the provider isn't a
+	// known built-in, use the main model as the chore model. This
 	// prevents two different models from being requested concurrently
 	// for local/openai-compat providers.
-	if !smallModelConfigured {
+	if !choreConfigured {
 		isKnownProvider := false
 		for _, kp := range knownProviders {
-			if string(kp.ID) == small.Provider {
+			if string(kp.ID) == chore.Provider {
 				isKnownProvider = true
 				break
 			}
 		}
 		if !isKnownProvider {
-			slog.Warn("Using large model as small model for unknown provider", "provider", large.Provider, "model", large.Model)
-			small = large
+			slog.Warn("Using main model as chore model for unknown provider", "provider", main.Provider, "model", main.Model)
+			chore = main
 		}
 	}
 
-	result.Large = large
-	result.Small = small
+	result.Main = main
+	result.Chore = chore
 	return result, nil
 }
 

@@ -48,9 +48,6 @@ func validateAgenticFetchParams(ctx context.Context, params tools.AgenticFetchPa
 	}, nil
 }
 
-//go:embed templates/agentic_fetch_prompt.md.tpl
-var agenticFetchPromptTmpl []byte
-
 func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (fantasy.AgentTool, error) {
 	if client == nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -139,30 +136,14 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 				fullPrompt = fmt.Sprintf("%s\n\nUse the web_search tool to find relevant information. Break down the question into smaller, focused searches if needed. After searching, use web_fetch to get detailed content from the most relevant results.", params.Prompt)
 			}
 
-			promptOpts := []prompt.Option{
-				prompt.WithWorkingDir(tmpDir),
-			}
-
-			promptTemplate, err := prompt.NewPrompt("agentic_fetch", string(agenticFetchPromptTmpl), promptOpts...)
+			// Agentic fetch is an internal agent: resolved from config
+			// each call so a user's model and prompt overrides apply.
+			agentCfg, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentAgenticFetch,
+				prompt.WithWorkingDir(tmpDir))
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error creating prompt: %s", err)
+				return fantasy.ToolResponse{}, fmt.Errorf("error resolving the agentic fetch agent: %w", err)
 			}
-
-			// Agentic fetch runs on the small model as a sub-agent.
-			small, _, err := c.buildAgentModels(ctx, config.Agent{Model: config.SelectedModelTypeSmall}, true)
-			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error building models: %s", err)
-			}
-
-			systemPrompt, err := promptTemplate.Build(ctx, small.Model.Provider(), small.Model.Model(), c.cfg)
-			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error building system prompt: %s", err)
-			}
-
-			smallProviderCfg, ok := c.cfg.Config().Providers.Get(small.ModelCfg.Provider)
-			if !ok {
-				return fantasy.ToolResponse{}, errors.New("small model provider not configured")
-			}
+			providerCfg, _ := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
 
 			webFetchTool := tools.NewWebFetchTool(tmpDir, client)
 			webSearchTool := tools.NewWebSearchTool(client)
@@ -181,20 +162,32 @@ func (c *coordinator) agenticFetchTool(_ context.Context, client *http.Client) (
 			// the user's hooks N times per delegated turn.
 
 			agent := NewSessionAgent(SessionAgentOptions{
-				LargeModel:           small, // Use small model for both (fetch doesn't need large)
-				SmallModel:           small,
-				SystemPromptPrefix:   smallProviderCfg.SystemPromptPrefix,
-				SystemPrompt:         systemPrompt,
-				AgentName:            tools.AgenticFetchToolName,
-				DisableAutoSummarize: c.cfg.Config().Options.DisableAutoSummarize,
-				IsYolo:               c.permissions.SkipRequests(),
-				Sessions:             c.sessions,
-				Messages:             c.messages,
-				Tools:                fetchTools,
+				IsSubAgent:    true,
+				AgentID:       config.AgentAgenticFetch,
+				Compaction:    c.cfg.Config().Options.Compaction,
+				IsYolo:        c.permissions.SkipRequests(),
+				Sessions:      c.sessions,
+				Messages:      c.messages,
+				GenerateTitle: c.generateSessionTitle,
 			})
+
+			// The tool list is built here rather than resolved from
+			// config: every tool above is bound to tmpDir, this call's
+			// own scratch directory. That is why agentic_fetch's model
+			// and prompt are user-overridable but its tools are not.
+			resolved := resolvedAgent{
+				ID:                 config.AgentAgenticFetch,
+				Name:               agentCfg.Name,
+				Model:              model,
+				Tools:              fetchTools,
+				SystemPrompt:       systemPrompt,
+				SystemPromptPrefix: providerCfg.SystemPromptPrefix,
+				MaxTokens:          maxTokensFor(agentCfg, model),
+			}
 
 			return c.runSubAgent(ctx, subAgentParams{
 				Agent:          agent,
+				Resolved:       resolved,
 				SessionID:      validationResult.SessionID,
 				AgentMessageID: validationResult.AgentMessageID,
 				ToolCallID:     call.ID,

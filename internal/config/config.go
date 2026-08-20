@@ -45,31 +45,49 @@ var defaultContextPaths = []string{
 	"Agents.md",
 }
 
-type SelectedModelType string
+// ModelConfigName names a model configuration slot. The two seeds below
+// ship with Angela; users may define any other name and point an agent
+// at it via the agent's Model field.
+type ModelConfigName string
 
-// String returns the string representation of the [SelectedModelType].
-func (s SelectedModelType) String() string {
+// String returns the string representation of the [ModelConfigName].
+func (s ModelConfigName) String() string {
 	return string(s)
 }
 
 const (
-	SelectedModelTypeLarge SelectedModelType = "large"
-	SelectedModelTypeSmall SelectedModelType = "small"
+	// ModelMain is the workhorse model configuration.
+	ModelMain ModelConfigName = "main"
+	// ModelChore is the cheap model configuration used for auxiliary
+	// work such as titles and summaries.
+	ModelChore ModelConfigName = "chore"
 )
 
 const (
 	AgentCoder   string = "coder"
-	AgentTask    string = "task"
 	AgentExplore string = "explore"
 	AgentGeneral string = "general"
+
+	// The agents below back Angela's own auxiliary LLM calls. They are
+	// hidden — resolvable by ID, but never offered for dispatch or
+	// completion — so a user can retune their model and prompt without
+	// them showing up as things to delegate to.
+	AgentTitle         string = "title"
+	AgentCompact       string = "compact"
+	AgentAgenticFetch  string = "agentic-fetch"
+	AgentGenerateAgent string = "generate-agent"
+	AgentInitialize    string = "initialize"
 )
+
+func ptr[T any](v T) *T { return &v }
 
 // AgentMode determines how an agent can be used.
 type AgentMode string
 
 const (
-	// AgentModePrimary means the agent is a top-level agent. Only the
-	// coder agent runs as one today.
+	// AgentModePrimary means the agent drives a session directly: it is
+	// what a session can be switched to, and it is never dispatched via
+	// the agent tool.
 	AgentModePrimary AgentMode = "primary"
 	// AgentModeSubagent means the agent can only be launched via the
 	// agent tool.
@@ -100,6 +118,11 @@ type SelectedModel struct {
 
 	// Override provider specific options.
 	ProviderOptions map[string]any `json:"provider_options,omitempty" jsonschema:"description=Additional provider-specific options for the model"`
+
+	// Variants are named parameter presets over the fields above. They
+	// keep the model identity and override only the keys they name, so
+	// N models by M presets stays N+M configs instead of N*M.
+	Variants map[string]SelectedModelOverride `json:"variants,omitempty" jsonschema:"description=Named parameter presets layered over this model config"`
 }
 
 type ProviderConfig struct {
@@ -288,6 +311,51 @@ type Completions struct {
 	MaxItems *int `json:"max_items,omitempty" jsonschema:"description=Maximum number of items to return for the ls tool,default=1000,example=100"`
 }
 
+// Compaction defaults. A context window past
+// CompactionLargeContextThreshold gets a fixed headroom reserve; a
+// smaller one reserves a proportion of itself instead, because a fixed
+// 20k reserve would swallow most of a 32k window.
+const (
+	CompactionLargeContextThreshold int64   = 200_000
+	CompactionReserved              int64   = 20_000
+	CompactionSmallContextRatio     float64 = 0.2
+)
+
+// CompactionOptions tunes when a conversation is automatically
+// summarized to free context.
+type CompactionOptions struct {
+	Auto                  *bool    `json:"auto,omitempty" jsonschema:"description=Automatically compact when the context fills up,default=true"`
+	LargeContextThreshold *int64   `json:"large_context_threshold,omitempty" jsonschema:"description=Context window size above which Reserved is used instead of SmallContextRatio,default=200000"`
+	Reserved              *int64   `json:"reserved,omitempty" jsonschema:"description=Tokens kept free for the next turn on a large context window,default=20000"`
+	SmallContextRatio     *float64 `json:"small_context_ratio,omitempty" jsonschema:"description=Proportion of a small context window kept free for the next turn,default=0.2"`
+}
+
+// AutoCompact reports whether automatic compaction is on. A nil
+// receiver means "not configured", which is the default: on.
+func (c *CompactionOptions) AutoCompact() bool {
+	if c == nil || c.Auto == nil {
+		return true
+	}
+	return *c.Auto
+}
+
+// ReserveFor returns how many tokens of a context window to keep free
+// for the next turn.
+func (c *CompactionOptions) ReserveFor(contextWindow int64) int64 {
+	threshold := CompactionLargeContextThreshold
+	reserved := CompactionReserved
+	ratio := CompactionSmallContextRatio
+	if c != nil {
+		threshold = ptrValOr(c.LargeContextThreshold, threshold)
+		reserved = ptrValOr(c.Reserved, reserved)
+		ratio = ptrValOr(c.SmallContextRatio, ratio)
+	}
+	if contextWindow > threshold {
+		return reserved
+	}
+	return int64(float64(contextWindow) * ratio)
+}
+
 func (c Completions) Limits() (depth, items int) {
 	return ptrValOr(c.MaxDepth, 0), ptrValOr(c.MaxItems, 0)
 }
@@ -327,13 +395,13 @@ func (Attribution) JSONSchemaExtend(schema *jsonschema.Schema) {
 }
 
 type Options struct {
-	ContextPaths         []string    `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=ANGELA.md"`
-	GlobalContextPaths   []string    `json:"global_context_paths,omitempty" jsonschema:"description=Paths to files containing global context information for the AI,default=~/.config/angela/ANGELA.md,default=~/.config/AGENTS.md"`
-	SkillsPaths          []string    `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/angela/skills,example=./skills"`
-	TUI                  *TUIOptions `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
-	Debug                bool        `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
-	DebugLSP             bool        `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
-	DisableAutoSummarize bool        `json:"disable_auto_summarize,omitempty" jsonschema:"description=Disable automatic conversation summarization,default=false"`
+	ContextPaths       []string           `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=ANGELA.md"`
+	GlobalContextPaths []string           `json:"global_context_paths,omitempty" jsonschema:"description=Paths to files containing global context information for the AI,default=~/.config/angela/ANGELA.md,default=~/.config/AGENTS.md"`
+	SkillsPaths        []string           `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/angela/skills,example=./skills"`
+	TUI                *TUIOptions        `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
+	Compaction         *CompactionOptions `json:"compaction,omitempty" jsonschema:"description=Conversation compaction options"`
+	Debug              bool               `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`
+	DebugLSP           bool               `json:"debug_lsp,omitempty" jsonschema:"description=Enable debug logging for LSP servers,default=false"`
 	// DataDirectory is where Angela keeps per-project state such as
 	// the SQLite database and workspace overrides. Relative paths are
 	// resolved against the working directory; absolute paths are used
@@ -573,11 +641,28 @@ type Agent struct {
 	// from unset.
 	Disabled *bool `json:"disabled,omitempty" jsonschema:"description=Whether this agent is disabled"`
 
+	// Hidden keeps an agent out of the agent tool's dispatch list and
+	// out of UI completion, while leaving it resolvable by ID. It is a
+	// pointer for the same reason as Disabled: so a user can un-hide a
+	// built-in hidden agent with an explicit "hidden: false".
+	//
+	// Hidden is orthogonal to Mode: whether an agent is internal has
+	// nothing to do with whether it is primary or a subagent.
+	Hidden *bool `json:"hidden,omitempty" jsonschema:"description=Keep this agent out of the agent tool's dispatch list and UI completion"`
+
 	// Mode controls how the agent can be used. Primary agents are
 	// top-level; subagents are launched via the agent tool.
 	Mode AgentMode `json:"mode,omitempty" jsonschema:"description=Agent mode: primary or subagent,enum=primary,enum=subagent"`
 
-	Model SelectedModelType `json:"model,omitempty" jsonschema:"description=The model type to use for this agent,enum=large,enum=small,default=large"`
+	Model ModelConfigName `json:"model,omitempty" jsonschema:"description=Name of the model config to use,default=main"`
+
+	// Variant names a parameter preset on the model config above.
+	// Unknown names degrade to the model's baseline parameters.
+	Variant string `json:"variant,omitempty" jsonschema:"description=Name of a variant on the model config"`
+
+	// MaxTokens caps the agent's output tokens. Zero means the model
+	// default applies.
+	MaxTokens *int64 `json:"max_tokens,omitempty" jsonschema:"description=Cap on the agent's output tokens; zero means the model default"`
 
 	// Prompt is the system prompt text. When set it replaces the
 	// built-in template for this agent. The text is parsed as a Go
@@ -607,6 +692,12 @@ type Agent struct {
 
 	// ContextPaths overrides the context paths for this agent.
 	ContextPaths []string `json:"context_paths,omitempty" jsonschema:"description=Context file paths for this agent"`
+}
+
+// IsHidden reports whether the agent should stay out of dispatch lists
+// and UI completion. Unset means visible.
+func (a Agent) IsHidden() bool {
+	return a.Hidden != nil && *a.Hidden
 }
 
 type Tools struct {
@@ -680,11 +771,12 @@ func (h *HookConfig) TimeoutDuration() time.Duration {
 type Config struct {
 	Schema string `json:"$schema,omitempty"`
 
-	// We currently only support large/small as values here.
-	Models map[SelectedModelType]SelectedModel `json:"models,omitempty" jsonschema:"description=Model configurations for different model types,example={\"large\":{\"model\":\"gpt-4o\",\"provider\":\"openai\"}}"`
+	// Named model configurations. "main" and "chore" ship as seeds;
+	// any other name may be defined and referenced by an agent.
+	Models map[ModelConfigName]SelectedModel `json:"models,omitempty" jsonschema:"description=Named model configurations,example={\"main\":{\"model\":\"gpt-4o\",\"provider\":\"openai\"}}"`
 
 	// Recently used models stored in the data directory config.
-	RecentModels map[SelectedModelType][]SelectedModel `json:"recent_models,omitempty" jsonschema:"-"`
+	RecentModels map[ModelConfigName][]SelectedModel `json:"recent_models,omitempty" jsonschema:"-"`
 
 	// The providers that are configured
 	Providers *csync.Map[string, ProviderConfig] `json:"providers,omitempty" jsonschema:"description=AI provider configurations"`
@@ -793,8 +885,14 @@ func (c *Config) IsModelAvailable(provider, model string) bool {
 	return false
 }
 
-func (c *Config) GetProviderForModel(modelType SelectedModelType) *ProviderConfig {
-	model, ok := c.Models[modelType]
+// ModelForName returns the model configuration registered under name.
+func (c *Config) ModelForName(name ModelConfigName) (SelectedModel, bool) {
+	model, ok := c.Models[name]
+	return model, ok
+}
+
+func (c *Config) GetProviderForModelName(name ModelConfigName) *ProviderConfig {
+	model, ok := c.Models[name]
 	if !ok {
 		return nil
 	}
@@ -804,24 +902,8 @@ func (c *Config) GetProviderForModel(modelType SelectedModelType) *ProviderConfi
 	return nil
 }
 
-func (c *Config) GetModelByType(modelType SelectedModelType) *catwalk.Model {
-	model, ok := c.Models[modelType]
-	if !ok {
-		return nil
-	}
-	return c.GetModel(model.Provider, model.Model)
-}
-
-func (c *Config) LargeModel() *catwalk.Model {
-	model, ok := c.Models[SelectedModelTypeLarge]
-	if !ok {
-		return nil
-	}
-	return c.GetModel(model.Provider, model.Model)
-}
-
-func (c *Config) SmallModel() *catwalk.Model {
-	model, ok := c.Models[SelectedModelTypeSmall]
+func (c *Config) GetModelByName(name ModelConfigName) *catwalk.Model {
+	model, ok := c.Models[name]
 	if !ok {
 		return nil
 	}
@@ -872,12 +954,6 @@ func resolveAllowedTools(allTools []string, disabledTools []string) []string {
 	return filterSlice(allTools, disabledTools, false)
 }
 
-func resolveReadOnlyTools(tools []string) []string {
-	readOnlyTools := []string{"glob", "grep", "ls", "lsp_call_hierarchy", "lsp_definition", "lsp_symbols", "sourcegraph", "view"}
-	// filter to only include tools that are in allowedtools (include mode)
-	return filterSlice(tools, readOnlyTools, true)
-}
-
 func filterSlice(data []string, mask []string, include bool) []string {
 	var filtered []string
 	for _, s := range data {
@@ -923,27 +999,17 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// be explicit rather than inherited.
 			Description:  "An agent that helps with executing coding tasks.",
 			Mode:         AgentModePrimary,
-			Model:        SelectedModelTypeLarge,
+			Model:        ModelMain,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetAll},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetAll},
-		},
-		AgentTask: {
-			ID:           AgentTask,
-			Name:         "Task",
-			Description:  "An agent that helps with searching for context and finding implementation details.",
-			Mode:         AgentModeSubagent,
-			Model:        SelectedModelTypeLarge,
-			ContextPaths: contextPaths,
-			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: resolveReadOnlyTools(base)},
-			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
 		},
 		AgentExplore: {
 			ID:           AgentExplore,
 			Name:         "Explore",
 			Description:  "Fast agent specialized for exploring codebases. Use for file searches, code keyword searches, or questions about the codebase structure.",
 			Mode:         AgentModeSubagent,
-			Model:        SelectedModelTypeLarge,
+			Model:        ModelMain,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, exploreToolNames(), true)},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
@@ -953,13 +1019,77 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:         "General",
 			Description:  "General-purpose agent for researching complex questions and executing multi-step tasks in parallel.",
 			Mode:         AgentModeSubagent,
-			Model:        SelectedModelTypeLarge,
+			Model:        ModelMain,
 			ContextPaths: contextPaths,
 			// General mirrors whatever the coder may use, so tightening
 			// the coder tightens it too.
 			AllowedTools:  &AllowedToolSet{Kind: ToolSetInherited},
 			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetInherited},
 			DisabledTools: []string{"todos"},
+		},
+
+		// Internal agents. Each backs one of Angela's own auxiliary LLM
+		// calls; all are hidden and toolless.
+		AgentTitle: {
+			ID:           AgentTitle,
+			Name:         "Title",
+			Description:  "Names a session from its first user prompt.",
+			Mode:         AgentModeSubagent,
+			Hidden:       ptr(true),
+			Model:        ModelChore,
+			MaxTokens:    ptr(int64(40)),
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
+		},
+		AgentCompact: {
+			ID:          AgentCompact,
+			Name:        "Compact",
+			Description: "Summarizes a conversation so work can continue in a fresh context.",
+			Mode:        AgentModeSubagent,
+			Hidden:      ptr(true),
+			// Compaction borrows the workhorse model on purpose:
+			// summarizing on the cheap model silently degrades the only
+			// context a resumed session gets.
+			Model:        ModelMain,
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
+		},
+		AgentAgenticFetch: {
+			ID:           AgentAgenticFetch,
+			Name:         "Agentic Fetch",
+			Description:  "Fetches a URL and answers a question about its content.",
+			Mode:         AgentModeSubagent,
+			Hidden:       ptr(true),
+			Model:        ModelChore,
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
+		},
+		AgentGenerateAgent: {
+			ID:           AgentGenerateAgent,
+			Name:         "Generate Agent",
+			Description:  "Writes a new agent definition from a description.",
+			Mode:         AgentModeSubagent,
+			Hidden:       ptr(true),
+			Model:        ModelMain,
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
+		},
+		AgentInitialize: {
+			ID:          AgentInitialize,
+			Name:        "Initialize",
+			Description: "Writes the project's initial context file.",
+			Mode:        AgentModeSubagent,
+			Hidden:      ptr(true),
+			// Model is deliberately unset: initialize never makes an LLM
+			// call of its own. Its rendered prompt is injected into an
+			// ordinary session and runs on whatever agent is primary.
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
 		},
 	}
 }
@@ -973,7 +1103,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 // deny-filtered list.
 func newCustomAgent(contextPaths []string) Agent {
 	return Agent{
-		Model:        SelectedModelTypeLarge,
+		Model:        ModelMain,
 		Mode:         AgentModeSubagent,
 		ContextPaths: contextPaths,
 		AllowedTools: &AllowedToolSet{Kind: ToolSetInherited},
@@ -999,6 +1129,9 @@ func mergeAgent(base, override Agent) Agent {
 	if override.Model != "" {
 		base.Model = override.Model
 	}
+	if override.Variant != "" {
+		base.Variant = override.Variant
+	}
 	if override.Prompt != "" {
 		base.Prompt = override.Prompt
 	}
@@ -1019,6 +1152,12 @@ func mergeAgent(base, override Agent) Agent {
 	}
 	if override.Disabled != nil {
 		base.Disabled = override.Disabled
+	}
+	if override.Hidden != nil {
+		base.Hidden = override.Hidden
+	}
+	if override.MaxTokens != nil {
+		base.MaxTokens = override.MaxTokens
 	}
 	return base
 }
@@ -1064,17 +1203,6 @@ func (c *Config) ResolveAgents() map[string]Agent {
 		merged := mergeAgent(existing, override)
 		merged.ID = key
 		agents[key] = merged
-	}
-
-	// Primary mode is reserved for coder today; downgrade rather than
-	// silently ignore it so a multi-primary config doesn't appear to
-	// work while only coder actually runs as one.
-	for key, a := range agents {
-		if key != AgentCoder && a.Mode == AgentModePrimary {
-			slog.Warn("Only the coder agent can run as a primary agent; treating this agent as a subagent", "agent", key)
-			a.Mode = AgentModeSubagent
-			agents[key] = a
-		}
 	}
 
 	coderTools, coderMCP := resolveCoderAgent(agents, c.Options.DisabledTools)

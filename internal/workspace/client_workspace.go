@@ -310,6 +310,10 @@ func (w *ClientWorkspace) AgentClearQueue(sessionID string) {
 	_ = w.client.ClearAgentSessionQueuedPrompts(context.Background(), w.workspaceID(), sessionID)
 }
 
+func (w *ClientWorkspace) AgentSwitch(ctx context.Context, sessionID, agentID string) error {
+	return w.client.AgentSwitchSessionAgent(ctx, w.workspaceID(), sessionID, agentID)
+}
+
 func (w *ClientWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
 	return w.client.AgentSummarizeSession(ctx, w.workspaceID(), sessionID)
 }
@@ -324,14 +328,6 @@ func (w *ClientWorkspace) InitCoderAgent(ctx context.Context) error {
 
 func (w *ClientWorkspace) InitCoderAgentNonInteractive(ctx context.Context) error {
 	return w.client.InitiateAgentProcessing(ctx, w.workspaceID(), false)
-}
-
-func (w *ClientWorkspace) GetDefaultSmallModel(providerID string) config.SelectedModel {
-	model, err := w.client.GetDefaultSmallModel(context.Background(), w.workspaceID(), providerID)
-	if err != nil {
-		return config.SelectedModel{}
-	}
-	return *model
 }
 
 // -- Permissions --
@@ -528,8 +524,8 @@ func (w *ClientWorkspace) Resolver() config.VariableResolver {
 
 // -- Config mutations --
 
-func (w *ClientWorkspace) UpdatePreferredModel(scope config.Scope, modelType config.SelectedModelType, model config.SelectedModel) error {
-	err := w.client.UpdatePreferredModel(context.Background(), w.workspaceID(), scope, modelType, model)
+func (w *ClientWorkspace) UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+	err := w.client.UpdatePreferredModel(context.Background(), w.workspaceID(), scope, name, model)
 	if err == nil {
 		w.refreshWorkspace()
 	}
@@ -1235,6 +1231,8 @@ func protoToSession(s proto.Session) session.Session {
 		ID:               s.ID,
 		ParentSessionID:  s.ParentSessionID,
 		Title:            s.Title,
+		Agent:            s.Agent,
+		Model:            protoToModelRef(s.Model),
 		SummaryMessageID: s.SummaryMessageID,
 		MessageCount:     s.MessageCount,
 		PromptTokens:     s.PromptTokens,
@@ -1243,6 +1241,14 @@ func protoToSession(s proto.Session) session.Session {
 		Todos:            protoToTodos(s.Todos),
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
+	}
+}
+
+func protoToModelRef(m proto.ModelRef) session.ModelRef {
+	return session.ModelRef{
+		Provider: m.Provider,
+		Model:    m.Model,
+		Variant:  m.Variant,
 	}
 }
 
@@ -1357,6 +1363,8 @@ func sessionToProto(s session.Session) proto.Session {
 		ID:               s.ID,
 		ParentSessionID:  s.ParentSessionID,
 		Title:            s.Title,
+		Agent:            s.Agent,
+		Model:            modelRefToProto(s.Model),
 		SummaryMessageID: s.SummaryMessageID,
 		MessageCount:     s.MessageCount,
 		PromptTokens:     s.PromptTokens,
@@ -1365,6 +1373,14 @@ func sessionToProto(s session.Session) proto.Session {
 		Todos:            todosToProto(s.Todos),
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
+	}
+}
+
+func modelRefToProto(m session.ModelRef) proto.ModelRef {
+	return proto.ModelRef{
+		Provider: m.Provider,
+		Model:    m.Model,
+		Variant:  m.Variant,
 	}
 }
 

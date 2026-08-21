@@ -155,6 +155,7 @@ type Workspace interface {
 	AgentClearQueue(sessionID string)
 	AgentSummarize(ctx context.Context, sessionID string) error
 	AgentSwitch(ctx context.Context, sessionID, agentID string) error
+	AgentSwitchVariant(ctx context.Context, sessionID, variant string) error
 	UpdateAgentModel(ctx context.Context) error
 	InitCoderAgent(ctx context.Context) error
 	InitCoderAgentNonInteractive(ctx context.Context) error

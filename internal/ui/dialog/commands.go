@@ -456,15 +456,15 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}))
 	}
 
-	// Add reasoning toggle for models that support it
 	cfg := c.com.Config()
 	if agentCfg, ok := cfg.Agents[config.AgentCoder]; ok {
 		providerCfg := cfg.GetProviderForModelName(agentCfg.Model)
 		model := cfg.GetModelByName(agentCfg.Model)
-		if providerCfg != nil && model != nil && model.CanReason {
+		if providerCfg != nil && model != nil {
 			selectedModel := cfg.Models[agentCfg.Model]
 
-			// Anthropic models: thinking toggle
+			// A model that reasons without naming levels has one knob
+			// and no presets to seed, so it keeps its own toggle.
 			if model.CanReason && len(model.ReasoningLevels) == 0 {
 				status := "Enable"
 				if selectedModel.Think {
@@ -473,10 +473,11 @@ func (c *Commands) defaultCommands() []*CommandItem {
 				commands = append(commands, NewCommandItem(c.com.Styles, "toggle_thinking", status+" Thinking Mode", "", ActionToggleThinking{}))
 			}
 
-			// OpenAI models: reasoning effort dialog
-			if len(model.ReasoningLevels) > 0 {
-				commands = append(commands, NewCommandItem(c.com.Styles, "select_reasoning_effort", "Select Reasoning Effort", "", ActionOpenDialog{
-					DialogID: ReasoningID,
+			// Everything else picks a preset, reasoning levels included:
+			// they seed variants of the same name.
+			if len(selectedModel.VariantNames(model)) > 0 {
+				commands = append(commands, NewCommandItem(c.com.Styles, "select_variant", "Select Variant", "ctrl+e", ActionOpenDialog{
+					DialogID: VariantsID,
 				}))
 			}
 		}

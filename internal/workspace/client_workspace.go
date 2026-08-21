@@ -314,6 +314,10 @@ func (w *ClientWorkspace) AgentSwitch(ctx context.Context, sessionID, agentID st
 	return w.client.AgentSwitchSessionAgent(ctx, w.workspaceID(), sessionID, agentID)
 }
 
+func (w *ClientWorkspace) AgentSwitchVariant(ctx context.Context, sessionID, variant string) error {
+	return w.client.AgentSwitchSessionVariant(ctx, w.workspaceID(), sessionID, variant)
+}
+
 func (w *ClientWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
 	return w.client.AgentSummarizeSession(ctx, w.workspaceID(), sessionID)
 }

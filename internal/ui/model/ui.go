@@ -2016,36 +2016,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if cmd := m.handleSelectAgent(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case dialog.ActionSelectReasoningEffort:
-		if m.isAgentBusy() {
-			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait..."))
-			break
+	case dialog.ActionSelectVariant:
+		if cmd := m.handleSelectVariant(msg.Variant); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
-
-		cfg := m.com.Config()
-		if cfg == nil {
-			cmds = append(cmds, util.ReportError(errors.New("configuration not found")))
-			break
-		}
-
-		agentCfg, ok := cfg.Agents[config.AgentCoder]
-		if !ok {
-			cmds = append(cmds, util.ReportError(errors.New("agent configuration not found")))
-			break
-		}
-
-		currentModel := cfg.Models[agentCfg.Model]
-		currentModel.ReasoningEffort = msg.Effort
-		if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, agentCfg.Model, currentModel); err != nil {
-			cmds = append(cmds, util.ReportError(err))
-			break
-		}
-
-		cmds = append(cmds, m.updateAgentModelCmd(func() tea.Msg {
-			m.com.Workspace.UpdateAgentModel(context.TODO())
-			return util.NewInfoMsg("Reasoning effort set to " + msg.Effort)
-		}))
-		m.dialog.CloseDialog(dialog.ReasoningID)
 	case dialog.ActionPermissionResponse:
 		m.dialog.CloseDialog(dialog.PermissionsID)
 		switch msg.Action {
@@ -2268,6 +2242,86 @@ func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
 	}
 }
 
+// handleSelectVariant points the session's model at a preset. The
+// variant lives on the session record, so it takes effect from the next
+// turn and needs no model rebuild.
+func (m *UI) handleSelectVariant(variant string) tea.Cmd {
+	m.dialog.CloseDialog(dialog.VariantsID)
+	if m.session == nil {
+		return util.ReportWarn("Start a session before switching variants.")
+	}
+	if m.session.Model.Variant == variant {
+		return nil
+	}
+
+	sessionID := m.session.ID
+	return func() tea.Msg {
+		if err := m.com.Workspace.AgentSwitchVariant(context.Background(), sessionID, variant); err != nil {
+			return util.ReportError(err)()
+		}
+		return util.NewInfoMsg(variantSetMessage(variant))
+	}
+}
+
+// variantSetMessage names what the user just selected. The baseline has
+// no name of its own, so it is described rather than quoted.
+func variantSetMessage(variant string) string {
+	if variant == "" {
+		return "Using the model's baseline parameters"
+	}
+	return "Variant set to " + variant
+}
+
+// cycleVariant steps to the preset after the one in effect, wrapping
+// through the baseline. Cycling is what makes a variant cheap to reach
+// mid-task, so it deliberately skips the dialog.
+func (m *UI) cycleVariant() tea.Cmd {
+	if m.session == nil {
+		return util.ReportWarn("Start a session before switching variants.")
+	}
+	choices := append([]string{""}, m.sessionVariants()...)
+	if len(choices) < 2 {
+		return util.ReportWarn("This model offers no variants.")
+	}
+	current := slices.Index(choices, m.session.Model.Variant)
+	if current < 0 {
+		current = 0
+	}
+	return m.handleSelectVariant(choices[(current+1)%len(choices)])
+}
+
+// sessionVariants lists the presets the session's model offers.
+func (m *UI) sessionVariants() []string {
+	model := m.selectedLargeModel()
+	return model.ModelCfg.VariantNames(&model.CatwalkCfg)
+}
+
+// openVariantsDialog opens the preset picker for the session's model.
+// There is nothing to switch without a session: the variant is recorded
+// on the session, not globally.
+func (m *UI) openVariantsDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.VariantsID) {
+		m.dialog.BringToFront(dialog.VariantsID)
+		return nil
+	}
+	if m.session == nil {
+		return util.ReportWarn("Start a session before switching variants.")
+	}
+	variants := m.sessionVariants()
+	if len(variants) == 0 {
+		return util.ReportWarn("This model offers no variants.")
+	}
+
+	variantsDialog, err := dialog.NewVariants(m.com,
+		m.selectedLargeModel().CatwalkCfg.Name, variants, m.session.Model.Variant)
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	m.dialog.OpenDialog(variantsDialog)
+	return nil
+}
+
 func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	var cmds []tea.Cmd
 
@@ -2410,6 +2464,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			return true
 		case key.Matches(msg, m.keyMap.Sessions):
 			if cmd := m.openSessionsDialog(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return true
+		case key.Matches(msg, m.keyMap.CycleVariant):
+			if cmd := m.cycleVariant(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 			return true
@@ -4332,8 +4391,8 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openCommandsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-	case dialog.ReasoningID:
-		if cmd := m.openReasoningDialog(); cmd != nil {
+	case dialog.VariantsID:
+		if cmd := m.openVariantsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case dialog.AgentsID:
@@ -4415,22 +4474,6 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	m.dialog.OpenDialog(commands)
 
 	return commands.InitialCmd()
-}
-
-// openReasoningDialog opens the reasoning effort dialog.
-func (m *UI) openReasoningDialog() tea.Cmd {
-	if m.dialog.ContainsDialog(dialog.ReasoningID) {
-		m.dialog.BringToFront(dialog.ReasoningID)
-		return nil
-	}
-
-	reasoningDialog, err := dialog.NewReasoning(m.com)
-	if err != nil {
-		return util.ReportError(err)
-	}
-
-	m.dialog.OpenDialog(reasoningDialog)
-	return nil
 }
 
 // openAgentsDialog opens the primary-agent picker for the current

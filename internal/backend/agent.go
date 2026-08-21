@@ -177,7 +177,6 @@ func (b *Backend) CancelSession(workspaceID, sessionID string) error {
 	return nil
 }
 
-// SummarizeSession triggers a session summarization.
 // SwitchSessionAgent points a session at a different primary agent.
 func (b *Backend) SwitchSessionAgent(ctx context.Context, workspaceID, sessionID, agentID string) error {
 	ws, err := b.GetWorkspace(workspaceID)
@@ -189,6 +188,21 @@ func (b *Backend) SwitchSessionAgent(ctx context.Context, workspaceID, sessionID
 	}
 	return ws.AgentCoordinator.SwitchAgent(ctx, sessionID, agentID)
 }
+
+// SwitchSessionVariant points a session's model at a different
+// parameter preset.
+func (b *Backend) SwitchSessionVariant(ctx context.Context, workspaceID, sessionID, variant string) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	if ws.AgentCoordinator == nil {
+		return ErrAgentNotInitialized
+	}
+	return ws.AgentCoordinator.SwitchVariant(ctx, sessionID, variant)
+}
+
+// SummarizeSession triggers a session summarization.
 
 func (b *Backend) SummarizeSession(ctx context.Context, workspaceID, sessionID string) error {
 	ws, err := b.GetWorkspace(workspaceID)

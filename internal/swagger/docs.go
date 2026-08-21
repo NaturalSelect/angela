@@ -792,6 +792,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/agent/sessions/{sid}/variant": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent"
+                ],
+                "summary": "Switch the session's model variant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Variant switch request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.VariantSwitchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/agent/update": {
             "post": {
                 "tags": [
@@ -3294,6 +3353,10 @@ const docTemplate = `{
                 "temperature": {
                     "description": "Temperature overrides the model's default sampling temperature.",
                     "type": "number"
+                },
+                "variant": {
+                    "description": "Variant names a parameter preset on the model config above.\nUnknown names degrade to the model's baseline parameters.",
+                    "type": "string"
                 }
             }
         },
@@ -3605,6 +3668,47 @@ const docTemplate = `{
                 },
                 "think": {
                     "description": "Used by anthropic models that can reason to indicate if the model should think.",
+                    "type": "boolean"
+                },
+                "top_k": {
+                    "type": "integer"
+                },
+                "top_p": {
+                    "type": "number"
+                },
+                "variants": {
+                    "description": "Variants are named parameter presets over the fields above. They\nkeep the model identity and override only the keys they name, so\nN models by M presets stays N+M configs instead of N*M.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.SelectedModelOverride"
+                    }
+                }
+            }
+        },
+        "config.SelectedModelOverride": {
+            "type": "object",
+            "properties": {
+                "frequency_penalty": {
+                    "type": "number"
+                },
+                "max_tokens": {
+                    "type": "integer"
+                },
+                "presence_penalty": {
+                    "type": "number"
+                },
+                "provider_options": {
+                    "description": "ProviderOptions merges key by key: the keys a variant names win,\nthe baseline's other keys survive.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "reasoning_effort": {
+                    "type": "string"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "think": {
                     "type": "boolean"
                 },
                 "top_k": {
@@ -4751,6 +4855,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "proto.VariantSwitchRequest": {
+            "type": "object",
+            "properties": {
+                "variant": {
                     "type": "string"
                 }
             }

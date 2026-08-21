@@ -63,7 +63,8 @@ func (c *blockingCoordinator) GenerateAgent(context.Context, string) (config.Age
 	return config.Agent{}, "", nil
 }
 
-func (c *blockingCoordinator) SwitchAgent(context.Context, string, string) error { return nil }
+func (c *blockingCoordinator) SwitchAgent(context.Context, string, string) error   { return nil }
+func (c *blockingCoordinator) SwitchVariant(context.Context, string, string) error { return nil }
 
 // insertAgentWorkspace installs a synthetic workspace with the given
 // coordinator (or none) and a workspace run context, mirroring the

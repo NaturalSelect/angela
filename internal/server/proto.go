@@ -980,6 +980,38 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionAgent(w http.ResponseWrite
 	w.WriteHeader(http.StatusOK)
 }
 
+// handlePostWorkspaceAgentSessionVariant switches the session's model
+// variant.
+//
+//	@Summary		Switch the session's model variant
+//	@Tags			agent
+//	@Accept			json
+//	@Param			id		path	string						true	"Workspace ID"
+//	@Param			sid		path	string						true	"Session ID"
+//	@Param			request	body	proto.VariantSwitchRequest	true	"Variant switch request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/variant [post]
+func (c *controllerV1) handlePostWorkspaceAgentSessionVariant(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+
+	var req proto.VariantSwitchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if err := c.backend.SwitchSessionVariant(r.Context(), id, sid, req.Variant); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handlePostWorkspaceAgentSessionShell runs a shell command in the workspace.
 //
 //	@Summary		Run shell command

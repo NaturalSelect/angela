@@ -123,6 +123,11 @@ definitions:
       temperature:
         description: Temperature overrides the model's default sampling temperature.
         type: number
+      variant:
+        description: |-
+          Variant names a parameter preset on the model config above.
+          Unknown names degrade to the model's baseline parameters.
+        type: string
     type: object
   config.AgentMode:
     enum:
@@ -366,6 +371,39 @@ definitions:
       think:
         description: Used by anthropic models that can reason to indicate if the model
           should think.
+        type: boolean
+      top_k:
+        type: integer
+      top_p:
+        type: number
+      variants:
+        additionalProperties:
+          $ref: '#/definitions/config.SelectedModelOverride'
+        description: |-
+          Variants are named parameter presets over the fields above. They
+          keep the model identity and override only the keys they name, so
+          N models by M presets stays N+M configs instead of N*M.
+        type: object
+    type: object
+  config.SelectedModelOverride:
+    properties:
+      frequency_penalty:
+        type: number
+      max_tokens:
+        type: integer
+      presence_penalty:
+        type: number
+      provider_options:
+        additionalProperties: {}
+        description: |-
+          ProviderOptions merges key by key: the keys a variant names win,
+          the baseline's other keys survive.
+        type: object
+      reasoning_effort:
+        type: string
+      temperature:
+        type: number
+      think:
         type: boolean
       top_k:
         type: integer
@@ -1140,6 +1178,11 @@ definitions:
       status:
         type: string
     type: object
+  proto.VariantSwitchRequest:
+    properties:
+      variant:
+        type: string
+    type: object
   proto.VersionInfo:
     properties:
       build_id:
@@ -1726,6 +1769,45 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Summarize session
+      tags:
+      - agent
+  /workspaces/{id}/agent/sessions/{sid}/variant:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: Variant switch request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.VariantSwitchRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Switch the session's model variant
       tags:
       - agent
   /workspaces/{id}/agent/update:

@@ -56,6 +56,7 @@ import (
 var (
 	errCoderAgentNotConfigured    = errors.New("coder agent not configured")
 	errAgentNotAvailable          = errors.New("agent not available")
+	errVariantNotAvailable        = errors.New("model variant not available")
 	errModelProviderNotConfigured = errors.New("model provider not configured")
 	errModelNotSelected           = errors.New("model config not selected")
 	errModelNotFound              = errors.New("model not found in provider config")
@@ -126,6 +127,7 @@ type Coordinator interface {
 	// SwitchAgent points the session at a different primary agent from
 	// the next turn on, and records the switch in the transcript.
 	SwitchAgent(ctx context.Context, sessionID, agentID string) error
+	SwitchVariant(ctx context.Context, sessionID, variant string) error
 }
 
 type coordinator struct {
@@ -859,9 +861,9 @@ func (c *coordinator) buildTools(ctx context.Context, agent config.Agent, isSubA
 }
 
 // sessionAgentConfig returns the agent config this turn runs on. The
-// session record is authoritative: SwitchAgent writes it, every later
-// turn reads it, so a switch survives restarts and applies to queued
-// prompts too.
+// session record is authoritative: SwitchAgent and SwitchVariant write
+// it, every later turn reads it, so a switch survives restarts and
+// applies to queued prompts too.
 //
 // A session with no recorded agent (a fresh one, or one created before
 // the record existed) runs the coder. So does a session pointing at an
@@ -874,14 +876,33 @@ func (c *coordinator) sessionAgentConfig(ctx context.Context, sessionID string) 
 	if err != nil {
 		slog.Warn("Failed to read the session's agent; falling back to the coder",
 			"error", err, "sessionID", sessionID)
-	} else if sess.Agent != "" {
-		if agentCfg, ok := agents[sess.Agent]; ok && !agentCfg.IsHidden() {
-			return agentCfg, nil
-		}
-		slog.Warn("Session points at an agent that is no longer available; falling back to the coder",
-			"sessionID", sessionID, "agent", sess.Agent)
+		return coderAgentConfig(agents)
 	}
 
+	agentCfg, ok := agents[sess.Agent]
+	if sess.Agent == "" || !ok || agentCfg.IsHidden() {
+		if sess.Agent != "" {
+			slog.Warn("Session points at an agent that is no longer available; falling back to the coder",
+				"sessionID", sessionID, "agent", sess.Agent)
+		}
+		agentCfg, err = coderAgentConfig(agents)
+		if err != nil {
+			return config.Agent{}, err
+		}
+	}
+
+	// A recorded variant outranks the agent's configured one. The
+	// config value only seeds a session; from the first turn on, the
+	// record is what the session runs, and the variant selector is how
+	// it changes. Editing config therefore steers new sessions, not
+	// ones already under way — the same rule the agent field follows.
+	if sess.Model.Variant != "" {
+		agentCfg.Variant = sess.Model.Variant
+	}
+	return agentCfg, nil
+}
+
+func coderAgentConfig(agents map[string]config.Agent) (config.Agent, error) {
 	agentCfg, ok := agents[config.AgentCoder]
 	if !ok {
 		return config.Agent{}, errCoderAgentNotConfigured
@@ -948,6 +969,77 @@ func agentSwitchedText(from string, to config.Agent) string {
 		return fmt.Sprintf("Switched to the %s agent.", name)
 	}
 	return fmt.Sprintf("Switched from %s to the %s agent.", from, name)
+}
+
+// SwitchVariant points a session at a different parameter preset of the
+// model it already runs on. Nothing about the session's identity moves:
+// same agent, same model, different request parameters.
+//
+// The empty name selects the model's baseline parameters, which is how
+// a user backs out of a preset. An unknown name is an error here, where
+// the user is watching and can pick again; per-turn resolution stays
+// lenient about the same name for the opposite reason.
+func (c *coordinator) SwitchVariant(ctx context.Context, sessionID, variant string) error {
+	sess, err := c.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("read session: %w", err)
+	}
+	if sess.Model.Variant == variant {
+		return nil
+	}
+
+	agentCfg, err := c.sessionAgentConfig(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	model, err := c.buildModel(ctx, agentCfg, false)
+	if err != nil {
+		return fmt.Errorf("resolve the session's model: %w", err)
+	}
+	if variant != "" && !slices.Contains(model.ModelCfg.VariantNames(&model.CatwalkCfg), variant) {
+		return fmt.Errorf("%w: %q on %q", errVariantNotAvailable, variant, model.ModelCfg.Model)
+	}
+
+	agentID := cmp.Or(sess.Agent, agentCfg.ID)
+	ref := model.Ref()
+	ref.Variant = variant
+	if err := c.sessions.UpdateAgentAndModel(ctx, sessionID, agentID, ref); err != nil {
+		return fmt.Errorf("record variant switch: %w", err)
+	}
+
+	if _, err := c.messages.Create(ctx, sessionID, message.CreateMessageParams{
+		Role: message.System,
+		Parts: []message.ContentPart{message.TextContent{
+			Text: variantSwitchedText(sess.Model.Variant, variant, modelDisplayName(model)),
+		}},
+		Model:    model.ModelCfg.Model,
+		Provider: model.ModelCfg.Provider,
+		Agent:    agentID,
+	}); err != nil {
+		// The switch itself is already durable; losing its trail must
+		// not fail the switch.
+		slog.Warn("Failed to write the variant switch trail",
+			"error", err, "sessionID", sessionID, "variant", variant)
+	}
+	return nil
+}
+
+// modelDisplayName prefers the catalog's display name and falls back to
+// the raw ID for models a provider discovered without one.
+func modelDisplayName(model Model) string {
+	return cmp.Or(model.CatwalkCfg.Name, model.ModelCfg.Model)
+}
+
+// variantSwitchedText renders the transcript line for a preset change.
+func variantSwitchedText(from, to, modelName string) string {
+	switch {
+	case to == "":
+		return fmt.Sprintf("Switched %s back to its baseline parameters.", modelName)
+	case from == "":
+		return fmt.Sprintf("Switched %s to the %s preset.", modelName, to)
+	default:
+		return fmt.Sprintf("Switched %s from the %s preset to %s.", modelName, from, to)
+	}
 }
 
 // recordSessionAgent stamps a session with the agent and model this turn

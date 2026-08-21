@@ -28,16 +28,24 @@ func (m *UI) modelInfo(width int) string {
 		if ok {
 			providerName = providerConfig.Name
 
+			// The session's variant overlays the model's baseline, so
+			// the sidebar has to resolve it too or it reports settings
+			// the turn is not actually running on.
+			effective := model.ModelCfg
+			if m.session != nil {
+				effective, _ = model.ModelCfg.WithVariant(m.session.Model.Variant, &model.CatwalkCfg)
+			}
+
 			// Only check reasoning if model can reason
 			if model.CatwalkCfg.CanReason {
 				if len(model.CatwalkCfg.ReasoningLevels) == 0 {
-					if model.ModelCfg.Think {
+					if effective.Think {
 						reasoningInfo = "Thinking On"
 					} else {
 						reasoningInfo = "Thinking Off"
 					}
 				} else {
-					reasoningEffort := cmp.Or(model.ModelCfg.ReasoningEffort, model.CatwalkCfg.DefaultReasoningEffort)
+					reasoningEffort := cmp.Or(effective.ReasoningEffort, model.CatwalkCfg.DefaultReasoningEffort)
 					reasoningInfo = fmt.Sprintf("Reasoning %s", common.FormatReasoningEffort(reasoningEffort))
 				}
 			}

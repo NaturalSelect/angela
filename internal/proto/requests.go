@@ -34,6 +34,12 @@ type AgentSwitchRequest struct {
 	Agent string `json:"agent"`
 }
 
+// VariantSwitchRequest asks the session to run its model on a different
+// parameter preset. An empty name selects the model's baseline.
+type VariantSwitchRequest struct {
+	Variant string `json:"variant"`
+}
+
 // ConfigCompactRequest represents a request to set compact mode.
 type ConfigCompactRequest struct {
 	Scope   config.Scope `json:"scope"`

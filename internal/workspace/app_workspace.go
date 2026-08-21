@@ -226,6 +226,13 @@ func (w *AppWorkspace) AgentSwitch(ctx context.Context, sessionID, agentID strin
 	return w.app.AgentCoordinator.SwitchAgent(ctx, sessionID, agentID)
 }
 
+func (w *AppWorkspace) AgentSwitchVariant(ctx context.Context, sessionID, variant string) error {
+	if w.app.AgentCoordinator == nil {
+		return errors.New("agent coordinator not initialized")
+	}
+	return w.app.AgentCoordinator.SwitchVariant(ctx, sessionID, variant)
+}
+
 func (w *AppWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
 	if w.app.AgentCoordinator == nil {
 		return errors.New("agent coordinator not initialized")

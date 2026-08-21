@@ -588,6 +588,22 @@ func (c *Client) AgentSwitchSessionAgent(ctx context.Context, id, sessionID, age
 	return nil
 }
 
+// AgentSwitchSessionVariant points a session's model at a different
+// parameter preset.
+func (c *Client) AgentSwitchSessionVariant(ctx context.Context, id, sessionID, variant string) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/variant", id, sessionID),
+		nil, jsonBody(proto.VariantSwitchRequest{Variant: variant}),
+		http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to switch variant: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to switch variant: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
 // InitiateAgentProcessing triggers agent initialization on the server.
 func (c *Client) InitiateAgentProcessing(ctx context.Context, id string, interactive bool) error {
 	body := jsonBody(proto.AgentInitRequest{Interactive: interactive})

@@ -45,9 +45,10 @@ type AWSSSO struct {
 		Close key.Binding
 	}
 
-	width  int
-	url    string
-	errMsg string
+	frame   *Frame
+	metrics FrameMetrics
+	url     string
+	errMsg  string
 }
 
 var _ Dialog = (*AWSSSO)(nil)
@@ -61,8 +62,11 @@ func NewAWSSSO(com *common.Common, command string) (*AWSSSO, tea.Cmd) {
 	m := &AWSSSO{
 		com:     com,
 		command: command,
-		width:   0, // Set dynamically in Draw().
-		state:   awsSSOStateWaiting,
+		frame: NewFrame(t, FrameSpec{
+			MaxWidth: 60,
+			Title:    "AWS SSO Authentication",
+		}),
+		state: awsSSOStateWaiting,
 	}
 
 	m.spinner = spinner.New(
@@ -138,25 +142,17 @@ func (m *AWSSSO) HandleMsg(msg tea.Msg) Action {
 
 // Draw renders the AWS SSO auth dialog.
 func (m *AWSSSO) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
-	var (
-		t           = m.com.Styles
-		dialogWidth = max(0, min(60, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-		dialogStyle = t.Dialog.View.Width(dialogWidth)
-	)
-	m.width = dialogWidth
-	view := dialogStyle.Render(m.dialogContent())
-	DrawCenter(scr, area, view)
-	return nil
+	t := m.com.Styles
+	m.metrics = m.frame.Measure(area)
+	view := t.Dialog.View.Width(m.metrics.Width).Render(m.dialogContent())
+	return m.frame.Draw(scr, area, view, nil)
 }
 
 func (m *AWSSSO) dialogContent() string {
-	t := m.com.Styles
-	innerWidth := m.width - t.Dialog.View.GetHorizontalFrameSize()
-
 	elements := []string{
 		m.headerContent(),
 		m.innerDialogContent(),
-		renderDialogHelp(t, &m.help, m, innerWidth),
+		m.frame.RenderHelp(&m.help, m, m.metrics.ContentWidth),
 	}
 	return strings.Join(elements, "\n")
 }
@@ -165,11 +161,11 @@ func (m *AWSSSO) headerContent() string {
 	var (
 		t            = m.com.Styles
 		titleStyle   = t.Dialog.Title
-		dialogStyle  = t.Dialog.View.Width(m.width)
+		dialogStyle  = t.Dialog.View.Width(m.metrics.Width)
 		headerOffset = titleStyle.GetHorizontalFrameSize() + dialogStyle.GetHorizontalFrameSize()
-		dialogTitle  = "AWS SSO Authentication"
+		dialogTitle  = m.frame.Spec().Title
 	)
-	return common.DialogTitle(t, titleStyle.Render(dialogTitle), m.width-headerOffset, t.Dialog.TitleGradFromColor, t.Dialog.TitleGradToColor)
+	return common.DialogTitle(t, titleStyle.Render(dialogTitle), m.metrics.Width-headerOffset, t.Dialog.TitleGradFromColor, t.Dialog.TitleGradToColor)
 }
 
 func (m *AWSSSO) innerDialogContent() string {
@@ -186,7 +182,7 @@ func (m *AWSSSO) innerDialogContent() string {
 	// innerWidth is the dialog's content area (total minus the View
 	// border). Every block sizes to this and uses padding for the inset, so
 	// nothing is re-wrapped when the dialog frame renders it.
-	innerWidth := m.width - t.Dialog.View.GetHorizontalFrameSize()
+	innerWidth := m.metrics.ContentWidth
 
 	switch m.state {
 	case awsSSOStateWaiting:

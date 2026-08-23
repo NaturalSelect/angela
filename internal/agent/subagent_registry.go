@@ -145,6 +145,16 @@ func (c *coordinator) reconcileSubagents() {
 // depth plus one). It is never baked into the cached executor: the same
 // entry can be reused across dispatches at different depths, and only
 // the per-dispatch resolution (its tool list) is depth-sensitive.
+// subagentExecutor returns the entry's cached executor, building it on first
+// use. Unlike dispatchSubAgent it resolves no identity, so callers that only
+// need somewhere to run — routing and cancellation — do not pay for a model
+// resolution they would throw away.
+func (c *coordinator) subagentExecutor(entry *subagentEntry) SessionAgent {
+	return entry.executor(func(agentCfg config.Agent) SessionAgent {
+		return c.buildAgent(agentCfg.ID, true)
+	})
+}
+
 func (c *coordinator) dispatchSubAgent(ctx context.Context, entry *subagentEntry, depth int) (SessionAgent, resolvedAgent, error) {
 	// A subagent is instantiated fresh for every dispatch and never
 	// stored: it has no session of its own to own an instance, and its
@@ -157,8 +167,5 @@ func (c *coordinator) dispatchSubAgent(ctx context.Context, entry *subagentEntry
 	if err != nil {
 		return nil, resolvedAgent{}, err
 	}
-	executor := entry.executor(func(agentCfg config.Agent) SessionAgent {
-		return c.buildAgent(agentCfg.ID, true)
-	})
-	return executor, resolved, nil
+	return c.subagentExecutor(entry), resolved, nil
 }

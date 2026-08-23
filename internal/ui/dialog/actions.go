@@ -44,6 +44,16 @@ type ActionSelectModel struct {
 	ReAuthenticate bool
 }
 
+// ActionSelectProvider is emitted when the user picks a provider, which
+// during onboarding precedes both authentication and model selection.
+// Configured reports whether the provider already holds credentials, so
+// the caller can skip straight to the model list.
+type ActionSelectProvider struct {
+	Provider       catwalk.Provider
+	Configured     bool
+	ReAuthenticate bool
+}
+
 // ActionSelectAgent is emitted when the user picks the primary agent
 // the session should run on.
 type ActionSelectAgent struct {
@@ -55,8 +65,9 @@ type (
 	ActionNewSession              struct{}
 	ActionToggleHelp              struct{}
 	ActionToggleCompactMode       struct{}
+	ActionToggleDetails           struct{}
+	ActionSuspend                 struct{}
 	ActionToggleThinking          struct{}
-	ActionTogglePills             struct{}
 	ActionExternalEditor          struct{}
 	ActionToggleYoloMode          struct{}
 	ActionToggleNotifications     struct{}

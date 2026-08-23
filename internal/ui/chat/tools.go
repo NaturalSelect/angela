@@ -566,6 +566,54 @@ func toolErrorContent(sty *styles.Styles, result *message.ToolResult, width int)
 	return fmt.Sprintf("%s %s", errTag, sty.Tool.ErrorMessage.Render(errContent))
 }
 
+// toolKindIcon returns the glyph for what kind of work a tool does. The names
+// come from the same constants NewToolMessageItem routes on, so a tool cannot
+// pick up a renderer here and a different identity there.
+func toolKindIcon(name string) string {
+	switch name {
+	case tools.BashToolName, tools.JobOutputToolName, tools.JobKillToolName:
+		return styles.ToolIconShell
+	case tools.WriteToolName, tools.EditToolName, tools.MultiEditToolName:
+		return styles.ToolIconWrite
+	case tools.ViewToolName, tools.DownloadToolName:
+		return styles.ToolIconRead
+	case tools.GlobToolName, tools.GrepToolName, tools.LSToolName, tools.SourcegraphToolName:
+		return styles.ToolIconSearch
+	case tools.FetchToolName, tools.WebFetchToolName:
+		return styles.ToolIconFetch
+	case tools.WebSearchToolName:
+		return styles.ToolIconWeb
+	case agent.AgentToolName:
+		return styles.ToolIconAgent
+	case tools.TodosToolName:
+		return styles.ToolIconTodo
+	case tools.DiagnosticsToolName, tools.LSPRestartToolName, tools.ReferencesToolName,
+		tools.DefinitionToolName, tools.RenameToolName, tools.ReplaceSymbolToolName,
+		tools.CallHierarchyToolName, tools.SymbolsToolName:
+		return styles.ToolIconLSP
+	}
+	if IsDockerMCPTool(name) || strings.HasPrefix(name, "mcp_") {
+		return styles.ToolIconMCP
+	}
+	return styles.ToolIconGeneric
+}
+
+// toolStatusStyle returns the style carrying a tool's status color. The status
+// styles bake in their own glyph, which must be cleared: the glyph comes from
+// the tool kind now and lipgloss would otherwise render both.
+func toolStatusStyle(sty *styles.Styles, status ToolStatus) lipgloss.Style {
+	switch status {
+	case ToolStatusSuccess:
+		return sty.Tool.IconSuccess.SetString("")
+	case ToolStatusError:
+		return sty.Tool.IconError.SetString("")
+	case ToolStatusCanceled:
+		return sty.Tool.IconCancelled.SetString("")
+	default:
+		return sty.Tool.IconPending.SetString("")
+	}
+}
+
 // toolIcon returns the status icon for a tool call.
 // toolIcon returns the status icon for a tool call based on its status.
 func toolIcon(sty *styles.Styles, status ToolStatus) string {
@@ -622,7 +670,7 @@ func toolParamList(sty *styles.Styles, params []string, width int, opts *ToolRen
 // When opts.ExpandedContent is true, long parameters wrap instead of truncating.
 func toolHeader(sty *styles.Styles, status ToolStatus, name string, width int, opts *ToolRenderOpts, params ...string) string {
 	nested := opts != nil && opts.Compact
-	icon := toolIcon(sty, status)
+	icon := toolStatusStyle(sty, status).Render(toolKindIcon(name))
 	nameStyle := sty.Tool.NameNormal
 	if nested {
 		nameStyle = sty.Tool.NameNested

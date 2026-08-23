@@ -31,6 +31,7 @@ type FilePicker struct {
 	imgPrevWidth, imgPrevHeight int
 	cellSizeW, cellSizeH        int
 
+	frame           *Frame
 	fp              filepicker.Model
 	help            help.Model
 	previewingImage bool // indicates if an image is being previewed
@@ -61,6 +62,13 @@ var _ Dialog = (*FilePicker)(nil)
 func NewFilePicker(com *common.Common) (*FilePicker, tea.Cmd) {
 	f := new(FilePicker)
 	f.com = com
+
+	f.frame = NewFrame(com.Styles, FrameSpec{
+		Title:     "Add Image",
+		MaxWidth:  filePickerMinWidth,
+		MaxHeight: filePickerMaxHeight,
+		Gap:       1,
+	})
 
 	help := help.New()
 	help.Styles = com.Styles.DialogHelpStyles()
@@ -215,27 +223,44 @@ func (f *FilePicker) HandleMsg(msg tea.Msg) Action {
 }
 
 const (
-	filePickerMinWidth  = 70
-	filePickerMinHeight = 10
+	filePickerMinWidth = 70
+	// filePickerMaxHeight allows room for an image preview above the
+	// file list. The dialog frame, title, gap, and help consume some of
+	// this; Draw splits the remainder between preview and list.
+	filePickerMaxHeight = 30
+	// filePickerMinFileRows is the minimum file list height kept visible
+	// even when a preview is shown.
+	filePickerMinFileRows = 3
 )
 
 // Draw renders the [FilePicker] dialog as a string.
 func (f *FilePicker) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := f.com.Styles
-	width := max(0, min(filePickerMinWidth, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	height := max(0, min(10, area.Dy()-t.Dialog.View.GetVerticalBorderSize()))
-	innerWidth := width - t.Dialog.View.GetHorizontalFrameSize()
+	m := f.frame.Measure(area)
+	innerWidth := m.ContentWidth
 
-	// Scale down image preview on small screens. Hide it entirely
-	// when the dialog is too short to show both preview and files.
+	// The content height is what remains after the view chrome
+	// (border + padding). The title, gap, and help lines are rendered
+	// by the frame itself; ContentHeight already accounts for those
+	// when the frame's Context/Render pipeline is used, but the
+	// filepicker uses its own title/help so we subtract them here.
+	titleCost := t.Dialog.Title.GetVerticalFrameSize() + titleContentHeight
+	helpCost := t.Dialog.HelpView.GetVerticalFrameSize()
+	gapCost := f.frame.Spec().Gap
+	bodyHeight := max(0, m.ContentHeight-titleCost-helpCost-gapCost)
+
+	// Split bodyHeight between image preview and file list.
 	imgPrevHeight := 0
-	if height > 5 {
-		imgPrevHeight = filePickerMinHeight*2 - t.Dialog.ImagePreview.GetVerticalFrameSize()
+	fileListHeight := bodyHeight
+	if bodyHeight > filePickerMinFileRows+2 {
+		// Give half the body to the preview, but never starve the list.
+		imgPrevHeight = max(0, bodyHeight/2-t.Dialog.ImagePreview.GetVerticalFrameSize())
+		fileListHeight = bodyHeight - imgPrevHeight - t.Dialog.ImagePreview.GetVerticalFrameSize()
 	}
 	imgPrevWidth := innerWidth - t.Dialog.ImagePreview.GetHorizontalFrameSize()
 	f.imgPrevWidth = imgPrevWidth
 	f.imgPrevHeight = imgPrevHeight
-	f.fp.SetHeight(height)
+	f.fp.SetHeight(max(1, fileListHeight))
 
 	styles := t.FilePicker
 	styles.File = styles.File.Width(innerWidth)
@@ -244,10 +269,8 @@ func (f *FilePicker) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	styles.DisabledSelected = styles.DisabledSelected.PaddingLeft(1).Width(innerWidth)
 	f.fp.Styles = styles
 
-	rc := NewRenderContext(t, width)
-	rc.Gap = 1
-	rc.Title = "Add Image"
-	rc.Help = renderDialogHelp(t, &f.help, f, innerWidth)
+	rc := f.frame.Context(m)
+	rc.Help = f.frame.RenderHelp(&f.help, f, innerWidth)
 
 	if imgPrevHeight > 0 {
 		imgPreview := t.Dialog.ImagePreview.Align(lipgloss.Center).Width(innerWidth).Render(f.imagePreview(imgPrevWidth, imgPrevHeight))
@@ -257,10 +280,7 @@ func (f *FilePicker) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	files := strings.TrimSpace(f.fp.View())
 	rc.AddPart(files)
 
-	view := rc.Render()
-
-	DrawCenter(scr, area, view)
-	return nil
+	return f.frame.Draw(scr, area, rc.Render(), nil)
 }
 
 var (

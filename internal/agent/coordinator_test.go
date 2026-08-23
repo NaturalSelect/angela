@@ -16,7 +16,9 @@ import (
 	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,6 +29,10 @@ type mockSessionAgent struct {
 	agentID   string
 	runFunc   func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error)
 	cancelled []string
+	cleared   []string
+	cancelAll int
+	busy      bool
+	queued    []string
 }
 
 func (m *mockSessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
@@ -41,12 +47,15 @@ func (m *mockSessionAgent) AgentID() string { return m.agentID }
 func (m *mockSessionAgent) Cancel(sessionID string) {
 	m.cancelled = append(m.cancelled, sessionID)
 }
-func (m *mockSessionAgent) CancelAll()                                  {}
-func (m *mockSessionAgent) IsSessionBusy(sessionID string) bool         { return false }
-func (m *mockSessionAgent) IsBusy() bool                                { return false }
-func (m *mockSessionAgent) QueuedPrompts(sessionID string) int          { return 0 }
-func (m *mockSessionAgent) QueuedPromptsList(sessionID string) []string { return nil }
-func (m *mockSessionAgent) ClearQueue(sessionID string)                 {}
+func (m *mockSessionAgent) CancelAll()                                  { m.cancelAll++ }
+func (m *mockSessionAgent) IsSessionBusy(sessionID string) bool         { return m.busy }
+func (m *mockSessionAgent) IsBusy() bool                                { return m.busy }
+func (m *mockSessionAgent) QueuedPrompts(sessionID string) int          { return len(m.queued) }
+func (m *mockSessionAgent) QueuedPromptsList(sessionID string) []string { return m.queued }
+func (m *mockSessionAgent) ClearQueue(sessionID string) {
+	m.cleared = append(m.cleared, sessionID)
+}
+
 func (m *mockSessionAgent) Summarize(context.Context, string, CompactAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error {
 	return nil
 }
@@ -57,10 +66,12 @@ func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCf
 	require.NoError(t, err)
 	cfg.Config().Providers.Set(providerID, providerCfg)
 	return &coordinator{
-		cfg:         cfg,
-		sessions:    env.sessions,
-		messages:    env.messages,
-		permissions: env.permissions,
+		cfg:            cfg,
+		sessions:       env.sessions,
+		messages:       env.messages,
+		permissions:    env.permissions,
+		subagents:      newSubagentRegistry(),
+		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
 }
 
@@ -502,7 +513,7 @@ func TestUpdateParentSessionCost(t *testing.T) {
 
 		err = coord.updateParentSessionCost(t.Context(), child.ID, "non-existent")
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "get parent session")
+		require.ErrorIs(t, err, session.ErrSessionNotFound)
 	})
 
 	t.Run("zero cost handled correctly", func(t *testing.T) {

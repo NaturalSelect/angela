@@ -2,7 +2,6 @@
 package logo
 
 import (
-	"fmt"
 	"image/color"
 	"strings"
 
@@ -15,89 +14,42 @@ import (
 // a given amount via the boolean argument.
 type letterform func(bool) string
 
-const diag = `╱`
+// angelaLetterforms spells ANGELA.
+var angelaLetterforms = []letterform{LetterA, LetterN, LetterG, LetterE, LetterL, LetterA}
 
 // Opts are the options for rendering the Angela title art.
 type Opts struct {
-	FieldColor   color.Color // diagonal lines
 	TitleColorA  color.Color // left gradient ramp point
 	TitleColorB  color.Color // right gradient ramp point
-	CharmColor   color.Color // Charm™ text color
 	VersionColor color.Color // version text color
 	Width        int         // width of the rendered logo, used for truncation
 
-	// When true, stretch a random letterform on each render. Has no effect in
-	// compact mode. Mainly for testing. In production you will want to cache
-	// the stretched letterform to keep the logo from jittering on resize.
-	//
-	// NOTE: currently a no-op — Render doesn't use letterforms while the
-	// angela title is a placeholder (see Render's doc comment).
+	// When true, stretch a random letterform on each render. Mainly for
+	// testing. In production you will want to cache the stretched
+	// letterform to keep the logo from jittering on resize.
 	Unstable bool
 }
 
-// Render renders the Angela logo. Set the argument to true to render the narrow
-// version, intended for use in a sidebar.
+// Render renders the Angela wordmark as a block-character letterform wall,
+// gradient-tinted column by column.
 //
-// The compact argument determines whether it renders compact for the sidebar
-// or wider for the main pane.
-//
-// NOTE: the title is rendered as plain gradient text rather than blocky
-// letterforms. The letterform set in letterforms.go only covers
-// C/E/EAlt/H/P/R/SAlt/U/Y/YAlt and can't spell "ANGELA" (missing A/N/G/L).
-// This is a placeholder until those letterforms are designed.
+// The compact argument selects the single-line wordmark used where a full
+// letterform wall doesn't fit, such as a one-row header.
 func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
-	fg := func(c color.Color, s string) string {
-		return lipgloss.NewStyle().Foreground(c).Render(s)
-	}
-
-	// Title.
-	name := "angela"
-	angela := styles.ApplyForegroundGrad(base, name, o.TitleColorA, o.TitleColorB)
-	angelaWidth := lipgloss.Width(angela)
-
-	// Version. (There is no Charm™-equivalent mark configured for this
-	// build, so the meta row is just the version, right-aligned to the
-	// title width.)
-	version = ansi.Truncate(version, angelaWidth, "…") // truncate version if too long.
-	gap := max(0, angelaWidth-lipgloss.Width(version))
-	metaRow := strings.Repeat(" ", gap) + fg(o.VersionColor, version)
-
-	// Join the meta row and big title.
-	angela = strings.TrimSpace(metaRow + "\n" + angela)
-
-	// Narrow version.
 	if compact {
-		field := fg(o.FieldColor, strings.Repeat(diag, angelaWidth))
-		return strings.Join([]string{field, field, angela, field, ""}, "\n")
+		return compactRender(base, version, o)
 	}
 
-	fieldHeight := lipgloss.Height(angela)
-
-	// Left field.
-	const leftWidth = 6
-	leftFieldRow := fg(o.FieldColor, strings.Repeat(diag, leftWidth))
-	leftField := new(strings.Builder)
-	for range fieldHeight {
-		fmt.Fprintln(leftField, leftFieldRow)
+	stretch := -1
+	if o.Unstable {
+		stretch = cachedRandN(len(angelaLetterforms))
 	}
 
-	// Right field.
-	rightWidth := max(15, o.Width-angelaWidth-leftWidth-2) // 2 for the gap.
-	const stepDownAt = 0
-	rightField := new(strings.Builder)
-	for i := range fieldHeight {
-		width := rightWidth
-		if i >= stepDownAt {
-			width = rightWidth - (i - stepDownAt)
-		}
-		fmt.Fprint(rightField, fg(o.FieldColor, strings.Repeat(diag, width)), "\n")
-	}
+	wall := renderWord(1, stretch, angelaLetterforms...)
+	logo := tintColumns(wall, o.TitleColorA, o.TitleColorB)
+	logo = appendVersion(logo, version, o.VersionColor)
 
-	// Return the wide version.
-	const hGap = " "
-	logo := lipgloss.JoinHorizontal(lipgloss.Top, leftField.String(), hGap, angela, hGap, rightField.String())
 	if o.Width > 0 {
-		// Truncate the logo to the specified width.
 		lines := strings.Split(logo, "\n")
 		for i, line := range lines {
 			lines[i] = ansi.Truncate(line, o.Width, "")
@@ -107,14 +59,79 @@ func Render(base lipgloss.Style, version string, compact bool, o Opts) string {
 	return logo
 }
 
-// SmallRender renders a smaller version of the Angela logo, suitable for
-// smaller windows or sidebar usage.
-func SmallRender(t *styles.Styles, width int) string {
-	title := styles.ApplyBoldForegroundGrad(t.Logo.GradCanvas, "angela", t.Logo.SmallGradFromColor, t.Logo.SmallGradToColor)
-	remainingWidth := width - lipgloss.Width(title) - 1 // 1 for the space after the name
-	if remainingWidth > 0 {
-		lines := strings.Repeat("╱", remainingWidth)
-		title = fmt.Sprintf("%s %s", title, t.Logo.SmallDiagonals.Render(lines))
+// compactRender renders the single-line wordmark plus the version.
+func compactRender(base lipgloss.Style, version string, o Opts) string {
+	title := styles.ApplyBoldForegroundGrad(base, WordmarkText, o.TitleColorA, o.TitleColorB)
+	if version == "" {
+		return title
 	}
-	return title
+	return title + "  " + lipgloss.NewStyle().Foreground(o.VersionColor).Render(version)
+}
+
+// WordmarkText is the letter-spaced Angela wordmark used wherever the
+// letterform wall is too tall to fit.
+const WordmarkText = "A N G E L A"
+
+// Wordmark renders the single-line Angela wordmark, letter-spaced and
+// gradient-tinted. It's the mark used in one-row chrome such as the header and
+// the post-exit banner.
+func Wordmark(t *styles.Styles, width int) string {
+	mark := styles.ApplyBoldForegroundGrad(
+		t.Logo.GradCanvas,
+		WordmarkText,
+		t.Logo.SmallGradFromColor,
+		t.Logo.SmallGradToColor,
+	)
+	if width > 0 {
+		mark = ansi.Truncate(mark, width, "")
+	}
+	return mark
+}
+
+// appendVersion adds a right-aligned caption row beneath the wordmark.
+func appendVersion(logo, version string, c color.Color) string {
+	if version == "" {
+		return logo
+	}
+
+	lines := strings.Split(logo, "\n")
+	width := 0
+	for _, line := range lines {
+		width = max(width, ansi.StringWidth(line))
+	}
+
+	version = ansi.Truncate(version, width, "…")
+	gap := max(0, width-ansi.StringWidth(version))
+	caption := strings.Repeat(" ", gap) +
+		lipgloss.NewStyle().Foreground(c).Render(version)
+
+	return logo + "\n" + caption
+}
+
+// tintColumns tints the letterform wall column by column along the gradient,
+// leaving blank cells untouched.
+func tintColumns(wall string, from, to color.Color) string {
+	rows := strings.Split(wall, "\n")
+	width := 0
+	grid := make([][]rune, len(rows))
+	for y, row := range rows {
+		grid[y] = []rune(row)
+		width = max(width, len(grid[y]))
+	}
+
+	ramp := lipgloss.Blend1D(max(width, 1), from, to)
+	var b strings.Builder
+	for y, row := range grid {
+		if y > 0 {
+			b.WriteRune('\n')
+		}
+		for x, r := range row {
+			if r == ' ' {
+				b.WriteRune(' ')
+				continue
+			}
+			b.WriteString(lipgloss.NewStyle().Foreground(ramp[x]).Render(string(r)))
+		}
+	}
+	return b.String()
 }

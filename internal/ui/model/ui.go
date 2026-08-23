@@ -53,6 +53,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/completions"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	fimage "github.com/NaturalSelect/angela/internal/ui/image"
+	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/logo"
 	"github.com/NaturalSelect/angela/internal/ui/notification"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -62,13 +63,13 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/ultraviolet/layout"
 	"github.com/charmbracelet/ultraviolet/screen"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/editor"
 	xstrings "github.com/charmbracelet/x/exp/strings"
 )
 
 // Compact mode breakpoints.
 const (
-	compactModeWidthBreakpoint  = 120
 	compactModeHeightBreakpoint = 30
 )
 
@@ -78,15 +79,28 @@ const pasteLinesThreshold = 10
 // If pasted text has more than 1000 columns, treat it as a file attachment.
 const pasteColsThreshold = 1000
 
-// Session details panel max height.
-const sessionDetailsMaxHeight = 20
+// Session details panel max size.
+const (
+	sessionDetailsMaxHeight = 24
+	sessionDetailsMaxWidth  = 100
+)
 
 // TextareaMaxHeight is the maximum height of the prompt textarea.
 const TextareaMaxHeight = 15
 
-// editorHeightMargin is the vertical margin added to the textarea height to
-// account for the attachments row (top) and bottom margin.
-const editorHeightMargin = 2
+// editorHeightMargin is the vertical margin added to the textarea height: the
+// attachments row on top, plus the box's own top and bottom border rows.
+const editorHeightMargin = 3
+
+// editorPromptWidth is the gutter width: marker and gap.
+const editorPromptWidth = 2
+
+// editorPromptGlyph is the marker on the first editor line.
+const editorPromptGlyph = "❯ "
+
+// editorBoxBorders is the column count the box border takes from the editor
+// band: one on each side.
+const editorBoxBorders = 2
 
 // TextareaMinHeight is the minimum height of the prompt textarea.
 const TextareaMinHeight = 3
@@ -99,7 +113,6 @@ const (
 	uiFocusNone uiFocusState = iota
 	uiFocusEditor
 	uiFocusMain
-	uiFocusSidebar
 )
 
 type uiState uint8
@@ -173,8 +186,13 @@ type (
 
 // UI represents the main user interface model.
 type UI struct {
-	com          *common.Common
-	session      *session.Session
+	com     *common.Common
+	session *session.Session
+	// sessionStack holds the levels drilled down from, root first. session
+	// is always the level in view, so everything reading it — the pubsub
+	// filter, the busy cache, the sidebar state — follows the stack top
+	// without knowing the stack exists.
+	sessionStack []sessionStackFrame
 	sessionFiles []SessionFile
 
 	// keeps track of read files while we don't have a session id
@@ -244,9 +262,6 @@ type UI struct {
 	// Attachment list
 	attachments *attachments.Attachments
 
-	readyPlaceholder   string
-	workingPlaceholder string
-
 	// Completions state
 	completions              *completions.Completions
 	completionsOpen          bool
@@ -260,6 +275,11 @@ type UI struct {
 	// onboarding state
 	onboarding struct {
 		yesInitializeSelected bool
+
+		// step is the stage of the first-run flow; provider is the one
+		// picked in its first step, which the later steps act on.
+		step     onboardingStep
+		provider catwalk.Provider
 	}
 
 	// lspStates / lspDiagnostics memoize the workspace LSP state and
@@ -282,21 +302,6 @@ type UI struct {
 	// skills
 	skillStates []*skills.SkillState
 
-	// sidebarLogo keeps a cached version of the sidebar sidebarLogo.
-	sidebarLogo string
-
-	// Sidebar scroll state for virtual scrolling.
-	sidebarOffset           int  // current scroll offset in lines
-	sidebarScrollable       bool // true when sidebar content exceeds available height
-	sidebarScrollbarVisible bool
-	sidebarScrollbarSeq     int    // sequence number for auto-hide timer
-	sidebarMaxOffsetVal     int    // max scroll offset, computed in updateSidebarScrollState
-	sidebarContent          string // cached rendered sidebar content
-	sidebarTotalLines       int    // total lines in sidebarContent
-	sidebarContentHeight    int    // available height for sidebar content
-	sidebarContentWidth     int    // available width for sidebar content
-	sidebarDrawLogo         string // logo to render (may differ from sidebarLogo for short heights)
-
 	// Notification state
 	notifyBackend       notification.Backend
 	notifyWindowFocused bool
@@ -311,13 +316,9 @@ type UI struct {
 	// by user toggle or auto-switch based on window size)
 	isCompact bool
 
-	// detailsOpen tracks whether the details panel is open (in compact mode)
+	// detailsOpen tracks whether the details panel is open.
 	detailsOpen bool
 
-	// pills state
-	pillsExpanded      bool
-	pillsAutoExpanded  bool
-	focusedPillSection pillSection
 	// promptQueue / promptQueueItems mirror the session's queued prompts.
 	// They are event-driven with a TTL backstop, fetched off-thread by
 	// dispatchPromptQueueRefresh (see workspace_cache.go); promptQueue is
@@ -362,7 +363,6 @@ type UI struct {
 	// like promptQueueGen it lets a stale in-flight probe result be
 	// discarded and re-fetched instead of clobbering newer state.
 	busyFetchGen uint64
-	pillsView    string
 
 	// Todo spinner
 	todoSpinner    spinner.Model
@@ -411,7 +411,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 
 	todoSpinner := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),
-		spinner.WithStyle(com.Styles.Pills.TodoSpinner),
+		spinner.WithStyle(com.Styles.TurnStatus.Spinner),
 	)
 
 	// Attachments component
@@ -478,8 +478,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		}
 	}
 	ui.setEditorPrompt(yolo)
-	ui.randomizePlaceholders()
-	ui.textarea.Placeholder = ui.readyPlaceholder
+	ui.textarea.Placeholder = ui.editorPlaceholder()
 	ui.status = status
 
 	// Initialize compact mode from config
@@ -513,7 +512,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 func (m *UI) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	if m.state == uiOnboarding {
-		if cmd := m.openModelsDialog(); cmd != nil {
+		if cmd := m.openOnboardingStep(onboardingStepProvider); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -756,12 +755,23 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	case loadSessionMsg:
+		// Sub-session navigation: push/pop deferred to here so a
+		// failed load (which sends ReportError, not loadSessionMsg)
+		// never touches the stack.
+		if msg.enterFrame != nil {
+			m.sessionStack = append(m.sessionStack, *msg.enterFrame)
+		}
+		if msg.leaveLevel && len(m.sessionStack) > 0 {
+			m.sessionStack = m.sessionStack[:len(m.sessionStack)-1]
+		}
+		if msg.clearStack {
+			m.sessionStack = nil
+		}
 		if m.forceCompactMode {
 			m.isCompact = true
 		}
 		m.setState(uiChat, m.focus)
 		m.session = msg.session
-		m.sidebarOffset = 0
 		m.sessionFiles = msg.files
 		// Session switch: the memoized busy state and queued prompts
 		// belong to the previous session. Drop them and re-fetch
@@ -780,9 +790,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
 		cmds = append(cmds, m.loadSessionMessagesCmd(m.session.ID))
-		if cmd := m.autoExpandPillsIfReasonable(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 		// If a bang command was issued before the session finished
 		// loading, start it now that the chat list is stable.
 		if m.pendingBangCommand != "" {
@@ -862,25 +869,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.session != nil && msg.Payload.ID == m.session.ID {
 			prevHasInProgress := hasInProgressTodo(m.session.Todos)
-			prevPillsHeight := m.pillsAreaHeight()
 			m.session = &msg.Payload
 			if !prevHasInProgress && hasInProgressTodo(m.session.Todos) {
 				m.todoIsSpinning = true
 				cmds = append(cmds, m.todoSpinner.Tick)
 			}
-			// The pills panel reserves vertical space that the chat area
-			// must yield. Recompute the layout whenever that footprint
-			// changes (todos appearing, the list growing, etc.) so the
-			// box renders on first paint rather than waiting for a toggle.
-			// When the footprint is unchanged we still re-render the pill
-			// content so status changes (e.g. the in-progress spinner)
-			// show up.
-			if m.pillsAreaHeight() != prevPillsHeight {
-				m.updateLayoutAndSize()
-			} else {
-				m.renderPills()
-			}
-			m.autoExpandPillsIfReasonable()
 		}
 	case pubsub.Event[message.Message]:
 		// Check if this is a child session message for an agent tool.
@@ -925,8 +918,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.todoIsSpinning && !m.isAgentBusy() {
 			m.todoIsSpinning = false
 		}
-		// there is a number of things that could change the pills here so we want to re-render
-		m.renderPills()
 	case pubsub.Event[history.File]:
 		cmds = append(cmds, m.handleFileEvent(msg.Payload))
 	case pubsub.Event[app.LSPEvent]:
@@ -1056,7 +1047,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Adjust for chat area position
 			x -= m.layout.main.Min.X
 			y -= m.layout.main.Min.Y
-			if !image.Pt(msg.X, msg.Y).In(m.layout.sidebar) {
+			{
 				if handled, cmd := m.chat.HandleMouseDown(x, y); handled {
 					m.lastClickTime = time.Now()
 					if cmd != nil {
@@ -1166,17 +1157,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// others send DeltaY=1.
 		switch m.state {
 		case uiChat:
-			// When sidebar is focused, route wheel events to sidebar scrolling.
-			if m.focus == uiFocusSidebar {
-				lines := int(msg.DeltaY)
-				if lines != 0 {
-					m.sidebarOffset = max(0, min(m.sidebarOffset+lines, m.sidebarMaxOffsetVal))
-					m.sidebarScrollbarSeq++
-					m.sidebarScrollbarVisible = true
-					cmds = append(cmds, sidebarScrollbarHideCmd(m.sidebarScrollbarSeq))
-				}
-				break
-			}
 			if msg.DeltaX != 0 {
 				m.chat.ScrollSelectedShellHorizontal(int(msg.DeltaX))
 			}
@@ -1228,10 +1208,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateLayoutAndSize()
 			}
 		}
-	case sidebarScrollbarHideMsg:
-		if msg.seq == m.sidebarScrollbarSeq && m.focus != uiFocusSidebar {
-			m.sidebarScrollbarVisible = false
-		}
 	case spinner.TickMsg:
 		if m.dialog.HasDialogs() {
 			// route to dialog
@@ -1243,7 +1219,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.todoSpinner, cmd = m.todoSpinner.Update(msg)
 			if cmd != nil {
-				m.renderPills()
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -1331,6 +1306,12 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+	case dialog.ProvidersCatalogMsg:
+		// Routed here for the same reason as ModelsCatalogMsg: the
+		// catalog can land after another dialog has been stacked on top.
+		if d, ok := m.dialog.Dialog(dialog.ProvidersID).(*dialog.Providers); ok {
+			d.SetProviders(msg.Providers)
+		}
 	case util.InfoMsg:
 		if msg.Type == util.InfoTypeError {
 			slog.Error("Error reported", "error", msg.Msg)
@@ -1387,17 +1368,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.focus {
 	case uiFocusMain:
 	case uiFocusEditor:
-		// Textarea placeholder logic
-		if m.bangMode {
-			m.textarea.Placeholder = "Run a shell command"
-		} else if m.isAgentBusy() {
-			m.textarea.Placeholder = m.workingPlaceholder
-		} else {
-			m.textarea.Placeholder = m.readyPlaceholder
-		}
-		if !m.bangMode && m.yoloModeCached() {
-			m.textarea.Placeholder = "Yolo mode!"
-		}
+		m.textarea.Placeholder = m.editorPlaceholder()
 	}
 
 	// TTL backstop: schedule an off-thread re-probe for any memoized
@@ -1695,11 +1666,6 @@ func (m *UI) handleClickFocus(msg tea.MouseClickMsg) (cmd tea.Cmd) {
 	switch {
 	case m.state != uiChat:
 		return nil
-	case m.focus != uiFocusSidebar && image.Pt(msg.X, msg.Y).In(m.layout.sidebar) && m.sidebarScrollable:
-		m.focus = uiFocusSidebar
-		m.textarea.Blur()
-		m.chat.Blur()
-		return nil
 	case m.focus != uiFocusEditor && image.Pt(msg.X, msg.Y).In(m.layout.editor):
 		m.focus = uiFocusEditor
 		if m.activeInline != nil {
@@ -1707,11 +1673,9 @@ func (m *UI) handleClickFocus(msg tea.MouseClickMsg) (cmd tea.Cmd) {
 		} else {
 			cmd = m.textarea.Focus()
 		}
-		m.sidebarScrollbarVisible = false
 		m.chat.Blur()
 	case m.focus != uiFocusMain && image.Pt(msg.X, msg.Y).In(m.layout.main):
 		m.focus = uiFocusMain
-		m.sidebarScrollbarVisible = false
 		m.textarea.Blur()
 		m.chat.Focus()
 	}
@@ -1898,7 +1862,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	switch msg := action.(type) {
 	// Generic dialog messages
 	case dialog.ActionClose:
-		if isOnboarding && m.dialog.ContainsDialog(dialog.ModelsID) {
+		if isOnboarding {
+			if cmd := m.closeOnboardingDialog(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 			break
 		}
 
@@ -1907,12 +1874,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 
 		m.dialog.CloseFrontDialog()
-
-		if isOnboarding {
-			if cmd := m.openModelsDialog(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
 
 		if m.focus == uiFocusEditor {
 			cmds = append(cmds, m.textarea.Focus())
@@ -1925,7 +1886,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	// Session dialog messages.
 	case dialog.ActionSelectSession:
 		m.dialog.CloseDialog(dialog.SessionsID)
-		cmds = append(cmds, m.loadSession(msg.Session.ID))
+		cmds = append(cmds, m.loadSession(msg.Session.ID, loadSessionOpt{clearStack: true}))
 
 	// Open dialog message.
 	case dialog.ActionOpenDialog:
@@ -1990,11 +1951,19 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionToggleCompactMode:
 		cmds = append(cmds, m.toggleCompactMode())
 		m.dialog.CloseDialog(dialog.CommandsID)
-	case dialog.ActionTogglePills:
-		if cmd := m.togglePillsExpanded(); cmd != nil {
-			cmds = append(cmds, cmd)
+	case dialog.ActionToggleDetails:
+		if m.hasSession() {
+			m.detailsOpen = !m.detailsOpen
+			m.updateLayoutAndSize()
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionSuspend:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if m.isAgentBusy() {
+			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait..."))
+			break
+		}
+		cmds = append(cmds, tea.Suspend)
 	case dialog.ActionToggleThinking:
 		cmds = append(cmds, m.toggleThinkingCmd())
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -2017,6 +1986,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, m.initializeProject())
 		m.dialog.CloseDialog(dialog.CommandsID)
 
+	case dialog.ActionSelectProvider:
+		if cmd := m.handleSelectProvider(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.ActionSelectModel:
 		if cmd := m.handleSelectModel(msg); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -2322,6 +2295,14 @@ func (m *UI) openVariantsDialog() tea.Cmd {
 func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	var cmds []tea.Cmd
 
+	// The onboarding credential step carries no model — the provider
+	// dialog had none to hand it. Arriving here from that step means
+	// auth just succeeded, so move on to the model list rather than
+	// persisting a blank pick and starting the agent on it.
+	if m.state == uiOnboarding && m.onboarding.step == onboardingStepAuth {
+		return m.openOnboardingStep(onboardingStepModel)
+	}
+
 	// we ignore dialogs with the oauth id as they need to be able to be dismissed
 	if m.isAgentBusy() && !m.dialog.ContainsDialog(dialog.OAuthID) {
 		return util.ReportWarn("Agent is busy, please wait...")
@@ -2523,34 +2504,13 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				cmds = append(cmds, cmd)
 			}
 			return true
-		case key.Matches(msg, m.keyMap.Chat.Details) && m.isCompact:
+		case key.Matches(msg, m.keyMap.Chat.Details) && m.hasSession():
 			m.detailsOpen = !m.detailsOpen
 			m.updateLayoutAndSize()
 			return true
 		case key.Matches(msg, m.keyMap.Chat.EndFollow):
 			if m.state == uiChat && m.hasSession() {
 				if cmd := m.chat.ScrollToBottomAndSelectLast(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return true
-			}
-		case key.Matches(msg, m.keyMap.Chat.TogglePills):
-			if m.state == uiChat && m.hasSession() {
-				if cmd := m.togglePillsExpanded(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return true
-			}
-		case key.Matches(msg, m.keyMap.Chat.PillLeft):
-			if m.state == uiChat && m.hasSession() && m.pillsExpanded && m.focus != uiFocusEditor {
-				if cmd := m.switchPillSection(-1); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return true
-			}
-		case key.Matches(msg, m.keyMap.Chat.PillRight):
-			if m.state == uiChat && m.hasSession() && m.pillsExpanded && m.focus != uiFocusEditor {
-				if cmd := m.switchPillSection(1); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 				return true
@@ -2633,6 +2593,14 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	}
 
+	// Escape leaves a sub-session. It sits after the busy check so a running
+	// turn is stopped first, and ahead of the focus switch so it also works
+	// from the editor — but an open completion popup owns Escape while it is
+	// up, or dismissing it would throw the user out of the session instead.
+	if key.Matches(msg, m.keyMap.Chat.Back) && m.inSubSession() && !m.completionsOpen {
+		return tea.Batch(append(cmds, m.leaveSubSession())...)
+	}
+
 	switch m.state {
 	case uiOnboarding:
 		return tea.Batch(cmds...)
@@ -2708,7 +2676,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				if m.bangMode && value != "" {
 					m.bangMode = false
 					m.setEditorPrompt(m.yoloModeCached())
-					m.randomizePlaceholders()
+					m.textarea.Placeholder = m.editorPlaceholder()
 					m.historyReset()
 					return tea.Batch(m.runShellCommand(value))
 				}
@@ -2719,7 +2687,6 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					return nil
 				}
 
-				m.randomizePlaceholders()
 				m.historyReset()
 
 				return tea.Batch(m.sendMessage(value, attachments...), m.loadPromptHistory())
@@ -2873,14 +2840,8 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			switch {
 			case key.Matches(msg, m.keyMap.Tab):
 				m.focus = uiFocusEditor
-				m.sidebarScrollbarVisible = false
 				cmds = append(cmds, m.textarea.Focus())
 				m.chat.Blur()
-			case key.Matches(msg, m.keyMap.Chat.FocusSidebar):
-				if m.state == uiChat && !m.isCompact && m.hasSession() && m.sidebarScrollable {
-					m.focus = uiFocusSidebar
-					m.chat.Blur()
-				}
 			case key.Matches(msg, m.keyMap.Chat.NewSession):
 				if !m.hasSession() {
 					break
@@ -2892,6 +2853,10 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				m.focus = uiFocusEditor
 				if cmd := m.newSession(); cmd != nil {
 					cmds = append(cmds, cmd)
+				}
+			case key.Matches(msg, m.keyMap.Chat.OpenSubSession):
+				if agentItem, ok := m.selectedAgentTool(); ok {
+					cmds = append(cmds, m.enterSubSession(agentItem))
 				}
 			case key.Matches(msg, m.keyMap.Chat.Expand):
 				m.chat.ToggleExpandedSelectedItem()
@@ -2961,38 +2926,6 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					handleGlobalKeys(msg)
 				}
 			}
-		case uiFocusSidebar:
-			if m.state != uiChat || m.isCompact || !m.hasSession() {
-				break
-			}
-			switch {
-			case key.Matches(msg, m.keyMap.Chat.Up):
-				m.sidebarOffset = max(0, m.sidebarOffset-4)
-				m.sidebarScrollbarSeq++
-			case key.Matches(msg, m.keyMap.Chat.Down):
-				maxOffset := m.sidebarMaxOffsetVal
-				if m.sidebarOffset < maxOffset {
-					m.sidebarOffset = min(m.sidebarOffset+4, maxOffset)
-					m.sidebarScrollbarSeq++
-				}
-			case key.Matches(msg, m.keyMap.Chat.Home):
-				m.sidebarOffset = 0
-				m.sidebarScrollbarSeq++
-			case key.Matches(msg, m.keyMap.Chat.End):
-				m.sidebarOffset = m.sidebarMaxOffsetVal
-				m.sidebarScrollbarSeq++
-			case key.Matches(msg, m.keyMap.Chat.FocusChat):
-				m.focus = uiFocusMain
-				m.sidebarScrollbarVisible = false
-				m.chat.Focus()
-			case key.Matches(msg, m.keyMap.Tab):
-				m.focus = uiFocusEditor
-				m.sidebarScrollbarVisible = false
-				cmds = append(cmds, m.textarea.Focus())
-				m.chat.Blur()
-			default:
-				handleGlobalKeys(msg)
-			}
 		default:
 			handleGlobalKeys(msg)
 		}
@@ -3005,20 +2938,26 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 // drawHeader draws the header section of the UI.
 func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
-	var contextWindow int64
-	if active := m.activeAgent(); active != nil {
-		contextWindow = active.CatwalkCfg.ContextWindow
+	m.header.drawHeader(scr, area, m.sessionTrail(), area.Dx(), m.lspErrorCount())
+}
+
+// drawEditor draws whatever currently owns the editor rect: an inline dialog
+// (question form, etc.) when one is active, otherwise the prompt textarea.
+func (m *UI) drawEditor(scr uv.Screen, layout uiLayout) {
+	if m.activeInline == nil {
+		m.drawPromptBox(scr, layout.editor)
+		m.inlineCursor = nil
+		return
 	}
-	m.header.drawHeader(
-		scr,
-		area,
-		m.session,
-		m.isCompact,
-		m.detailsOpen,
-		area.Dx(),
-		m.lspErrorCount(),
-		contextWindow,
-	)
+
+	m.activeInline.SetFocused(m.focus == uiFocusEditor)
+	if qf, ok := m.activeInline.(*dialog.QuestionForm); ok &&
+		m.focus != uiFocusEditor && m.shouldCollapseQuestion(qf) {
+		qf.DrawCollapsed(scr, layout.editor)
+		m.inlineCursor = nil
+		return
+	}
+	m.inlineCursor = m.activeInline.Draw(scr, layout.editor)
 }
 
 // Draw implements [uv.Drawable] and draws the UI model.
@@ -3028,17 +2967,6 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	if m.layout != layout {
 		m.layout = layout
 		m.updateSize()
-	} else if m.state == uiChat && m.hasSession() {
-		// Re-render pills on every draw so the box appears even when
-		// the layout footprint hasn't changed (e.g. todos arrived
-		// while the panel was collapsed). updateSize already calls
-		// renderPills, but only when the layout actually differs;
-		// this catches the steady-state case.
-		m.renderPills()
-	}
-
-	if m.state == uiChat && m.hasSession() && !m.isCompact {
-		m.updateSidebarScrollState()
 	}
 
 	// Clear the screen first
@@ -3062,56 +2990,18 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		main := uv.NewStyledString(m.landingView())
 		main.Draw(scr, layout.main)
 
-		if m.activeInline != nil {
-			m.activeInline.SetFocused(m.focus == uiFocusEditor)
-			if m.focus == uiFocusEditor {
-				m.inlineCursor = m.activeInline.Draw(scr, layout.editor)
-			} else if qf, ok := m.activeInline.(*dialog.QuestionForm); ok && m.shouldCollapseQuestion(qf) {
-				qf.DrawCollapsed(scr, layout.editor)
-				m.inlineCursor = nil
-			} else {
-				m.inlineCursor = m.activeInline.Draw(scr, layout.editor)
-			}
-		} else {
-			editor := uv.NewStyledString(m.renderEditorView(scr.Bounds().Dx()))
-			editor.Draw(scr, layout.editor)
-			m.inlineCursor = nil
-		}
+		m.drawEditor(scr, layout)
 
 	case uiChat:
-		if m.isCompact {
-			m.drawHeader(scr, layout.header)
-		} else {
-			m.drawSidebar(scr, layout.sidebar)
-		}
-
+		m.drawHeader(scr, layout.header)
 		m.chat.Draw(scr, layout.main)
-		if layout.pills.Dy() > 0 && m.pillsView != "" {
-			uv.NewStyledString(m.pillsView).Draw(scr, layout.pills)
-		}
+		m.drawEditor(scr, layout)
 
-		if m.activeInline != nil {
-			m.activeInline.SetFocused(m.focus == uiFocusEditor)
-			if m.focus == uiFocusEditor {
-				m.inlineCursor = m.activeInline.Draw(scr, layout.editor)
-			} else if qf, ok := m.activeInline.(*dialog.QuestionForm); ok && m.shouldCollapseQuestion(qf) {
-				qf.DrawCollapsed(scr, layout.editor)
-				m.inlineCursor = nil
-			} else {
-				m.inlineCursor = m.activeInline.Draw(scr, layout.editor)
-			}
-		} else {
-			editorWidth := scr.Bounds().Dx()
-			if !m.isCompact {
-				editorWidth -= layout.sidebar.Dx()
-			}
-			editor := uv.NewStyledString(m.renderEditorView(editorWidth))
-			editor.Draw(scr, layout.editor)
-			m.inlineCursor = nil
-		}
+		uv.NewStyledString(m.renderTurnStatus(layout.turnStatus.Dx())).
+			Draw(scr, layout.turnStatus)
 
-		// Draw details overlay in compact mode when open
-		if m.isCompact && m.detailsOpen {
+		// Draw details overlay when open
+		if m.detailsOpen {
 			m.drawSessionDetails(scr, layout.sessionDetails)
 		}
 	}
@@ -3165,14 +3055,14 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			// Don't show cursor if editor is not visible
 			return nil
 		}
-		if m.detailsOpen && m.isCompact {
+		if m.detailsOpen {
 			// Don't show cursor if details overlay is open
 			return nil
 		}
 
 		if m.activeInline != nil {
 			if cur := m.inlineCursor; cur != nil {
-				cur.X++                        // Adjust for app margins
+				cur.X += m.layout.editor.Min.X // Adjust for app margins
 				cur.Y += m.layout.editor.Min.Y // Inline editor draws from area top
 				return cur
 			}
@@ -3181,8 +3071,10 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 		if m.textarea.Focused() {
 			cur := m.textarea.Cursor()
-			cur.X++                            // Adjust for app margins
-			cur.Y += m.layout.editor.Min.Y + 1 // Offset for attachments row
+			// App margin plus the box's left border.
+			cur.X += m.layout.editor.Min.X + 1
+			// Attachments row plus the box's top border.
+			cur.Y += m.layout.editor.Min.Y + 2
 			return cur
 		}
 	}
@@ -3226,260 +3118,189 @@ func (m *UI) View() tea.View {
 	return v
 }
 
+// cancelHint returns the esc binding with the wording the current turn state
+// calls for: clearing a queue, confirming a second press, or plain cancel.
+func (m *UI) cancelHint() key.Binding {
+	b := m.keyMap.Chat.Cancel
+	switch {
+	case m.isCanceling:
+		b.SetHelp("esc", "press again to cancel")
+	case m.promptQueue > 0:
+		b.SetHelp("esc", "clear queue")
+	}
+	return b
+}
+
+// commandsHint returns the command-palette binding, advertising the bare "/"
+// shortcut only where typing it would actually open the palette.
+func (m *UI) commandsHint() key.Binding {
+	b := m.keyMap.Commands
+	if m.focus == uiFocusEditor && m.textarea.Value() == "" {
+		b.SetHelp("/ or ctrl+p", "commands")
+	}
+	return b
+}
+
+// tabHint returns the focus-switch binding labeled with where it goes.
+func (m *UI) tabHint() key.Binding {
+	b := m.keyMap.Tab
+	if m.focus == uiFocusEditor {
+		b.SetHelp("tab", "focus chat")
+	} else {
+		b.SetHelp("tab", "focus editor")
+	}
+	return b
+}
+
+// shortHelpLimit caps the help line so it stays one row on a narrow terminal.
+// Everything cut from here is still reachable through ctrl+p and ctrl+g.
+const shortHelpLimit = 4
+
+// shortHelpWidth measures the line the way [help.Model] renders it: each hint
+// is "key desc", hints joined by a three-cell separator.
+func shortHelpWidth(binds []key.Binding) int {
+	var w, n int
+	for _, b := range binds {
+		if !b.Enabled() {
+			continue
+		}
+		if n > 0 {
+			w += 3
+		}
+		h := b.Help()
+		w += ansi.StringWidth(h.Key) + 1 + ansi.StringWidth(h.Desc)
+		n++
+	}
+	return w
+}
+
+// helpWidth is the room the status bar actually gives the help line.
+func (m *UI) helpWidth() int {
+	w := m.layout.status.Dx()
+	if w <= 0 {
+		w = m.width
+	}
+	st := m.com.Styles.Status.Help
+	return w - st.GetPaddingLeft() - st.GetPaddingRight()
+}
+
+// fitShortHelp drops optional hints until the line fits one row. The help
+// component truncates unpredictably once the budget runs out — at 80 columns
+// it can emit a 106-cell line — so the line has to arrive already short
+// enough. The trailing two hints go last: quit and more are what a stuck user
+// reaches for.
+func fitShortHelp(binds []key.Binding, width int) []key.Binding {
+	if width <= 0 {
+		return binds
+	}
+	for len(binds) > 2 && shortHelpWidth(binds) > width {
+		binds = slices.Delete(binds, len(binds)-3, len(binds)-2)
+	}
+	return binds
+}
+
 // ShortHelp implements [help.KeyMap].
 func (m *UI) ShortHelp() []key.Binding {
-	var binds []key.Binding
-	k := &m.keyMap
-
 	// When an inline editor is active, show its help.
 	if m.activeInline != nil {
 		return m.activeInline.ShortHelp()
 	}
 
-	tab := k.Tab
-	commands := k.Commands
-	if m.focus == uiFocusEditor && m.textarea.Value() == "" {
-		commands.SetHelp("/ or ctrl+p", "commands")
+	k := &m.keyMap
+	if m.state == uiInitialize {
+		return []key.Binding{k.Quit}
 	}
 
-	switch m.state {
-	case uiInitialize:
-		binds = append(binds, k.Quit)
-	case uiChat:
-		// Show cancel binding if agent is busy.
-		if m.isAgentBusy() {
-			cancelBinding := k.Chat.Cancel
-			if m.isCanceling {
-				cancelBinding.SetHelp("esc", "press again to cancel")
-			} else if m.promptQueue > 0 {
-				cancelBinding.SetHelp("esc", "clear queue")
-			}
-			binds = append(binds, cancelBinding)
-		}
-
-		switch m.focus {
-		case uiFocusEditor:
-			tab.SetHelp("tab", "focus chat")
-		default:
-			tab.SetHelp("tab", "focus editor")
-		}
-
-		binds = append(
-			binds,
-			tab,
-			commands,
-			k.Models,
-		)
-
-		switch m.focus {
-		case uiFocusEditor:
-			binds = append(
-				binds,
-				k.Editor.Newline,
-			)
-		case uiFocusSidebar:
-			binds = append(
-				binds,
-				k.Chat.UpDown,
-				k.Chat.FocusChat,
-			)
-		case uiFocusMain:
-			binds = append(
-				binds,
-				k.Chat.UpDown,
-				k.Chat.UpDownOneItem,
-				k.Chat.PageUp,
-				k.Chat.PageDown,
-				k.Chat.Copy,
-			)
-			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
-				binds = append(binds, k.Chat.PillLeft)
-			}
-		}
-	default:
-		// TODO: other states
-		// if m.session == nil {
-		// no session selected
-		binds = append(
-			binds,
-			commands,
-			k.Models,
-			k.Editor.Newline,
-		)
+	var binds []key.Binding
+	if m.state == uiChat && m.isAgentBusy() {
+		binds = append(binds, m.cancelHint())
 	}
 
-	binds = append(
-		binds,
-		k.Quit,
-		k.Help,
-	)
+	// The way out of a sub-session leads the standing hints: it is the only
+	// one that is not discoverable anywhere else, so it must survive the
+	// trim on a narrow terminal.
+	if m.inSubSession() {
+		binds = append(binds, k.Chat.Back)
+	}
 
-	return binds
+	binds = append(binds, m.tabHint(), m.commandsHint())
+
+	switch m.focus {
+	case uiFocusEditor:
+		binds = append(binds, k.Editor.Newline)
+	case uiFocusMain:
+		binds = append(binds, k.Chat.UpDown, k.Chat.Copy)
+		if _, ok := m.selectedAgentTool(); ok {
+			binds = append(binds, k.Chat.OpenSubSession)
+		}
+	}
+
+	if m.hasSession() {
+		details := k.Chat.Details
+		details.SetHelp("ctrl+d", "details")
+		binds = append(binds, details)
+	}
+	binds = append(binds, k.Quit, k.Help)
+
+	if len(binds) > shortHelpLimit {
+		binds = append(binds[:shortHelpLimit-2:shortHelpLimit-2], k.Quit, k.Help)
+	}
+	return fitShortHelp(binds, m.helpWidth())
 }
 
-// FullHelp implements [help.KeyMap].
+// FullHelp implements [help.KeyMap]. Four fixed groups so the layout does not
+// reshuffle as session state changes.
 func (m *UI) FullHelp() [][]key.Binding {
 	// When an inline editor is active, show its help.
 	if m.activeInline != nil {
 		return [][]key.Binding{m.activeInline.ShortHelp()}
 	}
 
-	var binds [][]key.Binding
 	k := &m.keyMap
-	help := k.Help
-	help.SetHelp("ctrl+g", "less")
-	hasAttachments := len(m.attachments.List()) > 0
-	hasSession := m.hasSession()
-	commands := k.Commands
-	if m.focus == uiFocusEditor && m.textarea.Value() == "" {
-		commands.SetHelp("/ or ctrl+p", "commands")
+	if m.state == uiInitialize {
+		return [][]key.Binding{{k.Quit}}
 	}
 
-	switch m.state {
-	case uiInitialize:
-		binds = append(binds,
-			[]key.Binding{
-				k.Quit,
-			})
-	case uiChat:
-		// Show cancel binding if agent is busy.
-		if m.isAgentBusy() {
-			cancelBinding := k.Chat.Cancel
-			if m.isCanceling {
-				cancelBinding.SetHelp("esc", "press again to cancel")
-			} else if m.promptQueue > 0 {
-				cancelBinding.SetHelp("esc", "clear queue")
-			}
-			binds = append(binds, []key.Binding{cancelBinding})
-		}
+	less := k.Help
+	less.SetHelp("ctrl+g", "less")
 
-		mainBinds := []key.Binding{}
-		tab := k.Tab
-		switch m.focus {
-		case uiFocusEditor:
-			tab.SetHelp("tab", "focus chat")
-		default:
-			tab.SetHelp("tab", "focus editor")
-		}
-
-		mainBinds = append(
-			mainBinds,
-			tab,
-			commands,
-			k.Models,
-			k.Sessions,
-			k.ToggleYolo,
-		)
-		if hasSession {
-			mainBinds = append(mainBinds, k.Chat.NewSession, k.Chat.EndFollow)
-		}
-
-		binds = append(binds, mainBinds)
-
-		switch m.focus {
-		case uiFocusEditor:
-			editorBinds := []key.Binding{
-				k.Editor.Newline,
-				k.Editor.MentionFile,
-				k.Editor.OpenEditor,
-			}
-			if m.currentModelSupportsImages() {
-				editorBinds = append(editorBinds, k.Editor.AddImage, k.Editor.PasteImage)
-			}
-			binds = append(binds, editorBinds)
-			if hasAttachments {
-				binds = append(
-					binds,
-					[]key.Binding{
-						k.Editor.AttachmentDeleteMode,
-						k.Editor.DeleteAllAttachments,
-						k.Editor.Escape,
-					},
-				)
-			}
-		case uiFocusSidebar:
-			binds = append(
-				binds,
-				[]key.Binding{
-					k.Chat.UpDown,
-				},
-				[]key.Binding{
-					k.Chat.FocusChat,
-				},
-				[]key.Binding{
-					k.Chat.Home,
-					k.Chat.End,
-				},
-			)
-		case uiFocusMain:
-			binds = append(
-				binds,
-				[]key.Binding{
-					k.Chat.UpDown,
-					k.Chat.UpDownOneItem,
-					k.Chat.PageUp,
-					k.Chat.PageDown,
-				},
-				[]key.Binding{
-					k.Chat.HalfPageUp,
-					k.Chat.HalfPageDown,
-					k.Chat.Home,
-					k.Chat.End,
-					k.Chat.EndFollow,
-					k.Chat.FocusSidebar,
-				},
-				[]key.Binding{
-					k.Chat.Copy,
-					k.Chat.ClearHighlight,
-				},
-			)
-			if m.pillsExpanded && hasIncompleteTodos(m.session.Todos) && m.promptQueue > 0 {
-				binds = append(binds, []key.Binding{k.Chat.PillLeft})
-			}
-		}
-	default:
-		if m.session == nil {
-			// no session selected
-			binds = append(
-				binds,
-				[]key.Binding{
-					commands,
-					k.Models,
-					k.Sessions,
-					k.ToggleYolo,
-				},
-			)
-			editorBinds := []key.Binding{
-				k.Editor.Newline,
-				k.Editor.MentionFile,
-				k.Editor.OpenEditor,
-			}
-			if m.currentModelSupportsImages() {
-				editorBinds = append(editorBinds, k.Editor.AddImage, k.Editor.PasteImage)
-			}
-			binds = append(binds, editorBinds)
-			if hasAttachments {
-				binds = append(
-					binds,
-					[]key.Binding{
-						k.Editor.AttachmentDeleteMode,
-						k.Editor.DeleteAllAttachments,
-						k.Editor.Escape,
-					},
-				)
-			}
-		}
+	navigation := []key.Binding{
+		k.Chat.UpDown,
+		k.Chat.UpDownOneItem,
+		k.Chat.PageUp,
+		k.Chat.PageDown,
+		k.Chat.Copy,
+		k.Chat.Expand,
 	}
 
-	binds = append(
-		binds,
-		[]key.Binding{
-			help,
-			k.Quit,
-		},
-	)
+	editor := []key.Binding{
+		m.tabHint(),
+		k.Editor.Newline,
+		k.Editor.MentionFile,
+		k.Editor.OpenEditor,
+	}
+	if m.currentModelSupportsImages() {
+		editor = append(editor, k.Editor.AddImage, k.Editor.PasteImage)
+	}
+	if len(m.attachments.List()) > 0 {
+		editor = append(editor, k.Editor.AttachmentDeleteMode)
+	}
 
-	return binds
+	session := []key.Binding{
+		m.commandsHint(),
+		k.Chat.NewSession,
+		k.Chat.Details,
+		k.Sessions,
+		k.Models,
+		k.CycleVariant,
+	}
+
+	app := []key.Binding{k.ToggleYolo, k.Suspend, less, k.Quit}
+	if m.state == uiChat && m.isAgentBusy() {
+		app = append([]key.Binding{m.cancelHint()}, app...)
+	}
+
+	return [][]key.Binding{navigation, editor, session, app}
 }
 
 // currentModelSupportsImages reports whether the model the session is
@@ -3508,15 +3329,11 @@ func (m *UI) toggleCompactMode() tea.Cmd {
 
 // updateLayoutAndSize updates the layout and sizes of UI components.
 func (m *UI) updateLayoutAndSize() {
-	// Determine if we should be in compact mode
+	// Compact mode is now purely vertical: the layout no longer has a
+	// horizontal branch, so only short terminals (or an explicit toggle)
+	// need to drop the gaps between bands.
 	if m.state == uiChat {
-		if m.forceCompactMode {
-			m.isCompact = true
-		} else if m.width < compactModeWidthBreakpoint || m.height < compactModeHeightBreakpoint {
-			m.isCompact = true
-		} else {
-			m.isCompact = false
-		}
+		m.isCompact = m.forceCompactMode || m.height < compactModeHeightBreakpoint
 	}
 
 	// First pass sizes components from the current textarea height.
@@ -3574,48 +3391,40 @@ func (m *UI) updateSize() {
 
 	m.chat.SetSize(m.layout.main.Dx(), m.layout.main.Dy())
 	m.textarea.MaxHeight = TextareaMaxHeight
-	m.textarea.SetWidth(m.layout.editor.Dx())
-	m.renderPills()
-
-	// Handle different app states
-	switch m.state {
-	case uiChat:
-		if !m.isCompact {
-			m.cacheSidebarLogo(m.layout.sidebar.Dx())
-		}
-	}
+	m.textarea.SetWidth(m.layout.editor.Dx() - editorBoxBorders)
 }
 
-// generateLayout calculates the layout rectangles for all UI components based
-// on the current UI state and terminal dimensions.
+// Layout constants for the single unified skeleton.
+const (
+	headerHeight     = 1
+	headerGapHeight  = 1
+	mainBottomGap    = 1
+	turnStatusHeight = 1
+	// editorGapHeight separates the editor from the turn-status row.
+	// Without it the bottom bands read as one crammed block.
+	editorGapHeight = 1
+	// appMarginX insets the content from each terminal edge so it sits on a
+	// page instead of running into the frame.
+	appMarginX = 2
+	// logoWallHeight is the row count of the letterform wall: three rows of
+	// letterforms plus the version line.
+	logoWallHeight = 4
+)
+
+// generateLayout calculates the layout rectangles for all UI components. Every
+// state shares one vertical stack; states differ only in which bands they use.
+//
+//	header
+//	(gap)
+//	main
+//	(gap)
+//	editor
+//	turn status
+//	help
 func (m *UI) generateLayout(w, h int) uiLayout {
-	// The screen area we're working with
 	area := image.Rect(0, 0, w, h)
 
-	// The help height
 	helpHeight := 1
-	// The editor height: textarea height + margin for attachments and bottom spacing.
-	// When an inline editor is active, use its height instead.
-	editorHeight := m.textarea.Height() + editorHeightMargin
-	if m.activeInline != nil {
-		// The editor content width depends only on terminal width
-		// and layout (not on editor height), so passing the current
-		// frame's width to Height() keeps layout in sync with the
-		// width Draw will use, preventing flicker during fast resize.
-		editorWidth := m.editorContentWidth()
-		if m.focus == uiFocusEditor {
-			editorHeight = m.activeInline.Height(editorWidth)
-		} else if qf, ok := m.activeInline.(*dialog.QuestionForm); ok && m.shouldCollapseQuestion(qf) {
-			editorHeight = qf.CollapsedHeight() + 1
-		} else {
-			editorHeight = m.activeInline.Height(editorWidth)
-		}
-	}
-	// The sidebar width
-	sidebarWidth := 32
-	// The header height
-	const landingHeaderHeight = 4
-
 	var helpKeyMap help.KeyMap = m
 	if m.status != nil && m.status.ShowingAll() {
 		for _, row := range helpKeyMap.FullHelp() {
@@ -3623,7 +3432,7 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 		}
 	}
 
-	// Add app margins
+	// App margins: one row top and bottom, one column each side.
 	var appRect, helpRect image.Rectangle
 	layout.Vertical(
 		layout.Len(area.Dy()-helpHeight),
@@ -3632,160 +3441,97 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 	appRect.Min.Y += 1
 	appRect.Max.Y -= 1
 	helpRect.Min.Y -= 1
-	appRect.Min.X += 1
-	appRect.Max.X -= 1
+	appRect.Min.X += appMarginX
+	appRect.Max.X -= appMarginX
 
-	if slices.Contains([]uiState{uiOnboarding, uiInitialize, uiLanding}, m.state) {
-		// extra padding on left and right for these states
-		appRect.Min.X += 1
-		appRect.Max.X -= 1
+	l := uiLayout{area: area, status: helpRect}
+
+	// Header band. Every state gets the one-line instrument bar. The
+	// letterform wall belongs to the landing body, where it can be
+	// composed with the menu and dropped on short terminals.
+	header := headerHeight
+	gap := headerGapHeight
+	if m.isCompact {
+		gap = 0
 	}
 
-	uiLayout := uiLayout{
-		area:   area,
-		status: helpRect,
+	var headerRect, bodyRect image.Rectangle
+	layout.Vertical(
+		layout.Len(header),
+		layout.Fill(1),
+	).Split(appRect).Assign(&headerRect, &bodyRect)
+	l.header = headerRect
+	bodyRect.Min.Y += gap
+
+	// Onboarding draws its flow as dialogs and owns no body bands.
+	if m.state == uiOnboarding {
+		return l
 	}
 
-	// Handle different app states
-	switch m.state {
-	case uiOnboarding, uiInitialize:
-		// Layout
-		//
-		// header
-		// ------
-		// main
-		// ------
-		// help
-
-		var headerRect, mainRect image.Rectangle
-		layout.Vertical(
-			layout.Len(landingHeaderHeight),
-			layout.Fill(1),
-		).Split(appRect).Assign(&headerRect, &mainRect)
-		uiLayout.header = headerRect
-		uiLayout.main = mainRect
-
-	case uiLanding:
-		// Layout
-		//
-		// header
-		// ------
-		// main
-		// ------
-		// editor
-		// ------
-		// help
-		var headerRect, mainRect image.Rectangle
-		layout.Vertical(
-			layout.Len(landingHeaderHeight),
-			layout.Fill(1),
-		).Split(appRect).Assign(&headerRect, &mainRect)
-		var editorRect image.Rectangle
-		layout.Vertical(
-			layout.Len(mainRect.Dy()-editorHeight),
-			layout.Fill(1),
-		).Split(mainRect).Assign(&mainRect, &editorRect)
-		// Remove extra padding from editor (but keep it for header and main)
-		editorRect.Min.X -= 1
-		editorRect.Max.X += 1
-		uiLayout.header = headerRect
-		uiLayout.main = mainRect
-		uiLayout.editor = editorRect
-
-	case uiChat:
-		if m.isCompact {
-			// Layout
-			//
-			// compact-header
-			// ------
-			// main
-			// ------
-			// editor
-			// ------
-			// help
-			const compactHeaderHeight = 1
-			var headerRect, mainRect image.Rectangle
-			layout.Vertical(
-				layout.Len(compactHeaderHeight),
-				layout.Fill(1),
-			).Split(appRect).Assign(&headerRect, &mainRect)
-			detailsHeight := min(sessionDetailsMaxHeight, area.Dy()-1) // One row for the header
-			var sessionDetailsArea image.Rectangle
-			layout.Vertical(
-				layout.Len(detailsHeight),
-				layout.Fill(1),
-			).Split(appRect).Assign(&sessionDetailsArea, new(image.Rectangle))
-			uiLayout.sessionDetails = sessionDetailsArea
-			uiLayout.sessionDetails.Min.Y += compactHeaderHeight // adjust for header
-			// Add one line gap between header and main content
-			mainRect.Min.Y += 1
-			var editorRect image.Rectangle
-			layout.Vertical(
-				layout.Len(mainRect.Dy()-editorHeight),
-				layout.Fill(1),
-			).Split(mainRect).Assign(&mainRect, &editorRect)
-			mainRect.Max.X -= 1 // Add padding right
-			uiLayout.header = headerRect
-			pillsHeight := m.pillsAreaHeight()
-			if pillsHeight > 0 {
-				pillsHeight = min(pillsHeight, mainRect.Dy())
-				var chatRect, pillsRect image.Rectangle
-				layout.Vertical(
-					layout.Len(mainRect.Dy()-pillsHeight),
-					layout.Fill(1),
-				).Split(mainRect).Assign(&chatRect, &pillsRect)
-				uiLayout.main = chatRect
-				uiLayout.pills = pillsRect
-			} else {
-				uiLayout.main = mainRect
-			}
-			// Add bottom margin to main
-			uiLayout.main.Max.Y -= 1
-			uiLayout.editor = editorRect
-		} else {
-			// Layout
-			//
-			// ------|---
-			// main  |
-			// ------| side
-			// editor|
-			// ----------
-			// help
-
-			var mainRect, sideRect image.Rectangle
-			layout.Horizontal(
-				layout.Len(appRect.Dx()-sidebarWidth),
-				layout.Fill(1),
-			).Split(appRect).Assign(&mainRect, &sideRect)
-			// Add padding left
-			sideRect.Min.X += 1
-			var editorRect image.Rectangle
-			layout.Vertical(
-				layout.Len(mainRect.Dy()-editorHeight),
-				layout.Fill(1),
-			).Split(mainRect).Assign(&mainRect, &editorRect)
-			mainRect.Max.X -= 1 // Add padding right
-			uiLayout.sidebar = sideRect
-			pillsHeight := m.pillsAreaHeight()
-			if pillsHeight > 0 {
-				pillsHeight = min(pillsHeight, mainRect.Dy())
-				var chatRect, pillsRect image.Rectangle
-				layout.Vertical(
-					layout.Len(mainRect.Dy()-pillsHeight),
-					layout.Fill(1),
-				).Split(mainRect).Assign(&chatRect, &pillsRect)
-				uiLayout.main = chatRect
-				uiLayout.pills = pillsRect
-			} else {
-				uiLayout.main = mainRect
-			}
-			// Add bottom margin to main
-			uiLayout.main.Max.Y -= 1
-			uiLayout.editor = editorRect
-		}
+	// Initialize has a main pane but no editor or turn status.
+	if m.state == uiInitialize {
+		l.main = bodyRect
+		return l
 	}
 
-	return uiLayout
+	editorHeight := m.editorHeight()
+
+	// Chat reserves a turn-status row directly under the editor; landing
+	// has no turn to report on.
+	statusRows := 0
+	if m.state == uiChat {
+		statusRows = turnStatusHeight
+	}
+
+	// A blank row between the editor and the turn status, unless the
+	// terminal is too short to spend one.
+	editorGap := editorGapHeight
+	if m.isCompact || statusRows == 0 {
+		editorGap = 0
+	}
+
+	var mainRect, editorRect, turnStatusRect image.Rectangle
+	layout.Vertical(
+		layout.Len(max(0, bodyRect.Dy()-editorHeight-statusRows-editorGap)),
+		layout.Len(editorHeight),
+		layout.Fill(1),
+	).Split(bodyRect).Assign(&mainRect, &editorRect, &turnStatusRect)
+	turnStatusRect.Min.Y += editorGap
+
+	// Main keeps a blank row above the editor so text never touches it.
+	mainRect.Max.Y -= mainBottomGap
+
+	l.main = mainRect
+	l.editor = editorRect
+	if statusRows > 0 {
+		l.turnStatus = turnStatusRect
+		l.sessionDetails = common.CenterRect(
+			appRect,
+			min(appRect.Dx(), sessionDetailsMaxWidth),
+			min(sessionDetailsMaxHeight, appRect.Dy()),
+		)
+	}
+
+	return l
+}
+
+// editorHeight is the number of rows the editor band needs: the textarea plus
+// its margin, or the active inline dialog's own height.
+func (m *UI) editorHeight() int {
+	if m.activeInline == nil {
+		return m.textarea.Height() + editorHeightMargin
+	}
+
+	// The editor content width depends only on terminal width and layout
+	// (not on editor height), so passing the current frame's width keeps
+	// layout in sync with the width Draw will use, preventing flicker
+	// during fast resize.
+	width := m.editorContentWidth()
+	if qf, ok := m.activeInline.(*dialog.QuestionForm); ok &&
+		m.focus != uiFocusEditor && m.shouldCollapseQuestion(qf) {
+		return qf.CollapsedHeight() + 1
+	}
+	return m.activeInline.Height(width)
 }
 
 // uiLayout defines the positioning of UI elements.
@@ -3793,28 +3539,24 @@ type uiLayout struct {
 	// area is the overall available area.
 	area uv.Rectangle
 
-	// header is the header shown in special cases
-	// e.x when the sidebar is collapsed
-	// or when in the landing page
-	// or in init/config
+	// header is the wordmark band: the full letterform wall on landing
+	// and setup, a single line in chat.
 	header uv.Rectangle
 
 	// main is the area for the main pane. (e.x chat, configure, landing)
 	main uv.Rectangle
 
-	// pills is the area for the pills panel.
-	pills uv.Rectangle
-
 	// editor is the area for the editor pane.
 	editor uv.Rectangle
 
-	// sidebar is the area for the sidebar.
-	sidebar uv.Rectangle
+	// turnStatus is the single row under the editor reporting what the
+	// current turn is doing. Empty outside chat.
+	turnStatus uv.Rectangle
 
 	// status is the area for the status view.
 	status uv.Rectangle
 
-	// session details is the area for the session details overlay in compact mode.
+	// sessionDetails is the area for the session details overlay.
 	sessionDetails uv.Rectangle
 }
 
@@ -3860,67 +3602,34 @@ func (m *UI) openEditor(value string) tea.Cmd {
 	})
 }
 
-// setEditorPrompt configures the textarea prompt function based on whether
-// yolo mode or bang mode is enabled.
+// setEditorPrompt configures the textarea prompt function. The prompt is a
+// two-column gutter: marker, gap.
 func (m *UI) setEditorPrompt(yolo bool) {
-	if m.bangMode {
-		m.textarea.SetPromptFunc(4, m.bangPromptFunc)
-		return
-	}
-	if yolo {
-		m.textarea.SetPromptFunc(4, m.yoloPromptFunc)
-		return
-	}
-	m.textarea.SetPromptFunc(4, m.normalPromptFunc)
+	m.textarea.SetPromptFunc(editorPromptWidth, m.editorPromptFunc(yolo))
 }
 
-// normalPromptFunc returns the normal editor prompt style ("  > " on first
-// line, "::: " on subsequent lines).
-func (m *UI) normalPromptFunc(info textarea.PromptInfo) string {
+// editorPromptFunc draws the editor gutter for one visual line. The marker
+// only appears on the first line, and carries the input mode in its color —
+// as does the box border, so no separate accent rail is needed.
+func (m *UI) editorPromptFunc(yolo bool) func(textarea.PromptInfo) string {
 	t := m.com.Styles
-	if info.LineNumber == 0 {
-		if info.Focused {
-			return "  > "
-		}
-		return "::: "
+	mode := t.Editor.Rail
+	switch {
+	case m.bangMode:
+		mode = t.Editor.RailBang
+	case yolo:
+		mode = t.Editor.RailYolo
 	}
-	if info.Focused {
-		return t.Editor.PromptNormalFocused.Render()
-	}
-	return t.Editor.PromptNormalBlurred.Render()
-}
 
-// yoloPromptFunc returns the yolo mode editor prompt style with warning icon
-// and colored dots.
-func (m *UI) yoloPromptFunc(info textarea.PromptInfo) string {
-	t := m.com.Styles
-	if info.LineNumber == 0 {
-		if info.Focused {
-			return t.Editor.PromptYoloIconFocused.Render()
-		} else {
-			return t.Editor.PromptYoloIconBlurred.Render()
+	return func(info textarea.PromptInfo) string {
+		if info.LineNumber != 0 {
+			return "  "
 		}
-	}
-	if info.Focused {
-		return t.Editor.PromptYoloDotsFocused.Render()
-	}
-	return t.Editor.PromptYoloDotsBlurred.Render()
-}
-
-// bangPromptFunc returns the bang mode editor prompt style with Turtle-colored
-// icon and dots.
-func (m *UI) bangPromptFunc(info textarea.PromptInfo) string {
-	t := m.com.Styles
-	if info.LineNumber == 0 {
-		if info.Focused {
-			return t.Editor.PromptBangIconFocused.Render()
+		if !info.Focused {
+			return t.Editor.PromptMarkerBlurred.Render(editorPromptGlyph)
 		}
-		return t.Editor.PromptBangIconBlurred.Render()
+		return mode.Render(editorPromptGlyph)
 	}
-	if info.Focused {
-		return t.Editor.PromptBangDotsFocused.Render()
-	}
-	return t.Editor.PromptBangDotsBlurred.Render()
 }
 
 // closeCompletions closes the completions popup and resets state.
@@ -4099,45 +3808,126 @@ func mimeOf(content []byte) string {
 	return http.DetectContentType(content[:mimeBufferSize])
 }
 
-var readyPlaceholders = [...]string{
-	"Ready!",
-	"Ready...",
-	"Ready?",
-	"Ready for instructions",
-}
-
-var workingPlaceholders = [...]string{
-	"Working!",
-	"Working...",
-	"Brrrrr...",
-	"Prrrrrrrr...",
-	"Processing...",
-	"Thinking...",
-}
-
-// randomizePlaceholders selects random placeholder text for the textarea's
-// ready and working states.
-func (m *UI) randomizePlaceholders() {
-	m.workingPlaceholder = workingPlaceholders[rand.Intn(len(workingPlaceholders))]
-	m.readyPlaceholder = readyPlaceholders[rand.Intn(len(readyPlaceholders))]
-}
-
-// renderEditorView renders the editor view with attachments if any.
-func (m *UI) renderEditorView(width int) string {
-	var attachmentsView string
-	if len(m.attachments.List()) > 0 {
-		attachmentsView = m.attachments.Render(width)
+// editorPlaceholder returns the textarea placeholder for the current input
+// mode. Narrow terminals get the bare prompt without the hint tail.
+func (m *UI) editorPlaceholder() string {
+	if m.bangMode {
+		return "Run a shell command"
 	}
-	return strings.Join([]string{
-		attachmentsView,
-		m.textarea.View(),
-		"", // margin at bottom of editor
-	}, "\n")
+	if m.yoloModeCached() {
+		return "Yolo mode — permissions are skipped"
+	}
+	if m.width < narrowWidthBreakpoint {
+		return "Ask anything…"
+	}
+	return "Ask anything — / for commands, @ to mention a file"
 }
 
-// cacheSidebarLogo renders and caches the sidebar logo at the specified width.
-func (m *UI) cacheSidebarLogo(width int) {
-	m.sidebarLogo = renderLogo(m.com.Styles, true, width)
+// editorCaption returns the one-line run context: which agent and model the
+// next message will go to, plus the input mode when it is not the ordinary
+// one. The text is unstyled; the caller owns how it is drawn.
+func (m *UI) editorCaption(width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	var modelName, agentName string
+	if active := m.activeAgent(); active != nil {
+		modelName = active.CatwalkCfg.Name
+		agentName = active.AgentName
+	}
+
+	var mode string
+	switch {
+	case m.bangMode:
+		mode = "shell"
+	case m.yoloModeCached():
+		mode = "yolo"
+	}
+
+	// Narrow terminals keep only what identifies the run: the model, and
+	// the mode when it is escalated.
+	fields := []string{agentName, modelName, mode}
+	if width < narrowWidthBreakpoint {
+		fields = []string{modelName, mode}
+	}
+
+	var parts []string
+	for _, f := range fields {
+		if f != "" {
+			parts = append(parts, f)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ansi.Truncate(strings.Join(parts, " · "), width, "…")
+}
+
+// editorBorderStyle is the box border color. It carries the input mode, which
+// is why the gutter no longer needs an accent rail.
+func (m *UI) editorBorderStyle() lipgloss.Style {
+	t := m.com.Styles
+	switch {
+	case m.bangMode:
+		return t.Editor.RailBang
+	case m.yoloModeCached():
+		return t.Editor.RailYolo
+	case m.focus == uiFocusEditor:
+		return t.Editor.BorderFocused
+	default:
+		return t.Editor.Border
+	}
+}
+
+// drawPromptBox draws the input as a bordered box with the attachments strip
+// above it and the run context inset into its bottom border.
+func (m *UI) drawPromptBox(scr uv.Screen, area uv.Rectangle) {
+	if area.Dx() <= editorBoxBorders || area.Dy() <= editorBoxBorders {
+		return
+	}
+
+	if len(m.attachments.List()) > 0 {
+		uv.NewStyledString(m.attachments.Render(area.Dx())).Draw(scr, image.Rect(
+			area.Min.X, area.Min.Y, area.Max.X, area.Min.Y+1,
+		))
+	}
+
+	// The box occupies the band below the attachments row.
+	box := image.Rect(area.Min.X, area.Min.Y+1, area.Max.X, area.Max.Y)
+	top, bottom, right := box.Min.Y, box.Max.Y-1, box.Max.X-1
+	span := strings.Repeat("─", box.Dx()-editorBoxBorders)
+	border := list.ToStyle(m.editorBorderStyle())
+
+	common.SetSpan(scr, box.Min.X, top, border, "╭"+span+"╮")
+	common.SetSpan(scr, box.Min.X, bottom, border, "╰"+span+"╯")
+	for y := top + 1; y < bottom; y++ {
+		common.SetSpan(scr, box.Min.X, y, border, "│")
+		common.SetSpan(scr, right, y, border, "│")
+	}
+
+	uv.NewStyledString(m.textarea.View()).Draw(scr, image.Rect(
+		box.Min.X+1, top+1, right, bottom,
+	))
+
+	m.drawPromptLabel(scr, box, bottom)
+}
+
+// drawPromptLabel writes the run context onto the bottom border row. The
+// spaces the label pads itself with overwrite the border glyphs, so it reads
+// as inset into the border rather than printed over it.
+func (m *UI) drawPromptLabel(scr uv.Screen, box uv.Rectangle, row int) {
+	// Two columns of border plus the two spaces the label pads itself with.
+	caption := m.editorCaption(box.Dx() - 4)
+	if caption == "" {
+		return
+	}
+	label := " " + caption + " "
+	x := box.Max.X - 1 - ansi.StringWidth(label)
+	if x <= box.Min.X {
+		return
+	}
+	common.SetSpan(scr, x, row, list.ToStyle(m.com.Styles.Editor.BottomLabel), label)
 }
 
 // attachSkill reads a skill's content by ID and returns it as a markdown
@@ -4352,12 +4142,11 @@ func (m *UI) cancelAgent() tea.Cmd {
 
 		m.com.Workspace.AgentCancel(m.session.ID)
 		// Stop the spinning todo indicator and drop the memoized busy
-		// state the cancel just changed; the pill re-renders now from
+		// state the cancel just changed; the turn status re-renders from
 		// last-known state and again when the off-thread refresh (and
 		// the agent's own events) land.
 		m.todoIsSpinning = false
 		m.invalidateBusyCaches()
-		m.renderPills()
 		return m.dispatchBusyRefresh()
 	}
 
@@ -4436,8 +4225,16 @@ func (m *UI) openQuitDialog() tea.Cmd {
 	return nil
 }
 
-// openModelsDialog opens the models dialog.
+// openModelsDialog opens the models dialog across every provider.
 func (m *UI) openModelsDialog() tea.Cmd {
+	return m.openModelsDialogFor("")
+}
+
+// openModelsDialogFor opens the models dialog, optionally narrowed to a
+// single provider. Onboarding narrows it because the provider is already
+// settled by then; ctrl+l does not, because switching provider is the
+// whole point of that path.
+func (m *UI) openModelsDialogFor(restrictTo catwalk.InferenceProvider) tea.Cmd {
 	if m.dialog.ContainsDialog(dialog.ModelsID) {
 		// Bring to front
 		m.dialog.BringToFront(dialog.ModelsID)
@@ -4446,10 +4243,27 @@ func (m *UI) openModelsDialog() tea.Cmd {
 
 	isOnboarding := m.state == uiOnboarding
 	modelsDialog := dialog.NewModels(m.com, isOnboarding, m.activeAgent())
+	if restrictTo != "" {
+		modelsDialog.RestrictToProvider(restrictTo)
+	}
 
 	m.dialog.OpenDialog(modelsDialog)
 
 	return modelsDialog.InitialCmd()
+}
+
+// openProvidersDialog opens the provider selection dialog, the first
+// step of onboarding.
+func (m *UI) openProvidersDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.ProvidersID) {
+		m.dialog.BringToFront(dialog.ProvidersID)
+		return nil
+	}
+
+	providersDialog := dialog.NewProviders(m.com, m.state == uiOnboarding)
+	m.dialog.OpenDialog(providersDialog)
+
+	return providersDialog.InitialCmd()
 }
 
 // openCommandsDialog opens the commands dialog.
@@ -4612,11 +4426,7 @@ func (m *UI) handleQuestionNotification(_ question.Notification) {
 // of truth for the inline editor width used by both layout sizing
 // and Height() queries.
 func (m *UI) editorContentWidth() int {
-	width := m.width - 2 // appRect horizontal margins
-	if m.state == uiChat && !m.isCompact {
-		width -= 30 // sidebar column
-	}
-	return width
+	return m.width - 2*appMarginX // appRect horizontal margins
 }
 
 // shouldCollapseQuestion reports whether a question form should render
@@ -4804,21 +4614,18 @@ func (m *UI) newSession() tea.Cmd {
 	}
 
 	m.session = nil
-	m.sidebarOffset = 0
 	m.sessionFiles = nil
 	m.sessionFileReads = nil
+	m.sessionStack = nil
 	m.setState(uiLanding, uiFocusEditor)
 	m.textarea.Focus()
 	m.chat.Blur()
 	m.chat.ClearMessages()
-	m.pillsExpanded = false
-	m.pillsAutoExpanded = false
 	m.promptQueue = 0
 	m.promptQueueItems = nil
 	m.promptQueueCheckedAt = time.Now()
 	m.invalidateBusyCaches()
 	m.invalidatePromptQueue()
-	m.pillsView = ""
 	m.historyReset()
 	agenttools.ResetCache()
 	return tea.Batch(
@@ -5062,7 +4869,31 @@ func (m *UI) pasteIdx() int {
 	return result + 1
 }
 
-// drawSessionDetails draws the session details in compact mode.
+// detailColumnWeights gives Todos twice the width of the other columns.
+var detailColumnWeights = [...]int{2, 1, 1, 1, 1}
+
+// detailColumnWidths splits width across the detail columns, reserving one
+// cell of gap between each adjacent pair.
+func detailColumnWidths(width int) [len(detailColumnWeights)]int {
+	total := 0
+	for _, w := range detailColumnWeights {
+		total += w
+	}
+
+	avail := max(len(detailColumnWeights), width-(len(detailColumnWeights)-1))
+	var out [len(detailColumnWeights)]int
+	used := 0
+	for i, w := range detailColumnWeights {
+		out[i] = max(1, avail*w/total)
+		used += out[i]
+	}
+	out[0] += max(0, avail-used) // rounding slack goes to the widest column
+	return out
+}
+
+// drawSessionDetails draws the session details panel. It carries everything
+// that isn't on screen permanently: cwd, model, todos, changed files, and the
+// LSP/MCP/skill inventories.
 func (m *UI) drawSessionDetails(scr uv.Screen, area uv.Rectangle) {
 	if m.session == nil {
 		return
@@ -5073,32 +4904,29 @@ func (m *UI) drawSessionDetails(scr uv.Screen, area uv.Rectangle) {
 	width := area.Dx() - s.CompactDetails.View.GetHorizontalFrameSize()
 	height := area.Dy() - s.CompactDetails.View.GetVerticalFrameSize()
 
-	title := s.CompactDetails.Title.Width(width).MaxHeight(2).Render(m.session.Title)
-	blocks := []string{
-		title,
-		"",
-		m.modelInfo(width),
-		"",
-	}
-
 	detailsHeader := lipgloss.JoinVertical(
 		lipgloss.Left,
-		blocks...,
+		s.CompactDetails.Title.Width(width).MaxHeight(2).Render(m.session.Title),
+		common.PrettyPath(s, m.com.Workspace.WorkingDir(), width),
+		m.modelInfo(width),
+		"",
 	)
 
 	version := s.CompactDetails.Version.Width(width).AlignHorizontal(lipgloss.Right).Render(version.Version)
 
 	remainingHeight := height - lipgloss.Height(detailsHeader) - lipgloss.Height(version)
+	maxItemsPerSection := max(1, remainingHeight-2) // section title and spacing
 
-	const maxSectionWidth = 50
-	sectionWidth := max(1, min(maxSectionWidth, width/4-2)) // account for spacing between sections
-	maxItemsPerSection := remainingHeight - 3               // Account for section title and spacing
+	cols := detailColumnWidths(width)
+	sections := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		m.todosInfo(cols[0], maxItemsPerSection, false), " ",
+		m.filesInfo(m.com.Workspace.WorkingDir(), cols[1], maxItemsPerSection, false), " ",
+		m.lspInfo(cols[2], maxItemsPerSection, false), " ",
+		m.mcpInfo(cols[3], maxItemsPerSection, false), " ",
+		m.skillsInfo(cols[4], maxItemsPerSection, false),
+	)
 
-	lspSection := m.lspInfo(sectionWidth, maxItemsPerSection, false)
-	mcpSection := m.mcpInfo(sectionWidth, maxItemsPerSection, false)
-	skillsSection := m.skillsInfo(sectionWidth, maxItemsPerSection, false)
-	filesSection := m.filesInfo(m.com.Workspace.WorkingDir(), sectionWidth, maxItemsPerSection, false)
-	sections := lipgloss.JoinHorizontal(lipgloss.Top, filesSection, " ", lspSection, " ", mcpSection, " ", skillsSection)
 	uv.NewStyledString(
 		s.CompactDetails.View.
 			Width(area.Dx()).
@@ -5199,13 +5027,11 @@ func (m *UI) disableDockerMCP() tea.Msg {
 	return util.NewInfoMsg("Docker MCP disabled successfully")
 }
 
-// renderLogo renders the Angela logo with the given styles and dimensions.
-func renderLogo(t *styles.Styles, compact bool, width int) string {
-	return logo.Render(t.Logo.GradCanvas, version.Version, compact, logo.Opts{
-		FieldColor:   t.Logo.FieldColor,
+// renderLogo renders the Angela letterform wall at the given width.
+func renderLogo(t *styles.Styles, width int) string {
+	return logo.Render(t.Logo.GradCanvas, version.Version, false, logo.Opts{
 		TitleColorA:  t.Logo.TitleColorA,
 		TitleColorB:  t.Logo.TitleColorB,
-		CharmColor:   t.Logo.CharmColor,
 		VersionColor: t.Logo.VersionColor,
 		Width:        width,
 	})

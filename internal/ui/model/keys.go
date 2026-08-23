@@ -28,9 +28,6 @@ type KeyMap struct {
 		Cancel         key.Binding
 		Tab            key.Binding
 		Details        key.Binding
-		TogglePills    key.Binding
-		PillLeft       key.Binding
-		PillRight      key.Binding
 		Down           key.Binding
 		Up             key.Binding
 		UpDown         key.Binding
@@ -47,10 +44,10 @@ type KeyMap struct {
 		Copy           key.Binding
 		ClearHighlight key.Binding
 		Expand         key.Binding
+		OpenSubSession key.Binding
+		Back           key.Binding
 		ScrollLeft     key.Binding
 		ScrollRight    key.Binding
-		FocusSidebar   key.Binding
-		FocusChat      key.Binding
 	}
 
 	Initialize struct {
@@ -185,18 +182,6 @@ func DefaultKeyMap() KeyMap {
 		key.WithKeys("ctrl+d"),
 		key.WithHelp("ctrl+d", "toggle details"),
 	)
-	km.Chat.TogglePills = key.NewBinding(
-		key.WithKeys("ctrl+t", "ctrl+space"),
-		key.WithHelp("ctrl+t", "toggle tasks"),
-	)
-	km.Chat.PillLeft = key.NewBinding(
-		key.WithKeys("left"),
-		key.WithHelp("←/→", "switch section"),
-	)
-	km.Chat.PillRight = key.NewBinding(
-		key.WithKeys("right"),
-		key.WithHelp("←/→", "switch section"),
-	)
 
 	km.Chat.Down = key.NewBinding(
 		key.WithKeys("down", "ctrl+j", "j"),
@@ -257,6 +242,14 @@ func DefaultKeyMap() KeyMap {
 		key.WithKeys("esc", "alt+esc"),
 		key.WithHelp("esc", "clear selection"),
 	)
+	km.Chat.OpenSubSession = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "open"),
+	)
+	km.Chat.Back = key.NewBinding(
+		key.WithKeys("esc", "alt+esc"),
+		key.WithHelp("esc", "back"),
+	)
 	km.Chat.Expand = key.NewBinding(
 		key.WithKeys("space"),
 		key.WithHelp("space", "expand/collapse"),
@@ -268,14 +261,6 @@ func DefaultKeyMap() KeyMap {
 	km.Chat.ScrollRight = key.NewBinding(
 		key.WithKeys("shift+right", "L"),
 		key.WithHelp("shift+→/L", "scroll right"),
-	)
-	km.Chat.FocusSidebar = key.NewBinding(
-		key.WithKeys("l", "right"),
-		key.WithHelp("l/→", "focus sidebar"),
-	)
-	km.Chat.FocusChat = key.NewBinding(
-		key.WithKeys("h", "left"),
-		key.WithHelp("h/←", "focus chat"),
 	)
 	km.Initialize.Yes = key.NewBinding(
 		key.WithKeys("y", "Y"),

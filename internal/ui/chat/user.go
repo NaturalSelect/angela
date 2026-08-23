@@ -2,7 +2,9 @@ package chat
 
 import (
 	"encoding/xml"
+	"image"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -11,7 +13,35 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
+	uv "github.com/charmbracelet/ultraviolet"
 )
+
+// Geometry of the user message band. The band is a filled surface, so these
+// are cell offsets into it rather than padding on a string.
+//
+//	[accent 1][gap 1][prompt 2][text ...][timestamp 10][pad 2]
+const (
+	userBandAccentWidth    = 1
+	userBandGap            = 1
+	userBandPromptWidth    = 2
+	userBandTimestampWidth = 10
+	userBandPadRight       = 2
+	// userBandPadY is the blank row above and below the text. It belongs to
+	// the band because list gap rows are empty strings and cannot carry a
+	// background.
+	userBandPadY        = 1
+	userBandAccentGlyph = "▌"
+	userPromptGlyph     = "❯ "
+)
+
+// userBandTextX is the column where the message text starts.
+const userBandTextX = userBandAccentWidth + userBandGap + userBandPromptWidth
+
+// userBandTextWidth is how much room the text gets once the accent column,
+// prompt, reserved timestamp columns and right padding are taken out.
+func userBandTextWidth(width int) int {
+	return max(width-userBandTextX-userBandTimestampWidth-userBandPadRight, 1)
+}
 
 // skillInvocation represents the XML structure for a loaded skill.
 type skillInvocation struct {
@@ -55,25 +85,30 @@ func (m *UserMessageItem) Finished() bool {
 
 // RawRender implements [MessageItem].
 func (m *UserMessageItem) RawRender(width int) string {
-	cappedWidth := cappedMessageWidth(width)
+	return m.renderBody(cappedMessageWidth(width))
+}
 
-	content, height, ok := m.getCachedRender(cappedWidth)
+// renderBody renders the message text at exactly the given width. The band
+// needs a narrower width than RawRender's default cap, so the width is a
+// parameter rather than derived here.
+func (m *UserMessageItem) renderBody(width int) string {
+	content, height, ok := m.getCachedRender(width)
 	// cache hit
 	if ok {
-		return m.renderHighlighted(content, cappedWidth, height)
+		return m.renderHighlighted(content, width, height)
 	}
 
 	msgContent := strings.TrimSpace(m.message.Content().Text)
 
 	// Check if this is a skill invocation (loaded_skill XML)
 	if strings.HasPrefix(msgContent, "<loaded_skill>") {
-		content = m.renderSkillInvocation(msgContent, cappedWidth)
+		content = m.renderSkillInvocation(msgContent, width)
 		height = lipgloss.Height(content)
-		m.setCachedRender(content, cappedWidth, height)
-		return m.renderHighlighted(content, cappedWidth, height)
+		m.setCachedRender(content, width, height)
+		return m.renderHighlighted(content, width, height)
 	}
 
-	renderer := common.MarkdownRenderer(m.sty, cappedWidth)
+	renderer := common.MarkdownRenderer(m.sty, width)
 	mu := common.LockMarkdownRenderer(renderer)
 
 	mu.Lock()
@@ -87,7 +122,7 @@ func (m *UserMessageItem) RawRender(width int) string {
 	}
 
 	if len(m.message.BinaryContent()) > 0 {
-		attachmentsStr := m.renderAttachments(cappedWidth)
+		attachmentsStr := m.renderAttachments(width)
 		if content == "" {
 			content = attachmentsStr
 		} else {
@@ -96,8 +131,8 @@ func (m *UserMessageItem) RawRender(width int) string {
 	}
 
 	height = lipgloss.Height(content)
-	m.setCachedRender(content, cappedWidth, height)
-	return m.renderHighlighted(content, cappedWidth, height)
+	m.setCachedRender(content, width, height)
+	return m.renderHighlighted(content, width, height)
 }
 
 // renderSkillInvocation renders a loaded_skill XML as a special UI element.
@@ -137,21 +172,66 @@ func (m *UserMessageItem) Render(width int) string {
 			return cached
 		}
 	}
-	var prefix string
-	if m.focused {
-		prefix = m.sty.Messages.UserFocused.Render()
-	} else {
-		prefix = m.sty.Messages.UserBlurred.Render()
-	}
-	lines := strings.Split(m.RawRender(width), "\n")
-	for i, line := range lines {
-		lines[i] = prefix + line
-	}
-	out := strings.Join(lines, "\n")
+	out := m.renderBand(width)
 	if useCache {
 		m.setCachedPrefixedRender(out, width, key)
 	}
 	return out
+}
+
+// renderBand paints the message onto a filled surface: an accent column, the
+// prompt glyph, the text, and a timestamp in reserved right-hand columns. The
+// text is wrapped short of those columns, so it can never collide with them.
+func (m *UserMessageItem) renderBand(width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	textWidth := userBandTextWidth(width)
+	lines := strings.Split(m.renderBody(textWidth), "\n")
+	height := len(lines) + 2*userBandPadY
+
+	base := list.ToStyle(m.sty.Messages.UserBand)
+	buf := uv.NewScreenBuffer(width, height)
+	common.FillRect(&buf, buf.Bounds(), base)
+
+	accent := m.sty.Messages.UserBandAccentBlurred
+	if m.focused {
+		accent = m.sty.Messages.UserBandAccentFocused
+	}
+	accentStyle := list.ToStyle(accent)
+	for y := range height {
+		common.SetSpan(&buf, 0, y, accentStyle, userBandAccentGlyph)
+	}
+
+	// The body keeps its own markdown colors, so it is drawn rather than
+	// spanned — only the cells it leaves without a background inherit the
+	// fill.
+	body := strings.Join(lines, "\n")
+	common.DrawOnSurface(&buf, image.Rect(
+		userBandTextX, userBandPadY,
+		userBandTextX+textWidth, userBandPadY+len(lines),
+	), base, body)
+
+	common.SetSpan(&buf, userBandAccentWidth+userBandGap, userBandPadY,
+		list.ToStyle(m.sty.Messages.UserBandPrompt), userPromptGlyph)
+
+	if ts := m.timestamp(); ts != "" {
+		x := width - userBandPadRight - buf.WidthMethod().StringWidth(ts)
+		common.SetSpan(&buf, x, userBandPadY,
+			list.ToStyle(m.sty.Messages.UserBandTimestamp), ts)
+	}
+
+	return buf.Render()
+}
+
+// timestamp is the wall-clock time the message was sent, or "" when the
+// message predates timestamping.
+func (m *UserMessageItem) timestamp() string {
+	if m.message.CreatedAt <= 0 {
+		return ""
+	}
+	return time.Unix(m.message.CreatedAt, 0).Format("3:04 PM")
 }
 
 // ID implements MessageItem.

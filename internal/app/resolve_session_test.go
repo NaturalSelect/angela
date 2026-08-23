@@ -61,6 +61,10 @@ func (m *mockSessionService) UpdateTitleAndUsage(context.Context, string, string
 	return nil
 }
 
+func (m *mockSessionService) AddCost(context.Context, string, float64) error {
+	return nil
+}
+
 func (m *mockSessionService) UpdateActiveAgent(context.Context, string, config.ActiveAgentState) error {
 	return nil
 }

@@ -31,8 +31,9 @@ const (
 
 // MCPAuth handles the MCP OAuth authentication dialog.
 type MCPAuth struct {
-	com   *common.Common
-	width int
+	com     *common.Common
+	frame   *Frame
+	metrics FrameMetrics
 
 	pending   []mcptools.PendingAuthServer
 	current   int
@@ -59,7 +60,7 @@ func NewMCPAuth(com *common.Common, pending []mcptools.PendingAuthServer, authUR
 	t := com.Styles
 	m := &MCPAuth{
 		com:       com,
-		width:     0, // Set dynamically in Draw().
+		frame:     NewFrame(t, FrameSpec{MaxWidth: 60}),
 		pending:   pending,
 		state:     MCPAuthStatePrompt,
 		authURLFn: authURLFn,
@@ -224,20 +225,17 @@ func (m *MCPAuth) currentServer() mcptools.PendingAuthServer {
 // overflows a narrow terminal.
 func (m *MCPAuth) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := m.com.Styles
-	m.width = max(0, min(60, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	dialogStyle := t.Dialog.View.Width(m.width)
-	view := dialogStyle.Render(m.dialogContent())
-	DrawCenter(scr, area, view)
-	return nil
+	m.frame.SetTitle(fmt.Sprintf("Authenticate with %s", m.currentServer().Name), "")
+	m.metrics = m.frame.Measure(area)
+	view := t.Dialog.View.Width(m.metrics.Width).Render(m.dialogContent())
+	return m.frame.Draw(scr, area, view, nil)
 }
 
 func (m *MCPAuth) dialogContent() string {
-	t := m.com.Styles
-	innerWidth := m.width - t.Dialog.View.GetHorizontalFrameSize()
 	elements := []string{
 		m.headerContent(),
 		m.innerContent(),
-		renderDialogHelp(t, &m.help, m, innerWidth),
+		m.frame.RenderHelp(&m.help, m, m.metrics.ContentWidth),
 	}
 	return strings.Join(elements, "\n")
 }
@@ -245,11 +243,11 @@ func (m *MCPAuth) dialogContent() string {
 func (m *MCPAuth) headerContent() string {
 	t := m.com.Styles
 	titleStyle := t.Dialog.Title
-	dialogStyle := t.Dialog.View.Width(m.width)
+	dialogStyle := t.Dialog.View.Width(m.metrics.Width)
 	headerOffset := titleStyle.GetHorizontalFrameSize() + dialogStyle.GetHorizontalFrameSize()
 
-	title := fmt.Sprintf("Authenticate with %s", m.currentServer().Name)
-	return common.DialogTitle(t, titleStyle.Render(title), m.width-headerOffset, t.Dialog.TitleGradFromColor, t.Dialog.TitleGradToColor)
+	title := m.frame.Spec().Title
+	return common.DialogTitle(t, titleStyle.Render(title), m.metrics.Width-headerOffset, t.Dialog.TitleGradFromColor, t.Dialog.TitleGradToColor)
 }
 
 func (m *MCPAuth) innerContent() string {
@@ -264,7 +262,7 @@ func (m *MCPAuth) innerContent() string {
 	// innerWidth is the dialog's content area: total width minus the
 	// View frame (border). Every block sizes to this so nothing gets
 	// re-wrapped when the dialog frame renders it.
-	innerWidth := m.width - t.Dialog.View.GetHorizontalFrameSize()
+	innerWidth := m.metrics.ContentWidth
 	server := m.currentServer()
 
 	block := func(s string) string {

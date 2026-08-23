@@ -27,7 +27,6 @@ package model
 import (
 	"context"
 	"log/slog"
-	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -206,7 +205,6 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 		}
 		return nil
 	}
-	prevBusy := m.isAgentBusy()
 	prevYolo := m.yoloModeCached()
 	m.agentBusyCache.set(msg.agentBusy)
 	m.yoloCache.set(msg.yolo)
@@ -230,9 +228,6 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 	}
 	if m.todoIsSpinning && !busy {
 		m.todoIsSpinning = false
-	}
-	if prevBusy != busy {
-		m.renderPills()
 	}
 	if cmd := m.drainPendingReAuth(); cmd != nil {
 		cmds = append(cmds, cmd)
@@ -289,14 +284,11 @@ func (m *UI) applyPromptQueue(msg promptQueueMsg) []tea.Cmd {
 		return nil
 	}
 	m.promptQueueCheckedAt = time.Now()
-	itemsChanged := !slices.Equal(m.promptQueueItems, msg.prompts)
 	countChanged := len(msg.prompts) != m.promptQueue
 	m.promptQueueItems = msg.prompts
 	m.promptQueue = len(msg.prompts)
 	if countChanged {
 		m.updateLayoutAndSize()
-	} else if itemsChanged {
-		m.renderPills()
 	}
 	return nil
 }

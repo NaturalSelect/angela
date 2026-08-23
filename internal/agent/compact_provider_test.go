@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,13 +60,14 @@ func newSplitProviderCoordinator(t *testing.T) *coordinator {
 	cfg.Config().Providers.Set("other", other)
 
 	coord := &coordinator{
-		cfg:         cfg,
-		sessions:    env.sessions,
-		messages:    env.messages,
-		permissions: env.permissions,
-		history:     env.history,
-		filetracker: *env.filetracker,
-		subagents:   newSubagentRegistry(),
+		cfg:            cfg,
+		sessions:       env.sessions,
+		messages:       env.messages,
+		permissions:    env.permissions,
+		history:        env.history,
+		filetracker:    *env.filetracker,
+		subagents:      newSubagentRegistry(),
+		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
 	coord.reconcileSubagents()
 	coord.currentAgent = coord.buildAgent(coderCfg.ID, false)

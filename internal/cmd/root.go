@@ -172,12 +172,10 @@ var heartbit = lipgloss.NewStyle().Foreground(charmtone.Dolly).SetString(`
 func printSessionResume(model *ui.UI) {
 	out := colorprofile.NewWriter(os.Stderr, os.Environ())
 
-	t := styles.CharmtonePantera()
+	t := styles.AngelaTeal()
 	angelaLogo := logo.Render(t.Logo.GradCanvas, version.Version, true, logo.Opts{
-		FieldColor:   t.Logo.FieldColor,
 		TitleColorA:  t.Logo.TitleColorA,
 		TitleColorB:  t.Logo.TitleColorB,
-		CharmColor:   t.Logo.CharmColor,
 		VersionColor: t.Logo.VersionColor,
 	})
 

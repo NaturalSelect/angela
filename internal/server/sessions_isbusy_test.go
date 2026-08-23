@@ -36,7 +36,7 @@ func (s *stubCoordinator) RunAccepted(ctx context.Context, accept *agent.Accepte
 	return nil, nil
 }
 
-func (s *stubCoordinator) BeginAccepted(sessionID string) *agent.AcceptedRun {
+func (s *stubCoordinator) BeginAccepted(context.Context, string) *agent.AcceptedRun {
 	return nil
 }
 func (s *stubCoordinator) Cancel(string) {}

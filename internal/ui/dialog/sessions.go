@@ -39,6 +39,9 @@ type Session struct {
 
 	sessionsMode sessionsMode
 
+	frame   *Frame
+	metrics FrameMetrics
+
 	keyMap struct {
 		Select        key.Binding
 		Next          key.Binding
@@ -61,6 +64,11 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 	s := new(Session)
 	s.sessionsMode = sessionsModeNormal
 	s.com = com
+	s.frame = NewFrame(com.Styles, FrameSpec{
+		Title:     "Sessions",
+		MaxWidth:  defaultDialogMaxWidth,
+		MaxHeight: defaultDialogHeight,
+	})
 	sessions, err := com.Workspace.ListSessions(context.TODO())
 	if err != nil {
 		return nil, err
@@ -229,11 +237,9 @@ func (s *Session) Cursor() *tea.Cursor {
 // Draw implements [Dialog].
 func (s *Session) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := s.com.Styles
-	width := max(0, min(defaultDialogMaxWidth, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	height := max(0, min(defaultDialogHeight, area.Dy()-t.Dialog.View.GetVerticalBorderSize()))
-	innerWidth := width - t.Dialog.View.GetHorizontalFrameSize()
-	s.input.SetWidth(dialogInputTextWidth(t, s.input, innerWidth))
-	listHeight, listTotalHeight, listWidth := sizeDialogList(t, s.list, innerWidth, height)
+	s.metrics = s.frame.Measure(area)
+	s.input.SetWidth(s.frame.InputTextWidth(s.input, s.metrics.ContentWidth))
+	listHeight, listTotalHeight, listWidth := s.frame.SizeList(s.list, s.metrics)
 
 	// Hide the timestamps uniformly when the widest would crowd the title.
 	applyInfoColumnVisibility(s.list.FilteredItems(), listWidth, sessionInfoMaxPercent)
@@ -247,8 +253,7 @@ func (s *Session) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	var cur *tea.Cursor
-	rc := NewRenderContext(t, width)
-	rc.Title = "Sessions"
+	rc := s.frame.Context(s.metrics)
 	switch s.sessionsMode {
 	case sessionsModeDeleting:
 		rc.TitleStyle = t.Dialog.Sessions.DeletingTitle
@@ -307,14 +312,13 @@ func (s *Session) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		rc.AddPart(inputView)
 	}
 	listView := t.Dialog.List.Height(s.list.Height()).Render(s.list.Render())
-	listView = joinScrollbar(t, listView, listHeight, listTotalHeight, listHeight, s.list.Offset())
+	listView = s.frame.JoinScrollbar(listView, listHeight, listTotalHeight, listHeight, s.list.Offset())
 	rc.AddPart(listView)
-	rc.Help = renderDialogHelp(t, &s.help, s, innerWidth)
+	rc.Help = s.frame.RenderHelp(&s.help, s, s.metrics.ContentWidth)
 
 	view := rc.Render()
 
-	DrawCenterCursor(scr, area, view, cur)
-	return cur
+	return s.frame.Draw(scr, area, view, cur)
 }
 
 func (s *Session) selectedSessionItem() *SessionItem {

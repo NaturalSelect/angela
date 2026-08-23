@@ -544,6 +544,17 @@ func TestCallbackReceiver_RendersFailurePage(t *testing.T) {
 // single redirect, so the user saw two tabs and one of the two requests
 // waited on a redirect that had already been consumed, hanging until its
 // context expired.
+//
+// The test drives begin/await rather than fetchAuthorizationCode so the
+// overlap is established instead of hoped for. Only a redirect settles a
+// flight, and only a settled flight is retired, so withholding the
+// redirect until every caller has returned from begin makes retirement
+// impossible in the meantime — which is what turns "one tab" into an
+// invariant. Driving fetchAuthorizationCode cannot pin this down: its
+// whole flight lifecycle (open, redirect, settle, release, end) may
+// complete before a slow caller is first scheduled, and that caller then
+// legitimately starts a second login, exactly as
+// TestCallbackReceiver_AuthorizeTwiceInSequence requires it to.
 func TestCallbackReceiver_ConcurrentAuthorizeOpensOneTab(t *testing.T) {
 	t.Parallel()
 
@@ -552,43 +563,56 @@ func TestCallbackReceiver_ConcurrentAuthorizeOpensOneTab(t *testing.T) {
 
 	base := serveReceiver(t, r)
 
-	// Stand in for the browser: record the open, then redirect back as the
-	// authorization server would once the user consents.
-	var opens atomic.Int64
-	r.handler = &Handler{openURL: func(string) error {
-		opens.Add(1)
-		go func() {
-			resp, gerr := http.Get(base + callbackPath + "?code=abc&state=xyz") //nolint:noctx
-			if gerr == nil {
-				resp.Body.Close()
-			}
-		}()
-		return nil
-	}}
+	// Only the owner opens a browser tab, so counting owners counts tabs.
+	type arrival struct {
+		flight *authFlight
+		owned  bool
+		err    error
+	}
 
 	const callers = 4
+	arrivals := make(chan arrival, callers)
 	var wg sync.WaitGroup
-	results := make(chan *auth.AuthorizationResult, callers)
-	errs := make(chan error, callers)
 	for range callers {
 		wg.Go(func() {
-			result, ferr := r.fetchAuthorizationCode(t.Context(), &auth.AuthorizationArgs{URL: base + "/authorize"})
-			results <- result
-			errs <- ferr
+			flight, owned, err := r.begin()
+			arrivals <- arrival{flight: flight, owned: owned, err: err}
 		})
 	}
+	// No redirect has fired yet, so the flight every caller found cannot
+	// have settled and cannot have been retired.
 	wg.Wait()
-	close(results)
-	close(errs)
+	close(arrivals)
 
-	require.Equal(t, int64(1), opens.Load(), "one login must open exactly one tab")
+	joined := make([]arrival, 0, callers)
+	owners := 0
+	for a := range arrivals {
+		require.NoError(t, a.err)
+		require.NotNil(t, a.flight)
+		if a.owned {
+			owners++
+		}
+		joined = append(joined, a)
+	}
+
+	require.Len(t, joined, callers)
+	require.Equal(t, 1, owners, "one login must open exactly one tab")
+	for _, a := range joined {
+		require.Same(t, joined[0].flight, a.flight,
+			"overlapping callers must coalesce onto one flight")
+	}
+
+	// Redirect back as the authorization server would once the user
+	// consents, now that every caller is provably on the same flight.
+	resp, err := http.Get(base + callbackPath + "?code=abc&state=xyz") //nolint:noctx
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
 
 	// Every caller is served the same authorization code, and none is left
 	// waiting on a redirect it will never see.
-	for err := range errs {
+	for _, a := range joined {
+		result, err := r.await(t.Context(), a.flight, a.owned)
 		require.NoError(t, err)
-	}
-	for result := range results {
 		require.NotNil(t, result)
 		require.Equal(t, "abc", result.Code)
 	}

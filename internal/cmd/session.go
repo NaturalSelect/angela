@@ -438,7 +438,7 @@ func outputSessionJSON(w io.Writer, sess session.Session, msgs []*message.Messag
 }
 
 func outputSessionHuman(ctx context.Context, sess session.Session, msgs []*message.Message) error {
-	styles := styles.CharmtonePantera()
+	styles := styles.AngelaTeal()
 	toolResults := chat.BuildToolResultMap(msgs)
 
 	width := sessionOutputWidth

@@ -47,16 +47,18 @@ func (c *blockingCoordinator) RunAccepted(ctx context.Context, accept *agent.Acc
 	return nil, nil
 }
 
-func (c *blockingCoordinator) BeginAccepted(sessionID string) *agent.AcceptedRun { return nil }
-func (c *blockingCoordinator) Cancel(string)                                     {}
-func (c *blockingCoordinator) CancelAll()                                        {}
-func (c *blockingCoordinator) IsBusy() bool                                      { return false }
-func (c *blockingCoordinator) IsSessionBusy(string) bool                         { return false }
-func (c *blockingCoordinator) QueuedPrompts(string) int                          { return 0 }
-func (c *blockingCoordinator) QueuedPromptsList(string) []string                 { return nil }
-func (c *blockingCoordinator) ClearQueue(string)                                 {}
-func (c *blockingCoordinator) Summarize(context.Context, string) error           { return nil }
-func (c *blockingCoordinator) DefaultModel() agent.Model                         { return agent.Model{} }
+func (c *blockingCoordinator) BeginAccepted(context.Context, string) *agent.AcceptedRun {
+	return nil
+}
+func (c *blockingCoordinator) Cancel(string)                           {}
+func (c *blockingCoordinator) CancelAll()                              {}
+func (c *blockingCoordinator) IsBusy() bool                            { return false }
+func (c *blockingCoordinator) IsSessionBusy(string) bool               { return false }
+func (c *blockingCoordinator) QueuedPrompts(string) int                { return 0 }
+func (c *blockingCoordinator) QueuedPromptsList(string) []string       { return nil }
+func (c *blockingCoordinator) ClearQueue(string)                       {}
+func (c *blockingCoordinator) Summarize(context.Context, string) error { return nil }
+func (c *blockingCoordinator) DefaultModel() agent.Model               { return agent.Model{} }
 
 func (c *blockingCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
 	return config.ActiveAgent{}, nil

@@ -1369,6 +1369,7 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 	var (
 		providerID = catwalk.InferenceProvider(c.ID)
 		testURL    = ""
+		hint       = ""
 		headers    = make(map[string]string)
 		apiKey, _  = resolver.ResolveValue(c.APIKey)
 	)
@@ -1389,6 +1390,7 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 	switch c.Type {
 	case catwalk.TypeOpenAI, catwalk.TypeOpenAICompat, catwalk.TypeOpenRouter:
 		baseURL, _ := resolver.ResolveValue(c.BaseURL)
+		baseURL = NormalizeBaseURL(baseURL, c.Type)
 		baseURL = cmp.Or(baseURL, "https://api.openai.com/v1")
 
 		switch providerID {
@@ -1399,18 +1401,16 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 		default:
 			testURL = baseURL + "/models"
 		}
+		if !looksVersioned(baseURL) {
+			hint = fmt.Sprintf(" (base_url %q has no version segment; if this provider's API lives under /v1, try %q)", baseURL, baseURL+"/v1")
+		}
 
 		headers["Authorization"] = "Bearer " + apiKey
 	case catwalk.TypeAnthropic:
 		baseURL, _ := resolver.ResolveValue(c.BaseURL)
-		baseURL = cmp.Or(baseURL, "https://api.anthropic.com/v1")
-
-		switch providerID {
-		case catwalk.InferenceKimiCoding:
-			testURL = baseURL + "/v1/models"
-		default:
-			testURL = baseURL + "/models"
-		}
+		baseURL = NormalizeBaseURL(baseURL, c.Type)
+		baseURL = cmp.Or(baseURL, "https://api.anthropic.com")
+		testURL = baseURL + "/v1/models"
 
 		headers["x-api-key"] = apiKey
 		headers["anthropic-version"] = "2023-06-01"
@@ -1462,6 +1462,9 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 		}
 	default:
 		if resp.StatusCode != http.StatusOK {
+			if resp.StatusCode == http.StatusNotFound && hint != "" {
+				return fmt.Errorf("failed to connect to provider %s: %s%s", c.ID, resp.Status, hint)
+			}
 			return fmt.Errorf("failed to connect to provider %s: %s", c.ID, resp.Status)
 		}
 	}

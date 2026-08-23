@@ -24,6 +24,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/discover"
 	"github.com/NaturalSelect/angela/internal/event"
 	"github.com/NaturalSelect/angela/internal/filetracker"
@@ -118,7 +119,11 @@ type Coordinator interface {
 	// consumed under dispatchMu once the accepted -> (cancel-on-entry |
 	// queued | active) transition is chosen.
 	RunAccepted(ctx context.Context, accept *AcceptedRun, sessionID, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error)
-	BeginAccepted(sessionID string) *AcceptedRun
+	// BeginAccepted reserves the accept slot the handle above carries.
+	// For a child session this process has not dispatched itself it
+	// also rebuilds the session's route, which costs one database read
+	// and one agent resolution, once per child session per process.
+	BeginAccepted(ctx context.Context, sessionID string) *AcceptedRun
 	Cancel(sessionID string)
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
@@ -169,6 +174,9 @@ type coordinator struct {
 	currentAgent SessionAgent
 	subagents    *subagentRegistry
 
+	// subagentRoutes maps a child session ID to the executor that owns it.
+	subagentRoutes *csync.Map[string, subagentRoute]
+
 	// active holds each session's own agent instance. Everything a
 	// user changes at runtime lands here, never in cfg. The zero value
 	// is ready to use.
@@ -213,21 +221,22 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 	skillTracker := skills.NewTracker(activeSkills)
 
 	c := &coordinator{
-		cfg:          opts.Config,
-		sessions:     opts.Sessions,
-		messages:     opts.Messages,
-		permissions:  opts.Permissions,
-		questions:    opts.Questions,
-		history:      opts.History,
-		filetracker:  opts.FileTracker,
-		lspManager:   opts.LSPManager,
-		notify:       opts.Notify,
-		runComplete:  opts.RunComplete,
-		subagents:    newSubagentRegistry(),
-		allSkills:    allSkills,
-		activeSkills: activeSkills,
-		skillTracker: skillTracker,
-		interactive:  opts.Interactive,
+		cfg:            opts.Config,
+		sessions:       opts.Sessions,
+		messages:       opts.Messages,
+		permissions:    opts.Permissions,
+		questions:      opts.Questions,
+		history:        opts.History,
+		filetracker:    opts.FileTracker,
+		lspManager:     opts.LSPManager,
+		notify:         opts.Notify,
+		runComplete:    opts.RunComplete,
+		subagents:      newSubagentRegistry(),
+		subagentRoutes: csync.NewMap[string, subagentRoute](),
+		allSkills:      allSkills,
+		activeSkills:   activeSkills,
+		skillTracker:   skillTracker,
+		interactive:    opts.Interactive,
 	}
 
 	// No agent is bound here. Which agent drives a turn is read from
@@ -256,11 +265,11 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 	return c, nil
 }
 
-// forgetDeletedSessions evicts a session's cached agent as the session
-// goes away. Deletion runs through several entry points (CLI, workspace
-// and backend), so the store follows the event instead of asking each
-// of them to remember; a surviving entry would keep answering for a
-// session that no longer exists.
+// forgetDeletedSessions evicts a session's cached agent and routing entry
+// as the session goes away. Deletion runs through several entry points
+// (CLI, workspace and backend), so the stores follow the event instead of
+// asking each of them to remember; a surviving entry would keep answering
+// for a session that no longer exists.
 func (c *coordinator) forgetDeletedSessions(ctx context.Context, events <-chan pubsub.Event[session.Session]) {
 	for {
 		select {
@@ -272,6 +281,7 @@ func (c *coordinator) forgetDeletedSessions(ctx context.Context, events <-chan p
 			}
 			if ev.Type == pubsub.DeletedEvent {
 				c.active.forget(ev.Payload.ID)
+				c.forgetSubagentRoute(ev.Payload.ID)
 			}
 		}
 	}
@@ -319,14 +329,11 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	// reusing a cached agent that still holds revoked tools.
 	c.reconcileSubagents()
 
-	active, err := c.activeAgentFor(ctx, sessionID)
+	target, err := c.turnExecutorFor(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := c.resolveAgent(ctx, active, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve the agent: %w", err)
-	}
+	resolved := target.resolved
 	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, sessionID)
 
 	model := resolved.Model
@@ -371,7 +378,7 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	// same correlator.
 	runID := RunIDFromContext(ctx)
 	run := func() (*fantasy.AgentResult, error) {
-		return c.currentAgent.Run(ctx, SessionAgentCall{
+		return target.executor.Run(ctx, SessionAgentCall{
 			SessionID:                sessionID,
 			Agent:                    resolved,
 			RunID:                    runID,
@@ -390,14 +397,11 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 			OnComplete:               onComplete,
 			Accepted:                 accept,
 			OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
-			Resolve: func(ctx context.Context) (resolvedAgent, error) {
-				active, err := c.activeAgentFor(ctx, sessionID)
-				if err != nil {
-					return resolvedAgent{}, err
-				}
-				return c.resolveAgent(ctx, active, 0)
-			},
+			Resolve:                  target.resolve,
 		})
+	}
+	if target.child {
+		run = c.rollingUpCost(ctx, sessionID, run)
 	}
 	beforeLoaded := c.skillTracker.LoadedNames()
 	result, originalErr := run()
@@ -1370,7 +1374,7 @@ func (c *coordinator) buildAnthropicProvider(baseURL, apiKey string, headers map
 		opts = append(opts, anthropic.WithHeaders(headers))
 	}
 
-	if baseURL != "" {
+	if baseURL := config.NormalizeBaseURL(baseURL, catwalk.TypeAnthropic); baseURL != "" {
 		opts = append(opts, anthropic.WithBaseURL(baseURL))
 	}
 
@@ -1393,7 +1397,7 @@ func (c *coordinator) buildOpenaiProvider(baseURL, apiKey string, headers map[st
 	if len(headers) > 0 {
 		opts = append(opts, openai.WithHeaders(headers))
 	}
-	if baseURL != "" {
+	if baseURL := config.NormalizeBaseURL(baseURL, catwalk.TypeOpenAI); baseURL != "" {
 		opts = append(opts, openai.WithBaseURL(baseURL))
 	}
 	return openai.New(opts...)
@@ -1429,7 +1433,7 @@ func (c *coordinator) buildVercelProvider(_, apiKey string, headers map[string]s
 
 func (c *coordinator) buildOpenaiCompatProvider(baseURL, apiKey string, headers map[string]string, extraBody map[string]any, providerID string, isSubAgent bool) (fantasy.Provider, error) {
 	opts := []openaicompat.Option{
-		openaicompat.WithBaseURL(baseURL),
+		openaicompat.WithBaseURL(config.NormalizeBaseURL(baseURL, catwalk.TypeOpenAICompat)),
 		openaicompat.WithAPIKey(apiKey),
 	}
 
@@ -1575,7 +1579,6 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 	switch providerCfg.ID {
 	case string(catwalk.InferenceProviderOpenCodeGo), string(catwalk.InferenceProviderOpenCodeZen):
 		if opencodeMessagesModels[model.Model] {
-			baseURL = strings.TrimSuffix(baseURL, "/v1")
 			return c.buildAnthropicProvider(baseURL, apiKey, headers, providerCfg.ID)
 		}
 	}
@@ -1638,28 +1641,47 @@ func isExactoSupported(modelID string) bool {
 // dispatch path's only way to mark a run as accepted-but-not-yet-active
 // so a cancel arriving before the run registers in activeRequests is not
 // lost.
-func (c *coordinator) BeginAccepted(sessionID string) *AcceptedRun {
-	return c.currentAgent.BeginAccepted(sessionID)
+//
+// It resolves through acceptExecutorFor, not executorForSession: this
+// path is synchronous but not latency-critical, so unlike Cancel it can
+// afford to rebuild a persisted child session's route from the database.
+// A nil return means the session has no executor to run on at all, and
+// the run that follows reports why.
+func (c *coordinator) BeginAccepted(ctx context.Context, sessionID string) *AcceptedRun {
+	executor, ok := c.acceptExecutorFor(ctx, sessionID)
+	if !ok {
+		return nil
+	}
+	return executor.BeginAccepted(sessionID)
 }
 
 func (c *coordinator) Cancel(sessionID string) {
-	c.currentAgent.Cancel(sessionID)
+	if executor, ok := c.executorForSession(sessionID); ok {
+		executor.Cancel(sessionID)
+	}
 }
 
 func (c *coordinator) CancelAll() {
-	c.currentAgent.CancelAll()
+	c.eachExecutor(SessionAgent.CancelAll)
 }
 
 func (c *coordinator) ClearQueue(sessionID string) {
-	c.currentAgent.ClearQueue(sessionID)
+	if executor, ok := c.executorForSession(sessionID); ok {
+		executor.ClearQueue(sessionID)
+	}
 }
 
 func (c *coordinator) IsBusy() bool {
-	return c.currentAgent.IsBusy()
+	busy := false
+	c.eachExecutor(func(executor SessionAgent) {
+		busy = busy || executor.IsBusy()
+	})
+	return busy
 }
 
 func (c *coordinator) IsSessionBusy(sessionID string) bool {
-	return c.currentAgent.IsSessionBusy(sessionID)
+	executor, ok := c.executorForSession(sessionID)
+	return ok && executor.IsSessionBusy(sessionID)
 }
 
 // DefaultModel reports the model a brand new session would run on. It
@@ -1717,11 +1739,19 @@ func (c *coordinator) UpdateModels(ctx context.Context) error {
 }
 
 func (c *coordinator) QueuedPrompts(sessionID string) int {
-	return c.currentAgent.QueuedPrompts(sessionID)
+	executor, ok := c.executorForSession(sessionID)
+	if !ok {
+		return 0
+	}
+	return executor.QueuedPrompts(sessionID)
 }
 
 func (c *coordinator) QueuedPromptsList(sessionID string) []string {
-	return c.currentAgent.QueuedPromptsList(sessionID)
+	executor, ok := c.executorForSession(sessionID)
+	if !ok {
+		return nil
+	}
+	return executor.QueuedPromptsList(sessionID)
 }
 
 func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
@@ -1911,6 +1941,20 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 	}
 	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)
 
+	c.registerSubagentRoute(session.ID, params.Resolved.ID, params.Agent)
+
+	// Record which sub-agent owns this session. Without it the session is
+	// only addressable for as long as this process lives, and a later one
+	// has no identity to resume it under.
+	if err := c.sessions.UpdateActiveAgent(ctx, session.ID, params.Resolved.Host.State()); err != nil {
+		slog.Warn(
+			"Failed to record the sub-agent on its session",
+			"session", session.ID,
+			"agent", params.Resolved.ID,
+			"error", err,
+		)
+	}
+
 	// A child session has no interactive surface of its own: no UI ever
 	// subscribes to its permission events, so a permission-gated tool it
 	// uses (web_fetch, web_search, or anything a "general" dispatch
@@ -1987,22 +2031,17 @@ func subAgentOutput(result *fantasy.AgentResult) string {
 	return result.Response.Content.Text()
 }
 
-// updateParentSessionCost accumulates the cost from a child session to its parent session.
+// updateParentSessionCost accumulates the cost from a child session to its
+// parent session. The add is atomic because sibling sub-runs under one
+// parent finish concurrently.
 func (c *coordinator) updateParentSessionCost(ctx context.Context, childSessionID, parentSessionID string) error {
 	childSession, err := c.sessions.Get(ctx, childSessionID)
 	if err != nil {
 		return fmt.Errorf("get child session: %w", err)
 	}
 
-	parentSession, err := c.sessions.Get(ctx, parentSessionID)
-	if err != nil {
-		return fmt.Errorf("get parent session: %w", err)
-	}
-
-	parentSession.Cost += childSession.Cost
-
-	if _, err := c.sessions.Save(ctx, parentSession); err != nil {
-		return fmt.Errorf("save parent session: %w", err)
+	if err := c.sessions.AddCost(ctx, parentSessionID, childSession.Cost); err != nil {
+		return fmt.Errorf("add cost to parent session: %w", err)
 	}
 
 	return nil

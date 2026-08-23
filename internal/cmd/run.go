@@ -203,7 +203,7 @@ func runNonInteractive(
 	progress = ws.Config.Options.Progress == nil || *ws.Config.Options.Progress
 
 	if !hideSpinner && stderrTTY {
-		t := styles.CharmtonePantera()
+		t := styles.AngelaTeal()
 
 		spinner = format.NewSpinner(ctx, cancel, anim.Settings{
 			Size:        10,

@@ -136,7 +136,7 @@ func shortHelpLine(h *help.Model, bindings []key.Binding, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	sep := h.Styles.ShortSeparator.Inline(true).Render(h.ShortSeparator)
+	sep := h.Styles.ShortSeparator.Inline(true).Render(styles.HelpSeparator)
 	ellipsis := h.Styles.Ellipsis.Inline(true).Render(cmp.Or(h.Ellipsis, "…"))
 
 	var b strings.Builder

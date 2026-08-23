@@ -33,6 +33,9 @@ type Agents struct {
 	list  *list.FilterableList
 	input textinput.Model
 
+	frame   *Frame
+	metrics FrameMetrics
+
 	keyMap struct {
 		Select   key.Binding
 		Next     key.Binding
@@ -70,6 +73,13 @@ var (
 // agent the session runs on today, so it can be marked and preselected.
 func NewAgents(com *common.Common, currentAgent string) (*Agents, error) {
 	a := &Agents{com: com}
+
+	a.frame = NewFrame(com.Styles, FrameSpec{
+		Title:     "Switch Agent",
+		MaxWidth:  agentsDialogMaxWidth,
+		MinHeight: agentsDialogMinHeight,
+		MaxHeight: agentsDialogMaxHeight,
+	})
 
 	h := help.New()
 	h.Styles = com.Styles.DialogHelpStyles()
@@ -169,25 +179,11 @@ func (a *Agents) Cursor() *tea.Cursor {
 // Draw implements [Dialog].
 func (a *Agents) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := a.com.Styles
-	width := max(0, min(agentsDialogMaxWidth, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	innerWidth := width - t.Dialog.View.GetHorizontalFrameSize()
+	a.metrics = a.frame.FitHeight(area, a.frame.ListHeightOffset()+a.list.TotalHeight())
 
-	a.input.SetWidth(dialogInputTextWidth(t, a.input, innerWidth))
+	a.input.SetWidth(a.frame.InputTextWidth(a.input, a.metrics.ContentWidth))
 
-	listTotalHeight := a.list.TotalHeight()
-	heightOffset := t.Dialog.Title.GetVerticalFrameSize() + titleContentHeight +
-		t.Dialog.InputPrompt.GetVerticalFrameSize() + inputContentHeight +
-		t.Dialog.HelpView.GetVerticalFrameSize() +
-		t.Dialog.View.GetVerticalFrameSize()
-	desiredHeight := heightOffset + listTotalHeight
-	maxAvailable := area.Dy() - t.Dialog.View.GetVerticalBorderSize()
-	height := max(agentsDialogMinHeight, min(agentsDialogMaxHeight, desiredHeight, maxAvailable))
-
-	listHeight, listTotalHeight, _ := sizeDialogList(t, a.list, innerWidth, height)
-
-	rc := NewRenderContext(t, width)
-	rc.Title = "Switch Agent"
-	rc.AddPart(t.Dialog.InputPrompt.Render(a.input.View()))
+	listHeight, listTotalHeight, _ := a.frame.SizeList(a.list, a.metrics)
 
 	if a.list.Height() >= len(a.list.FilteredItems()) {
 		a.list.ScrollToTop()
@@ -196,15 +192,15 @@ func (a *Agents) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	listView := t.Dialog.List.Height(a.list.Height()).Render(a.list.Render())
-	listView = joinScrollbar(t, listView, listHeight, listTotalHeight, listHeight, a.list.Offset())
-	rc.AddPart(listView)
-	rc.Help = renderDialogHelp(t, &a.help, a, innerWidth)
+	listView = a.frame.JoinScrollbar(listView, listHeight, listTotalHeight, listHeight, a.list.Offset())
 
-	view := rc.Render()
+	view := a.frame.Render(a.metrics,
+		[]string{t.Dialog.InputPrompt.Render(a.input.View()), listView},
+		a.frame.RenderHelp(&a.help, a, a.metrics.ContentWidth),
+	)
 
 	cur := a.Cursor()
-	DrawCenterCursor(scr, area, view, cur)
-	return cur
+	return a.frame.Draw(scr, area, view, cur)
 }
 
 // ShortHelp implements [help.KeyMap].

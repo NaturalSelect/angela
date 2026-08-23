@@ -85,6 +85,13 @@ provider add deepseek \
   --api-key "${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}"
 ```
 
+`--base-url` conventions differ by `--type`: `anthropic` wants the bare
+host (`https://api.anthropic.com`, no `/v1` — the SDK appends
+`v1/messages` itself; a stray `/v1` is stripped automatically). `openai`,
+`openai-compat`, and `openrouter` never add a version segment, so
+`--base-url` must be the exact value the vendor's docs show, `/v1`
+included — it is never guessed or appended.
+
 ### models
 
 ```bash

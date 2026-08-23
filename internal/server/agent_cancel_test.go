@@ -65,7 +65,7 @@ func (s *runCoordinator) RunAccepted(ctx context.Context, accept *agent.Accepted
 	return s.Run(ctx, sessionID, prompt, attachments...)
 }
 
-func (s *runCoordinator) BeginAccepted(sessionID string) *agent.AcceptedRun {
+func (s *runCoordinator) BeginAccepted(context.Context, string) *agent.AcceptedRun {
 	return nil
 }
 func (s *runCoordinator) Cancel(string) {}

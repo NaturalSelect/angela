@@ -26,12 +26,39 @@ The UI uses a **hybrid rendering** approach:
 1. **Screen-based (Ultraviolet)**: The top-level `UI` model creates a
    `uv.ScreenBuffer`, and components draw into sub-regions using
    `uv.NewStyledString(str).Draw(scr, rect)`. Layout is rectangle-based via
-   a `uiLayout` struct with fields like `layout.header`, `layout.main`,
-   `layout.editor`, `layout.sidebar`, `layout.pills`, `layout.status`.
+   a `uiLayout` struct. Every state shares **one** vertical stack —
+   `header`, `main`, `editor`, `turnStatus`, `status` — and states differ
+   only in which bands they use, never in the direction of the split. There
+   is no horizontal branch; do not reintroduce one.
 2. **String-based**: Sub-components like `list.List` and `completions` render
    to strings, which are painted onto the screen buffer.
 3. **`View()`** creates the screen buffer, calls `Draw()`, then
    `canvas.Render()` flattens it to a string for Bubble Tea.
+
+#### Strings vs. cells — where the line is
+
+A component may render to a **string** only when its output is a *stream of
+text* whose every visual attribute travels with the text itself: foreground
+color, bold, underline.
+
+The moment a component owns a **rectangle with a surface** — a background
+fill, a border, a label inset into a border, or anything positioned by column
+rather than by text flow — it must paint **cells**: either `Draw(scr, area)`
+directly, or `common.RenderSurface` to build a `uv.ScreenBuffer` and return
+`buf.Render()` (that path exists for components stuck with the
+`Render(width int) string` contract, such as `list.Item`).
+
+**Corollary**: never express a background by wrapping multi-line text in
+`lipgloss.Background()` — a reset inside an inner segment clears it, and
+Glamour-rendered markdown is full of them. Filling is a cell operation. See
+`common/surface.go`; the primitives are `FillRect`, `DrawOnSurface`,
+`RenderSurface` and `SetSpan`.
+
+Foreground and background are **independent per-cell attributes**. Text drawn
+onto a filled surface must therefore carry no background of its own — leave
+`Style.Bg` nil and the fill shows through. Conversely, a span that *does* set
+a background will overwrite the fill, which is how a label carves its notch
+out of a border row.
 
 ### Main Model (`model/ui.go`)
 
@@ -41,6 +68,9 @@ The `UI` struct is the top-level Bubble Tea model. Key fields:
 - `layout uiLayout` — computed layout rectangles
 - `state uiState` — `uiOnboarding | uiInitialize | uiLanding | uiChat`
 - `focus uiFocusState` — `uiFocusNone | uiFocusEditor | uiFocusMain`
+- `isCompact bool` — compact is **vertical only** (short terminals or the
+  explicit toggle); it removes the gaps between bands and never changes
+  which bands exist
 - `chat *Chat` — wraps `list.List` for the message view
 - `textarea textarea.Model` — the input editor
 - `dialog *dialog.Overlay` — stacked dialog system
@@ -66,7 +96,6 @@ imperative methods that the main model calls directly:
 - **`Attachments`** and **`Completions`** have non-standard `Update`
   signatures (e.g., returning `bool` for "consumed") that act as guards, not
   as full Bubble Tea models.
-- **Sidebar** is not its own model: it's a `drawSidebar()` method on `UI`.
 
 When writing new components, follow this pattern:
 
@@ -149,7 +178,7 @@ tool names to specific types:
 ### Styling
 
 - All styles are defined in `styles/styles.go` (massive `Styles` struct with
-  nested groups for Header, Pills, Dialog, Help, etc.).
+  nested groups for Header, TurnStatus, Dialog, Help, etc.).
 - Access styles via `*common.Common` passed to components.
 - Use semantic color fields rather than hardcoded colors.
 
@@ -159,19 +188,36 @@ tool names to specific types:
   `ID()`, `HandleMsg()` returning an `Action`, `Draw()` onto `uv.Screen`.
 - `Overlay` manages a stack of dialogs with push/pop/contains operations.
 - Dialogs draw last and overlay everything else.
-- Use `RenderContext` from `dialog/common.go` for consistent layout (title
-  gradients, width, gap, cursor offset helpers).
+- Use `dialog.Frame` for sizing, chrome and placement (see below).
 
 #### Dialog rendering rules
 
-These prevent the wrapping/overflow bugs that recur whenever a new dialog
-is copy-pasted from an old one. In lipgloss v2 `Width(n)` is the **total**
-box width — border and padding live *inside* it.
+`dialog.Frame` (`dialog/frame.go`) owns dialog size. Declare bounds as
+intent in a `FrameSpec` and let `Measure(area)` resolve them; never subtract
+a border or frame size yourself to arrive at a dimension.
 
-- Size content to the dialog's **content area**, not the outer width:
-  `innerWidth := m.width - t.Dialog.View.GetHorizontalFrameSize()`. Sizing a
-  block to the full `m.width` makes it 1–2 cols too wide, so the dialog
-  frame re-wraps it (the classic "last few chars wrap" bug).
+- Build the frame in the constructor, `Measure` as the first line of `Draw`,
+  and lay every piece of content out against `metrics.ContentWidth`. Sizing
+  a block to the outer width makes it 1–2 cols too wide, so the frame
+  re-wraps it (the classic "last few chars wrap" bug).
+- Express size as intent: `MaxWidth` for a fixed cap, `WidthRatio` to track
+  the terminal (a ratio with no cap is unbounded — that is what a diff
+  wants), `MinHeight`/`MaxHeight` plus `FitHeight(area, desired)` for a
+  dialog that shrinks to its content, `Fullscreen` when the terminal is too
+  small for the normal bounds.
+- Go through the frame for the rest too: `RenderHelp`, `SizeList`,
+  `JoinScrollbar`, `InputTextWidth`, `Render`, and `Draw`. Use
+  `Context(metrics)` when a dialog must override a style before rendering.
+- `SizeList` reserves a scrollbar column when the content overflows. A
+  dialog that draws no scrollbar should size its list directly from
+  `metrics.ContentWidth` and `ListHeightOffset()`, or rows lose a column to
+  a scrollbar that never appears.
+- The screen is always the last word: a `MinWidth`/`MinHeight` floor yields
+  to a terminal too small to hold it, rather than overflowing.
+
+Two lipgloss rules the frame cannot enforce for you — in lipgloss v2
+`Width(n)` is the **total** box width, border and padding inside it:
+
 - Inset text with **`Padding`, never `Margin`**. Margin sits outside the
   width and pushes the block past the frame; padding is inside the width
   and applies to every wrapped line.
@@ -179,16 +225,12 @@ box width — border and padding live *inside* it.
   (`styleA.Render(x) + styleB.Render(y)`), rather than concatenating raw
   strings and wrapping the whole thing in one style. An inner segment's
   reset code drops the outer color for everything after it.
-- Use the shared helpers instead of re-deriving widths:
-  - keybind hints → `renderDialogHelp(t, &m.help, m, innerWidth)` (sizes,
-    pads, truncates — never `helpStyle.Render(m.help.View(m))` raw);
-  - text inputs → `dialogInputTextWidth(t, input, innerWidth)` (accounts
-    for the `"> "` prompt);
-  - titles → `common.DialogTitle` (truncates instead of wrapping);
-  - list + scrollbar → `joinScrollbar`;
-  - hiding a crowded info column → `applyInfoColumnVisibility`.
-- Clamp width/height to the drawable `area` (`max(0, min(maxW, area.Dx()-frame))`)
-  so dialogs stay inside small terminals.
+
+`quit.go` and `arguments.go` stay off the frame on purpose: their width is
+measured from their own content rather than declared, and `quit.go` has its
+own `Dialog.Quit.*` chrome with no title or help line. The `question_*.go`
+components are inline editors, not framed dialogs — they draw into a rect
+the form hands them.
 
 ### Shared Context
 
@@ -197,8 +239,8 @@ through all components that need access to app state or styles.
 
 ## File Organization
 
-- `model/` — Main UI model and major sub-models (chat, sidebar, header,
-  status, pills, session, onboarding, keys, etc.)
+- `model/` — Main UI model and major sub-models (chat, header, status,
+  turnstatus, todos, session, onboarding, keys, etc.)
 - `chat/` — Chat message item types and tool renderers
 - `dialog/` — Dialog implementations (models, sessions, commands,
   permissions, API key, OAuth, filepicker, reasoning, quit)

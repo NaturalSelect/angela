@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,13 +42,14 @@ func newModelPrefTestCoordinator(t *testing.T, temperature *float64) *coordinato
 	cfg.Config().Agents[config.AgentCoder] = agentCfg
 
 	coord := &coordinator{
-		cfg:         cfg,
-		sessions:    env.sessions,
-		messages:    env.messages,
-		permissions: env.permissions,
-		history:     env.history,
-		filetracker: *env.filetracker,
-		subagents:   newSubagentRegistry(),
+		cfg:            cfg,
+		sessions:       env.sessions,
+		messages:       env.messages,
+		permissions:    env.permissions,
+		history:        env.history,
+		filetracker:    *env.filetracker,
+		subagents:      newSubagentRegistry(),
+		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
 	coord.reconcileSubagents()
 	coord.currentAgent = coord.buildAgent(agentCfg.ID, false)

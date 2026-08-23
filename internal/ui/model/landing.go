@@ -1,12 +1,26 @@
 package model
 
 import (
-	"image"
+	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/workspace"
-	"github.com/charmbracelet/ultraviolet/layout"
+	"github.com/charmbracelet/x/ansi"
+)
+
+// Landing geometry.
+const (
+	// landingMenuWidth is the column budget one menu row is laid out in, so
+	// the shortcuts line up under each other instead of tracking the
+	// terminal edge.
+	landingMenuWidth = 34
+	// landingLogoMinHeight is the body height below which the letterform
+	// wall is dropped. The wall goes before the menu does: a terminal that
+	// cannot hold both should still offer the entry points.
+	landingLogoMinHeight = 12
+	// landingTopDivisor sits the block above center. Slack below the menu
+	// reads as room leading into the prompt; slack above reads as a hole.
+	landingTopDivisor = 3
 )
 
 // activeAgent returns the agent the current session is running, as
@@ -26,39 +40,69 @@ func (m *UI) activeAgent() *workspace.ActiveAgent {
 	return &active
 }
 
-// landingView renders the landing page view showing the current working
-// directory, model information, and LSP/MCP status in a two-column layout.
-func (m *UI) landingView() string {
-	t := m.com.Styles
-	width := m.layout.main.Dx()
-	cwd := common.PrettyPath(t, m.com.Workspace.WorkingDir(), width)
+// landingEntry is one row of the landing menu: an action and the key that
+// runs it.
+type landingEntry struct {
+	label string
+	key   string
+}
 
-	parts := []string{
-		cwd,
+// landingMenu returns the entry points the landing page offers. They are the
+// bindings that do something useful before a session exists — everything
+// else waits behind the command palette.
+func (m *UI) landingMenu() []landingEntry {
+	return []landingEntry{
+		{"Resume session", m.keyMap.Sessions.Help().Key},
+		{"Commands", m.keyMap.Commands.Help().Key},
+		{"Switch model", m.keyMap.Models.Help().Key},
+		{"Quit", m.keyMap.Quit.Help().Key},
 	}
+}
 
-	parts = append(parts, "", m.modelInfo(width))
-	infoSection := lipgloss.JoinVertical(lipgloss.Left, parts...)
+// renderLandingMenu lays the entries out as label-left, key-right rows within
+// landingMenuWidth, falling back to the plain labels when the width cannot
+// hold both columns.
+func (m *UI) renderLandingMenu(width int) string {
+	t := m.com.Styles
+	entries := m.landingMenu()
 
-	var remainingHeightArea image.Rectangle
-	layout.Vertical(
-		layout.Len(lipgloss.Height(infoSection)+1),
-		layout.Fill(1),
-	).Split(m.layout.main).Assign(new(image.Rectangle), &remainingHeightArea)
+	menuWidth := min(landingMenuWidth, width)
+	rows := make([]string, 0, len(entries))
+	for _, e := range entries {
+		label := t.Landing.MenuLabel.Render(e.label)
+		key := t.Landing.MenuKey.Render(e.key)
+		gap := menuWidth - lipgloss.Width(label) - lipgloss.Width(key)
+		if gap < 1 {
+			rows = append(rows, ansi.Truncate(label, width, "…"))
+			continue
+		}
+		rows = append(rows, label+strings.Repeat(" ", gap)+key)
+	}
+	return strings.Join(rows, "\n")
+}
 
-	mcpLspSectionWidth := min(30, (width-2)/3)
+// landingView renders the landing page: the letterform wall over a menu of
+// entry points, sat above center. Everything the old landing page reported —
+// model, LSP, MCP, skills — now lives behind ctrl+d, so the entry screen
+// stays an entry screen.
+func (m *UI) landingView() string {
+	width := m.layout.main.Dx()
+	height := max(0, m.layout.main.Dy())
 
-	lspSection := m.lspInfo(mcpLspSectionWidth, max(1, remainingHeightArea.Dy()), false)
-	mcpSection := m.mcpInfo(mcpLspSectionWidth, max(1, remainingHeightArea.Dy()), false)
-	skillsSection := m.skillsInfo(mcpLspSectionWidth, max(1, remainingHeightArea.Dy()), false)
+	var parts []string
+	if height >= landingLogoMinHeight {
+		parts = append(parts, renderLogo(m.com.Styles, width), "")
+	}
+	parts = append(parts, m.renderLandingMenu(width))
+	block := strings.Join(parts, "\n")
 
-	content := lipgloss.JoinHorizontal(lipgloss.Left, lspSection, " ", mcpSection, " ", skillsSection)
+	// Place the block above center, then let the style pad out the rest.
+	if top := (height - lipgloss.Height(block)) / landingTopDivisor; top > 0 {
+		block = strings.Repeat("\n", top) + block
+	}
 
 	return lipgloss.NewStyle().
 		Width(width).
-		Height(m.layout.main.Dy() - 1).
-		PaddingTop(1).
-		Render(
-			lipgloss.JoinVertical(lipgloss.Left, infoSection, "", content),
-		)
+		Height(height).
+		Render(block)
 }

@@ -297,3 +297,70 @@ func TestTheCatalogLandingKeepsTheTypedFilter(t *testing.T) {
 	require.Equal(t, []string{sessionModelID}, visibleModelIDs(m),
 		"the catalog landing must not drop the typed filter")
 }
+
+const (
+	otherProviderID = "globex"
+	otherModelID    = "globex-model"
+)
+
+// twoProviderCatalog adds a second provider, so restricting the list has
+// something to exclude.
+func twoProviderCatalog() []catwalk.Provider {
+	return append(catalogFor(), catwalk.Provider{
+		ID:     otherProviderID,
+		Name:   "Globex",
+		Models: []catwalk.Model{{ID: otherModelID, Name: "Globex Model"}},
+	})
+}
+
+// TestRestrictToProviderHidesEveryOtherProvider pins the third
+// onboarding step: the provider is already settled by then, so listing
+// the others invites the user to contradict their own earlier choice.
+func TestRestrictToProviderHidesEveryOtherProvider(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newModelsDialog(t, ws, nil)
+	m.SetProviders(twoProviderCatalog())
+
+	require.Equal(t, []string{globalModelID, sessionModelID, otherModelID}, visibleModelIDs(m),
+		"an unrestricted list keeps every provider")
+
+	m.RestrictToProvider(testProviderID)
+	require.Equal(t, []string{globalModelID, sessionModelID}, visibleModelIDs(m))
+}
+
+// TestRestrictToProviderDropsRecents covers the leak the group would
+// otherwise open: recents span providers, so they smuggle rows past the
+// restriction.
+func TestRestrictToProviderDropsRecents(t *testing.T) {
+	t.Parallel()
+
+	recent := config.SelectedModel{Provider: otherProviderID, Model: otherModelID}
+	ws := &configWorkspace{cfg: modelsConfig(t, recent)}
+	m := newModelsDialog(t, ws, nil)
+	m.SetProviders(twoProviderCatalog())
+
+	require.Contains(t, visibleModelIDs(m), otherModelID)
+
+	m.RestrictToProvider(testProviderID)
+	require.Equal(t, []string{globalModelID, sessionModelID}, visibleModelIDs(m),
+		"a recent from another provider must not survive the restriction")
+}
+
+// TestARestrictedListNeverPrunesRecents follows the onboarding order:
+// the restriction is applied before the catalog lands. Judging recents
+// against a one-provider view would call every other provider's entry
+// dead and delete it.
+func TestARestrictedListNeverPrunesRecents(t *testing.T) {
+	t.Parallel()
+
+	recent := config.SelectedModel{Provider: otherProviderID, Model: otherModelID}
+	ws := &configWorkspace{cfg: modelsConfig(t, recent)}
+	m := newModelsDialog(t, ws, nil)
+	m.RestrictToProvider(testProviderID)
+
+	require.Nil(t, m.SetProviders(twoProviderCatalog()), "a restricted view must not prune")
+	require.Nil(t, m.staleRecents)
+	require.Empty(t, ws.pruned)
+}

@@ -13,12 +13,8 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-const (
-	// NotificationsID is the identifier for the notification style picker dialog.
-	NotificationsID              = "notifications"
-	notificationsDialogMaxWidth  = 50
-	notificationsDialogMaxHeight = 12
-)
+// NotificationsID is the identifier for the notification style picker dialog.
+const NotificationsID = "notifications"
 
 // NotificationStyle represents a notification backend option.
 type NotificationStyle struct {
@@ -42,6 +38,9 @@ type Notifications struct {
 	help  help.Model
 	list  *list.FilterableList
 	input textinput.Model
+
+	frame   *Frame
+	metrics FrameMetrics
 
 	keyMap struct {
 		Select   key.Binding
@@ -77,6 +76,12 @@ var (
 // NewNotifications creates a new notification style picker dialog.
 func NewNotifications(com *common.Common) *Notifications {
 	n := &Notifications{com: com}
+
+	n.frame = NewFrame(com.Styles, FrameSpec{
+		Title:     "Notification Style",
+		MaxWidth:  50,
+		MaxHeight: 12,
+	})
 
 	h := help.New()
 	h.Styles = com.Styles.DialogHelpStyles()
@@ -174,21 +179,12 @@ func (n *Notifications) Cursor() *tea.Cursor {
 // Draw implements [Dialog].
 func (n *Notifications) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := n.com.Styles
-	width := max(0, min(notificationsDialogMaxWidth, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	height := max(0, min(notificationsDialogMaxHeight, area.Dy()-t.Dialog.View.GetVerticalBorderSize()))
-	innerWidth := width - t.Dialog.View.GetHorizontalFrameSize()
-	heightOffset := t.Dialog.Title.GetVerticalFrameSize() + titleContentHeight +
-		t.Dialog.InputPrompt.GetVerticalFrameSize() + inputContentHeight +
-		t.Dialog.HelpView.GetVerticalFrameSize() +
-		t.Dialog.View.GetVerticalFrameSize()
+	n.metrics = n.frame.Measure(area)
 
-	n.input.SetWidth(dialogInputTextWidth(t, n.input, innerWidth))
-	n.list.SetSize(innerWidth, max(0, height-heightOffset))
+	n.input.SetWidth(n.frame.InputTextWidth(n.input, n.metrics.ContentWidth))
+	n.frame.SizeList(n.list, n.metrics)
 
-	rc := NewRenderContext(t, width)
-	rc.Title = "Notification Style"
 	inputView := t.Dialog.InputPrompt.Render(n.input.View())
-	rc.AddPart(inputView)
 
 	visibleCount := len(n.list.FilteredItems())
 	if n.list.Height() >= visibleCount {
@@ -198,14 +194,14 @@ func (n *Notifications) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	listView := t.Dialog.List.Height(n.list.Height()).Render(n.list.Render())
-	rc.AddPart(listView)
-	rc.Help = renderDialogHelp(t, &n.help, n, innerWidth)
 
-	view := rc.Render()
+	view := n.frame.Render(n.metrics,
+		[]string{inputView, listView},
+		n.frame.RenderHelp(&n.help, n, n.metrics.ContentWidth),
+	)
 
 	cur := n.Cursor()
-	DrawCenterCursor(scr, area, view, cur)
-	return cur
+	return n.frame.Draw(scr, area, view, cur)
 }
 
 // ShortHelp implements [help.KeyMap].

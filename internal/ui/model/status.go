@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -31,6 +32,7 @@ func NewStatus(com *common.Common, km help.KeyMap) *Status {
 	s.com = com
 	s.help = help.New()
 	s.help.Styles = com.Styles.Help
+	s.help.ShortSeparator = styles.HelpSeparator
 	s.helpKm = km
 	return s
 }

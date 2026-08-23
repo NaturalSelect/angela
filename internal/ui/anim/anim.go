@@ -55,7 +55,9 @@ var (
 )
 
 var (
-	availableRunes = []rune("0123456789abcdefABCDEF~!@#$£€%^&*()+=_")
+	// The pool the animation cycles through. Braille dots read as a
+	// deliberate shimmer; alphanumerics and punctuation read as mojibake.
+	availableRunes = []rune("⠁⠂⠄⠈⠐⠠⡀⢀⠃⠅⠆⠉⠊⠌⠑⠒⠔⠘⠡⠢⠤⠨⠰⡁⡂⡄⢁⢂⢄⠿")
 	ellipsisFrames = []string{".", "..", "...", ""}
 )
 

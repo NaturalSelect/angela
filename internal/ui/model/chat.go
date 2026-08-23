@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/common"
@@ -35,11 +36,6 @@ type DelayedClickMsg struct {
 // scrollbarHideMsg is sent to hide the scrollbar after the timeout period.
 type scrollbarHideMsg struct {
 	seq int // sequence number to ignore stale messages
-}
-
-// sidebarScrollbarHideMsg is sent to hide the sidebar scrollbar after timeout.
-type sidebarScrollbarHideMsg struct {
-	seq int
 }
 
 // scrollbarHideCmd returns a command that sends a scrollbarHideMsg after the timeout.
@@ -73,14 +69,6 @@ func chatWarmCmd(seq int, delay time.Duration) tea.Cmd {
 	}
 	return tea.Tick(delay, func(_ time.Time) tea.Msg {
 		return chatWarmMsg{seq: seq}
-	})
-}
-
-// sidebarScrollbarHideCmd returns a command that sends a sidebarScrollbarHideMsg
-// after the timeout.
-func sidebarScrollbarHideCmd(seq int) tea.Cmd {
-	return tea.Tick(scrollbarHideDuration, func(_ time.Time) tea.Msg {
-		return sidebarScrollbarHideMsg{seq: seq}
 	})
 }
 
@@ -441,6 +429,15 @@ func (m *Chat) AppendMessages(msgs ...chat.MessageItem) {
 
 // UpdateNestedToolIDs updates the ID map for nested tools within a container.
 // Call this after modifying nested tools to ensure animations work correctly.
+// SelectedItem returns the focused item, or nil when nothing is focused.
+func (m *Chat) SelectedItem() chat.MessageItem {
+	item, ok := m.list.SelectedItem().(chat.MessageItem)
+	if !ok {
+		return nil
+	}
+	return item
+}
+
 func (m *Chat) UpdateNestedToolIDs(containerID string) {
 	idx, ok := m.idInxMap[containerID]
 	if !ok {
@@ -812,6 +809,22 @@ func (m *Chat) MessageItem(id string) chat.MessageItem {
 		return nil
 	}
 	return item
+}
+
+// LastPendingTool returns the most recent tool call still running or awaiting
+// permission. It backs the turn status line's "what is it doing right now".
+func (m *Chat) LastPendingTool() (message.ToolCall, bool) {
+	for i := m.list.Len() - 1; i >= 0; i-- {
+		item, ok := m.list.ItemAt(i).(chat.ToolMessageItem)
+		if !ok {
+			continue
+		}
+		switch item.Status() {
+		case chat.ToolStatusRunning, chat.ToolStatusAwaitingPermission:
+			return item.ToolCall(), true
+		}
+	}
+	return message.ToolCall{}, false
 }
 
 // ToggleExpandedSelectedItem expands the selected message item if it is expandable.

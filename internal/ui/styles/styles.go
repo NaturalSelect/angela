@@ -19,15 +19,35 @@ import (
 
 const (
 	CheckIcon   string = "✓"
-	SpinnerIcon string = "⋯"
+	SpinnerIcon string = "⠋"
 	LoadingIcon string = "⟳"
 	ModelIcon   string = "◇"
+
+	// HelpSeparator divides hints on a help row. A rule reads as chrome; a
+	// bullet reads as prose. Shared so the main help row and every dialog
+	// footer agree.
+	HelpSeparator string = " │ "
 
 	ArrowRightIcon string = "→"
 
 	ToolPending string = "●"
 	ToolSuccess string = "✓"
 	ToolError   string = "×"
+
+	// Tool kind icons. The glyph says what kind of work a call does; its
+	// color says how the call ended. Status alone left every row looking
+	// the same, so a screenful of tool calls could not be skimmed.
+	ToolIconShell   string = "$"
+	ToolIconWrite   string = "←"
+	ToolIconRead    string = "→"
+	ToolIconSearch  string = "✱"
+	ToolIconFetch   string = "%"
+	ToolIconWeb     string = "◈"
+	ToolIconAgent   string = "◆"
+	ToolIconTodo    string = "≡"
+	ToolIconLSP     string = "▪"
+	ToolIconMCP     string = "▸"
+	ToolIconGeneric string = "●"
 
 	RadioOn  string = "◉"
 	RadioOff string = "○"
@@ -46,8 +66,8 @@ const (
 	SkillIcon  string = "▲"
 	RemoveIcon string = "✕"
 
-	ScrollbarThumb string = "┃"
-	ScrollbarTrack string = "│"
+	ScrollbarThumb string = "▊"
+	ScrollbarTrack string = "▏"
 
 	LSPErrorIcon   string = "E"
 	LSPWarningIcon string = "W"
@@ -72,15 +92,12 @@ type Styles struct {
 	ANSI [16]color.Color
 
 	// Header
-	Header struct {
-		Charm             lipgloss.Style // Style for "Charm™" label
-		Diagonals         lipgloss.Style // Style for diagonal separators (╱)
-		Percentage        lipgloss.Style // Style for context percentage
-		Keystroke         lipgloss.Style // Style for keystroke hints (e.g., "ctrl+d")
-		KeystrokeTip      lipgloss.Style // Style for keystroke action text (e.g., "open", "close")
+	Header struct { // Style for context percentage // Style for keystroke hints (e.g., "ctrl+d") // Style for keystroke action text (e.g., "open", "close")
 		WorkingDir        lipgloss.Style // Style for current working directory
 		Separator         lipgloss.Style // Style for separator dots (•)
 		Wrapper           lipgloss.Style // Outer container for the entire header row
+		SessionTitle      lipgloss.Style
+		Breadcrumb        lipgloss.Style // Ancestor levels and separators in the session trail
 		LogoGradCanvas    lipgloss.Style // Canvas for the compact "angela" gradient
 		LogoGradFromColor color.Color    // "angela" wordmark gradient start
 		LogoGradToColor   color.Color    // "angela" wordmark gradient end
@@ -126,23 +143,27 @@ type Styles struct {
 	Editor struct {
 		Textarea textarea.Styles
 
-		// Normal mode prompt (default "::: ").
-		PromptNormalFocused lipgloss.Style
-		PromptNormalBlurred lipgloss.Style
+		// Mode colors. They tint the box border and the prompt marker, so
+		// the input's state stays legible without a separate accent rail.
+		Rail     lipgloss.Style
+		RailBang lipgloss.Style
+		RailYolo lipgloss.Style
 
-		// YOLO mode prompt (" ! " icon + ":::" dots).
-		PromptYoloIconFocused lipgloss.Style
-		PromptYoloIconBlurred lipgloss.Style
-		PromptYoloDotsFocused lipgloss.Style
-		PromptYoloDotsBlurred lipgloss.Style
+		// Border is the box drawn around the textarea.
+		Border        lipgloss.Style
+		BorderFocused lipgloss.Style
 
-		// Bang mode prompt (" ! " icon + ":::" dots, Turtle color).
-		PromptBangIconFocused lipgloss.Style
-		PromptBangIconBlurred lipgloss.Style
-		PromptBangDotsFocused lipgloss.Style
-		PromptBangDotsBlurred lipgloss.Style
+		// Prompt marker ("> ") on the first editor line.
+		PromptMarkerFocused lipgloss.Style
+		PromptMarkerBlurred lipgloss.Style
 
-		// Question mode prompt (" ? " icon + ":::" dots).
+		// Caption is the one-line run context. BottomLabel is the style it
+		// is drawn with when inset into the bottom border: its background
+		// masks the border glyphs so the label sits in a notch.
+		Caption     lipgloss.Style
+		BottomLabel lipgloss.Style
+
+		// Question mode prompt (" ? " icon).
 		PromptQuestionIconFocused lipgloss.Style
 		PromptQuestionIconBlurred lipgloss.Style
 
@@ -182,16 +203,23 @@ type Styles struct {
 
 	// Logo
 	Logo struct {
-		FieldColor         color.Color
 		TitleColorA        color.Color
 		TitleColorB        color.Color
-		CharmColor         color.Color
 		VersionColor       color.Color
-		SmallCharm         lipgloss.Style // "Charm™" label in SmallRender
-		SmallDiagonals     lipgloss.Style // Diagonal line fill in SmallRender
 		GradCanvas         lipgloss.Style // Blank canvas for gradient painting
-		SmallGradFromColor color.Color    // Small "Angela" wordmark gradient start
-		SmallGradToColor   color.Color    // Small "Angela" wordmark gradient end
+		SmallGradFromColor color.Color    // Single-line wordmark gradient start
+		SmallGradToColor   color.Color    // Single-line wordmark gradient end
+	}
+
+	// Turn status: the single authoritative runtime line under the editor.
+	TurnStatus struct {
+		Spinner   lipgloss.Style // Busy spinner
+		Activity  lipgloss.Style // Current activity, e.g. "Edit main.go"
+		Field     lipgloss.Style // Metric fields (elapsed, tokens, cost, todos)
+		Separator lipgloss.Style // " · " between fields
+		HintKey   lipgloss.Style // Right-hand hint key, e.g. "esc"
+		HintDesc  lipgloss.Style // Right-hand hint description
+		Idle      lipgloss.Style // Idle-state text
 	}
 
 	// Working indicator gradient (spinners/shimmers on assistant "thinking",
@@ -222,10 +250,14 @@ type Styles struct {
 		InfoDiagnostic    lipgloss.Style
 	}
 
-	// Sidebar
-	Sidebar struct {
-		SessionTitle lipgloss.Style // Current session title at top of sidebar
-		WorkingDir   lipgloss.Style // Working directory path (PrettyPath)
+	// WorkingDirText styles a working-directory path (see common.PrettyPath).
+	WorkingDirText lipgloss.Style
+
+	// Landing
+	Landing struct {
+		Hint      lipgloss.Style // One-line entry hint under the wordmark
+		MenuLabel lipgloss.Style // Landing menu entry label
+		MenuKey   lipgloss.Style // Landing menu entry shortcut
 	}
 
 	// ModelInfo (model name, provider, reasoning, token/cost summary)
@@ -274,18 +306,23 @@ type Styles struct {
 	// Chat
 	// Messages - chat message item styles
 	Messages struct {
-		UserBlurred      lipgloss.Style
-		UserFocused      lipgloss.Style
-		AssistantBlurred lipgloss.Style
-		AssistantFocused lipgloss.Style
-		NoContent        lipgloss.Style
-		Thinking         lipgloss.Style
-		ErrorTag         lipgloss.Style
-		ErrorTitle       lipgloss.Style
-		ErrorDetails     lipgloss.Style
-		ToolCallFocused  lipgloss.Style
-		ToolCallCompact  lipgloss.Style
-		ToolCallBlurred  lipgloss.Style
+		// The user message band: a filled surface, not a text prefix.
+		// Text drawn onto it must carry no background of its own.
+		UserBand              lipgloss.Style
+		UserBandPrompt        lipgloss.Style
+		UserBandTimestamp     lipgloss.Style
+		UserBandAccentFocused lipgloss.Style
+		UserBandAccentBlurred lipgloss.Style
+		AssistantBlurred      lipgloss.Style
+		AssistantFocused      lipgloss.Style
+		NoContent             lipgloss.Style
+		Thinking              lipgloss.Style
+		ErrorTag              lipgloss.Style
+		ErrorTitle            lipgloss.Style
+		ErrorDetails          lipgloss.Style
+		ToolCallFocused       lipgloss.Style
+		ToolCallCompact       lipgloss.Style
+		ToolCallBlurred       lipgloss.Style
 
 		// Shell (bang mode) item styles.
 		ShellBarFocused    lipgloss.Style // Left vertical bar when focused.
@@ -563,25 +600,6 @@ type Styles struct {
 		Skill    lipgloss.Style
 		Remove   lipgloss.Style
 		Deleting lipgloss.Style
-	}
-
-	// Pills styles for todo/queue pills
-	Pills struct {
-		Base               lipgloss.Style // Base pill style with padding
-		Focused            lipgloss.Style // Pill with visible rounded border
-		QueueItemPrefix    lipgloss.Style // Prefix for queue list items
-		QueueItemText      lipgloss.Style // Queue list item body text
-		QueueLabel         lipgloss.Style // "N Queued" label text
-		QueueIconBase      lipgloss.Style // Base style for queue gradient triangles
-		QueueGradFromColor color.Color    // Start color for queue indicator gradient
-		QueueGradToColor   color.Color    // End color for queue indicator gradient
-		TodoLabel          lipgloss.Style // "To-Do" label
-		TodoProgress       lipgloss.Style // Todo ratio (e.g. "2/5")
-		TodoCurrentTask    lipgloss.Style // Current in-progress task name
-		TodoSpinner        lipgloss.Style // Todo spinner style
-		HelpKey            lipgloss.Style // Keystroke hint style
-		HelpText           lipgloss.Style // Help action text style
-		Area               lipgloss.Style // Pills area container
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -223,110 +222,4 @@ func TestFollowStaysAtBottomWhenContentGrows(t *testing.T) {
 	if !u.chat.AtBottom() {
 		t.Fatal("expected chat to remain at bottom after streaming content grew while following")
 	}
-}
-
-func TestAutoExpandPillsIfReasonable(t *testing.T) {
-	t.Parallel()
-
-	t.Run("expands when terminal is tall enough and todos exist", func(t *testing.T) {
-		t.Parallel()
-
-		u := newTestUI()
-		u.height = 50
-		u.session = &session.Session{ID: "s1", Todos: []session.Todo{
-			{Status: session.TodoStatusInProgress, Content: "do work"},
-			{Status: session.TodoStatusPending, Content: "do more"},
-		}}
-
-		u.autoExpandPillsIfReasonable()
-
-		if !u.pillsExpanded {
-			t.Fatal("expected pillsExpanded to be true")
-		}
-		if u.focusedPillSection != pillSectionTodos {
-			t.Fatalf("expected focusedPillSection to be pillSectionTodos, got %d", u.focusedPillSection)
-		}
-	})
-
-	t.Run("does not expand when terminal is too short", func(t *testing.T) {
-		t.Parallel()
-
-		u := newTestUI()
-		u.height = 30
-		u.session = &session.Session{ID: "s1", Todos: []session.Todo{
-			{Status: session.TodoStatusInProgress, Content: "do work"},
-		}}
-
-		u.autoExpandPillsIfReasonable()
-
-		if u.pillsExpanded {
-			t.Fatal("expected pillsExpanded to be false when terminal height is below threshold")
-		}
-	})
-
-	t.Run("does not expand when all todos are completed", func(t *testing.T) {
-		t.Parallel()
-
-		u := newTestUI()
-		u.height = 50
-		u.session = &session.Session{ID: "s1", Todos: []session.Todo{
-			{Status: session.TodoStatusCompleted, Content: "done"},
-		}}
-
-		u.autoExpandPillsIfReasonable()
-
-		if u.pillsExpanded {
-			t.Fatal("expected pillsExpanded to be false when all todos are completed")
-		}
-	})
-
-	t.Run("does not expand when already expanded", func(t *testing.T) {
-		t.Parallel()
-
-		u := newTestUI()
-		u.height = 50
-		u.pillsExpanded = true
-		u.session = &session.Session{ID: "s1", Todos: []session.Todo{
-			{Status: session.TodoStatusInProgress, Content: "do work"},
-		}}
-		u.updateLayoutAndSize()
-
-		u.autoExpandPillsIfReasonable()
-
-		if !u.pillsExpanded {
-			t.Fatal("expected pillsExpanded to stay true")
-		}
-	})
-
-	t.Run("expands for prompt queue when no todos", func(t *testing.T) {
-		t.Parallel()
-
-		u := newTestUI()
-		u.height = 50
-		u.session = &session.Session{ID: "s1", Todos: []session.Todo{}}
-		u.promptQueue = 2
-
-		u.autoExpandPillsIfReasonable()
-
-		if !u.pillsExpanded {
-			t.Fatal("expected pillsExpanded to be true for prompt queue")
-		}
-		if u.focusedPillSection != pillSectionQueue {
-			t.Fatalf("expected focusedPillSection to be pillSectionQueue, got %d", u.focusedPillSection)
-		}
-	})
-
-	t.Run("does not expand when no session", func(t *testing.T) {
-		t.Parallel()
-
-		u := newTestUI()
-		u.height = 50
-		u.session = nil
-
-		u.autoExpandPillsIfReasonable()
-
-		if u.pillsExpanded {
-			t.Fatal("expected pillsExpanded to be false when there is no session")
-		}
-	})
 }

@@ -168,6 +168,22 @@ provider add deepseek \
   --api-key "${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}"
 ```
 
+`--base-url` conventions differ by `--type`. The Anthropic SDK appends
+`v1/messages` to the base URL itself, so `--type anthropic` wants the
+bare host — `https://api.anthropic.com`, not `.../v1` — and a stray
+trailing `/v1` is stripped automatically:
+
+```bash
+provider add my-anthropic-proxy \
+  --type anthropic \
+  --base-url "https://my-proxy.example.com"
+```
+
+`openai`, `openai-compat`, and `openrouter` never add a version segment
+themselves, so `--base-url` must already be the exact value the vendor's
+docs show, `/v1` (or whatever path they use) included — Angela does not
+guess a missing one.
+
 Headers whose value resolves to the empty string (an unset `$VAR`, a
 `$(...)` that prints nothing, or a literal `""`) are dropped from the
 outgoing request. This makes env-gated headers safe:

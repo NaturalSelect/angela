@@ -8,6 +8,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/agenttest"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
@@ -123,6 +124,64 @@ func TestSendMessage_AcceptedCancelRace_RealMachinery(t *testing.T) {
 	// The accepted-but-not-yet-active cancel persisted a canceled turn
 	// rather than streaming a real response.
 	msgs, err := messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2)
+	require.Equal(t, message.User, msgs[0].Role)
+	require.Equal(t, message.Assistant, msgs[1].Role)
+	require.Equal(t, message.FinishReasonCanceled, msgs[1].FinishReason())
+}
+
+// TestSendMessage_AcceptedCancelRace_PersistedChildSession is the same
+// race for a sub-agent session that outlived the process which
+// dispatched it: nothing about it is in memory, only its session row.
+//
+// Accepting has to rebuild that session's route, because Cancel resolves
+// through the in-memory index alone. Before that, BeginAccepted returned
+// nil for such a session, the cancel below found no route and no accept
+// counter to mark, and the run streamed on regardless — so no
+// FinishReasonCanceled turn would be persisted.
+func TestSendMessage_AcceptedCancelRace_PersistedChildSession(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+
+	coord, sessions, messages := newRealCoordinator(t)
+
+	parent, err := sessions.Create(t.Context(), "parent")
+	require.NoError(t, err)
+
+	// The state an earlier process would have left behind: a child
+	// session row naming the agent that produced it, and no route.
+	childID := sessions.CreateAgentToolSessionID("msg-1", "call-1")
+	_, err = sessions.CreateTaskSession(t.Context(), childID, parent.ID, "explore run")
+	require.NoError(t, err)
+	require.NoError(t, sessions.UpdateActiveAgent(t.Context(), childID,
+		config.ActiveAgentState{Agent: config.AgentExplore}))
+
+	ws := insertAgentWorkspace(t, b, coord)
+
+	require.NoError(t, b.SendMessage(ws.ID, proto.AgentMessage{SessionID: childID, Prompt: "hi"}))
+
+	select {
+	case <-coord.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatched run never entered RunAccepted")
+	}
+
+	require.NoError(t, b.CancelSession(ws.ID, childID))
+	close(coord.gate)
+
+	waited := make(chan struct{})
+	go func() {
+		ws.runWG.Wait()
+		close(waited)
+	}()
+	select {
+	case <-waited:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runWG.Wait did not complete after the canceled run returned")
+	}
+
+	msgs, err := messages.List(t.Context(), childID)
 	require.NoError(t, err)
 	require.Len(t, msgs, 2)
 	require.Equal(t, message.User, msgs[0].Role)

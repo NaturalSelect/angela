@@ -21,12 +21,21 @@ import (
 // agent event channels (a notify.TypeAgentError notification), not
 // through this return value.
 //
+// Accepting the prompt is synchronous. For a sub-agent session this
+// process has not addressed before — a child session persisted by an
+// earlier run of the binary — accepting also rebuilds the session's
+// route, costing one database read and one agent resolution. That
+// happens once per child session per process, and reserving the accept
+// slot on the right executor before returning is what keeps a cancel
+// arriving straight after this call from being dropped.
+//
 // SendMessage returns synchronously when the request cannot be accepted:
 // ErrWorkspaceNotFound if the workspace is missing, ErrAgentNotInitialized
 // if its coordinator is nil, the structural validation errors from
 // agent.ValidateCall (ErrEmptyPrompt, ErrSessionMissing) when the prompt
 // or session is missing, and ErrWorkspaceClosing if the workspace is
-// being torn down.
+// being torn down. A route that cannot be rebuilt is not in that set: it
+// surfaces on the run's own terminal path, like any other run failure.
 func (b *Backend) SendMessage(workspaceID string, msg proto.AgentMessage) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
@@ -45,7 +54,7 @@ func (b *Backend) SendMessage(workspaceID string, msg proto.AgentMessage) error 
 		return err
 	}
 
-	accept := ws.AgentCoordinator.BeginAccepted(msg.SessionID)
+	accept := ws.AgentCoordinator.BeginAccepted(ws.ctx, msg.SessionID)
 
 	ws.runMu.Lock()
 	if ws.closing {

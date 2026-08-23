@@ -16,10 +16,7 @@ import (
 
 const (
 	// VariantsID is the identifier for the model variant dialog.
-	VariantsID              = "variants"
-	variantsDialogMaxWidth  = 50
-	variantsDialogMinHeight = 8
-	variantsDialogMaxHeight = 16
+	VariantsID = "variants"
 
 	// baselineVariantTitle names the entry that clears the preset. The
 	// empty variant is a real choice, not the absence of one, so it
@@ -35,6 +32,9 @@ type Variants struct {
 	help  help.Model
 	list  *list.FilterableList
 	input textinput.Model
+
+	frame   *Frame
+	metrics FrameMetrics
 
 	keyMap struct {
 		Select   key.Binding
@@ -74,6 +74,13 @@ var (
 // because that answer comes from the session record rather than config.
 func NewVariants(com *common.Common, modelName string, variants []string, current string) (*Variants, error) {
 	v := &Variants{com: com}
+
+	v.frame = NewFrame(com.Styles, FrameSpec{
+		Title:     "Select Variant",
+		MaxWidth:  50,
+		MinHeight: 8,
+		MaxHeight: 16,
+	})
 
 	h := help.New()
 	h.Styles = com.Styles.DialogHelpStyles()
@@ -173,25 +180,11 @@ func (v *Variants) Cursor() *tea.Cursor {
 // Draw implements [Dialog].
 func (v *Variants) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := v.com.Styles
-	width := max(0, min(variantsDialogMaxWidth, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	innerWidth := width - t.Dialog.View.GetHorizontalFrameSize()
+	v.metrics = v.frame.FitHeight(area, v.frame.ListHeightOffset()+v.list.TotalHeight())
 
-	v.input.SetWidth(dialogInputTextWidth(t, v.input, innerWidth))
+	v.input.SetWidth(v.frame.InputTextWidth(v.input, v.metrics.ContentWidth))
 
-	listTotalHeight := v.list.TotalHeight()
-	heightOffset := t.Dialog.Title.GetVerticalFrameSize() + titleContentHeight +
-		t.Dialog.InputPrompt.GetVerticalFrameSize() + inputContentHeight +
-		t.Dialog.HelpView.GetVerticalFrameSize() +
-		t.Dialog.View.GetVerticalFrameSize()
-	desiredHeight := heightOffset + listTotalHeight
-	maxAvailable := area.Dy() - t.Dialog.View.GetVerticalBorderSize()
-	height := max(variantsDialogMinHeight, min(variantsDialogMaxHeight, desiredHeight, maxAvailable))
-
-	listHeight, listTotalHeight, _ := sizeDialogList(t, v.list, innerWidth, height)
-
-	rc := NewRenderContext(t, width)
-	rc.Title = "Select Variant"
-	rc.AddPart(t.Dialog.InputPrompt.Render(v.input.View()))
+	listHeight, listTotalHeight, _ := v.frame.SizeList(v.list, v.metrics)
 
 	if v.list.Height() >= len(v.list.FilteredItems()) {
 		v.list.ScrollToTop()
@@ -200,15 +193,15 @@ func (v *Variants) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	listView := t.Dialog.List.Height(v.list.Height()).Render(v.list.Render())
-	listView = joinScrollbar(t, listView, listHeight, listTotalHeight, listHeight, v.list.Offset())
-	rc.AddPart(listView)
-	rc.Help = renderDialogHelp(t, &v.help, v, innerWidth)
+	listView = v.frame.JoinScrollbar(listView, listHeight, listTotalHeight, listHeight, v.list.Offset())
 
-	view := rc.Render()
+	view := v.frame.Render(v.metrics,
+		[]string{t.Dialog.InputPrompt.Render(v.input.View()), listView},
+		v.frame.RenderHelp(&v.help, v, v.metrics.ContentWidth),
+	)
 
 	cur := v.Cursor()
-	DrawCenterCursor(scr, area, view, cur)
-	return cur
+	return v.frame.Draw(scr, area, view, cur)
 }
 
 // ShortHelp implements [help.KeyMap].

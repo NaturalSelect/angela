@@ -8,7 +8,6 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
 	"github.com/NaturalSelect/angela/internal/agent/notify"
@@ -912,9 +911,9 @@ func TestLSPEventRefreshIsOffThreadAndDeduped(t *testing.T) {
 
 // TestRemoteYoloToggleUpdatesEditorPrompt pins the second fix: when an
 // asynchronous busy-state refresh reports a yolo mode different from the
-// cached one (a remote toggle), applyBusyState must update the textarea
-// prompt function too, not just the cache — otherwise the prompt icon/style
-// keeps rendering the old mode.
+// cached one (a remote toggle), applyBusyState must rebuild the textarea
+// prompt function too, not just the cache — otherwise the rail keeps
+// rendering the old mode's color.
 func TestRemoteYoloToggleUpdatesEditorPrompt(t *testing.T) {
 	pinTTLs(t)
 
@@ -924,20 +923,22 @@ func TestRemoteYoloToggleUpdatesEditorPrompt(t *testing.T) {
 	m.textarea.SetWidth(40)
 	m.yoloCache.set(false)
 	m.setEditorPrompt(false)
-	normalPrompt := ansi.Strip(m.textarea.View())
+	normalPrompt := m.textarea.View()
+	require.NotContains(t, m.editorCaption(100), "yolo")
 
 	// A remote toggle flips yolo on; delivered via an off-thread refresh.
 	m.applyBusyState(busyStateMsg{gen: m.busyFetchGen, yolo: true})
 	require.True(t, m.yoloModeCached(), "the refresh must write the new yolo value through the cache")
-	yoloPrompt := ansi.Strip(m.textarea.View())
+	yoloPrompt := m.textarea.View()
 	require.NotEqual(t, normalPrompt, yoloPrompt,
-		"a remote yolo toggle must change the rendered editor prompt")
-	require.Contains(t, yoloPrompt, "Y",
-		"the yolo prompt icon must render after a remote toggle")
+		"a remote yolo toggle must recolor the editor rail")
+	require.Contains(t, m.editorCaption(100), "yolo",
+		"the caption carries the mode for readers who cannot see the rail color")
 
 	// Flipping back off must restore the normal prompt.
 	m.applyBusyState(busyStateMsg{gen: m.busyFetchGen, yolo: false})
 	require.False(t, m.yoloModeCached())
-	require.Equal(t, normalPrompt, ansi.Strip(m.textarea.View()),
-		"toggling yolo off must restore the normal editor prompt")
+	require.Equal(t, normalPrompt, m.textarea.View(),
+		"toggling yolo off must restore the normal editor rail")
+	require.NotContains(t, m.editorCaption(100), "yolo")
 }

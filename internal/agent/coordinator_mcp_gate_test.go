@@ -9,6 +9,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,14 +37,15 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
 	cfg.SetupAgents()
 
 	coord := &coordinator{
-		cfg:         cfg,
-		sessions:    env.sessions,
-		messages:    env.messages,
-		permissions: env.permissions,
-		history:     env.history,
-		filetracker: *env.filetracker,
-		subagents:   newSubagentRegistry(),
-		interactive: interactive,
+		cfg:            cfg,
+		sessions:       env.sessions,
+		messages:       env.messages,
+		permissions:    env.permissions,
+		history:        env.history,
+		filetracker:    *env.filetracker,
+		subagents:      newSubagentRegistry(),
+		subagentRoutes: csync.NewMap[string, subagentRoute](),
+		interactive:    interactive,
 	}
 	coord.reconcileSubagents()
 

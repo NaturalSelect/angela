@@ -26,6 +26,21 @@ type loadSessionMsg struct {
 	session   *session.Session
 	files     []SessionFile
 	readFiles []string
+
+	// enterFrame, when set, pushes the parent frame onto sessionStack
+	// after a successful sub-session drill-down. The push is deferred
+	// to this handler so a failed load never leaves a phantom frame.
+	enterFrame *sessionStackFrame
+
+	// leaveLevel pops the top frame from sessionStack after a
+	// successful parent reload. Like enterFrame, the pop is deferred
+	// so a transient error never discards the breadcrumb.
+	leaveLevel bool
+
+	// clearStack replaces the session stack with nil on success. Used
+	// when switching to an unrelated session whose ancestors differ
+	// from those in the current stack.
+	clearStack bool
 }
 
 // lspFilePaths returns deduplicated file paths from both modified and read
@@ -69,7 +84,11 @@ type SessionFile struct {
 // the workspace so the server can update its per-client presence map.
 // That report is fire-and-forget: errors are logged at debug and the
 // UI never blocks on the call.
-func (m *UI) loadSession(sessionID string) tea.Cmd {
+func (m *UI) loadSession(sessionID string, opts ...loadSessionOpt) tea.Cmd {
+	var o loadSessionOpt
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	load := func() tea.Msg {
 		session, err := m.com.Workspace.GetSession(context.Background(), sessionID)
 		if err != nil {
@@ -87,9 +106,12 @@ func (m *UI) loadSession(sessionID string) tea.Cmd {
 		}
 
 		return loadSessionMsg{
-			session:   &session,
-			files:     sessionFiles,
-			readFiles: readFiles,
+			session:    &session,
+			files:      sessionFiles,
+			readFiles:  readFiles,
+			enterFrame: o.enterFrame,
+			leaveLevel: o.leaveLevel,
+			clearStack: o.clearStack,
 		}
 	}
 	return tea.Batch(load, m.reportCurrentSession(sessionID))

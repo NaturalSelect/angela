@@ -45,6 +45,11 @@ type Models struct {
 	modelName config.ModelConfigName
 	providers []catwalk.Provider
 
+	// restrictTo narrows the list to a single provider. Onboarding sets
+	// it once the provider is picked; the global model switcher leaves
+	// it empty and keeps listing everything.
+	restrictTo catwalk.InferenceProvider
+
 	// active is the agent the current session runs, or nil when it is
 	// not known yet. It decides which model the list opens on, so the
 	// highlighted entry is the one the session actually runs rather
@@ -68,6 +73,9 @@ type Models struct {
 	input textinput.Model
 	help  help.Model
 
+	frame   *Frame
+	metrics FrameMetrics
+
 	// staleRecents are the recent-model entries that no longer resolve
 	// to an available model. Building the item list must not write
 	// config — that is a synchronous HTTP round-trip in client/server
@@ -87,6 +95,12 @@ func NewModels(com *common.Common, isOnboarding bool, active *workspace.ActiveAg
 	m.isOnboarding = isOnboarding
 	m.modelName = config.ModelMain
 	m.active = active
+
+	m.frame = NewFrame(t, FrameSpec{
+		Title:     "Switch Model",
+		MaxWidth:  defaultModelsDialogMaxWidth,
+		MaxHeight: defaultDialogHeight,
+	})
 
 	help := help.New()
 	help.Styles = t.DialogHelpStyles()
@@ -250,18 +264,15 @@ func (m *Models) Cursor() *tea.Cursor {
 // Draw implements [Dialog].
 func (m *Models) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := m.com.Styles
-	width := max(0, min(defaultModelsDialogMaxWidth, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	height := max(0, min(defaultDialogHeight, area.Dy()-t.Dialog.View.GetVerticalBorderSize()))
-	innerWidth := width - t.Dialog.View.GetHorizontalFrameSize()
-	m.input.SetWidth(dialogInputTextWidth(t, m.input, innerWidth))
+	m.metrics = m.frame.Measure(area)
+	m.input.SetWidth(m.frame.InputTextWidth(m.input, m.metrics.ContentWidth))
 
-	listHeight, listTotalHeight, _ := sizeDialogList(t, m.list, innerWidth, height)
+	listHeight, listTotalHeight, _ := m.frame.SizeList(m.list, m.metrics)
 
-	rc := NewRenderContext(t, width)
-	rc.Title = "Switch Model"
+	rc := m.frame.Context(m.metrics)
 
 	if m.isOnboarding {
-		titleText := t.Dialog.PrimaryText.Render("To start, let's choose a provider and model.")
+		titleText := t.Dialog.PrimaryText.Render("Now pick a model.")
 		rc.AddPart(titleText)
 	}
 
@@ -272,11 +283,11 @@ func (m *Models) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		rc.AddPart(t.Dialog.SecondaryText.Render("Loading models…"))
 	} else {
 		listView := t.Dialog.List.Height(m.list.Height()).Render(m.list.Render())
-		listView = joinScrollbar(t, listView, listHeight, listTotalHeight, listHeight, m.list.Offset())
+		listView = m.frame.JoinScrollbar(listView, listHeight, listTotalHeight, listHeight, m.list.Offset())
 		rc.AddPart(listView)
 	}
 
-	rc.Help = renderDialogHelp(t, &m.help, m, innerWidth)
+	rc.Help = m.frame.RenderHelp(&m.help, m, m.metrics.ContentWidth)
 
 	cur := m.Cursor()
 
@@ -332,6 +343,19 @@ func (m *Models) isSelectedConfigured() bool {
 	return isConfigured
 }
 
+// allows reports whether a provider survives the current restriction.
+func (m *Models) allows(id catwalk.InferenceProvider) bool {
+	return m.restrictTo == "" || id == m.restrictTo
+}
+
+// RestrictToProvider narrows the list to a single provider's models. It
+// also drops the recents group, which spans providers and would
+// otherwise leak entries from the ones being hidden.
+func (m *Models) RestrictToProvider(id catwalk.InferenceProvider) {
+	m.restrictTo = id
+	m.setProviderItems()
+}
+
 // setProviderItems sets the provider items in the list.
 func (m *Models) setProviderItems() {
 	t := m.com.Styles
@@ -361,6 +385,9 @@ func (m *Models) setProviderItems() {
 	groups := []ModelGroup{}
 	for id, p := range cfg.Providers.Seq2() {
 		if p.Disable {
+			continue
+		}
+		if !m.allows(catwalk.InferenceProvider(id)) {
 			continue
 		}
 
@@ -393,6 +420,9 @@ func (m *Models) setProviderItems() {
 	for _, provider := range m.providers {
 		providerID := string(provider.ID)
 		if addedProviders[providerID] {
+			continue
+		}
+		if !m.allows(provider.ID) {
 			continue
 		}
 
@@ -439,7 +469,7 @@ func (m *Models) setProviderItems() {
 		groups = append(groups, group)
 	}
 
-	if len(recentItems) > 0 {
+	if len(recentItems) > 0 && m.restrictTo == "" {
 		recentGroup := NewModelGroup(t, "Recently used", false)
 
 		// Recomputed from scratch: this runs again when the catalog

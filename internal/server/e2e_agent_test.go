@@ -179,7 +179,7 @@ func (c *scriptedCoordinator) RunAccepted(ctx context.Context, accept *agent.Acc
 	return c.Run(ctx, sessionID, prompt, attachments...)
 }
 
-func (c *scriptedCoordinator) BeginAccepted(string) *agent.AcceptedRun { return nil }
+func (c *scriptedCoordinator) BeginAccepted(context.Context, string) *agent.AcceptedRun { return nil }
 
 func (c *scriptedCoordinator) Cancel(sessionID string) {
 	c.mu.Lock()

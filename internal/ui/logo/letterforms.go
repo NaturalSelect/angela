@@ -31,6 +31,36 @@ func renderWord(spacing int, stretchIndex int, letterforms ...letterform) string
 	)
 }
 
+// LetterA renders the letter A in a stylized way. It takes an integer that
+// determines how many cells to stretch the letter. If the stretch is less than
+// 1, it defaults to no stretching.
+func LetterA(stretch bool) string {
+	// Here's what we're making:
+	//
+	// █▀▀▀█
+	// █▀▀▀█
+	// ▀   ▀
+
+	side := heredoc.Doc(`
+		█
+		█
+		▀`)
+	middle := heredoc.Doc(`
+		▀
+		▀
+	`)
+	return joinLetterform(
+		side,
+		stretchLetterformPart(middle, letterformProps{
+			stretch:    stretch,
+			width:      3,
+			minStretch: 8,
+			maxStretch: 12,
+		}),
+		side,
+	)
+}
+
 // LetterC renders the letter C in a stylized way. It takes an integer that
 // determines how many cells to stretch the letter. If the stretch is less than
 // 1, it defaults to no stretching.
@@ -127,6 +157,40 @@ func LetterEAlt(stretch bool) string {
 	)
 }
 
+// LetterG renders the letter G in a stylized way. It takes an integer that
+// determines how many cells to stretch the letter. If the stretch is less than
+// 1, it defaults to no stretching.
+func LetterG(stretch bool) string {
+	// Here's what we're making:
+	//
+	// ▄▀▀▀▀
+	// █   ▄
+	// ▀▀▀▀▀
+
+	left := heredoc.Doc(`
+		▄
+		█
+		▀`)
+	middle := heredoc.Doc(`
+		▀
+
+		▀`)
+	right := heredoc.Doc(`
+		▀
+		▄
+		▀`)
+	return joinLetterform(
+		left,
+		stretchLetterformPart(middle, letterformProps{
+			stretch:    stretch,
+			width:      3,
+			minStretch: 7,
+			maxStretch: 12,
+		}),
+		right,
+	)
+}
+
 // LetterH renders the letter H in a stylized way. It takes an integer that
 // determines how many cells to stretch the letter. If the stretch is less than
 // 1, it defaults to no stretching.
@@ -155,6 +219,54 @@ func LetterH(stretch bool) string {
 		}),
 		side,
 	)
+}
+
+// LetterL renders the letter L in a stylized way. It takes an integer that
+// determines how many cells to stretch the letter. If the stretch is less than
+// 1, it defaults to no stretching.
+func LetterL(stretch bool) string {
+	// Here's what we're making:
+	//
+	// █
+	// █
+	// ▀▀▀▀
+
+	left := heredoc.Doc(`
+		█
+		█
+		▀`)
+	foot := heredoc.Doc(`
+
+
+		▀`)
+	return joinLetterform(
+		left,
+		stretchLetterformPart(foot, letterformProps{
+			stretch:    stretch,
+			width:      3,
+			minStretch: 7,
+			maxStretch: 11,
+		}),
+	)
+}
+
+// LetterN renders the letter N in a stylized way. The diagonal is what makes
+// it an N rather than a Π, and a diagonal cannot survive the column repeat
+// that stretching does — so this letterform never stretches.
+func LetterN(bool) string {
+	// Here's what we're making:
+	//
+	// █▄ █
+	// █ ▀█
+	// ▀  ▀
+
+	side := heredoc.Doc(`
+		█
+		█
+		▀`)
+	// The diagonal steps are written literally: heredoc would strip the
+	// leading spaces that place them.
+	return joinLetterform(side, "▄\n \n ", " \n▀\n ", side)
 }
 
 // LetterP renders the letter P in a stylized way. It takes an integer that

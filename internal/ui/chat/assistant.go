@@ -602,7 +602,7 @@ func (a *AssistantMessageItem) renderThinking(thinking string, width int) string
 	if !a.message.IsThinking() || len(a.message.ToolCalls()) > 0 {
 		duration := a.message.ThinkingDuration()
 		if duration.String() != "0s" {
-			footer = a.sty.Messages.ThinkingFooterTitle.Render("Thought for ") +
+			footer = a.sty.Messages.ThinkingFooterTitle.Render("Thought · ") +
 				a.sty.Messages.ThinkingFooterDuration.Render(duration.String())
 		}
 	}

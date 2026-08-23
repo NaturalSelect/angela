@@ -347,24 +347,28 @@ func (p *Permissions) scrollRight() {
 }
 
 // Draw implements [Dialog].
-// dialogSize returns the outer dialog width and maximum height for the
-// given screen area, and whether the window is too small so the dialog
-// must fill it. Diff views get more room than simple prompts.
-func (p *Permissions) dialogSize(area uv.Rectangle) (width, maxHeight int, forceFullscreen bool) {
-	forceFullscreen = area.Dx() <= minWindowWidth || area.Dy() <= minWindowHeight
+// frameSpec states how much room this prompt wants. The three modes are the
+// point: a side-by-side diff needs width a fixed cap would waste, a command or
+// URL prompt does not, and a terminal too small for either gets the whole
+// screen rather than a box that overflows it.
+func (p *Permissions) frameSpec(area uv.Rectangle) (FrameSpec, bool) {
+	forceFullscreen := area.Dx() <= minWindowWidth || area.Dy() <= minWindowHeight
 	switch {
 	case forceFullscreen || (p.fullscreen && p.hasDiffView()):
-		width, maxHeight = area.Dx(), area.Dy()
+		return FrameSpec{Fullscreen: true}, forceFullscreen
 	case p.hasDiffView():
-		// Wide for side-by-side diffs, capped for readability.
-		width = min(int(float64(area.Dx())*diffSizeRatio), diffMaxWidth)
-		maxHeight = int(float64(area.Dy()) * diffSizeRatio)
+		return FrameSpec{
+			WidthRatio:  diffSizeRatio,
+			MaxWidth:    diffMaxWidth,
+			HeightRatio: diffSizeRatio,
+		}, forceFullscreen
 	default:
-		// Narrower for simple content like commands and URLs.
-		width = min(int(float64(area.Dx())*simpleSizeRatio), simpleMaxWidth)
-		maxHeight = int(float64(area.Dy()) * simpleHeightRatio)
+		return FrameSpec{
+			WidthRatio:  simpleSizeRatio,
+			MaxWidth:    simpleMaxWidth,
+			HeightRatio: simpleHeightRatio,
+		}, forceFullscreen
 	}
-	return width, maxHeight, forceFullscreen
 }
 
 // contentViewportHeight returns the height for the scrollable content
@@ -383,7 +387,10 @@ func (p *Permissions) contentViewportHeight(forceFullscreen bool, maxHeight, fix
 
 func (p *Permissions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := p.com.Styles
-	width, maxHeight, forceFullscreen := p.dialogSize(area)
+	spec, forceFullscreen := p.frameSpec(area)
+	frame := NewFrame(t, spec)
+	metrics := frame.Measure(area)
+	width, maxHeight := metrics.Width, metrics.Height
 	dialogStyle := t.Dialog.View.Width(width).Padding(0, 1)
 	// The dialog fills the screen when forced small or when a diff is
 	// expanded; center the buttons then instead of hugging the far edge.

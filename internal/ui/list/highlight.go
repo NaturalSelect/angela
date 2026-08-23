@@ -2,6 +2,7 @@ package list
 
 import (
 	"image"
+	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -144,13 +145,25 @@ func ToHighlighter(lgStyle lipgloss.Style) Highlighter {
 	}
 }
 
+// unsetToNil maps an unset lipgloss color onto a nil uv color. lipgloss
+// reports an attribute it was never given as [lipgloss.NoColor], which is
+// opaque black rather than nil; passing that straight through reads as an
+// explicit black, so every cell drawn with such a style paints a black patch
+// instead of keeping the background underneath.
+func unsetToNil(c color.Color) color.Color {
+	if _, ok := c.(lipgloss.NoColor); ok {
+		return nil
+	}
+	return c
+}
+
 // ToStyle converts an inline [lipgloss.Style] to a [uv.Style].
 func ToStyle(lgStyle lipgloss.Style) uv.Style {
 	var uvStyle uv.Style
 
 	// Colors are already color.Color
-	uvStyle.Fg = lgStyle.GetForeground()
-	uvStyle.Bg = lgStyle.GetBackground()
+	uvStyle.Fg = unsetToNil(lgStyle.GetForeground())
+	uvStyle.Bg = unsetToNil(lgStyle.GetBackground())
 
 	// Build attributes using bitwise OR
 	var attrs uint8

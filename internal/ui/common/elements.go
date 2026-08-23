@@ -18,7 +18,7 @@ import (
 // muted styling.
 func PrettyPath(t *styles.Styles, path string, width int) string {
 	formatted := home.Short(path)
-	return t.Sidebar.WorkingDir.Width(width).Render(formatted)
+	return t.WorkingDirText.Width(width).Render(formatted)
 }
 
 // FormatReasoningEffort formats a reasoning effort level for display.
@@ -193,20 +193,25 @@ func Section(t *styles.Styles, text string, width int, info ...string) string {
 	return text
 }
 
-// DialogTitle renders a dialog title with a decorative line filling the
-// remaining width. When the title alone exceeds the available width it is
-// truncated with an ellipsis so it never wraps.
+// DialogTitle renders a dialog title followed by a short rule. The rule is a
+// bracket, not a fill: a line spanning the whole dialog reads as decoration.
+// The remaining width is padded with spaces so a caller appending title info
+// still lands flush right. When the title alone exceeds the available width it
+// is truncated with an ellipsis so it never wraps.
 func DialogTitle(t *styles.Styles, title string, width int, fromColor, toColor color.Color) string {
 	if width > 0 && lipgloss.Width(title) > width {
 		return ansi.Truncate(title, width, "…")
 	}
-	char := "╱"
-	length := lipgloss.Width(title) + 1
-	remainingWidth := width - length
-	if remainingWidth > 0 {
-		lines := strings.Repeat(char, remainingWidth)
-		lines = styles.ApplyForegroundGrad(t.Dialog.TitleLineBase, lines, fromColor, toColor)
-		title = title + " " + lines
+	const bracketWidth = 3
+	remainingWidth := width - lipgloss.Width(title) - 1
+	if remainingWidth <= 0 {
+		return title
+	}
+	rule := strings.Repeat("─", min(bracketWidth, remainingWidth))
+	rule = styles.ApplyForegroundGrad(t.Dialog.TitleLineBase, rule, fromColor, toColor)
+	title = title + " " + rule
+	if pad := remainingWidth - bracketWidth; pad > 0 {
+		title += strings.Repeat(" ", pad)
 	}
 	return title
 }

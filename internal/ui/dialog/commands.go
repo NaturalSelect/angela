@@ -28,10 +28,6 @@ type CommandType uint
 func (c CommandType) String() string { return []string{"System", "User", "MCP"}[c] }
 
 const (
-	sidebarCompactModeBreakpoint = 120
-)
-
-const (
 	SystemCommands CommandType = iota
 	UserCommands
 	MCPPrompts
@@ -72,6 +68,9 @@ type Commands struct {
 	input textinput.Model
 	list  *list.FilterableList
 
+	frame   *Frame
+	metrics FrameMetrics
+
 	windowWidth int
 
 	customCommands []commands.CustomCommand
@@ -101,6 +100,12 @@ func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, has
 	help.Styles = com.Styles.DialogHelpStyles()
 
 	c.help = help
+
+	c.frame = NewFrame(com.Styles, FrameSpec{
+		Title:     "Commands",
+		MaxWidth:  defaultDialogMaxWidth,
+		MaxHeight: defaultDialogHeight,
+	})
 
 	c.list = list.NewFilterableList()
 	c.list.Focus()
@@ -295,8 +300,7 @@ func commandsRadioView(sty *styles.Styles, selected CommandType, hasUserCmds boo
 // Draw implements [Dialog].
 func (c *Commands) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	t := c.com.Styles
-	width := max(0, min(defaultDialogMaxWidth, area.Dx()-t.Dialog.View.GetHorizontalBorderSize()))
-	height := max(0, min(defaultDialogHeight, area.Dy()-t.Dialog.View.GetVerticalBorderSize()))
+	c.metrics = c.frame.Measure(area)
 	if area.Dx() != c.windowWidth && c.selected == SystemCommands {
 		c.windowWidth = area.Dx()
 		// since some items in the list depend on width (e.g. toggle sidebar command),
@@ -304,37 +308,29 @@ func (c *Commands) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		c.setCommandItems(c.selected)
 	}
 
-	innerWidth := width - c.com.Styles.Dialog.View.GetHorizontalFrameSize()
-	heightOffset := t.Dialog.Title.GetVerticalFrameSize() + titleContentHeight +
-		t.Dialog.InputPrompt.GetVerticalFrameSize() + inputContentHeight +
-		t.Dialog.HelpView.GetVerticalFrameSize() +
-		t.Dialog.View.GetVerticalFrameSize()
+	c.input.SetWidth(c.frame.InputTextWidth(c.input, c.metrics.ContentWidth))
 
-	c.input.SetWidth(dialogInputTextWidth(t, c.input, innerWidth))
-
-	c.list.SetSize(innerWidth, max(0, height-heightOffset))
+	// This dialog renders no scrollbar, so the list keeps the full content
+	// width rather than reserving a column for one.
+	c.list.SetSize(c.metrics.ContentWidth, max(0, c.metrics.Height-c.frame.ListHeightOffset()))
 
 	// Hide the shortcut hints uniformly when the widest would crowd names.
-	applyInfoColumnVisibility(c.list.FilteredItems(), innerWidth, commandInfoMaxPercent)
+	applyInfoColumnVisibility(c.list.FilteredItems(), c.metrics.ContentWidth, commandInfoMaxPercent)
 
-	rc := NewRenderContext(t, width)
-	rc.Title = "Commands"
-	rc.TitleInfo = commandsRadioView(t, c.selected, len(c.customCommands) > 0, len(c.mcpPrompts) > 0)
-	inputView := t.Dialog.InputPrompt.Render(c.input.View())
-	rc.AddPart(inputView)
-	listView := t.Dialog.List.Height(c.list.Height()).Render(c.list.Render())
-	rc.AddPart(listView)
-	rc.Help = renderDialogHelp(t, &c.help, c, innerWidth)
+	c.frame.SetTitle("Commands", commandsRadioView(t, c.selected, len(c.customCommands) > 0, len(c.mcpPrompts) > 0))
 
+	helpLine := c.frame.RenderHelp(&c.help, c, c.metrics.ContentWidth)
 	if c.loading {
-		rc.Help = t.Dialog.HelpView.Width(innerWidth).Render(c.spinner.View() + " Generating Prompt...")
+		helpLine = t.Dialog.HelpView.Width(c.metrics.ContentWidth).Render(c.spinner.View() + " Generating Prompt...")
 	}
 
-	view := rc.Render()
+	inputView := t.Dialog.InputPrompt.Render(c.input.View())
+	listView := t.Dialog.List.Height(c.list.Height()).Render(c.list.Render())
+
+	view := c.frame.Render(c.metrics, []string{inputView, listView}, helpLine)
 
 	cur := c.Cursor()
-	DrawCenterCursor(scr, area, view, cur)
-	return cur
+	return c.frame.Draw(scr, area, view, cur)
 }
 
 // ShortHelp implements [help.KeyMap].
@@ -456,6 +452,11 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		NewCommandItem(c.com.Styles, "switch_session", "Sessions", "ctrl+s", ActionOpenDialog{SessionsID}),
 		NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}),
 		NewCommandItem(c.com.Styles, "switch_agent", "Switch Agent", "", ActionOpenDialog{AgentsID}).WithAliases("agent"),
+		NewCommandItem(c.com.Styles, "suspend", "Suspend", "ctrl+z", ActionSuspend{}),
+	}
+
+	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "session_details", "Session Details", "ctrl+d", ActionToggleDetails{}))
 	}
 
 	// Only show compact command if there's an active session
@@ -482,9 +483,8 @@ func (c *Commands) defaultCommands() []*CommandItem {
 			}))
 		}
 	}
-	// Only show toggle compact mode command if window width is larger than compact breakpoint (120)
-	if c.windowWidth >= sidebarCompactModeBreakpoint && c.hasSession {
-		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_sidebar", "Toggle Sidebar", "", ActionToggleCompactMode{}))
+	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_compact", "Toggle Compact Mode", "", ActionToggleCompactMode{}))
 	}
 	if c.hasSession && c.active != nil && c.active.CatwalkCfg.SupportsImages {
 		commands = append(commands, NewCommandItem(c.com.Styles, "file_picker", "Open File Picker", "ctrl+f", ActionOpenDialog{
@@ -513,19 +513,6 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	// Add disable Docker MCP command if it's currently enabled
 	if cfg.IsDockerMCPEnabled() {
 		commands = append(commands, NewCommandItem(c.com.Styles, "disable_docker_mcp", "Disable Docker MCP Catalog", "", ActionDisableDockerMCP{}))
-	}
-
-	if c.hasTodos || c.hasQueue {
-		var label string
-		switch {
-		case c.hasTodos && c.hasQueue:
-			label = "Toggle To-Dos/Queue"
-		case c.hasQueue:
-			label = "Toggle Queue"
-		default:
-			label = "Toggle To-Dos"
-		}
-		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_pills", label, "ctrl+t", ActionTogglePills{}))
 	}
 
 	// Add a command for selecting notification style via picker dialog.

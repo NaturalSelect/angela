@@ -1,0 +1,81 @@
+package model
+
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/ui/chat"
+)
+
+// sessionStackFrame remembers a level the view drilled down from. The title is
+// captured on the way in because popping reloads the parent asynchronously, and
+// the breadcrumb has to name the level before that load lands.
+type sessionStackFrame struct {
+	id    string
+	title string
+}
+
+// loadSessionOpt carries deferred stack operations for sub-session
+// navigation. The push/pop only takes effect inside the loadSessionMsg
+// handler — never before the async load — so a failed load leaves
+// the stack untouched.
+type loadSessionOpt struct {
+	enterFrame *sessionStackFrame
+	leaveLevel bool
+	// clearStack replaces the session stack with nil on success. Used
+	// when switching to an unrelated session: the new session's
+	// ancestors are not the old stack, so keeping it would let Escape
+	// reload a stranger.
+	clearStack bool
+}
+
+// inSubSession reports whether the view is below the session the user opened.
+func (m *UI) inSubSession() bool {
+	return len(m.sessionStack) > 0
+}
+
+// sessionTrail returns the titles from the root down to the level in view.
+func (m *UI) sessionTrail() []string {
+	if m.session == nil {
+		return nil
+	}
+	trail := make([]string, 0, len(m.sessionStack)+1)
+	for _, frame := range m.sessionStack {
+		trail = append(trail, frame.title)
+	}
+	return append(trail, m.session.Title)
+}
+
+// selectedAgentTool returns the focused item when it is an agent tool call —
+// the only kind of item with a session of its own behind it.
+func (m *UI) selectedAgentTool() (*chat.AgentToolMessageItem, bool) {
+	if m.chat == nil {
+		return nil, false
+	}
+	item, ok := m.chat.SelectedItem().(*chat.AgentToolMessageItem)
+	return item, ok
+}
+
+// enterSubSession drills into the session a sub-agent ran in. The parent
+// frame is captured now but pushed onto the stack only when the child
+// loads successfully — a failed load never leaves a phantom frame.
+func (m *UI) enterSubSession(item *chat.AgentToolMessageItem) tea.Cmd {
+	if m.session == nil {
+		return nil
+	}
+	childID := m.com.Workspace.CreateAgentToolSessionID(item.MessageID(), item.ToolCall().ID)
+	frame := sessionStackFrame{
+		id:    m.session.ID,
+		title: m.session.Title,
+	}
+	return m.loadSession(childID, loadSessionOpt{enterFrame: &frame})
+}
+
+// leaveSubSession pops back one level. The parent is reloaded from the
+// database rather than restored from memory: the sub-agent kept writing to
+// it while the view was elsewhere, so the copy we drilled down from is
+// already stale. The stack frame is popped only after the reload succeeds
+// so a transient error keeps the breadcrumb and lets the user retry.
+func (m *UI) leaveSubSession() tea.Cmd {
+	top := len(m.sessionStack) - 1
+	parent := m.sessionStack[top]
+	return m.loadSession(parent.id, loadSessionOpt{leaveLevel: true})
+}

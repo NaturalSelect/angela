@@ -92,6 +92,7 @@ type Service interface {
 	List(ctx context.Context) ([]Session, error)
 	Save(ctx context.Context, session Session) (Session, error)
 	UpdateTitleAndUsage(ctx context.Context, sessionID, title string, promptTokens, completionTokens int64, cost float64) error
+	AddCost(ctx context.Context, sessionID string, delta float64) error
 	UpdateActiveAgent(ctx context.Context, id string, state config.ActiveAgentState) error
 	Rename(ctx context.Context, id string, title string) error
 	Delete(ctx context.Context, id string) error
@@ -270,6 +271,28 @@ func (s *service) UpdateTitleAndUsage(ctx context.Context, sessionID, title stri
 		Cost:             cost,
 	}); err != nil {
 		return err
+	}
+	s.publishSessionUpdate(ctx, sessionID)
+	return nil
+}
+
+// AddCost adds delta to a session's cost in a single statement.
+//
+// It is deliberately not expressed as Get, add, Save. Two roll-ups landing
+// on the same ancestor would each read the same starting value and the
+// later write would swallow the earlier increment; and because Save writes
+// the whole row, it would also clobber a title, token count or todo list
+// another writer changed in the meantime.
+func (s *service) AddCost(ctx context.Context, sessionID string, delta float64) error {
+	rows, err := s.q.AddSessionCost(ctx, db.AddSessionCostParams{
+		ID:   sessionID,
+		Cost: delta,
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 	s.publishSessionUpdate(ctx, sessionID)
 	return nil

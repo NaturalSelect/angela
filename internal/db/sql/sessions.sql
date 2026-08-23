@@ -67,6 +67,13 @@ SET
 WHERE id = ?;
 
 
+-- name: AddSessionCost :execrows
+UPDATE sessions
+SET
+    cost = cost + ?
+WHERE id = ?;
+
+
 -- name: UpdateSessionActiveAgent :execrows
 UPDATE sessions
 SET

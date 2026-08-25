@@ -502,10 +502,15 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 // TestSetConfigField_AutoReloads verifies that SetConfigField automatically
 // reloads config into memory after writing, so subsequent reads see the new value.
 func TestSetConfigField_AutoReloads(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "angela.json")
+
+	// No t.Parallel(): Setenv forbids it, and without the isolation
+	// Load reaches the real user config and data directories. Those are
+	// shared, so a parallel sibling writing one of them races this
+	// test's read of it — on Windows that read fails outright.
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
 
 	// Create initial config file with debug = false
 	initialConfig := `{"options": {"debug": false}}`
@@ -537,10 +542,14 @@ func TestSetConfigField_AutoReloads(t *testing.T) {
 // TestRemoveConfigField_AutoReloads verifies that RemoveConfigField automatically
 // reloads config into memory after writing.
 func TestRemoveConfigField_AutoReloads(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "angela.json")
+
+	// See TestSetConfigField_AutoReloads: isolated and serial so Load
+	// cannot read the real user data directory while a sibling rewrites
+	// it.
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
 
 	// Create initial config file with a custom option
 	initialConfig := `{"options": {"debug": true, "custom_field": "value"}}`
@@ -594,10 +603,16 @@ func TestSetConfigField_AutoReloadSkipsWhenNoWorkingDir(t *testing.T) {
 // TestAutoReloadDisabledDuringReload verifies that auto-reload is suppressed
 // during ReloadFromDisk to prevent re-entrant/nested reload calls.
 func TestAutoReloadDisabledDuringReload(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "angela.json")
+
+	// This one is the writer the others were racing: the OAuth config
+	// below makes configureProviders call RemoveConfigField(ScopeGlobal),
+	// which without this isolation rewrites the real user data
+	// directory — deleting a developer's anthropic config as a side
+	// effect of running the suite.
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
 
 	// Create initial config with a provider that will trigger config modification during reload
 	// (simulating the anthropic OAuth token removal case)
@@ -632,10 +647,12 @@ func TestAutoReloadDisabledDuringReload(t *testing.T) {
 // multiple fields in a single disk write and triggers only one auto-reload,
 // avoiding intermediate states where only some fields are persisted.
 func TestSetConfigFields_AutoReloadsAtomically(t *testing.T) {
-	t.Parallel()
-
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "angela.json")
+
+	// See TestSetConfigField_AutoReloads.
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
 
 	// Create initial config file.
 	initialConfig := `{"options": {"debug": false}}`

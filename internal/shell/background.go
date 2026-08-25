@@ -46,6 +46,7 @@ func (sb *syncBuffer) String() string {
 // BackgroundShell represents a shell running in the background.
 type BackgroundShell struct {
 	ID          string
+	SessionID   string
 	Command     string
 	Description string
 	Shell       *Shell
@@ -86,7 +87,9 @@ func GetBackgroundShellManager() *BackgroundShellManager {
 }
 
 // Start creates and starts a new background shell with the given command.
-func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, blockFuncs []BlockFunc, command string, description string) (*BackgroundShell, error) {
+// The shell belongs to sessionID: only that session can later look it up,
+// read its output, or kill it.
+func (m *BackgroundShellManager) Start(ctx context.Context, sessionID string, workingDir string, blockFuncs []BlockFunc, command string, description string) (*BackgroundShell, error) {
 	// Check job limit
 	if m.shells.Len() >= MaxBackgroundJobs {
 		return nil, fmt.Errorf("maximum number of background jobs (%d) reached. Please terminate or wait for some jobs to complete", MaxBackgroundJobs)
@@ -103,6 +106,7 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 
 	bgShell := &BackgroundShell{
 		ID:          id,
+		SessionID:   sessionID,
 		Command:     command,
 		Description: description,
 		WorkingDir:  workingDir,
@@ -128,27 +132,35 @@ func (m *BackgroundShellManager) Start(ctx context.Context, workingDir string, b
 	return bgShell, nil
 }
 
-// Get retrieves a background shell by ID.
-func (m *BackgroundShellManager) Get(id string) (*BackgroundShell, bool) {
-	return m.shells.Get(id)
+// Get retrieves a background shell by ID on behalf of a session. IDs are
+// short and sequential, so a shell owned by another session must read as
+// absent rather than as forbidden: telling a caller that an ID exists but
+// is off-limits would let it enumerate what other sessions are running.
+func (m *BackgroundShellManager) Get(id, sessionID string) (*BackgroundShell, bool) {
+	shell, ok := m.shells.Get(id)
+	if !ok || shell.SessionID != sessionID {
+		return nil, false
+	}
+	return shell, true
 }
 
 // Remove removes a background shell from the manager without terminating it.
 // This is useful when a shell has already completed and you just want to clean up tracking.
-func (m *BackgroundShellManager) Remove(id string) error {
-	_, ok := m.shells.Take(id)
-	if !ok {
+func (m *BackgroundShellManager) Remove(id, sessionID string) error {
+	if _, ok := m.Get(id, sessionID); !ok {
 		return fmt.Errorf("background shell not found: %s", id)
 	}
+	m.shells.Del(id)
 	return nil
 }
 
 // Kill terminates a background shell by ID.
-func (m *BackgroundShellManager) Kill(id string) error {
-	shell, ok := m.shells.Take(id)
+func (m *BackgroundShellManager) Kill(id, sessionID string) error {
+	shell, ok := m.Get(id, sessionID)
 	if !ok {
 		return fmt.Errorf("background shell not found: %s", id)
 	}
+	m.shells.Del(id)
 
 	shell.cancel()
 	<-shell.done
@@ -162,11 +174,13 @@ type BackgroundShellInfo struct {
 	Description string
 }
 
-// List returns all background shell IDs.
-func (m *BackgroundShellManager) List() []string {
+// List returns the IDs of the shells the session started.
+func (m *BackgroundShellManager) List(sessionID string) []string {
 	ids := make([]string, 0, m.shells.Len())
-	for id := range m.shells.Seq2() {
-		ids = append(ids, id)
+	for shell := range m.shells.Seq() {
+		if shell.SessionID == sessionID {
+			ids = append(ids, shell.ID)
+		}
 	}
 	return ids
 }
@@ -184,8 +198,10 @@ func (m *BackgroundShellManager) Cleanup() int {
 		}
 	}
 
+	// Retention is process-wide bookkeeping, not a session acting on a
+	// job, so it drops the entries directly.
 	for _, id := range toRemove {
-		m.Remove(id)
+		m.shells.Del(id)
 	}
 
 	return len(toRemove)

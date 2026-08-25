@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/common"
@@ -46,10 +47,26 @@ func (m *UI) renderTurnStatus(width int) string {
 // turnSpinnerFrame returns the current spinner glyph, falling back to a static
 // icon when the animation tick isn't running.
 func (m *UI) turnSpinnerFrame() string {
-	if m.todoIsSpinning {
-		return ansi.Strip(m.todoSpinner.View())
+	if m.turnIsSpinning {
+		return ansi.Strip(m.turnSpinner.View())
 	}
 	return styles.SpinnerIcon
+}
+
+// syncTurnSpinner starts the status spinner when a turn begins and stops it
+// when the turn ends, returning the tick that drives the animation. It is a
+// no-op while the spinner already matches the busy state, which is what keeps
+// a second tick chain from starting.
+func (m *UI) syncTurnSpinner() tea.Cmd {
+	busy := m.isAgentBusy()
+	if busy == m.turnIsSpinning {
+		return nil
+	}
+	m.turnIsSpinning = busy
+	if !busy {
+		return nil
+	}
+	return m.turnSpinner.Tick
 }
 
 // busyStatusFields builds the busy-state fields in drop order: the last entry

@@ -1,15 +1,16 @@
 ---
 name: angela-hooks
-description: Use when the user wants to add, write, debug, or configure an Angela hook — gating or blocking tool calls, approving or rewriting tool input before execution, injecting context into tool results, or troubleshooting hook behavior in angela.json.
+description: Use when the user wants to add, write, debug, or configure an Angela hook — gating or blocking tool calls, approving or rewriting tool input before execution, injecting context into tool results, or troubleshooting hook behavior in angelarc or angela.json.
 ---
 
 # Angela Hooks
 
-Hooks are user-defined commands in `angela.json` that fire at specific points
-during execution, giving deterministic control over tool behavior. They run
-**before** permission checks and **only on the top-level agent's** tool calls —
-tool calls made by a dispatched sub-agent are not intercepted, though the
-`agent` tool call that dispatched it is.
+Hooks are user-defined commands in `angelarc` (or `angela.json`) that fire at
+specific points during execution, giving deterministic control over tool
+behavior. They run **before** permission checks, and on **every** tool call —
+including the ones a dispatched sub-agent makes. Use `depth` (`0` for the
+top-level agent, `1+` for a sub-agent) or `agent_id` to scope a hook to the
+calls you care about.
 
 For the full reference, see `docs/hooks/README.md`. This skill covers what you
 need to author correct hooks.
@@ -20,6 +21,15 @@ Only `PreToolUse` is currently supported. Event names are case-insensitive and
 accept snake_case (`PreToolUse`, `pretooluse`, `pre_tool_use` all work).
 
 ## Configuration
+
+`angelarc` is the preferred format:
+
+```bash
+hook add PreToolUse --command ./hooks/my-hook.sh --matcher '^bash$' --timeout 10
+hook remove PreToolUse --name my-hook
+```
+
+The deprecated `angela.json` form is equivalent:
 
 ```jsonc
 {
@@ -56,6 +66,8 @@ the input/output contract is identical regardless of language.
 | `ANGELA_SESSION_ID`           | Current session ID                       |
 | `ANGELA_CWD`                  | Working directory                        |
 | `ANGELA_PROJECT_DIR`          | Project root directory                   |
+| `ANGELA_AGENT_ID`             | Agent making the call (e.g. `coder`)     |
+| `ANGELA_AGENT_DEPTH`          | `0` for the top-level agent, `1+` below  |
 | `ANGELA_TOOL_INPUT_COMMAND`   | For `bash` calls: the shell command      |
 | `ANGELA_TOOL_INPUT_FILE_PATH` | For file tools: the target file path     |
 
@@ -67,7 +79,9 @@ the input/output contract is identical regardless of language.
   "session_id": "313909e",
   "cwd": "/home/user/project",
   "tool_name": "bash",
-  "tool_input": {"command": "rm -rf /"}
+  "tool_input": {"command": "rm -rf /"},
+  "agent_id": "coder",
+  "depth": 0
 }
 ```
 

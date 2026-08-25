@@ -1197,6 +1197,40 @@ func (c *controllerV1) handlePostWorkspacePermissionsSkip(w http.ResponseWriter,
 	}
 }
 
+// handlePostWorkspacePermissionsUnattended marks whether a session has
+// anyone who could answer a permission prompt.
+//
+//	@Summary		Set session unattended
+//	@Tags			permissions
+//	@Accept			json
+//	@Param			id		path	string							true	"Workspace ID"
+//	@Param			request	body	proto.PermissionUnattendedRequest	true	"Session unattended request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/permissions/unattended [post]
+func (c *controllerV1) handlePostWorkspacePermissionsUnattended(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req proto.PermissionUnattendedRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if req.SessionID == "" {
+		jsonError(w, http.StatusBadRequest, "session_id is required")
+		return
+	}
+
+	if err := c.backend.SetSessionUnattended(id, req.SessionID, req.Unattended); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+}
+
 // handleGetWorkspacePermissionsSkip returns whether permission prompts are skipped.
 //
 //	@Summary		Get skip permissions status

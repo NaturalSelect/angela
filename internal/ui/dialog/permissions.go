@@ -556,6 +556,8 @@ func (p *Permissions) renderContent(width int) string {
 		return p.renderMultiEditContent(width)
 	case tools.ReplaceSymbolToolName:
 		return p.renderReplaceSymbolContent(width)
+	case tools.RenameToolName:
+		return p.renderRenameContent(width)
 	case tools.DownloadToolName:
 		return p.renderDownloadContent(width)
 	case tools.FetchToolName:
@@ -702,6 +704,21 @@ func (p *Permissions) renderViewContent(width int) string {
 	if params.Limit > 0 && params.Limit != 2000 {
 		content += fmt.Sprintf("\nLines to read: %d", params.Limit)
 	}
+
+	return p.renderContentPanel(content, width)
+}
+
+// renderRenameContent shows the symbol change itself. A rename spans
+// every file that references the symbol, so naming the two symbols says
+// more about what is being approved than any single file's diff would.
+func (p *Permissions) renderRenameContent(width int) string {
+	params, ok := p.permission.Params.(tools.RenamePermissionsParams)
+	if !ok {
+		return ""
+	}
+
+	content := fmt.Sprintf("Symbol: %s %s %s",
+		params.Symbol, styles.ArrowRightIcon, params.NewName)
 
 	return p.renderContentPanel(content, width)
 }

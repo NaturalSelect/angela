@@ -791,6 +791,21 @@ func (c *Client) SetPermissionsSkipRequests(ctx context.Context, id string, skip
 	return nil
 }
 
+// SetSessionUnattended marks whether a session has anyone who could
+// answer a permission prompt.
+func (c *Client) SetSessionUnattended(ctx context.Context, id, sessionID string, unattended bool) error {
+	body := proto.PermissionUnattendedRequest{SessionID: sessionID, Unattended: unattended}
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/permissions/unattended", id), nil, jsonBody(body), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to set session unattended: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to set session unattended: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
 // GetPermissionsSkipRequests retrieves the skip-requests flag for a workspace.
 func (c *Client) GetPermissionsSkipRequests(ctx context.Context, id string) (bool, error) {
 	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/permissions/skip", id), nil, nil)

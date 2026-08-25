@@ -65,7 +65,9 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Ceiling for the whole job. Must stay above the review step's own
+    # timeout below with room for checkout, build, and posting.
+    timeout-minutes: 50
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -345,7 +347,11 @@ jobs:
       - name: Run Angela review
         id: review
         continue-on-error: true
-        timeout-minutes: 20
+        # The prompt above asks for repeated full sweeps over the diff, so
+        # runtime scales with how much the PR touches rather than with the
+        # repo. Headroom for a large PR; raise this and the job ceiling
+        # together.
+        timeout-minutes: 40
         env:
           REVIEW_MODEL: ${{ secrets.ANGELA_REVIEW_MODEL }}
         run: |

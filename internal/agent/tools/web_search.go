@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"charm.land/fantasy"
-
-	"github.com/NaturalSelect/angela/internal/permission"
 )
 
 //go:embed web_search.md.tpl
@@ -23,7 +21,7 @@ var webSearchDescriptionTpl = template.Must(
 )
 
 // NewWebSearchTool creates a web search tool for sub-agents.
-func NewWebSearchTool(permissions permission.Service, workingDir string, client *http.Client) fantasy.AgentTool {
+func NewWebSearchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.MaxIdleConns = 100
@@ -55,25 +53,6 @@ func NewWebSearchTool(permissions permission.Service, workingDir string, client 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
-			}
-
-			p, err := permissions.Request(
-				ctx,
-				permission.CreatePermissionRequest{
-					SessionID:   sessionID,
-					Path:        workingDir,
-					ToolCallID:  call.ID,
-					ToolName:    WebSearchToolName,
-					Action:      "search",
-					Description: fmt.Sprintf("Search the web for: %s", params.Query),
-					Params:      WebSearchPermissionsParams(params),
-				},
-			)
-			if err != nil {
-				return fantasy.ToolResponse{}, err
-			}
-			if !p {
-				return NewPermissionDeniedResponse(), nil
 			}
 
 			maybeDelaySearch()

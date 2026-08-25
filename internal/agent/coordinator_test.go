@@ -380,13 +380,13 @@ func TestRunSubAgent(t *testing.T) {
 
 	// TestRunSubAgent/child session is pre-approved pins a regression:
 	// the generic dispatch path used to lose agentic_fetch's explicit
-	// AutoApproveSession call on its child session. A child session has
+	// per-session grant on its child session. A child session has
 	// no UI subscriber to ever answer its permission events, so without
 	// this, any permission-gated tool a subagent uses (web_fetch,
 	// web_search, or bash/edit inherited by "general") would block until
 	// ctx is done rather than resolve. env.permissions defaults to
 	// skip=true, which would mask that, so this uses its own
-	// skip=false, allowlist-free service to isolate the child-session
+	// skip=false, rule-free service to isolate the child-session
 	// grant from the global YOLO shortcut.
 	t.Run("child session is pre-approved", func(t *testing.T) {
 		env := testEnv(t)
@@ -398,16 +398,16 @@ func TestRunSubAgent(t *testing.T) {
 
 		var granted bool
 		agent, resolved := newMockAgent(providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
-			ok, err := coord.permissions.Request(ctx, permission.CreatePermissionRequest{
-				SessionID: call.SessionID,
-				ToolName:  "web_fetch",
-				Action:    "fetch",
-				Path:      env.workingDir,
+			decision := coord.permissions.Gate(ctx, permission.GateRequest{
+				SessionID:  call.SessionID,
+				ToolCallID: "child-call",
+				Access: permission.Access{
+					Tool:   "web_fetch",
+					Action: permission.ActionNetwork,
+					URL:    "https://example.com",
+				},
 			})
-			if err != nil {
-				return nil, err
-			}
-			granted = ok
+			granted = decision.Allowed()
 			return agentResultWithText("fetched"), nil
 		})
 
@@ -915,5 +915,70 @@ func TestWithPromptCacheKey(t *testing.T) {
 		result := withPromptCacheKey(map[string]any{"reasoning_effort": "high"}, "")
 		_, ok := result["prompt_cache_key"]
 		require.False(t, ok)
+	})
+}
+
+// TestSubAgentInheritsWhetherAnyoneCanApprove pins the rule that keeps a
+// headless run from stalling: whether a permission prompt can ever be
+// answered depends on where the run started, not on how deep the work
+// nested. Without the hand-down, a sub-agent dispatched by `angela run`
+// parks on a prompt nothing is watching and burns the whole invocation.
+func TestSubAgentInheritsWhetherAnyoneCanApprove(t *testing.T) {
+	const providerID = "test-provider"
+	providerCfg := config.ProviderConfig{ID: providerID}
+
+	// dispatch runs one sub-agent under parentID and reports the
+	// session the child actually ran in.
+	dispatch := func(t *testing.T, coord *coordinator, parentID, callID string) string {
+		t.Helper()
+		var childID string
+		agent, resolved := newMockAgent(providerID, 4096,
+			func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+				childID = call.SessionID
+				return agentResultWithText("done"), nil
+			})
+
+		_, err := coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			Resolved:       resolved,
+			SessionID:      parentID,
+			AgentMessageID: "msg-" + callID,
+			ToolCallID:     callID,
+			Prompt:         "work",
+			SessionTitle:   "Child",
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, childID, "the sub-agent must have run in a session")
+		return childID
+	}
+
+	t.Run("a headless run hands it down at every level", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		// Exactly what App.RunNonInteractive marks.
+		env.permissions.SetSessionUnattended(parent.ID, true)
+
+		child := dispatch(t, coord, parent.ID, "call-1")
+		require.True(t, env.permissions.SessionUnattended(child),
+			"a sub-agent of a headless run has no one to approve for it either")
+
+		grandchild := dispatch(t, coord, child, "call-2")
+		assert.True(t, env.permissions.SessionUnattended(grandchild),
+			"nesting must not quietly regain an approver")
+	})
+
+	t.Run("a watched session hands down being watched", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		child := dispatch(t, coord, parent.ID, "call-1")
+		assert.False(t, env.permissions.SessionUnattended(child),
+			"a sub-agent under a TUI session must still be able to ask the user")
 	})
 }

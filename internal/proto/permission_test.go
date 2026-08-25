@@ -169,6 +169,20 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 				require.Equal(t, 5, v.MaxResults)
 			},
 		},
+		{
+			name:     "lsp_rename",
+			toolName: tools.RenameToolName,
+			params: tools.RenamePermissionsParams{
+				Symbol:  "OldName",
+				NewName: "NewName",
+			},
+			assert: func(t *testing.T, got any) {
+				v, ok := got.(tools.RenamePermissionsParams)
+				require.True(t, ok, "params must decode as tools.RenamePermissionsParams, got %T", got)
+				require.Equal(t, "OldName", v.Symbol)
+				require.Equal(t, "NewName", v.NewName)
+			},
+		},
 	}
 
 	for _, tc := range tests {

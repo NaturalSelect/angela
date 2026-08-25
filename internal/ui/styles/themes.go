@@ -12,13 +12,15 @@ func c(hex string) color.Color {
 	return lipgloss.Color(hex)
 }
 
-// AngelaTeal returns Angela's default theme: a neutral graphite base with a
-// single teal-cyan brand color and a three-step gray text ramp. Saturated
-// hues are reserved for genuine status signals, so at most a handful of
-// colors compete for attention on any given screen.
+// AngelaTeal returns Angela's default theme: a near-monochrome graphite UI
+// built on a four-step gray ramp. Chrome — borders, spinners, prompts,
+// selection — never leaves that ramp. Hue is reserved for genuine status
+// signals (error, success, warning) and appears as a foreground color, never
+// as a filled chip. The one exception is the landing-page logo, which is the
+// only place the teal brand gradient is drawn.
 func AngelaTeal() Styles {
-	s := quickStyle(quickStyleOpts{
-		// Brand. One hue family, three intensities.
+	return quickStyle(quickStyleOpts{
+		// Brand. Used by the landing logo gradient and nothing else.
 		primary:   c("#2dd4bf"),
 		secondary: c("#5eead4"),
 		accent:    c("#14b8a6"),
@@ -42,52 +44,41 @@ func AngelaTeal() Styles {
 		// Ink for text sitting on a saturated background.
 		onPrimary: c("#08100f"),
 
-		// Statuses.
-		destructive:       c("#f2555a"),
-		error:             c("#ff6b6b"),
-		warning:           c("#ffdb8d"),
+		// Statuses. Desaturated on purpose: these read as signals against
+		// the gray ramp without competing with the text they annotate.
+		destructive:       c("#f7768e"),
+		error:             c("#f7768e"),
+		warning:           c("#e0af68"),
 		warningSubtle:     c("#c99a3f"),
-		attention:         c("#f0883e"),
-		busy:              c("#ffdb8d"),
+		attention:         c("#e0af68"),
+		busy:              c("#e0af68"),
 		info:              c("#7aa2f7"),
 		infoMoreSubtle:    c("#5aa9d6"),
 		infoMostSubtle:    c("#3f7fa3"),
-		success:           c("#3fb950"),
-		successMoreSubtle: c("#2ea043"),
-		successMostSubtle: c("#238636"),
+		success:           c("#9ece6a"),
+		successMoreSubtle: c("#7fae57"),
+		successMostSubtle: c("#68914a"),
 
 		// ANSI 16-color palette for remapping raw terminal output
 		// (e.g. bang-mode shell commands) onto legible colors.
 		ansiBlack:   c("#1a1d20"),
-		ansiRed:     c("#f2555a"),
-		ansiGreen:   c("#3fb950"),
-		ansiYellow:  c("#e3b341"),
-		ansiBlue:    c("#6cb6ff"),
-		ansiMagenta: c("#d2a8ff"),
+		ansiRed:     c("#f7768e"),
+		ansiGreen:   c("#9ece6a"),
+		ansiYellow:  c("#e0af68"),
+		ansiBlue:    c("#7aa2f7"),
+		ansiMagenta: c("#bb9af7"),
 		ansiCyan:    c("#2dd4bf"),
 		ansiWhite:   c("#b1bac4"),
 
 		ansiBrightBlack:   c("#616a73"),
 		ansiBrightRed:     c("#ff8080"),
-		ansiBrightGreen:   c("#56d364"),
+		ansiBrightGreen:   c("#b4dd8a"),
 		ansiBrightYellow:  c("#f0c674"),
 		ansiBrightBlue:    c("#91cbff"),
 		ansiBrightMagenta: c("#e2c5ff"),
 		ansiBrightCyan:    c("#5eead4"),
 		ansiBrightWhite:   c("#e6e9ec"),
 	})
-
-	// Shell and yolo prompts get amber rather than the brand teal, so an
-	// escalated input mode reads as a different mode at a glance.
-	amber := c("#e3b341")
-	s.Editor.RailBang = s.Editor.RailBang.Foreground(amber)
-	s.Editor.RailYolo = s.Editor.RailYolo.Foreground(amber)
-	s.Messages.ShellBarFocused = s.Messages.ShellBarFocused.BorderForeground(amber)
-	s.Messages.ShellBarBlurred = s.Messages.ShellBarBlurred.BorderForeground(c("#31373d"))
-	s.Messages.ShellPrompt = s.Messages.ShellPrompt.Foreground(amber)
-	s.Messages.ShellPromptBlurred = s.Messages.ShellPromptBlurred.Foreground(c("#8b949e"))
-
-	return s
 }
 
 // CharmtonePantera returns the Charmtone dark theme inherited from Crush.

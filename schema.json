@@ -742,6 +742,16 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "PatternMode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "path",
+        "free",
+        "domain"
+      ],
+      "description": "How Pattern is compared: auto picks by action"
+    },
     "Permissions": {
       "properties": {
         "allowed_tools": {
@@ -754,6 +764,21 @@
           },
           "type": "array",
           "description": "List of tools that don't require permission prompts"
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/Rule"
+          },
+          "type": "array",
+          "description": "Declarative permission rules evaluated in deny \u003e ask \u003e allow order"
+        },
+        "prompt": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "deny"
+          ],
+          "description": "What to do when no rule settles a request"
         }
       },
       "additionalProperties": false,
@@ -863,6 +888,36 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "Rule": {
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/RuleAction"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/PatternMode"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "action"
+      ]
+    },
+    "RuleAction": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "ask",
+        "deny"
+      ],
+      "description": "What to do when the rule matches"
     },
     "SelectedModel": {
       "properties": {

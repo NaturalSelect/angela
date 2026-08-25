@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -284,6 +285,27 @@ func (h *e2eHarness) grantPermission(t *testing.T, ctx context.Context, workspac
 	return out.Resolved
 }
 
+// setSessionUnattended posts the mark a headless client sends before
+// its first prompt. Mirrors the client-side SetSessionUnattended flow
+// without importing internal/client.
+func (h *e2eHarness) setSessionUnattended(t *testing.T, ctx context.Context, workspaceID, sessionID string, unattended bool) {
+	t.Helper()
+	body, err := json.Marshal(proto.PermissionUnattendedRequest{
+		SessionID:  sessionID,
+		Unattended: unattended,
+	})
+	require.NoError(t, err)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		h.httpSrv.URL+"/v1/workspaces/"+workspaceID+"/permissions/unattended",
+		bytes.NewReader(body))
+	require.NoError(t, err)
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := h.httpSrv.Client().Do(httpReq)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
 // waitForAttached spins until the workspace's clients map reports at
 // least n entries with streams > 0. Catches the race where a test
 // publishes events before the server-side AttachClient has completed.
@@ -446,7 +468,7 @@ func TestE2E_PermissionFlowCrossClient(t *testing.T) {
 	h.waitForAttached(t, 2)
 
 	// Drive the permission request from a goroutine simulating the
-	// tool path. Request blocks until resolved; capture the outcome.
+	// tool path. Gate blocks until resolved; capture the outcome.
 	const sessionID = "s-perm"
 	const toolCallID = "tc-1"
 	type result struct {
@@ -455,15 +477,16 @@ func TestE2E_PermissionFlowCrossClient(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		granted, err := h.app.Permissions.Request(ctx, permission.CreatePermissionRequest{
-			SessionID:   sessionID,
-			ToolCallID:  toolCallID,
-			ToolName:    "view",
-			Description: "read a file",
-			Action:      "read",
-			Path:        h.workspace.Path,
+		decision := h.app.Permissions.Gate(ctx, permission.GateRequest{
+			SessionID:  sessionID,
+			ToolCallID: toolCallID,
+			Access: permission.Access{
+				Tool:   "edit",
+				Action: permission.ActionEdit,
+				Path:   filepath.Join(h.workspace.Path, "a.txt"),
+			},
 		})
-		done <- result{granted: granted, err: err}
+		done <- result{granted: decision.Allowed()}
 	}()
 
 	// Wait for the PermissionRequest to arrive on client A's SSE
@@ -629,4 +652,46 @@ func TestE2E_ShutdownCallbackFiresWhenLastClientLeaves(t *testing.T) {
 	_, _ = io.Copy(io.Discard, r.Body)
 	r.Body.Close()
 	require.Equal(t, http.StatusNotFound, r.StatusCode)
+}
+
+// TestE2EUnattendedSessionIsRefusedNotParked drives the headless
+// client's path over the real HTTP surface. `angela run` against a
+// server reads messages and run results only — nothing in that process
+// answers a permission prompt — so it marks its session before sending
+// the first prompt. Without the mark the gate parks on a channel only a
+// reply can close, and the run burns its entire timeout on a question
+// no one was ever going to see.
+func TestE2EUnattendedSessionIsRefusedNotParked(t *testing.T) {
+	h := newE2EHarness(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	const sessionID = "s-headless"
+	h.setSessionUnattended(t, ctx, h.workspace.ID, sessionID, true)
+
+	// A dangerous verb insists on a prompt whatever else is configured,
+	// so this is the case a headless run cannot settle on its own.
+	done := make(chan permission.Decision, 1)
+	go func() {
+		done <- h.app.Permissions.Gate(ctx, permission.GateRequest{
+			SessionID:  sessionID,
+			ToolCallID: "tc-headless",
+			Access: permission.Access{
+				Tool:    "bash",
+				Action:  permission.ActionExecute,
+				Command: "rm -rf build",
+				Path:    h.workspace.Path,
+			},
+		})
+	}()
+
+	select {
+	case decision := <-done:
+		require.False(t, decision.Allowed())
+		require.Equal(t, permission.OutcomePolicyDeny, decision.Outcome)
+		require.Contains(t, decision.Reason, "attached",
+			"the refusal must say nobody could have approved it")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the gate parked on a prompt no one in a headless run can answer")
+	}
 }

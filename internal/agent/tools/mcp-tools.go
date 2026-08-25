@@ -3,34 +3,22 @@ package tools
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/permission"
 )
 
-// whitelistDockerTools contains Docker MCP tools that don't require permission.
-var whitelistDockerTools = []string{
-	"mcp_docker_mcp-find",
-	"mcp_docker_mcp-add",
-	"mcp_docker_mcp-remove",
-	"mcp_docker_mcp-config-set",
-	"mcp_docker_code-mode",
-}
-
 // GetMCPTools gets all the currently available MCP tools.
-func GetMCPTools(permissions permission.Service, cfg *config.ConfigStore, wd string) []*Tool {
+func GetMCPTools(cfg *config.ConfigStore, wd string) []*Tool {
 	var result []*Tool
 	for mcpName, tools := range mcp.Tools() {
 		for _, tool := range tools {
 			result = append(result, &Tool{
-				mcpName:     mcpName,
-				tool:        tool,
-				permissions: permissions,
-				workingDir:  wd,
-				cfg:         cfg,
+				mcpName:    mcpName,
+				tool:       tool,
+				workingDir: wd,
+				cfg:        cfg,
 			})
 		}
 	}
@@ -42,7 +30,6 @@ type Tool struct {
 	mcpName         string
 	tool            *mcp.Tool
 	cfg             *config.ConfigStore
-	permissions     permission.Service
 	workingDir      string
 	providerOptions fantasy.ProviderOptions
 }
@@ -100,29 +87,6 @@ func (m *Tool) Run(ctx context.Context, params fantasy.ToolCall) (fantasy.ToolRe
 	sessionID := GetSessionFromContext(ctx)
 	if sessionID == "" {
 		return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
-	}
-
-	// Skip permission for whitelisted Docker MCP tools.
-	if !slices.Contains(whitelistDockerTools, params.Name) {
-		permissionDescription := fmt.Sprintf("execute %s with the following parameters:", m.Info().Name)
-		p, err := m.permissions.Request(
-			ctx,
-			permission.CreatePermissionRequest{
-				SessionID:   sessionID,
-				ToolCallID:  params.ID,
-				Path:        m.workingDir,
-				ToolName:    m.Info().Name,
-				Action:      "execute",
-				Description: permissionDescription,
-				Params:      params.Input,
-			},
-		)
-		if err != nil {
-			return fantasy.ToolResponse{}, err
-		}
-		if !p {
-			return NewPermissionDeniedResponse(), nil
-		}
 	}
 
 	result, err := mcp.RunTool(ctx, m.cfg, m.mcpName, m.tool.Name, params.Input)

@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"charm.land/fantasy"
-
-	"github.com/NaturalSelect/angela/internal/permission"
 )
 
 //go:embed web_fetch.md.tpl
@@ -47,7 +45,7 @@ func WebFetchScratchDir(root, sessionID string) (string, error) {
 // the root where large pages get saved for grep/view; each session gets
 // its own subdirectory under it, created on first use, so cleanup can
 // discard one session's pages without touching a concurrent session's.
-func NewWebFetchTool(permissions permission.Service, scratchDir string, client *http.Client) fantasy.AgentTool {
+func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.MaxIdleConns = 100
@@ -71,25 +69,6 @@ func NewWebFetchTool(permissions permission.Service, scratchDir string, client *
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
-			}
-
-			p, err := permissions.Request(
-				ctx,
-				permission.CreatePermissionRequest{
-					SessionID:   sessionID,
-					Path:        scratchDir,
-					ToolCallID:  call.ID,
-					ToolName:    WebFetchToolName,
-					Action:      "fetch",
-					Description: fmt.Sprintf("Fetch content from URL: %s", params.URL),
-					Params:      WebFetchPermissionsParams(params),
-				},
-			)
-			if err != nil {
-				return fantasy.ToolResponse{}, err
-			}
-			if !p {
-				return NewPermissionDeniedResponse(), nil
 			}
 
 			content, err := FetchURLAndConvert(ctx, client, params.URL)

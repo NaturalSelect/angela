@@ -142,6 +142,30 @@ func unmarshalToolParams(toolName string, raw json.RawMessage) (any, error) {
 			return nil, err
 		}
 		return params, nil
+	case ReplaceSymbolToolName:
+		var params ReplaceSymbolPermissionsParams
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, err
+		}
+		return params, nil
+	case ListMCPResourcesToolName:
+		var params ListMCPResourcesPermissionsParams
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, err
+		}
+		return params, nil
+	case ReadMCPResourceToolName:
+		var params ReadMCPResourcePermissionsParams
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, err
+		}
+		return params, nil
+	case RenameToolName:
+		var params RenamePermissionsParams
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, err
+		}
+		return params, nil
 	default:
 		// For unknown tools, keep the raw JSON as-is.
 		var generic map[string]any

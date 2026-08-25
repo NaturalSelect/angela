@@ -2543,6 +2543,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/permissions/unattended": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "permissions"
+                ],
+                "summary": "Set session unattended",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Session unattended request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.PermissionUnattendedRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/project/init": {
             "post": {
                 "tags": [
@@ -3784,6 +3836,15 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "prompt": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/permission.Rule"
+                    }
                 }
             }
         },
@@ -4111,6 +4172,9 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "subagent_depth": {
+                    "type": "integer"
+                },
                 "tui": {
                     "$ref": "#/definitions/config.TUIOptions"
                 }
@@ -4218,6 +4282,65 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "permission.PatternMode": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+                0,
+                1,
+                2,
+                3
+            ],
+            "x-enum-varnames": [
+                "PatternAuto",
+                "PatternPath",
+                "PatternFree",
+                "PatternDomain"
+            ]
+        },
+        "permission.Rule": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is what to do when the rule matches.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/permission.RuleAction"
+                        }
+                    ]
+                },
+                "mode": {
+                    "description": "Mode selects how Pattern is compared.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/permission.PatternMode"
+                        }
+                    ]
+                },
+                "pattern": {
+                    "description": "Pattern narrows the rule further. Empty or \"*\" matches everything.",
+                    "type": "string"
+                },
+                "tool": {
+                    "description": "Tool narrows the rule. It matches either an access category\n(\"read\", \"edit\", \"execute\", \"network\", \"mcp\", \"list\") or a single\ntool name (\"bash\", \"view\"). Empty matches everything.",
+                    "type": "string"
+                }
+            }
+        },
+        "permission.RuleAction": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+                0,
+                1,
+                2
+            ],
+            "x-enum-varnames": [
+                "RuleDeny",
+                "RuleAsk",
+                "RuleAllow"
+            ]
         },
         "proto.APIKeyKind": {
             "type": "string",
@@ -4805,6 +4928,17 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "skip": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "proto.PermissionUnattendedRequest": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string"
+                },
+                "unattended": {
                     "type": "boolean"
                 }
             }

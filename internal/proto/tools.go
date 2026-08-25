@@ -239,3 +239,31 @@ type WriteResponseMetadata struct {
 	Additions int    `json:"additions"`
 	Removals  int    `json:"removals"`
 }
+
+// ReplaceSymbolToolName is the name of the replace_symbol tool.
+const ReplaceSymbolToolName = tools.ReplaceSymbolToolName
+
+// ReplaceSymbolPermissionsParams represents the permission parameters
+// for the replace_symbol tool.
+type ReplaceSymbolPermissionsParams = tools.ReplaceSymbolPermissionsParams
+
+// ListMCPResourcesToolName is the name of the list_mcp_resources tool.
+const ListMCPResourcesToolName = tools.ListMCPResourcesToolName
+
+// ListMCPResourcesPermissionsParams represents the permission parameters
+// for the list_mcp_resources tool.
+type ListMCPResourcesPermissionsParams = tools.ListMCPResourcesPermissionsParams
+
+// ReadMCPResourceToolName is the name of the read_mcp_resource tool.
+const ReadMCPResourceToolName = tools.ReadMCPResourceToolName
+
+// ReadMCPResourcePermissionsParams represents the permission parameters
+// for the read_mcp_resource tool.
+type ReadMCPResourcePermissionsParams = tools.ReadMCPResourcePermissionsParams
+
+// RenameToolName is the name of the lsp_rename tool.
+const RenameToolName = tools.RenameToolName
+
+// RenamePermissionsParams represents the permission parameters for the
+// lsp_rename tool.
+type RenamePermissionsParams = tools.RenamePermissionsParams

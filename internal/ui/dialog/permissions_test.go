@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -95,4 +97,29 @@ func TestPermissions_EscapeDenies(t *testing.T) {
 	resp, ok := action.(ActionPermissionResponse)
 	require.True(t, ok)
 	require.Equal(t, PermissionDeny, resp.Action)
+}
+
+// TestPermissions_RenameShowsSymbolChange pins that approving a rename
+// tells the user which symbol becomes which. A rename spans files the
+// dialog never shows, so the two names are the whole basis for the
+// decision.
+func TestPermissions_RenameShowsSymbolChange(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{Styles: &s}
+	p := NewPermissions(com, permission.PermissionRequest{
+		ID:         "perm-test",
+		ToolCallID: "tool-call-test",
+		ToolName:   tools.RenameToolName,
+		Params: tools.RenamePermissionsParams{
+			Symbol:  "OldName",
+			NewName: "NewName",
+		},
+	})
+
+	content := ansi.Strip(p.renderContent(80))
+	require.Contains(t, content,
+		"Symbol: OldName "+styles.ArrowRightIcon+" NewName",
+		"the rename must read as a symbol change, not a dump of the raw params")
 }

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"charm.land/fantasy"
@@ -58,16 +59,18 @@ func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 	require.True(t, inner.called, "inner tool should have run")
 
 	// The inner tool's permission service can now treat call-1 as pre-approved.
-	svc := permission.NewPermissionService(t.TempDir(), false, nil)
-	granted, err := svc.Request(inner.gotCtx, permission.CreatePermissionRequest{
+	dir := t.TempDir()
+	svc := permission.NewPermissionService(dir, false, nil)
+	decision := svc.Gate(inner.gotCtx, permission.GateRequest{
 		SessionID:  "s1",
 		ToolCallID: "call-1",
-		ToolName:   "view",
-		Action:     "read",
-		Path:       t.TempDir(),
+		Access: permission.Access{
+			Tool:   "edit",
+			Action: permission.ActionEdit,
+			Path:   filepath.Join(dir, "a.go"),
+		},
 	})
-	require.NoError(t, err)
-	require.True(t, granted, "hook allow should bypass the permission prompt")
+	require.True(t, decision.Allowed(), "hook allow should bypass the permission prompt")
 }
 
 func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
@@ -83,20 +86,24 @@ func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 
 	// With no hook opinion, a fresh permission request has nothing stamped
 	// and must fall through to the normal flow. We verify by checking that
-	// the context does not look pre-approved for this call ID: sending a
-	// request that no subscriber resolves will block until cancelled.
-	svc := permission.NewPermissionService(t.TempDir(), false, nil)
+	// the context does not look pre-approved for this call ID: a request
+	// that no subscriber resolves blocks until cancelled.
+	dir := t.TempDir()
+	svc := permission.NewPermissionService(dir, false, nil)
 	ctx, cancel := context.WithCancel(inner.gotCtx)
 	cancel()
-	granted, err := svc.Request(ctx, permission.CreatePermissionRequest{
+	decision := svc.Gate(ctx, permission.GateRequest{
 		SessionID:  "s1",
 		ToolCallID: "call-2",
-		ToolName:   "view",
-		Action:     "read",
-		Path:       t.TempDir(),
+		Access: permission.Access{
+			Tool:   "edit",
+			Action: permission.ActionEdit,
+			Path:   filepath.Join(dir, "a.go"),
+		},
 	})
-	require.Error(t, err, "no approval stamped => request should reach the prompt path")
-	require.False(t, granted)
+	require.Equal(t, permission.OutcomeCancelled, decision.Outcome,
+		"no approval stamped => request should reach the prompt path")
+	require.False(t, decision.Allowed())
 }
 
 func TestHookedTool_DenySkipsInnerTool(t *testing.T) {

@@ -32,9 +32,9 @@ on conflicts) and Angela logs a warning.
 
 An `angelarc` is a plain Bash script executed at load time with the same embedded
 shell the `bash` tool uses. It builds config by calling builtins (`provider`,
-`model`, `mcp`, `lsp`, `hook`, `permissions`, `option`). Statements run top to
-bottom; later statements win, and `remove`/`reset` operate on anything defined
-earlier or pulled in via `source`.
+`model`, `agent`, `mcp`, `lsp`, `hook`, `permissions`, `option`). Statements run
+top to bottom; later statements win, and `remove`/`reset` operate on anything
+defined earlier or pulled in via `source`.
 
 ```bash
 #!/usr/bin/env bash
@@ -99,6 +99,7 @@ model add <provider>/<id> [flags]      # register a custom model (provider must 
 model remove <provider>/<id>           # alias: rm
 model main [<provider>/<id>] [flags]   # set the main slot; no arg prints it
 model chore [<provider>/<id>] [flags]  # set the chore slot; no arg prints it
+model <name> variant <variant> [flags] # named preset of parameter flags
 ```
 
 - `<provider>/<id>` is the same form `angela models` prints. A missing slash is
@@ -116,6 +117,8 @@ model chore [<provider>/<id>] [flags]  # set the chore slot; no arg prints it
   `--frequency-penalty F`, `--presence-penalty F`, `--provider-options JSON`.
 - `model main` with no argument prints the current selection as `provider/id`,
   usable in `$(model main)`.
+- `model <name> variant <variant>` stores a named preset of the same parameter
+  flags under a slot, so one slot can carry several tunings.
 
 `main` is the workhorse model used by `coder` and most agents; `chore` is
 the cheap model used for auxiliary work such as titles and web-fetch
@@ -174,15 +177,51 @@ execute (stdin payload, env vars, decisions).
 hook add PreToolUse --matcher "^bash$" --command ".angela/hooks/no-haskell.sh" --name no-haskell
 ```
 
+### agents
+
+```bash
+agent add <name> [--description DESC] [--mode primary|subagent]
+    [--model NAME] [--prompt TEXT] [--temperature T]
+    [--tool TOOL ...] [--tools all|inherited]
+    [--disable-tool TOOL ...] [--mcp all|inherited]
+    [--mcp-scope JSON] [--disabled true|false]
+    [--hidden true|false] [--max-tokens N]
+agent remove <name>    # alias: rm
+```
+
+`--model` takes a model slot (`main`, `chore`, ...), which is how a sub-agent is
+pointed at a cheaper or faster model than the primary one:
+
+```bash
+agent add explore --model chore
+agent add general --disabled true
+```
+
 ### permissions
 
 ```bash
 permissions allow <tool> [<tool> ...]   # tools that skip permission prompts
 permissions deny <tool> [<tool> ...]    # hide tools from the agent entirely
+permissions rule <allow|ask|deny> [--tool <filter>] [--path|--free|--domain] [<pattern> ...]
+permissions prompt <ask|deny>           # what happens when no rule settles it
 ```
 
 `deny` is the inverse of `allow`: it writes `options.disabled_tools`. A denied
 tool is hidden from the agent, not merely prompted for.
+
+`rule` is the declarative form and matches on what a call actually touches, not
+just on the tool name. Rules are evaluated **deny > ask > allow** regardless of
+the order they are written in, so a deny always wins:
+
+```bash
+permissions rule deny --tool edit '**/.env' '**/id_rsa'
+permissions rule allow --tool bash 'git status*'
+permissions rule deny --domain 'evil.example.com'
+```
+
+`prompt` decides the fallback when nothing matched: `ask` (the default) puts the
+request to the user, `deny` refuses it. A deny rule and a dangerous or
+unreadable command always outrank both.
 
 ### options
 
@@ -248,9 +287,15 @@ Event names are case-insensitive and accept snake_case: `PreToolUse`,
   "session_id": "abc-123",
   "cwd": "/path/to/project",
   "tool_name": "bash",
-  "tool_input": { "command": "ls -la" }
+  "tool_input": { "command": "ls -la" },
+  "agent_id": "coder",
+  "depth": 0
 }
 ```
+
+Hooks fire on every tool call, including the ones a dispatched sub-agent makes.
+`depth` is `0` for the top-level agent and `1+` below it, so a hook that only
+wants top-level calls filters on `depth` or `agent_id`.
 
 ### Hook environment variables
 
@@ -261,6 +306,8 @@ Event names are case-insensitive and accept snake_case: `PreToolUse`,
 | `ANGELA_SESSION_ID`           | Current session ID                                |
 | `ANGELA_CWD`                  | Current working directory                         |
 | `ANGELA_PROJECT_DIR`          | Project root directory                            |
+| `ANGELA_AGENT_ID`             | Agent making the call (e.g. `coder`)              |
+| `ANGELA_AGENT_DEPTH`          | `0` for the top-level agent, `1+` below it        |
 | `ANGELA_TOOL_INPUT_COMMAND`   | Value of `command` from tool input (if present)   |
 | `ANGELA_TOOL_INPUT_FILE_PATH` | Value of `file_path` from tool input (if present) |
 
@@ -275,7 +322,8 @@ Event names are case-insensitive and accept snake_case: `PreToolUse`,
 - `decision`: `allow` to explicitly allow, `deny` to block, `none` (or omit).
 - `reason`: explanation (used when denying).
 - `context`: extra context appended to the tool result.
-- `updated_input`: replacement JSON for the tool input; last non-empty wins.
+- `updated_input`: shallow-merge patch against the tool input, not a
+  replacement. Keys you include overwrite; keys you omit are preserved.
 
 **Exit code 2** — the tool call is blocked; stderr is the deny reason.
 
@@ -286,7 +334,8 @@ Event names are case-insensitive and accept snake_case: `PreToolUse`,
 - **Deny wins over allow** — any deny blocks the call.
 - **Allow wins over none** — a lone allow lets it proceed.
 - Deny reasons and context strings are concatenated (newline-separated).
-- For `updated_input`, the last non-empty value wins.
+- `updated_input` patches shallow-merge in config order; later patches win on
+  colliding keys.
 
 ### Claude Code compatibility
 
@@ -361,6 +410,9 @@ The `$schema` property enables IDE autocomplete but is optional.
 | `hook add PreToolUse --command C`    | append to `hooks.PreToolUse[]`                         |
 | `permissions allow view ls`          | `permissions.allowed_tools = ["view","ls"]`            |
 | `permissions deny bash`              | `options.disabled_tools = ["bash"]`                    |
+| `permissions rule deny --tool edit P` | append to `permissions.rules[]`                       |
+| `permissions prompt deny`            | `permissions.prompt = "deny"`                          |
+| `agent add explore --model chore`    | `agents.explore = {"model":"chore"}`                   |
 | `option skill-path ./skills`         | `options.skills_paths = ["./skills"]`                  |
 | `option metrics false`               | `options.disable_metrics = true`                       |
 | `option attribution-trailer-style none` | `options.attribution.trailer_style = "none"`        |

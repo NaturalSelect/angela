@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/permission"
 )
 
 type (
@@ -67,6 +68,25 @@ func NewPermissionDeniedResponse() fantasy.ToolResponse {
 	resp := fantasy.NewTextErrorResponse("User denied permission")
 	resp.StopTurn = true
 	return resp
+}
+
+// DecisionResponse turns a refusal into what the model sees. The two
+// refusals mean different things and must not be collapsed: the user
+// saying no ends the turn, while the configuration saying no is an
+// obstacle the model should route around, so it carries the reason back
+// and lets the turn continue.
+func DecisionResponse(decision permission.Decision) fantasy.ToolResponse {
+	switch decision.Outcome {
+	case permission.OutcomePolicyDeny:
+		return fantasy.NewTextErrorResponse("Permission denied by configuration: " + decision.Reason +
+			". Do not retry this call; use a different approach or ask the user.")
+	case permission.OutcomeCancelled:
+		resp := fantasy.NewTextErrorResponse("Permission request cancelled: " + decision.Reason)
+		resp.StopTurn = true
+		return resp
+	default:
+		return NewPermissionDeniedResponse()
+	}
 }
 
 // ghAvailable indicates whether the `gh` CLI is available on PATH.

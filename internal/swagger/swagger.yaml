@@ -356,6 +356,12 @@ definitions:
         items:
           type: string
         type: array
+      prompt:
+        type: string
+      rules:
+        items:
+          $ref: '#/definitions/permission.Rule'
+        type: array
     type: object
   config.SelectedModel:
     properties:
@@ -596,6 +602,8 @@ definitions:
         items:
           type: string
         type: array
+      subagent_depth:
+        type: integer
       tui:
         $ref: '#/definitions/config.TUIOptions'
     type: object
@@ -671,6 +679,50 @@ definitions:
       refresh_token:
         type: string
     type: object
+  permission.PatternMode:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    format: int32
+    type: integer
+    x-enum-varnames:
+    - PatternAuto
+    - PatternPath
+    - PatternFree
+    - PatternDomain
+  permission.Rule:
+    properties:
+      action:
+        allOf:
+        - $ref: '#/definitions/permission.RuleAction'
+        description: Action is what to do when the rule matches.
+      mode:
+        allOf:
+        - $ref: '#/definitions/permission.PatternMode'
+        description: Mode selects how Pattern is compared.
+      pattern:
+        description: Pattern narrows the rule further. Empty or "*" matches everything.
+        type: string
+      tool:
+        description: |-
+          Tool narrows the rule. It matches either an access category
+          ("read", "edit", "execute", "network", "mcp", "list") or a single
+          tool name ("bash", "view"). Empty matches everything.
+        type: string
+    type: object
+  permission.RuleAction:
+    enum:
+    - 0
+    - 1
+    - 2
+    format: int32
+    type: integer
+    x-enum-varnames:
+    - RuleDeny
+    - RuleAsk
+    - RuleAllow
   proto.APIKeyKind:
     enum:
     - string
@@ -1077,6 +1129,13 @@ definitions:
   proto.PermissionSkipRequest:
     properties:
       skip:
+        type: boolean
+    type: object
+  proto.PermissionUnattendedRequest:
+    properties:
+      session_id:
+        type: string
+      unattended:
         type: boolean
     type: object
   proto.ProjectInitPromptResponse:
@@ -2975,6 +3034,40 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Set skip permissions
+      tags:
+      - permissions
+  /workspaces/{id}/permissions/unattended:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session unattended request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.PermissionUnattendedRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Set session unattended
       tags:
       - permissions
   /workspaces/{id}/project/init:

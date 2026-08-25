@@ -16,16 +16,6 @@ func hasIncompleteTodos(todos []session.Todo) bool {
 	return session.HasIncompleteTodos(todos)
 }
 
-// hasInProgressTodo returns true if there is at least one in-progress todo.
-func hasInProgressTodo(todos []session.Todo) bool {
-	for _, todo := range todos {
-		if todo.Status == session.TodoStatusInProgress {
-			return true
-		}
-	}
-	return false
-}
-
 // todosInfo renders the session todo list as a details column. Like the other
 // detail sections it renders from the memoized session snapshot only and must
 // not probe the workspace; see lspInfo for why.

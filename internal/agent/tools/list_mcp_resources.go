@@ -11,8 +11,6 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/filepathext"
-	"github.com/NaturalSelect/angela/internal/permission"
 )
 
 type ListMCPResourcesParams struct {
@@ -28,7 +26,7 @@ const ListMCPResourcesToolName = "list_mcp_resources"
 //go:embed list_mcp_resources.md
 var listMCPResourcesDescription string
 
-func NewListMCPResourcesTool(cfg *config.ConfigStore, permissions permission.Service) fantasy.AgentTool {
+func NewListMCPResourcesTool(cfg *config.ConfigStore) fantasy.AgentTool {
 	return fantasy.NewParallelAgentTool(
 		ListMCPResourcesToolName,
 		listMCPResourcesDescription,
@@ -41,26 +39,6 @@ func NewListMCPResourcesTool(cfg *config.ConfigStore, permissions permission.Ser
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for listing MCP resources")
-			}
-
-			relPath := filepathext.SmartJoin(cfg.WorkingDir(), params.MCPName)
-			p, err := permissions.Request(
-				ctx,
-				permission.CreatePermissionRequest{
-					SessionID:   sessionID,
-					Path:        relPath,
-					ToolCallID:  call.ID,
-					ToolName:    ListMCPResourcesToolName,
-					Action:      "list",
-					Description: fmt.Sprintf("List MCP resources from %s", params.MCPName),
-					Params:      ListMCPResourcesPermissionsParams(params),
-				},
-			)
-			if err != nil {
-				return fantasy.ToolResponse{}, err
-			}
-			if !p {
-				return NewPermissionDeniedResponse(), nil
 			}
 
 			resources, err := mcp.ListResources(ctx, cfg, params.MCPName)

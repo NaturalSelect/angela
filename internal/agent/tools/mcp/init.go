@@ -21,7 +21,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/home"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	mcpoauth "github.com/NaturalSelect/angela/internal/oauth/mcp"
-	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -289,7 +288,7 @@ func Close(ctx context.Context) error {
 }
 
 // Initialize initializes MCP clients based on the provided configuration.
-func Initialize(ctx context.Context, permissions permission.Service, cfg *config.ConfigStore) {
+func Initialize(ctx context.Context, cfg *config.ConfigStore) {
 	ArmInit()
 	slog.Info("Initializing MCP clients")
 	start := time.Now()

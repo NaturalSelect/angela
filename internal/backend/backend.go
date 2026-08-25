@@ -939,6 +939,12 @@ func (b *Backend) DeleteWorkspace(id, clientID string) error {
 // guards against zombie writes from a client that has detached and
 // against ghost presence from a hold-only client that never opened an
 // SSE stream.
+//
+// Reporting a session also clears its unattended mark: a client holding
+// a live stream is exactly the thing that can answer a prompt, and
+// without this a session a headless run once marked would keep refusing
+// prompts after a TUI took it over. The headless path never reports a
+// session, so it cannot clear its own mark this way.
 func (b *Backend) SetCurrentSession(workspaceID, clientID, sessionID string) error {
 	if _, err := validateClientID(clientID); err != nil {
 		return err
@@ -948,16 +954,23 @@ func (b *Backend) SetCurrentSession(workspaceID, clientID, sessionID string) err
 		return ErrWorkspaceNotFound
 	}
 	ws.clientsMu.Lock()
-	defer ws.clientsMu.Unlock()
 	cs, ok := ws.clients[clientID]
 	if !ok || cs.streams == 0 {
 		// No entry, or hold-only (no live stream): refuse the
 		// write. The presence record this is meant to feed
 		// should only reflect clients that can actually observe
 		// session events.
+		ws.clientsMu.Unlock()
 		return ErrClientNotAttached
 	}
 	cs.currentSessionID = sessionID
+	ws.clientsMu.Unlock()
+
+	// A workspace whose app has not finished starting has no permission
+	// service to tell; the mark it would clear cannot exist yet either.
+	if sessionID != "" && ws.App != nil && ws.Permissions != nil {
+		ws.Permissions.SetSessionUnattended(sessionID, false)
+	}
 	return nil
 }
 

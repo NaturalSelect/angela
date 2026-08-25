@@ -35,9 +35,14 @@ func NewJobKillTool() fantasy.AgentTool {
 				return fantasy.NewTextErrorResponse("missing shell_id"), nil
 			}
 
+			sessionID := GetSessionFromContext(ctx)
+			if sessionID == "" {
+				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for terminating a background shell")
+			}
+
 			bgManager := shell.GetBackgroundShellManager()
 
-			bgShell, ok := bgManager.Get(params.ShellID)
+			bgShell, ok := bgManager.Get(params.ShellID, sessionID)
 			if !ok {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("background shell not found: %s", params.ShellID)), nil
 			}
@@ -48,7 +53,7 @@ func NewJobKillTool() fantasy.AgentTool {
 				Description: bgShell.Description,
 			}
 
-			err := bgManager.Kill(params.ShellID)
+			err := bgManager.Kill(params.ShellID, sessionID)
 			if err != nil {
 				return fantasy.NewTextErrorResponse(err.Error()), nil
 			}

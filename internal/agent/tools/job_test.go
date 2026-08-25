@@ -2,13 +2,22 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"runtime"
 	"testing"
 	"time"
 
+	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/shell"
 	"github.com/stretchr/testify/require"
 )
+
+// jobSession names a session per test. These tests share the process-wide
+// manager, so a unique owner keeps one test's jobs out of another's view.
+func jobSession(t *testing.T) string {
+	t.Helper()
+	return t.Name()
+}
 
 func TestBackgroundShell_Integration(t *testing.T) {
 	t.Parallel()
@@ -18,7 +27,7 @@ func TestBackgroundShell_Integration(t *testing.T) {
 
 	// Start a background shell
 	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, nil, "echo 'hello background' && echo 'done'", "")
+	bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "echo 'hello background' && echo 'done'", "")
 	require.NoError(t, err)
 	require.NotEmpty(t, bgShell.ID)
 
@@ -34,7 +43,7 @@ func TestBackgroundShell_Integration(t *testing.T) {
 	require.Empty(t, stderr)
 
 	// Clean up
-	bgManager.Kill(bgShell.ID)
+	bgManager.Kill(bgShell.ID, jobSession(t))
 }
 
 func TestBackgroundShell_Kill(t *testing.T) {
@@ -45,15 +54,15 @@ func TestBackgroundShell_Kill(t *testing.T) {
 
 	// Start a long-running background shell
 	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, nil, "sleep 100", "")
+	bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "sleep 100", "")
 	require.NoError(t, err)
 
 	// Kill it
-	err = bgManager.Kill(bgShell.ID)
+	err = bgManager.Kill(bgShell.ID, jobSession(t))
 	require.NoError(t, err)
 
 	// Verify it's gone
-	_, ok := bgManager.Get(bgShell.ID)
+	_, ok := bgManager.Get(bgShell.ID, jobSession(t))
 	require.False(t, ok)
 
 	// Verify the shell is done
@@ -68,9 +77,9 @@ func TestBackgroundShell_MultipleOutputCalls(t *testing.T) {
 
 	// Start a background shell
 	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, nil, "echo 'step 1' && echo 'step 2' && echo 'step 3'", "")
+	bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "echo 'step 1' && echo 'step 2' && echo 'step 3'", "")
 	require.NoError(t, err)
-	defer bgManager.Kill(bgShell.ID)
+	defer bgManager.Kill(bgShell.ID, jobSession(t))
 
 	// Check that we can call GetOutput multiple times while running
 	for range 5 {
@@ -108,9 +117,9 @@ func TestBackgroundShell_EmptyOutput(t *testing.T) {
 
 	// Start a background shell with no output
 	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, nil, "sleep 0.1", "")
+	bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "sleep 0.1", "")
 	require.NoError(t, err)
-	defer bgManager.Kill(bgShell.ID)
+	defer bgManager.Kill(bgShell.ID, jobSession(t))
 
 	// Wait for completion
 	bgShell.Wait()
@@ -130,9 +139,9 @@ func TestBackgroundShell_ExitCode(t *testing.T) {
 
 	// Start a background shell that exits with non-zero code
 	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, nil, "echo 'failing' && exit 42", "")
+	bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "echo 'failing' && exit 42", "")
 	require.NoError(t, err)
-	defer bgManager.Kill(bgShell.ID)
+	defer bgManager.Kill(bgShell.ID, jobSession(t))
 
 	// Wait for completion
 	bgShell.Wait()
@@ -158,9 +167,9 @@ func TestBackgroundShell_WithBlockFuncs(t *testing.T) {
 
 	// Start a background shell with a blocked command
 	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, blockFuncs, "curl example.com", "")
+	bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, blockFuncs, "curl example.com", "")
 	require.NoError(t, err)
-	defer bgManager.Kill(bgShell.ID)
+	defer bgManager.Kill(bgShell.ID, jobSession(t))
 
 	// Wait for completion
 	bgShell.Wait()
@@ -187,9 +196,9 @@ func TestBackgroundShell_StdoutAndStderr(t *testing.T) {
 
 	// Start a background shell with both stdout and stderr
 	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, nil, "echo 'stdout message' && echo 'stderr message' >&2", "")
+	bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "echo 'stdout message' && echo 'stderr message' >&2", "")
 	require.NoError(t, err)
-	defer bgManager.Kill(bgShell.ID)
+	defer bgManager.Kill(bgShell.ID, jobSession(t))
 
 	// Wait for completion
 	bgShell.Wait()
@@ -209,9 +218,9 @@ func TestBackgroundShell_ConcurrentAccess(t *testing.T) {
 
 	// Start a background shell
 	bgManager := shell.GetBackgroundShellManager()
-	bgShell, err := bgManager.Start(ctx, workingDir, nil, "for i in 1 2 3 4 5; do echo \"line $i\"; sleep 0.05; done", "")
+	bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "for i in 1 2 3 4 5; do echo \"line $i\"; sleep 0.05; done", "")
 	require.NoError(t, err)
-	defer bgManager.Kill(bgShell.ID)
+	defer bgManager.Kill(bgShell.ID, jobSession(t))
 
 	// Access output concurrently from multiple goroutines
 	done := make(chan struct{})
@@ -262,13 +271,13 @@ func TestBackgroundShell_List(t *testing.T) {
 	// Start multiple background shells
 	shells := make([]*shell.BackgroundShell, 3)
 	for i := range 3 {
-		bgShell, err := bgManager.Start(ctx, workingDir, nil, "sleep 1", "")
+		bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "sleep 1", "")
 		require.NoError(t, err)
 		shells[i] = bgShell
 	}
 
 	// Get the list
-	ids := bgManager.List()
+	ids := bgManager.List(jobSession(t))
 
 	// Verify all our shells are in the list
 	for _, sh := range shells {
@@ -277,7 +286,7 @@ func TestBackgroundShell_List(t *testing.T) {
 
 	// Clean up
 	for _, sh := range shells {
-		bgManager.Kill(sh.ID)
+		bgManager.Kill(sh.ID, jobSession(t))
 	}
 }
 
@@ -291,7 +300,7 @@ func TestBackgroundShell_AutoBackground(t *testing.T) {
 	t.Run("quick command completes synchronously", func(t *testing.T) {
 		t.Parallel()
 		bgManager := shell.GetBackgroundShellManager()
-		bgShell, err := bgManager.Start(ctx, workingDir, nil, "echo 'quick'", "")
+		bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "echo 'quick'", "")
 		require.NoError(t, err)
 
 		// Wait threshold time
@@ -305,16 +314,16 @@ func TestBackgroundShell_AutoBackground(t *testing.T) {
 		require.Empty(t, stderr)
 
 		// Clean up
-		bgManager.Kill(bgShell.ID)
+		bgManager.Kill(bgShell.ID, jobSession(t))
 	})
 
 	// Test that a long command stays in background
 	t.Run("long command stays in background", func(t *testing.T) {
 		t.Parallel()
 		bgManager := shell.GetBackgroundShellManager()
-		bgShell, err := bgManager.Start(ctx, workingDir, nil, "sleep 20 && echo '20 seconds completed'", "")
+		bgShell, err := bgManager.Start(ctx, jobSession(t), workingDir, nil, "sleep 20 && echo '20 seconds completed'", "")
 		require.NoError(t, err)
-		defer bgManager.Kill(bgShell.ID)
+		defer bgManager.Kill(bgShell.ID, jobSession(t))
 
 		// Wait threshold time
 		time.Sleep(5 * time.Second)
@@ -327,8 +336,64 @@ func TestBackgroundShell_AutoBackground(t *testing.T) {
 		require.Empty(t, stderr)
 
 		// Verify we can get the shell from manager
-		retrieved, ok := bgManager.Get(bgShell.ID)
+		retrieved, ok := bgManager.Get(bgShell.ID, jobSession(t))
 		require.True(t, ok, "Should be able to retrieve background shell")
 		require.Equal(t, bgShell.ID, retrieved.ID)
+	})
+}
+
+// TestJobToolsRefuseAnotherSessionsShell pins the tool-level half of job
+// ownership: job_output and job_kill must not act on an ID belonging to
+// another session, and must not reveal that the ID exists at all.
+func TestJobToolsRefuseAnotherSessionsShell(t *testing.T) {
+	t.Parallel()
+
+	bgManager := shell.GetBackgroundShellManager()
+	victim, err := bgManager.Start(context.Background(), "victim-session",
+		t.TempDir(), nil, "sleep 30", "secret job")
+	require.NoError(t, err)
+	t.Cleanup(func() { bgManager.Kill(victim.ID, "victim-session") })
+
+	intruder := context.WithValue(context.Background(), SessionIDContextKey, "intruder-session")
+
+	run := func(t *testing.T, tool fantasy.AgentTool, name string, params any) fantasy.ToolResponse {
+		t.Helper()
+		input, err := json.Marshal(params)
+		require.NoError(t, err)
+		resp, err := tool.Run(intruder, fantasy.ToolCall{ID: "c1", Name: name, Input: string(input)})
+		require.NoError(t, err)
+		return resp
+	}
+
+	t.Run("job_output refuses", func(t *testing.T) {
+		t.Parallel()
+		resp := run(t, NewJobOutputTool(), JobOutputToolName,
+			JobOutputParams{ShellID: victim.ID})
+
+		require.True(t, resp.IsError)
+		require.Contains(t, resp.Content, "not found")
+		require.NotContains(t, resp.Content, "secret job")
+	})
+
+	t.Run("job_kill refuses and the job survives", func(t *testing.T) {
+		t.Parallel()
+		resp := run(t, NewJobKillTool(), JobKillToolName,
+			JobKillParams{ShellID: victim.ID})
+
+		require.True(t, resp.IsError)
+		require.Contains(t, resp.Content, "not found")
+		require.False(t, victim.IsDone(), "a foreign job_kill must not stop the job")
+	})
+
+	t.Run("the owner still reaches its own job", func(t *testing.T) {
+		t.Parallel()
+		owner := context.WithValue(context.Background(), SessionIDContextKey, "victim-session")
+		input, err := json.Marshal(JobOutputParams{ShellID: victim.ID})
+		require.NoError(t, err)
+
+		resp, err := NewJobOutputTool().Run(owner,
+			fantasy.ToolCall{ID: "c2", Name: JobOutputToolName, Input: string(input)})
+		require.NoError(t, err)
+		require.False(t, resp.IsError)
 	})
 }

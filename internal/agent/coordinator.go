@@ -877,24 +877,24 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 
 	allTools = append(
 		allTools,
-		tools.NewBashTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Config().Options.Attribution, modelID),
+		tools.NewBashTool(c.cfg.WorkingDir(), c.cfg.Config().Options.Attribution, modelID),
 		tools.NewAngelaInfoTool(c.cfg, c.lspManager, c.allSkills, c.activeSkills, c.skillTracker),
 		tools.NewAngelaLogsTool(logFile),
 		tools.NewJobOutputTool(),
 		tools.NewJobKillTool(),
-		tools.NewDownloadTool(c.permissions, c.cfg.WorkingDir(), nil),
-		tools.NewEditTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
-		tools.NewMultiEditTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
-		tools.NewFetchTool(c.permissions, c.cfg.WorkingDir(), nil),
-		tools.NewWebFetchTool(c.permissions, filepath.Join(c.cfg.Config().Options.DataDirectory, "webfetch"), nil),
-		tools.NewWebSearchTool(c.permissions, c.cfg.WorkingDir(), nil),
+		tools.NewDownloadTool(c.cfg.WorkingDir(), nil),
+		tools.NewEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
+		tools.NewMultiEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
+		tools.NewFetchTool(c.cfg.WorkingDir(), nil),
+		tools.NewWebFetchTool(filepath.Join(c.cfg.Config().Options.DataDirectory, "webfetch"), nil),
+		tools.NewWebSearchTool(c.cfg.WorkingDir(), nil),
 		tools.NewGlobTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Glob),
 		tools.NewGrepTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Grep),
-		tools.NewLsTool(c.permissions, c.cfg.WorkingDir(), c.cfg.Config().Tools.Ls),
+		tools.NewLsTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Ls),
 		tools.NewSourcegraphTool(nil),
 		tools.NewTodosTool(c.sessions),
-		tools.NewViewTool(c.lspManager, c.permissions, c.filetracker, c.skillTracker, c.cfg.WorkingDir(), c.cfg.Config().Options.SkillsPaths...),
-		tools.NewWriteTool(c.lspManager, c.permissions, c.history, c.filetracker, c.cfg.WorkingDir()),
+		tools.NewViewTool(c.lspManager, c.filetracker, c.skillTracker, c.cfg.WorkingDir(), c.cfg.Config().Options.SkillsPaths...),
+		tools.NewWriteTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
 	)
 
 	// Question tool is interactive-only and not available to sub-agents.
@@ -912,16 +912,16 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 			tools.NewSymbolsTool(c.lspManager),
 			tools.NewDefinitionTool(c.lspManager),
 			tools.NewCallHierarchyTool(c.lspManager),
-			tools.NewRenameTool(c.lspManager, c.permissions, c.history, c.filetracker),
-			tools.NewReplaceSymbolTool(c.lspManager, c.permissions, c.history, c.filetracker),
+			tools.NewRenameTool(c.lspManager, c.history, c.filetracker),
+			tools.NewReplaceSymbolTool(c.lspManager, c.history, c.filetracker),
 		)
 	}
 
 	if len(c.cfg.Config().MCP) > 0 {
 		allTools = append(
 			allTools,
-			tools.NewListMCPResourcesTool(c.cfg, c.permissions),
-			tools.NewReadMCPResourceTool(c.cfg, c.permissions),
+			tools.NewListMCPResourcesTool(c.cfg),
+			tools.NewReadMCPResourceTool(c.cfg),
 		)
 	}
 
@@ -932,7 +932,7 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 		}
 	}
 
-	for _, tool := range tools.GetMCPTools(c.permissions, c.cfg, c.cfg.WorkingDir()) {
+	for _, tool := range tools.GetMCPTools(c.cfg, c.cfg.WorkingDir()) {
 		if agent.AllowedMCP.Allows(tool.MCP(), tool.MCPToolName()) {
 			filteredTools = append(filteredTools, tool)
 			continue
@@ -942,6 +942,12 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 	slices.SortFunc(filteredTools, func(a, b fantasy.AgentTool) int {
 		return strings.Compare(a.Info().Name, b.Info().Name)
 	})
+
+	// The wrappers compose outside in as hooks -> permissions -> tool.
+	// A hook must run first so its allow decision is already on the
+	// context when the gate looks for one, and the gate must run before
+	// the tool so a tool cannot forget to ask.
+	filteredTools = wrapToolsWithPermissions(filteredTools, c.permissions, c.cfg.WorkingDir())
 
 	// Every tool call runs through the user's PreToolUse hooks, including
 	// the ones a sub-agent makes. A delegated `bash` is still a bash
@@ -1955,14 +1961,16 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 		)
 	}
 
-	// A child session has no interactive surface of its own: no UI ever
-	// subscribes to its permission events, so a permission-gated tool it
-	// uses (web_fetch, web_search, or anything a "general" dispatch
-	// inherits) would otherwise block until ctx is done instead of ever
-	// resolving. The dispatch that created this session already ran
-	// inside the permission scope the user controls; that covers the
-	// delegated work too.
-	c.permissions.AutoApproveSession(session.ID)
+	// The dispatch that created this session already ran inside the
+	// permission scope the user controls; that covers the delegated work
+	// too, so routine gated tools the child uses need not be asked about
+	// again. Whether anyone can answer a prompt is a property of where
+	// the run started, not of how deep it has nested, so the child
+	// inherits it: under a TUI the child's prompts reach the same
+	// dialog, and under a headless run they are refused instead of
+	// stalling the whole dispatch.
+	c.permissions.SetSessionPromptPolicy(session.ID, permission.PromptAllow)
+	c.permissions.SetSessionUnattended(session.ID, c.permissions.SessionUnattended(params.SessionID))
 
 	model := params.Resolved.Model
 	maxTokens := params.Resolved.MaxTokens

@@ -3,24 +3,34 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
-	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/require"
 )
 
+// mockPermissionService stands in for the gate, which now lives in the
+// decorator above these tools. A tool under test is reached only after
+// the gate allowed the call, so the mock allows everything.
 type mockPermissionService struct {
 	*pubsub.Broker[permission.PermissionRequest]
 }
 
-func (m *mockPermissionService) Request(ctx context.Context, req permission.CreatePermissionRequest) (bool, error) {
-	return true, nil
+func (m *mockPermissionService) Gate(ctx context.Context, req permission.GateRequest) permission.Decision {
+	return permission.Decision{Outcome: permission.OutcomeAllow}
+}
+
+func (m *mockPermissionService) PolicyDenial(access permission.Access) (permission.Decision, bool) {
+	return permission.Decision{}, false
 }
 
 func (m *mockPermissionService) Grant(req permission.PermissionRequest) bool { return true }
@@ -31,7 +41,12 @@ func (m *mockPermissionService) GrantPersistent(req permission.PermissionRequest
 	return true
 }
 
-func (m *mockPermissionService) AutoApproveSession(sessionID string) {}
+func (m *mockPermissionService) SetSessionPromptPolicy(sessionID string, policy permission.PromptPolicy) {
+}
+
+func (m *mockPermissionService) SetSessionUnattended(sessionID string, unattended bool) {}
+
+func (m *mockPermissionService) SessionUnattended(sessionID string) bool { return false }
 
 func (m *mockPermissionService) SetSkipRequests(skip bool) {}
 
@@ -45,18 +60,45 @@ func (m *mockPermissionService) SubscribeNotifications(ctx context.Context) <-ch
 
 type mockHistoryService struct {
 	*pubsub.Broker[history.File]
+
+	// versions records what was stored, in order, so tests can check
+	// that a change left both of its sides behind.
+	mu       sync.Mutex
+	versions []string
+	// existing is what GetByPathAndSession reports; an empty value
+	// makes the lookup fail, as it does for a file never seen before.
+	existing string
+	missing  bool
 }
 
 func (m *mockHistoryService) Create(ctx context.Context, sessionID, path, content string) (history.File, error) {
+	m.record(content)
 	return history.File{Path: path, Content: content}, nil
 }
 
 func (m *mockHistoryService) CreateVersion(ctx context.Context, sessionID, path, content string) (history.File, error) {
+	m.record(content)
 	return history.File{}, nil
 }
 
+func (m *mockHistoryService) record(content string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.versions = append(m.versions, content)
+}
+
+// recorded returns the contents stored so far.
+func (m *mockHistoryService) recorded() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.versions)
+}
+
 func (m *mockHistoryService) GetByPathAndSession(ctx context.Context, path, sessionID string) (history.File, error) {
-	return history.File{Path: path, Content: ""}, nil
+	if m.missing {
+		return history.File{}, errors.New("not found")
+	}
+	return history.File{Path: path, Content: m.existing}, nil
 }
 
 func (m *mockHistoryService) Get(ctx context.Context, id string) (history.File, error) {
@@ -241,6 +283,20 @@ func TestMultiEditAllEditsFail(t *testing.T) {
 	require.Equal(t, content, currentContent, "Content should be unchanged")
 }
 
+// multiEditPlan builds a plan for one multiedit call, the way the
+// permission decorator does, and returns it with the context to apply
+// it in.
+func multiEditPlan(t *testing.T, dir string, tracker filetracker.Service, files history.Service, params MultiEditParams) (Plan, context.Context) {
+	t.Helper()
+
+	tool := NewMultiEditTool(nil, files, tracker, dir).(*multiEditTool)
+	ctx := context.WithValue(t.Context(), SessionIDContextKey, "session")
+
+	plan, err := tool.plan(ctx, params)
+	require.NoError(t, err)
+	return plan, ctx
+}
+
 func TestProcessMultiEditExistingFilePartialFailure(t *testing.T) {
 	t.Parallel()
 
@@ -248,22 +304,15 @@ func TestProcessMultiEditExistingFilePartialFailure(t *testing.T) {
 	filePath := filepath.Join(dir, "test.txt")
 	require.NoError(t, os.WriteFile(filePath, []byte("one\ntwo\nthree\n"), 0o644))
 
-	edit := editContext{
-		ctx:         context.WithValue(t.Context(), SessionIDContextKey, "session"),
-		permissions: &mockPermissionService{},
-		files:       &mockHistoryService{},
-		filetracker: &mockEditFileTracker{lastRead: time.Now().Add(time.Second)},
-		workingDir:  dir,
-	}
-	params := MultiEditParams{
+	plan, ctx := multiEditPlan(t, dir, &mockEditFileTracker{lastRead: time.Now().Add(time.Second)}, &mockHistoryService{}, MultiEditParams{
 		FilePath: filePath,
 		Edits: []MultiEditOperation{
 			{OldString: "two", NewString: "TWO"},
 			{OldString: "missing", NewString: "MISSING"},
 		},
-	}
+	})
 
-	resp, err := processMultiEditExistingFile(edit, params, fantasy.ToolCall{ID: "call"})
+	resp, err := plan.Apply(ctx)
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
 	require.Contains(t, resp.Content, "Applied 1 of 2 edits")
@@ -287,23 +336,16 @@ func TestProcessMultiEditWithCreationPartialFailure(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "nested", "test.txt")
 
-	edit := editContext{
-		ctx:         context.WithValue(t.Context(), SessionIDContextKey, "session"),
-		permissions: &mockPermissionService{},
-		files:       &mockHistoryService{},
-		filetracker: &mockEditFileTracker{},
-		workingDir:  dir,
-	}
-	params := MultiEditParams{
+	plan, ctx := multiEditPlan(t, dir, &mockEditFileTracker{}, &mockHistoryService{}, MultiEditParams{
 		FilePath: filePath,
 		Edits: []MultiEditOperation{
 			{OldString: "", NewString: "one\ntwo\nthree\n"},
 			{OldString: "two", NewString: "TWO"},
 			{OldString: "missing", NewString: "MISSING"},
 		},
-	}
+	})
 
-	resp, err := processMultiEditWithCreation(edit, params, fantasy.ToolCall{ID: "call"})
+	resp, err := plan.Apply(ctx)
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
 	require.Contains(t, resp.Content, "File created with 2 of 3 edits")
@@ -319,4 +361,83 @@ func TestProcessMultiEditWithCreationPartialFailure(t *testing.T) {
 	require.Equal(t, 3, meta.EditsFailed[0].Index)
 	require.Equal(t, "", meta.OldContent)
 	require.Equal(t, "one\nTWO\nthree\n", meta.NewContent)
+}
+
+// TestMultiEditPlanCreatesNothingUntilApply pins that planning a new
+// file leaves the disk alone. Planning runs before the user is asked,
+// so directories made here would outlive a refusal.
+func TestMultiEditPlanCreatesNothingUntilApply(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "nested", "test.txt")
+
+	plan, ctx := multiEditPlan(t, dir, &mockEditFileTracker{}, &mockHistoryService{}, MultiEditParams{
+		FilePath: filePath,
+		Edits:    []MultiEditOperation{{OldString: "", NewString: "hello\n"}},
+	})
+
+	require.NoDirExists(t, filepath.Dir(filePath), "planning must not create directories")
+	require.NotNil(t, plan.Apply)
+
+	_, err := plan.Apply(ctx)
+	require.NoError(t, err)
+	require.FileExists(t, filePath)
+}
+
+// TestMultiEditPlanPreviewsTheWholeBatch pins that the user is asked
+// once, about the combined result of every edit, rather than once per
+// edit.
+func TestMultiEditPlanPreviewsTheWholeBatch(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "test.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("one\ntwo\n"), 0o644))
+
+	plan, _ := multiEditPlan(t, dir, &mockEditFileTracker{lastRead: time.Now().Add(time.Second)}, &mockHistoryService{}, MultiEditParams{
+		FilePath: filePath,
+		Edits: []MultiEditOperation{
+			{OldString: "one", NewString: "ONE"},
+			{OldString: "two", NewString: "TWO"},
+		},
+	})
+
+	params, ok := plan.Preview.Params.(MultiEditPermissionsParams)
+	require.True(t, ok, "the dialog asserts on MultiEditPermissionsParams")
+	require.Equal(t, "one\ntwo\n", params.OldContent)
+	require.Equal(t, "ONE\nTWO\n", params.NewContent, "both edits show in one prompt")
+
+	meta, ok := plan.Refusal.(MultiEditResponseMetadata)
+	require.True(t, ok, "a refused batch still shows its diff")
+	require.Equal(t, "ONE\nTWO\n", meta.NewContent)
+	require.Equal(t, 2, meta.EditsApplied)
+}
+
+// TestMultiEditPlanSettlesWhenEveryEditFails pins that a batch with
+// nothing to write never reaches the gate.
+func TestMultiEditPlanSettlesWhenEveryEditFails(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "test.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("one\n"), 0o644))
+
+	plan, _ := multiEditPlan(t, dir, &mockEditFileTracker{lastRead: time.Now().Add(time.Second)}, &mockHistoryService{}, MultiEditParams{
+		FilePath: filePath,
+		Edits:    []MultiEditOperation{{OldString: "missing", NewString: "MISSING"}},
+	})
+
+	require.NotNil(t, plan.Response)
+	require.True(t, plan.Response.IsError)
+	require.Contains(t, plan.Response.Content, "all 1 edit(s) failed")
+	require.Nil(t, plan.Apply)
+}
+
+// TestMultiEditToolPlans pins that multiedit reaches the gate as a
+// planner.
+func TestMultiEditToolPlans(t *testing.T) {
+	t.Parallel()
+
+	require.Implements(t, (*Planner)(nil), NewMultiEditTool(nil, nil, nil, t.TempDir()))
 }

@@ -38,6 +38,19 @@ func (b *Backend) GrantPermission(workspaceID string, req proto.PermissionGrant)
 	}
 }
 
+// SetSessionUnattended records whether a session has anyone who could
+// answer a permission prompt. A client driving a run headlessly marks
+// its session so the gate refuses instead of blocking.
+func (b *Backend) SetSessionUnattended(workspaceID, sessionID string, unattended bool) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+
+	ws.Permissions.SetSessionUnattended(sessionID, unattended)
+	return nil
+}
+
 // SetPermissionsSkip sets whether permission prompts are skipped.
 func (b *Backend) SetPermissionsSkip(workspaceID string, skip bool) error {
 	ws, err := b.GetWorkspace(workspaceID)

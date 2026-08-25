@@ -13,7 +13,6 @@ import (
 
 	"charm.land/fantasy"
 	md "github.com/JohannesKaufmann/html-to-markdown"
-	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -42,7 +41,7 @@ func fetchDescription() string {
 	})
 }
 
-func NewFetchTool(permissions permission.Service, workingDir string, client *http.Client) fantasy.AgentTool {
+func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.MaxIdleConns = 100
@@ -75,25 +74,6 @@ func NewFetchTool(permissions permission.Service, workingDir string, client *htt
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
-			}
-
-			p, err := permissions.Request(
-				ctx,
-				permission.CreatePermissionRequest{
-					SessionID:   sessionID,
-					Path:        workingDir,
-					ToolCallID:  call.ID,
-					ToolName:    FetchToolName,
-					Action:      "fetch",
-					Description: fmt.Sprintf("Fetch content from URL: %s", params.URL),
-					Params:      FetchPermissionsParams(params),
-				},
-			)
-			if err != nil {
-				return fantasy.ToolResponse{}, err
-			}
-			if !p {
-				return NewPermissionDeniedResponse(), nil
 			}
 
 			// maxFetchTimeoutSeconds is the maximum allowed timeout for fetch requests (2 minutes)

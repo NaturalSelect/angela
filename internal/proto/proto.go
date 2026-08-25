@@ -268,6 +268,15 @@ type PermissionSkipRequest struct {
 	Skip bool `json:"skip"`
 }
 
+// PermissionUnattendedRequest marks whether a session has anyone who
+// could answer a permission prompt. A headless client sends this before
+// its first prompt so the server refuses what it must ask about, rather
+// than blocking on a request no one will ever see.
+type PermissionUnattendedRequest struct {
+	SessionID  string `json:"session_id"`
+	Unattended bool   `json:"unattended"`
+}
+
 // LSPEventType represents the type of LSP event.
 type LSPEventType string
 

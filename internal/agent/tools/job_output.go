@@ -40,7 +40,11 @@ func NewJobOutputTool() fantasy.AgentTool {
 			}
 
 			bgManager := shell.GetBackgroundShellManager()
-			bgShell, ok := bgManager.Get(params.ShellID)
+			sessionID := GetSessionFromContext(ctx)
+			if sessionID == "" {
+				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for reading background shell output")
+			}
+			bgShell, ok := bgManager.Get(params.ShellID, sessionID)
 			if !ok {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("background shell not found: %s", params.ShellID)), nil
 			}

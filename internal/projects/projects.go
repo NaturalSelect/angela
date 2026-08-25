@@ -83,6 +83,15 @@ func Register(workingDir, dataDir string) error {
 
 	now := time.Now().UTC()
 
+	// Ensure now is strictly after every other project's LastAccessed so
+	// that registrations happening within the same clock tick still sort
+	// with the most recently registered project first.
+	for _, p := range list.Projects {
+		if p.Path != workingDir && !p.LastAccessed.Before(now) {
+			now = p.LastAccessed.Add(time.Nanosecond)
+		}
+	}
+
 	// Check if project already exists
 	found := false
 	for i, p := range list.Projects {

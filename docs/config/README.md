@@ -446,6 +446,8 @@ Usage:
 Available Commands:
   allow     Allow tools without prompting
   deny      Hide tools from the agent
+  rule      Add a permission rule
+  prompt    Set what happens when no rule matches
 ```
 
 #### `permissions allow`
@@ -470,6 +472,117 @@ Usage:
 permissions allow view ls grep edit
 permissions deny bash
 ```
+
+#### `permissions rule`
+
+Add a rule. Rules are more precise than `allow`/`deny`: they match on what a
+call actually reaches — a path, a command, a host — instead of just the tool
+name.
+
+```text
+Usage:
+  permissions rule allow|deny|ask [flags] <pattern> [<pattern> ...]
+
+Flags:
+  --tool <filter>   Limit to an access category (read, list, edit, execute,
+                    network, mcp) or a single tool name (bash, view, ...).
+  --path            Match as a filesystem path. '*' stops at '/', '**' does not.
+  --free            Match as free text. '*' crosses anything.
+  --domain          Match a URL host, including its subdomains.
+```
+
+Without a mode flag the mode is picked from the action: paths for file access,
+free text for commands, domains for network calls.
+
+```bash
+# Never read secrets, whoever asks. This covers `view .env` and `cat .env`
+# alike, because both are the same read.
+permissions rule deny --tool read '**/.env' '**/.env.*' '**/id_rsa'
+
+# Never write outside the source tree.
+permissions rule deny --tool edit '/etc/**' '~/**'
+
+# Let routine git commands through without a prompt.
+permissions rule allow --tool bash 'git status*' 'git diff*' 'git log*'
+
+# Fetch from the docs site freely, ask for anywhere else.
+permissions rule allow --tool network --domain 'docs.example.com'
+```
+
+**Precedence is deny, then ask, then allow** — a `deny` always wins, no matter
+what order the rules are written in, and no matter how they were granted:
+neither "Allow for Session" nor `--yolo` can override a `deny` rule.
+
+**Commands are judged link by link.** Allowing `ls*` does not let
+`ls && rm -rf /` through: every command in a chain has to be allowed on its
+own, and any one of them being denied denies the whole line.
+
+**A download is judged twice** — once as the fetch, once as the file it
+writes. Opening a domain does not hand out the filesystem, so this asks
+before writing even though the host is allowed:
+
+```bash
+permissions rule allow --tool network --domain 'releases.example.com'
+```
+
+To let a download through without a prompt, cover both legs — or name the
+tool, which covers everything it does:
+
+```bash
+permissions rule allow --tool network --domain 'releases.example.com'
+permissions rule allow --tool edit --path './vendor/**'
+
+# Or, more bluntly:
+permissions rule allow --tool download
+```
+
+A `deny` on the destination refuses the download whatever the network rules
+say, and approving one download covers the directory it landed in, not the
+whole host.
+
+**Some things always prompt.** Destructive verbs (`rm`, `kill`, `chmod`,
+`dd`, `git push`, ...) and commands that can carry another command inside them
+(`sudo`, `sh`, `xargs`, `find -exec`, ...) ask every time. A session grant
+cannot silence them, because the command you approved is not the command they
+end up running.
+
+#### `permissions prompt`
+
+Set what happens to a request no rule settled.
+
+```text
+Usage:
+  permissions prompt ask|deny
+```
+
+`ask` is the default and prompts you. `deny` refuses instead, which turns your
+rules into a strict allowlist — useful for unattended runs.
+
+```bash
+permissions rule allow --tool bash 'go test*' 'go build*'
+permissions rule allow --tool read '**'
+permissions prompt deny
+```
+
+#### What never needs a rule
+
+Reading inside the directory you started Angela in is free, and so are
+read-only commands that stay inside it — looking around the workspace is the
+job. Everything else (writes, network, MCP, anything outside the workspace)
+goes through the rules above.
+
+"Stays inside it" means the machine as well as the directory. A command that
+contacts something — `kubectl`, `git ls-remote` — is asked about even though
+it only reads, because what comes back is not yours and the credentials it
+sends are. Write a rule for the ones you want to run unprompted:
+
+```bash
+permissions rule allow --tool bash 'kubectl get *'
+```
+
+Symlinks are resolved before any of this is decided, so a link inside the
+workspace pointing outside it is treated as outside — and a rule naming a
+real path catches whatever reaches it through a link.
 
 ### option
 

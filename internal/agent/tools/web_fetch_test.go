@@ -29,7 +29,7 @@ func TestWebFetchToolScopesLargePagesToSession(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	scratchRoot := t.TempDir()
-	tool := NewWebFetchTool(&mockPermissionService{}, scratchRoot, srv.Client())
+	tool := NewWebFetchTool(scratchRoot, srv.Client())
 
 	fetchAs := func(t *testing.T, sessionID string) string {
 		t.Helper()
@@ -110,7 +110,7 @@ func TestWebFetchToolRejectsPathTraversalSessionID(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	scratchRoot := t.TempDir()
-	tool := NewWebFetchTool(&mockPermissionService{}, scratchRoot, srv.Client())
+	tool := NewWebFetchTool(scratchRoot, srv.Client())
 	unsafeTarget := filepath.Join(scratchRoot, "..", "evil-marker")
 
 	for _, maliciousID := range []string{

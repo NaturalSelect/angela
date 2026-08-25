@@ -364,9 +364,9 @@ type UI struct {
 	// discarded and re-fetched instead of clobbering newer state.
 	busyFetchGen uint64
 
-	// Todo spinner
-	todoSpinner    spinner.Model
-	todoIsSpinning bool
+	// Turn status spinner, animated for as long as the agent is busy.
+	turnSpinner    spinner.Model
+	turnIsSpinning bool
 
 	// mouse highlighting related state
 	lastClickTime time.Time
@@ -409,7 +409,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		com.Styles.Completions.Match,
 	)
 
-	todoSpinner := spinner.New(
+	turnSpinner := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),
 		spinner.WithStyle(com.Styles.TurnStatus.Spinner),
 	)
@@ -442,7 +442,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		header:              header,
 		completions:         comp,
 		attachments:         attachments,
-		todoSpinner:         todoSpinner,
+		turnSpinner:         turnSpinner,
 		lspStates:           make(map[string]workspace.LSPClientInfo),
 		mcpStates:           make(map[string]mcp.ClientInfo),
 		notifyBackend:       notification.NoopBackend{},
@@ -796,13 +796,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.runShellCommandInternal(m.pendingBangCommand, true))
 			m.pendingBangCommand = ""
 		}
-		if hasInProgressTodo(m.session.Todos) {
-			// only start spinner if there is an in-progress todo
-			if m.isAgentBusy() {
-				m.todoIsSpinning = true
-				cmds = append(cmds, m.todoSpinner.Tick)
-			}
-			m.updateLayoutAndSize()
+		if cmd := m.syncTurnSpinner(); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 		// Reload prompt history for the new session.
 		m.historyReset()
@@ -868,12 +863,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		if m.session != nil && msg.Payload.ID == m.session.ID {
-			prevHasInProgress := hasInProgressTodo(m.session.Todos)
 			m.session = &msg.Payload
-			if !prevHasInProgress && hasInProgressTodo(m.session.Todos) {
-				m.todoIsSpinning = true
-				cmds = append(cmds, m.todoSpinner.Tick)
-			}
 		}
 	case pubsub.Event[message.Message]:
 		// Check if this is a child session message for an agent tool.
@@ -909,14 +899,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pubsub.DeletedEvent:
 			m.chat.RemoveMessage(msg.Payload.ID)
 		}
-		// start the spinner if there is a new message
-		if hasInProgressTodo(m.session.Todos) && m.isAgentBusy() && !m.todoIsSpinning {
-			m.todoIsSpinning = true
-			cmds = append(cmds, m.todoSpinner.Tick)
-		}
-		// stop the spinner if the agent is not busy anymore
-		if m.todoIsSpinning && !m.isAgentBusy() {
-			m.todoIsSpinning = false
+		// Follow the turn: spin while the agent works, stop when it stops.
+		if cmd := m.syncTurnSpinner(); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 	case pubsub.Event[history.File]:
 		cmds = append(cmds, m.handleFileEvent(msg.Payload))
@@ -1215,9 +1200,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
-		if m.state == uiChat && m.hasSession() && hasInProgressTodo(m.session.Todos) && m.todoIsSpinning {
+		if m.state == uiChat && m.turnIsSpinning {
 			var cmd tea.Cmd
-			m.todoSpinner, cmd = m.todoSpinner.Update(msg)
+			m.turnSpinner, cmd = m.turnSpinner.Update(msg)
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -4141,11 +4126,11 @@ func (m *UI) cancelAgent() tea.Cmd {
 		}
 
 		m.com.Workspace.AgentCancel(m.session.ID)
-		// Stop the spinning todo indicator and drop the memoized busy
+		// Stop the spinning turn indicator and drop the memoized busy
 		// state the cancel just changed; the turn status re-renders from
 		// last-known state and again when the off-thread refresh (and
 		// the agent's own events) land.
-		m.todoIsSpinning = false
+		m.turnIsSpinning = false
 		m.invalidateBusyCaches()
 		return m.dispatchBusyRefresh()
 	}

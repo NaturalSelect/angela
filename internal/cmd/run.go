@@ -245,6 +245,15 @@ func runNonInteractive(
 		slog.Info("Created session for non-interactive run", "session_id", sess.ID)
 	}
 
+	// Nothing in this process answers permission prompts: the stream
+	// loop below reads messages and run results only. Tell the server
+	// before the first prompt goes out, so a request it cannot settle
+	// on its own is refused rather than parked on a channel until this
+	// run's context dies.
+	if err := c.SetSessionUnattended(ctx, ws.ID, sess.ID, true); err != nil {
+		return fmt.Errorf("failed to mark the session unattended: %w", err)
+	}
+
 	// The model override belongs to this run's session, not to the
 	// workspace config: applying it here leaves every other session
 	// alone, and a continued session without an override keeps the model

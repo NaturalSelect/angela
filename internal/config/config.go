@@ -17,6 +17,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/oauth/copilot"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/invopop/jsonschema"
 )
 
@@ -368,7 +369,9 @@ const (
 )
 
 type Permissions struct {
-	AllowedTools []string `json:"allowed_tools,omitempty" jsonschema:"description=List of tools that don't require permission prompts,example=bash,example=view"`
+	AllowedTools []string          `json:"allowed_tools,omitempty" jsonschema:"description=List of tools that don't require permission prompts,example=bash,example=view"`
+	Rules        []permission.Rule `json:"rules,omitempty" jsonschema:"description=Declarative permission rules evaluated in deny > ask > allow order"`
+	Prompt       string            `json:"prompt,omitempty" jsonschema:"description=What to do when no rule settles a request,enum=ask,enum=deny"`
 }
 
 type TrailerStyle string

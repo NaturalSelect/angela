@@ -100,16 +100,31 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	files := history.NewService(q, conn)
 	cfg := store.Config()
 	skipPermissionsRequests := store.Overrides().SkipPermissionRequests
+
+	var rules []permission.Rule
 	var allowedTools []string
-	if cfg.Permissions != nil && cfg.Permissions.AllowedTools != nil {
+	prompt := permission.PromptAsk
+	if cfg.Permissions != nil {
+		rules = cfg.Permissions.Rules
 		allowedTools = cfg.Permissions.AllowedTools
+		if cfg.Permissions.Prompt != "" {
+			parsed, ok := permission.ParsePromptPolicy(cfg.Permissions.Prompt)
+			if !ok {
+				return nil, fmt.Errorf("invalid permissions prompt policy %q", cfg.Permissions.Prompt)
+			}
+			prompt = parsed
+		}
+	}
+	policy, err := permission.CompilePolicy(rules, allowedTools, prompt)
+	if err != nil {
+		return nil, err
 	}
 
 	app := &App{
 		Sessions:    sessions,
 		Messages:    messages,
 		History:     files,
-		Permissions: permission.NewPermissionService(store.WorkingDir(), skipPermissionsRequests, allowedTools),
+		Permissions: permission.NewPermissionService(store.WorkingDir(), skipPermissionsRequests, policy, cfg.Options.SkillsPaths...),
 		Questions:   question.NewService(),
 		FileTracker: filetracker.NewService(q),
 		LSPManager:  lsp.NewManager(store),
@@ -141,7 +156,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	// blocks for the in-flight init instead of racing the goroutine and
 	// returning before any MCP tools register.
 	mcp.ArmInit()
-	go mcp.Initialize(ctx, app.Permissions, store)
+	go mcp.Initialize(ctx, store)
 
 	// Start herdr integration when running inside a herdr pane.
 	app.herdrClient = herdr.Init()
@@ -350,8 +365,12 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	}
 
 	// Automatically approve all permission requests for this non-interactive
-	// session.
-	app.Permissions.AutoApproveSession(sess.ID)
+	// session. PromptAllow only covers what can be settled without asking:
+	// a dangerous or unreadable command still insists on a prompt, and
+	// there is no terminal here to show one, so mark the session
+	// unattended and let those be refused rather than hang.
+	app.Permissions.SetSessionPromptPolicy(sess.ID, permission.PromptAllow)
+	app.Permissions.SetSessionUnattended(sess.ID, true)
 
 	// Report session identity to herdr.
 	app.ReportCurrentSession(sess.ID)

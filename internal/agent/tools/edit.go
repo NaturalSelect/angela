@@ -49,7 +49,15 @@ var editDescription string
 
 type editContext struct {
 	ctx         context.Context
-	permissions permission.Service
+	files       history.Service
+	filetracker filetracker.Service
+	workingDir  string
+}
+
+type editTool struct {
+	fantasy.AgentTool
+
+	lspManager  *lsp.Manager
 	files       history.Service
 	filetracker filetracker.Service
 	workingDir  string
@@ -57,87 +65,106 @@ type editContext struct {
 
 func NewEditTool(
 	lspManager *lsp.Manager,
-	permissions permission.Service,
 	files history.Service,
 	filetracker filetracker.Service,
 	workingDir string,
 ) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
-		EditToolName,
-		editDescription,
-		func(ctx context.Context, params EditParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			if params.FilePath == "" {
-				return fantasy.NewTextErrorResponse("file_path is required"), nil
-			}
-
-			params.FilePath = filepathext.SmartJoin(workingDir, params.FilePath)
-
-			var response fantasy.ToolResponse
-			var err error
-
-			editCtx := editContext{ctx, permissions, files, filetracker, workingDir}
-
-			if params.OldString == "" {
-				response, err = createNewFile(editCtx, params.FilePath, params.NewString, call)
-			} else if params.NewString == "" {
-				response, err = deleteContent(editCtx, params.FilePath, params.OldString, params.ReplaceAll, call)
-			} else {
-				response, err = replaceContent(editCtx, params.FilePath, params.OldString, params.NewString, params.ReplaceAll, call)
-			}
-
-			if err != nil {
-				return response, err
-			}
-			if response.IsError {
-				// Return early if there was an error during content replacement
-				// This prevents unnecessary LSP diagnostics processing
-				return response, nil
-			}
-
-			notifyLSPs(ctx, lspManager, params.FilePath)
-
-			text := fmt.Sprintf("<result>\n%s\n</result>\n", response.Content)
-			text += getDiagnostics(params.FilePath, lspManager)
-			response.Content = text
-			return response, nil
-		},
-	)
+	t := &editTool{
+		lspManager:  lspManager,
+		files:       files,
+		filetracker: filetracker,
+		workingDir:  workingDir,
+	}
+	t.AgentTool = fantasy.NewAgentTool(EditToolName, editDescription, t.run)
+	return t
 }
 
-func createNewFile(edit editContext, filePath, content string, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+func (t *editTool) run(ctx context.Context, params EditParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+	plan, err := t.plan(ctx, params)
+	if err != nil {
+		return fantasy.ToolResponse{}, err
+	}
+	if plan.Response != nil {
+		return *plan.Response, nil
+	}
+	return plan.Apply(ctx)
+}
+
+func (t *editTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
+	params, ok := decodeInput[EditParams](call.Input)
+	if !ok {
+		return Plan{}, fmt.Errorf("invalid input for %s", EditToolName)
+	}
+	return t.plan(ctx, params)
+}
+
+// plan works out the file's new content without writing anything. Which
+// of the three shapes an edit takes is decided by what the caller left
+// empty: no old string creates, no new string deletes.
+func (t *editTool) plan(ctx context.Context, params EditParams) (Plan, error) {
+	if params.FilePath == "" {
+		return settled(fantasy.NewTextErrorResponse("file_path is required")), nil
+	}
+
+	filePath := filepathext.SmartJoin(t.workingDir, params.FilePath)
+	edit := editContext{ctx, t.files, t.filetracker, t.workingDir}
+
+	switch {
+	case params.OldString == "":
+		return t.planCreateNewFile(edit, filePath, params.NewString)
+	case params.NewString == "":
+		return t.planRewrite(edit, rewrite{
+			filePath:   filePath,
+			oldString:  params.OldString,
+			replaceAll: params.ReplaceAll,
+			describe:   "Delete content from file ",
+			done:       "Content deleted from file: ",
+			sessionErr: "session ID is required for deleting content",
+		})
+	default:
+		return t.planRewrite(edit, rewrite{
+			filePath:   filePath,
+			oldString:  params.OldString,
+			newString:  params.NewString,
+			replaceAll: params.ReplaceAll,
+			describe:   "Replace content in file ",
+			done:       "Content replaced in file: ",
+			sessionErr: "session ID is required for editing a file",
+			rejectNoop: true,
+		})
+	}
+}
+
+func (t *editTool) planCreateNewFile(edit editContext, filePath, content string) (Plan, error) {
 	fileInfo, err := os.Stat(filePath)
 	if err == nil {
 		if fileInfo.IsDir() {
-			return fantasy.NewTextErrorResponse(fmt.Sprintf("path is a directory, not a file: %s", filePath)), nil
+			return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("path is a directory, not a file: %s", filePath))), nil
 		}
-		return fantasy.NewTextErrorResponse(fmt.Sprintf("file already exists: %s", filePath)), nil
+		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("file already exists: %s", filePath))), nil
 	} else if !os.IsNotExist(err) {
-		return fantasy.ToolResponse{}, fmt.Errorf("failed to access file: %w", err)
-	}
-
-	dir := filepath.Dir(filePath)
-	if err = os.MkdirAll(dir, 0o755); err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("failed to create parent directories: %w", err)
+		return Plan{}, fmt.Errorf("failed to access file: %w", err)
 	}
 
 	sessionID := GetSessionFromContext(edit.ctx)
 	if sessionID == "" {
-		return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
+		return Plan{}, fmt.Errorf("session ID is required for creating a new file")
 	}
 
 	_, additions, removals := diff.GenerateDiff(
 		"",
 		content,
-		strings.TrimPrefix(filePath, edit.workingDir),
+		strings.TrimPrefix(filePath, t.workingDir),
 	)
-	p, err := edit.permissions.Request(
-		edit.ctx,
-		permission.CreatePermissionRequest{
-			SessionID:   sessionID,
-			Path:        fsext.PathOrPrefix(filePath, edit.workingDir),
-			ToolCallID:  call.ID,
-			ToolName:    EditToolName,
-			Action:      "write",
+	metadata := EditResponseMetadata{
+		OldContent: "",
+		NewContent: content,
+		Additions:  additions,
+		Removals:   removals,
+	}
+
+	return Plan{
+		Preview: permission.Preview{
 			Description: fmt.Sprintf("Create file %s", filePath),
 			Params: EditPermissionsParams{
 				FilePath:   filePath,
@@ -145,51 +172,116 @@ func createNewFile(edit editContext, filePath, content string, call fantasy.Tool
 				NewContent: content,
 			},
 		},
+		Refusal: metadata,
+		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+			// Creating the parent directories belongs here rather than
+			// in planning: a refused edit must leave no trace.
+			if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+				return fantasy.ToolResponse{}, fmt.Errorf("failed to create parent directories: %w", err)
+			}
+			if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+				return fantasy.ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
+			}
+
+			if _, err := t.files.Create(ctx, sessionID, filePath, ""); err != nil {
+				return fantasy.ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
+			}
+			if _, err := t.files.CreateVersion(ctx, sessionID, filePath, content); err != nil {
+				slog.Error("Error creating file history version", "error", err)
+			}
+			t.filetracker.RecordRead(ctx, sessionID, filePath)
+
+			return t.finish(ctx, filePath, "File created: "+filePath, metadata), nil
+		},
+	}, nil
+}
+
+// rewrite describes an edit to a file that already exists. Deleting is
+// replacing with nothing, so both shapes share one body and differ only
+// in what they call themselves.
+type rewrite struct {
+	filePath   string
+	oldString  string
+	newString  string
+	replaceAll bool
+	describe   string
+	done       string
+	sessionErr string
+	// rejectNoop refuses an edit that would leave the file unchanged.
+	// Deleting found content always changes it, so only replacing needs
+	// the check.
+	rejectNoop bool
+}
+
+func (t *editTool) planRewrite(edit editContext, r rewrite) (Plan, error) {
+	sessionID, oldContent, isCrlf, resp, err := loadExistingFile(edit, r.filePath, r.sessionErr)
+	if err != nil {
+		return Plan{}, err
+	}
+	if resp.Content != "" || resp.IsError {
+		return settled(resp), nil
+	}
+
+	newContent, whitespaceCorrected, err := findAndReplace(oldContent, r.oldString, r.newString, r.replaceAll)
+	if err != nil {
+		return settled(fantasy.NewTextErrorResponse(err.Error())), nil
+	}
+	if r.rejectNoop && newContent == oldContent {
+		return settled(fantasy.NewTextErrorResponse("new content is the same as old content. No changes made.")), nil
+	}
+
+	_, additions, removals := diff.GenerateDiff(
+		oldContent,
+		newContent,
+		strings.TrimPrefix(r.filePath, t.workingDir),
 	)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
-	if !p {
-		resp := NewPermissionDeniedResponse()
-		resp = fantasy.WithResponseMetadata(resp, EditResponseMetadata{
-			OldContent: "",
-			NewContent: content,
-			Additions:  additions,
-			Removals:   removals,
-		})
-		return resp, nil
+
+	writeContent := newContent
+	if isCrlf {
+		writeContent, _ = fsext.ToWindowsLineEndings(writeContent)
 	}
 
-	err = os.WriteFile(filePath, []byte(content), 0o644)
-	if err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
-	}
-
-	// File can't be in the history so we create a new file history
-	_, err = edit.files.Create(edit.ctx, sessionID, filePath, "")
-	if err != nil {
-		// Log error but don't fail the operation
-		return fantasy.ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
-	}
-
-	// Add the new content to the file history
-	_, err = edit.files.CreateVersion(edit.ctx, sessionID, filePath, content)
-	if err != nil {
-		// Log error but don't fail the operation
-		slog.Error("Error creating file history version", "error", err)
-	}
-
-	edit.filetracker.RecordRead(edit.ctx, sessionID, filePath)
-
-	return fantasy.WithResponseMetadata(
-		fantasy.NewTextResponse("File created: "+filePath),
-		EditResponseMetadata{
-			OldContent: "",
-			NewContent: content,
+	return Plan{
+		Preview: permission.Preview{
+			Description: r.describe + r.filePath,
+			Params: EditPermissionsParams{
+				FilePath:   r.filePath,
+				OldContent: oldContent,
+				NewContent: newContent,
+			},
+		},
+		Refusal: EditResponseMetadata{
+			OldContent: oldContent,
+			NewContent: newContent,
 			Additions:  additions,
 			Removals:   removals,
 		},
-	), nil
+		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+			applyCtx := edit
+			applyCtx.ctx = ctx
+			if err := commitFileChange(applyCtx, sessionID, r.filePath, oldContent, writeContent); err != nil {
+				return fantasy.ToolResponse{}, err
+			}
+			return t.finish(ctx, r.filePath,
+				withWhitespaceNote(r.done+r.filePath, whitespaceCorrected),
+				EditResponseMetadata{
+					OldContent: oldContent,
+					NewContent: writeContent,
+					Additions:  additions,
+					Removals:   removals,
+				},
+			), nil
+		},
+	}, nil
+}
+
+// finish tells the language servers what changed and folds the fresh
+// diagnostics into the answer the model reads.
+func (t *editTool) finish(ctx context.Context, filePath, message string, metadata EditResponseMetadata) fantasy.ToolResponse {
+	notifyLSPs(ctx, t.lspManager, filePath)
+	text := fmt.Sprintf("<result>\n%s\n</result>\n", message)
+	text += getDiagnostics(filePath, t.lspManager)
+	return fantasy.WithResponseMetadata(fantasy.NewTextResponse(text), metadata)
 }
 
 // findAndReplace performs a find-and-replace on content. When replaceAll is
@@ -309,147 +401,4 @@ func loadExistingFile(edit editContext, filePath, sessionError string) (sessionI
 
 	oldContent, isCrlf = fsext.ToUnixLineEndings(string(content))
 	return sessionID, oldContent, isCrlf, fantasy.ToolResponse{}, nil
-}
-
-func deleteContent(edit editContext, filePath, oldString string, replaceAll bool, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	sessionID, oldContent, isCrlf, resp, err := loadExistingFile(edit, filePath, "session ID is required for deleting content")
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
-	if resp.Content != "" || resp.IsError {
-		return resp, nil
-	}
-
-	newContent, whitespaceCorrected, err := findAndReplace(oldContent, oldString, "", replaceAll)
-	if err != nil {
-		return fantasy.NewTextErrorResponse(err.Error()), nil
-	}
-
-	_, additions, removals := diff.GenerateDiff(
-		oldContent,
-		newContent,
-		strings.TrimPrefix(filePath, edit.workingDir),
-	)
-
-	p, err := edit.permissions.Request(
-		edit.ctx,
-		permission.CreatePermissionRequest{
-			SessionID:   sessionID,
-			Path:        fsext.PathOrPrefix(filePath, edit.workingDir),
-			ToolCallID:  call.ID,
-			ToolName:    EditToolName,
-			Action:      "write",
-			Description: fmt.Sprintf("Delete content from file %s", filePath),
-			Params: EditPermissionsParams{
-				FilePath:   filePath,
-				OldContent: oldContent,
-				NewContent: newContent,
-			},
-		},
-	)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
-	if !p {
-		resp := NewPermissionDeniedResponse()
-		resp = fantasy.WithResponseMetadata(resp, EditResponseMetadata{
-			OldContent: oldContent,
-			NewContent: newContent,
-			Additions:  additions,
-			Removals:   removals,
-		})
-		return resp, nil
-	}
-
-	writeContent := newContent
-	if isCrlf {
-		writeContent, _ = fsext.ToWindowsLineEndings(writeContent)
-	}
-
-	if err := commitFileChange(edit, sessionID, filePath, oldContent, writeContent); err != nil {
-		return fantasy.ToolResponse{}, err
-	}
-
-	return fantasy.WithResponseMetadata(
-		fantasy.NewTextResponse(withWhitespaceNote("Content deleted from file: "+filePath, whitespaceCorrected)),
-		EditResponseMetadata{
-			OldContent: oldContent,
-			NewContent: writeContent,
-			Additions:  additions,
-			Removals:   removals,
-		},
-	), nil
-}
-
-func replaceContent(edit editContext, filePath, oldString, newString string, replaceAll bool, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	sessionID, oldContent, isCrlf, resp, err := loadExistingFile(edit, filePath, "session ID is required for editing a file")
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
-	if resp.Content != "" || resp.IsError {
-		return resp, nil
-	}
-
-	result, whitespaceCorrected, err := findAndReplace(oldContent, oldString, newString, replaceAll)
-	if err != nil {
-		return fantasy.NewTextErrorResponse(err.Error()), nil
-	}
-	if result == oldContent {
-		return fantasy.NewTextErrorResponse("new content is the same as old content. No changes made."), nil
-	}
-
-	_, additions, removals := diff.GenerateDiff(
-		oldContent,
-		result,
-		strings.TrimPrefix(filePath, edit.workingDir),
-	)
-
-	p, err := edit.permissions.Request(
-		edit.ctx,
-		permission.CreatePermissionRequest{
-			SessionID:   sessionID,
-			Path:        fsext.PathOrPrefix(filePath, edit.workingDir),
-			ToolCallID:  call.ID,
-			ToolName:    EditToolName,
-			Action:      "write",
-			Description: fmt.Sprintf("Replace content in file %s", filePath),
-			Params: EditPermissionsParams{
-				FilePath:   filePath,
-				OldContent: oldContent,
-				NewContent: result,
-			},
-		},
-	)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
-	if !p {
-		resp := NewPermissionDeniedResponse()
-		resp = fantasy.WithResponseMetadata(resp, EditResponseMetadata{
-			OldContent: oldContent,
-			NewContent: result,
-			Additions:  additions,
-			Removals:   removals,
-		})
-		return resp, nil
-	}
-
-	writeContent := result
-	if isCrlf {
-		writeContent, _ = fsext.ToWindowsLineEndings(writeContent)
-	}
-
-	if err := commitFileChange(edit, sessionID, filePath, oldContent, writeContent); err != nil {
-		return fantasy.ToolResponse{}, err
-	}
-
-	return fantasy.WithResponseMetadata(
-		fantasy.NewTextResponse(withWhitespaceNote("Content replaced in file: "+filePath, whitespaceCorrected)),
-		EditResponseMetadata{
-			OldContent: oldContent,
-			NewContent: writeContent,
-			Additions:  additions,
-			Removals:   removals,
-		},
-	), nil
 }

@@ -17,7 +17,6 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/fsext"
-	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/shell"
 )
 
@@ -194,7 +193,7 @@ func blockFuncs() []shell.BlockFunc {
 	}
 }
 
-func NewBashTool(permissions permission.Service, workingDir string, attribution *config.Attribution, modelID string) fantasy.AgentTool {
+func NewBashTool(workingDir string, attribution *config.Attribution, modelID string) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		BashToolName,
 		string(bashDescription(attribution, modelID)),
@@ -206,43 +205,9 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			// Determine working directory
 			execWorkingDir := cmp.Or(params.WorkingDir, workingDir)
 
-			isSafeReadOnly := false
-			cmdLower := strings.ToLower(params.Command)
-
-			if !containsCommandChaining(params.Command) {
-				for _, safe := range safeCommands {
-					if strings.HasPrefix(cmdLower, safe) {
-						if len(cmdLower) == len(safe) || cmdLower[len(safe)] == ' ' || cmdLower[len(safe)] == '-' {
-							isSafeReadOnly = true
-							break
-						}
-					}
-				}
-			}
-
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for executing shell command")
-			}
-			if !isSafeReadOnly {
-				p, err := permissions.Request(
-					ctx,
-					permission.CreatePermissionRequest{
-						SessionID:   sessionID,
-						Path:        execWorkingDir,
-						ToolCallID:  call.ID,
-						ToolName:    BashToolName,
-						Action:      "execute",
-						Description: fmt.Sprintf("Execute command: %s", params.Command),
-						Params:      BashPermissionsParams(params),
-					},
-				)
-				if err != nil {
-					return fantasy.ToolResponse{}, err
-				}
-				if !p {
-					return NewPermissionDeniedResponse(), nil
-				}
 			}
 
 			// If explicitly requested as background, start immediately with detached context
@@ -251,7 +216,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				bgManager := shell.GetBackgroundShellManager()
 				bgManager.Cleanup()
 				// Use background context so it continues after tool returns
-				bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command, params.Description)
+				bgShell, err := bgManager.Start(context.Background(), sessionID, execWorkingDir, blockFuncs(), params.Command, params.Description)
 				if err != nil {
 					return fantasy.ToolResponse{}, fmt.Errorf("error starting background shell: %w", err)
 				}
@@ -262,7 +227,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 
 				if done {
 					// Command failed or completed very quickly
-					bgManager.Remove(bgShell.ID)
+					bgManager.Remove(bgShell.ID, sessionID)
 
 					interrupted := shell.IsInterrupt(execErr)
 					exitCode := shell.ExitCode(execErr)
@@ -306,7 +271,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 			// Start with detached context so it can survive if moved to background
 			bgManager := shell.GetBackgroundShellManager()
 			bgManager.Cleanup()
-			bgShell, err := bgManager.Start(context.Background(), execWorkingDir, blockFuncs(), params.Command, params.Description)
+			bgShell, err := bgManager.Start(context.Background(), sessionID, execWorkingDir, blockFuncs(), params.Command, params.Description)
 			if err != nil {
 				return fantasy.ToolResponse{}, fmt.Errorf("error starting shell: %w", err)
 			}
@@ -337,7 +302,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				case <-ctx.Done():
 					// Incoming context was cancelled before we moved to background
 					// Kill the shell and return error
-					bgManager.Kill(bgShell.ID)
+					bgManager.Kill(bgShell.ID, sessionID)
 					return fantasy.ToolResponse{}, ctx.Err()
 				}
 			}
@@ -346,7 +311,7 @@ func NewBashTool(permissions permission.Service, workingDir string, attribution 
 				// Command completed within threshold - return synchronously
 				// Remove from background manager since we're returning directly
 				// Don't call Kill() as it cancels the context and corrupts the exit code
-				bgManager.Remove(bgShell.ID)
+				bgManager.Remove(bgShell.ID, sessionID)
 
 				interrupted := shell.IsInterrupt(execErr)
 				exitCode := shell.ExitCode(execErr)

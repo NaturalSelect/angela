@@ -87,12 +87,25 @@ var gitUnsafeOptions = []string{
 	"-C", "-O", "-c",
 }
 
-// gitMutatingOptions turn a listing verb such as branch or tag into a
-// write.
-var gitMutatingOptions = []string{
-	"--copy", "--delete", "--edit-description", "--force", "--move",
-	"--set-upstream", "--set-upstream-to", "--unset-upstream", "-C",
-	"-D", "-M", "-c", "-d", "-f", "-m", "-u",
+// gitRefQueryOptions are the branch and tag options that only list or
+// filter refs. The set is a whitelist because creation carries no
+// option at all — `git branch release` writes a ref with nothing but a
+// positional operand — so the question cannot be "does this hold a
+// mutating option" but "is every word here one this list explains".
+var gitRefQueryOptions = []string{
+	"--abbrev", "--all", "--color", "--column", "--contains",
+	"--format", "--ignore-case", "--list", "--merged", "--no-abbrev",
+	"--no-color", "--no-column", "--no-contains", "--no-merged",
+	"--points-at", "--remotes", "--show-current", "--sort", "--verbose",
+	"-a", "-i", "-l", "-r", "-v", "-vv",
+}
+
+// gitRefQueryValueOptions take the following word as their value, so
+// that word is a pattern or a commit rather than a ref being created.
+var gitRefQueryValueOptions = []string{
+	"--abbrev", "--color", "--column", "--contains", "--format",
+	"--list", "--merged", "--no-contains", "--no-merged",
+	"--points-at", "--sort", "-l",
 }
 
 var gitConfigReadOptions = []string{
@@ -215,9 +228,7 @@ func gitSafePrefix(words []string) int {
 			return 0
 		}
 	case "branch", "tag":
-		if slices.ContainsFunc(rest, func(w string) bool {
-			return slices.Contains(gitMutatingOptions, optionName(w))
-		}) {
+		if !gitRefQueryOnly(rest) {
 			return 0
 		}
 	case "remote":
@@ -254,4 +265,21 @@ func psDumpsEnvironment(words []string) bool {
 func optionName(w string) string {
 	name, _, _ := strings.Cut(w, "=")
 	return name
+}
+
+// gitRefQueryOnly reports that a branch or tag invocation only reads.
+// Every word must be an option the query list explains, or the value
+// belonging to one; a bare operand is a ref name being created.
+func gitRefQueryOnly(rest []string) bool {
+	for i := 0; i < len(rest); i++ {
+		name, _, hasValue := strings.Cut(rest[i], "=")
+		if !slices.Contains(gitRefQueryOptions, name) {
+			return false
+		}
+		if !hasValue && slices.Contains(gitRefQueryValueOptions, name) {
+			// The value cannot be a ref being written, so step over it.
+			i++
+		}
+	}
+	return true
 }

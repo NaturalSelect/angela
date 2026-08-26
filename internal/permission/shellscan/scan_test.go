@@ -490,6 +490,67 @@ func TestGitReadsCannotLeaveTheCheckout(t *testing.T) {
 	}
 }
 
+// TestGitRefWritesAreNotSafe pins the form a blacklist of mutating
+// options cannot see: creation carries no option at all. `git branch
+// release` and `git tag v1.0` write a ref out of a bare operand, so the
+// query forms are whitelisted instead and everything else asks.
+func TestGitRefWritesAreNotSafe(t *testing.T) {
+	t.Parallel()
+
+	t.Run("writes ask", func(t *testing.T) {
+		t.Parallel()
+		for _, command := range []string{
+			"git branch release",
+			"git branch release main",
+			"git branch -d release",
+			"git branch -D release",
+			"git branch -m old new",
+			"git branch -f release main",
+			"git branch --set-upstream-to=origin/main",
+			"git branch -u origin/main",
+			"git branch --edit-description",
+			"git tag v1.0",
+			"git tag v1.0 HEAD",
+			"git tag -d v1.0",
+			"git tag -a v1.0 -m msg",
+		} {
+			t.Run(command, func(t *testing.T) {
+				t.Parallel()
+				require.False(t, Scan(command, workDir).Safe(insideWorkDir))
+			})
+		}
+	})
+
+	t.Run("listing stays quiet", func(t *testing.T) {
+		t.Parallel()
+		for _, command := range []string{
+			"git branch",
+			"git branch -a",
+			"git branch -r",
+			"git branch -v",
+			"git branch -vv",
+			"git branch --all",
+			"git branch --show-current",
+			"git branch --list",
+			"git branch --list feature/*",
+			"git branch --contains HEAD",
+			"git branch --merged main",
+			"git branch --sort=-committerdate",
+			"git branch --format='%(refname)'",
+			"git tag",
+			"git tag -l",
+			"git tag -l v*",
+			"git tag --list v*",
+			"git tag --points-at HEAD",
+		} {
+			t.Run(command, func(t *testing.T) {
+				t.Parallel()
+				require.True(t, Scan(command, workDir).Safe(insideWorkDir))
+			})
+		}
+	})
+}
+
 // insideWorkDir is the containment predicate the scan tests run with.
 // Safe takes it as a parameter because resolving a path honestly needs
 // the filesystem, which this package deliberately never touches.

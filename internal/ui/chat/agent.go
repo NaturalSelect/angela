@@ -2,7 +2,9 @@ package chat
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -10,6 +12,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
+	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 )
 
@@ -17,11 +20,20 @@ import (
 // Agent Tool
 // -----------------------------------------------------------------------------
 
+// agentActionTargetWidth caps the tool target on the summary line so a long
+// shell command cannot push the line past the prompt above it.
+const agentActionTargetWidth = 40
+
+// agentSummaryArrow marks the one-line summary beneath the task prompt.
+const agentSummaryArrow = "↳ "
+
 // NestedToolContainer is an interface for tool items that can contain nested tool calls.
 type NestedToolContainer interface {
 	NestedTools() []ToolMessageItem
 	SetNestedTools(tools []ToolMessageItem)
 	AddNestedTool(tool ToolMessageItem)
+	SetTiming(startedAt, endedAt int64)
+	MarkActivity(ts int64)
 }
 
 // AgentToolMessageItem is a message item that represents an agent tool call.
@@ -29,6 +41,12 @@ type AgentToolMessageItem struct {
 	*baseToolMessageItem
 
 	nestedTools []ToolMessageItem
+
+	// startedAt and endedAt bracket the sub-agent's run, in Unix seconds.
+	// They come from the child session's message timestamps because
+	// message.ToolCall and message.ToolResult carry none of their own.
+	startedAt int64
+	endedAt   int64
 }
 
 var (
@@ -118,6 +136,86 @@ func (a *AgentToolMessageItem) AddNestedTool(tool ToolMessageItem) {
 	a.Bump()
 }
 
+// SetTiming records when the sub-agent's run started and ended, in Unix
+// seconds. A zero endedAt means it is still going.
+//
+// Unlike SetNestedTools this dedupes, because the whole state is the two
+// values compared — there are no children mutated in place behind them.
+func (a *AgentToolMessageItem) SetTiming(startedAt, endedAt int64) {
+	if a.startedAt == startedAt && a.endedAt == endedAt {
+		return
+	}
+	a.startedAt = startedAt
+	a.endedAt = endedAt
+	a.clearCache()
+	a.Bump()
+}
+
+// MarkActivity widens the run's window to cover a child message seen at ts.
+// The first sighting opens the window; each one after it moves the end.
+//
+// The live event path learns the timing one message at a time, so keeping
+// "the start never moves forward" here spares every caller from tracking it.
+func (a *AgentToolMessageItem) MarkActivity(ts int64) {
+	if ts == 0 {
+		return
+	}
+	start := a.startedAt
+	if start == 0 || ts < start {
+		start = ts
+	}
+	a.SetTiming(start, ts)
+}
+
+// currentAction names the newest nested tool — the one the sub-agent is
+// working on, or the one it just finished.
+func (a *AgentToolMessageItem) currentAction() string {
+	if len(a.nestedTools) == 0 {
+		return ""
+	}
+	tc := a.nestedTools[len(a.nestedTools)-1].ToolCall()
+	if target := ToolCallTarget(tc, agentActionTargetWidth); target != "" {
+		return tc.Name + " " + target
+	}
+	return tc.Name
+}
+
+// elapsed formats how long the sub-agent ran. It reports nothing while the
+// run is still open or when the timestamps never arrived.
+func (a *AgentToolMessageItem) elapsed() string {
+	if a.startedAt == 0 || a.endedAt < a.startedAt {
+		return ""
+	}
+	return common.FormatDuration(time.Duration(a.endedAt-a.startedAt) * time.Second)
+}
+
+// summaryLine condenses the run into one line: what the sub-agent is doing
+// while it works, what it added up to once it is done. The tree below
+// already lists every step, so the finished form reports totals rather
+// than repeating the last one.
+func (a *AgentToolMessageItem) summaryLine(sty *styles.Styles, done bool) string {
+	if len(a.nestedTools) == 0 {
+		return ""
+	}
+
+	text := a.currentAction()
+	if done {
+		label := "tools"
+		if len(a.nestedTools) == 1 {
+			label = "tool"
+		}
+		text = fmt.Sprintf("%d %s", len(a.nestedTools), label)
+		if elapsed := a.elapsed(); elapsed != "" {
+			text += " · " + elapsed
+		}
+	}
+	if text == "" {
+		return ""
+	}
+	// MarginLeft(2) lines the arrow up with the task tag above it.
+	return sty.Tool.AgentPrompt.MarginLeft(2).Render(agentSummaryArrow + text)
+}
+
 // AgentToolRenderContext renders agent tool messages.
 type AgentToolRenderContext struct {
 	agent *AgentToolMessageItem
@@ -152,8 +250,7 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 
 	promptText := sty.Tool.AgentPrompt.Width(remainingWidth).Render(prompt)
 
-	header = lipgloss.JoinVertical(
-		lipgloss.Left,
+	headerParts := []string{
 		header,
 		"",
 		lipgloss.JoinHorizontal(
@@ -162,7 +259,12 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 			" ",
 			promptText,
 		),
-	)
+	}
+	if summary := r.agent.summaryLine(sty, opts.HasResult() || opts.IsCanceled()); summary != "" {
+		headerParts = append(headerParts, summary)
+	}
+
+	header = lipgloss.JoinVertical(lipgloss.Left, headerParts...)
 
 	// Build tree with nested tool calls.
 	childTools := tree.Root(header)

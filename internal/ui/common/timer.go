@@ -36,10 +36,15 @@ func Elapsed() string {
 	if !turnTimer.active {
 		return ""
 	}
-	elapsed := time.Since(turnTimer.startTime)
-	totalSeconds := int(elapsed.Seconds())
-	minutes := int(elapsed.Minutes())
-	hours := int(elapsed.Hours())
+	return FormatDuration(time.Since(turnTimer.startTime))
+}
+
+// FormatDuration renders a duration for one-line chrome, dropping the
+// units too small to read at that magnitude.
+func FormatDuration(d time.Duration) string {
+	totalSeconds := int(d.Seconds())
+	minutes := int(d.Minutes())
+	hours := int(d.Hours())
 
 	switch {
 	case hours >= 1:

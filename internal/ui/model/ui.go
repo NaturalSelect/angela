@@ -770,7 +770,15 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.forceCompactMode {
 			m.isCompact = true
 		}
-		m.setState(uiChat, m.focus)
+		focus := m.focus
+		if msg.session.ParentSessionID != "" {
+			// The editor is closed off down here, so leaving focus in it
+			// would strand the user in a box that cannot take input.
+			focus = uiFocusMain
+			m.textarea.Blur()
+			m.chat.Focus()
+		}
+		m.setState(uiChat, focus)
 		m.session = msg.session
 		m.sessionFiles = msg.files
 		// Session switch: the memoized busy state and queued prompts
@@ -1551,6 +1559,7 @@ func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
 
 		// Set nested tools on the parent.
 		nestedContainer.SetNestedTools(nestedTools)
+		nestedContainer.SetTiming(nestedMsgs[0].CreatedAt, nestedMsgs[len(nestedMsgs)-1].CreatedAt)
 	}
 }
 
@@ -1759,28 +1768,20 @@ func (m *UI) handleChildSessionMessage(event pubsub.Event[message.Message]) tea.
 		return nil
 	}
 
-	// Find the parent agent tool item.
-	var agentItem chat.NestedToolContainer
-	for i := 0; i < m.chat.Len(); i++ {
-		item := m.chat.MessageItem(toolCallID)
-		if item == nil {
-			continue
-		}
-		if agent, ok := item.(chat.NestedToolContainer); ok {
-			if toolMessageItem, ok := item.(chat.ToolMessageItem); ok {
-				if toolMessageItem.ToolCall().ID == toolCallID {
-					// Verify this agent belongs to the correct parent message.
-					// We can't directly check parentMessageID on the item, so we trust the session parsing.
-					agentItem = agent
-					break
-				}
-			}
-		}
-	}
-
-	if agentItem == nil {
+	// The agent tool's call ID keys the chat's index map directly, so one
+	// lookup finds the block that owns this child session.
+	item := m.chat.MessageItem(toolCallID)
+	if item == nil {
 		return nil
 	}
+	agentItem, ok := item.(chat.NestedToolContainer)
+	if !ok {
+		return nil
+	}
+
+	// Child messages are the only clock this run has: neither ToolCall nor
+	// ToolResult carries a timestamp of its own.
+	agentItem.MarkActivity(event.Payload.CreatedAt)
 
 	// Get existing nested tools.
 	nestedTools := agentItem.NestedTools()
@@ -2824,6 +2825,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		case uiFocusMain:
 			switch {
 			case key.Matches(msg, m.keyMap.Tab):
+				if m.viewingSubAgent() {
+					break
+				}
 				m.focus = uiFocusEditor
 				cmds = append(cmds, m.textarea.Focus())
 				m.chat.Blur()
@@ -3054,7 +3058,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			return nil
 		}
 
-		if m.textarea.Focused() {
+		if m.textarea.Focused() && !m.viewingSubAgent() {
 			cur := m.textarea.Cursor()
 			// App margin plus the box's left border.
 			cur.X += m.layout.editor.Min.X + 1
@@ -3891,11 +3895,22 @@ func (m *UI) drawPromptBox(scr uv.Screen, area uv.Rectangle) {
 		common.SetSpan(scr, right, y, border, "│")
 	}
 
-	uv.NewStyledString(m.textarea.View()).Draw(scr, image.Rect(
+	content := m.textarea.View()
+	if m.viewingSubAgent() {
+		content = m.subAgentNotice(box.Dx() - editorBoxBorders)
+	}
+	uv.NewStyledString(content).Draw(scr, image.Rect(
 		box.Min.X+1, top+1, right, bottom,
 	))
 
 	m.drawPromptLabel(scr, box, bottom)
+}
+
+// subAgentNotice replaces the prompt while a sub-agent's transcript is on
+// screen, so the box reads as a closed door rather than an empty one.
+func (m *UI) subAgentNotice(width int) string {
+	notice := "Sub-agent transcript · read only · esc to go back"
+	return m.com.Styles.Editor.Caption.Render(ansi.Truncate(notice, width, "…"))
 }
 
 // drawPromptLabel writes the run context onto the bottom border row. The
@@ -3941,6 +3956,9 @@ func (m *UI) attachSkill(skillID, name string) tea.Cmd {
 
 // sendMessage sends a message with the given content and attachments.
 func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.Cmd {
+	if m.viewingSubAgent() {
+		return util.ReportWarn("This is a sub-agent's transcript. Press esc to go back and reply there.")
+	}
 	if err := m.com.Workspace.AgentReadyErr(); err != nil {
 		return util.ReportError(err)
 	}

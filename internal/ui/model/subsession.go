@@ -32,6 +32,17 @@ func (m *UI) inSubSession() bool {
 	return len(m.sessionStack) > 0
 }
 
+// viewingSubAgent reports that the transcript on screen belongs to a
+// sub-agent rather than to the user.
+//
+// Nothing here accepts input: the run takes its instructions from the
+// parent's model, so a prompt typed in would land in that agent's queue
+// behind the parent's back, where the model that dispatched it never sees
+// it. The editor is closed off rather than silently swallowing the text.
+func (m *UI) viewingSubAgent() bool {
+	return m.session != nil && m.session.ParentSessionID != ""
+}
+
 // sessionTrail returns the titles from the root down to the level in view.
 func (m *UI) sessionTrail() []string {
 	if m.session == nil {

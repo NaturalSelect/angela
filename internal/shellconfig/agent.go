@@ -67,10 +67,10 @@ var agentAddFlags = []flagSpec{
 	{name: "--mode", jsonKey: "mode", kind: flagString, op: opSet, validate: func(v any) error {
 		s, _ := v.(string)
 		switch s {
-		case "primary", "subagent":
+		case "primary", "subagent", "branch":
 			return nil
 		default:
-			return fmt.Errorf("mode must be primary or subagent; got %q", s)
+			return fmt.Errorf("mode must be primary, subagent or branch; got %q", s)
 		}
 	}},
 	{name: "--model", jsonKey: "model", kind: flagString, op: opSet},

@@ -215,6 +215,9 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 		LSToolName,
 		ListMCPResourcesToolName,
 		MultiEditToolName,
+		ProposalEditToolName,
+		ProposalReadToolName,
+		ProposalWriteToolName,
 		QuestionToolName,
 		ReadMCPResourceToolName,
 		ReferencesToolName,
@@ -317,7 +320,7 @@ func TestPreviewOfSkipsPlanners(t *testing.T) {
 
 	for _, tool := range []string{
 		EditToolName, MultiEditToolName, WriteToolName,
-		ReplaceSymbolToolName, RenameToolName,
+		ReplaceSymbolToolName, RenameToolName, MergeToolName,
 	} {
 		t.Run(tool, func(t *testing.T) {
 			t.Parallel()
@@ -380,18 +383,37 @@ func TestMCPIdentityComesFromTheTool(t *testing.T) {
 	}
 }
 
-// TestAccessOfRefusesDynamicMCPByName pins the other half: with only the
-// name in hand there is no way to tell which underscore separates the
-// server from the tool, so it describes nothing and the caller refuses.
-func TestAccessOfRefusesDynamicMCPByName(t *testing.T) {
+// TestAccessOfMerge covers the one tool whose approval is not about
+// reaching anything. A merge touches no file and runs no command, so
+// every field but the action stays empty — and the action has to be its
+// own, or the call inherits whatever the neighbouring category permits.
+func TestAccessOfMerge(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{
-		"mcp_docker_mcp-find",
-		"mcp_prod_admin_delete_user",
-	} {
-		_, ok := AccessOf(name, `{}`, "/work")
-		require.False(t, ok,
-			"%q must not be described from a guessed split", name)
+	access, ok := AccessOf(MergeToolName, `{}`, "/work")
+	require.True(t, ok)
+	require.Equal(t, permission.Access{
+		Tool:   MergeToolName,
+		Action: permission.ActionMerge,
+	}, access)
+}
+
+// The proposal tools reach nothing: they revise a document held in
+// memory for one branch. Mapping them anywhere stricter would put an
+// approval prompt in front of every keystroke of drafting, and the gate
+// that decides whether the result crosses back sits on merge.
+func TestAccessOfProposalToolsOnlyRead(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{ProposalWriteToolName, ProposalEditToolName, ProposalReadToolName} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			access, ok := AccessOf(name, `{}`, "/work")
+			require.True(t, ok)
+			require.Equal(t, permission.Access{
+				Tool:   name,
+				Action: permission.ActionRead,
+			}, access)
+		})
 	}
 }

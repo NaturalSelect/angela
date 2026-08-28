@@ -237,3 +237,39 @@ func TestLoadShellConfig_AgentAddPermissionSets(t *testing.T) {
 	require.Equal(t, "inherited", reviewer["allowed_tools"])
 	require.Equal(t, map[string]any{"github": []any{"create_issue"}}, reviewer["allowed_mcp"])
 }
+
+// TestLoadShellConfig_AgentAddBranchMode pins that angelarc can declare a
+// branch agent. There is no builtin one, so this builtin is the only way
+// most users will ever create one — rejecting the mode here would make the
+// feature unreachable from the primary config format.
+func TestLoadShellConfig_AgentAddBranchMode(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `agent add pairing --mode branch --description "Think it through together"`
+	path := filepath.Join(dir, "angelarc")
+
+	jsonBytes, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.NoError(t, err)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(jsonBytes, &result))
+
+	agents := result["agents"].(map[string]any)
+	pairing := agents["pairing"].(map[string]any)
+	require.Equal(t, "branch", pairing["mode"])
+}
+
+// TestLoadShellConfig_AgentAddRejectsUnknownMode pins that the flag still
+// validates. Widening it for branch must not turn it into a passthrough
+// that silently accepts a typo the loader will later reject.
+func TestLoadShellConfig_AgentAddRejectsUnknownMode(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	script := `agent add pairing --mode branchh`
+	path := filepath.Join(dir, "angelarc")
+
+	_, err := LoadShellConfig(t.Context(), path, []byte(script))
+	require.Error(t, err)
+}

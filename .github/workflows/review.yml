@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     # Ceiling for the whole job. Must stay above the review step's own
     # timeout below with room for checkout, build, and posting.
-    timeout-minutes: 50
+    timeout-minutes: 120
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -321,11 +321,12 @@ jobs:
              wrong, why it is wrong, the concrete failure scenario, the traced
              call chain (the upward and downward frames you read), and a
              recommended fix.
-          3. A \`## Commits\` section at the very end.
 
           ## Commit list
 
-          Reproduce the following list verbatim inside the \`## Commits\` section of your output. Do not edit, summarize, reorder, or invent any commit information.
+          The commits in this PR, as context for the findings. Do not
+          reproduce this list in your output: a \`## Commits\` section is
+          appended automatically after your review.
 
           \`\`\`
           PROMPTEOF
@@ -351,12 +352,13 @@ jobs:
         # runtime scales with how much the PR touches rather than with the
         # repo. Headroom for a large PR; raise this and the job ceiling
         # together.
-        timeout-minutes: 40
+        timeout-minutes: 90
         env:
           REVIEW_MODEL: ${{ secrets.ANGELA_REVIEW_MODEL }}
         run: |
           "${RUNNER_TEMP}/bin/angela" run \
             --quiet \
+            --verbose \
             --cwd "${GITHUB_WORKSPACE}/pr" \
             --data-dir "${RUNNER_TEMP}/angela-data" \
             --model "$REVIEW_MODEL" \

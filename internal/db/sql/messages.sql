@@ -7,7 +7,7 @@ WHERE id = ? LIMIT 1;
 SELECT *
 FROM messages
 WHERE session_id = ?
-ORDER BY created_at ASC;
+ORDER BY rowid ASC;
 
 -- name: CreateMessage :one
 INSERT INTO messages (
@@ -47,17 +47,17 @@ WHERE session_id = ?;
 SELECT *
 FROM messages
 WHERE session_id = ? AND role = 'user'
-ORDER BY created_at DESC;
+ORDER BY rowid DESC;
 
 -- name: ListAllUserMessages :many
 SELECT *
 FROM messages
 WHERE role = 'user'
-ORDER BY created_at DESC;
+ORDER BY rowid DESC;
 
 -- name: GetLastAssistantMessageBySession :one
 SELECT *
 FROM messages
 WHERE session_id = ? AND role = 'assistant' AND is_summary_message = 0
-ORDER BY created_at DESC
+ORDER BY rowid DESC
 LIMIT 1;

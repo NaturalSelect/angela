@@ -621,10 +621,13 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.CompactDetails.Version = lipgloss.NewStyle().Foreground(o.separator)
 
 	// Tool rendering styles
-	s.Tool.IconPending = base.Foreground(o.fgSubtle).SetString(ToolPending)
-	s.Tool.IconSuccess = base.Foreground(o.fgMoreSubtle).SetString(ToolSuccess)
+	s.Tool.IconPending = base.Foreground(o.info).SetString(ToolPending)
+	s.Tool.IconAwaitingPermission = base.Foreground(o.warning).SetString(ToolPending)
+	s.Tool.IconSuccess = base.Foreground(o.success).SetString(ToolSuccess)
 	s.Tool.IconError = base.Foreground(o.error).SetString(ToolError)
-	s.Tool.IconCancelled = muted.SetString(ToolPending)
+	// A cancelled call did not finish its work, which is the same thing a
+	// reader needs to notice about a failed one.
+	s.Tool.IconCancelled = base.Foreground(o.error).SetString(ToolPending)
 
 	s.Tool.NameNormal = base.Foreground(o.fgBase).Bold(true)
 	s.Tool.NameNested = base.Foreground(o.fgBase).Bold(true)

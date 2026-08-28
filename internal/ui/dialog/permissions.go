@@ -321,7 +321,8 @@ func (p *Permissions) respond(action PermissionAction) tea.Msg {
 
 func (p *Permissions) hasDiffView() bool {
 	switch p.permission.ToolName {
-	case tools.EditToolName, tools.WriteToolName, tools.MultiEditToolName, tools.ReplaceSymbolToolName:
+	case tools.EditToolName, tools.WriteToolName, tools.MultiEditToolName,
+		tools.ReplaceSymbolToolName, tools.MergeToolName:
 		return true
 	}
 	return false
@@ -467,7 +468,8 @@ func (p *Permissions) renderHeader(contentWidth int) string {
 	switch p.permission.ToolName {
 	case tools.EditToolName, tools.WriteToolName, tools.MultiEditToolName,
 		tools.ViewToolName, tools.ReplaceSymbolToolName,
-		tools.DownloadToolName, tools.LSToolName:
+		tools.DownloadToolName, tools.LSToolName,
+		tools.MergeToolName:
 		// These tools show their own File/Directory line below.
 	default:
 		lines = append(lines, p.renderKeyValue("Path", fsext.PrettyPath(p.permission.Path), contentWidth))
@@ -504,6 +506,12 @@ func (p *Permissions) renderHeader(contentWidth int) string {
 	case tools.LSToolName:
 		if params, ok := p.permission.Params.(tools.LSPermissionsParams); ok {
 			lines = append(lines, p.renderKeyValue("Directory", fsext.PrettyPath(params.Path), contentWidth))
+		}
+	case tools.MergeToolName:
+		// Named, not path-shortened: the proposal is held in memory and
+		// has no file behind it.
+		if params, ok := p.permission.Params.(tools.MergePermissionsParams); ok {
+			lines = append(lines, p.renderKeyValue("Document", params.Name, contentWidth))
 		}
 	}
 
@@ -556,6 +564,8 @@ func (p *Permissions) renderContent(width int) string {
 		return p.renderMultiEditContent(width)
 	case tools.ReplaceSymbolToolName:
 		return p.renderReplaceSymbolContent(width)
+	case tools.MergeToolName:
+		return p.renderMergeContent(width)
 	case tools.RenameToolName:
 		return p.renderRenameContent(width)
 	case tools.DownloadToolName:
@@ -619,6 +629,14 @@ func (p *Permissions) renderReplaceSymbolContent(contentWidth int) string {
 		return ""
 	}
 	return p.renderDiff(params.FilePath, params.OldContent, params.NewContent, contentWidth)
+}
+
+func (p *Permissions) renderMergeContent(contentWidth int) string {
+	params, ok := p.permission.Params.(tools.MergePermissionsParams)
+	if !ok {
+		return ""
+	}
+	return p.renderDiff(params.Name, params.OldContent, params.NewContent, contentWidth)
 }
 
 func (p *Permissions) renderDiff(filePath, oldContent, newContent string, contentWidth int) string {

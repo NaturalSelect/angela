@@ -349,11 +349,15 @@ type Styles struct {
 
 	// Tool - styles for tool call rendering
 	Tool struct {
-		// Icon styles with tool status
-		IconPending   lipgloss.Style
-		IconSuccess   lipgloss.Style
-		IconError     lipgloss.Style
-		IconCancelled lipgloss.Style
+		// Icon styles with tool status. The four colors are the only
+		// signal a skimming reader gets from a screenful of calls, so
+		// they stay far apart: running is blue, done green, failed or
+		// abandoned red, and blocked on the user yellow.
+		IconPending            lipgloss.Style // Running
+		IconAwaitingPermission lipgloss.Style // Blocked on an approval
+		IconSuccess            lipgloss.Style
+		IconError              lipgloss.Style
+		IconCancelled          lipgloss.Style
 
 		// Tool name styles
 		NameNormal lipgloss.Style // Top-level tool name

@@ -123,3 +123,58 @@ func TestPermissions_RenameShowsSymbolChange(t *testing.T) {
 		"Symbol: OldName "+styles.ArrowRightIcon+" NewName",
 		"the rename must read as a symbol change, not a dump of the raw params")
 }
+
+func newMergePermissions(doc string) *Permissions {
+	s := styles.CharmtonePantera()
+	com := &common.Common{Styles: &s}
+	p := NewPermissions(com, permission.PermissionRequest{
+		ID:         "perm-test",
+		ToolCallID: "tool-call-test",
+		ToolName:   tools.MergeToolName,
+		Params: tools.MergePermissionsParams{
+			Name:       tools.ProposalDocumentName,
+			NewContent: doc,
+		},
+	})
+	// renderDiff serves a cache until something marks it stale; Draw does
+	// that on its first pass by sizing the viewport.
+	p.viewportDirty = true
+	return p
+}
+
+// A merge hands a whole proposal back and ends the branch, so the user
+// has to be able to read the document before approving it. The diff view
+// is what gives the prompt the room, the scrollbar and the fullscreen
+// key; the plain text panel caps out at half the terminal with no way to
+// expand.
+func TestPermissions_MergeShowsTheProposalAsADiff(t *testing.T) {
+	t.Parallel()
+
+	p := newMergePermissions("# Plan\n\nRewrite the parser.")
+	require.True(t, p.hasDiffView(),
+		"a proposal is too long for the simple prompt, which cannot go fullscreen")
+
+	content := ansi.Strip(p.renderContent(80))
+	require.Contains(t, content, "Rewrite the parser.")
+
+	header := ansi.Strip(p.renderHeader(80))
+	require.Contains(t, header, "Document")
+	require.Contains(t, header, tools.ProposalDocumentName)
+	require.NotContains(t, header, "Path",
+		"the proposal is held in memory and has no path to show")
+}
+
+// The fullscreen toggle and the split/unified switch are offered only
+// where they do something. Merge earns them by rendering a diff.
+func TestPermissions_MergeOffersDiffControls(t *testing.T) {
+	t.Parallel()
+
+	p := newMergePermissions("# Plan\n\nRewrite the parser.")
+
+	var names []string
+	for _, b := range p.ShortHelp() {
+		names = append(names, b.Help().Key)
+	}
+	require.Contains(t, names, p.keyMap.ToggleFullscreen.Help().Key)
+	require.Contains(t, names, p.keyMap.ToggleDiffMode.Help().Key)
+}

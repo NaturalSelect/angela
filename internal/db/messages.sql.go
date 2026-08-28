@@ -91,7 +91,7 @@ const getLastAssistantMessageBySession = `-- name: GetLastAssistantMessageBySess
 SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
 FROM messages
 WHERE session_id = ? AND role = 'assistant' AND is_summary_message = 0
-ORDER BY created_at DESC
+ORDER BY rowid DESC
 LIMIT 1
 `
 
@@ -143,7 +143,7 @@ const listAllUserMessages = `-- name: ListAllUserMessages :many
 SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
 FROM messages
 WHERE role = 'user'
-ORDER BY created_at DESC
+ORDER BY rowid DESC
 `
 
 func (q *Queries) ListAllUserMessages(ctx context.Context) ([]Message, error) {
@@ -185,7 +185,7 @@ const listMessagesBySession = `-- name: ListMessagesBySession :many
 SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
 FROM messages
 WHERE session_id = ?
-ORDER BY created_at ASC
+ORDER BY rowid ASC
 `
 
 func (q *Queries) ListMessagesBySession(ctx context.Context, sessionID string) ([]Message, error) {
@@ -227,7 +227,7 @@ const listUserMessagesBySession = `-- name: ListUserMessagesBySession :many
 SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
 FROM messages
 WHERE session_id = ? AND role = 'user'
-ORDER BY created_at DESC
+ORDER BY rowid DESC
 `
 
 func (q *Queries) ListUserMessagesBySession(ctx context.Context, sessionID string) ([]Message, error) {

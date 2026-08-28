@@ -2,6 +2,8 @@ package model
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 )
 
@@ -39,8 +41,36 @@ func (m *UI) inSubSession() bool {
 // parent's model, so a prompt typed in would land in that agent's queue
 // behind the parent's back, where the model that dispatched it never sees
 // it. The editor is closed off rather than silently swallowing the text.
+//
+// A branch is the exception. It is also a child session, but it was forked
+// precisely so the user could drive it, so it stays open for input.
 func (m *UI) viewingSubAgent() bool {
-	return m.session != nil && m.session.ParentSessionID != ""
+	return m.session != nil && m.session.ParentSessionID != "" && !m.viewingBranch()
+}
+
+// viewingBranch reports that the transcript on screen is a branch: a child
+// session the user talks to directly, and which suspends the conversation it
+// was forked from until they resolve it.
+//
+// The answer is memoized at load time; the status line asks every frame and
+// resolving it reaches through the workspace.
+func (m *UI) viewingBranch() bool {
+	return m.session != nil && m.sessionIsBranch
+}
+
+// isBranchSession reports whether a session runs a branch-mode agent. The
+// mode is read from config rather than stored on the session, so retuning an
+// agent takes effect without migrating rows.
+func (m *UI) isBranchSession(sess session.Session) bool {
+	if sess.ParentSessionID == "" || sess.Agent == "" {
+		return false
+	}
+	cfg := m.com.Config()
+	if cfg == nil {
+		return false
+	}
+	agent, ok := cfg.Agents[sess.Agent]
+	return ok && agent.Mode == config.AgentModeBranch
 }
 
 // sessionTrail returns the titles from the root down to the level in view.
@@ -89,4 +119,47 @@ func (m *UI) leaveSubSession() tea.Cmd {
 	top := len(m.sessionStack) - 1
 	parent := m.sessionStack[top]
 	return m.loadSession(parent.id, loadSessionOpt{leaveLevel: true})
+}
+
+// escapeCancels reports whether the escape key means "stop what is running"
+// rather than "go back a level".
+//
+// A branch claims the key even while idle: there the gesture is not stopping
+// a turn but abandoning the branch, which is the only way to release the
+// conversation suspended behind it.
+func (m *UI) escapeCancels() bool {
+	return m.isAgentBusy() || m.viewingBranch()
+}
+
+// cancelLeavesBranch reports whether a confirmed cancel also returns to the
+// parent conversation.
+//
+// An idle branch is abandoned by the gesture, so its transcript is finished
+// and the view follows it back. A busy one only loses its current turn and
+// the user keeps talking to it, so the view stays. This mirrors the split
+// coordinator.Cancel makes on the same signal.
+func (m *UI) cancelLeavesBranch() bool {
+	return m.viewingBranch() && !m.isAgentBusy() && m.inSubSession()
+}
+
+// abortBranch abandons a branch without merging and returns to the
+// conversation it was forked from, releasing the turn that has been
+// suspended there.
+//
+// Unlike the escape gesture this is unconditional: the user picked "abort"
+// by name, so a turn still running is given up along with the branch rather
+// than merely interrupted.
+func (m *UI) abortBranch(sessionID string) tea.Cmd {
+	m.com.Workspace.AgentCancel(sessionID)
+	m.turnIsSpinning = false
+	m.invalidateBusyCaches()
+
+	var cmds []tea.Cmd
+	if m.inSubSession() {
+		cmds = append(cmds, m.leaveSubSession())
+	}
+	if cmd := m.dispatchBusyRefresh(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
 }

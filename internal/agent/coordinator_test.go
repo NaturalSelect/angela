@@ -15,6 +15,7 @@ import (
 	"charm.land/fantasy/providers/bedrock"
 	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -71,6 +72,8 @@ func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCf
 		messages:       env.messages,
 		permissions:    env.permissions,
 		subagents:      newSubagentRegistry(),
+		branches:       newBranchController(),
+		proposals:      tools.NewProposalStore(),
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
 }

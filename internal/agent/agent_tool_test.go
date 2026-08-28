@@ -101,3 +101,51 @@ func TestSubagentRegistryMetadataIsStable(t *testing.T) {
 		strings.Index(first, "zeta"),
 		"mid must be rendered before zeta")
 }
+
+// TestAgentToolDescriptionSeparatesBranches pins that a branch agent is not
+// listed as an ordinary dispatch target. Mixed into the plain list, the
+// model would call it expecting a result and instead block on a user who
+// was never told to do anything.
+func TestAgentToolDescriptionSeparatesBranches(t *testing.T) {
+	t.Parallel()
+
+	reg := newSubagentRegistry()
+	reg.Reconcile(map[string]config.Agent{
+		"research": {Description: "reads code", Mode: config.AgentModeSubagent},
+		"pairing":  {Description: "thinks it through with you", Mode: config.AgentModeBranch},
+	}, nil)
+
+	desc, err := renderAgentToolDescription(reg.Metadata())
+	require.NoError(t, err)
+
+	branchAt := strings.Index(desc, "Branch agents:")
+	require.Positive(t, branchAt, "a branch agent must get its own section")
+
+	require.Less(t, strings.Index(desc, "research"), branchAt,
+		"an ordinary subagent belongs in the plain list")
+	require.Greater(t, strings.Index(desc, "pairing"), branchAt,
+		"a branch agent must be listed under the branch section, not with the rest")
+
+	section := desc[branchAt:]
+	require.Contains(t, section, "suspends")
+	require.Contains(t, section, "user")
+	require.Contains(t, section, "merged")
+}
+
+// TestAgentToolDescriptionOmitsTheBranchSection pins that the explanation
+// stays out of the prompt when no branch agent is configured. There is no
+// builtin one, so this is the default shape.
+func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
+	t.Parallel()
+
+	reg := newSubagentRegistry()
+	reg.Reconcile(map[string]config.Agent{
+		"research": {Description: "reads code", Mode: config.AgentModeSubagent},
+	}, nil)
+
+	desc, err := renderAgentToolDescription(reg.Metadata())
+	require.NoError(t, err)
+
+	require.NotContains(t, desc, "Branch agents:")
+	require.Contains(t, desc, "research")
+}

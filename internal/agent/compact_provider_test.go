@@ -67,6 +67,7 @@ func newSplitProviderCoordinator(t *testing.T) *coordinator {
 		history:        env.history,
 		filetracker:    *env.filetracker,
 		subagents:      newSubagentRegistry(),
+		branches:       newBranchController(),
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
 	coord.reconcileSubagents()

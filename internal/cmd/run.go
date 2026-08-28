@@ -64,6 +64,7 @@ angela run --continue "Follow up on your last response"
 		var (
 			quiet, _      = cmd.Flags().GetBool("quiet")
 			verbose, _    = cmd.Flags().GetBool("verbose")
+			debug, _      = cmd.Flags().GetBool("debug")
 			largeModel, _ = cmd.Flags().GetString("model")
 			smallModel, _ = cmd.Flags().GetString("small-model")
 			sessionID, _  = cmd.Flags().GetString("session")
@@ -122,7 +123,7 @@ angela run --continue "Follow up on your last response"
 			}
 
 			if verbose {
-				slog.SetDefault(slog.New(log.New(os.Stderr)))
+				logToStderr(debug)
 			}
 
 			return runNonInteractive(ctx, c, ws, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
@@ -141,7 +142,7 @@ angela run --continue "Follow up on your last response"
 		}
 
 		if verbose {
-			slog.SetDefault(slog.New(log.New(os.Stderr)))
+			logToStderr(debug)
 		}
 
 		appWs := ws.(*workspace.AppWorkspace)
@@ -160,12 +161,26 @@ angela run --continue "Follow up on your last response"
 
 func init() {
 	runCmd.Flags().BoolP("quiet", "q", false, "Hide spinner")
-	runCmd.Flags().BoolP("verbose", "v", false, "Show logs")
+	runCmd.Flags().BoolP("verbose", "v", false, "Show logs on stderr; combine with --debug for debug level")
 	runCmd.Flags().StringP("model", "m", "", "Model to use. Accepts 'model' or 'provider/model' to disambiguate models with the same name across providers")
 	runCmd.Flags().String("small-model", "", "Small model to use. If not provided, uses the default small model for the provider")
 	runCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
 	runCmd.Flags().BoolP("continue", "C", false, "Continue the most recent session")
 	runCmd.MarkFlagsMutuallyExclusive("session", "continue")
+}
+
+// logToStderr sends logs to stderr, where a headless run's stdout is
+// usually already redirected to capture the answer.
+//
+// It replaces the handler angelalog.Setup installed rather than adding to
+// it, so the level has to be restated here: reading --debug from the flag
+// is what keeps `--debug --verbose` from showing less than --debug alone.
+func logToStderr(debug bool) {
+	level := log.InfoLevel
+	if debug {
+		level = log.DebugLevel
+	}
+	slog.SetDefault(slog.New(log.NewWithOptions(os.Stderr, log.Options{Level: level})))
 }
 
 // runNonInteractive executes the agent via the server and streams output

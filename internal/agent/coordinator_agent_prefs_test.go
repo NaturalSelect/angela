@@ -49,6 +49,7 @@ func newModelPrefTestCoordinator(t *testing.T, temperature *float64) *coordinato
 		history:        env.history,
 		filetracker:    *env.filetracker,
 		subagents:      newSubagentRegistry(),
+		branches:       newBranchController(),
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
 	coord.reconcileSubagents()

@@ -177,6 +177,14 @@ type coordinator struct {
 	// subagentRoutes maps a child session ID to the executor that owns it.
 	subagentRoutes *csync.Map[string, subagentRoute]
 
+	// branches holds the rendezvous for every dispatch currently
+	// suspended on a branch session.
+	branches *branchController
+
+	// proposals holds the document each branch is drafting, which is
+	// what its merge hands back.
+	proposals *tools.ProposalStore
+
 	// active holds each session's own agent instance. Everything a
 	// user changes at runtime lands here, never in cfg. The zero value
 	// is ready to use.
@@ -233,6 +241,8 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		runComplete:    opts.RunComplete,
 		subagents:      newSubagentRegistry(),
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
+		branches:       newBranchController(),
+		proposals:      tools.NewProposalStore(),
 		allSkills:      allSkills,
 		activeSkills:   activeSkills,
 		skillTracker:   skillTracker,
@@ -930,6 +940,20 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 		if agent.AllowedTools.Allows(tool.Info().Name) {
 			filteredTools = append(filteredTools, tool)
 		}
+	}
+
+	// Appended past the whitelist rather than through it: these are the
+	// only way a branch can draft its result and end, and the
+	// conversation that forked it stays suspended until it does. A user
+	// narrowing their branch agent's tools would otherwise strand both
+	// sides with no way back.
+	if agent.Mode == config.AgentModeBranch {
+		filteredTools = append(filteredTools,
+			c.mergeTool(),
+			tools.NewProposalWriteTool(c.proposals),
+			tools.NewProposalEditTool(c.proposals),
+			tools.NewProposalReadTool(c.proposals),
+		)
 	}
 
 	for _, tool := range tools.GetMCPTools(c.cfg, c.cfg.WorkingDir()) {
@@ -1662,9 +1686,46 @@ func (c *coordinator) BeginAccepted(ctx context.Context, sessionID string) *Acce
 }
 
 func (c *coordinator) Cancel(sessionID string) {
+	// A cancel that lands on a branch or on a conversation suspended by
+	// one means "give this up", not "interrupt this turn", so it resolves
+	// the rendezvous instead of tearing down a run.
+	if c.abortBranchFor(sessionID) {
+		return
+	}
 	if executor, ok := c.executorForSession(sessionID); ok {
 		executor.Cancel(sessionID)
 	}
+}
+
+// abortBranchFor turns a cancel into an abandoned branch where one applies,
+// reporting whether it handled the cancel. Only the user reaches it, through
+// Esc or /abort; no model can end a branch.
+//
+// Three cases:
+//   - a conversation suspended on branches: abandon them, and cancel their
+//     runs so they stop working for a result nobody will read. The suspended
+//     turn is left alone — it resumes with the abandonment as its tool result.
+//   - an idle branch: abandon it. There is no turn to interrupt, so a cancel
+//     here can only mean the branch itself.
+//   - a branch mid-turn: not handled. The cancel falls through and interrupts
+//     that turn, which is what lets the user stop a branch mid-thought and
+//     redirect it rather than lose it.
+func (c *coordinator) abortBranchFor(sessionID string) bool {
+	const abandoned = "The user ended this branch without merging it."
+
+	if aborted := c.branches.AbortByParent(sessionID, branchOutcome{Payload: abandoned}); len(aborted) > 0 {
+		for _, branchSessionID := range aborted {
+			if executor, ok := c.executorForSession(branchSessionID); ok {
+				executor.Cancel(branchSessionID)
+			}
+		}
+		return true
+	}
+
+	if c.branches.Waiting(sessionID) && !c.IsSessionBusy(sessionID) {
+		return c.branches.Signal(sessionID, branchOutcome{Payload: abandoned})
+	}
+	return false
 }
 
 func (c *coordinator) CancelAll() {
@@ -2037,6 +2098,140 @@ func subAgentOutput(result *fantasy.AgentResult) string {
 		return ""
 	}
 	return result.Response.Content.Text()
+}
+
+// runBranchAgent forks the caller's conversation into a session the user
+// drives themselves, and suspends this tool call until they resolve it.
+//
+// It differs from runSubAgent in what it does not do. It grants no blanket
+// permission policy, because a branch acts on the user's behalf in front of
+// the user, so its prompts belong to them. It does not run non-interactively.
+// And it does not read a result off the agent run at all: the first turn
+// merely starts the conversation, and what crosses back is whatever the user
+// eventually approves through the merge tool — possibly many turns later.
+func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams) (fantasy.ToolResponse, error) {
+	branchSessionID := c.sessions.CreateAgentToolSessionID(params.AgentMessageID, params.ToolCallID)
+	session, err := c.sessions.CreateTaskSession(ctx, branchSessionID, params.SessionID, params.SessionTitle)
+	if err != nil {
+		return fantasy.ToolResponse{}, fmt.Errorf("create branch session: %w", err)
+	}
+	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)
+
+	c.registerSubagentRoute(session.ID, params.Resolved.ID, params.Agent)
+
+	if err := c.sessions.UpdateActiveAgent(ctx, session.ID, params.Resolved.Host.State()); err != nil {
+		slog.Warn(
+			"Failed to record the branch agent on its session",
+			"session", session.ID,
+			"agent", params.Resolved.ID,
+			"error", err,
+		)
+	}
+
+	// Everything the caller had said and seen up to the call that forked
+	// it. The forking message itself is excluded: the branch is told what
+	// to do by the prompt below, so copying a tool call nobody will answer
+	// would only leave a dangling call in its history.
+	if err := c.messages.ForkSession(ctx, params.SessionID, session.ID, params.AgentMessageID); err != nil {
+		return fantasy.ToolResponse{}, fmt.Errorf("fork conversation into branch: %w", err)
+	}
+
+	forkPrompt, err := renderBranchForkPrompt(branchForkPrompt{
+		ParentTitle: c.parentTitle(ctx, params.SessionID),
+		Prompt:      params.Prompt,
+	})
+	if err != nil {
+		return fantasy.ToolResponse{}, fmt.Errorf("render branch prompt: %w", err)
+	}
+
+	// Registered before the first turn, not after: that turn may call
+	// merge, and a merge arriving before anyone is listening must still
+	// land.
+	done := c.branches.Register(session.ID, params.SessionID)
+	defer c.branches.Forget(session.ID)
+	defer c.proposals.Discard(session.ID)
+
+	if err := c.startBranchTurn(ctx, session.ID, forkPrompt, params); err != nil {
+		// Reported through the rendezvous rather than returned, so that a
+		// user who abandoned the branch while it was failing to start
+		// still sees their own outcome: delivery happens once, and
+		// whichever came first wins.
+		slog.Error("Branch first turn failed", "session", session.ID, "error", err)
+		c.branches.Signal(session.ID, branchOutcome{
+			Payload: fmt.Sprintf("The branch could not be started: %s", err),
+		})
+	}
+
+	select {
+	case <-ctx.Done():
+		return fantasy.ToolResponse{}, ctx.Err()
+	case out := <-done:
+		if out.Merged {
+			return fantasy.NewTextResponse(out.Payload), nil
+		}
+		resp := fantasy.NewTextErrorResponse(out.Payload)
+		resp.StopTurn = true
+		return resp, nil
+	}
+}
+
+// startBranchTurn runs the branch's opening turn, the one seeded with the
+// fork prompt. Every turn after it is driven by the user through the normal
+// session path.
+func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt string, params subAgentParams) error {
+	model := params.Resolved.Model
+	providerCfg, ok := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
+	if !ok {
+		return errModelProviderNotConfigured
+	}
+
+	compact := c.compactFor(ctx, params.SessionID, params.Resolved.Host)
+	_, err := params.Agent.Run(ctx, SessionAgentCall{
+		SessionID:                sessionID,
+		Agent:                    params.Resolved,
+		Prompt:                   prompt,
+		MaxOutputTokens:          params.Resolved.MaxTokens,
+		ProviderOptions:          getProviderOptions(model, providerCfg, buildPromptCacheKey(sessionID, params.Resolved.ID)),
+		SummarizeProviderOptions: compact.options,
+		Compact:                  compact.agent,
+		SummarizeOnAuthRefresh:   compact.onAuthRefresh,
+		Temperature:              model.ModelCfg.Temperature,
+		TopP:                     model.ModelCfg.TopP,
+		TopK:                     model.ModelCfg.TopK,
+		FrequencyPenalty:         model.ModelCfg.FrequencyPenalty,
+		PresencePenalty:          model.ModelCfg.PresencePenalty,
+		OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
+	})
+	return err
+}
+
+// parentTitle names the conversation a branch was forked from, for the fork
+// prompt. Best effort: an unnamed parent just makes the prompt less specific.
+func (c *coordinator) parentTitle(ctx context.Context, sessionID string) string {
+	sess, err := c.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return ""
+	}
+	return sess.Title
+}
+
+// branchDispatchRefusal reports why this caller may not fork a branch, or an
+// empty string when it may. Each refusal names the alternative, because the
+// model has to be able to act on it without guessing.
+func (c *coordinator) branchDispatchRefusal(ctx context.Context, sessionID string) string {
+	if !c.interactive {
+		return "A branch hands the conversation to the user, so it needs an interactive session. " +
+			"Dispatch a regular subagent instead."
+	}
+	if c.dispatchDepth(ctx, sessionID) != 0 {
+		return "Only a top-level conversation can fork a branch, because the user has to be able to take it over. " +
+			"Dispatch a regular subagent instead."
+	}
+	if c.branches.HasBranchFor(sessionID) {
+		return "This conversation is already suspended on a branch. " +
+			"Wait for the user to resolve it before forking another."
+	}
+	return ""
 }
 
 // updateParentSessionCost accumulates the cost from a child session to its

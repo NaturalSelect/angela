@@ -8,12 +8,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// toolDescriptionTemplates are the templates under templates/ that are
-// not system prompts: they describe a tool to the model calling it, so
-// they belong to a tool rather than to an agent and have no entry in
-// builtinPromptForAgent.
-var toolDescriptionTemplates = map[string]bool{
-	"agent_tool.md.tpl": true,
+// nonSystemPromptTemplates are the templates under templates/ that no agent
+// ID maps to, because none of them is an agent's system prompt: one describes
+// a tool to the model calling it, one is a turn's user message, and one is a
+// preamble the branch machinery prepends to whatever prompt the user
+// configured. The preamble is deliberately not overridable — it states the
+// rules that keep a suspended parent from hanging forever.
+var nonSystemPromptTemplates = map[string]bool{
+	"agent_tool.md.tpl":         true,
+	"branch_fork_prompt.md.tpl": true,
+	"branch_preamble.md.tpl":    true,
 }
 
 // TestEveryTemplateIsReachableAsAnAgentPrompt is the standing guard
@@ -40,13 +44,13 @@ func TestEveryTemplateIsReachableAsAnAgentPrompt(t *testing.T) {
 		if ext := filepath.Ext(name); ext != ".md" && ext != ".tpl" {
 			continue
 		}
-		if toolDescriptionTemplates[name] {
+		if nonSystemPromptTemplates[name] {
 			continue
 		}
 		require.Contains(t, registered, name,
 			"template %q is embedded but no agent ID maps to it, so a user cannot override it: "+
 				"register it in builtinPromptForAgent and builtinPromptTemplateFile, "+
-				"or add it to toolDescriptionTemplates if it describes a tool", name)
+				"or add it to nonSystemPromptTemplates if it is not a system prompt", name)
 	}
 }
 

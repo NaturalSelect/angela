@@ -477,14 +477,56 @@ func TestFreeMatch(t *testing.T) {
 	}
 }
 
+// TestPolicyMergeRules pins how the new action behaves against rules.
+// A merge carries no path, command or URL, so there is nothing for a
+// pattern to match — the danger is a pattern written for some other
+// action silently swallowing it.
+func TestPolicyMergeRules(t *testing.T) {
+	t.Parallel()
+
+	merge := Access{Tool: "merge", Action: ActionMerge}
+
+	t.Run("the action name selects it", func(t *testing.T) {
+		t.Parallel()
+		p := mustPolicy(t, []Rule{{Action: RuleAllow, Tool: "merge"}}, nil)
+		v := p.Evaluate(merge, policyCwd)
+		require.True(t, v.Matched)
+		require.Equal(t, RuleAllow, v.Action)
+	})
+
+	t.Run("a rule for another action leaves it alone", func(t *testing.T) {
+		t.Parallel()
+		p := mustPolicy(t, []Rule{
+			{Action: RuleAllow, Tool: "execute"},
+			{Action: RuleDeny, Tool: "edit", Pattern: "**"},
+		}, nil)
+		require.False(t, p.Evaluate(merge, policyCwd).Matched)
+	})
+
+	t.Run("a pattern cannot match a merge", func(t *testing.T) {
+		t.Parallel()
+		p := mustPolicy(t, []Rule{{Action: RuleAllow, Tool: "merge", Pattern: "found*"}}, nil)
+		require.False(t, p.Evaluate(merge, policyCwd).Matched,
+			"a merge has no text for a pattern to match, so it must not be settled by one")
+	})
+}
+
 func TestActionRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	for _, action := range []Action{
-		ActionRead, ActionList, ActionEdit, ActionExecute, ActionNetwork, ActionMCP,
-	} {
+	// Length-checked against the sentinel rather than just ranged over:
+	// actionNames is indexed by constant, so an action added without a
+	// name only makes the array shorter, and a loop over it would never
+	// reach the missing entry.
+	require.Len(t, actionNames, int(actionCount),
+		"an action has no entry in actionNames and would render as \"unknown\"")
+
+	for i, name := range actionNames {
+		action := Action(i)
+		require.NotEmpty(t, name, "action %d has no name", i)
+
 		parsed, ok := ParseAction(action.String())
-		require.True(t, ok)
+		require.True(t, ok, "action %q does not parse back", name)
 		require.Equal(t, action, parsed)
 	}
 

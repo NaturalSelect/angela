@@ -224,6 +224,11 @@ type UI struct {
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
 
+	// sessionIsBranch memoizes whether the loaded session is a branch.
+	// Resolving it reads config through the workspace, which the status
+	// line renders too often to afford, so it is settled once per load.
+	sessionIsBranch bool
+
 	// bangMode tracks whether the editor is in bang (!) shell mode.
 	bangMode     bool
 	bangWasEmpty bool // true when bang prompt became empty on last keystroke
@@ -771,15 +776,18 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.isCompact = true
 		}
 		focus := m.focus
-		if msg.session.ParentSessionID != "" {
+		isBranch := m.isBranchSession(*msg.session)
+		if msg.session.ParentSessionID != "" && !isBranch {
 			// The editor is closed off down here, so leaving focus in it
-			// would strand the user in a box that cannot take input.
+			// would strand the user in a box that cannot take input. A
+			// branch keeps its editor, so it keeps the focus too.
 			focus = uiFocusMain
 			m.textarea.Blur()
 			m.chat.Focus()
 		}
 		m.setState(uiChat, focus)
 		m.session = msg.session
+		m.sessionIsBranch = isBranch
 		m.sessionFiles = msg.files
 		// Session switch: the memoized busy state and queued prompts
 		// belong to the previous session. Drop them and re-fetch
@@ -1920,6 +1928,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			return nil
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionAbortBranch:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if cmd := m.abortBranch(msg.SessionID); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.ActionToggleHelp:
 		m.status.ToggleHelp()
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -2569,9 +2582,10 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 
-	// Handle cancel key when agent is busy.
+	// Handle cancel key when the escape gesture means "stop" rather than
+	// "go back".
 	if key.Matches(msg, m.keyMap.Chat.Cancel) {
-		if m.isAgentBusy() {
+		if m.escapeCancels() {
 			if cmd := m.cancelAgent(); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -4143,6 +4157,11 @@ func (m *UI) cancelAgent() tea.Cmd {
 			m.bangCancel = nil
 		}
 
+		// An idle branch is abandoned by this press rather than merely
+		// interrupted, so the view follows it back to the parent that was
+		// waiting on it.
+		leaving := m.cancelLeavesBranch()
+
 		m.com.Workspace.AgentCancel(m.session.ID)
 		// Stop the spinning turn indicator and drop the memoized busy
 		// state the cancel just changed; the turn status re-renders from
@@ -4150,6 +4169,9 @@ func (m *UI) cancelAgent() tea.Cmd {
 		// the agent's own events) land.
 		m.turnIsSpinning = false
 		m.invalidateBusyCaches()
+		if leaving {
+			return tea.Batch(m.leaveSubSession(), m.dispatchBusyRefresh())
+		}
 		return m.dispatchBusyRefresh()
 	}
 
@@ -4285,7 +4307,7 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	hasTodos := hasSession && hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
 
-	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.activeAgent(), m.customCommands, m.mcpPrompts)
+	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.viewingBranch(), m.activeAgent(), m.customCommands, m.mcpPrompts)
 	if err != nil {
 		return util.ReportError(err)
 	}

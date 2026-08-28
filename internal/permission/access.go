@@ -23,6 +23,15 @@ const (
 	ActionNetwork
 	// ActionMCP calls a tool or resource on an MCP server.
 	ActionMCP
+	// ActionMerge returns a branch's result to the conversation it was
+	// forked from, ending the branch.
+	ActionMerge
+
+	// actionCount is the number of actions and must stay last. It is
+	// what lets a test notice a new action that was never named:
+	// actionNames is indexed by constant, so a missing final entry just
+	// makes the array shorter and iterating it would look complete.
+	actionCount
 )
 
 var actionNames = [...]string{
@@ -32,6 +41,7 @@ var actionNames = [...]string{
 	ActionExecute: "execute",
 	ActionNetwork: "network",
 	ActionMCP:     "mcp",
+	ActionMerge:   "merge",
 }
 
 // actionAliases keep configuration written against the older free-form

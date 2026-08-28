@@ -44,6 +44,7 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
 		history:        env.history,
 		filetracker:    *env.filetracker,
 		subagents:      newSubagentRegistry(),
+		branches:       newBranchController(),
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 		interactive:    interactive,
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -55,6 +56,16 @@ type Service interface {
 	GetLastAssistantMessage(ctx context.Context, sessionID string) (Message, error)
 	Delete(ctx context.Context, id string) error
 	DeleteSessionMessages(ctx context.Context, sessionID string) error
+
+	// ForkSession seeds dstSessionID with a copy of every message in
+	// srcSessionID that precedes beforeMessageID, in order, with fresh IDs.
+	// It is an error for beforeMessageID not to belong to srcSessionID, and
+	// nothing is written in that case.
+	//
+	// Nothing is published. The destination has no reader yet, and a create
+	// event per copied message would replay the source's entire tool history
+	// into whatever the user currently has on screen.
+	ForkSession(ctx context.Context, srcSessionID, dstSessionID, beforeMessageID string) error
 
 	// Flush synchronously drains any pending debounced state for the
 	// given message ID, performs the SQL write, and publishes the
@@ -196,6 +207,35 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 	// concurrent modifications to the Parts slice.
 	s.Publish(pubsub.CreatedEvent, message.Clone())
 	return message, nil
+}
+
+func (s *service) ForkSession(ctx context.Context, srcSessionID, dstSessionID, beforeMessageID string) error {
+	rows, err := s.q.ListMessagesBySession(ctx, srcSessionID)
+	if err != nil {
+		return err
+	}
+	cut := slices.IndexFunc(rows, func(row db.Message) bool { return row.ID == beforeMessageID })
+	if cut < 0 {
+		return fmt.Errorf("fork point %q does not belong to session %s", beforeMessageID, srcSessionID)
+	}
+	for i, row := range rows[:cut] {
+		// Parts travels verbatim: it is already the marshalled form, and a
+		// decode/encode round trip would be a chance to lose something.
+		_, err := s.q.CreateMessage(ctx, db.CreateMessageParams{
+			ID:               uuid.New().String(),
+			SessionID:        dstSessionID,
+			Role:             row.Role,
+			Parts:            row.Parts,
+			Model:            row.Model,
+			Provider:         row.Provider,
+			Agent:            row.Agent,
+			IsSummaryMessage: row.IsSummaryMessage,
+		})
+		if err != nil {
+			return fmt.Errorf("copying message %d of %d into %s: %w", i+1, cut, dstSessionID, err)
+		}
+	}
+	return nil
 }
 
 func (s *service) DeleteSessionMessages(ctx context.Context, sessionID string) error {
@@ -456,6 +496,13 @@ func (s *service) Get(ctx context.Context, id string) (Message, error) {
 	return s.fromDBItem(dbMessage)
 }
 
+// List returns a session's transcript in insertion order.
+//
+// NOTE: the query orders by rowid, not created_at. created_at is
+// strftime('%s') seconds, so a burst of messages — a turn's assistant reply
+// plus its tool results, or a whole forked history — shares one value and the
+// order within it would be undefined. Ordering by the clock would also let a
+// backwards step scramble a conversation.
 func (s *service) List(ctx context.Context, sessionID string) ([]Message, error) {
 	dbMessages, err := s.q.ListMessagesBySession(ctx, sessionID)
 	if err != nil {

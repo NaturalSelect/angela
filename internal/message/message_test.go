@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -101,6 +102,49 @@ func (c *eventCollector) reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.events = nil
+}
+
+// A turn's assistant reply and its tool results land in the same
+// strftime('%s') second, and a forked history lands there wholesale. Ordering
+// by that clock leaves them in no defined order — and a clock that steps
+// backwards would reverse them outright.
+func TestListOrdersByInsertionNotByTheClock(t *testing.T) {
+	t.Parallel()
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	q := db.New(conn)
+	sess := newTestSession(t, q)
+	svc := NewService(q)
+
+	const count = 10
+	want := make([]string, count)
+	for i := range want {
+		want[i] = fmt.Sprintf("msg-%02d", i)
+		_, err := svc.Create(t.Context(), sess.ID, CreateMessageParams{
+			Role:  User,
+			Parts: []ContentPart{TextContent{Text: want[i]}},
+		})
+		require.NoError(t, err)
+	}
+
+	// Hand the rows a clock running backwards: created_at now descends as the
+	// conversation advances.
+	_, err = conn.ExecContext(t.Context(),
+		`UPDATE messages SET created_at = 1000000 - rowid WHERE session_id = ?`, sess.ID)
+	require.NoError(t, err)
+
+	listed, err := svc.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Len(t, listed, count)
+
+	got := make([]string, len(listed))
+	for i, m := range listed {
+		got[i] = m.Content().Text
+	}
+	require.Equal(t, want, got)
 }
 
 func TestCreate_PersistsAgentAttribution(t *testing.T) {

@@ -161,6 +161,11 @@ func TestParseAgentFile_Validation(t *testing.T) {
 			wantErr: "invalid mode",
 		},
 		{
+			name:    "branch is a valid mode",
+			content: "---\nname: Pairing\ndescription: x\nmode: branch\n---\nbody",
+			wantErr: "",
+		},
+		{
 			name:    "temperature out of range",
 			content: "---\ntemperature: 1.5\n---\nbody",
 			wantErr: "invalid temperature",

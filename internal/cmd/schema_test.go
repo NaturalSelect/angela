@@ -110,7 +110,8 @@ func TestSchemaAgentModeHasNoAll(t *testing.T) {
 		} `json:"properties"`
 	}
 	require.NoError(t, json.Unmarshal(reflectSchemaDefs(t)["Agent"], &agent))
-	require.ElementsMatch(t, []string{"primary", "subagent"}, agent.Properties["mode"].Enum)
+	require.ElementsMatch(t, []string{"primary", "subagent", "branch"}, agent.Properties["mode"].Enum)
+	require.NotContains(t, agent.Properties["mode"].Enum, "all")
 }
 
 // TestSchemaAllowedSetsAcceptLiterals pins the tri-state unions. A plain

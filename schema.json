@@ -29,9 +29,10 @@
           "type": "string",
           "enum": [
             "primary",
-            "subagent"
+            "subagent",
+            "branch"
           ],
-          "description": "Agent mode: primary or subagent"
+          "description": "Agent mode: primary or subagent or branch"
         },
         "model": {
           "type": "string",

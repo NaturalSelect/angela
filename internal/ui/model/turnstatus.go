@@ -126,6 +126,11 @@ func (m *UI) renderIdleStatus(width int) string {
 	t := m.com.Styles
 
 	var fields []string
+	// A branch is the one place where leaving the session is a decision
+	// rather than navigation, so the way out leads the line.
+	if m.viewingBranch() {
+		fields = append(fields, t.TurnStatus.Idle.Render("branch · merge to return · esc to abandon"))
+	}
 	if active := m.activeAgent(); active != nil {
 		// The model name already sits on the prompt box's bottom border;
 		// repeating it here only doubles the noise.

@@ -182,6 +182,55 @@ func TestPermissionService_ReadScope(t *testing.T) {
 	assert.False(t, wait().Allowed())
 }
 
+// TestPermissionService_MergeAlwaysPrompts pins that a merge is never
+// waved through by scope. It reaches no file and runs no command, so
+// every heuristic that auto-allows harmless-looking access would let it
+// past — but approving it is the user's only say over whether a branch
+// ends and its result crosses back into the parent conversation.
+func TestPermissionService_MergeAlwaysPrompts(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	service := NewPermissionService(dir, false, nil)
+
+	events := service.Subscribe(t.Context())
+	wait := gateAsync(t.Context(), service, "s1", "c1", Access{
+		Tool: "merge", Action: ActionMerge,
+	})
+	select {
+	case ev := <-events:
+		service.Deny(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("a merge must reach the user")
+	}
+	assert.Equal(t, OutcomeUserDeny, wait().Outcome)
+}
+
+// A rejected merge must not be remembered: the branch stays alive so the
+// user can have it adjust the summary, and the retry has to ask again.
+func TestPermissionService_MergeDenialIsNotRemembered(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	service := NewPermissionService(dir, false, nil)
+	merge := Access{Tool: "merge", Action: ActionMerge}
+
+	events := service.Subscribe(t.Context())
+
+	first := gateAsync(t.Context(), service, "s1", "c1", merge)
+	service.Deny((<-events).Payload)
+	require.False(t, first().Allowed())
+
+	second := gateAsync(t.Context(), service, "s1", "c2", merge)
+	select {
+	case ev := <-events:
+		service.Grant(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("a second merge must prompt again rather than inherit the refusal")
+	}
+	assert.True(t, second().Allowed())
+}
+
 // TestPermissionService_DenyOutcomesDiffer pins the semantic split: a
 // refusal from the configuration is an obstacle the model may route
 // around, while a refusal from the user ends the turn.

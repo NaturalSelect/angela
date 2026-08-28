@@ -79,6 +79,11 @@ type (
 	ActionSummarize                   struct {
 		SessionID string
 	}
+	// ActionAbortBranch abandons a branch session without merging and
+	// returns to the conversation it was forked from.
+	ActionAbortBranch struct {
+		SessionID string
+	}
 	// ActionSelectVariant is a message indicating a model variant has
 	// been selected. An empty Variant selects the model's baseline.
 	ActionSelectVariant struct {

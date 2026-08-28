@@ -609,6 +609,8 @@ func toolStatusStyle(sty *styles.Styles, status ToolStatus) lipgloss.Style {
 		return sty.Tool.IconError.SetString("")
 	case ToolStatusCanceled:
 		return sty.Tool.IconCancelled.SetString("")
+	case ToolStatusAwaitingPermission:
+		return sty.Tool.IconAwaitingPermission.SetString("")
 	default:
 		return sty.Tool.IconPending.SetString("")
 	}
@@ -624,6 +626,8 @@ func toolIcon(sty *styles.Styles, status ToolStatus) string {
 		return sty.Tool.IconError.String()
 	case ToolStatusCanceled:
 		return sty.Tool.IconCancelled.String()
+	case ToolStatusAwaitingPermission:
+		return sty.Tool.IconAwaitingPermission.String()
 	default:
 		return sty.Tool.IconPending.String()
 	}

@@ -15,6 +15,21 @@ import (
 // package agent depends on this one, so the constant cannot be imported.
 const agentToolName = "agent"
 
+// MergeToolName names the merge tool, whose implementation lives in
+// package agent because it needs the branch controller. The name is
+// declared here so the permission system and the approval dialog can
+// reach it from this side of the dependency.
+const MergeToolName = "merge"
+
+// MergePermissionsParams is what the approval dialog renders for a
+// merge. The proposal being handed back is shown as a diff, so it
+// carries both sides like the file tools' equivalents do.
+type MergePermissionsParams struct {
+	Name       string `json:"name"`
+	OldContent string `json:"old_content,omitempty"`
+	NewContent string `json:"new_content,omitempty"`
+}
+
 // mcpToolPrefix starts the generated name of every dynamic MCP tool,
 // which is built as mcp_<server>_<tool>.
 const mcpToolPrefix = "mcp_"
@@ -289,6 +304,20 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 
 	case LSPRestartToolName:
 		// Restarts a server the user configured; it starts nothing new.
+		access.Action = permission.ActionRead
+
+	case MergeToolName:
+		// Reaches no file and runs nothing, but it is the one moment
+		// the user decides whether this branch's result crosses back
+		// and the branch ends. Never in scope: the gate always asks.
+		access.Action = permission.ActionMerge
+
+	case ProposalWriteToolName, ProposalEditToolName, ProposalReadToolName:
+		// The proposal is the branch's own draft, held in memory and
+		// never written anywhere. The gate that matters sits on merge,
+		// where the user decides whether the finished text crosses
+		// back; stopping to approve each revision on the way there
+		// would ask about a document that reaches nothing.
 		access.Action = permission.ActionRead
 
 	case agentToolName, TodosToolName, QuestionToolName, AngelaInfoToolName,

@@ -28,6 +28,9 @@ below.
 - **subagent** — Only launched via the `agent` tool. Whether it can dispatch
   further sub-agents depends on `options.subagent_depth`; by default the
   budget is 1, so a sub-agent cannot delegate further.
+- **branch** — Launched via the `agent` tool like a sub-agent, but instead of
+  working on its own it forks the conversation and hands it to you. See
+  [Branch Agents](#branch-agents).
 
 ## Using the `agent` Tool
 
@@ -68,6 +71,89 @@ option subagent-depth 2
 A PreToolUse hook can read the current nesting level from the `depth` field
 in its JSON payload or the `ANGELA_AGENT_DEPTH` environment variable — see
 [Hooks](../hooks/README.md).
+
+## Branch Agents
+
+A **branch** agent turns a delegation into a conversation you take part in.
+When the coder dispatches one, Angela forks the current session, suspends
+the coder's turn, and drops you into the fork. You talk to the branch
+directly, the way you talk to the coder. When you are done, the branch hands
+a summary back and the coder's turn resumes where it left off.
+
+Use it for work the model cannot finish alone: a design decision only you
+can make, an exploration whose direction you have to steer, a discussion
+that has to happen before the task is even well-defined.
+
+There is no built-in branch agent — you configure your own, with your own
+system prompt.
+
+### Configuring one
+
+```bash
+agent add pairing \
+  --mode branch \
+  --description "Work through a problem together before committing to an approach" \
+  --prompt "You are exploring a problem with the user. Ask before assuming."
+```
+
+```json
+{
+  "agents": {
+    "pairing": {
+      "mode": "branch",
+      "description": "Work through a problem together before committing to an approach",
+      "prompt": "You are exploring a problem with the user. Ask before assuming."
+    }
+  }
+}
+```
+
+Angela prepends a short fixed preamble to whatever prompt you write, so the
+agent knows it is a branch: that it is talking to you directly, that a
+conversation is suspended behind it, and that only you can end it. Your
+prompt follows and decides everything else.
+
+### The lifecycle
+
+1. **Fork.** The branch starts with a copy of the conversation up to the
+   point of the call, then a message stating the task the coder gave it.
+2. **Talk.** You drive it. Everything works as usual — tools, permissions,
+   `/` commands.
+3. **Merge.** When the work is settled, the branch calls the `merge` tool
+   with a summary. Merging always asks for your approval, even under an
+   allow-list, because the summary is what the coder will believe.
+   - **Approve** — the branch ends, you return to the parent conversation,
+     and the coder resumes with the summary as the `agent` tool's result.
+   - **Deny** — nothing is merged and nothing is sent. The branch stays
+     open, so you can say what was wrong with the summary and have it try
+     again.
+   - Under yolo mode (`--yolo`, or permissions set to skip requests), merge
+     is approved automatically like any other tool.
+4. **Abandon.** If the branch led nowhere, drop it: the coder is told the
+   branch was abandoned and continues without a summary. That is a normal
+   outcome, not an error.
+
+### Ending a branch without merging
+
+- **Escape twice** — abandons the branch and returns you to the parent. If a
+  turn is running, the first two presses stop that turn instead; press again
+  once it is idle to abandon.
+- **`/abort`** — abandons it outright, whether or not a turn is running.
+  The command only appears while you are inside a branch.
+
+Escape no longer walks back out of a branch the way it leaves a sub-agent
+transcript, since it is reserved for stopping and abandoning. To look at the
+parent without giving up the branch, use the session switcher (`Ctrl+S`) —
+branches are not listed there, so the parent is the one you pick.
+
+### Limits
+
+- Only the top-level conversation can open a branch, and only one at a time.
+  A sub-agent cannot open one: there is no user attached to its turn.
+- Branches are unavailable in non-interactive runs (`angela run`), where
+  there is nobody to hand the conversation to.
+- A branch does not consume the `options.subagent_depth` budget, and it can
+  dispatch sub-agents of its own exactly like the coder can.
 
 ## Configuration
 
@@ -152,7 +238,7 @@ Available flags for `agent add`:
 | Flag               | Description                                        |
 |--------------------|----------------------------------------------------|
 | `--description`    | Agent description                                  |
-| `--mode`           | `primary` or `subagent` (see Agent Modes)          |
+| `--mode`           | `primary`, `subagent` or `branch` (see Agent Modes) |
 | `--model`          | `main` or `chore` (default `main`)                 |
 | `--prompt`         | System prompt text (Go template)                   |
 | `--temperature`    | Sampling temperature (0-1)                         |

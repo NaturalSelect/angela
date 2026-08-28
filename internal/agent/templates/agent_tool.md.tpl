@@ -18,5 +18,28 @@ Usage notes:
 
 Available agent types:
 {{- range .Agents}}
+{{- if not .Branch}}
 - {{.ID}}: {{.Description}}
+{{- end}}
+{{- end}}
+{{- if .HasBranch}}
+
+Branch agents:
+
+These do not work on their own. Calling one forks the current conversation
+into a side session, suspends this call, and hands control to the user, who
+talks to it directly. Your call returns only when they finish — with their
+summary if they merged the branch back, or with a note that they abandoned
+it. Neither outcome is a failure.
+
+Use one only when the work genuinely needs the user in the loop: a decision
+you cannot make for them, an exploration whose direction only they can set,
+or a discussion that has to happen before the task is even well-defined. For
+anything you can carry out yourself, use an ordinary agent instead — a
+branch stops all your progress until the user comes back to it.
+{{- range .Agents}}
+{{- if .Branch}}
+- {{.ID}}: {{.Description}}
+{{- end}}
+{{- end}}
 {{- end}}

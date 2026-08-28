@@ -407,9 +407,17 @@ func TestE2E_TwoClientsReceiveSameMessage(t *testing.T) {
 	// resources the test doesn't need to exercise), but still
 	// release the pooled DB connection so Windows can clean up
 	// the temp data directory.
+	//
+	// released closes once that release has actually happened. The
+	// test blocks on it before returning: the shutdown runs off a
+	// grace timer, and t.TempDir's RemoveAll is registered after the
+	// harness cleanups, so without this edge the data dir is removed
+	// while the connection is still open.
 	wsDataDir := ws.Cfg.Config().Options.DataDirectory
+	released := make(chan struct{})
 	backend.SetWorkspaceShutdownFnForTest(ws, func() {
 		_ = db.Release(wsDataDir)
+		close(released)
 	})
 
 	evcA, cancelA := h.subscribeSSE(t, ctx, ws.ID, cidA)
@@ -444,6 +452,17 @@ func TestE2E_TwoClientsReceiveSameMessage(t *testing.T) {
 	})
 	require.True(t, okB, "client B must receive the same MessageEvent")
 	require.Equal(t, sessionID, gotB.Payload.SessionID)
+
+	// Drop both streams here rather than leaving it to cleanup, so the
+	// detach grace and the teardown it triggers complete while the test
+	// is still running.
+	cancelA()
+	cancelB()
+	select {
+	case <-released:
+	case <-time.After(10 * time.Second):
+		t.Fatal("workspace teardown did not release the pooled DB connection")
+	}
 }
 
 // TestE2E_PermissionFlowCrossClient covers PLAN item 6 scenario 2:

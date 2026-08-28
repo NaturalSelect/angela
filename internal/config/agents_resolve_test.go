@@ -120,6 +120,36 @@ func TestResolveAgents_DefaultModeIsSubagent(t *testing.T) {
 	require.Equal(t, AgentModeSubagent, agents["reviewer"].Mode)
 }
 
+// A branch is dispatched like a subagent but is not one: it forks the
+// caller's transcript and then talks to the user. Angela ships no branch of
+// its own, so this mode only ever arrives from user configuration — losing it
+// in resolution would accept "mode: branch" and then quietly demote it to an
+// ordinary delegation that nobody can reply to.
+func TestResolveAgents_CustomBranchIsNotDowngraded(t *testing.T) {
+	cfg := &Config{
+		Options: &Options{},
+		AgentConfigs: map[string]Agent{
+			"pairing": {Description: "x", Mode: AgentModeBranch},
+		},
+	}
+
+	agents := cfg.ResolveAgents()
+	require.Equal(t, AgentModeBranch, agents["pairing"].Mode)
+	require.NotEqual(t, AgentModeSubagent, agents["pairing"].Mode)
+}
+
+// Nothing built in may claim branch mode: a branch suspends its caller until
+// a human resolves it, which is never the right default for an agent the user
+// did not ask for.
+func TestResolveAgents_NoBuiltinIsABranch(t *testing.T) {
+	cfg := &Config{Options: &Options{}}
+
+	for id, agent := range cfg.ResolveAgents() {
+		require.NotEqual(t, AgentModeBranch, agent.Mode,
+			"builtin agent %q ships as a branch", id)
+	}
+}
+
 func TestResolveAgents_ExploreHasNoBash(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 	agents := cfg.ResolveAgents()

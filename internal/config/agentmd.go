@@ -307,9 +307,9 @@ func ValidateAgent(id string, a Agent) error {
 // DiscoverAgentFiles has already validated.
 func validateAgentFields(a Agent) error {
 	switch a.Mode {
-	case "", AgentModePrimary, AgentModeSubagent:
+	case "", AgentModePrimary, AgentModeSubagent, AgentModeBranch:
 	default:
-		return fmt.Errorf("invalid mode %q: must be one of %s, %s", a.Mode, AgentModePrimary, AgentModeSubagent)
+		return fmt.Errorf("invalid mode %q: must be one of %s, %s, %s", a.Mode, AgentModePrimary, AgentModeSubagent, AgentModeBranch)
 	}
 	// Agent.Model is an open value domain: any model config name is
 	// accepted here, and an unknown one is warned about and falls back

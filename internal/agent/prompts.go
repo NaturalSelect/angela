@@ -32,6 +32,14 @@ var webFetchPromptTmpl []byte
 //go:embed templates/generate_agent.md.tpl
 var generateAgentPromptTmpl []byte
 
+// branchPreambleTmpl fronts the system prompt of every branch-mode agent.
+// Angela ships no branch of its own, so the prompt underneath it is always
+// the user's; this is the only place the rules the fork machinery depends on
+// are guaranteed to be stated.
+//
+//go:embed templates/branch_preamble.md.tpl
+var branchPreambleTmpl []byte
+
 func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	systemPrompt, err := prompt.NewPrompt("coder", string(coderPromptTmpl), opts...)
 	if err != nil {
@@ -114,6 +122,13 @@ var builtinPromptTemplateFile = map[string]string{
 // precedence over the global default, on every path.
 func agentPrompt(agentCfg config.Agent, opts ...prompt.Option) (*prompt.Prompt, error) {
 	opts = append(opts, prompt.WithContextPaths(agentCfg.ContextPaths))
+
+	// Applied here rather than inside any one template so that all three
+	// resolutions below carry it, including a custom prompt that replaces
+	// the template outright.
+	if agentCfg.Mode == config.AgentModeBranch {
+		opts = append(opts, prompt.WithPreamble(string(branchPreambleTmpl)))
+	}
 
 	if agentCfg.Prompt != "" {
 		return prompt.NewPrompt(agentCfg.ID, agentCfg.Prompt, opts...)

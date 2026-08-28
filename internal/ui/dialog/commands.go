@@ -54,7 +54,11 @@ type Commands struct {
 	hasSession bool
 	hasTodos   bool
 	hasQueue   bool
-	selected   CommandType
+	// inBranch gates the abort command. Abandoning a branch is only
+	// meaningful from inside one, and offering it elsewhere would name a
+	// session the user is not looking at.
+	inBranch bool
+	selected CommandType
 	// active is the agent the session runs on, or nil when it is not
 	// known yet. The model-dependent commands (thinking, variants, file
 	// picker) are gated on it rather than on the global config, so the
@@ -83,7 +87,7 @@ type Commands struct {
 var _ Dialog = (*Commands)(nil)
 
 // NewCommands creates a new commands dialog.
-func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue bool, active *workspace.ActiveAgent, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
+func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue, inBranch bool, active *workspace.ActiveAgent, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
 	c := &Commands{
 		com:            com,
 		selected:       SystemCommands,
@@ -91,6 +95,7 @@ func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, has
 		hasSession:     hasSession,
 		hasTodos:       hasTodos,
 		hasQueue:       hasQueue,
+		inBranch:       inBranch,
 		active:         active,
 		customCommands: customCommands,
 		mcpPrompts:     mcpPrompts,
@@ -462,6 +467,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	// Only show compact command if there's an active session
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}))
+	}
+
+	if c.inBranch {
+		commands = append(commands, NewCommandItem(c.com.Styles, "abort_branch", "Abort Branch", "", ActionAbortBranch{SessionID: c.sessionID}).WithAliases("abort"))
 	}
 
 	if c.active != nil {

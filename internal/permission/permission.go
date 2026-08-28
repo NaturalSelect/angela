@@ -677,6 +677,8 @@ func describe(access Access) string {
 		return "Write " + access.Path
 	case ActionList:
 		return "List " + access.Path
+	case ActionMerge:
+		return "Merge this branch into the conversation it forked from"
 	default:
 		if access.Path == "" {
 			return "Run " + access.Tool

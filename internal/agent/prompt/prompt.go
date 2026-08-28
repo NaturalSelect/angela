@@ -28,6 +28,7 @@ type Prompt struct {
 	platform     string
 	workingDir   string
 	contextPaths []string
+	preamble     string
 	extra        map[string]any
 }
 
@@ -84,6 +85,18 @@ func WithContextPaths(paths []string) Option {
 	}
 }
 
+// WithPreamble prepends fixed text to the rendered prompt.
+//
+// It carries what the session imposes on the agent rather than what the
+// agent is, so it sits outside the template on purpose: a user who replaces
+// the whole prompt still gets it. It is written verbatim, not rendered, so
+// the text cannot reach the template data.
+func WithPreamble(text string) Option {
+	return func(p *Prompt) {
+		p.preamble = text
+	}
+}
+
 // WithExtra supplies values reachable from a template as {{.Extra.Key}}.
 func WithExtra(extra map[string]any) Option {
 	return func(p *Prompt) {
@@ -124,6 +137,10 @@ func (p *Prompt) Build(ctx context.Context, provider, model string, store *confi
 	d, err := p.promptData(ctx, provider, model, store)
 	if err != nil {
 		return "", err
+	}
+	if p.preamble != "" {
+		sb.WriteString(strings.TrimRight(p.preamble, "\n"))
+		sb.WriteString("\n\n")
 	}
 	if err := p.tmpl.Execute(&sb, d); err != nil {
 		return "", fmt.Errorf("executing template: %w", err)

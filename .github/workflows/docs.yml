@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     # Ceiling for the whole job. Must stay above the docs step's own
     # timeout below with room for checkout, build, and posting.
-    timeout-minutes: 35
+    timeout-minutes: 120
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -358,12 +358,13 @@ jobs:
         # Documentation generation is a single read-then-write pass, not
         # review's repeated full-sweep loop, so it needs less headroom than
         # review's 40 minutes.
-        timeout-minutes: 25
+        timeout-minutes: 90
         env:
           DOCS_MODEL: ${{ secrets.ANGELA_DOCS_MODEL }}
         run: |
           "${RUNNER_TEMP}/bin/angela" run \
             --quiet \
+            --verbose \
             --cwd "${GITHUB_WORKSPACE}/pr" \
             --data-dir "${RUNNER_TEMP}/angela-data" \
             --model "$DOCS_MODEL" \

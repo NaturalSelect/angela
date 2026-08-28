@@ -116,7 +116,11 @@ func (r *subagentRegistry) Metadata() []agentToolDescriptionAgent {
 	defer r.mu.RUnlock()
 	agents := make([]agentToolDescriptionAgent, 0, len(r.entries))
 	for id, e := range r.entries {
-		agents = append(agents, agentToolDescriptionAgent{ID: id, Description: e.cfg.Description})
+		agents = append(agents, agentToolDescriptionAgent{
+			ID:          id,
+			Description: e.cfg.Description,
+			Branch:      e.cfg.Mode == config.AgentModeBranch,
+		})
 	}
 	sort.Slice(agents, func(i, j int) bool { return agents[i].ID < agents[j].ID })
 	return agents

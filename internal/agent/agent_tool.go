@@ -93,7 +93,18 @@ func (c *coordinator) agentTool(depth int) (fantasy.AgentTool, error) {
 				title = "New Agent Session"
 			}
 
-			return c.runSubAgent(ctx, subAgentParams{
+			run := c.runSubAgent
+			if entry.cfg.Mode == config.AgentModeBranch {
+				// Checked after the agent is built so that a
+				// misconfigured branch still reports the build failure
+				// rather than a refusal that hides it.
+				if refusal := c.branchDispatchRefusal(ctx, sessionID); refusal != "" {
+					return fantasy.NewTextErrorResponse(refusal), nil
+				}
+				run = c.runBranchAgent
+			}
+
+			return run(ctx, subAgentParams{
 				Agent:          agent,
 				Resolved:       resolved,
 				SessionID:      sessionID,
@@ -112,9 +123,24 @@ type agentToolDescription struct {
 	Agents []agentToolDescriptionAgent
 }
 
+// HasBranch reports whether any agent needs the branch section rendered.
+func (d agentToolDescription) HasBranch() bool {
+	for _, a := range d.Agents {
+		if a.Branch {
+			return true
+		}
+	}
+	return false
+}
+
 type agentToolDescriptionAgent struct {
 	ID          string
 	Description string
+	// Branch marks an agent that hands the conversation to the user
+	// instead of running on its own. The template lists these apart:
+	// dispatched as an ordinary subagent, one would look to the model
+	// like a call that simply never returns.
+	Branch bool
 }
 
 func renderAgentToolDescription(agents []agentToolDescriptionAgent) (string, error) {

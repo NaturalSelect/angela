@@ -93,6 +93,11 @@ const (
 	// AgentModeSubagent means the agent can only be launched via the
 	// agent tool.
 	AgentModeSubagent AgentMode = "subagent"
+	// AgentModeBranch means the agent is dispatched like a subagent but
+	// forks the parent's transcript and then talks to the user directly.
+	// The dispatching tool call stays suspended until the branch merges
+	// or the user abandons it.
+	AgentModeBranch AgentMode = "branch"
 )
 
 type SelectedModel struct {
@@ -685,8 +690,10 @@ type Agent struct {
 	Hidden *bool `json:"hidden,omitempty" jsonschema:"description=Keep this agent out of the agent tool's dispatch list and UI completion"`
 
 	// Mode controls how the agent can be used. Primary agents are
-	// top-level; subagents are launched via the agent tool.
-	Mode AgentMode `json:"mode,omitempty" jsonschema:"description=Agent mode: primary or subagent,enum=primary,enum=subagent"`
+	// top-level; subagents are launched via the agent tool; a branch is
+	// dispatched like a subagent but forks the caller's transcript and
+	// hands the conversation to the user.
+	Mode AgentMode `json:"mode,omitempty" jsonschema:"description=Agent mode: primary or subagent or branch,enum=primary,enum=subagent,enum=branch"`
 
 	Model ModelConfigName `json:"model,omitempty" jsonschema:"description=Name of the model config to use,default=main"`
 

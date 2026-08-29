@@ -887,6 +887,27 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionCancel(w http.ResponseWrit
 	w.WriteHeader(http.StatusOK)
 }
 
+// handlePostWorkspaceAgentSessionAbandonBranch gives up a branch session
+// whether or not a turn is running on it.
+//
+//	@Summary		Abandon agent branch session
+//	@Tags			agent
+//	@Param			id	path	string	true	"Workspace ID"
+//	@Param			sid	path	string	true	"Session ID"
+//	@Success		200
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/abandon-branch [post]
+func (c *controllerV1) handlePostWorkspaceAgentSessionAbandonBranch(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+	if err := c.backend.AbandonBranch(id, sid); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleGetWorkspaceAgentSessionPromptQueued returns whether a queued prompt exists.
 //
 //	@Summary		Get queued prompt status

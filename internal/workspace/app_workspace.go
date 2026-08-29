@@ -163,6 +163,12 @@ func (w *AppWorkspace) AgentCancel(sessionID string) {
 	}
 }
 
+func (w *AppWorkspace) AgentAbandonBranch(sessionID string) {
+	if w.app.AgentCoordinator != nil {
+		w.app.AgentCoordinator.AbandonBranch(sessionID)
+	}
+}
+
 func (w *AppWorkspace) AgentIsBusy() bool {
 	if w.app.AgentCoordinator == nil {
 		return false

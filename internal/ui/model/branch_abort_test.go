@@ -12,18 +12,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// cancelRecordingWorkspace records which sessions were asked to cancel and
-// which were asked to load, so a test can tell "cancel reached the backend"
-// from "cancel reached the right session", and can observe a navigation
-// that is otherwise only visible as a deferred command.
+// cancelRecordingWorkspace records which sessions were asked to cancel,
+// which were asked to be abandoned, and which were asked to load, so a test
+// can tell "the request reached the backend" from "it reached the right
+// session", tell the two gestures apart by the channel each took, and
+// observe a navigation that is otherwise only visible as a deferred
+// command.
 type cancelRecordingWorkspace struct {
 	workspace.Workspace
 	cancelled []string
+	abandoned []string
 	loaded    []string
 }
 
 func (w *cancelRecordingWorkspace) AgentCancel(sessionID string) {
 	w.cancelled = append(w.cancelled, sessionID)
+}
+
+func (w *cancelRecordingWorkspace) AgentAbandonBranch(sessionID string) {
+	w.abandoned = append(w.abandoned, sessionID)
 }
 
 // The cancel path also fires an off-thread busy re-probe. It is not what
@@ -186,6 +193,8 @@ func TestEscOnAnIdleBranchAborts(t *testing.T) {
 	require.False(t, ui.isCanceling)
 	require.Equal(t, []string{"branch-1"}, ws.cancelled,
 		"the abort must name the branch, not the parent it returns to")
+	require.Empty(t, ws.abandoned,
+		"escape stays on the shared cancel, which abandons an idle branch itself")
 	require.Contains(t, ws.loaded, "parent-1",
 		"an abandoned branch must hand the view back to its parent")
 }
@@ -201,6 +210,8 @@ func TestEscOnABusyBranchOnlyInterruptsTheTurn(t *testing.T) {
 
 	drain(ui.cancelAgent())
 	require.Equal(t, []string{"branch-1"}, ws.cancelled)
+	require.Empty(t, ws.abandoned,
+		"escape must never reach for the outcome only /abort names")
 	require.NotContains(t, ws.loaded, "parent-1",
 		"interrupting a turn must leave the user in the branch")
 }
@@ -222,11 +233,12 @@ func TestEscOnAnOrdinarySessionNeverNavigates(t *testing.T) {
 
 	drain(ui.cancelAgent())
 	require.Equal(t, []string{"root"}, ws.cancelled)
+	require.Empty(t, ws.abandoned, "an ordinary session has no branch to abandon")
 	require.Empty(t, ws.loaded, "cancelling an ordinary turn must not navigate")
 }
 
-// TestAbortBranchAbandonsAndReturns pins the /abort handler: it cancels the
-// session it names and hands the view back.
+// TestAbortBranchAbandonsAndReturns pins the /abort handler: it abandons
+// the session it names and hands the view back.
 func TestAbortBranchAbandonsAndReturns(t *testing.T) {
 	t.Parallel()
 
@@ -234,7 +246,7 @@ func TestAbortBranchAbandonsAndReturns(t *testing.T) {
 
 	drain(ui.abortBranch("branch-1"))
 
-	require.Equal(t, []string{"branch-1"}, ws.cancelled,
+	require.Equal(t, []string{"branch-1"}, ws.abandoned,
 		"the command must abandon the branch it names")
 	require.Contains(t, ws.loaded, "parent-1",
 		"aborting must return to the parent conversation")
@@ -243,6 +255,11 @@ func TestAbortBranchAbandonsAndReturns(t *testing.T) {
 // TestAbortBranchIsUnconditional separates the command from the escape
 // gesture: escape spares a busy branch, but a user who typed "abort" meant
 // it whether or not a turn happens to be running.
+//
+// The channel it takes is the whole point, so it is asserted rather than
+// assumed. The shared cancel spares a busy branch by design, so routing
+// /abort back through it would silently restore the bug where the view left
+// but the branch and its suspended parent stayed behind.
 func TestAbortBranchIsUnconditional(t *testing.T) {
 	t.Parallel()
 
@@ -256,7 +273,9 @@ func TestAbortBranchIsUnconditional(t *testing.T) {
 
 			ui, ws := newBranchCancelUI(t, busy)
 			drain(ui.abortBranch("branch-1"))
-			require.Equal(t, []string{"branch-1"}, ws.cancelled)
+			require.Equal(t, []string{"branch-1"}, ws.abandoned)
+			require.Empty(t, ws.cancelled,
+				"/abort must not fall back to the shared cancel path")
 			require.Contains(t, ws.loaded, "parent-1")
 		})
 	}

@@ -924,6 +924,20 @@ func (c *Client) CancelAgentSession(ctx context.Context, id string, sessionID st
 	return nil
 }
 
+// AbandonAgentBranch gives up a branch session whether or not a turn is
+// running on it, releasing the parent call suspended on it.
+func (c *Client) AbandonAgentBranch(ctx context.Context, id string, sessionID string) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/abandon-branch", id, sessionID), nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to abandon agent branch: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to abandon agent branch: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
 // GetAgentSessionQueuedPromptsList retrieves the list of queued prompt
 // strings for a session.
 func (c *Client) GetAgentSessionQueuedPromptsList(ctx context.Context, id string, sessionID string) ([]string, error) {

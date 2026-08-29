@@ -125,6 +125,12 @@ type Coordinator interface {
 	// and one agent resolution, once per child session per process.
 	BeginAccepted(ctx context.Context, sessionID string) *AcceptedRun
 	Cancel(sessionID string)
+	// AbandonBranch gives a branch up whether or not a turn is running,
+	// releasing the parent call suspended on it. Cancel is the gesture
+	// that interrupts a turn and only abandons an idle branch; this is
+	// the outcome a user names outright, and the two are kept apart so
+	// neither has to guess which one was meant.
+	AbandonBranch(sessionID string) bool
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
 	// IsSessionBranch reports whether a session is a branch this
@@ -1692,6 +1698,12 @@ func (c *coordinator) BeginAccepted(ctx context.Context, sessionID string) *Acce
 	return executor.BeginAccepted(sessionID)
 }
 
+// branchAbandonedMessage is what a parent's suspended tool call resolves to
+// when the user gives a branch up. Both routes to abandonment — the cancel
+// gesture and the explicit command — report it, so the parent reads the same
+// outcome however the user got there.
+const branchAbandonedMessage = "The user ended this branch without merging it."
+
 func (c *coordinator) Cancel(sessionID string) {
 	// A cancel that lands on a branch or on a conversation suspended by
 	// one means "give this up", not "interrupt this turn", so it resolves
@@ -1702,6 +1714,26 @@ func (c *coordinator) Cancel(sessionID string) {
 	if executor, ok := c.executorForSession(sessionID); ok {
 		executor.Cancel(sessionID)
 	}
+}
+
+// AbandonBranch gives a branch up outright and reports whether it was one.
+// Unlike Cancel it does not care whether a turn is running: the user named
+// this outcome, so a turn still in flight is given up along with the branch
+// rather than merely interrupted.
+//
+// The order is load-bearing. Signalling first claims the rendezvous for the
+// abandonment, so the error the cancelled turn may raise on its way out
+// arrives second and is discarded. Cancelling first would let a failing
+// first turn report "could not be started" through the same rendezvous and
+// win, leaving the parent with an outcome the user never chose.
+func (c *coordinator) AbandonBranch(sessionID string) bool {
+	if !c.branches.Signal(sessionID, branchOutcome{Payload: branchAbandonedMessage}) {
+		return false
+	}
+	if executor, ok := c.executorForSession(sessionID); ok {
+		executor.Cancel(sessionID)
+	}
+	return true
 }
 
 // abortBranchFor turns a cancel into an abandoned branch where one applies,
@@ -1716,11 +1748,10 @@ func (c *coordinator) Cancel(sessionID string) {
 //     here can only mean the branch itself.
 //   - a branch mid-turn: not handled. The cancel falls through and interrupts
 //     that turn, which is what lets the user stop a branch mid-thought and
-//     redirect it rather than lose it.
+//     redirect it rather than lose it. A user who means to give the branch up
+//     regardless says so through AbandonBranch.
 func (c *coordinator) abortBranchFor(sessionID string) bool {
-	const abandoned = "The user ended this branch without merging it."
-
-	if aborted := c.branches.AbortByParent(sessionID, branchOutcome{Payload: abandoned}); len(aborted) > 0 {
+	if aborted := c.branches.AbortByParent(sessionID, branchOutcome{Payload: branchAbandonedMessage}); len(aborted) > 0 {
 		for _, branchSessionID := range aborted {
 			if executor, ok := c.executorForSession(branchSessionID); ok {
 				executor.Cancel(branchSessionID)
@@ -1730,7 +1761,7 @@ func (c *coordinator) abortBranchFor(sessionID string) bool {
 	}
 
 	if c.branches.Waiting(sessionID) && !c.IsSessionBusy(sessionID) {
-		return c.branches.Signal(sessionID, branchOutcome{Payload: abandoned})
+		return c.branches.Signal(sessionID, branchOutcome{Payload: branchAbandonedMessage})
 	}
 	return false
 }

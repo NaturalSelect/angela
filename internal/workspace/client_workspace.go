@@ -255,6 +255,10 @@ func (w *ClientWorkspace) AgentCancel(sessionID string) {
 	_ = w.client.CancelAgentSession(context.Background(), w.workspaceID(), sessionID)
 }
 
+func (w *ClientWorkspace) AgentAbandonBranch(sessionID string) {
+	_ = w.client.AbandonAgentBranch(context.Background(), w.workspaceID(), sessionID)
+}
+
 func (w *ClientWorkspace) AgentIsBusy() bool {
 	info, err := w.client.GetAgentInfo(context.Background(), w.workspaceID())
 	if err != nil {

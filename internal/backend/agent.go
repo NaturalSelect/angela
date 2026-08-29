@@ -187,6 +187,24 @@ func (b *Backend) CancelSession(workspaceID, sessionID string) error {
 	return nil
 }
 
+// AbandonBranch gives up a branch session whether or not a turn is running
+// on it, releasing the parent call suspended on it.
+//
+// The coordinator reports whether the session was a branch at all, and that
+// answer is deliberately dropped: abandoning a branch that a merge already
+// resolved is a harmless no-op, not something the caller needs to handle.
+func (b *Backend) AbandonBranch(workspaceID, sessionID string) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+
+	if ws.AgentCoordinator != nil {
+		ws.AgentCoordinator.AbandonBranch(sessionID)
+	}
+	return nil
+}
+
 // EditSessionActiveAgent changes the agent instance a session runs and
 // reports what it ends up running, with the preset folded in.
 func (b *Backend) EditSessionActiveAgent(ctx context.Context, workspaceID, sessionID string, edit config.ActiveAgentEdit) (proto.ActiveAgent, error) {

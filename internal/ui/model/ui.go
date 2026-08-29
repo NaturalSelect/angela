@@ -272,7 +272,8 @@ type UI struct {
 	completionsOpen          bool
 	completionsStartIndex    int
 	completionsQuery         string
-	completionsPositionStart image.Point // x,y where user typed '@'
+	completionsTrigger       string      // the character that opened the popup
+	completionsPositionStart image.Point // x,y where user typed the trigger
 
 	// Chat components
 	chat *Chat
@@ -2680,6 +2681,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 						if !msg.KeepOpen {
 							m.closeCompletions()
 						}
+					case completions.SelectionMsg[completions.AgentCompletionValue]:
+						cmds = append(cmds, m.insertAgentCompletion(msg.Value.ID))
+						if !msg.KeepOpen {
+							m.closeCompletions()
+						}
 					case completions.ClosedMsg:
 						m.completionsOpen = false
 					}
@@ -2812,20 +2818,28 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					break
 				}
 
-				// Check for @ trigger before passing to textarea.
+				// Check for a completion trigger before passing to textarea.
 				curValue := m.textarea.Value()
 				curIdx := len(curValue)
 
-				// Trigger completions on @.
-				if msg.String() == "@" && !m.completionsOpen {
-					// Only show if beginning of prompt or after whitespace.
-					if curIdx == 0 || (curIdx > 0 && isWhitespace(curValue[curIdx-1])) {
-						m.completionsOpen = true
-						m.completionsQuery = ""
-						m.completionsStartIndex = curIdx
-						m.completionsPositionStart = m.completionsPosition()
+				// Both triggers only fire at the start of a word, so that
+				// an address or a comment marker mid-sentence stays text.
+				justOpened := false
+				if !m.completionsOpen && (curIdx == 0 || isWhitespace(curValue[curIdx-1])) {
+					switch msg.String() {
+					case "@":
+						// An empty popup would swallow Enter without ever
+						// inserting anything, stranding the message.
+						if agents := m.mentionableAgents(); len(agents) > 0 {
+							m.openCompletions("@", curIdx)
+							m.completions.SetAgents(agents)
+							justOpened = true
+						}
+					case "#":
+						m.openCompletions("#", curIdx)
 						depth, limit := m.com.Config().Options.TUI.Completions.Limits()
 						cmds = append(cmds, m.completions.Open(depth, limit))
+						justOpened = true
 					}
 				}
 
@@ -2869,8 +2883,8 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				m.updateHistoryDraft(curValue)
 
 				// After updating textarea, check if we need to filter completions.
-				// Skip filtering on the initial @ keystroke since items are loading async.
-				if m.completionsOpen && msg.String() != "@" {
+				// The keystroke that opened the popup carries no query yet.
+				if m.completionsOpen && !justOpened {
 					newValue := m.textarea.Value()
 					newIdx := len(newValue)
 
@@ -2883,8 +2897,8 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					} else {
 						// Extract current word and filter.
 						word := m.textareaWord()
-						if strings.HasPrefix(word, "@") {
-							m.completionsQuery = word[1:]
+						if strings.HasPrefix(word, m.completionsTrigger) {
+							m.completionsQuery = word[len(m.completionsTrigger):]
 							m.completions.Filter(m.completionsQuery)
 						} else if m.completionsOpen {
 							m.closeCompletions()
@@ -3335,6 +3349,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 	editor := []key.Binding{
 		m.tabHint(),
 		k.Editor.Newline,
+		k.Editor.MentionAgent,
 		k.Editor.MentionFile,
 		k.Editor.OpenEditor,
 	}
@@ -3696,11 +3711,48 @@ func (m *UI) closeCompletions() {
 	m.completionsOpen = false
 	m.completionsQuery = ""
 	m.completionsStartIndex = 0
+	m.completionsTrigger = ""
 	m.completions.Close()
 }
 
-// insertCompletionText replaces the @query in the textarea with the given text.
-// Returns false if the replacement cannot be performed.
+// openCompletions arms the popup state for a trigger character typed at
+// startIndex. The caller supplies the items separately, because agents come
+// from config in hand while files have to be walked first.
+func (m *UI) openCompletions(trigger string, startIndex int) {
+	m.completionsOpen = true
+	m.completionsQuery = ""
+	m.completionsTrigger = trigger
+	m.completionsStartIndex = startIndex
+	m.completionsPositionStart = m.completionsPosition()
+}
+
+// mentionableAgents returns the agents the coder can be asked to dispatch,
+// sorted by ID so the popup is stable across openings. Mentioning the
+// primary agent would name the one already reading the message, and hidden
+// agents back Angela's own internal calls rather than delegation. Disabled
+// agents never reach the resolved map at all.
+func (m *UI) mentionableAgents() []completions.AgentCompletionValue {
+	cfg := m.com.Config()
+	if cfg == nil {
+		return nil
+	}
+
+	var agents []completions.AgentCompletionValue
+	for _, agentCfg := range cfg.Agents {
+		if agentCfg.Mode == config.AgentModePrimary || agentCfg.IsHidden() {
+			continue
+		}
+		agents = append(agents, completions.AgentCompletionValue{ID: agentCfg.ID})
+	}
+	slices.SortFunc(agents, func(a, b completions.AgentCompletionValue) int {
+		return strings.Compare(a.ID, b.ID)
+	})
+	return agents
+}
+
+// insertCompletionText replaces the trigger word in the textarea with the
+// given text. The trigger character is part of what gets replaced, so a
+// caller that wants to keep it has to include it in text.
 func (m *UI) insertCompletionText(text string) bool {
 	value := m.textarea.Value()
 	if m.completionsStartIndex > len(value) {
@@ -3716,8 +3768,19 @@ func (m *UI) insertCompletionText(text string) bool {
 	return true
 }
 
+// insertAgentCompletion writes the mention into the textarea. The "@" is
+// kept: unlike a file, whose contents ride along as an attachment, the
+// mention is only ever the text the coder reads.
+func (m *UI) insertAgentCompletion(id string) tea.Cmd {
+	prevHeight := m.textarea.Height()
+	if !m.insertCompletionText("@" + id) {
+		return nil
+	}
+	return m.handleTextareaHeightChange(prevHeight)
+}
+
 // insertFileCompletion inserts the selected file path into the textarea,
-// replacing the @query, and adds the file as an attachment.
+// replacing the trigger word, and adds the file as an attachment.
 func (m *UI) insertFileCompletion(path string) tea.Cmd {
 	prevHeight := m.textarea.Height()
 	if !m.insertCompletionText(path) {
@@ -3879,7 +3942,7 @@ func (m *UI) editorPlaceholder() string {
 	if m.width < narrowWidthBreakpoint {
 		return "Ask anything…"
 	}
-	return "Ask anything — / for commands, @ to mention a file"
+	return "Ask anything — / for commands, @ for agents, # for files"
 }
 
 // editorCaption returns the one-line run context: which agent and model the

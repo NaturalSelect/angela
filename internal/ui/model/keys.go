@@ -4,13 +4,14 @@ import "charm.land/bubbles/v2/key"
 
 type KeyMap struct {
 	Editor struct {
-		SendMessage key.Binding
-		OpenEditor  key.Binding
-		Newline     key.Binding
-		AddImage    key.Binding
-		PasteImage  key.Binding
-		MentionFile key.Binding
-		Commands    key.Binding
+		SendMessage  key.Binding
+		OpenEditor   key.Binding
+		Newline      key.Binding
+		AddImage     key.Binding
+		PasteImage   key.Binding
+		MentionAgent key.Binding
+		MentionFile  key.Binding
+		Commands     key.Binding
 
 		// Attachments key maps
 		AttachmentDeleteMode key.Binding
@@ -135,9 +136,13 @@ func DefaultKeyMap() KeyMap {
 		key.WithKeys("ctrl+v", "super+v"),
 		key.WithHelp("ctrl+v", "paste image from clipboard"),
 	)
-	km.Editor.MentionFile = key.NewBinding(
+	km.Editor.MentionAgent = key.NewBinding(
 		key.WithKeys("@"),
-		key.WithHelp("@", "mention file"),
+		key.WithHelp("@", "mention agent"),
+	)
+	km.Editor.MentionFile = key.NewBinding(
+		key.WithKeys("#"),
+		key.WithHelp("#", "mention file"),
 	)
 	km.Editor.Commands = key.NewBinding(
 		key.WithKeys("/"),

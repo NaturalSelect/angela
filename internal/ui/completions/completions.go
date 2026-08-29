@@ -44,6 +44,16 @@ type CompletionItemsLoadedMsg struct {
 	Resources []ResourceCompletionValue
 }
 
+// completionKind tells the popup what its current items are, which is
+// what decides how they sort. Paths get the basename/extension tiers
+// below; anything else keeps plain fuzzy relevance order.
+type completionKind int
+
+const (
+	kindFile completionKind = iota
+	kindAgent
+)
+
 // Completions represents the completions popup component.
 type Completions struct {
 	// Popup dimensions
@@ -53,6 +63,7 @@ type Completions struct {
 	// State
 	open  bool
 	query string
+	kind  completionKind
 
 	// Key bindings
 	keyMap KeyMap
@@ -184,8 +195,32 @@ func (c *Completions) SetItems(files []FileCompletionValue, resources []Resource
 		items = append(items, item)
 	}
 
+	c.setItems(items, kindFile)
+}
+
+// SetAgents sets the mentionable agents and rebuilds the list. Unlike
+// SetItems this needs no loading step: the agents come from config that
+// is already in memory.
+func (c *Completions) SetAgents(agents []AgentCompletionValue) {
+	items := make([]list.FilterableItem, 0, len(agents))
+	for _, agent := range agents {
+		item := NewCompletionItem(
+			agent.ID,
+			agent,
+			c.normalStyle,
+			c.focusedStyle,
+			c.matchStyle,
+		)
+		items = append(items, item)
+	}
+
+	c.setItems(items, kindAgent)
+}
+
+func (c *Completions) setItems(items []list.FilterableItem, kind completionKind) {
 	c.open = true
 	c.query = ""
+	c.kind = kind
 	c.allItems = items
 	c.filtered = append([]list.FilterableItem(nil), items...)
 	c.list.SetItems(c.filtered...)
@@ -217,12 +252,12 @@ func (c *Completions) Filter(query string) {
 	}
 
 	c.query = query
-	c.applyNamePriorityFilter(query)
+	c.applyFilter(query)
 
 	c.updateSize()
 }
 
-func (c *Completions) applyNamePriorityFilter(query string) {
+func (c *Completions) applyFilter(query string) {
 	if query == "" {
 		c.filtered = append([]list.FilterableItem(nil), c.allItems...)
 		c.list.SetItems(c.filtered...)
@@ -241,10 +276,15 @@ func (c *Completions) applyNamePriorityFilter(query string) {
 		filtered = append(filtered, filterable)
 	}
 
-	queryLower := strings.ToLower(strings.TrimSpace(query))
-	slices.SortStableFunc(filtered, func(a, b list.FilterableItem) int {
-		return namePriorityTier(a.Filter(), queryLower) - namePriorityTier(b.Filter(), queryLower)
-	})
+	// The tiers below read a path: basename, extension stem, slash-separated
+	// segments. An agent id has none of those, so it keeps the fuzzy
+	// relevance order the list already produced.
+	if c.kind == kindFile {
+		queryLower := strings.ToLower(strings.TrimSpace(query))
+		slices.SortStableFunc(filtered, func(a, b list.FilterableItem) int {
+			return namePriorityTier(a.Filter(), queryLower) - namePriorityTier(b.Filter(), queryLower)
+		})
+	}
 	c.filtered = filtered
 	c.list.SetItems(c.filtered...)
 }
@@ -382,6 +422,11 @@ func (c *Completions) selectCurrent(keepOpen bool) tea.Msg {
 		}
 	case FileCompletionValue:
 		return SelectionMsg[FileCompletionValue]{
+			Value:    item,
+			KeepOpen: keepOpen,
+		}
+	case AgentCompletionValue:
+		return SelectionMsg[AgentCompletionValue]{
 			Value:    item,
 			KeepOpen: keepOpen,
 		}

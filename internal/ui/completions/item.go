@@ -23,6 +23,11 @@ type ResourceCompletionValue struct {
 	MIMEType string
 }
 
+// AgentCompletionValue represents an agent mention completion value.
+type AgentCompletionValue struct {
+	ID string
+}
+
 // CompletionItem represents an item in the completions list.
 type CompletionItem struct {
 	*list.Versioned

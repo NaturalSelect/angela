@@ -271,6 +271,14 @@ func (w *ClientWorkspace) AgentIsSessionBusy(sessionID string) bool {
 	return info.IsBusy
 }
 
+func (w *ClientWorkspace) AgentIsSessionBranch(sessionID string) bool {
+	info, err := w.client.GetAgentSessionInfo(context.Background(), w.workspaceID(), sessionID)
+	if err != nil {
+		return false
+	}
+	return info.IsBranch
+}
+
 func (w *ClientWorkspace) AgentIsReady() bool {
 	return w.AgentReadyErr() == nil
 }

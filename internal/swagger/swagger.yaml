@@ -127,7 +127,9 @@ definitions:
         - $ref: '#/definitions/config.AgentMode'
         description: |-
           Mode controls how the agent can be used. Primary agents are
-          top-level; subagents are launched via the agent tool.
+          top-level; subagents are launched via the agent tool; a branch is
+          dispatched like a subagent but forks the caller's transcript and
+          hands the conversation to the user.
       model:
         $ref: '#/definitions/config.ModelConfigName'
       name:
@@ -151,10 +153,12 @@ definitions:
     enum:
     - primary
     - subagent
+    - branch
     type: string
     x-enum-varnames:
     - AgentModePrimary
     - AgentModeSubagent
+    - AgentModeBranch
   config.AllowedMCPSet:
     properties:
       kind:
@@ -822,6 +826,11 @@ definitions:
         type: integer
       id:
         type: string
+      is_branch:
+        description: |-
+          IsBranch reports whether the serving process still has a parent
+          tool call suspended on this session.
+        type: boolean
       is_busy:
         type: boolean
       message_count:

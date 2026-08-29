@@ -3,80 +3,56 @@ package model
 import (
 	"testing"
 
-	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/stretchr/testify/require"
 )
 
-// branchTestConfig declares one agent of each mode, so a test can pick the
-// mode it needs by naming the agent on the session.
-func branchTestConfig() *config.Config {
-	return &config.Config{
-		Agents: map[string]config.Agent{
-			"pairing": {ID: "pairing", Mode: config.AgentModeBranch},
-			"task":    {ID: "task", Mode: config.AgentModeSubagent},
-		},
-	}
-}
-
-// TestIsBranchSession pins which sessions count as branches. The mode is
-// read from config rather than stored on the row, so every case here is
-// about resolving an agent name that may not resolve at all.
-func TestIsBranchSession(t *testing.T) {
+// TestLoadingADeadBranchIsReadOnly is the restart case. The rendezvous that
+// suspends a parent on its branch lives in the agent process, so nothing
+// survives a restart: config still describes a branch-mode agent, but no
+// turn is held open for it any more. Loading such a session must land on
+// the ordinary read-only sub-agent path rather than offering an editor,
+// a merge and an abort that have nothing left to act on.
+func TestLoadingADeadBranchIsReadOnly(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name string
-		sess session.Session
-		want bool
-	}{
-		{
-			name: "a child running a branch-mode agent",
-			sess: session.Session{ID: "c", ParentSessionID: "p", Agent: "pairing"},
-			want: true,
-		},
-		{
-			name: "a child running a sub-agent is not a branch",
-			sess: session.Session{ID: "c", ParentSessionID: "p", Agent: "task"},
-			want: false,
-		},
-		{
-			name: "a top-level session is never a branch",
-			sess: session.Session{ID: "c", Agent: "pairing"},
-			want: false,
-		},
-		{
-			name: "a child with no agent recorded",
-			sess: session.Session{ID: "c", ParentSessionID: "p"},
-			want: false,
-		},
-		{
-			name: "a child naming an agent config no longer defines",
-			sess: session.Session{ID: "c", ParentSessionID: "p", Agent: "deleted"},
-			want: false,
-		},
-	}
+	m := newSubSessionUI(t)
+	require.Equal(t, uiFocusEditor, m.focus, "the fixture should start in the editor")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	m.Update(loadSessionMsg{
+		session:  &session.Session{ID: "msg-1$$call-1", ParentSessionID: "root", Agent: "pairing"},
+		isBranch: false,
+	})
 
-			ui := newTestUIWithConfig(t, branchTestConfig())
-			require.Equal(t, tt.want, ui.isBranchSession(tt.sess))
-		})
-	}
+	require.False(t, m.viewingBranch())
+	require.True(t, m.viewingSubAgent(),
+		"a branch nobody is suspended on is just a finished transcript")
+	require.Equal(t, uiFocusMain, m.focus)
+	require.False(t, m.textarea.Focused())
+	require.False(t, m.escapeCancels(),
+		"esc must go back a level, not abandon a branch that is already over")
+	require.False(t, m.cancelLeavesBranch())
 }
 
-// TestIsBranchSessionWithoutConfig pins that an unresolved config reads as
-// "not a branch" rather than panicking. The UI can render before the
-// workspace has settled.
-func TestIsBranchSessionWithoutConfig(t *testing.T) {
+// TestLoadingALiveBranchKeepsTheEditor is the control for the case above:
+// while the process still holds the suspended call, the branch is the
+// user's to drive.
+func TestLoadingALiveBranchKeepsTheEditor(t *testing.T) {
 	t.Parallel()
 
-	ui := newTestUIWithConfig(t, nil)
-	require.False(t, ui.isBranchSession(session.Session{
-		ID: "c", ParentSessionID: "p", Agent: "pairing",
-	}))
+	m := newSubSessionUI(t)
+
+	m.Update(loadSessionMsg{
+		session:  &session.Session{ID: "msg-1$$call-1", ParentSessionID: "root", Agent: "pairing"},
+		isBranch: true,
+	})
+
+	require.True(t, m.viewingBranch())
+	require.False(t, m.viewingSubAgent(), "a branch must keep its editor")
+	require.Equal(t, uiFocusEditor, m.focus)
+	require.True(t, m.textarea.Focused())
+	require.True(t, m.escapeCancels(),
+		"esc on an idle branch abandons it, which is the only way to release the parent")
 }
 
 // TestViewingSubAgentExcludesBranches is the guard that makes a branch
@@ -88,7 +64,7 @@ func TestViewingSubAgentExcludesBranches(t *testing.T) {
 	t.Run("a branch is not treated as a sub-agent transcript", func(t *testing.T) {
 		t.Parallel()
 
-		ui := newTestUIWithConfig(t, branchTestConfig())
+		ui := newTestUIWithConfig(t, nil)
 		ui.session = &session.Session{ID: "c", ParentSessionID: "p", Agent: "pairing"}
 		ui.sessionIsBranch = true
 
@@ -100,7 +76,7 @@ func TestViewingSubAgentExcludesBranches(t *testing.T) {
 	t.Run("an ordinary sub-agent stays read only", func(t *testing.T) {
 		t.Parallel()
 
-		ui := newTestUIWithConfig(t, branchTestConfig())
+		ui := newTestUIWithConfig(t, nil)
 		ui.session = &session.Session{ID: "c", ParentSessionID: "p", Agent: "task"}
 		ui.sessionIsBranch = false
 
@@ -111,7 +87,7 @@ func TestViewingSubAgentExcludesBranches(t *testing.T) {
 	t.Run("a top-level session is neither", func(t *testing.T) {
 		t.Parallel()
 
-		ui := newTestUIWithConfig(t, branchTestConfig())
+		ui := newTestUIWithConfig(t, nil)
 		ui.session = &session.Session{ID: "root"}
 
 		require.False(t, ui.viewingBranch())
@@ -121,7 +97,7 @@ func TestViewingSubAgentExcludesBranches(t *testing.T) {
 	t.Run("no session loaded is neither", func(t *testing.T) {
 		t.Parallel()
 
-		ui := newTestUIWithConfig(t, branchTestConfig())
+		ui := newTestUIWithConfig(t, nil)
 
 		require.False(t, ui.viewingBranch())
 		require.False(t, ui.viewingSubAgent())
@@ -129,8 +105,8 @@ func TestViewingSubAgentExcludesBranches(t *testing.T) {
 }
 
 // TestViewingBranchReadsTheMemoizedFlag pins that the predicate answers from
-// the flag settled at load time, not from a fresh config lookup. The status
-// line calls it every frame and resolving it reaches through the workspace.
+// the flag settled at load time. The status line calls it every frame and
+// resolving it reaches through the workspace.
 func TestViewingBranchReadsTheMemoizedFlag(t *testing.T) {
 	t.Parallel()
 
@@ -139,7 +115,7 @@ func TestViewingBranchReadsTheMemoizedFlag(t *testing.T) {
 	ui.sessionIsBranch = true
 
 	require.True(t, ui.viewingBranch(),
-		"the memoized answer must stand on its own: config is not consulted per frame")
+		"the memoized answer must stand on its own: nothing is consulted per frame")
 }
 
 // TestSendMessageIsAllowedOnABranch pins the gate that would otherwise
@@ -148,7 +124,7 @@ func TestViewingBranchReadsTheMemoizedFlag(t *testing.T) {
 func TestSendMessageIsAllowedOnABranch(t *testing.T) {
 	t.Parallel()
 
-	ui := newTestUIWithConfig(t, branchTestConfig())
+	ui := newTestUIWithConfig(t, nil)
 	ui.session = &session.Session{ID: "c", ParentSessionID: "p", Agent: "pairing"}
 	ui.sessionIsBranch = true
 

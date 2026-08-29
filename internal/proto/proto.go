@@ -165,11 +165,14 @@ type ShellCommandResponse struct {
 type AgentSession struct {
 	Session
 	IsBusy bool `json:"is_busy"`
+	// IsBranch reports whether the serving process still has a parent
+	// tool call suspended on this session.
+	IsBranch bool `json:"is_branch"`
 }
 
 // IsZero checks if the AgentSession is zero-valued.
 func (a AgentSession) IsZero() bool {
-	return a.ID == "" && !a.IsBusy
+	return a.ID == "" && !a.IsBusy && !a.IsBranch
 }
 
 // PermissionAction represents an action taken on a permission request.

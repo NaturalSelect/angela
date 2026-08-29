@@ -25,7 +25,8 @@ import (
 // the type satisfies the interface without dragging in the full
 // coordinator dependency graph.
 type stubCoordinator struct {
-	busy map[string]bool
+	busy   map[string]bool
+	branch map[string]bool
 }
 
 func (s *stubCoordinator) Run(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error) {
@@ -45,6 +46,7 @@ func (s *stubCoordinator) IsBusy() bool  { return false }
 func (s *stubCoordinator) IsSessionBusy(id string) bool {
 	return s.busy[id]
 }
+func (s *stubCoordinator) IsSessionBranch(id string) bool    { return s.branch[id] }
 func (s *stubCoordinator) QueuedPrompts(string) int          { return 0 }
 func (s *stubCoordinator) QueuedPromptsList(string) []string { return nil }
 func (s *stubCoordinator) ClearQueue(string)                 {}
@@ -163,6 +165,58 @@ func TestSessionGetIncludesIsBusy(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Equal(t, sid, got.ID)
 	require.True(t, got.IsBusy)
+}
+
+// buildBranchWorkspace is buildBusyWorkspace's sibling for the branch flag:
+// it wires a coordinator that reports the named session as a branch it
+// still holds a suspended parent call for.
+func buildBranchWorkspace(t *testing.T, sessionID string, branch bool) (*controllerV1, string) {
+	t.Helper()
+
+	b := backend.New(context.Background(), nil, nil)
+	wsID := uuid.New().String()
+	coord := &stubCoordinator{branch: map[string]bool{sessionID: branch}}
+	a := &app.App{AgentCoordinator: coord}
+	a.Sessions = &stubSessions{all: []session.Session{{ID: sessionID, Title: "t"}}}
+
+	ws := &backend.Workspace{
+		ID:   wsID,
+		Path: t.TempDir(),
+		App:  a,
+	}
+	backend.InsertWorkspaceForTest(b, ws)
+
+	s := &Server{backend: b}
+	return &controllerV1{backend: b, server: s}, wsID
+}
+
+// The agent session endpoint is how a client asks whether it may still
+// drive a branch. Branch liveness lives in the serving process's memory,
+// so it has to travel over the wire rather than be re-derived from config
+// on the client, which outlives the process that held the call open.
+func TestAgentSessionCarriesTheBranchFlag(t *testing.T) {
+	t.Parallel()
+
+	for _, branch := range []bool{true, false} {
+		t.Run(map[bool]string{true: "live branch", false: "not a branch"}[branch], func(t *testing.T) {
+			t.Parallel()
+
+			const sid = "s-branch"
+			c, wsID := buildBranchWorkspace(t, sid, branch)
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/workspaces/"+wsID+"/agent/sessions/"+sid, nil)
+			req.SetPathValue("id", wsID)
+			req.SetPathValue("sid", sid)
+			rec := httptest.NewRecorder()
+			c.handleGetWorkspaceAgentSession(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			var got proto.AgentSession
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+			require.Equal(t, sid, got.ID)
+			require.Equal(t, branch, got.IsBranch)
+		})
+	}
 }
 
 // TestIsSessionBusyNilSafe verifies the helper tolerates a missing

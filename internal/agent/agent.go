@@ -1652,6 +1652,11 @@ func filterOrphanedToolResults(m message.Message, knownToolCallIDs map[string]st
 // session can leave orphaned tool_use blocks that permanently lock the
 // conversation. Returns the message and true if any synthetic results were
 // produced.
+//
+// Interruption is derived at read time, never recorded: the absence of a
+// result is itself the record. This is one of the system's two derivation
+// points; the other is ExtractMessageItems, which decides the same thing
+// for display.
 func syntheticToolResultsForOrphanedCalls(m message.Message, knownToolResultIDs map[string]struct{}) (fantasy.Message, bool) {
 	var syntheticParts []fantasy.MessagePart
 	for _, tc := range m.ToolCalls() {
@@ -1666,7 +1671,7 @@ func syntheticToolResultsForOrphanedCalls(m message.Message, knownToolResultIDs 
 		syntheticParts = append(syntheticParts, fantasy.ToolResultPart{
 			ToolCallID: tc.ID,
 			Output: fantasy.ToolResultOutputContentError{
-				Error: errors.New("tool call was interrupted and did not produce a result, you may retry this call if the result is still needed"),
+				Error: errors.New("tool call was interrupted before returning a result; its outcome is unknown, so do not assume it ran or did not run, and verify the current state before re-running anything with side effects"),
 			},
 		})
 	}

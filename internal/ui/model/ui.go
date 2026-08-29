@@ -776,7 +776,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.isCompact = true
 		}
 		focus := m.focus
-		isBranch := m.isBranchSession(*msg.session)
+		isBranch := msg.isBranch
 		if msg.session.ParentSessionID != "" && !isBranch {
 			// The editor is closed off down here, so leaving focus in it
 			// would strand the user in a box that cannot take input. A
@@ -1402,7 +1402,7 @@ func (m *UI) loadSessionMessagesCmd(sessionID string) tea.Cmd {
 		if err != nil {
 			return util.ReportError(err)()
 		}
-		items, lastUserMessageTime := m.buildSessionItems(msgs)
+		items, lastUserMessageTime := m.buildSessionItems(sessionID, msgs)
 		return sessionMessagesMsg{
 			sessionID:           sessionID,
 			items:               items,
@@ -1411,15 +1411,57 @@ func (m *UI) loadSessionMessagesCmd(sessionID string) tea.Cmd {
 	}
 }
 
+// lastAssistantIndex reports the position of the final assistant message in
+// a transcript, or -1 when there is none. Only that message can still be
+// producing results: the tool calls in an earlier one were all answered
+// before the next assistant message was written, so one left without a
+// result was orphaned.
+func lastAssistantIndex(msgs []*message.Message) int {
+	last := -1
+	for i, msg := range msgs {
+		if msg.Role == message.Assistant {
+			last = i
+		}
+	}
+	return last
+}
+
+// hasOrphanedCall reports whether any tool call in the transcript is missing
+// its result. Probing the agent for liveness costs a round trip in
+// client/server mode, and a transcript with every result in place has
+// nothing to decide.
+func hasOrphanedCall(msgs []*message.Message, results map[string]message.ToolResult) bool {
+	for _, msg := range msgs {
+		if msg.Role != message.Assistant {
+			continue
+		}
+		for _, tc := range msg.ToolCalls() {
+			if _, ok := results[tc.ID]; !ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // buildSessionItems turns a transcript into chat items and reports the
 // timestamp of the last user message. It touches no UI state, so it is
 // safe to run from a command.
-func (m *UI) buildSessionItems(msgs []message.Message) ([]chat.MessageItem, int64) {
+func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat.MessageItem, int64) {
 	msgPtrs := make([]*message.Message, len(msgs))
 	for i := range msgs {
 		msgPtrs[i] = &msgs[i]
 	}
 	toolResultMap := chat.BuildToolResultMap(msgPtrs)
+
+	// Asked per session, not through the busy cache: that cache answers
+	// for the whole process and carries a TTL, so another session's run
+	// would keep this one's orphans spinning.
+	runActive := false
+	if hasOrphanedCall(msgPtrs, toolResultMap) {
+		runActive = m.com.Workspace.AgentIsSessionBusy(sessionID)
+	}
+	lastAssistant := lastAssistantIndex(msgPtrs)
 
 	var lastUserMessageTime int64
 	if len(msgPtrs) > 0 {
@@ -1427,19 +1469,20 @@ func (m *UI) buildSessionItems(msgs []message.Message) ([]chat.MessageItem, int6
 	}
 
 	items := make([]chat.MessageItem, 0, len(msgs)*2)
-	for _, msg := range msgPtrs {
+	for i, msg := range msgPtrs {
+		msgRunActive := runActive && i == lastAssistant
 		switch msg.Role {
 		case message.User:
 			lastUserMessageTime = msg.CreatedAt
-			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir())...)
+			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir(), msgRunActive)...)
 		case message.Assistant:
-			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir())...)
+			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir(), msgRunActive)...)
 			if msg.FinishPart() != nil && msg.FinishPart().Reason == message.FinishReasonEndTurn {
 				infoItem := chat.NewAssistantInfoItem(m.com.Styles, msg, m.com.Config(), time.Unix(lastUserMessageTime, 0))
 				items = append(items, infoItem)
 			}
 		default:
-			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir())...)
+			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir(), msgRunActive)...)
 		}
 	}
 
@@ -1543,10 +1586,19 @@ func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
 		}
 		nestedToolResultMap := chat.BuildToolResultMap(nestedMsgPtrs)
 
+		// Same predicate as the top level, asked about the sub-session:
+		// executorForSession answers false for a child session this
+		// process never dispatched, which is exactly the question.
+		nestedRunActive := false
+		if hasOrphanedCall(nestedMsgPtrs, nestedToolResultMap) {
+			nestedRunActive = m.com.Workspace.AgentIsSessionBusy(agentSessionID)
+		}
+		nestedLastAssistant := lastAssistantIndex(nestedMsgPtrs)
+
 		// Extract nested tool items.
 		var nestedTools []chat.ToolMessageItem
-		for _, nestedMsg := range nestedMsgPtrs {
-			nestedItems := chat.ExtractMessageItems(m.com.Styles, nestedMsg, nestedToolResultMap, m.com.Workspace.WorkingDir())
+		for i, nestedMsg := range nestedMsgPtrs {
+			nestedItems := chat.ExtractMessageItems(m.com.Styles, nestedMsg, nestedToolResultMap, m.com.Workspace.WorkingDir(), nestedRunActive && i == nestedLastAssistant)
 			for _, nestedItem := range nestedItems {
 				if nestedToolItem, ok := nestedItem.(chat.ToolMessageItem); ok {
 					// Mark nested tools as simple (compact) rendering.
@@ -1573,6 +1625,10 @@ func (m *UI) loadNestedToolCalls(items []chat.MessageItem) {
 
 // appendSessionMessage appends a new message to the current session in the chat
 // if the message is a tool result it will update the corresponding tool call message
+//
+// Items built here always count as active: this path only runs in the
+// process carrying the run, driven by its event stream, which delivers the
+// results as they land.
 func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 	var cmds []tea.Cmd
 
@@ -1597,7 +1653,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			return nil
 		}
 		m.lastUserMessageTime = msg.CreatedAt
-		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir())
+		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir(), true)
 		for _, item := range items {
 			if animatable, ok := item.(chat.Animatable); ok {
 				if cmd := animatable.StartAnimation(); cmd != nil {
@@ -1610,7 +1666,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	case message.Assistant:
-		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir())
+		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir(), true)
 		for _, item := range items {
 			if animatable, ok := item.(chat.Animatable); ok {
 				if cmd := animatable.StartAnimation(); cmd != nil {
@@ -1634,7 +1690,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			}
 		}
 	case message.System:
-		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir())
+		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir(), true)
 		if len(items) == 0 {
 			break
 		}

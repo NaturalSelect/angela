@@ -33,9 +33,12 @@ type countingWorkspace struct {
 
 	ready     bool
 	agentBusy bool
-	yolo      bool
-	queued    []string
-	active    workspace.ActiveAgent
+	// sessionBranch is what AgentIsSessionBranch answers: whether this
+	// process still holds a parent tool call suspended on the session.
+	sessionBranch bool
+	yolo          bool
+	queued        []string
+	active        workspace.ActiveAgent
 	// activeErr, when set, makes the agent probe fail the way a dropped
 	// connection would.
 	activeErr error
@@ -50,17 +53,21 @@ type countingWorkspace struct {
 	// leave it nil: reaching for config is usually the bug they pin.
 	cfg *config.Config
 
-	readyCalls      int
-	agentBusyCalls  int
-	queuedCalls     int
-	queueListCalls  int
-	permCalls       int
-	permSetCalls    int
-	clearQueueCalls int
-	cancelCalls     int
-	modelCalls      int
-	lspStateCalls   int
-	lspDiagCalls    int
+	readyCalls     int
+	agentBusyCalls int
+	// sessionBusyCalls and sessionBranchCalls count the per-session
+	// probes the load path makes. They stay out of syncProbes.
+	sessionBusyCalls   int
+	sessionBranchCalls int
+	queuedCalls        int
+	queueListCalls     int
+	permCalls          int
+	permSetCalls       int
+	clearQueueCalls    int
+	cancelCalls        int
+	modelCalls         int
+	lspStateCalls      int
+	lspDiagCalls       int
 
 	recentModelCalls    int
 	preferredModelCalls int
@@ -80,6 +87,19 @@ type countingWorkspace struct {
 
 func (w *countingWorkspace) AgentIsReady() bool { w.readyCalls++; return w.ready }
 func (w *countingWorkspace) AgentIsBusy() bool  { w.agentBusyCalls++; return w.agentBusy }
+
+// AgentIsSessionBusy is deliberately outside syncProbes: it is already
+// called synchronously from the session dialog's render path, which is a
+// pre-existing exception this counter must not be dragged into.
+func (w *countingWorkspace) AgentIsSessionBusy(string) bool {
+	w.sessionBusyCalls++
+	return w.agentBusy
+}
+
+func (w *countingWorkspace) AgentIsSessionBranch(string) bool {
+	w.sessionBranchCalls++
+	return w.sessionBranch
+}
 
 func (w *countingWorkspace) AgentReadyErr() error {
 	w.readyCalls++
@@ -653,13 +673,13 @@ func TestSetSessionMessagesGatesAnimationsOnBusy(t *testing.T) {
 	}
 
 	// When the agent is not busy, applying items must not start animations.
-	items, _ := m.buildSessionItems(msgs)
+	items, _ := m.buildSessionItems("s1", msgs)
 	cmd := m.applySessionItems(items)
 	require.Nil(t, cmd, "applySessionItems must not start animations when agent is idle")
 
 	// When the agent is busy, animations should start.
 	warmCaches(m, true)
-	items, _ = m.buildSessionItems(msgs)
+	items, _ = m.buildSessionItems("s1", msgs)
 	cmd = m.applySessionItems(items)
 	require.NotNil(t, cmd, "applySessionItems must start animations when agent is busy")
 }

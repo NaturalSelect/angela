@@ -127,6 +127,13 @@ type Coordinator interface {
 	Cancel(sessionID string)
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
+	// IsSessionBranch reports whether a session is a branch this
+	// process still has a parent tool call suspended on. It asks the
+	// rendezvous, not the config: an agent configured in branch mode
+	// says nothing about whether this process is holding a turn open
+	// for it, and a restart leaves the config behind while the
+	// suspended call it described is gone.
+	IsSessionBranch(sessionID string) bool
 	IsBusy() bool
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []string
@@ -1749,6 +1756,10 @@ func (c *coordinator) IsBusy() bool {
 func (c *coordinator) IsSessionBusy(sessionID string) bool {
 	executor, ok := c.executorForSession(sessionID)
 	return ok && executor.IsSessionBusy(sessionID)
+}
+
+func (c *coordinator) IsSessionBranch(sessionID string) bool {
+	return c.branches.Waiting(sessionID)
 }
 
 // DefaultModel reports the model a brand new session would run on. It

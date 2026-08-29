@@ -2,8 +2,6 @@ package model
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 )
 
@@ -54,23 +52,12 @@ func (m *UI) viewingSubAgent() bool {
 //
 // The answer is memoized at load time; the status line asks every frame and
 // resolving it reaches through the workspace.
+//
+// Liveness comes from the agent process holding the suspended call, not from
+// the agent's configured mode: a branch whose process is gone is finished,
+// however the config still describes it.
 func (m *UI) viewingBranch() bool {
 	return m.session != nil && m.sessionIsBranch
-}
-
-// isBranchSession reports whether a session runs a branch-mode agent. The
-// mode is read from config rather than stored on the session, so retuning an
-// agent takes effect without migrating rows.
-func (m *UI) isBranchSession(sess session.Session) bool {
-	if sess.ParentSessionID == "" || sess.Agent == "" {
-		return false
-	}
-	cfg := m.com.Config()
-	if cfg == nil {
-		return false
-	}
-	agent, ok := cfg.Agents[sess.Agent]
-	return ok && agent.Mode == config.AgentModeBranch
 }
 
 // sessionTrail returns the titles from the root down to the level in view.

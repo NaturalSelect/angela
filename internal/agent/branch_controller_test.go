@@ -197,3 +197,47 @@ func TestBranchControllerMergeAndParentAbortRace(t *testing.T) {
 		require.Len(t, done, 1)
 	}
 }
+
+// TestIsSessionBranchTracksTheRendezvous pins where branch identity comes
+// from. The config outlives the process; the suspended call it describes
+// does not. Asking the rendezvous is what makes a restart read as "this
+// branch is over" without anything having to be migrated onto the row.
+func TestIsSessionBranchTracksTheRendezvous(t *testing.T) {
+	t.Parallel()
+
+	c := &coordinator{branches: newBranchController()}
+
+	require.False(t, c.IsSessionBranch("branch-1"),
+		"a process that never dispatched this branch holds nothing open for it")
+
+	c.branches.Register("branch-1", "parent-1")
+	require.True(t, c.IsSessionBranch("branch-1"))
+
+	require.True(t, c.branches.Signal("branch-1", branchOutcome{Merged: true, Payload: "done"}))
+	require.False(t, c.IsSessionBranch("branch-1"),
+		"a merged branch is finished, so it stops being one")
+}
+
+// A branch abandoned through its parent has to stop reading as live too,
+// or the view would keep offering a merge with nothing behind it.
+func TestIsSessionBranchClearsOnAbort(t *testing.T) {
+	t.Parallel()
+
+	c := &coordinator{branches: newBranchController()}
+	c.branches.Register("branch-1", "parent-1")
+
+	require.Len(t, c.branches.AbortByParent("parent-1", branchOutcome{Payload: "abandoned"}), 1)
+	require.False(t, c.IsSessionBranch("branch-1"))
+}
+
+// Forget is what runBranchAgent defers, so it is the path every finished
+// dispatch takes regardless of how it ended.
+func TestIsSessionBranchClearsOnForget(t *testing.T) {
+	t.Parallel()
+
+	c := &coordinator{branches: newBranchController()}
+	c.branches.Register("branch-1", "parent-1")
+	c.branches.Forget("branch-1")
+
+	require.False(t, c.IsSessionBranch("branch-1"))
+}

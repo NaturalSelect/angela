@@ -27,6 +27,12 @@ type loadSessionMsg struct {
 	files     []SessionFile
 	readFiles []string
 
+	// isBranch reports whether the agent process still has a parent
+	// tool call suspended on this session. It is probed in the load
+	// command rather than derived in Update: branch liveness lives in
+	// the agent process, so answering it can cost a round trip.
+	isBranch bool
+
 	// enterFrame, when set, pushes the parent frame onto sessionStack
 	// after a successful sub-session drill-down. The push is deferred
 	// to this handler so a failed load never leaves a phantom frame.
@@ -109,6 +115,7 @@ func (m *UI) loadSession(sessionID string, opts ...loadSessionOpt) tea.Cmd {
 			session:    &session,
 			files:      sessionFiles,
 			readFiles:  readFiles,
+			isBranch:   m.com.Workspace.AgentIsSessionBranch(sessionID),
 			enterFrame: o.enterFrame,
 			leaveLevel: o.leaveLevel,
 			clearStack: o.clearStack,

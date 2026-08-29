@@ -364,7 +364,15 @@ func cappedMessageWidth(availableWidth int) int {
 //
 // For assistant messages with tool calls, pass a toolResults map to link results.
 // Use BuildToolResultMap to create this map from all messages in a session.
-func ExtractMessageItems(sty *styles.Styles, msg *message.Message, toolResults map[string]message.ToolResult, workingDir string) []MessageItem {
+//
+// runActive says whether this message can still produce results. When it
+// cannot, a tool call with no result never will: the run that owned it is
+// gone, so the call is shown as interrupted. Interruption is derived here
+// rather than recorded — the absence of a result is itself the record. This
+// is one of the system's two derivation points; the other is
+// syntheticToolResultsForOrphanedCalls, which decides the same thing for the
+// model. The rule holds for every tool; there is no per-tool exception list.
+func ExtractMessageItems(sty *styles.Styles, msg *message.Message, toolResults map[string]message.ToolResult, workingDir string, runActive bool) []MessageItem {
 	switch msg.Role {
 	case message.User:
 		// Reconstruct shell command items from ShellCommand parts.
@@ -401,7 +409,7 @@ func ExtractMessageItems(sty *styles.Styles, msg *message.Message, toolResults m
 				msg.ID,
 				tc,
 				result,
-				msg.FinishReason() == message.FinishReasonCanceled,
+				msg.FinishReason() == message.FinishReasonCanceled || (result == nil && !runActive),
 				workingDir,
 			))
 		}

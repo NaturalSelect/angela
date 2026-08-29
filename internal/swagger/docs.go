@@ -3539,7 +3539,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "mode": {
-                    "description": "Mode controls how the agent can be used. Primary agents are\ntop-level; subagents are launched via the agent tool.",
+                    "description": "Mode controls how the agent can be used. Primary agents are\ntop-level; subagents are launched via the agent tool; a branch is\ndispatched like a subagent but forks the caller's transcript and\nhands the conversation to the user.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/config.AgentMode"
@@ -3570,11 +3570,13 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "primary",
-                "subagent"
+                "subagent",
+                "branch"
             ],
             "x-enum-varnames": [
                 "AgentModePrimary",
-                "AgentModeSubagent"
+                "AgentModeSubagent",
+                "AgentModeBranch"
             ]
         },
         "config.AllowedMCPSet": {
@@ -4468,6 +4470,10 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "is_branch": {
+                    "description": "IsBranch reports whether the serving process still has a parent\ntool call suspended on this session.",
+                    "type": "boolean"
                 },
                 "is_busy": {
                     "type": "boolean"

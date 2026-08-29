@@ -147,6 +147,12 @@ type Workspace interface {
 	AgentCancel(sessionID string)
 	AgentIsBusy() bool
 	AgentIsSessionBusy(sessionID string) bool
+	// AgentIsSessionBranch reports whether the process running the
+	// agent still has a parent tool call suspended on this session.
+	// Branch liveness lives in that process's memory, so a session
+	// configured to run a branch-mode agent is not a live branch once
+	// the process holding its suspended call is gone.
+	AgentIsSessionBranch(sessionID string) bool
 	AgentIsReady() bool
 	// AgentReadyErr reports nil when the coder agent is ready to accept
 	// work, or a descriptive error otherwise: ErrAgentNotInitialized

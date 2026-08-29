@@ -177,6 +177,13 @@ func (w *AppWorkspace) AgentIsSessionBusy(sessionID string) bool {
 	return w.app.AgentCoordinator.IsSessionBusy(sessionID)
 }
 
+func (w *AppWorkspace) AgentIsSessionBranch(sessionID string) bool {
+	if w.app.AgentCoordinator == nil {
+		return false
+	}
+	return w.app.AgentCoordinator.IsSessionBranch(sessionID)
+}
+
 func (w *AppWorkspace) AgentIsReady() bool {
 	return w.app.AgentCoordinator != nil
 }

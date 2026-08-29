@@ -479,7 +479,9 @@ func outputSessionHuman(ctx context.Context, sess session.Session, msgs []*messa
 
 	first := true
 	for _, msg := range msgs {
-		items := chat.ExtractMessageItems(&styles, msg, toolResults, "")
+		// A one-shot read-only command never carries a run, so a tool
+		// call still missing its result was interrupted.
+		items := chat.ExtractMessageItems(&styles, msg, toolResults, "", false)
 		for _, item := range items {
 			if !first {
 				fmt.Fprintln(&buf)

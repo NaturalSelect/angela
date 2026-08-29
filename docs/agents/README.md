@@ -8,16 +8,22 @@ tasks to specialized sub-agents via the `agent` tool.
 | ID        | Mode      | Description                                                            |
 |-----------|-----------|------------------------------------------------------------------------|
 | `coder`   | primary   | Main agent for executing coding tasks. Has access to all tools.        |
+| `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
 | `explore` | subagent  | Fast codebase explorer. Tools: glob, grep, ls, view, fetch, sourcegraph, LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
+| `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. Read-only. |
 | `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: fetch, web_fetch, web_search, glob, grep, view, sourcegraph. |
 
 Every sub-agent additionally loses the interactive `question` tool at run
-time, whatever its configuration says. It also loses the `agent` tool once
-its dispatch depth reaches the `options.subagent_depth` budget — 1 by
+time, whatever its configuration says — it has no user to ask, only the agent
+that dispatched it. Branch agents keep it, because a branch hands the
+conversation to you and asking is the point. It also loses the `agent` tool
+once its dispatch depth reaches the `options.subagent_depth` budget — 1 by
 default, which means a sub-agent cannot dispatch further sub-agents (`web-fetch`
 included; dispatching it is just another `agent` call) unless the budget is
-raised. See [Configuring `subagent_depth`](#configuring-subagent_depth)
+raised. Branches are dispatched the same way and sit at the same depth, so
+`plan` and `deep-research` do not delegate under the default budget either.
+See [Configuring `subagent_depth`](#configuring-subagent_depth)
 below.
 
 ### Agent Modes
@@ -84,8 +90,8 @@ Use it for work the model cannot finish alone: a design decision only you
 can make, an exploration whose direction you have to steer, a discussion
 that has to happen before the task is even well-defined.
 
-Angela ships one branch agent, `plan`, and you can configure your own with
-your own system prompt.
+Angela ships two branch agents, `plan` and `deep-research`, and you can
+configure your own with your own system prompt.
 
 ### `plan`
 
@@ -106,6 +112,25 @@ prompt per command:
 ```bash
 agent set plan --allowed-tools "$(agent get plan --allowed-tools),bash"
 ```
+
+### `deep-research`
+
+The coder forks `deep-research` for a question ordinary investigation could not
+settle: a bug whose symptoms contradict the code, a fix that failed for reasons
+nobody can explain, an intermittent or timing-dependent failure, or an
+architectural choice that is hard to reverse. You argue it through together, and
+it hands back a conclusion with the evidence behind it.
+
+The split with `plan` is what the question is about. `plan` decides what should
+be built; `deep-research` establishes what is already true. Ask for a plan when
+you know the problem and need a route through it, and for research when you do
+not yet trust your account of the problem.
+
+Unlike `plan`, `deep-research` has `bash` — a root cause usually cannot be
+reached by reading alone, and it needs to reproduce the failure, read the
+history, or run the one test that separates two hypotheses. Every command asks
+your permission first, and it still holds no `edit` or `write`: the finding is
+its only product, and acting on it is the coder's job.
 
 ### Configuring one
 

@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -139,9 +140,10 @@ func TestResolveAgents_CustomBranchIsNotDowngraded(t *testing.T) {
 }
 
 // Branch mode suspends the caller until a human resolves it, so it is never
-// the right default for an agent the user did not ask for. plan is the one
-// deliberate exception; this keeps any other builtin from drifting into it.
-func TestResolveAgents_PlanIsTheOnlyBuiltinBranch(t *testing.T) {
+// the right default for an agent the user did not ask for. plan and
+// deep-research are the deliberate exceptions; this keeps any other builtin
+// from drifting into it.
+func TestResolveAgents_BuiltinBranchesAreExactlyPlanAndDeepResearch(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 
 	var branches []string
@@ -150,7 +152,22 @@ func TestResolveAgents_PlanIsTheOnlyBuiltinBranch(t *testing.T) {
 			branches = append(branches, id)
 		}
 	}
-	require.Equal(t, []string{AgentPlan}, branches)
+	slices.Sort(branches)
+	require.Equal(t, []string{AgentDeepResearch, AgentPlan}, branches)
+}
+
+// deep-research is the one investigating agent that may run commands: a root
+// cause is a claim about what is already true, and settling it needs a
+// reproduction or a git history, not more reading. Writing is still off the
+// table, so the finding stays its only product.
+func TestResolveAgents_DeepResearchRunsButDoesNotWrite(t *testing.T) {
+	cfg := &Config{Options: &Options{}}
+	allowed := cfg.ResolveAgents()[AgentDeepResearch].AllowedTools.Tools
+
+	require.Contains(t, allowed, "bash")
+	for _, tool := range []string{"edit", "multiedit", "write", "download", "lsp_rename", "lsp_replace_symbol"} {
+		require.NotContains(t, allowed, tool)
+	}
 }
 
 func TestResolveAgents_ExploreHasNoBash(t *testing.T) {

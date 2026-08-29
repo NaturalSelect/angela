@@ -47,6 +47,7 @@ func TestAgentPrompt_SubagentTemplatesRenderContextFiles(t *testing.T) {
 		config.AgentExplore,
 		config.AgentGeneral,
 		config.AgentPlan,
+		config.AgentDeepResearch,
 	} {
 		t.Run(id, func(t *testing.T) {
 			agentCfg, ok := store.Config().Agents[id]

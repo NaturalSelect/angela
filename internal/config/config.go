@@ -65,11 +65,12 @@ const (
 )
 
 const (
-	AgentCoder    string = "coder"
-	AgentExplore  string = "explore"
-	AgentGeneral  string = "general"
-	AgentPlan     string = "plan"
-	AgentWebFetch string = "web-fetch"
+	AgentCoder        string = "coder"
+	AgentDeepResearch string = "deep-research"
+	AgentExplore      string = "explore"
+	AgentGeneral      string = "general"
+	AgentPlan         string = "plan"
+	AgentWebFetch     string = "web-fetch"
 
 	// The agents below back Angela's own auxiliary LLM calls. They are
 	// hidden — resolvable by ID, but never offered for dispatch or
@@ -1042,6 +1043,17 @@ func planToolNames() []string {
 	}
 }
 
+// deepResearchToolNames lists what the deep-research branch gets: plan's
+// read-only set plus the ability to run things. The difference is what the
+// two produce. A plan is a claim about what should be done and can be
+// reasoned out; a root cause is a claim about what is already true, and
+// that needs evidence — a failing test reproduced, a git history read, a
+// suspicion bisected. Nothing here edits, so the finding stays the only
+// product, but bash means the user approves each command it runs.
+func deepResearchToolNames() []string {
+	return append(planToolNames(), "bash", "job_output", "job_kill")
+}
+
 // webFetchToolNames lists the tools the web-fetch sub-agent gets: raw
 // fetch alongside the AI-driven web_fetch/web_search pair, plus enough
 // code-search tools to follow a link or grep a page it saved to disk.
@@ -1107,6 +1119,19 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			AllowedTools:  &AllowedToolSet{Kind: ToolSetInherited},
 			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetInherited},
 			DisabledTools: []string{"todos"},
+		},
+		AgentDeepResearch: {
+			ID:          AgentDeepResearch,
+			Name:        "DeepResearch",
+			Description: "Forks this conversation into a branch for a problem that resists ordinary investigation, and hands back a reasoned conclusion. Use it for a bug whose symptoms contradict the code you read, a fix that failed for reasons you cannot explain, an intermittent or timing-dependent failure, or an architectural choice that is hard to reverse and that you cannot decide with confidence. It reads, runs commands, and argues the question through with the user, but never edits — the finding is the product. Prefer plan when the question is what to build rather than what is true.",
+			Mode:        AgentModeBranch,
+			Model:       ModelMain,
+			// A root cause is only credible against the conventions the
+			// code was written under, so it reads the same context files
+			// the coder does.
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, deepResearchToolNames(), true)},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
 		},
 		AgentPlan: {
 			ID:          AgentPlan,

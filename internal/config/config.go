@@ -68,6 +68,7 @@ const (
 	AgentCoder    string = "coder"
 	AgentExplore  string = "explore"
 	AgentGeneral  string = "general"
+	AgentPlan     string = "plan"
 	AgentWebFetch string = "web-fetch"
 
 	// The agents below back Angela's own auxiliary LLM calls. They are
@@ -1026,6 +1027,21 @@ func exploreToolNames() []string {
 	}
 }
 
+// planToolNames lists what the plan branch gets: explore's read-only set,
+// widened with the LSP lookups a design decision leans on, plus the two
+// tools that make it a branch rather than a subagent — delegation, so it
+// can buy breadth without reading everything itself, and a way to ask the
+// user. Nothing here writes, which is why the plan is the only product.
+func planToolNames() []string {
+	return []string{
+		"agent", "fetch", "angela_info",
+		"glob", "grep", "ls",
+		"lsp_call_hierarchy", "lsp_definition", "lsp_diagnostics",
+		"lsp_references", "lsp_symbols",
+		"question", "sourcegraph", "view",
+	}
+}
+
 // webFetchToolNames lists the tools the web-fetch sub-agent gets: raw
 // fetch alongside the AI-driven web_fetch/web_search pair, plus enough
 // code-search tools to follow a link or grep a page it saved to disk.
@@ -1091,6 +1107,19 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			AllowedTools:  &AllowedToolSet{Kind: ToolSetInherited},
 			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetInherited},
 			DisabledTools: []string{"todos"},
+		},
+		AgentPlan: {
+			ID:          AgentPlan,
+			Name:        "Plan",
+			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first. It is read-only — it reads, searches, and asks, but never edits.",
+			Mode:        AgentModeBranch,
+			Model:       ModelMain,
+			// The proposal is only worth as much as the conventions it
+			// respects, so plan reads the project's context files the
+			// same way the coder that executes it does.
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
 		},
 		AgentWebFetch: {
 			ID:           AgentWebFetch,

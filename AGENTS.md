@@ -20,9 +20,8 @@ internal/
   cmd/                             CLI commands (root, run, login, models, stats, sessions)
   config/
     config.go                      Config struct, context file paths, agent definitions
-    load.go                        angelarc and angela.json loading and validation
+    load.go                        angela.json loading and validation
     provider.go                    Provider configuration and model resolution
-  shellconfig/                      Bash-powered config format (angelarc builtins)
   agent/
     agent.go                       SessionAgent: runs LLM conversations per session
     coordinator.go                 Coordinator: manages named agents ("coder", "task")
@@ -72,20 +71,16 @@ internal/
 - **Context files**: Angela reads AGENTS.md, ANGELA.md, CLAUDE.md, GEMINI.md
   (and `.local` variants) from the working directory for project-specific
   instructions.
-- **Bash config format**: Angela's primary config format is `angelarc` — a
-  Bash script using builtins (`provider`, `model`, `mcp`, `lsp`,
-  `permissions`, `hook`, `options`) to define config. `angela.json` is still
-  supported but is deprecated in favor of `angelarc` and may be removed in a
-  future release. Shell config files are discovered alongside JSON configs
-  and deep-merged through the same pipeline. Builtins are registered via
-  `shell.RegisterBuiltin` and gated by a `ConfigBuilder` on the context —
-  they are no-ops during normal bash tool execution. See
-  `internal/shellconfig/`.
+- **Config format**: `angela.json` (or `.angela.json`) is the only config
+  format. Files are discovered from the system path, the global config and
+  data directories, and by walking up from the working directory to the git
+  worktree root, then deep-merged with the layer closest to the project
+  winning. See `internal/config/load.go`.
 - **Persistence**: SQLite + sqlc. All queries live in `internal/db/sql/`,
   generated code in `internal/db/`. Migrations in `internal/db/migrations/`.
 - **Pub/sub**: `internal/pubsub` for decoupled communication between agent,
   UI, and services.
-- **Hooks**: User-defined shell commands in `angelarc` (or `angela.json`)
+- **Hooks**: User-defined shell commands in `angela.json`
   that fire before tool execution. The engine (`internal/hooks/`) is
   independent of fantasy and agent — it takes inputs, runs commands,
   returns decisions. The `hookedTool` decorator in

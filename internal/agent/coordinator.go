@@ -1046,7 +1046,7 @@ func (c *coordinator) loadActiveAgent(ctx context.Context, sessionID string) (co
 // materializeActiveAgent turns a session's delta into a live instance.
 // The agent definition always comes from the config as it stands now;
 // only the model selection comes from the delta. That split is the
-// point: editing angelarc steers prompts and tools on the next turn,
+// point: editing the config steers prompts and tools on the next turn,
 // while a model the user picked for this session stays picked.
 //
 // A session with no delta yet runs the coder on the configured default,

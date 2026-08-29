@@ -290,8 +290,8 @@ func RenderAgentFile(fm AgentFrontmatter, body string) ([]byte, error) {
 }
 
 // ValidateAgent checks an agent definition coming from any config
-// layer. Markdown files are validated while being parsed; JSON and
-// angelarc definitions go through ResolveAgents, which calls this so
+// layer. Markdown files are validated while being parsed; JSON
+// definitions go through ResolveAgents, which calls this so
 // every layer rejects the same values instead of only the markdown
 // one.
 func ValidateAgent(id string, a Agent) error {

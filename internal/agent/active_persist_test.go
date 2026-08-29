@@ -40,7 +40,7 @@ func TestActiveAgentSurvivesARestart(t *testing.T) {
 
 // TestRestartTakesDefinitionsFromConfigAndModelFromTheSession pins the
 // split that makes persisting safe. A session must not carry a frozen
-// copy of its prompt and tools across a restart, or editing angelarc
+// copy of its prompt and tools across a restart, or editing the config
 // would stop reaching sessions that already exist.
 func TestRestartTakesDefinitionsFromConfigAndModelFromTheSession(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
@@ -50,7 +50,7 @@ func TestRestartTakesDefinitionsFromConfigAndModelFromTheSession(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, coord.SwitchAgent(t.Context(), sess.ID, testReviewerAgent))
 
-	// The user edits the agent's prompt in angelarc while the session
+	// The user edits the agent's prompt in the config while the session
 	// is not loaded, then comes back to it.
 	coord.active.forget(sess.ID)
 	cfg := coord.cfg.Config()
@@ -103,7 +103,7 @@ func TestClearingTheVariantSurvivesARestart(t *testing.T) {
 // TestAnUnpickedVariantKeepsFollowingTheConfig is the A1 regression.
 // Agent.Variant also carries config-derived defaults, so persisting it
 // on an edit that never touched the preset would freeze it — the user
-// would then change the default in angelarc and find that sessions
+// would then change the default in the config and find that sessions
 // which merely switched model never picked it up.
 func TestAnUnpickedVariantKeepsFollowingTheConfig(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)

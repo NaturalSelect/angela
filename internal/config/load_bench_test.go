@@ -102,32 +102,3 @@ func BenchmarkLoadFromConfigPaths_Empty(b *testing.B) {
 		}
 	}
 }
-
-// BenchmarkLoadFromConfigPaths_ShellConfig measures the angelarc execution
-// path (shell interpreter + config builtins + JSON marshal), which now sits on
-// the startup and reload critical path alongside JSON parsing. Keeps a
-// regression in shell config loading from going unnoticed.
-func BenchmarkLoadFromConfigPaths_ShellConfig(b *testing.B) {
-	tmpDir := b.TempDir()
-	rcPath := filepath.Join(tmpDir, "angelarc")
-
-	rcContent := []byte(`provider add openai --api-key "$OPENAI_API_KEY" --base-url "https://api.openai.com/v1"
-provider add anthropic --api-key "$ANTHROPIC_API_KEY"
-model main openai/gpt-4o --think
-permissions allow bash view
-option data-directory .angela
-option metrics false`)
-
-	if err := os.WriteFile(rcPath, rcContent, 0o644); err != nil {
-		b.Fatal(err)
-	}
-	configPaths := []string{rcPath}
-
-	b.ReportAllocs()
-	for b.Loop() {
-		_, _, err := loadFromConfigPaths(context.Background(), configPaths)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}

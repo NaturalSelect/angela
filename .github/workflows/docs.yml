@@ -20,13 +20,13 @@ name: docs
 #     beyond what push access already has. Do not build/run PR-supplied
 #     source once this workflow (or any workflow with secrets access) is
 #     ever allowed to trigger from forks.
-#   - Any `angelarc`/`angela.json` committed inside the PR is deleted right
+#   - Any `angela.json` committed inside the PR is deleted right
 #     after checkout, before Angela ever runs, so a PR cannot override the
-#     CI permission allowlist below or smuggle in arbitrary Bash. The CI
+#     CI permission allowlist below. The CI
 #     config lives outside the checked-out tree ($RUNNER_TEMP).
 #   - The provider API key is only pulled from secrets in the single
 #     "Write CI Angela config" step, never at job level. It is written
-#     into the generated angelarc, which lives outside the checked-out
+#     into the generated angela.json, which lives outside the checked-out
 #     tree in $RUNNER_TEMP (not the repo, never committed, gone when the
 #     runner is torn down) and is never printed to the step log.
 #
@@ -104,7 +104,7 @@ jobs:
       - name: Strip PR-supplied Angela config
         working-directory: pr
         run: |
-          rm -rf angelarc .angelarc angela.json .angela.json .angela
+          rm -rf angela.json .angela.json .angela
           ls -a
 
       - name: Write CI Angela config
@@ -128,44 +128,80 @@ jobs:
           EXPLORE_MODEL_ID="${EXPLORE_MODEL##*/}"
 
           mkdir -p "${RUNNER_TEMP}/angela-config" "${RUNNER_TEMP}/angela-global-data"
-          cat > "${RUNNER_TEMP}/angela-config/angelarc" <<CONFIGEOF
-          # Written by .github/workflows/docs.yml. --base-url makes it
+
+          # Written by .github/workflows/docs.yml. base_url makes it
           # trivial to point this at a third-party relay/proxy instead of
           # the provider's official endpoint. The model is registered
           # explicitly rather than relying on /v1/models discovery, which
           # not every relay implements.
-          provider add docs --type "${PROVIDER_TYPE}" --base-url "${BASE_URL}" --api-key "${ANGELA_DOCS_API_KEY}" --discover-models false
-          model add "docs/${MODEL_ID}" --can-reason true --reasoning-level low --reasoning-level medium --reasoning-level high --reasoning-level max
-          model main "docs/${MODEL_ID}"
-
-          # explore gets its own model slot so ANGELA_DOCS_EXPLORE_MODEL
-          # can point it at a separate (e.g. cheaper/faster) model; it
-          # falls back to the docs model above when unset, in which
-          # case this is a harmless re-registration of the same id.
-          if [ "${EXPLORE_MODEL_ID}" != "${MODEL_ID}" ]; then
-            model add "docs/${EXPLORE_MODEL_ID}" --can-reason true --reasoning-level low --reasoning-level medium --reasoning-level high --reasoning-level max
-          fi
-          model chore "docs/${EXPLORE_MODEL_ID}"
-
-          # explore uses the chore slot above so codebase searches during
-          # documentation generation can run through the fast, read-only
+          #
+          # explore gets its own model slot (chore) so
+          # ANGELA_DOCS_EXPLORE_MODEL can point it at a separate
+          # (e.g. cheaper/faster) model; it falls back to the docs model
+          # when unset, in which case only one model is registered — the
+          # providers.models array is keyed by id, so listing the same id
+          # twice would be a duplicate rather than a harmless re-register.
+          #
+          # explore uses the chore slot so codebase searches during
+          # documentation generation run through the fast, read-only
           # explore sub-agent instead of the main turn. general is
           # disabled since nothing in this docs flow needs it; leaving it
           # enabled would just be an unused agent with standing tool
           # access.
-          agent add explore --model chore
-          agent add general --disabled true
-
-          permissions allow bash view ls grep glob agent
-          permissions deny write edit multiedit
-          permissions deny lsp_rename lsp_replace_symbol
-          permissions deny fetch download web_fetch web_search sourcegraph
-          permissions deny question
-
-          option auto-lsp false
-          option metrics false
-          option progress false
-          CONFIGEOF
+          #
+          # Secrets go through jq --arg so a key containing a quote or
+          # backslash cannot break out of the JSON string.
+          jq -n \
+            --arg type "${PROVIDER_TYPE}" \
+            --arg base_url "${BASE_URL}" \
+            --arg api_key "${ANGELA_DOCS_API_KEY}" \
+            --arg main_model "${MODEL_ID}" \
+            --arg chore_model "${EXPLORE_MODEL_ID}" \
+            '
+            def mkmodel($id): {
+              id: $id,
+              can_reason: true,
+              reasoning_levels: ["low", "medium", "high", "max"]
+            };
+            {
+              providers: {
+                docs: {
+                  type: $type,
+                  base_url: $base_url,
+                  api_key: $api_key,
+                  discover_models: false,
+                  models: (
+                    if $chore_model == $main_model
+                    then [mkmodel($main_model)]
+                    else [mkmodel($main_model), mkmodel($chore_model)]
+                    end
+                  )
+                }
+              },
+              models: {
+                main:  { provider: "docs", model: $main_model },
+                chore: { provider: "docs", model: $chore_model }
+              },
+              agents: {
+                explore: { model: "chore" },
+                general: { disabled: true }
+              },
+              permissions: {
+                allowed_tools: ["bash", "view", "ls", "grep", "glob", "agent"]
+              },
+              options: {
+                disabled_tools: [
+                  "write", "edit", "multiedit",
+                  "lsp_rename", "lsp_replace_symbol",
+                  "fetch", "download", "web_fetch", "web_search", "sourcegraph",
+                  "question"
+                ],
+                auto_lsp: false,
+                disable_metrics: true,
+                progress: false
+              }
+            }
+            ' > "${RUNNER_TEMP}/angela-config/angela.json"
           echo "ANGELA_GLOBAL_CONFIG=${RUNNER_TEMP}/angela-config" >> "$GITHUB_ENV"
           echo "ANGELA_GLOBAL_DATA=${RUNNER_TEMP}/angela-global-data" >> "$GITHUB_ENV"
 

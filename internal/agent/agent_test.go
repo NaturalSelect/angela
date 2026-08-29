@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 
 	// Isolate the global config layer for the whole package. config.Init
 	// merges it underneath the project config the fixtures write, so a
-	// developer's or CI runner's own angelarc — a `permissions deny` line
+	// developer's or CI runner's own angela.json — a denied tool entry
 	// is enough — lands in Options.DisabledTools and strips tools the
 	// tests assert on. Process-wide rather than per-test because
 	// t.Setenv cannot be used from parallel tests.

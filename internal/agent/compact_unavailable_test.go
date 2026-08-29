@@ -15,7 +15,7 @@ func TestUnavailableCompactAgentIsReportedNotPanicked(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
 
 	// Point the compact agent at a provider that is not configured,
-	// the way removing a provider from angelarc would.
+	// the way removing a provider from the config would.
 	cfg := coord.cfg.Config()
 	broken := cfg.Models[config.ModelChore]
 	broken.Provider = "provider-that-was-removed"

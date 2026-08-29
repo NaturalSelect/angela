@@ -339,11 +339,10 @@ func TestResolveAgents_MaxTokensOverride(t *testing.T) {
 	require.Equal(t, int64(40), *got.MaxTokens)
 }
 
-// TestResolveAgents_ShellConfigTombstoneRemovesMarkdownAgent covers what
-// `agent remove` in an angelarc produces: a disable tombstone in the
-// JSON layer must suppress an agent defined by a markdown file, which
-// the lower layer cannot delete on its own.
-func TestResolveAgents_ShellConfigTombstoneRemovesMarkdownAgent(t *testing.T) {
+// TestResolveAgents_DisableTombstoneRemovesMarkdownAgent covers the only way
+// to retract a markdown-defined agent: a disable tombstone in the JSON layer
+// must suppress it, since the lower layer cannot delete itself.
+func TestResolveAgents_DisableTombstoneRemovesMarkdownAgent(t *testing.T) {
 	t.Parallel()
 
 	cfg := newAgentTestConfig(t, map[string]string{

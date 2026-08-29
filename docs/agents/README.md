@@ -219,7 +219,7 @@ Agents can be configured through three layers (later layers override earlier one
 
 1. **Built-in defaults** — The four agents above.
 2. **Markdown files** — `*.md` files in agent directories.
-3. **JSON/angelarc config** — The `agents` section in `angela.json` or `angelarc`.
+3. **JSON config** — The `agents` section in `angela.json`.
 
 ### Permission Inheritance
 
@@ -270,42 +270,10 @@ Above, `my-reviewer` says nothing about tools and so gets exactly
 }
 ```
 
-### Shell Configuration (`angelarc`)
-
-```bash
-# Override an existing agent
-agent add explore --model chore
-
-# Define a custom agent
-agent add my-reviewer \
-  --description "Reviews code for bugs" \
-  --mode subagent \
-  --prompt "You are a code reviewer..."
-
-# Disable an agent, wherever it was defined
-agent remove my-reviewer
-```
-
-`agent remove` writes `disabled: true` rather than deleting a key. It
-therefore suppresses agents that come from the built-in defaults or from a
-markdown file too, not just ones defined earlier in the same script.
-`agent remove coder` is an error — the primary agent cannot be disabled.
-
-Available flags for `agent add`:
-
-| Flag               | Description                                        |
-|--------------------|----------------------------------------------------|
-| `--description`    | Agent description                                  |
-| `--mode`           | `primary`, `subagent` or `branch` (see Agent Modes) |
-| `--model`          | `main` or `chore` (default `main`)                 |
-| `--prompt`         | System prompt text (Go template)                   |
-| `--temperature`    | Sampling temperature (0-1)                         |
-| `--tool`           | Add a tool to the allowed list (repeatable)        |
-| `--tools`          | Set the tool set to `all` or `inherited`           |
-| `--disable-tool`   | Remove a tool from the allowed list (repeatable)   |
-| `--mcp`            | Set MCP access to `all` or `inherited`             |
-| `--mcp-scope`      | Set MCP access to a JSON object of servers         |
-| `--disabled`       | Disable the agent (`true`/`false`)                 |
+Setting `"disabled": true` suppresses an agent wherever it was defined —
+including the built-in defaults and markdown files — rather than only
+overriding one defined in a lower layer. Disabling `coder` is an error: the
+primary agent cannot be turned off.
 
 ### Markdown Agent Files
 
@@ -318,7 +286,7 @@ directory's file with the same ID.
 - `~/.agents/agents`
 - `~/.config/angela/agents`
 
-Paths configured via `agent_paths` (in `angela.json`/`angelarc`) come next.
+Paths configured via `agent_paths` (in `angela.json`) come next.
 They support `~`, `$VAR` expansion, and paths relative to the working
 directory, and sit between the global and project-level default directories.
 
@@ -371,7 +339,7 @@ When the same agent ID appears in multiple layers:
 
 1. Built-in defaults (lowest priority)
 2. Markdown files override built-in fields
-3. JSON/angelarc overrides both (highest priority)
+3. JSON config overrides both (highest priority)
 
 Only non-zero fields from higher layers override lower ones. The `coder` agent
 cannot be disabled.

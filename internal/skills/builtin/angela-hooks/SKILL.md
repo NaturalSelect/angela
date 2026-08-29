@@ -1,11 +1,11 @@
 ---
 name: angela-hooks
-description: Use when the user wants to add, write, debug, or configure an Angela hook — gating or blocking tool calls, approving or rewriting tool input before execution, injecting context into tool results, or troubleshooting hook behavior in angelarc or angela.json.
+description: Use when the user wants to add, write, debug, or configure an Angela hook — gating or blocking tool calls, approving or rewriting tool input before execution, injecting context into tool results, or troubleshooting hook behavior in angela.json.
 ---
 
 # Angela Hooks
 
-Hooks are user-defined commands in `angelarc` (or `angela.json`) that fire at
+Hooks are user-defined commands in `angela.json` that fire at
 specific points during execution, giving deterministic control over tool
 behavior. They run **before** permission checks, and on **every** tool call —
 including the ones a dispatched sub-agent makes. Use `depth` (`0` for the
@@ -22,14 +22,7 @@ accept snake_case (`PreToolUse`, `pretooluse`, `pre_tool_use` all work).
 
 ## Configuration
 
-`angelarc` is the preferred format:
-
-```bash
-hook add PreToolUse --command ./hooks/my-hook.sh --matcher '^bash$' --timeout 10
-hook remove PreToolUse --name my-hook
-```
-
-The deprecated `angela.json` form is equivalent:
+Hooks live under the `hooks` key, grouped by event name:
 
 ```jsonc
 {

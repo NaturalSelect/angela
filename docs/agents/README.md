@@ -146,10 +146,23 @@ transcript, since it is reserved for stopping and abandoning. To look at the
 parent without giving up the branch, use the session switcher (`Ctrl+S`) —
 branches are not listed there, so the parent is the one you pick.
 
+### Several branches at once
+
+One turn can fork more than one branch, and that is the point when a question
+has several answers worth trying: one branch per direction lets you weigh
+them side by side instead of in sequence, and you can just as well carry
+unrelated questions in parallel.
+
+Each branch is a conversation of its own. You enter one from its `agent` call
+in the parent transcript, leave it through the session switcher to pick up
+another, and merge or abandon each on its own terms — resolving one does not
+touch the rest. The coder's turn resumes once every branch it forked has been
+resolved, so an abandoned branch still has to be abandoned explicitly.
+
 ### Limits
 
-- Only the top-level conversation can open a branch, and only one at a time.
-  A sub-agent cannot open one: there is no user attached to its turn.
+- Only the top-level conversation can open a branch. A sub-agent cannot open
+  one: there is no user attached to its turn.
 - Branches are unavailable in non-interactive runs (`angela run`), where
   there is nobody to hand the conversation to.
 - A branch does not consume the `options.subagent_depth` budget, and it can

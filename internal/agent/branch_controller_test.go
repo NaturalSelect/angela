@@ -125,7 +125,8 @@ func TestBranchControllerAbortsEveryBranchOfAParent(t *testing.T) {
 
 	require.Len(t, first, 1)
 	require.Len(t, second, 1)
-	require.False(t, b.HasBranchFor("parent-1"))
+	require.False(t, b.Waiting("branch-1"))
+	require.False(t, b.Waiting("branch-2"))
 }
 
 func TestBranchControllerAbortByParentLeavesOtherBranchesAlone(t *testing.T) {
@@ -162,8 +163,6 @@ func TestBranchControllerAbortByParentWithNoBranch(t *testing.T) {
 
 	require.Empty(t, b.AbortByParent("parent-2", branchOutcome{}))
 	require.True(t, b.Waiting("branch-1"))
-	require.False(t, b.HasBranchFor("parent-2"))
-	require.True(t, b.HasBranchFor("parent-1"))
 }
 
 // A merge landing just as the user cancels the parent must not double-resolve.

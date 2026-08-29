@@ -37,6 +37,14 @@ you cannot make for them, an exploration whose direction only they can set,
 or a discussion that has to happen before the task is even well-defined. For
 anything you can carry out yourself, use an ordinary agent instead — a
 branch stops all your progress until the user comes back to it.
+
+You may fork several at once, and that is the point when the user needs to
+compare: one call per direction lets them weigh alternatives on the same
+question side by side, or carry several unrelated questions at the same
+time. Each branch is its own conversation and comes back with its own
+outcome. Your turn resumes only once every branch you forked is resolved, so
+fork per direction the user would genuinely want to hold apart, not per
+thought.
 {{- range .Agents}}
 {{- if .Branch}}
 - {{.ID}}: {{.Description}}

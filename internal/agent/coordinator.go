@@ -2229,6 +2229,12 @@ func (c *coordinator) parentTitle(ctx context.Context, sessionID string) string 
 // branchDispatchRefusal reports why this caller may not fork a branch, or an
 // empty string when it may. Each refusal names the alternative, because the
 // model has to be able to act on it without guessing.
+//
+// Being suspended on a branch already is not a refusal: forking several at
+// once is the point. It lets the user hold alternative directions of one
+// question, or several unrelated questions, side by side and resolve each on
+// its own. The rendezvous keeps a waiter per branch, so the dispatches stay
+// independent however many are outstanding.
 func (c *coordinator) branchDispatchRefusal(ctx context.Context, sessionID string) string {
 	if !c.interactive {
 		return "A branch hands the conversation to the user, so it needs an interactive session. " +
@@ -2237,10 +2243,6 @@ func (c *coordinator) branchDispatchRefusal(ctx context.Context, sessionID strin
 	if c.dispatchDepth(ctx, sessionID) != 0 {
 		return "Only a top-level conversation can fork a branch, because the user has to be able to take it over. " +
 			"Dispatch a regular subagent instead."
-	}
-	if c.branches.HasBranchFor(sessionID) {
-		return "This conversation is already suspended on a branch. " +
-			"Wait for the user to resolve it before forking another."
 	}
 	return ""
 }

@@ -85,17 +85,6 @@ func (b *branchController) AbortByParent(parentSessionID string, out branchOutco
 	return aborted
 }
 
-// HasBranchFor reports whether the given session is already suspended on a
-// branch.
-func (b *branchController) HasBranchFor(parentSessionID string) bool {
-	for _, w := range b.waiters.Seq2() {
-		if w.parentSessionID == parentSessionID {
-			return true
-		}
-	}
-	return false
-}
-
 // Waiting reports whether a session is a branch with a parent still suspended
 // on it.
 func (b *branchController) Waiting(branchSessionID string) bool {

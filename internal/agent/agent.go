@@ -794,6 +794,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			callContext = context.WithValue(callContext, tools.SupportsImagesContextKey, runModel.CatwalkCfg.SupportsImages)
 			callContext = context.WithValue(callContext, tools.ModelNameContextKey, runModel.CatwalkCfg.Name)
 			currentAssistant = &assistantMsg
+			slog.Info("Model request starting",
+				"session_id", call.SessionID,
+				"agent", call.Agent.ID,
+				"provider", runModel.ModelCfg.Provider,
+				"model", runModel.ModelCfg.Model,
+				"messages", len(prepared.Messages),
+			)
 			return callContext, prepared, err
 		},
 		OnReasoningStart: func(id string, reasoning fantasy.ReasoningContent) error {
@@ -875,6 +882,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				Finished:         true,
 			}
 			currentAssistant.AddToolCall(toolCall)
+			slog.Info("Tool call",
+				"session_id", call.SessionID,
+				"tool", tc.ToolName,
+				"tool_call_id", tc.ToolCallID,
+			)
 			// Use parent ctx instead of genCtx to ensure the update succeeds
 			// even if the request is canceled mid-stream
 			return a.messages.Update(ctx, *currentAssistant)
@@ -941,6 +953,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			}
 			usage, estimated := fallbackStepUsage(stepMessages, stepResult)
 			a.updateSessionUsage(runModel, &updatedSession, usage, openrouterCost(stepResult.ProviderMetadata), estimated)
+			slog.Info("Model response received",
+				"session_id", call.SessionID,
+				"finish_reason", string(finishReason),
+				"input_tokens", usage.InputTokens,
+				"output_tokens", usage.OutputTokens,
+				"estimated_usage", estimated,
+			)
 			extractHyperCredits(stepResult.ProviderMetadata)
 			_, sessionErr := a.sessions.Save(ctx, updatedSession)
 			if sessionErr != nil {

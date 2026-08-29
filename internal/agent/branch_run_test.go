@@ -117,18 +117,100 @@ func requireBranchStarted(t *testing.T, seen <-chan string) string {
 
 func requireBranchSession(t *testing.T, c *coordinator, parentID string) string {
 	t.Helper()
+	return requireBranchSessions(t, c, parentID, 1)[0]
+}
+
+// requireBranchSessions waits until the parent has exactly want branches
+// registered and returns their IDs. Registration happens after a session
+// create and a transcript fork, so a dispatch is visible here well after
+// its goroutine started.
+func requireBranchSessions(t *testing.T, c *coordinator, parentID string, want int) []string {
+	t.Helper()
 	for range 100 {
-		if c.branches.HasBranchFor(parentID) {
-			for id, w := range c.branches.waiters.Seq2() {
-				if w.parentSessionID == parentID {
-					return id
-				}
+		var ids []string
+		for id, w := range c.branches.waiters.Seq2() {
+			if w.parentSessionID == parentID {
+				ids = append(ids, id)
 			}
+		}
+		if len(ids) >= want {
+			return ids
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("no branch was registered for the parent")
-	return ""
+	t.Fatalf("the parent never registered %d branches", want)
+	return nil
+}
+
+// Forking several branches at once is what lets the user hold alternative
+// directions apart and resolve each on its own, so both dispatches have to
+// land: one dropped for having lost the race would leave the model suspended
+// on a call nothing can resolve, since the branch it waits on never existed.
+func TestParallelBranchDispatchesBothLand(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 2)
+	agent, resolved := idleBranchAgent(t, seen)
+
+	responses := make(chan fantasy.ToolResponse, 2)
+	start := make(chan struct{})
+	for _, callID := range []string{"call-1", "call-2"} {
+		go func() {
+			<-start
+			if refusal := c.branchDispatchRefusal(t.Context(), parent.ID); refusal != "" {
+				t.Errorf("a parallel branch dispatch was refused: %s", refusal)
+				return
+			}
+			p := branchParams(agent, resolved, parent.ID, forking.ID)
+			p.ToolCallID = callID
+			resp, err := c.runBranchAgent(t.Context(), p)
+			if err != nil {
+				t.Errorf("branch dispatch failed: %v", err)
+				return
+			}
+			responses <- resp
+		}()
+	}
+	close(start)
+
+	requireBranchStarted(t, seen)
+	requireBranchStarted(t, seen)
+
+	branches := requireBranchSessions(t, c, parent.ID, 2)
+	require.Len(t, branches, 2, "each call must fork its own session")
+
+	// Resolved separately, because each suspended call is waiting on its
+	// own rendezvous: a summary must reach the dispatch that forked it
+	// rather than whichever one happens to be listening.
+	want := make([]string, 0, 2)
+	for _, id := range branches {
+		payload := "summary of " + id
+		want = append(want, payload)
+		require.True(t, c.branches.Signal(id, branchOutcome{Merged: true, Payload: payload}))
+	}
+
+	got := []string{
+		requireBranchResponse(t, responses).Content,
+		requireBranchResponse(t, responses).Content,
+	}
+	require.ElementsMatch(t, want, got)
+}
+
+func requireBranchResponse(t *testing.T, responses <-chan fantasy.ToolResponse) fantasy.ToolResponse {
+	t.Helper()
+	select {
+	case resp := <-responses:
+		return resp
+	case <-time.After(5 * time.Second):
+		t.Fatal("a merged branch never resolved its dispatch")
+		return fantasy.ToolResponse{}
+	}
 }
 
 // A merge is what the suspended call has been waiting for, and the summary
@@ -273,9 +355,9 @@ func TestRunBranchAgentReportsAStartupFailure(t *testing.T) {
 	require.Contains(t, resp.Content, "could not be started")
 }
 
-// TestBranchDispatchRefusals covers the three ways a fork is turned down.
-// Each has to explain itself: the model can only act on the refusal if it
-// says what to do instead.
+// TestBranchDispatchRefusals covers the two ways a fork is turned down, and
+// the case that looks like a third but is not. Each refusal has to explain
+// itself: the model can only act on it if it says what to do instead.
 func TestBranchDispatchRefusals(t *testing.T) {
 	t.Parallel()
 
@@ -310,7 +392,7 @@ func TestBranchDispatchRefusals(t *testing.T) {
 		require.Contains(t, strings.ToLower(refusal), "subagent instead")
 	})
 
-	t.Run("one branch at a time", func(t *testing.T) {
+	t.Run("an outstanding branch does not block another", func(t *testing.T) {
 		t.Parallel()
 
 		env := testEnv(t)
@@ -320,8 +402,7 @@ func TestBranchDispatchRefusals(t *testing.T) {
 		require.NoError(t, err)
 		c.branches.Register("branch-1", parent.ID)
 
-		require.Contains(t, c.branchDispatchRefusal(t.Context(), parent.ID),
-			"already suspended on a branch")
+		require.Empty(t, c.branchDispatchRefusal(t.Context(), parent.ID))
 	})
 
 	t.Run("a top-level interactive conversation may fork", func(t *testing.T) {

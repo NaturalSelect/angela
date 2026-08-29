@@ -8,100 +8,76 @@
 > Angela can configure itself via a builtin config skill. That is to say,
 > can generally just tell Angela want you want to configure using natural
 > language.
->
-> If you're migrating from the old JSON format, you can also ask Angela to
-> convert the config for you.
 
-Angela is configured with Bash via a set of Angela-specific builtin commands. By
-default, global config lives at `~/.config/angela/angelarc` on Unix-like systems
-and `%USERPROFILE%\.config\angela\angelarc` on Windows. It works like a `.bashrc`:
-it runs when Angela starts and configures the agent.
+Angela is configured with JSON. By default, global config lives at
+`~/.config/angela/angela.json` on Unix-like systems and
+`%USERPROFILE%\.config\angela\angela.json` on Windows. It is read when Angela
+starts and configures the agent.
 
-```bash
-# Add Ollama.
-provider add ollama --type ollama --base-url "http://localhost:11434/v1"
-
-# Register a model on Ollama.
-model add ollama/llama3.3 --name "Llama 3.3" --context-window 128000
-
-# Auto-approve some tools.
-permissions allow view edit
-
-# Add an MCP server
-mcp add github \
-  --type http \
-  --url "https://api.githubcopilot.com/mcp/" \
-  --header Authorization "Bearer $GITHUB_TOKEN"
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "models": [
+        { "id": "llama3.3", "name": "Llama 3.3", "context_window": 128000 }
+      ]
+    }
+  },
+  "permissions": {
+    "allowed_tools": ["view", "edit"]
+  },
+  "mcp": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer $GITHUB_TOKEN" }
+    }
+  }
+}
 ```
 
-Since it’s Bash, so you can use logic, `source` other files, and so on. It’s
-really handy.
+Selected string fields — API keys, MCP headers, and similar credential-bearing
+values — run through shell expansion when they are used, so `$VAR` and
+`$(cmd)` work:
 
-```bash
-# Change config based on the machine you're on.
-if [[ $HOSTNAME == "babysquid" ]]; then
-    option skill-path "$HOME/squid-skills"
-fi
-
-# Load some extra config
-source "$XDG_CONFIG_HOME/squid-config.sh"
-
-# Get API keys from your password manager.
-provider add my-secret-provider \
-  --type openai-compat \
-  --base-url "https://api.example.com/v1" \
-  --api-key "$(op read my-secret-key)"
-```
-
-## Why Bash?
-
-Two reasons:
-
-1. Angela ships with a first-class Bash interpreter, so we get the logic for
-   free.
-2. Ultimately, Angela needs to be able to configure itself, and command-based
-   config allows both users and the agent to use the same tools.
-
-## What about JSON?
-
-JSON is still supported but is deprecated and, while it's supported, it won't
-be receiving new features. For more see [Legacy JSON](#legacy-json).
-
-## Config versioning
-
-Not breaking the config API is really important to us! That said, you can
-target specific Angela versions with `$ANGELA_VERSION`:
-
-```bash
-if [[ $ANGELA_VERSION == "0.85.*" ]]; then
-    option debug true
-fi
+```json
+{
+  "providers": {
+    "my-secret-provider": {
+      "type": "openai-compat",
+      "base_url": "https://api.example.com/v1",
+      "api_key": "$(op read my-secret-key)"
+    }
+  }
+}
 ```
 
 ## Security
 
-Just like `angela.json`, `angelarc` is a trusted file. Guard it carefully and
-don't download random configs without reading them first.
+`angela.json` is a trusted file. Guard it carefully and don't download random
+configs without reading them first.
 
 ## Where config lives
 
 Angela looks for config in the following places, with lower numbers taking
 precedence:
 
-| Priority | Unix-like                        | Windows                           |
-| -------- | -------------------------------- | --------------------------------- |
-| 1        | `./.angelarc`                     | `.\.angelarc`                      |
-| 2        | `./angelarc`                      | `.\angelarc`                       |
-| 3        | `$XDG_CONFIG_HOME/angela/angelarc` | `%XDG_CONFIG_HOME%\angela\angelarc` |
+| Priority | Unix-like                           | Windows                              |
+| -------- | ----------------------------------- | ------------------------------------ |
+| 1        | `./.angela.json`                    | `.\.angela.json`                     |
+| 2        | `./angela.json`                     | `.\angela.json`                      |
+| 3        | `$XDG_CONFIG_HOME/angela/angela.json` | `%XDG_CONFIG_HOME%\angela\angela.json` |
 
-Legacy JSON uses `.angela.json` / `angela.json` in the same directories as the
-above. Everything found is merged, with project settings overriding global ones
-and `angelarc` overriding JSON in the same directory. If a folder has both, they
-merge and Angela logs a warning.
+Project config is discovered by walking up from the working directory to the
+git worktree root, so an unrelated `angela.json` above the project is never
+picked up. Everything found is deep-merged, with project settings overriding
+global ones.
 
 Data directories (`~/.local/share/angela` on Unix-like systems and
-`%LOCALAPPDATA%\angela` on Windows) contain machine-owned JSON state. Angela does
-not discover or execute a `angelarc` from those locations.
+`%LOCALAPPDATA%\angela` on Windows) contain machine-owned JSON state.
 
 > [!NOTE]
 > Angela also stores state data in `$XDG_DATA_HOME/angela`
@@ -685,28 +661,13 @@ option ui completions-max-items 200
 
 ## Composing configs
 
-Because it's Bash, a shared base config is just a `source`:
-
-```bash
-# Unix-like: ~/.config/angela/angelarc
-# Windows:   %USERPROFILE%\.config\angela\angelarc
-source ~/team/angela-base.sh    # sets up providers, a few skills
-
-# …but on this machine, drop a skill path the base added and add my own.
-option reset skill-path
-option skill-path ~/my/skills
-```
-
-`remove`, `rm`, and `option reset` all act on whatever was set earlier in the
-script or pulled in via `source`. Later lines win, just like a shell.
-
-## Legacy JSON
-
-`angela.json` is the original format and is now deprecated. We plan to support
-it for the forseeable future, but new configuration options will only be added
-to Bash-based config.
+A shared base config is just another layer: put the team's settings in the
+global config and let each project's `angela.json` override what it needs.
+Layers are deep-merged, with the one closest to the project winning.
 
 ```jsonc
+// Unix-like: ~/.config/angela/angela.json
+// Windows:   %USERPROFILE%\.config\angela\angela.json
 {
   "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
   "providers": {
@@ -719,14 +680,14 @@ to Bash-based config.
 }
 ```
 
-For a full reference, See the [JSON schema](../../schema.json).
+For a full reference, see the [JSON schema](../../schema.json).
 
-In JSON, only selected string fields (API keys, URLs, MCP/LSP commands and args,
-headers) are shell-expanded at load time. In `angelarc` there's no such list —
-it's all just Bash.
+Only selected string fields (API keys, URLs, MCP/LSP commands and args,
+headers) are shell-expanded at load time.
 
-Both formats are trusted code: they run with your shell privileges before the UI
-appears. Don't launch Angela in a directory whose config you haven't read.
+Config is trusted code: shell expansion runs with your shell privileges before
+the UI appears. Don't launch Angela in a directory whose config you haven't
+read.
 
 ---
 

@@ -311,9 +311,8 @@ func standardHandlers(blockFuncs []BlockFunc) []execMiddleware {
 }
 
 // builtinHandler returns middleware that dispatches recognized Angela
-// builtins to their in-process Go implementations. All builtins (jq plus the
-// config builtins registered by shellconfig) live in the builtins map; config
-// builtins are no-ops without a ConfigBuilder on the context.
+// builtins to their in-process Go implementations, so they work without the
+// corresponding binary on PATH.
 func builtinHandler() execMiddleware {
 	return func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 		return func(ctx context.Context, args []string) error {

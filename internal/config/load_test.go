@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
@@ -136,24 +135,14 @@ func TestLookupConfigs_BoundedByProject(t *testing.T) {
 		require.Contains(t, got, GlobalConfigData())
 	})
 
-	t.Run("global shell config (angelarc) is included", func(t *testing.T) {
+	t.Run("project angela.json and .angela.json are discovered", func(t *testing.T) {
 		project := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(project, "angela.json"), []byte(""), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".angela.json"), []byte(""), 0o644))
 
 		got := lookupConfigs(project)
-		// A global angelarc is discovered only beside the user config. The data
-		// directory is machine-owned state and must never execute a angelarc.
-		require.Contains(t, got, shellConfigSibling(GlobalConfig()))
-		require.NotContains(t, got, shellConfigSibling(GlobalConfigData()))
-	})
-
-	t.Run("project angelarc and .angelarc are discovered", func(t *testing.T) {
-		project := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(project, "angelarc"), []byte(""), 0o644))
-		require.NoError(t, os.WriteFile(filepath.Join(project, ".angelarc"), []byte(""), 0o644))
-
-		got := lookupConfigs(project)
-		require.Contains(t, got, filepath.Join(project, "angelarc"))
-		require.Contains(t, got, filepath.Join(project, ".angelarc"))
+		require.Contains(t, got, filepath.Join(project, "angela.json"))
+		require.Contains(t, got, filepath.Join(project, ".angela.json"))
 	})
 
 	t.Run("system config is loaded first", func(t *testing.T) {
@@ -201,47 +190,27 @@ func TestLoadFromConfigPaths_InvalidJSON(t *testing.T) {
 	})
 }
 
-// TestLoadFromConfigPaths_ConflictWarningNamesKeys verifies that when a JSON
-// config and a angelarc coexist in the same directory, the merge warning names
-// the overlapping top-level keys so incremental migrations can spot stale
-// duplicates.
-func TestLoadFromConfigPaths_ConflictWarningNamesKeys(t *testing.T) {
-	capture := func(t *testing.T) *strings.Builder {
-		t.Helper()
-		var buf strings.Builder
-		prev := slog.Default()
-		slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-		t.Cleanup(func() { slog.SetDefault(prev) })
-		return &buf
+// TestLookupConfigs_IgnoresAngelarc pins that the retired Bash config format
+// is invisible to discovery. A leftover angelarc must not be picked up and
+// handed to the JSON parser, which would turn a stale file into a hard
+// startup failure.
+func TestLookupConfigs_IgnoresAngelarc(t *testing.T) {
+	globalDir := t.TempDir()
+	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
+	t.Setenv("ANGELA_GLOBAL_DATA", t.TempDir())
+	require.NoError(t, os.WriteFile(filepath.Join(globalDir, "angelarc"), []byte("option debug true\n"), 0o644))
+
+	project := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(project, "angelarc"), []byte("option debug true\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(project, ".angelarc"), []byte("option debug true\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(project, "angela.json"), []byte(`{"providers":{}}`), 0o644))
+
+	got := lookupConfigs(project)
+
+	require.Contains(t, got, filepath.Join(project, "angela.json"))
+	for _, p := range got {
+		require.NotContains(t, filepath.Base(p), "angelarc", "angelarc must not reach the loader: %s", p)
 	}
-
-	t.Run("names overlapping keys", func(t *testing.T) {
-		buf := capture(t)
-		tmpDir := t.TempDir()
-		jsonPath := filepath.Join(tmpDir, "angela.json")
-		rcPath := filepath.Join(tmpDir, "angelarc")
-		require.NoError(t, os.WriteFile(jsonPath, []byte(`{"options":{"debug":true},"providers":{}}`), 0o644))
-		require.NoError(t, os.WriteFile(rcPath, []byte("option debug true\n"), 0o644))
-
-		_, _, err := loadFromConfigPaths(context.Background(), []string{jsonPath, rcPath})
-		require.NoError(t, err)
-		require.Contains(t, buf.String(), "angelarc taking precedence")
-		require.Contains(t, buf.String(), `"conflicting_keys":"options"`)
-	})
-
-	t.Run("no warning when nothing overlaps", func(t *testing.T) {
-		buf := capture(t)
-		tmpDir := t.TempDir()
-		jsonPath := filepath.Join(tmpDir, "angela.json")
-		rcPath := filepath.Join(tmpDir, "angelarc")
-		require.NoError(t, os.WriteFile(jsonPath, []byte(`{"providers":{}}`), 0o644))
-		require.NoError(t, os.WriteFile(rcPath, []byte("option debug true\n"), 0o644))
-
-		_, _, err := loadFromConfigPaths(context.Background(), []string{jsonPath, rcPath})
-		require.NoError(t, err)
-		require.NotContains(t, buf.String(), "angelarc taking precedence",
-			"disjoint coexistence should not warn")
-	})
 }
 
 // testStore wraps a Config in a minimal ConfigStore for testing.

@@ -1214,7 +1214,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 
 // newCustomAgent returns the default Agent used as the merge base for
 // an ID with no lower-priority definition yet (a brand-new markdown
-// or JSON/angelarc agent). Both permission sets default to
+// or JSON agent). Both permission sets default to
 // ToolSetInherited so an agent that never mentions them mirrors the
 // coder instead of silently getting a broader grant than the coder
 // itself has; ResolveAgents materializes that into a concrete,
@@ -1305,7 +1305,7 @@ func (c *Config) ResolveAgents() map[string]Agent {
 		agents[key] = merged
 	}
 
-	// Layer 3: user JSON/angelarc overrides. Unlike markdown files,
+	// Layer 3: user JSON overrides. Unlike markdown files,
 	// which are validated while being parsed, these arrive straight
 	// from JSON decoding, so they are validated here instead of being
 	// trusted.

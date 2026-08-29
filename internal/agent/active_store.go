@@ -29,7 +29,7 @@ type activeAgentIO struct {
 // It deliberately caches the delta rather than the materialized
 // instance. The agent definition — prompt, tools, permissions, context
 // paths — is re-read from the config files on every resolution, so
-// editing angelarc takes effect on the next turn, and an agent deleted
+// editing the config takes effect on the next turn, and an agent deleted
 // from config stops being served immediately. Only the model selection
 // is the session's own.
 //

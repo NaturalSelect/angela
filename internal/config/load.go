@@ -27,7 +27,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/home"
-	"github.com/NaturalSelect/angela/internal/shellconfig"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
 	"github.com/qjebbs/go-jsons"
 	"github.com/tidwall/gjson"
@@ -173,10 +172,9 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 		}
 	}
 
-	// Capture initial staleness snapshot
 	// Capture initial staleness snapshot. Track every discovered config path,
 	// not just the ones that loaded, so a config file created after startup
-	// (e.g. an angelarc added mid-session) is detected as a change.
+	// is detected as a change.
 	store.captureStalenessSnapshot(append(slices.Clone(configPaths), loadedPaths...))
 
 	return store, nil
@@ -933,24 +931,18 @@ func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (reso
 // up. Global user-level config locations are always included
 // regardless of the boundary.
 func lookupConfigs(cwd string) []string {
-	// Prepend global user config and machine-owned data JSON. Only the user
-	// config directory contributes a angelarc; the data directory is writable
-	// machine state and must never be executed as Bash. Missing files are
-	// skipped when loaded.
+	// Prepend global user config and machine-owned data JSON. Missing files
+	// are skipped when loaded.
 	configPaths := []string{
 		systemConfigPath,
 		GlobalConfig(),
-		shellConfigSibling(GlobalConfig()),
 		GlobalConfigData(),
 	}
 
 	// Ordered high-to-low priority within a directory. LookupBounded returns
 	// matches in this order, and the later reverse + merge make the earliest
-	// listed name win on conflict. So: .angelarc beats angelarc, both beat the
-	// JSON configs, and .angela.json beats angela.json.
+	// listed name win on conflict. So .angela.json beats angela.json.
 	configNames := []string{
-		"." + appName + "rc",
-		appName + "rc",
 		"." + appName + ".json",
 		appName + ".json",
 	}
@@ -971,12 +963,6 @@ func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []
 	var configs [][]byte
 	var loaded []string
 
-	// Track directories that have both angela.json and angelarc to warn
-	// about potential confusion, along with the top-level keys each
-	// defines so we can report conflicts.
-	jsonDirKeys := make(map[string]map[string]bool)
-	shDirKeys := make(map[string]map[string]bool)
-
 	for _, path := range configPaths {
 		if path == "" {
 			continue
@@ -992,49 +978,11 @@ func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []
 			continue
 		}
 
-		dir := filepath.Dir(path)
-		if isShellConfig(path) {
-			jsonBytes, err := shellconfig.LoadShellConfig(ctx, path, data)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to load shell config %s: %w", path, err)
-			}
-			if len(jsonBytes) > 0 {
-				if !json.Valid(jsonBytes) {
-					return nil, nil, fmt.Errorf("shell config %s produced invalid JSON", path)
-				}
-				addTopLevelKeys(shDirKeys, dir, jsonBytes)
-				configs = append(configs, jsonBytes)
-				loaded = append(loaded, path)
-			}
-		} else {
-			if !json.Valid(data) {
-				return nil, nil, fmt.Errorf("invalid JSON in config file %s", path)
-			}
-			addTopLevelKeys(jsonDirKeys, dir, data)
-			configs = append(configs, data)
-			loaded = append(loaded, path)
+		if !json.Valid(data) {
+			return nil, nil, fmt.Errorf("invalid JSON in config file %s", path)
 		}
-	}
-
-	// Warn if both a JSON config and an angelarc exist in the same directory
-	// and define overlapping top-level keys. Disjoint coexistence is
-	// intentional and not worth warning about.
-	for dir, jKeys := range jsonDirKeys {
-		sKeys, ok := shDirKeys[dir]
-		if !ok {
-			continue
-		}
-		var conflicts []string
-		for k := range jKeys {
-			if sKeys[k] {
-				conflicts = append(conflicts, k)
-			}
-		}
-		if len(conflicts) > 0 {
-			slices.Sort(conflicts)
-			slog.Warn("Found both a JSON config and an angelarc in the same directory; merging with angelarc taking precedence",
-				"dir", dir, "conflicting_keys", strings.Join(conflicts, ", "))
-		}
+		configs = append(configs, data)
+		loaded = append(loaded, path)
 	}
 
 	cfg, err := loadFromBytes(configs)
@@ -1042,20 +990,6 @@ func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []
 		return nil, nil, err
 	}
 	return cfg, loaded, nil
-}
-
-// addTopLevelKeys records the top-level JSON keys present in data into the
-// set for dir.
-func addTopLevelKeys(m map[string]map[string]bool, dir string, data []byte) {
-	keys := m[dir]
-	if keys == nil {
-		keys = make(map[string]bool)
-		m[dir] = keys
-	}
-	gjson.ParseBytes(data).ForEach(func(key, _ gjson.Result) bool {
-		keys[key.String()] = true
-		return true
-	})
 }
 
 func loadFromBytes(configs [][]byte) (*Config, error) {
@@ -1342,20 +1276,6 @@ func GlobalConfig() string {
 		return filepath.Join(angelaGlobal, fmt.Sprintf("%s.json", appName))
 	}
 	return filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName))
-}
-
-// shellConfigSibling returns the angelarc path that sits alongside a given
-// angela.json path (same directory). Used so global config locations pick up a
-// shell config, not just JSON.
-func shellConfigSibling(jsonPath string) string {
-	return filepath.Join(filepath.Dir(jsonPath), appName+"rc")
-}
-
-// isShellConfig reports whether a config path is a shell config (angelarc or
-// the hidden .angelarc), as opposed to a JSON config.
-func isShellConfig(path string) bool {
-	base := filepath.Base(path)
-	return base == appName+"rc" || base == "."+appName+"rc"
 }
 
 // GlobalCacheDir returns the path to the global cache directory for the

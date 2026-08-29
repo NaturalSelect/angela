@@ -954,3 +954,57 @@ func TestValidateOptions_RejectsNegativeSubagentDepth(t *testing.T) {
 	cfg.Options = nil
 	require.NoError(t, cfg.ValidateOptions())
 }
+
+// TestOptions_SubagentMaxDepthDefaultsToOne pins the depth an unconfigured
+// Angela allows. The value decides whether the coder can delegate at all, so
+// a silent drift to 0 would disable subagents everywhere without any config
+// change to point at.
+func TestOptions_SubagentMaxDepthDefaultsToOne(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, 1, (&Options{}).SubagentMaxDepth(), "unset means one level of delegation")
+	require.Equal(t, 1, (*Options)(nil).SubagentMaxDepth(), "a nil Options must not panic")
+
+	two := 2
+	require.Equal(t, 2, (&Options{SubagentDepth: &two}).SubagentMaxDepth())
+}
+
+// TestReloadFromDisk_InvalidJSONKeepsOldConfig is the safety net around the
+// reload swap: a config that fails to parse must not leave the store holding
+// a half-built value. Reload runs under the store's write lock while the app
+// keeps serving from Config(), so clobbering on failure would strand a live
+// session with no provider and no way back short of a restart.
+func TestReloadFromDisk_InvalidJSONKeepsOldConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "angela.json")
+
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	resetProviderState()
+	t.Cleanup(resetProviderState)
+
+	valid := `{
+		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
+		"providers": {
+			"openai": {
+				"api_key": "test-key",
+				"models": [{"id": "gpt-4", "name": "GPT-4"}]
+			}
+		},
+		"options": {"notifications": "bell"}
+	}`
+	require.NoError(t, os.WriteFile(configPath, []byte(valid), 0o600))
+
+	store, err := Load(dir, dir, false)
+	require.NoError(t, err)
+	require.Equal(t, "bell", store.Config().Options.Notifications)
+
+	// Truncated object: valid UTF-8, unparseable JSON.
+	require.NoError(t, os.WriteFile(configPath, []byte(`{"options": {"notifications":`), 0o600))
+
+	require.Error(t, store.ReloadFromDisk(context.Background()),
+		"an unparseable config must surface a reload error")
+	require.Equal(t, "bell", store.Config().Options.Notifications,
+		"in-memory config must survive a failed reload")
+	require.NotNil(t, store.Config().Models, "the failed reload must not blank out model selection")
+}

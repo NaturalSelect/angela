@@ -41,6 +41,7 @@ func (c *errorCoordinator) BeginAccepted(context.Context, string) *agent.Accepte
 	return nil
 }
 func (c *errorCoordinator) Cancel(string)                           {}
+func (c *errorCoordinator) AbandonBranch(string) bool               { return false }
 func (c *errorCoordinator) CancelAll()                              {}
 func (c *errorCoordinator) IsBusy() bool                            { return false }
 func (c *errorCoordinator) IsSessionBusy(string) bool               { return false }

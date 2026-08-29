@@ -68,9 +68,10 @@ func (s *runCoordinator) RunAccepted(ctx context.Context, accept *agent.Accepted
 func (s *runCoordinator) BeginAccepted(context.Context, string) *agent.AcceptedRun {
 	return nil
 }
-func (s *runCoordinator) Cancel(string) {}
-func (s *runCoordinator) CancelAll()    {}
-func (s *runCoordinator) IsBusy() bool  { return false }
+func (s *runCoordinator) Cancel(string)             {}
+func (s *runCoordinator) AbandonBranch(string) bool { return false }
+func (s *runCoordinator) CancelAll()                {}
+func (s *runCoordinator) IsBusy() bool              { return false }
 func (s *runCoordinator) IsSessionBusy(string) bool {
 	return false
 }
@@ -239,4 +240,26 @@ func TestPostAgent_DetachesRequestContext(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return coord.ranCount.Load() == 1
 	}, 2*time.Second, 10*time.Millisecond)
+}
+
+// TestAbandonBranchEndpointReachesTheCoordinator pins the wiring of the
+// dedicated abandon route. /abort is only unconditional if the intent
+// survives every hop, so this asserts the branch session id arrives at the
+// coordinator rather than the workspace or the parent it returns to.
+func TestAbandonBranchEndpointReachesTheCoordinator(t *testing.T) {
+	t.Parallel()
+
+	coord := &stubCoordinator{}
+	c, wsID := buildAgentWorkspace(t, coord)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"/v1/workspaces/"+wsID+"/agent/sessions/branch-1/abandon-branch", nil)
+	req.SetPathValue("id", wsID)
+	req.SetPathValue("sid", "branch-1")
+	rec := httptest.NewRecorder()
+
+	c.handlePostWorkspaceAgentSessionAbandonBranch(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []string{"branch-1"}, coord.abandoned)
 }

@@ -135,9 +135,11 @@ func (m *UI) cancelLeavesBranch() bool {
 //
 // Unlike the escape gesture this is unconditional: the user picked "abort"
 // by name, so a turn still running is given up along with the branch rather
-// than merely interrupted.
+// than merely interrupted. That is why it goes through the dedicated
+// abandon operation rather than the shared cancel, which spares a busy
+// branch on purpose.
 func (m *UI) abortBranch(sessionID string) tea.Cmd {
-	m.com.Workspace.AgentCancel(sessionID)
+	m.com.Workspace.AgentAbandonBranch(sessionID)
 	m.turnIsSpinning = false
 	m.invalidateBusyCaches()
 

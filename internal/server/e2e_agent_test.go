@@ -181,6 +181,8 @@ func (c *scriptedCoordinator) RunAccepted(ctx context.Context, accept *agent.Acc
 
 func (c *scriptedCoordinator) BeginAccepted(context.Context, string) *agent.AcceptedRun { return nil }
 
+func (c *scriptedCoordinator) AbandonBranch(string) bool { return false }
+
 func (c *scriptedCoordinator) Cancel(sessionID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

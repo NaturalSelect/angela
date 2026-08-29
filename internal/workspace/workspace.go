@@ -145,6 +145,11 @@ type Workspace interface {
 	AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error
 	AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (proto.ShellCommandResponse, error)
 	AgentCancel(sessionID string)
+	// AgentAbandonBranch gives a branch up whether or not a turn is
+	// running on it, releasing the parent call suspended on it.
+	// AgentCancel interrupts a turn and only abandons an idle branch;
+	// this is the outcome the user names outright.
+	AgentAbandonBranch(sessionID string)
 	AgentIsBusy() bool
 	AgentIsSessionBusy(sessionID string) bool
 	// AgentIsSessionBranch reports whether the process running the

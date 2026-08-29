@@ -51,6 +51,7 @@ func (c *blockingCoordinator) BeginAccepted(context.Context, string) *agent.Acce
 	return nil
 }
 func (c *blockingCoordinator) Cancel(string)                           {}
+func (c *blockingCoordinator) AbandonBranch(string) bool               { return false }
 func (c *blockingCoordinator) CancelAll()                              {}
 func (c *blockingCoordinator) IsBusy() bool                            { return false }
 func (c *blockingCoordinator) IsSessionBusy(string) bool               { return false }

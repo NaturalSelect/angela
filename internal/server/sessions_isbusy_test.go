@@ -25,8 +25,9 @@ import (
 // the type satisfies the interface without dragging in the full
 // coordinator dependency graph.
 type stubCoordinator struct {
-	busy   map[string]bool
-	branch map[string]bool
+	busy      map[string]bool
+	branch    map[string]bool
+	abandoned []string
 }
 
 func (s *stubCoordinator) Run(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error) {
@@ -41,8 +42,12 @@ func (s *stubCoordinator) BeginAccepted(context.Context, string) *agent.Accepted
 	return nil
 }
 func (s *stubCoordinator) Cancel(string) {}
-func (s *stubCoordinator) CancelAll()    {}
-func (s *stubCoordinator) IsBusy() bool  { return false }
+func (s *stubCoordinator) AbandonBranch(id string) bool {
+	s.abandoned = append(s.abandoned, id)
+	return true
+}
+func (s *stubCoordinator) CancelAll()   {}
+func (s *stubCoordinator) IsBusy() bool { return false }
 func (s *stubCoordinator) IsSessionBusy(id string) bool {
 	return s.busy[id]
 }

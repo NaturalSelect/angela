@@ -282,6 +282,138 @@ func TestRunBranchAgentReportsAbandonment(t *testing.T) {
 	require.Contains(t, resp.Content, "ended this branch")
 }
 
+// busyBranchFixture is a branch whose opening turn has started and not
+// finished, with the parent's dispatch still suspended on it. That is the
+// state the two abandonment gestures have to be told apart in.
+type busyBranchFixture struct {
+	c        *coordinator
+	agent    *mockSessionAgent
+	branchID string
+	release  chan struct{}
+	resp     fantasy.ToolResponse
+	wg       sync.WaitGroup
+}
+
+// forkBusyBranch drives a dispatch up to the point where the branch is
+// registered and its opening turn is mid-flight. turnErr is what that turn
+// eventually fails with, which is how a test can race a startup failure
+// against an outcome the user already chose.
+func forkBusyBranch(t *testing.T, turnErr error) *busyBranchFixture {
+	t.Helper()
+
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 1)
+	f := &busyBranchFixture{c: c, release: make(chan struct{})}
+
+	// The turn ends on release rather than on ctx: mockSessionAgent.Cancel
+	// only records the call, so a turn waiting to be cancelled for real
+	// would never return and its goroutine would leak.
+	agent, resolved := newMockAgent(branchProviderID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		seen <- call.Prompt
+		<-f.release
+		if turnErr != nil {
+			return nil, turnErr
+		}
+		return agentResultWithText("hello"), nil
+	})
+	agent.busy = true
+	f.agent = agent
+
+	f.wg.Add(1)
+	go func() {
+		defer f.wg.Done()
+		f.resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+
+	requireBranchStarted(t, seen)
+	f.branchID = requireBranchSession(t, c, parent.ID)
+	require.True(t, c.branches.Waiting(f.branchID))
+	require.True(t, c.IsSessionBusy(f.branchID),
+		"the fixture must present a branch that is still generating")
+	return f
+}
+
+// finish releases the opening turn and reports what the parent's suspended
+// dispatch resolved to. The branch must already be resolved, or there is
+// nothing for that dispatch to wake on.
+func (f *busyBranchFixture) finish(t *testing.T) fantasy.ToolResponse {
+	t.Helper()
+	close(f.release)
+	f.wg.Wait()
+	return f.resp
+}
+
+// Abandoning by name has to land on a branch that is still generating.
+// Cancel spares one on purpose, which left the gesture half-applied: the
+// view returned to the parent while the branch stayed live and the parent
+// stayed suspended, with nothing on screen to say so.
+func TestAbandonBranchGivesUpABusyBranch(t *testing.T) {
+	f := forkBusyBranch(t, nil)
+
+	require.True(t, f.c.AbandonBranch(f.branchID))
+	require.False(t, f.c.branches.Waiting(f.branchID),
+		"the parent must no longer be suspended on a branch the user gave up")
+	require.Equal(t, []string{f.branchID}, f.agent.cancelled,
+		"the branch must stop working for a result nobody will read")
+
+	resp := f.finish(t)
+	require.True(t, resp.IsError)
+	require.True(t, resp.StopTurn, "an abandoned branch must not leave the caller retrying")
+	require.Contains(t, resp.Content, "ended this branch")
+}
+
+// The cancelled turn fails on its way out and reports that failure through
+// the same rendezvous. It has to lose: the user already chose an outcome,
+// and signalling before cancelling is what keeps "could not be started"
+// from overwriting it.
+func TestAbandonBranchOutlivesTheCancelledTurnsFailure(t *testing.T) {
+	f := forkBusyBranch(t, context.DeadlineExceeded)
+
+	require.True(t, f.c.AbandonBranch(f.branchID))
+
+	resp := f.finish(t)
+	require.Contains(t, resp.Content, "ended this branch")
+	require.NotContains(t, resp.Content, "could not be started",
+		"the turn's own failure must not overwrite the outcome the user chose")
+}
+
+// A session that is not a branch has nothing to abandon, and must not have
+// its run torn down on the way to finding that out.
+func TestAbandonBranchLeavesAnOrdinarySessionAlone(t *testing.T) {
+	t.Parallel()
+
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	require.False(t, c.AbandonBranch("nobody"))
+}
+
+// The escape gesture keeps its own meaning on a busy branch: it interrupts
+// the turn and leaves the branch itself alive, which is what lets the user
+// stop it mid-thought and redirect it. Only the named command gives up the
+// branch as well.
+func TestCancelOnABusyBranchStillOnlyInterruptsTheTurn(t *testing.T) {
+	f := forkBusyBranch(t, nil)
+
+	f.c.Cancel(f.branchID)
+	require.True(t, f.c.branches.Waiting(f.branchID),
+		"a busy branch must survive a cancel so the user can redirect it")
+	require.Equal(t, []string{f.branchID}, f.agent.cancelled,
+		"the turn itself must still be interrupted")
+
+	// Still suspended, so the branch has to be resolved explicitly before
+	// the dispatch has anything to wake on.
+	require.True(t, f.c.branches.Signal(f.branchID, branchOutcome{Merged: true, Payload: "done"}))
+	require.Equal(t, "done", f.finish(t).Content)
+}
+
 // Cancelling the conversation that is suspended reaches through to the
 // branch. Without it the caller is freed while the branch runs on, working
 // for a result nobody will read.

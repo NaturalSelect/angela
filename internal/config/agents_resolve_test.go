@@ -138,16 +138,19 @@ func TestResolveAgents_CustomBranchIsNotDowngraded(t *testing.T) {
 	require.NotEqual(t, AgentModeSubagent, agents["pairing"].Mode)
 }
 
-// Nothing built in may claim branch mode: a branch suspends its caller until
-// a human resolves it, which is never the right default for an agent the user
-// did not ask for.
-func TestResolveAgents_NoBuiltinIsABranch(t *testing.T) {
+// Branch mode suspends the caller until a human resolves it, so it is never
+// the right default for an agent the user did not ask for. plan is the one
+// deliberate exception; this keeps any other builtin from drifting into it.
+func TestResolveAgents_PlanIsTheOnlyBuiltinBranch(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 
+	var branches []string
 	for id, agent := range cfg.ResolveAgents() {
-		require.NotEqual(t, AgentModeBranch, agent.Mode,
-			"builtin agent %q ships as a branch", id)
+		if agent.Mode == AgentModeBranch {
+			branches = append(branches, id)
+		}
 	}
+	require.Equal(t, []string{AgentPlan}, branches)
 }
 
 func TestResolveAgents_ExploreHasNoBash(t *testing.T) {

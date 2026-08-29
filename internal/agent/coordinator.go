@@ -920,8 +920,7 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 		tools.NewWriteTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
 	)
 
-	// Question tool is interactive-only and not available to sub-agents.
-	if !isSubAgent && c.interactive {
+	if c.shouldEnableQuestionTool(agent, isSubAgent) {
 		allTools = append(allTools, tools.NewQuestionTool(c.questions))
 	}
 
@@ -995,6 +994,18 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 	filteredTools = wrapToolsWithHooks(filteredTools, hookRunner)
 
 	return filteredTools, nil
+}
+
+// shouldEnableQuestionTool reports whether an agent may ask the user
+// questions. It needs someone to ask, which rules out a non-interactive run
+// and an ordinary sub-agent, whose output is read by another agent rather
+// than a person. A branch is dispatched like a sub-agent but hands the
+// conversation over, so asking is the reason it exists.
+func (c *coordinator) shouldEnableQuestionTool(agent config.Agent, isSubAgent bool) bool {
+	if !c.interactive {
+		return false
+	}
+	return !isSubAgent || agent.Mode == config.AgentModeBranch
 }
 
 // removeWebFetchScratch clears the web_fetch pages cached for one

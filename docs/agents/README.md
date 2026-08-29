@@ -84,8 +84,28 @@ Use it for work the model cannot finish alone: a design decision only you
 can make, an exploration whose direction you have to steer, a discussion
 that has to happen before the task is even well-defined.
 
-There is no built-in branch agent — you configure your own, with your own
-system prompt.
+Angela ships one branch agent, `plan`, and you can configure your own with
+your own system prompt.
+
+### `plan`
+
+The coder forks `plan` before non-trivial work — a new feature, a refactor, a
+change with several viable designs, or a request whose scope has to be pinned
+down first. You settle the approach together, and `plan` hands back an ordered,
+step-by-step plan for the coder to execute.
+
+`plan` is read-only. It reads, searches, and asks you questions, but it holds
+no `bash`, no `edit`, and no `write`: the plan is the only thing it produces.
+That is also why merging it is safe to approve — nothing in your working tree
+changed while it ran.
+
+If you want it to do more, override it like any other agent. Giving it `bash`
+lets it dig through `git log` and `git blame`, at the cost of a permission
+prompt per command:
+
+```bash
+agent set plan --allowed-tools "$(agent get plan --allowed-tools),bash"
+```
 
 ### Configuring one
 

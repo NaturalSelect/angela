@@ -17,6 +17,9 @@ var explorePromptTmpl []byte
 //go:embed templates/general.md.tpl
 var generalPromptTmpl []byte
 
+//go:embed templates/plan.md.tpl
+var planPromptTmpl []byte
+
 //go:embed templates/initialize.md.tpl
 var initializePromptTmpl []byte
 
@@ -32,10 +35,10 @@ var webFetchPromptTmpl []byte
 //go:embed templates/generate_agent.md.tpl
 var generateAgentPromptTmpl []byte
 
-// branchPreambleTmpl fronts the system prompt of every branch-mode agent.
-// Angela ships no branch of its own, so the prompt underneath it is always
-// the user's; this is the only place the rules the fork machinery depends on
-// are guaranteed to be stated.
+// branchPreambleTmpl fronts the system prompt of every branch-mode agent,
+// the built-in plan agent as well as any the user defines. It is the only
+// place the rules the fork machinery depends on are guaranteed to be stated,
+// so a custom branch prompt cannot drop them by omission.
 //
 //go:embed templates/branch_preamble.md.tpl
 var branchPreambleTmpl []byte
@@ -62,6 +65,10 @@ func generalPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 		return nil, err
 	}
 	return systemPrompt, nil
+}
+
+func planPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	return prompt.NewPrompt(config.AgentPlan, string(planPromptTmpl), opts...)
 }
 
 func titlePrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
@@ -91,6 +98,7 @@ var builtinPromptForAgent = map[string]func(...prompt.Option) (*prompt.Prompt, e
 	config.AgentCoder:         coderPrompt,
 	config.AgentExplore:       explorePrompt,
 	config.AgentGeneral:       generalPrompt,
+	config.AgentPlan:          planPrompt,
 	config.AgentTitle:         titlePrompt,
 	config.AgentCompact:       compactPrompt,
 	config.AgentWebFetch:      webFetchPrompt,
@@ -107,6 +115,7 @@ var builtinPromptTemplateFile = map[string]string{
 	config.AgentCoder:         "coder.md.tpl",
 	config.AgentExplore:       "explore.md.tpl",
 	config.AgentGeneral:       "general.md.tpl",
+	config.AgentPlan:          "plan.md.tpl",
 	config.AgentTitle:         "title.md",
 	config.AgentCompact:       "summary.md",
 	config.AgentWebFetch:      "web_fetch_prompt.md.tpl",

@@ -66,6 +66,46 @@ func TestDrawOnSurfaceFillsBlankArea(t *testing.T) {
 	}
 }
 
+// A wide rune occupies two columns, and the second one is a zero-width
+// placeholder. Writing to it makes the buffer erase the rune it belongs to,
+// which is how CJK text vanished from the user band.
+func TestDrawOnSurfaceKeepsWideRunes(t *testing.T) {
+	t.Parallel()
+
+	base := uv.Style{Bg: bandBg}
+	buf := uv.NewScreenBuffer(12, 1)
+	common.DrawOnSurface(&buf, buf.Bounds(), base, "中文ok")
+
+	require.Equal(t, "中", buf.CellAt(0, 0).Content)
+	require.Equal(t, "文", buf.CellAt(2, 0).Content)
+	require.Equal(t, "o", buf.CellAt(4, 0).Content)
+	require.Equal(t, "k", buf.CellAt(5, 0).Content)
+
+	for x := range 12 {
+		cell := buf.CellAt(x, 0)
+		// The continuation column of a wide rune carries no style; the
+		// rune's own cell paints both columns.
+		if cell.Width == 0 {
+			continue
+		}
+		sameColor(t, bandBg, cell.Style.Bg, "cell (%d,0) lost the surface fill", x)
+	}
+}
+
+func TestSetSpanKeepsWideRunes(t *testing.T) {
+	t.Parallel()
+
+	buf := uv.NewScreenBuffer(10, 1)
+	common.FillRect(&buf, buf.Bounds(), uv.Style{Bg: bandBg})
+	common.SetSpan(&buf, 1, 0, uv.Style{Fg: textFg}, "中文")
+
+	require.Equal(t, "中", buf.CellAt(1, 0).Content)
+	require.Equal(t, "文", buf.CellAt(3, 0).Content)
+	sameColor(t, textFg, buf.CellAt(1, 0).Style.Fg, "span lost its foreground")
+	sameColor(t, bandBg, buf.CellAt(1, 0).Style.Bg, "span erased the fill")
+	sameColor(t, bandBg, buf.CellAt(5, 0).Style.Bg, "span bled past its width")
+}
+
 // The chat path renders items to a string and parses that string back into
 // cells. If the background does not survive that round-trip, every surface in
 // the redesign is unreachable through the list.Item contract.

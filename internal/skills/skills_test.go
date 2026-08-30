@@ -446,6 +446,32 @@ func TestDiscoverBuiltin(t *testing.T) {
 		}
 	}
 	require.True(t, foundHooks, "angela-hooks builtin skill not found")
+
+	var foundSetup bool
+	for _, s := range discovered {
+		if s.Name == "angela-setup" {
+			foundSetup = true
+			require.Equal(t, "angela://skills/angela-setup/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-setup", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundSetup, "angela-setup builtin skill not found")
+
+	var foundMigrate bool
+	for _, s := range discovered {
+		if s.Name == "angela-migrate" {
+			foundMigrate = true
+			require.Equal(t, "angela://skills/angela-migrate/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-migrate", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundMigrate, "angela-migrate builtin skill not found")
 }
 
 func TestDeduplicate(t *testing.T) {

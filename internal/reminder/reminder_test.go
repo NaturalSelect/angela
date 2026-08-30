@@ -55,7 +55,7 @@ func TestTodoRecencyFiresOnAnInterval(t *testing.T) {
 				require.Empty(t, got)
 				return
 			}
-			require.Contains(t, got, "todos", "the nudge must name the tool it is nudging toward")
+			require.Contains(t, got, toolnames.Todos, "the nudge must name the tool it is nudging toward")
 			require.NotContains(t, got, "empty",
 				"the nudge must not assert anything about the list's contents")
 		})

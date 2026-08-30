@@ -22,14 +22,14 @@ Common shell builtins and core utils available on Windows.
 - Each command runs in an independent shell; the working directory persists between commands but shell state does not
 - Chain with ';' or '&&', avoid newlines except in quoted strings
 - IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `ls`, `sed`, `awk` and similar commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Use the appropriate dedicated tool instead — it provides a much better experience for the user and makes tool calls easier to review and approve:
-  - File search: Use glob (NOT find or ls)
-  - Content search: Use grep (NOT grep or rg)
-  - Read files: Use view (NOT cat/head/tail)
-  - Edit files: Use edit or multiedit (NOT sed/awk)
-  - Write files: Use write (NOT echo >/cat <<EOF)
+  - File search: Use Glob (NOT find or ls)
+  - Content search: Use Grep (NOT grep or rg)
+  - Read files: Use View (NOT cat/head/tail)
+  - Edit files: Use Edit or MultiEdit (NOT sed/awk)
+  - Write files: Use Write (NOT echo >/cat <<EOF)
   - Communication: Output text directly (NOT echo/printf)
 {{- if .RgAvailable }}
-- Ripgrep (`rg`) is available on this machine, but still prefer the grep tool; reach for `rg` directly only when you need an aggregate the grep tool cannot produce
+- Ripgrep (`rg`) is available on this machine, but still prefer the Grep tool; reach for `rg` directly only when you need an aggregate the Grep tool cannot produce
 {{- end }}
 </usage_notes>
 
@@ -50,15 +50,15 @@ For commands that are harder to parse at a glance (piped commands, obscure flags
 - Do not sleep between commands that can run immediately — just run them.
 - If you must poll an external process, use a check command (e.g. `gh run view`) rather than sleeping first.
 - If you must sleep, keep the duration short to avoid blocking the user.
-- If waiting for a background task you started with `run_in_background`, use job_output to read it when you need it — do not poll in a sleep loop.
+- If waiting for a background task you started with `run_in_background`, use JobOutput to read it when you need it — do not poll in a sleep loop.
 - Do not retry failing commands in a sleep loop — diagnose the root cause.
 </sleep>
 
 <background_execution>
 - Set run_in_background=true to run commands in a separate background shell
 - Returns a shell ID for managing the background process
-- Use job_output tool to view current output from background shell
-- Use job_kill tool to terminate a background shell
+- Use JobOutput tool to view current output from background shell
+- Use JobKill tool to terminate a background shell
 - IMPORTANT: NEVER use `&` at the end of commands to run in background - use run_in_background parameter instead
 - Commands that should run in background:
   * Long-running servers (e.g., `npm start`, `python -m http.server`, `node server.js`)

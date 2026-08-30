@@ -42,12 +42,12 @@ func TestUpdateModelsReconcilesSubagentsAfterConfigChange(t *testing.T) {
 	before, ok := coord.subagents.Get(config.AgentGeneral)
 	require.True(t, ok)
 
-	require.Contains(t, dispatchTools(t, coord, before), "bash",
+	require.Contains(t, dispatchTools(t, coord, before), toolnames.Bash,
 		"sanity check: general starts with bash")
 
 	agents := coord.cfg.Config().Agents
 	narrowed := agents[config.AgentGeneral]
-	narrowed.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{"view"}}
+	narrowed.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.View}}
 	agents[config.AgentGeneral] = narrowed
 
 	require.NoError(t, coord.UpdateModels(context.Background()))
@@ -56,7 +56,7 @@ func TestUpdateModelsReconcilesSubagentsAfterConfigChange(t *testing.T) {
 	require.True(t, ok)
 	require.NotSame(t, before, after, "a permission change must replace the cached entry")
 
-	require.NotContains(t, dispatchTools(t, coord, after), "bash",
+	require.NotContains(t, dispatchTools(t, coord, after), toolnames.Bash,
 		"a revoked tool must be gone from the rebuilt subagent")
 }
 
@@ -118,7 +118,7 @@ func TestDispatchIsolatesExecuteTimeTemplateError(t *testing.T) {
 		Description:  "parses fine, fails at execute time",
 		Mode:         config.AgentModeSubagent,
 		Prompt:       "{{.NoSuchField}}",
-		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{"view"}},
+		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.View}},
 		AllowedMCP:   &config.AllowedMCPSet{Kind: config.ToolSetScope},
 	}
 	coord.cfg.Config().Agents["broken"] = brokenCfg
@@ -199,9 +199,9 @@ func TestWebFetchSubagentIsRegistered(t *testing.T) {
 	require.True(t, ok, "web-fetch must be a dispatchable sub-agent")
 
 	names := dispatchTools(t, coord, entry)
-	require.Contains(t, names, "web_fetch")
-	require.Contains(t, names, "web_search")
-	require.Contains(t, names, "view")
-	require.NotContains(t, names, "bash")
+	require.Contains(t, names, toolnames.WebFetch)
+	require.Contains(t, names, toolnames.WebSearch)
+	require.Contains(t, names, toolnames.View)
+	require.NotContains(t, names, toolnames.Bash)
 	require.NotContains(t, names, toolnames.Agent)
 }

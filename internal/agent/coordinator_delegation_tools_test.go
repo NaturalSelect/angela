@@ -42,7 +42,7 @@ func TestSubagentsHaveNoDelegationTools(t *testing.T) {
 
 	t.Run("explore has no bash", func(t *testing.T) {
 		names := toolNames(t, config.AgentExplore, 1)
-		require.NotContains(t, names, "bash")
+		require.NotContains(t, names, toolnames.Bash)
 	})
 
 	t.Run(config.AgentCoder, func(t *testing.T) {
@@ -75,7 +75,7 @@ func TestBuildToolsOmitsAgentToolWhenNoSubagents(t *testing.T) {
 		names = append(names, tool.Info().Name)
 	}
 	require.NotContains(t, names, toolnames.Agent)
-	require.Contains(t, names, "bash", "the rest of the tool list must survive")
+	require.Contains(t, names, toolnames.Bash, "the rest of the tool list must survive")
 }
 
 // TestSubagentToolsAreHookWrapped pins the security fix: a sub-agent's
@@ -87,7 +87,7 @@ func TestSubagentToolsAreHookWrapped(t *testing.T) {
 
 	cfg := coord.cfg.Config()
 	cfg.Hooks = map[string][]config.HookConfig{
-		hooks.EventPreToolUse: {{Matcher: "bash", Command: `exit 2`}},
+		hooks.EventPreToolUse: {{Matcher: toolnames.Bash, Command: `exit 2`}},
 	}
 	require.NoError(t, cfg.ValidateHooks())
 
@@ -104,7 +104,7 @@ func TestSubagentToolsAreHookWrapped(t *testing.T) {
 
 			var bash fantasy.AgentTool
 			for _, tool := range toolList {
-				if tool.Info().Name == "bash" {
+				if tool.Info().Name == toolnames.Bash {
 					bash = tool
 				}
 			}
@@ -112,7 +112,7 @@ func TestSubagentToolsAreHookWrapped(t *testing.T) {
 			require.IsType(t, &hookedTool{}, bash, "every tool must face PreToolUse hooks")
 
 			resp, err := bash.Run(t.Context(), fantasy.ToolCall{
-				ID: "call-1", Name: "bash", Input: `{"command":"echo hi"}`,
+				ID: "call-1", Name: toolnames.Bash, Input: `{"command":"echo hi"}`,
 			})
 			require.NoError(t, err)
 			require.True(t, resp.IsError, "a denying hook must block the call")
@@ -137,11 +137,11 @@ func TestHookRunnerCarriesAgentIdentity(t *testing.T) {
 		toolList, err := coord.buildTools(cfg.Agents[agentID], "", depth)
 		require.NoError(t, err)
 		for _, tool := range toolList {
-			if tool.Info().Name != "view" {
+			if tool.Info().Name != toolnames.View {
 				continue
 			}
 			resp, err := tool.Run(t.Context(), fantasy.ToolCall{
-				ID: "call-1", Name: "view", Input: `{"file_path":"/tmp/x"}`,
+				ID: "call-1", Name: toolnames.View, Input: `{"file_path":"/tmp/x"}`,
 			})
 			require.NoError(t, err)
 			return resp.Content

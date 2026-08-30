@@ -19,8 +19,8 @@ Fetch only pages you need for the caller's request: the URL(s) the caller gave y
 </untrusted_content>
 
 <tool_guide>
-- **web_fetch**: fetch a URL and get back readable content extracted from the page. Use this for articles, docs, or any page whose meaning you need to understand. Large pages are saved to a file for you to view/grep instead of being inlined.
-- **web_search**: search the web for a query, returning titles, URLs, and snippets. Use it to find candidate pages before fetching them.
+- **WebFetch**: fetch a URL and get back readable content extracted from the page. Use this for articles, docs, or any page whose meaning you need to understand. Large pages are saved to a file for you to view/grep instead of being inlined.
+- **WebSearch**: search the web for a query, returning titles, URLs, and snippets. Use it to find candidate pages before fetching them.
 - **fetch**: fetch a URL's raw content (text, markdown, or html) with no extraction. Use it only when you need the unprocessed response, e.g. inspecting an API's raw JSON.
 - **sourcegraph**: search public code on Sourcegraph. Use it when the question is about code in a public repository rather than a general web page.
 </tool_guide>

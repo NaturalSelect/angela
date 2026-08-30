@@ -7,6 +7,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 // GetMCPTools gets all the currently available MCP tools.
@@ -43,7 +44,7 @@ func (m *Tool) ProviderOptions() fantasy.ProviderOptions {
 }
 
 func (m *Tool) Name() string {
-	return fmt.Sprintf("mcp_%s_%s", m.mcpName, m.tool.Name)
+	return toolnames.MCPPrefix + m.mcpName + "_" + m.tool.Name
 }
 
 func (m *Tool) MCP() string {

@@ -179,7 +179,7 @@ func TestAccessOfFailsClosed(t *testing.T) {
 		{"unregistered tool", "brand_new_tool", `{}`},
 		{"malformed input", toolnames.Bash, `{"command":`},
 		{"wrongly typed field", toolnames.View, `{"file_path":42}`},
-		{"mcp prefix without a tool name", "mcp_docker", `{}`},
+		{"mcp prefix without a tool name", toolnames.MCPPrefix + "docker", `{}`},
 	}
 
 	for _, tc := range cases {
@@ -215,6 +215,8 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 		toolnames.LSPRestart,
 		toolnames.LS,
 		toolnames.ListMCPResources,
+		toolnames.LoadReport,
+		toolnames.Merge,
 		toolnames.MultiEdit,
 		toolnames.ProposalEdit,
 		toolnames.ProposalRead,

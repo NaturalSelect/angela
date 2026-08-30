@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,7 +61,7 @@ func TestConvertToToolResult_ValidMediaNoText(t *testing.T) {
 
 	result := fantasy.ToolResultContent{
 		ToolCallID: "call_789",
-		ToolName:   "view",
+		ToolName:   toolnames.View,
 		Result: fantasy.ToolResultOutputContentMedia{
 			Data:      validData,
 			MediaType: "image/jpeg",
@@ -80,7 +81,7 @@ func TestConvertToToolResult_ASCIIButInvalidBase64(t *testing.T) {
 	a := &sessionAgent{}
 	result := fantasy.ToolResultContent{
 		ToolCallID: "call_abc",
-		ToolName:   "mcp_tool",
+		ToolName:   toolnames.MCPPrefix + "tool",
 		Result: fantasy.ToolResultOutputContentMedia{
 			Data:      "not-valid-base64!!!",
 			MediaType: "image/png",

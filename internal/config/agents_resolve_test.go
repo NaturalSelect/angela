@@ -56,17 +56,17 @@ func TestResolveAgents_Idempotent(t *testing.T) {
 
 func TestResolveAgents_GlobalDisabledToolsOverridesExplicitWhitelist(t *testing.T) {
 	cfg := &Config{
-		Options: &Options{DisabledTools: []string{"bash"}},
+		Options: &Options{DisabledTools: []string{"Bash"}},
 		AgentConfigs: map[string]Agent{
-			"reviewer": {Description: "x", AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"bash", "view"}}},
+			"reviewer": {Description: "x", AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"Bash", "View"}}},
 		},
 	}
 
 	agents := cfg.ResolveAgents()
 	reviewer, ok := agents["reviewer"]
 	require.True(t, ok)
-	require.NotContains(t, reviewer.AllowedTools.Tools, "bash", "global DisabledTools must win over an agent's explicit whitelist")
-	require.Contains(t, reviewer.AllowedTools.Tools, "view")
+	require.NotContains(t, reviewer.AllowedTools.Tools, "Bash", "global DisabledTools must win over an agent's explicit whitelist")
+	require.Contains(t, reviewer.AllowedTools.Tools, "View")
 }
 
 func TestResolveAgents_CustomAgentDefaultsToBaseTools(t *testing.T) {
@@ -81,7 +81,7 @@ func TestResolveAgents_CustomAgentDefaultsToBaseTools(t *testing.T) {
 	reviewer, ok := agents["reviewer"]
 	require.True(t, ok)
 	require.NotEmpty(t, reviewer.AllowedTools.Tools)
-	require.ElementsMatch(t, filterSlice(allToolNames(), []string{"web_fetch", "web_search"}, false), reviewer.AllowedTools.Tools)
+	require.ElementsMatch(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch"}, false), reviewer.AllowedTools.Tools)
 }
 
 // TestResolveAgents_CustomPrimaryIsNotDowngraded pins that primary mode
@@ -164,8 +164,8 @@ func TestResolveAgents_DeepResearchRunsButDoesNotWrite(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 	allowed := cfg.ResolveAgents()[AgentDeepResearch].AllowedTools.Tools
 
-	require.Contains(t, allowed, "bash")
-	for _, tool := range []string{"edit", "multiedit", "write", "download", "lsp_rename", "lsp_replace_symbol"} {
+	require.Contains(t, allowed, "Bash")
+	for _, tool := range []string{"Edit", "MultiEdit", "Write", "Download", "LSPRename", "LSPReplaceSymbol"} {
 		require.NotContains(t, allowed, tool)
 	}
 }
@@ -173,7 +173,7 @@ func TestResolveAgents_DeepResearchRunsButDoesNotWrite(t *testing.T) {
 func TestResolveAgents_ExploreHasNoBash(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 	agents := cfg.ResolveAgents()
-	require.NotContains(t, agents[AgentExplore].AllowedTools.Tools, "bash")
+	require.NotContains(t, agents[AgentExplore].AllowedTools.Tools, "Bash")
 }
 
 // TestResolveAgents_AlwaysMaterialized locks the structural postcondition
@@ -193,7 +193,7 @@ func TestResolveAgents_AlwaysMaterialized(t *testing.T) {
 		}},
 		{"every read-only tool disabled", func(t *testing.T) *Config {
 			return &Config{Options: &Options{DisabledTools: []string{
-				"glob", "grep", "ls", "lsp_call_hierarchy", "lsp_definition", "lsp_symbols", "sourcegraph", "view",
+				"Glob", "Grep", "LS", "LSPCallHierarchy", "LSPDefinition", "LSPSymbols", "Sourcegraph", "View",
 			}}}
 		}},
 		{"custom agent with explicit empty whitelist", func(t *testing.T) *Config {
@@ -361,17 +361,17 @@ func TestResolveAgents_InheritedFollowsCoderScope(t *testing.T) {
 	cfg := &Config{
 		Options: &Options{},
 		AgentConfigs: map[string]Agent{
-			AgentCoder: {AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view", "grep"}}},
+			AgentCoder: {AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"View", "Grep"}}},
 			"reviewer": {Description: "Reviews code"},
 		},
 	}
 
 	agents := cfg.ResolveAgents()
 
-	require.ElementsMatch(t, []string{"view", "grep"}, agents[AgentCoder].AllowedTools.Tools)
-	require.ElementsMatch(t, []string{"view", "grep"}, agents["reviewer"].AllowedTools.Tools,
+	require.ElementsMatch(t, []string{"View", "Grep"}, agents[AgentCoder].AllowedTools.Tools)
+	require.ElementsMatch(t, []string{"View", "Grep"}, agents["reviewer"].AllowedTools.Tools,
 		"an agent that never mentions allowed_tools inherits the coder's resolved set")
-	require.ElementsMatch(t, []string{"view", "grep"}, agents[AgentGeneral].AllowedTools.Tools,
+	require.ElementsMatch(t, []string{"View", "Grep"}, agents[AgentGeneral].AllowedTools.Tools,
 		"the built-in general agent inherits too")
 }
 
@@ -382,9 +382,9 @@ func TestResolveAgents_InheritedMinusOwnDisabledTools(t *testing.T) {
 	agents := cfg.ResolveAgents()
 
 	general := agents[AgentGeneral]
-	require.NotContains(t, general.AllowedTools.Tools, "todos",
+	require.NotContains(t, general.AllowedTools.Tools, "Todos",
 		"the agent's own disabled_tools still applies on top of the inherited set")
-	require.Contains(t, general.AllowedTools.Tools, "bash",
+	require.Contains(t, general.AllowedTools.Tools, "Bash",
 		"with an unrestricted coder, inheriting is equivalent to the previous all-tools default")
 }
 
@@ -396,8 +396,8 @@ func TestResolveAgents_ExplicitScopeIsNotWidenedByInheritance(t *testing.T) {
 
 	// task/explore declare their own scope, so a permissive coder must
 	// not widen them.
-	require.NotContains(t, agents[AgentExplore].AllowedTools.Tools, "bash")
-	require.NotContains(t, agents[AgentExplore].AllowedTools.Tools, "write")
+	require.NotContains(t, agents[AgentExplore].AllowedTools.Tools, "Bash")
+	require.NotContains(t, agents[AgentExplore].AllowedTools.Tools, "Write")
 }
 
 func TestResolveAgents_CoderCannotInherit(t *testing.T) {
@@ -416,7 +416,7 @@ func TestResolveAgents_CoderCannotInherit(t *testing.T) {
 	agents := cfg.ResolveAgents()
 	coder := agents[AgentCoder]
 	require.Equal(t, ToolSetScope, coder.AllowedTools.Kind)
-	require.ElementsMatch(t, filterSlice(allToolNames(), []string{"web_fetch", "web_search"}, false), coder.AllowedTools.Tools,
+	require.ElementsMatch(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch"}, false), coder.AllowedTools.Tools,
 		"the inheritance root falls back to every tool rather than to nothing")
 	require.Equal(t, ToolSetAll, coder.AllowedMCP.Kind)
 }

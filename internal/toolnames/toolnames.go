@@ -5,6 +5,10 @@
 // users write them in angela.json allow-lists, so the strings must never
 // change once shipped.
 //
+// Every name is the PascalCase spelling of its own Go identifier, which
+// keeps the two impossible to drift apart and matches the convention the
+// system prompts are written against.
+//
 // The package exists because the names are needed by packages that cannot
 // import internal/agent/tools: that package already depends on
 // internal/config and internal/permission, so either of them importing it
@@ -14,68 +18,70 @@ package toolnames
 
 // Core file and shell tools.
 const (
-	Bash      = "bash"
-	Edit      = "edit"
-	MultiEdit = "multiedit"
-	View      = "view"
-	Write     = "write"
-	Glob      = "glob"
-	Grep      = "grep"
-	LS        = "ls"
+	Bash      = "Bash"
+	Edit      = "Edit"
+	MultiEdit = "MultiEdit"
+	View      = "View"
+	Write     = "Write"
+	Glob      = "Glob"
+	Grep      = "Grep"
+	LS        = "LS"
 )
 
 // Network tools.
 const (
-	Download    = "download"
-	Fetch       = "fetch"
-	WebFetch    = "web_fetch"
-	WebSearch   = "web_search"
-	Sourcegraph = "sourcegraph"
+	Download    = "Download"
+	Fetch       = "Fetch"
+	WebFetch    = "WebFetch"
+	WebSearch   = "WebSearch"
+	Sourcegraph = "Sourcegraph"
 )
 
 // LSP tools.
 const (
-	LSPDiagnostics   = "lsp_diagnostics"
-	LSPReferences    = "lsp_references"
-	LSPRestart       = "lsp_restart"
-	LSPSymbols       = "lsp_symbols"
-	LSPDefinition    = "lsp_definition"
-	LSPCallHierarchy = "lsp_call_hierarchy"
-	LSPRename        = "lsp_rename"
-	LSPReplaceSymbol = "lsp_replace_symbol"
+	LSPDiagnostics   = "LSPDiagnostics"
+	LSPReferences    = "LSPReferences"
+	LSPRestart       = "LSPRestart"
+	LSPSymbols       = "LSPSymbols"
+	LSPDefinition    = "LSPDefinition"
+	LSPCallHierarchy = "LSPCallHierarchy"
+	LSPRename        = "LSPRename"
+	LSPReplaceSymbol = "LSPReplaceSymbol"
 )
 
 // Background job tools.
 const (
-	JobOutput = "job_output"
-	JobKill   = "job_kill"
+	JobOutput = "JobOutput"
+	JobKill   = "JobKill"
 )
 
 // MCP tools.
 const (
-	ListMCPResources = "list_mcp_resources"
-	ReadMCPResource  = "read_mcp_resource"
+	ListMCPResources = "ListMCPResources"
+	ReadMCPResource  = "ReadMCPResource"
 )
 
 // Session and introspection tools.
 const (
-	Agent      = "agent"
-	AngelaInfo = "angela_info"
-	AngelaLogs = "angela_logs"
-	LoadReport = "load_report"
-	Question   = "question"
-	Todos      = "todos"
+	Agent      = "Agent"
+	AngelaInfo = "AngelaInfo"
+	AngelaLogs = "AngelaLogs"
+	LoadReport = "LoadReport"
+	Question   = "Question"
+	Todos      = "Todos"
 )
 
 // Branch-mode tools. These are not part of the default tool set; the
 // coordinator appends them for agents running in branch mode.
 const (
-	Merge         = "merge"
-	ProposalWrite = "proposal_write"
-	ProposalEdit  = "proposal_edit"
-	ProposalRead  = "proposal_read"
+	Merge         = "Merge"
+	ProposalWrite = "ProposalWrite"
+	ProposalEdit  = "ProposalEdit"
+	ProposalRead  = "ProposalRead"
 )
 
 // MCPPrefix prefixes the dynamically generated name of every MCP tool,
-// which takes the form mcp_<server>_<tool>.
-const MCPPrefix = "mcp_"
+// which takes the form MCP_<server>_<tool>. The half after the prefix is
+// the server's own tool name, which Angela does not choose and cannot
+// re-case.
+const MCPPrefix = "MCP_"

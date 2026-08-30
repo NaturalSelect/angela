@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,7 +48,7 @@ func TestBranchPreambleStatesTheContract(t *testing.T) {
 	flat := flatten(string(branchPreambleTmpl))
 
 	for _, tc := range []struct{ need, why string }{
-		{"merge", "nothing names the tool that finishes the branch"},
+		{strings.ToLower(toolnames.Merge), "nothing names the tool that finishes the branch"},
 		{"reject", "nothing says a merge can be turned down"},
 		{"no way to abandon", "nothing says the model cannot end the branch itself"},
 		{"suspended", "nothing says the parent is blocked on this branch"},

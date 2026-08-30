@@ -6,7 +6,7 @@ Analyze this codebase and create/update **{{.Config.Options.InitializeAs}}** to 
 
 **Discovery process**:
 
-1. Check directory contents with `ls`
+1. Check directory contents with `LS`
 2. Look for existing rule files (`.cursor/rules/*.md`, `.cursorrules`, `.github/copilot-instructions.md`, `claude.md`, `agents.md`) - only read if they exist, and carry over the important parts
 3. If there is a README.md, read it and include the important parts
 4. Identify project type from config files and directory structure

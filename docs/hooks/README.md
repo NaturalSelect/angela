@@ -57,7 +57,7 @@ a global hook (`~/.config/angela/angela.json`), use an absolute path instead.
       {
         // What tool do we want to hook into? In this case, Bash, because it
         // runs the stuff we wanna block.
-        "matcher": "^bash$",
+        "matcher": "^Bash$",
 
         // The path to our actual hook script.
         "command": "./no-haskell.sh",
@@ -140,7 +140,7 @@ and project-level, with project level hooks taking precedence.
     "PreToolUse": [
       {
         "name": "no-rm-rf", // friendly name shown in the TUI
-        "matcher": "bash", // regex tested against the tool name
+        "matcher": "Bash", // regex tested against the tool name
         "command": "./hooks/my-hot-hook.sh", // the path to the hook
         "timeout": 10, // in seconds; default 30
       },
@@ -184,8 +184,8 @@ This hook fires before every tool call. Use it to block dangerous commands,
 enforce policies, rewrite tool input, inject context the model should see, log
 stuff, and so on.
 
-**Matched against**: the tool name (e.g. `bash`, `edit`, `write`,
-`mcp_github_create_pull_request`).
+**Matched against**: the tool name (e.g. `Bash`, `Edit`, `Write`,
+`MCP_github_create_pull_request`).
 
 > [!NOTE]
 > Event names are case insensitive and snake-caseable, so `PreToolUse`,
@@ -274,7 +274,7 @@ Standard input provides the full context as JSON:
   "event": "PreToolUse", // Hook event name
   "session_id": "313909e", // Current session ID
   "cwd": "/home/user/project", // Working directory
-  "tool_name": "bash", // The tool being called
+  "tool_name": "Bash", // The tool being called
   "tool_input": { "command": "rm -rf /" }, // The tool's input
   "agent_id": "coder", // Agent whose call fired the hook
   "depth": 0, // 0 = top-level agent, 1+ = nesting level of a delegated sub-agent
@@ -435,7 +435,7 @@ Prevent the agent from running `rm -rf` in bash:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^bash$",
+        "matcher": "^Bash$",
         "command": "./hooks/no-rm-rf.sh"
       }
     ]
@@ -504,7 +504,7 @@ Add a reminder to the model whenever it writes a Go file:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(edit|write|multiedit)$",
+        "matcher": "^(Edit|Write|MultiEdit)$",
         "command": "./hooks/go-context.sh"
       }
     ]
@@ -533,7 +533,7 @@ The `command` can be inline. This one-liner matches all MCP tools and blocks
 them:
 
 ```jsonc
-{ "matcher": "^mcp_", "command": "echo 'MCP tools are disabled' >&2; exit 2" }
+{ "matcher": "^MCP_", "command": "echo 'MCP tools are disabled' >&2; exit 2" }
 ```
 
 ### Log every tool call
@@ -558,7 +558,7 @@ Hooks aren't limited to shell scripts: any executable works. Here's the same
 
 #### Lua
 
-`{"matcher": "^bash$", "command": "lua ./hooks/no-rm-rf.lua"}`
+`{"matcher": "^Bash$", "command": "lua ./hooks/no-rm-rf.lua"}`
 
 ```lua
 local input = io.read("*a")
@@ -572,7 +572,7 @@ end
 
 #### JavaScript
 
-`{"matcher": "^bash$", "command": "node ./hooks/no-rm-rf.js"}`
+`{"matcher": "^Bash$", "command": "node ./hooks/no-rm-rf.js"}`
 
 ```js
 let input = "";
@@ -624,7 +624,7 @@ Each entry under a `hooks.<EventName>` array:
   "name": "no-rm-rf",
 
   // string. Optional. Regex tested against the tool name. Omit to match all.
-  "matcher": "^bash$",
+  "matcher": "^Bash$",
 
   // string. Required. Shell command to run.
   "command": "./hooks/my-hook.sh",
@@ -668,7 +668,7 @@ Extends the common payload:
   // ...common fields...
 
   // string. The tool being called.
-  "tool_name": "bash",
+  "tool_name": "Bash",
 
   // object. Raw JSON input the model sent to the tool. Shape is per-tool.
   "tool_input": {

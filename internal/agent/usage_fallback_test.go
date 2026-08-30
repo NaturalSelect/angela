@@ -8,6 +8,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,7 +95,7 @@ func TestFallbackStepUsageEstimatesToolCalls(t *testing.T) {
 			Content: fantasy.ResponseContent{
 				fantasy.ToolCallContent{
 					ToolCallID: "tool-call-1",
-					ToolName:   "view",
+					ToolName:   toolnames.View,
 					Input:      `{"file_path":"/tmp/example.go"}`,
 				},
 			},
@@ -154,7 +155,7 @@ func TestFallbackStepUsageSkipsClientToolResultsAsOutput(t *testing.T) {
 			Content: fantasy.ResponseContent{
 				fantasy.ToolResultContent{
 					ToolCallID: "tool-call-1",
-					ToolName:   "bash",
+					ToolName:   toolnames.Bash,
 					Result: fantasy.ToolResultOutputContentText{
 						Text: "large client-executed payload that should not count as model output tokens",
 					},
@@ -176,7 +177,7 @@ func TestFallbackStepUsageCountsProviderToolResultsAsOutput(t *testing.T) {
 			Content: fantasy.ResponseContent{
 				fantasy.ToolResultContent{
 					ToolCallID:       "tool-call-1",
-					ToolName:         "web_search",
+					ToolName:         toolnames.WebSearch,
 					ProviderExecuted: true,
 					ClientMetadata:   "provider metadata",
 					Result:           fantasy.ToolResultOutputContentText{Text: "provider-executed result"},

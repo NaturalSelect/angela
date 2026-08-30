@@ -1,6 +1,6 @@
 Load the full text of a report an agent dispatch produced earlier in this session.
 
-Every `agent` call returns its output with a header naming a report id (`rpt_` followed by eight hex characters). The text stays recorded for the whole session even after a compaction drops it from the conversation, and this tool brings it back verbatim.
+Every `Agent` call returns its output with a header naming a report id (`rpt_` followed by eight hex characters). The text stays recorded for the whole session even after a compaction drops it from the conversation, and this tool brings it back verbatim.
 
 Usage:
 - Use the id exactly as it appeared in the report header or in the compaction summary. Never invent or guess an id.

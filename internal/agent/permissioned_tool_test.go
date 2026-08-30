@@ -141,7 +141,7 @@ func TestPermissionedTool_DenyOutcomesDiffer(t *testing.T) {
 
 	dir := t.TempDir()
 	policy, err := permission.CompilePolicy([]permission.Rule{
-		{Action: permission.RuleDeny, Tool: "bash", Pattern: "curl*"},
+		{Action: permission.RuleDeny, Tool: toolnames.Bash, Pattern: "curl*"},
 	}, nil, permission.PromptAsk)
 	require.NoError(t, err)
 	svc := permission.NewPermissionService(dir, false, policy)
@@ -166,7 +166,7 @@ func TestPermissionedTool_PolicyDenyBeatsSkip(t *testing.T) {
 
 	dir := t.TempDir()
 	policy, err := permission.CompilePolicy([]permission.Rule{
-		{Action: permission.RuleDeny, Tool: "edit", Pattern: "**/.env"},
+		{Action: permission.RuleDeny, Tool: permission.ActionEdit.String(), Pattern: "**/.env"},
 	}, nil, permission.PromptAsk)
 	require.NoError(t, err)
 	svc := permission.NewPermissionService(dir, true, policy)
@@ -268,7 +268,7 @@ func TestPermissionedTool_PolicyDenyPrecedesPlanning(t *testing.T) {
 
 	dir := t.TempDir()
 	policy, err := permission.CompilePolicy([]permission.Rule{
-		{Action: permission.RuleDeny, Tool: "edit", Pattern: "**/.env"},
+		{Action: permission.RuleDeny, Tool: toolnames.Edit, Pattern: "**/.env"},
 	}, nil, permission.PromptAsk)
 	require.NoError(t, err)
 

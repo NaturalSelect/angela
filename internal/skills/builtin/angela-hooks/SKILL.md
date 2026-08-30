@@ -29,7 +29,7 @@ Hooks live under the `hooks` key, grouped by event name:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^bash$",              // regex against tool name (optional; omit to match all)
+        "matcher": "^Bash$",              // regex against tool name (optional; omit to match all)
         "command": "./hooks/my-hook.sh",   // required: shell command to run
         "timeout": 10                     // optional: seconds, default 30
       }
@@ -55,13 +55,13 @@ the input/output contract is identical regardless of language.
 | Variable                     | Description                              |
 | ---------------------------- | ---------------------------------------- |
 | `ANGELA_EVENT`                | Event name (e.g. `PreToolUse`)           |
-| `ANGELA_TOOL_NAME`            | Tool being called (e.g. `bash`)          |
+| `ANGELA_TOOL_NAME`            | Tool being called (e.g. `Bash`)          |
 | `ANGELA_SESSION_ID`           | Current session ID                       |
 | `ANGELA_CWD`                  | Working directory                        |
 | `ANGELA_PROJECT_DIR`          | Project root directory                   |
 | `ANGELA_AGENT_ID`             | Agent making the call (e.g. `coder`)     |
 | `ANGELA_AGENT_DEPTH`          | `0` for the top-level agent, `1+` below  |
-| `ANGELA_TOOL_INPUT_COMMAND`   | For `bash` calls: the shell command      |
+| `ANGELA_TOOL_INPUT_COMMAND`   | For `Bash` calls: the shell command      |
 | `ANGELA_TOOL_INPUT_FILE_PATH` | For file tools: the target file path     |
 
 **JSON on stdin:**
@@ -71,7 +71,7 @@ the input/output contract is identical regardless of language.
   "event": "PreToolUse",
   "session_id": "313909e",
   "cwd": "/home/user/project",
-  "tool_name": "bash",
+  "tool_name": "Bash",
   "tool_input": {"command": "rm -rf /"},
   "agent_id": "coder",
   "depth": 0
@@ -142,15 +142,15 @@ if echo "$ANGELA_TOOL_INPUT_COMMAND" | grep -qE 'rm\s+-(rf|fr)\s+/'; then
 fi
 ```
 
-Config: `{"matcher": "^bash$", "command": "./hooks/no-rm-rf.sh"}`
+Config: `{"matcher": "^Bash$", "command": "./hooks/no-rm-rf.sh"}`
 
 ### Auto-approve read-only tools (inline, no script)
 
 ```jsonc
-{"matcher": "^(view|ls|grep|glob)$", "command": "echo '{\"decision\":\"allow\"}'"}
+{"matcher": "^(View|LS|Grep|Glob)$", "command": "echo '{\"decision\":\"allow\"}'"}
 ```
 
-Every `view`/`ls`/`grep`/`glob` call now runs without prompting.
+Every `View`/`LS`/`Grep`/`Glob` call now runs without prompting.
 
 ### Inject context without auto-approving
 
@@ -167,7 +167,7 @@ else
 fi
 ```
 
-Config: `{"matcher": "^(edit|write|multiedit)$", "command": "./hooks/go-context.sh"}`
+Config: `{"matcher": "^(Edit|Write|MultiEdit)$", "command": "./hooks/go-context.sh"}`
 
 ### Rewrite tool input (shallow merge)
 
@@ -205,8 +205,8 @@ preserved.
 - Timeouts kill the hook silently and the tool call proceeds. Bump `timeout` if needed.
 - Non-zero exit codes other than 2/49 are logged but don't block — check Angela logs.
 - Use `echo "debug info" >&2` for logging without corrupting stdout JSON.
-- `matcher` is a regex against the tool name. Use `^bash$` (not `bash`) if you
-  don't also want to match `mcp_something_bash`.
+- `matcher` is a regex against the tool name. Use `^Bash$` (not `Bash`) if you
+  don't also want to match `MCP_something_bash`.
 
 ## Claude Code Compatibility
 

@@ -62,6 +62,7 @@ const (
 	Agent      = "agent"
 	AngelaInfo = "angela_info"
 	AngelaLogs = "angela_logs"
+	LoadReport = "load_report"
 	Question   = "question"
 	Todos      = "todos"
 )

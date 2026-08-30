@@ -21,16 +21,16 @@ conversation to you and asking is the point. It also loses the `agent` tool
 once its dispatch depth reaches the `options.subagent_depth` budget — 1 by
 default, which means a sub-agent cannot dispatch further sub-agents (`web-fetch`
 included; dispatching it is just another `agent` call) unless the budget is
-raised. Branches are dispatched the same way and sit at the same depth, so
-`plan` and `deep-research` do not delegate under the default budget either.
+raised. Branch agents do not consume a dispatch-depth hop — they can
+delegate sub-agents as freely as the session they forked from.
 See [Configuring `subagent_depth`](#configuring-subagent_depth)
 below.
 
 ### Agent Modes
 
-- **primary** — Top-level agent. Currently only `coder` can be primary; any
-  other agent that declares `mode: primary` is downgraded to `subagent` at
-  resolution time, with a warning.
+- **primary** — Top-level agent that can drive a session. `coder` is the
+  built-in primary; custom agents may also declare `mode: primary` and will
+  keep that mode — multiple primary agents are supported.
 - **subagent** — Only launched via the `agent` tool. Whether it can dispatch
   further sub-agents depends on `options.subagent_depth`; by default the
   budget is 1, so a sub-agent cannot delegate further.
@@ -63,10 +63,6 @@ sub-agent that cannot itself dispatch further, `0` disables delegation
 entirely, and higher values allow deeper dispatch chains. Raising it
 multiplies token and time cost per chain, since each additional level is a
 full agent turn.
-
-```bash
-option subagent-depth 2
-```
 
 ```json
 {

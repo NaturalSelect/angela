@@ -77,12 +77,8 @@ picked up. Everything found is deep-merged, with project settings overriding
 global ones.
 
 Data directories (`~/.local/share/angela` on Unix-like systems and
-`%LOCALAPPDATA%\angela` on Windows) contain machine-owned JSON state.
-
-> [!NOTE]
-> Angela also stores state data in `$XDG_DATA_HOME/angela`
-> (`%LOCALAPPDATA%\angela` on Windows). This is application state, and should
-> not be edited by hand.
+`%LOCALAPPDATA%\angela` on Windows) hold non-config application data, such
+as the provider catalog cache.
 
 ## Configuration Reference
 
@@ -238,9 +234,9 @@ See the [hooks docs](../hooks/) for the full guide.
 
     // Declarative permission rules. Precedence: deny > ask > allow.
     "rules": [
-      { "action": "deny",  "tool": "read",    "path": "**/.env" },
+      { "action": "deny",  "tool": "read",    "pattern": "**/.env", "mode": "path" },
       { "action": "allow", "tool": "bash",    "pattern": "git status*" },
-      { "action": "allow", "tool": "network", "domain": "docs.example.com" }
+      { "action": "allow", "tool": "network", "pattern": "docs.example.com", "mode": "domain" }
     ],
 
     // What to do when no rule matches: "ask" (default) or "deny".

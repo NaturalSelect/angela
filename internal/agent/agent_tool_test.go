@@ -150,3 +150,51 @@ func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
 	require.NotContains(t, desc, "Branch agents:")
 	require.Contains(t, desc, "research")
 }
+
+// TestReportHeaderFrontsSuccessfulOutput pins the banner shape: the id
+// and the loading instruction have to survive into the tool result,
+// because after a compaction they are the only route back to the text.
+func TestReportHeaderFrontsSuccessfulOutput(t *testing.T) {
+	t.Parallel()
+
+	resp := withReportHeader(
+		fantasy.NewTextResponse("the report body"),
+		"rpt_1a2b3c4d", "deep-research", "websocket vs sse",
+	)
+
+	require.False(t, resp.IsError)
+	require.Contains(t, resp.Content, "rpt_1a2b3c4d")
+	require.Contains(t, resp.Content, "deep-research")
+	require.Contains(t, resp.Content, "websocket vs sse")
+	require.Contains(t, resp.Content, toolnames.LoadReport)
+	require.True(t, strings.HasSuffix(resp.Content, "\n\nthe report body"),
+		"the original output must be preserved verbatim behind a blank line")
+}
+
+// TestReportHeaderOmitsTheTaskWhenUnlabelled keeps the banner from
+// carrying an empty task="" that reads as a missing value.
+func TestReportHeaderOmitsTheTaskWhenUnlabelled(t *testing.T) {
+	t.Parallel()
+
+	resp := withReportHeader(fantasy.NewTextResponse("body"), "rpt_1a2b3c4d", "explore", "")
+
+	require.Contains(t, resp.Content, "rpt_1a2b3c4d")
+	require.NotContains(t, resp.Content, "task=")
+}
+
+// TestReportHeaderLeavesFailuresAlone: a dispatch that errored has no
+// stored report, so advertising an id for it would send the model after
+// something that cannot be loaded.
+func TestReportHeaderLeavesFailuresAlone(t *testing.T) {
+	t.Parallel()
+
+	failed := withReportHeader(
+		fantasy.NewTextErrorResponse("Subagent \"explore\" is unavailable"),
+		"rpt_1a2b3c4d", "explore", "find it",
+	)
+	require.True(t, failed.IsError)
+	require.Equal(t, `Subagent "explore" is unavailable`, failed.Content)
+
+	empty := withReportHeader(fantasy.NewTextResponse(""), "rpt_1a2b3c4d", "explore", "find it")
+	require.Empty(t, empty.Content)
+}

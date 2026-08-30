@@ -101,7 +101,7 @@ func (c *coordinator) agentTool(depth int) (fantasy.AgentTool, error) {
 				run = c.runBranchAgent
 			}
 
-			return run(ctx, subAgentParams{
+			resp, err := run(ctx, subAgentParams{
 				Agent:          agent,
 				Resolved:       resolved,
 				SessionID:      sessionID,
@@ -110,8 +110,35 @@ func (c *coordinator) agentTool(depth int) (fantasy.AgentTool, error) {
 				Prompt:         params.Prompt,
 				SessionTitle:   title,
 			})
+			if err != nil {
+				return resp, err
+			}
+			reportID := tools.ReportID(c.sessions, agentMessageID, call.ID)
+			return withReportHeader(resp, reportID, agentType, params.Description), nil
 		},
 	), nil
+}
+
+// withReportHeader stamps a dispatch's output with the handle that loads
+// it back after a compaction drops it from the conversation. A failed or
+// empty dispatch is left alone: there is nothing worth reloading, and the
+// banner would only dress up an error as a result.
+func withReportHeader(resp fantasy.ToolResponse, reportID, agentType, task string) fantasy.ToolResponse {
+	if resp.IsError || resp.Content == "" {
+		return resp
+	}
+
+	var banner strings.Builder
+	fmt.Fprintf(&banner, "[report id=%s agent=%s", reportID, agentType)
+	if task != "" {
+		fmt.Fprintf(&banner, " task=%q", task)
+	}
+	banner.WriteString("]\nStored in full. If a later compaction drops this text, call ")
+	banner.WriteString(toolnames.LoadReport)
+	banner.WriteString(" with this id to get it back verbatim. Do not quote this banner back to the user.\n\n")
+
+	resp.Content = banner.String() + resp.Content
+	return resp
 }
 
 // agentToolDescription is the data structure passed to the agent tool

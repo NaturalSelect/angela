@@ -15,6 +15,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -40,8 +41,6 @@ type WriteResponseMetadata struct {
 	Removals  int    `json:"removals"`
 }
 
-const WriteToolName = "write"
-
 type writeTool struct {
 	fantasy.AgentTool
 
@@ -63,7 +62,7 @@ func NewWriteTool(
 		filetracker: filetracker,
 		workingDir:  workingDir,
 	}
-	t.AgentTool = fantasy.NewAgentTool(WriteToolName, writeDescription, t.run)
+	t.AgentTool = fantasy.NewAgentTool(toolnames.Write, writeDescription, t.run)
 	return t
 }
 
@@ -81,7 +80,7 @@ func (t *writeTool) run(ctx context.Context, params WriteParams, call fantasy.To
 func (t *writeTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[WriteParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", WriteToolName)
+		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.Write)
 	}
 	return t.plan(ctx, params)
 }

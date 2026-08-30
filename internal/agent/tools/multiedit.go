@@ -17,6 +17,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 type MultiEditOperation struct {
@@ -51,8 +52,6 @@ type MultiEditResponseMetadata struct {
 	EditsFailed  []FailedEdit `json:"edits_failed,omitempty"`
 }
 
-const MultiEditToolName = "multiedit"
-
 //go:embed multiedit.md
 var multieditDescription string
 
@@ -77,7 +76,7 @@ func NewMultiEditTool(
 		filetracker: filetracker,
 		workingDir:  workingDir,
 	}
-	t.AgentTool = fantasy.NewAgentTool(MultiEditToolName, multieditDescription, t.run)
+	t.AgentTool = fantasy.NewAgentTool(toolnames.MultiEdit, multieditDescription, t.run)
 	return t
 }
 
@@ -95,7 +94,7 @@ func (t *multiEditTool) run(ctx context.Context, params MultiEditParams, call fa
 func (t *multiEditTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[MultiEditParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", MultiEditToolName)
+		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.MultiEdit)
 	}
 	return t.plan(ctx, params)
 }

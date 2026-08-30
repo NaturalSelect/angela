@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,6 +49,6 @@ func TestSecondPrimaryGetsDelegationToolsWhenDriving(t *testing.T) {
 		instantiate(t, coord, testReviewerAgent), 0)
 	require.NoError(t, err)
 
-	require.Contains(t, toolNames(resolved), AgentToolName,
+	require.Contains(t, toolNames(resolved), toolnames.Agent,
 		"a primary agent driving a session must be able to delegate")
 }

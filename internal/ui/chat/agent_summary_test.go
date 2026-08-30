@@ -3,9 +3,8 @@ package chat
 import (
 	"testing"
 
-	"github.com/NaturalSelect/angela/internal/agent"
-	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -23,7 +22,7 @@ func newAgentItem(t *testing.T, done bool, calls ...message.ToolCall) *AgentTool
 	}
 	item := NewAgentToolMessageItem(&sty, message.ToolCall{
 		ID:       "agent-1",
-		Name:     agent.AgentToolName,
+		Name:     toolnames.Agent,
 		Input:    `{"prompt":"find the config loader"}`,
 		Finished: true,
 	}, result, false)
@@ -37,11 +36,11 @@ func newAgentItem(t *testing.T, done bool, calls ...message.ToolCall) *AgentTool
 }
 
 func globCall(id, pattern string) message.ToolCall {
-	return message.ToolCall{ID: id, Name: tools.GlobToolName, Input: `{"pattern":"` + pattern + `"}`}
+	return message.ToolCall{ID: id, Name: toolnames.Glob, Input: `{"pattern":"` + pattern + `"}`}
 }
 
 func grepCall(id, pattern string) message.ToolCall {
-	return message.ToolCall{ID: id, Name: tools.GrepToolName, Input: `{"pattern":"` + pattern + `"}`}
+	return message.ToolCall{ID: id, Name: toolnames.Grep, Input: `{"pattern":"` + pattern + `"}`}
 }
 
 // While a sub-agent runs, the block has to answer "what is it doing right
@@ -57,9 +56,9 @@ func TestAgentSummaryNamesTheNewestTool(t *testing.T) {
 	)
 
 	line := ansi.Strip(item.summaryLine(&sty, false))
-	require.Contains(t, line, tools.GrepToolName)
+	require.Contains(t, line, toolnames.Grep)
 	require.Contains(t, line, "LoadConfig")
-	require.NotContains(t, line, tools.GlobToolName,
+	require.NotContains(t, line, toolnames.Glob,
 		"the summary names the step in flight, not the one before it")
 }
 

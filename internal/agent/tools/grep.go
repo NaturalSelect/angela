@@ -23,6 +23,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/fsext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -87,7 +88,6 @@ type GrepResponseMetadata struct {
 }
 
 const (
-	GrepToolName        = "grep"
 	maxGrepContentWidth = 500
 )
 
@@ -123,7 +123,7 @@ func escapeRegexPattern(pattern string) string {
 
 func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		GrepToolName,
+		toolnames.Grep,
 		grepDescription(),
 		func(ctx context.Context, params GrepParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Pattern == "" {

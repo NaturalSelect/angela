@@ -2,6 +2,8 @@ package proto
 
 import (
 	"encoding/json"
+
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 // CreatePermissionRequest represents a request to create a permission.
@@ -82,85 +84,85 @@ func (p *CreatePermissionRequest) UnmarshalJSON(data []byte) error {
 
 func unmarshalToolParams(toolName string, raw json.RawMessage) (any, error) {
 	switch toolName {
-	case BashToolName:
+	case toolnames.Bash:
 		var params BashPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case DownloadToolName:
+	case toolnames.Download:
 		var params DownloadPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case EditToolName:
+	case toolnames.Edit:
 		var params EditPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case WriteToolName:
+	case toolnames.Write:
 		var params WritePermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case MultiEditToolName:
+	case toolnames.MultiEdit:
 		var params MultiEditPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case FetchToolName:
+	case toolnames.Fetch:
 		var params FetchPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case WebFetchToolName:
+	case toolnames.WebFetch:
 		var params WebFetchPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case WebSearchToolName:
+	case toolnames.WebSearch:
 		var params WebSearchPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case ViewToolName:
+	case toolnames.View:
 		var params ViewPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case LSToolName:
+	case toolnames.LS:
 		var params LSPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case ReplaceSymbolToolName:
+	case toolnames.LSPReplaceSymbol:
 		var params ReplaceSymbolPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case ListMCPResourcesToolName:
+	case toolnames.ListMCPResources:
 		var params ListMCPResourcesPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case ReadMCPResourceToolName:
+	case toolnames.ReadMCPResource:
 		var params ReadMCPResourcePermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err
 		}
 		return params, nil
-	case RenameToolName:
+	case toolnames.LSPRename:
 		var params RenamePermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {
 			return nil, err

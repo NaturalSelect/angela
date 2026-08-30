@@ -12,6 +12,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
@@ -21,8 +22,6 @@ type ReplaceSymbolParams struct {
 	Replacement string `json:"replacement,omitempty" description:"The replacement text. Required for 'replace' action. For 'add_before'/'add_after', the text to insert. Ignored for 'delete'."`
 	Action      string `json:"action,omitempty" description:"Operation to perform: 'replace' (default, replace entire symbol), 'add_before' (insert before symbol), 'add_after' (insert after symbol), 'delete' (remove symbol entirely)"`
 }
-
-const ReplaceSymbolToolName = "lsp_replace_symbol"
 
 //go:embed lsp_replace_symbol.md
 var replaceSymbolDescription string
@@ -60,7 +59,7 @@ func NewReplaceSymbolTool(
 		files:       files,
 		filetracker: filetracker,
 	}
-	t.AgentTool = fantasy.NewAgentTool(ReplaceSymbolToolName, replaceSymbolDescription, t.run)
+	t.AgentTool = fantasy.NewAgentTool(toolnames.LSPReplaceSymbol, replaceSymbolDescription, t.run)
 	return t
 }
 
@@ -78,7 +77,7 @@ func (t *replaceSymbolTool) run(ctx context.Context, params ReplaceSymbolParams,
 func (t *replaceSymbolTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[ReplaceSymbolParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", ReplaceSymbolToolName)
+		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.LSPReplaceSymbol)
 	}
 	return t.plan(ctx, params)
 }

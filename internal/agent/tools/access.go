@@ -9,17 +9,8 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
-
-// agentToolName mirrors agent.AgentToolName. It is duplicated because
-// package agent depends on this one, so the constant cannot be imported.
-const agentToolName = "agent"
-
-// MergeToolName names the merge tool, whose implementation lives in
-// package agent because it needs the branch controller. The name is
-// declared here so the permission system and the approval dialog can
-// reach it from this side of the dependency.
-const MergeToolName = "merge"
 
 // MergePermissionsParams is what the approval dialog renders for a
 // merge. The proposal being handed back is shown as a diff, so it
@@ -29,10 +20,6 @@ type MergePermissionsParams struct {
 	OldContent string `json:"old_content,omitempty"`
 	NewContent string `json:"new_content,omitempty"`
 }
-
-// mcpToolPrefix starts the generated name of every dynamic MCP tool,
-// which is built as mcp_<server>_<tool>.
-const mcpToolPrefix = "mcp_"
 
 // MCPIdentity is implemented by the dynamic MCP tools, which carry the
 // server and the tool they call.
@@ -106,12 +93,12 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		}
 	}
 
-	if strings.HasPrefix(toolName, mcpToolPrefix) {
+	if strings.HasPrefix(toolName, toolnames.MCPPrefix) {
 		return access, false
 	}
 
 	switch toolName {
-	case BashToolName:
+	case toolnames.Bash:
 		p, ok := decodeInput[BashParams](rawInput)
 		if !ok {
 			return access, false
@@ -120,7 +107,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Command = p.Command
 		access.Path = resolve(p.WorkingDir)
 
-	case EditToolName:
+	case toolnames.Edit:
 		p, ok := decodeInput[EditParams](rawInput)
 		if !ok {
 			return access, false
@@ -128,7 +115,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionEdit
 		access.Path = resolve(p.FilePath)
 
-	case MultiEditToolName:
+	case toolnames.MultiEdit:
 		p, ok := decodeInput[MultiEditParams](rawInput)
 		if !ok {
 			return access, false
@@ -136,7 +123,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionEdit
 		access.Path = resolve(p.FilePath)
 
-	case WriteToolName:
+	case toolnames.Write:
 		p, ok := decodeInput[WriteParams](rawInput)
 		if !ok {
 			return access, false
@@ -144,7 +131,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionEdit
 		access.Path = resolve(p.FilePath)
 
-	case ReplaceSymbolToolName:
+	case toolnames.LSPReplaceSymbol:
 		p, ok := decodeInput[ReplaceSymbolParams](rawInput)
 		if !ok {
 			return access, false
@@ -152,7 +139,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionEdit
 		access.Path = resolve(p.FilePath)
 
-	case RenameToolName:
+	case toolnames.LSPRename:
 		p, ok := decodeInput[RenameParams](rawInput)
 		if !ok {
 			return access, false
@@ -162,7 +149,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionEdit
 		access.Path = resolve(p.Path)
 
-	case ViewToolName:
+	case toolnames.View:
 		p, ok := decodeInput[ViewParams](rawInput)
 		if !ok {
 			return access, false
@@ -170,7 +157,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 		access.Path = resolve(p.FilePath)
 
-	case LSToolName:
+	case toolnames.LS:
 		p, ok := decodeInput[LSParams](rawInput)
 		if !ok {
 			return access, false
@@ -178,7 +165,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionList
 		access.Path = resolve(p.Path)
 
-	case GlobToolName:
+	case toolnames.Glob:
 		p, ok := decodeInput[GlobParams](rawInput)
 		if !ok {
 			return access, false
@@ -189,7 +176,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionList
 		access.Path = resolve(filepath.Join(p.Path, prefix))
 
-	case GrepToolName:
+	case toolnames.Grep:
 		p, ok := decodeInput[GrepParams](rawInput)
 		if !ok {
 			return access, false
@@ -197,7 +184,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 		access.Path = resolve(p.Path)
 
-	case DiagnosticsToolName:
+	case toolnames.LSPDiagnostics:
 		p, ok := decodeInput[DiagnosticsParams](rawInput)
 		if !ok {
 			return access, false
@@ -205,7 +192,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 		access.Path = resolve(p.FilePath)
 
-	case SymbolsToolName:
+	case toolnames.LSPSymbols:
 		p, ok := decodeInput[SymbolsParams](rawInput)
 		if !ok {
 			return access, false
@@ -213,7 +200,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 		access.Path = resolve(p.FilePath)
 
-	case ReferencesToolName:
+	case toolnames.LSPReferences:
 		p, ok := decodeInput[ReferencesParams](rawInput)
 		if !ok {
 			return access, false
@@ -221,7 +208,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 		access.Path = resolve(p.Path)
 
-	case DefinitionToolName:
+	case toolnames.LSPDefinition:
 		p, ok := decodeInput[DefinitionParams](rawInput)
 		if !ok {
 			return access, false
@@ -229,7 +216,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 		access.Path = resolve(p.Path)
 
-	case CallHierarchyToolName:
+	case toolnames.LSPCallHierarchy:
 		p, ok := decodeInput[CallHierarchyParams](rawInput)
 		if !ok {
 			return access, false
@@ -237,7 +224,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 		access.Path = resolve(p.Path)
 
-	case DownloadToolName:
+	case toolnames.Download:
 		p, ok := decodeInput[DownloadParams](rawInput)
 		if !ok {
 			return access, false
@@ -248,7 +235,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.URL = p.URL
 		access.Path = resolve(p.FilePath)
 
-	case FetchToolName:
+	case toolnames.Fetch:
 		p, ok := decodeInput[FetchParams](rawInput)
 		if !ok {
 			return access, false
@@ -256,7 +243,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionNetwork
 		access.URL = p.URL
 
-	case WebFetchToolName:
+	case toolnames.WebFetch:
 		p, ok := decodeInput[WebFetchParams](rawInput)
 		if !ok {
 			return access, false
@@ -264,7 +251,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionNetwork
 		access.URL = p.URL
 
-	case WebSearchToolName:
+	case toolnames.WebSearch:
 		p, ok := decodeInput[WebSearchParams](rawInput)
 		if !ok {
 			return access, false
@@ -272,7 +259,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionNetwork
 		access.URL = p.Query
 
-	case SourcegraphToolName:
+	case toolnames.Sourcegraph:
 		p, ok := decodeInput[SourcegraphParams](rawInput)
 		if !ok {
 			return access, false
@@ -280,7 +267,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionNetwork
 		access.URL = p.Query
 
-	case ListMCPResourcesToolName:
+	case toolnames.ListMCPResources:
 		p, ok := decodeInput[ListMCPResourcesParams](rawInput)
 		if !ok {
 			return access, false
@@ -288,7 +275,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionMCP
 		access.Server = p.MCPName
 
-	case ReadMCPResourceToolName:
+	case toolnames.ReadMCPResource:
 		p, ok := decodeInput[ReadMCPResourceParams](rawInput)
 		if !ok {
 			return access, false
@@ -297,22 +284,22 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Server = p.MCPName
 		access.MCPTool = p.URI
 
-	case JobKillToolName:
+	case toolnames.JobKill:
 		// Killing a job only reaches a shell this agent started under
 		// an already approved bash call, so the gate sat on that call.
 		access.Action = permission.ActionRead
 
-	case LSPRestartToolName:
+	case toolnames.LSPRestart:
 		// Restarts a server the user configured; it starts nothing new.
 		access.Action = permission.ActionRead
 
-	case MergeToolName:
+	case toolnames.Merge:
 		// Reaches no file and runs nothing, but it is the one moment
 		// the user decides whether this branch's result crosses back
 		// and the branch ends. Never in scope: the gate always asks.
 		access.Action = permission.ActionMerge
 
-	case ProposalWriteToolName, ProposalEditToolName, ProposalReadToolName:
+	case toolnames.ProposalWrite, toolnames.ProposalEdit, toolnames.ProposalRead:
 		// The proposal is the branch's own draft, held in memory and
 		// never written anywhere. The gate that matters sits on merge,
 		// where the user decides whether the finished text crosses
@@ -320,8 +307,8 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		// would ask about a document that reaches nothing.
 		access.Action = permission.ActionRead
 
-	case agentToolName, TodosToolName, QuestionToolName, AngelaInfoToolName,
-		AngelaLogsToolName, JobOutputToolName:
+	case toolnames.Agent, toolnames.Todos, toolnames.Question, toolnames.AngelaInfo,
+		toolnames.AngelaLogs, toolnames.JobOutput:
 		// These read state the agent already has. The real gate sits on
 		// the calls a subagent goes on to make.
 		access.Action = permission.ActionRead
@@ -343,7 +330,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 // derived from the arguments alone. They get a ticket instead.
 func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 	switch toolName {
-	case BashToolName:
+	case toolnames.Bash:
 		if p, ok := decodeInput[BashParams](rawInput); ok {
 			return permission.Preview{
 				Description: "Execute command: " + p.Command,
@@ -351,7 +338,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case ViewToolName:
+	case toolnames.View:
 		if p, ok := decodeInput[ViewParams](rawInput); ok {
 			return permission.Preview{
 				Description: "Read file outside working directory: " + p.FilePath,
@@ -359,7 +346,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case LSToolName:
+	case toolnames.LS:
 		if p, ok := decodeInput[LSParams](rawInput); ok {
 			return permission.Preview{
 				Description: "List directory outside working directory: " + p.Path,
@@ -367,7 +354,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case DownloadToolName:
+	case toolnames.Download:
 		if p, ok := decodeInput[DownloadParams](rawInput); ok {
 			return permission.Preview{
 				Description: fmt.Sprintf("Download file from URL: %s to %s", p.URL, p.FilePath),
@@ -375,7 +362,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case FetchToolName:
+	case toolnames.Fetch:
 		if p, ok := decodeInput[FetchParams](rawInput); ok {
 			return permission.Preview{
 				Description: "Fetch content from URL: " + p.URL,
@@ -383,7 +370,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case WebFetchToolName:
+	case toolnames.WebFetch:
 		if p, ok := decodeInput[WebFetchParams](rawInput); ok {
 			return permission.Preview{
 				Description: "Fetch content from URL: " + p.URL,
@@ -391,7 +378,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case WebSearchToolName:
+	case toolnames.WebSearch:
 		if p, ok := decodeInput[WebSearchParams](rawInput); ok {
 			return permission.Preview{
 				Description: "Search the web for: " + p.Query,
@@ -399,7 +386,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case ListMCPResourcesToolName:
+	case toolnames.ListMCPResources:
 		if p, ok := decodeInput[ListMCPResourcesParams](rawInput); ok {
 			return permission.Preview{
 				Description: "List MCP resources from " + p.MCPName,
@@ -407,7 +394,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case ReadMCPResourceToolName:
+	case toolnames.ReadMCPResource:
 		if p, ok := decodeInput[ReadMCPResourceParams](rawInput); ok {
 			return permission.Preview{
 				Description: "Read MCP resource from " + p.MCPName,

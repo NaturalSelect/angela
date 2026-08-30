@@ -9,6 +9,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/shell"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -367,7 +368,7 @@ func TestJobToolsRefuseAnotherSessionsShell(t *testing.T) {
 
 	t.Run("job_output refuses", func(t *testing.T) {
 		t.Parallel()
-		resp := run(t, NewJobOutputTool(), JobOutputToolName,
+		resp := run(t, NewJobOutputTool(), toolnames.JobOutput,
 			JobOutputParams{ShellID: victim.ID})
 
 		require.True(t, resp.IsError)
@@ -377,7 +378,7 @@ func TestJobToolsRefuseAnotherSessionsShell(t *testing.T) {
 
 	t.Run("job_kill refuses and the job survives", func(t *testing.T) {
 		t.Parallel()
-		resp := run(t, NewJobKillTool(), JobKillToolName,
+		resp := run(t, NewJobKillTool(), toolnames.JobKill,
 			JobKillParams{ShellID: victim.ID})
 
 		require.True(t, resp.IsError)
@@ -392,7 +393,7 @@ func TestJobToolsRefuseAnotherSessionsShell(t *testing.T) {
 		require.NoError(t, err)
 
 		resp, err := NewJobOutputTool().Run(owner,
-			fantasy.ToolCall{ID: "c2", Name: JobOutputToolName, Input: string(input)})
+			fantasy.ToolCall{ID: "c2", Name: toolnames.JobOutput, Input: string(input)})
 		require.NoError(t, err)
 		require.False(t, resp.IsError)
 	})

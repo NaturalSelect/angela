@@ -12,6 +12,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
@@ -19,14 +20,12 @@ type DiagnosticsParams struct {
 	FilePath string `json:"file_path,omitempty" description:"The path to the file to get diagnostics for (leave empty for project diagnostics)"`
 }
 
-const DiagnosticsToolName = "lsp_diagnostics"
-
 //go:embed diagnostics.md
 var diagnosticsDescription string
 
 func NewDiagnosticsTool(lspManager *lsp.Manager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		DiagnosticsToolName,
+		toolnames.LSPDiagnostics,
 		diagnosticsDescription,
 		func(ctx context.Context, params DiagnosticsParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			notifyLSPs(ctx, lspManager, params.FilePath)

@@ -5,7 +5,9 @@ package proto
 // there is exactly one source of truth and so values survive a
 // round-trip across the client/server boundary as the same Go type
 // the UI asserts on.
-import "github.com/NaturalSelect/angela/internal/agent/tools"
+import (
+	"github.com/NaturalSelect/angela/internal/agent/tools"
+)
 
 // ToolResponseType represents the type of tool response.
 type ToolResponseType string
@@ -22,8 +24,6 @@ type ToolResponse struct {
 	Metadata string           `json:"metadata,omitempty"`
 	IsError  bool             `json:"is_error"`
 }
-
-const BashToolName = "bash"
 
 // BashParams represents the parameters for the bash tool.
 type BashParams struct {
@@ -47,8 +47,6 @@ type DiagnosticsParams struct {
 	FilePath string `json:"file_path"`
 }
 
-const DownloadToolName = "download"
-
 // DownloadParams represents the parameters for the download tool.
 type DownloadParams struct {
 	URL      string `json:"url"`
@@ -58,8 +56,6 @@ type DownloadParams struct {
 
 // DownloadPermissionsParams represents the permission parameters for the download tool.
 type DownloadPermissionsParams = tools.DownloadPermissionsParams
-
-const EditToolName = "edit"
 
 // EditParams represents the parameters for the edit tool.
 type EditParams struct {
@@ -80,8 +76,6 @@ type EditResponseMetadata struct {
 	NewContent string `json:"new_content,omitempty"`
 }
 
-const FetchToolName = "fetch"
-
 // FetchParams represents the parameters for the fetch tool.
 type FetchParams struct {
 	URL     string `json:"url"`
@@ -92,21 +86,13 @@ type FetchParams struct {
 // FetchPermissionsParams represents the permission parameters for the fetch tool.
 type FetchPermissionsParams = tools.FetchPermissionsParams
 
-// WebFetchToolName is the name of the web_fetch tool.
-const WebFetchToolName = tools.WebFetchToolName
-
 // WebFetchPermissionsParams represents the permission parameters for the
 // web_fetch tool.
 type WebFetchPermissionsParams = tools.WebFetchPermissionsParams
 
-// WebSearchToolName is the name of the web_search tool.
-const WebSearchToolName = tools.WebSearchToolName
-
 // WebSearchPermissionsParams represents the permission parameters for the
 // web_search tool.
 type WebSearchPermissionsParams = tools.WebSearchPermissionsParams
-
-const GlobToolName = "glob"
 
 // GlobParams represents the parameters for the glob tool.
 type GlobParams struct {
@@ -119,8 +105,6 @@ type GlobResponseMetadata struct {
 	NumberOfFiles int  `json:"number_of_files"`
 	Truncated     bool `json:"truncated"`
 }
-
-const GrepToolName = "grep"
 
 // GrepParams represents the parameters for the grep tool.
 type GrepParams struct {
@@ -135,8 +119,6 @@ type GrepResponseMetadata struct {
 	NumberOfMatches int  `json:"number_of_matches"`
 	Truncated       bool `json:"truncated"`
 }
-
-const LSToolName = "ls"
 
 // LSParams represents the parameters for the ls tool.
 type LSParams struct {
@@ -160,8 +142,6 @@ type LSResponseMetadata struct {
 	NumberOfFiles int  `json:"number_of_files"`
 	Truncated     bool `json:"truncated"`
 }
-
-const MultiEditToolName = "multiedit"
 
 // MultiEditOperation represents a single edit operation in a multi-edit.
 type MultiEditOperation struct {
@@ -188,8 +168,6 @@ type MultiEditResponseMetadata struct {
 	EditsApplied int    `json:"edits_applied"`
 }
 
-const SourcegraphToolName = "sourcegraph"
-
 // SourcegraphParams represents the parameters for the sourcegraph tool.
 type SourcegraphParams struct {
 	Query         string `json:"query"`
@@ -203,8 +181,6 @@ type SourcegraphResponseMetadata struct {
 	NumberOfMatches int  `json:"number_of_matches"`
 	Truncated       bool `json:"truncated"`
 }
-
-const ViewToolName = "view"
 
 // ViewParams represents the parameters for the view tool.
 type ViewParams struct {
@@ -222,8 +198,6 @@ type ViewResponseMetadata struct {
 	Content  string `json:"content"`
 }
 
-const WriteToolName = "write"
-
 // WriteParams represents the parameters for the write tool.
 type WriteParams struct {
 	FilePath string `json:"file_path"`
@@ -240,29 +214,17 @@ type WriteResponseMetadata struct {
 	Removals  int    `json:"removals"`
 }
 
-// ReplaceSymbolToolName is the name of the replace_symbol tool.
-const ReplaceSymbolToolName = tools.ReplaceSymbolToolName
-
 // ReplaceSymbolPermissionsParams represents the permission parameters
 // for the replace_symbol tool.
 type ReplaceSymbolPermissionsParams = tools.ReplaceSymbolPermissionsParams
-
-// ListMCPResourcesToolName is the name of the list_mcp_resources tool.
-const ListMCPResourcesToolName = tools.ListMCPResourcesToolName
 
 // ListMCPResourcesPermissionsParams represents the permission parameters
 // for the list_mcp_resources tool.
 type ListMCPResourcesPermissionsParams = tools.ListMCPResourcesPermissionsParams
 
-// ReadMCPResourceToolName is the name of the read_mcp_resource tool.
-const ReadMCPResourceToolName = tools.ReadMCPResourceToolName
-
 // ReadMCPResourcePermissionsParams represents the permission parameters
 // for the read_mcp_resource tool.
 type ReadMCPResourcePermissionsParams = tools.ReadMCPResourcePermissionsParams
-
-// RenameToolName is the name of the lsp_rename tool.
-const RenameToolName = tools.RenameToolName
 
 // RenamePermissionsParams represents the permission parameters for the
 // lsp_rename tool.

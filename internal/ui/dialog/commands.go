@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -439,7 +440,7 @@ func (c *Commands) setCommandItems(commandType CommandType) {
 				ClientID:    cmd.ClientID,
 				Arguments:   cmd.Arguments,
 			}
-			commandItems = append(commandItems, NewCommandItem(c.com.Styles, "mcp_"+cmd.ID, cmd.PromptID, "", action))
+			commandItems = append(commandItems, NewCommandItem(c.com.Styles, toolnames.MCPPrefix+cmd.ID, cmd.PromptID, "", action))
 		}
 	}
 

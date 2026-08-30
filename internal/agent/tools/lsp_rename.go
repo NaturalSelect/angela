@@ -16,6 +16,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/lsp"
 	lsputil "github.com/NaturalSelect/angela/internal/lsp/util"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 type RenameParams struct {
@@ -23,8 +24,6 @@ type RenameParams struct {
 	NewName string `json:"new_name" description:"The new name for the symbol"`
 	Path    string `json:"path,omitempty" description:"The directory to search in. Defaults to the current working directory."`
 }
-
-const RenameToolName = "lsp_rename"
 
 // RenamePermissionsParams names the symbol change for the permission
 // dialog. A rename rewrites every file holding a reference, so what the
@@ -56,7 +55,7 @@ func NewRenameTool(
 		files:       files,
 		filetracker: filetracker,
 	}
-	t.AgentTool = fantasy.NewAgentTool(RenameToolName, renameDescription, t.run)
+	t.AgentTool = fantasy.NewAgentTool(toolnames.LSPRename, renameDescription, t.run)
 	return t
 }
 
@@ -74,7 +73,7 @@ func (t *renameTool) run(ctx context.Context, params RenameParams, call fantasy.
 func (t *renameTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[RenameParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", RenameToolName)
+		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.LSPRename)
 	}
 	return t.plan(ctx, params)
 }

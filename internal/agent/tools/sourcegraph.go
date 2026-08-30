@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 type SourcegraphParams struct {
@@ -26,8 +27,6 @@ type SourcegraphResponseMetadata struct {
 	NumberOfMatches int  `json:"number_of_matches"`
 	Truncated       bool `json:"truncated"`
 }
-
-const SourcegraphToolName = "sourcegraph"
 
 //go:embed sourcegraph.md.tpl
 var sourcegraphDescriptionTmpl []byte
@@ -60,7 +59,7 @@ func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 		}
 	}
 	return fantasy.NewParallelAgentTool(
-		SourcegraphToolName,
+		toolnames.Sourcegraph,
 		sourcegraphDescription(),
 		func(ctx context.Context, params SourcegraphParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Query == "" {

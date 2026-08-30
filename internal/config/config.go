@@ -18,6 +18,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/oauth/copilot"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/invopop/jsonschema"
 )
 
@@ -966,36 +967,36 @@ const maxRecentModelsPerType = 5
 
 func allToolNames() []string {
 	return []string{
-		"agent",
-		"bash",
-		"angela_info",
-		"angela_logs",
-		"job_output",
-		"job_kill",
-		"download",
-		"edit",
-		"multiedit",
-		"lsp_diagnostics",
-		"lsp_references",
-		"lsp_restart",
-		"lsp_symbols",
-		"lsp_definition",
-		"lsp_call_hierarchy",
-		"lsp_rename",
-		"lsp_replace_symbol",
-		"fetch",
-		"web_fetch",
-		"web_search",
-		"glob",
-		"grep",
-		"ls",
-		"question",
-		"sourcegraph",
-		"todos",
-		"view",
-		"write",
-		"list_mcp_resources",
-		"read_mcp_resource",
+		toolnames.Agent,
+		toolnames.Bash,
+		toolnames.AngelaInfo,
+		toolnames.AngelaLogs,
+		toolnames.JobOutput,
+		toolnames.JobKill,
+		toolnames.Download,
+		toolnames.Edit,
+		toolnames.MultiEdit,
+		toolnames.LSPDiagnostics,
+		toolnames.LSPReferences,
+		toolnames.LSPRestart,
+		toolnames.LSPSymbols,
+		toolnames.LSPDefinition,
+		toolnames.LSPCallHierarchy,
+		toolnames.LSPRename,
+		toolnames.LSPReplaceSymbol,
+		toolnames.Fetch,
+		toolnames.WebFetch,
+		toolnames.WebSearch,
+		toolnames.Glob,
+		toolnames.Grep,
+		toolnames.LS,
+		toolnames.Question,
+		toolnames.Sourcegraph,
+		toolnames.Todos,
+		toolnames.View,
+		toolnames.Write,
+		toolnames.ListMCPResources,
+		toolnames.ReadMCPResource,
 	}
 }
 
@@ -1021,10 +1022,10 @@ func filterSlice(data []string, mask []string, include bool) []string {
 
 func exploreToolNames() []string {
 	return []string{
-		"fetch", "angela_info",
-		"glob", "grep", "ls",
-		"lsp_call_hierarchy", "lsp_definition", "lsp_symbols",
-		"sourcegraph", "view",
+		toolnames.Fetch, toolnames.AngelaInfo,
+		toolnames.Glob, toolnames.Grep, toolnames.LS,
+		toolnames.LSPCallHierarchy, toolnames.LSPDefinition, toolnames.LSPSymbols,
+		toolnames.Sourcegraph, toolnames.View,
 	}
 }
 
@@ -1035,11 +1036,11 @@ func exploreToolNames() []string {
 // user. Nothing here writes, which is why the plan is the only product.
 func planToolNames() []string {
 	return []string{
-		"agent", "fetch", "angela_info",
-		"glob", "grep", "ls",
-		"lsp_call_hierarchy", "lsp_definition", "lsp_diagnostics",
-		"lsp_references", "lsp_symbols",
-		"question", "sourcegraph", "view",
+		toolnames.Agent, toolnames.Fetch, toolnames.AngelaInfo,
+		toolnames.Glob, toolnames.Grep, toolnames.LS,
+		toolnames.LSPCallHierarchy, toolnames.LSPDefinition, toolnames.LSPDiagnostics,
+		toolnames.LSPReferences, toolnames.LSPSymbols,
+		toolnames.Question, toolnames.Sourcegraph, toolnames.View,
 	}
 }
 
@@ -1051,7 +1052,7 @@ func planToolNames() []string {
 // suspicion bisected. Nothing here edits, so the finding stays the only
 // product, but bash means the user approves each command it runs.
 func deepResearchToolNames() []string {
-	return append(planToolNames(), "bash", "job_output", "job_kill")
+	return append(planToolNames(), toolnames.Bash, toolnames.JobOutput, toolnames.JobKill)
 }
 
 // webFetchToolNames lists the tools the web-fetch sub-agent gets: raw
@@ -1059,8 +1060,8 @@ func deepResearchToolNames() []string {
 // code-search tools to follow a link or grep a page it saved to disk.
 func webFetchToolNames() []string {
 	return []string{
-		"fetch", "web_fetch", "web_search",
-		"glob", "grep", "view", "sourcegraph",
+		toolnames.Fetch, toolnames.WebFetch, toolnames.WebSearch,
+		toolnames.Glob, toolnames.Grep, toolnames.View, toolnames.Sourcegraph,
 	}
 }
 
@@ -1095,7 +1096,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// web_fetch/web_search stay behind the web-fetch sub-agent
 			// so a page fetch always goes through its own delegated
 			// turn rather than the coder reaching for it directly.
-			DisabledTools: []string{"web_fetch", "web_search"},
+			DisabledTools: []string{toolnames.WebFetch, toolnames.WebSearch},
 		},
 		AgentExplore: {
 			ID:           AgentExplore,
@@ -1118,7 +1119,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// the coder tightens it too.
 			AllowedTools:  &AllowedToolSet{Kind: ToolSetInherited},
 			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetInherited},
-			DisabledTools: []string{"todos"},
+			DisabledTools: []string{toolnames.Todos},
 		},
 		AgentDeepResearch: {
 			ID:          AgentDeepResearch,

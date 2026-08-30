@@ -9,6 +9,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,7 +17,7 @@ func bashCall(t *testing.T, command string) fantasy.ToolCall {
 	t.Helper()
 	input, err := json.Marshal(map[string]string{"command": command})
 	require.NoError(t, err)
-	return fantasy.ToolCall{ID: "call-1", Name: tools.BashToolName, Input: string(input)}
+	return fantasy.ToolCall{ID: "call-1", Name: toolnames.Bash, Input: string(input)}
 }
 
 func sessionCtx(ctx context.Context) context.Context {
@@ -102,7 +103,7 @@ func TestPermissionedTool_SafeCommandsRunSilently(t *testing.T) {
 			dir := t.TempDir()
 			svc := permission.NewPermissionService(dir, false, nil)
 
-			inner := &fakeTool{name: tools.BashToolName, resp: fantasy.NewTextResponse("ran")}
+			inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
 			gated := newPermissionedTool(inner, svc, dir)
 
 			resp, err := gated.Run(sessionCtx(t.Context()), bashCall(t, command))
@@ -145,7 +146,7 @@ func TestPermissionedTool_DenyOutcomesDiffer(t *testing.T) {
 	require.NoError(t, err)
 	svc := permission.NewPermissionService(dir, false, policy)
 
-	inner := &fakeTool{name: tools.BashToolName, resp: fantasy.NewTextResponse("ran")}
+	inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
 	gated := newPermissionedTool(inner, svc, dir)
 
 	byPolicy, err := gated.Run(sessionCtx(t.Context()), bashCall(t, "curl http://evil"))
@@ -176,11 +177,11 @@ func TestPermissionedTool_PolicyDenyBeatsSkip(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	inner := &fakeTool{name: tools.WriteToolName, resp: fantasy.NewTextResponse("wrote")}
+	inner := &fakeTool{name: toolnames.Write, resp: fantasy.NewTextResponse("wrote")}
 	gated := newPermissionedTool(inner, svc, dir)
 
 	resp, err := gated.Run(sessionCtx(t.Context()), fantasy.ToolCall{
-		ID: "c1", Name: tools.WriteToolName, Input: string(input),
+		ID: "c1", Name: toolnames.Write, Input: string(input),
 	})
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
@@ -196,7 +197,7 @@ func TestPermissionedTool_HookAllowReachesTheGate(t *testing.T) {
 	dir := t.TempDir()
 	svc := permission.NewPermissionService(dir, false, nil)
 
-	inner := &fakeTool{name: tools.BashToolName, resp: fantasy.NewTextResponse("ran")}
+	inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
 	gated := newPermissionedTool(inner, svc, dir)
 	hooked := newHookedTool(gated, newRunner(t, `echo '{"decision":"allow"}'`))
 
@@ -226,7 +227,7 @@ func editCall(t *testing.T, path string) fantasy.ToolCall {
 		"file_path": path, "old_string": "a", "new_string": "b",
 	})
 	require.NoError(t, err)
-	return fantasy.ToolCall{ID: "call-1", Name: tools.EditToolName, Input: string(input)}
+	return fantasy.ToolCall{ID: "call-1", Name: toolnames.Edit, Input: string(input)}
 }
 
 // TestPermissionedTool_SettledPlanSkipsTheGate pins that a plan which
@@ -240,7 +241,7 @@ func TestPermissionedTool_SettledPlanSkipsTheGate(t *testing.T) {
 	dir := t.TempDir()
 	settled := fantasy.NewTextErrorResponse("old_string not found")
 	inner := &planningTool{
-		fakeTool: fakeTool{name: tools.EditToolName},
+		fakeTool: fakeTool{name: toolnames.Edit},
 		plan:     tools.Plan{Response: &settled},
 	}
 
@@ -273,7 +274,7 @@ func TestPermissionedTool_PolicyDenyPrecedesPlanning(t *testing.T) {
 
 	applied := false
 	inner := &planningTool{
-		fakeTool: fakeTool{name: tools.EditToolName},
+		fakeTool: fakeTool{name: toolnames.Edit},
 		plan: tools.Plan{Apply: func(context.Context) (fantasy.ToolResponse, error) {
 			applied = true
 			return fantasy.NewTextResponse("wrote"), nil
@@ -303,7 +304,7 @@ func TestPermissionedTool_RefusalKeepsPreviewMetadata(t *testing.T) {
 
 	dir := t.TempDir()
 	inner := &planningTool{
-		fakeTool: fakeTool{name: tools.EditToolName},
+		fakeTool: fakeTool{name: toolnames.Edit},
 		plan: tools.Plan{
 			Preview: permission.Preview{Description: "Replace content"},
 			Refusal: tools.EditResponseMetadata{

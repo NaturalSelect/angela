@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,7 +53,7 @@ func TestNewAngelaLogsTool(t *testing.T) {
 	t.Parallel()
 	tool := NewAngelaLogsTool("/tmp/test.log")
 	require.NotNil(t, tool)
-	require.Equal(t, AngelaLogsToolName, tool.Info().Name)
+	require.Equal(t, toolnames.AngelaLogs, tool.Info().Name)
 }
 
 func TestAngelaLogs_HappyPath(t *testing.T) {

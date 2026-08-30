@@ -11,6 +11,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 type ListMCPResourcesParams struct {
@@ -21,14 +22,12 @@ type ListMCPResourcesPermissionsParams struct {
 	MCPName string `json:"mcp_name"`
 }
 
-const ListMCPResourcesToolName = "list_mcp_resources"
-
 //go:embed list_mcp_resources.md
 var listMCPResourcesDescription string
 
 func NewListMCPResourcesTool(cfg *config.ConfigStore) fantasy.AgentTool {
 	return fantasy.NewParallelAgentTool(
-		ListMCPResourcesToolName,
+		toolnames.ListMCPResources,
 		listMCPResourcesDescription,
 		func(ctx context.Context, params ListMCPResourcesParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			params.MCPName = strings.TrimSpace(params.MCPName)

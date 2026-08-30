@@ -7,13 +7,14 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
 // mergeCall carries no arguments: what crosses back is the proposal in
 // the store, not anything the model puts in the call.
 func mergeCall() fantasy.ToolCall {
-	return fantasy.ToolCall{ID: "call-1", Name: MergeToolName, Input: "{}"}
+	return fantasy.ToolCall{ID: "call-1", Name: toolnames.Merge, Input: "{}"}
 }
 
 // mergeCoordinator is the smallest coordinator the merge tool needs: it
@@ -183,7 +184,7 @@ func TestMergeToolRetriesAfterDenial(t *testing.T) {
 
 	edited, err := tools.NewProposalEditTool(c.proposals).Run(sessionCtx(t.Context()), fantasy.ToolCall{
 		ID:    "call-edit",
-		Name:  tools.ProposalEditToolName,
+		Name:  toolnames.ProposalEdit,
 		Input: `{"old_string":"first","new_string":"second"}`,
 	})
 	require.NoError(t, err)
@@ -210,7 +211,7 @@ func TestProposalToolsNeverPrompt(t *testing.T) {
 
 	write := newPermissionedTool(tools.NewProposalWriteTool(store), svc, dir)
 	resp, err := write.Run(sessionCtx(t.Context()), fantasy.ToolCall{
-		ID: "call-w", Name: tools.ProposalWriteToolName,
+		ID: "call-w", Name: toolnames.ProposalWrite,
 		Input: `{"content":"first draft"}`,
 	})
 	require.NoError(t, err)
@@ -218,7 +219,7 @@ func TestProposalToolsNeverPrompt(t *testing.T) {
 
 	edit := newPermissionedTool(tools.NewProposalEditTool(store), svc, dir)
 	resp, err = edit.Run(sessionCtx(t.Context()), fantasy.ToolCall{
-		ID: "call-e", Name: tools.ProposalEditToolName,
+		ID: "call-e", Name: toolnames.ProposalEdit,
 		Input: `{"old_string":"first","new_string":"second"}`,
 	})
 	require.NoError(t, err)
@@ -226,7 +227,7 @@ func TestProposalToolsNeverPrompt(t *testing.T) {
 
 	read := newPermissionedTool(tools.NewProposalReadTool(store), svc, dir)
 	resp, err = read.Run(sessionCtx(t.Context()), fantasy.ToolCall{
-		ID: "call-r", Name: tools.ProposalReadToolName, Input: `{}`,
+		ID: "call-r", Name: toolnames.ProposalRead, Input: `{}`,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "second draft", resp.Content)
@@ -243,10 +244,10 @@ func TestBuildToolsGivesBranchesMerge(t *testing.T) {
 	t.Parallel()
 
 	branchOnly := []string{
-		MergeToolName,
-		tools.ProposalWriteToolName,
-		tools.ProposalEditToolName,
-		tools.ProposalReadToolName,
+		toolnames.Merge,
+		toolnames.ProposalWrite,
+		toolnames.ProposalEdit,
+		toolnames.ProposalRead,
 	}
 
 	built := func(t *testing.T, agent config.Agent) map[string]bool {

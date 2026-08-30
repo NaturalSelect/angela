@@ -8,10 +8,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/shell"
-)
-
-const (
-	JobOutputToolName = "job_output"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed job_output.md
@@ -32,7 +29,7 @@ type JobOutputResponseMetadata struct {
 
 func NewJobOutputTool() fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		JobOutputToolName,
+		toolnames.JobOutput,
 		jobOutputDescription,
 		func(ctx context.Context, params JobOutputParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.ShellID == "" {

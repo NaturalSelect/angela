@@ -17,6 +17,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/hooks"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/stringext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
@@ -171,7 +172,7 @@ func newBaseToolMessageItem(
 	canceled bool,
 ) *baseToolMessageItem {
 	// we only do full width for diffs (as far as I know)
-	hasCappedWidth := toolCall.Name != tools.EditToolName && toolCall.Name != tools.MultiEditToolName
+	hasCappedWidth := toolCall.Name != toolnames.Edit && toolCall.Name != toolnames.MultiEdit
 
 	status := ToolStatusRunning
 	if canceled {
@@ -218,62 +219,62 @@ func NewToolMessageItem(
 ) ToolMessageItem {
 	var item ToolMessageItem
 	switch toolCall.Name {
-	case tools.BashToolName:
+	case toolnames.Bash:
 		item = NewBashToolMessageItem(sty, toolCall, result, canceled, workingDir)
-	case tools.JobOutputToolName:
+	case toolnames.JobOutput:
 		item = NewJobOutputToolMessageItem(sty, toolCall, result, canceled)
-	case tools.JobKillToolName:
+	case toolnames.JobKill:
 		item = NewJobKillToolMessageItem(sty, toolCall, result, canceled)
-	case tools.ViewToolName:
+	case toolnames.View:
 		item = NewViewToolMessageItem(sty, toolCall, result, canceled)
-	case tools.WriteToolName:
+	case toolnames.Write:
 		item = NewWriteToolMessageItem(sty, toolCall, result, canceled)
-	case tools.EditToolName:
+	case toolnames.Edit:
 		item = NewEditToolMessageItem(sty, toolCall, result, canceled)
-	case tools.MultiEditToolName:
+	case toolnames.MultiEdit:
 		item = NewMultiEditToolMessageItem(sty, toolCall, result, canceled)
-	case tools.GlobToolName:
+	case toolnames.Glob:
 		item = NewGlobToolMessageItem(sty, toolCall, result, canceled)
-	case tools.GrepToolName:
+	case toolnames.Grep:
 		item = NewGrepToolMessageItem(sty, toolCall, result, canceled)
-	case tools.LSToolName:
+	case toolnames.LS:
 		item = NewLSToolMessageItem(sty, toolCall, result, canceled)
-	case tools.DownloadToolName:
+	case toolnames.Download:
 		item = NewDownloadToolMessageItem(sty, toolCall, result, canceled)
-	case tools.FetchToolName:
+	case toolnames.Fetch:
 		item = NewFetchToolMessageItem(sty, toolCall, result, canceled)
-	case tools.SourcegraphToolName:
+	case toolnames.Sourcegraph:
 		item = NewSourcegraphToolMessageItem(sty, toolCall, result, canceled)
-	case tools.DiagnosticsToolName:
+	case toolnames.LSPDiagnostics:
 		item = NewDiagnosticsToolMessageItem(sty, toolCall, result, canceled)
-	case agent.AgentToolName:
+	case toolnames.Agent:
 		item = NewAgentToolMessageItem(sty, toolCall, result, canceled)
-	case tools.WebFetchToolName:
+	case toolnames.WebFetch:
 		item = NewWebFetchToolMessageItem(sty, toolCall, result, canceled)
-	case tools.WebSearchToolName:
+	case toolnames.WebSearch:
 		item = NewWebSearchToolMessageItem(sty, toolCall, result, canceled)
-	case tools.TodosToolName:
+	case toolnames.Todos:
 		item = NewTodosToolMessageItem(sty, toolCall, result, canceled)
-	case tools.QuestionToolName:
+	case toolnames.Question:
 		item = NewQuestionToolMessageItem(sty, toolCall, result, canceled)
-	case tools.ReferencesToolName:
+	case toolnames.LSPReferences:
 		item = NewReferencesToolMessageItem(sty, toolCall, result, canceled)
-	case tools.DefinitionToolName:
+	case toolnames.LSPDefinition:
 		item = NewDefinitionToolMessageItem(sty, toolCall, result, canceled)
-	case tools.RenameToolName:
+	case toolnames.LSPRename:
 		item = NewRenameToolMessageItem(sty, toolCall, result, canceled)
-	case tools.ReplaceSymbolToolName:
+	case toolnames.LSPReplaceSymbol:
 		item = NewReplaceSymbolToolMessageItem(sty, toolCall, result, canceled)
-	case tools.CallHierarchyToolName:
+	case toolnames.LSPCallHierarchy:
 		item = NewCallHierarchyToolMessageItem(sty, toolCall, result, canceled)
-	case tools.SymbolsToolName:
+	case toolnames.LSPSymbols:
 		item = NewSymbolsToolMessageItem(sty, toolCall, result, canceled)
-	case tools.LSPRestartToolName:
+	case toolnames.LSPRestart:
 		item = NewLSPRestartToolMessageItem(sty, toolCall, result, canceled)
 	default:
 		if IsDockerMCPTool(toolCall.Name) {
 			item = NewDockerMCPToolMessageItem(sty, toolCall, result, canceled)
-		} else if strings.HasPrefix(toolCall.Name, "mcp_") {
+		} else if strings.HasPrefix(toolCall.Name, toolnames.MCPPrefix) {
 			item = NewMCPToolMessageItem(sty, toolCall, result, canceled)
 		} else {
 			item = NewGenericToolMessageItem(sty, toolCall, result, canceled)
@@ -571,28 +572,28 @@ func toolErrorContent(sty *styles.Styles, result *message.ToolResult, width int)
 // pick up a renderer here and a different identity there.
 func toolKindIcon(name string) string {
 	switch name {
-	case tools.BashToolName, tools.JobOutputToolName, tools.JobKillToolName:
+	case toolnames.Bash, toolnames.JobOutput, toolnames.JobKill:
 		return styles.ToolIconShell
-	case tools.WriteToolName, tools.EditToolName, tools.MultiEditToolName:
+	case toolnames.Write, toolnames.Edit, toolnames.MultiEdit:
 		return styles.ToolIconWrite
-	case tools.ViewToolName, tools.DownloadToolName:
+	case toolnames.View, toolnames.Download:
 		return styles.ToolIconRead
-	case tools.GlobToolName, tools.GrepToolName, tools.LSToolName, tools.SourcegraphToolName:
+	case toolnames.Glob, toolnames.Grep, toolnames.LS, toolnames.Sourcegraph:
 		return styles.ToolIconSearch
-	case tools.FetchToolName, tools.WebFetchToolName:
+	case toolnames.Fetch, toolnames.WebFetch:
 		return styles.ToolIconFetch
-	case tools.WebSearchToolName:
+	case toolnames.WebSearch:
 		return styles.ToolIconWeb
-	case agent.AgentToolName:
+	case toolnames.Agent:
 		return styles.ToolIconAgent
-	case tools.TodosToolName:
+	case toolnames.Todos:
 		return styles.ToolIconTodo
-	case tools.DiagnosticsToolName, tools.LSPRestartToolName, tools.ReferencesToolName,
-		tools.DefinitionToolName, tools.RenameToolName, tools.ReplaceSymbolToolName,
-		tools.CallHierarchyToolName, tools.SymbolsToolName:
+	case toolnames.LSPDiagnostics, toolnames.LSPRestart, toolnames.LSPReferences,
+		toolnames.LSPDefinition, toolnames.LSPRename, toolnames.LSPReplaceSymbol,
+		toolnames.LSPCallHierarchy, toolnames.LSPSymbols:
 		return styles.ToolIconLSP
 	}
-	if IsDockerMCPTool(name) || strings.HasPrefix(name, "mcp_") {
+	if IsDockerMCPTool(name) || strings.HasPrefix(name, toolnames.MCPPrefix) {
 		return styles.ToolIconMCP
 	}
 	return styles.ToolIconGeneric
@@ -1202,14 +1203,14 @@ func (t *baseToolMessageItem) formatToolForCopy() string {
 // formatParametersForCopy formats tool parameters for clipboard copying.
 func (t *baseToolMessageItem) formatParametersForCopy() string {
 	switch t.toolCall.Name {
-	case tools.BashToolName:
+	case toolnames.Bash:
 		var params tools.BashParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			cmd := strings.ReplaceAll(params.Command, "\n", " ")
 			cmd = strings.ReplaceAll(cmd, "\t", "    ")
 			return fmt.Sprintf("**Command:** %s", cmd)
 		}
-	case tools.ViewToolName:
+	case toolnames.View:
 		var params tools.ViewParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			var parts []string
@@ -1222,12 +1223,12 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			}
 			return strings.Join(parts, "\n")
 		}
-	case tools.EditToolName:
+	case toolnames.Edit:
 		var params tools.EditParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			return fmt.Sprintf("**File:** %s", fsext.PrettyPath(params.FilePath))
 		}
-	case tools.MultiEditToolName:
+	case toolnames.MultiEdit:
 		var params tools.MultiEditParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			var parts []string
@@ -1235,12 +1236,12 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			parts = append(parts, fmt.Sprintf("**Edits:** %d", len(params.Edits)))
 			return strings.Join(parts, "\n")
 		}
-	case tools.WriteToolName:
+	case toolnames.Write:
 		var params tools.WriteParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			return fmt.Sprintf("**File:** %s", fsext.PrettyPath(params.FilePath))
 		}
-	case tools.FetchToolName:
+	case toolnames.Fetch:
 		var params tools.FetchParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			var parts []string
@@ -1253,12 +1254,12 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			}
 			return strings.Join(parts, "\n")
 		}
-	case tools.WebFetchToolName:
+	case toolnames.WebFetch:
 		var params tools.WebFetchParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			return fmt.Sprintf("**URL:** %s", params.URL)
 		}
-	case tools.GrepToolName:
+	case toolnames.Grep:
 		var params tools.GrepParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			var parts []string
@@ -1274,7 +1275,7 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			}
 			return strings.Join(parts, "\n")
 		}
-	case tools.GlobToolName:
+	case toolnames.Glob:
 		var params tools.GlobParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			var parts []string
@@ -1284,7 +1285,7 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			}
 			return strings.Join(parts, "\n")
 		}
-	case tools.LSToolName:
+	case toolnames.LS:
 		var params tools.LSParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			path := params.Path
@@ -1293,7 +1294,7 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			}
 			return fmt.Sprintf("**Path:** %s", fsext.PrettyPath(path))
 		}
-	case tools.DownloadToolName:
+	case toolnames.Download:
 		var params tools.DownloadParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			var parts []string
@@ -1304,7 +1305,7 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			}
 			return strings.Join(parts, "\n")
 		}
-	case tools.SourcegraphToolName:
+	case toolnames.Sourcegraph:
 		var params tools.SourcegraphParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			var parts []string
@@ -1317,9 +1318,9 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			}
 			return strings.Join(parts, "\n")
 		}
-	case tools.DiagnosticsToolName:
+	case toolnames.LSPDiagnostics:
 		return "**Project:** diagnostics"
-	case agent.AgentToolName:
+	case toolnames.Agent:
 		var params agent.AgentParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			return fmt.Sprintf("**Task:**\n%s", params.Prompt)
@@ -1356,23 +1357,23 @@ func (t *baseToolMessageItem) formatResultForCopy() string {
 	}
 
 	switch t.toolCall.Name {
-	case tools.BashToolName:
+	case toolnames.Bash:
 		return t.formatBashResultForCopy()
-	case tools.ViewToolName:
+	case toolnames.View:
 		return t.formatViewResultForCopy()
-	case tools.EditToolName:
+	case toolnames.Edit:
 		return t.formatEditResultForCopy()
-	case tools.MultiEditToolName:
+	case toolnames.MultiEdit:
 		return t.formatMultiEditResultForCopy()
-	case tools.WriteToolName:
+	case toolnames.Write:
 		return t.formatWriteResultForCopy()
-	case tools.FetchToolName:
+	case toolnames.Fetch:
 		return t.formatFetchResultForCopy()
-	case tools.WebFetchToolName:
+	case toolnames.WebFetch:
 		return t.formatWebFetchResultForCopy()
-	case agent.AgentToolName:
+	case toolnames.Agent:
 		return t.formatAgentResultForCopy()
-	case tools.DownloadToolName, tools.GrepToolName, tools.GlobToolName, tools.LSToolName, tools.SourcegraphToolName, tools.DiagnosticsToolName, tools.TodosToolName:
+	case toolnames.Download, toolnames.Grep, toolnames.Glob, toolnames.LS, toolnames.Sourcegraph, toolnames.LSPDiagnostics, toolnames.Todos:
 		return fmt.Sprintf("```\n%s\n```", t.result.Content)
 	default:
 		return t.result.Content
@@ -1662,39 +1663,39 @@ func (t *baseToolMessageItem) formatAgentResultForCopy() string {
 // prettifyToolName returns a human-readable name for tool names.
 func prettifyToolName(name string) string {
 	switch name {
-	case agent.AgentToolName:
+	case toolnames.Agent:
 		return "Agent"
-	case tools.BashToolName:
+	case toolnames.Bash:
 		return "Bash"
-	case tools.JobOutputToolName:
+	case toolnames.JobOutput:
 		return "Job: Output"
-	case tools.JobKillToolName:
+	case toolnames.JobKill:
 		return "Job: Kill"
-	case tools.DownloadToolName:
+	case toolnames.Download:
 		return "Download"
-	case tools.EditToolName:
+	case toolnames.Edit:
 		return "Edit"
-	case tools.MultiEditToolName:
+	case toolnames.MultiEdit:
 		return "Multi-Edit"
-	case tools.FetchToolName:
+	case toolnames.Fetch:
 		return "Fetch"
-	case tools.WebFetchToolName:
+	case toolnames.WebFetch:
 		return "Fetch"
-	case tools.WebSearchToolName:
+	case toolnames.WebSearch:
 		return "Search"
-	case tools.GlobToolName:
+	case toolnames.Glob:
 		return "Glob"
-	case tools.GrepToolName:
+	case toolnames.Grep:
 		return "Grep"
-	case tools.LSToolName:
+	case toolnames.LS:
 		return "List"
-	case tools.SourcegraphToolName:
+	case toolnames.Sourcegraph:
 		return "Sourcegraph"
-	case tools.TodosToolName:
+	case toolnames.Todos:
 		return "To-Do"
-	case tools.ViewToolName:
+	case toolnames.View:
 		return "View"
-	case tools.WriteToolName:
+	case toolnames.Write:
 		return "Write"
 	default:
 		return humanizedToolName(name)

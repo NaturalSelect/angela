@@ -9,6 +9,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -591,9 +592,9 @@ func TestResumedGrandchildRespectsDepthBudget(t *testing.T) {
 	childID := newChild(root.ID, "msg-1", "call-1")
 	grandchildID := newChild(childID, "msg-2", "call-2")
 
-	require.Contains(t, agentToolNames(childID), AgentToolName,
+	require.Contains(t, agentToolNames(childID), toolnames.Agent,
 		"test premise: at depth 1 the budget still permits delegation")
 
-	require.NotContains(t, agentToolNames(grandchildID), AgentToolName,
+	require.NotContains(t, agentToolNames(grandchildID), toolnames.Agent,
 		"a grandchild at depth 2 regained the agent tool despite subagent_max_depth=2")
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed templates/agent_tool.md.tpl
@@ -24,10 +25,6 @@ type AgentParams struct {
 	Prompt       string `json:"prompt" description:"The task for the agent to perform"`
 	SubagentType string `json:"subagent_type,omitempty" description:"The type of specialized agent to use for this task"`
 }
-
-const (
-	AgentToolName = "agent"
-)
 
 // agentTool builds the agent dispatch tool from the coordinator's
 // subagent registry. The registry holds config snapshots, not built
@@ -44,7 +41,7 @@ func (c *coordinator) agentTool(depth int) (fantasy.AgentTool, error) {
 	}
 
 	return fantasy.NewParallelAgentTool(
-		AgentToolName,
+		toolnames.Agent,
 		description,
 		func(ctx context.Context, params AgentParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Prompt == "" {

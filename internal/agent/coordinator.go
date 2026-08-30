@@ -40,6 +40,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/azure"
@@ -877,7 +878,7 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 	isSubAgent := depth > 0
 	canDelegate := depth < c.cfg.Config().Options.SubagentMaxDepth()
 
-	if canDelegate && agent.AllowedTools.Allows(AgentToolName) {
+	if canDelegate && agent.AllowedTools.Allows(toolnames.Agent) {
 		if c.subagents.Len() == 0 {
 			slog.Info("No subagents available; omitting the agent tool")
 		} else {

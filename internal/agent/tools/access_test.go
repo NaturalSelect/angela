@@ -8,6 +8,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +38,7 @@ func TestAccessOf(t *testing.T) {
 	}{
 		{
 			name:  "bash carries the command and its directory",
-			tool:  BashToolName,
+			tool:  toolnames.Bash,
 			input: `{"command":"go test ./...","working_dir":"sub"}`,
 			want: permission.Access{
 				Action:  permission.ActionExecute,
@@ -47,7 +48,7 @@ func TestAccessOf(t *testing.T) {
 		},
 		{
 			name:  "bash without a directory falls back to the working dir",
-			tool:  BashToolName,
+			tool:  toolnames.Bash,
 			input: `{"command":"ls"}`,
 			want: permission.Access{
 				Action:  permission.ActionExecute,
@@ -57,67 +58,67 @@ func TestAccessOf(t *testing.T) {
 		},
 		{
 			name:  "edit resolves a relative path",
-			tool:  EditToolName,
+			tool:  toolnames.Edit,
 			input: `{"file_path":"internal/a.go","old_string":"x","new_string":"y"}`,
 			want:  permission.Access{Action: permission.ActionEdit, Path: filepath.Join(workDir, "internal", "a.go")},
 		},
 		{
 			name:  "write keeps an absolute path",
-			tool:  WriteToolName,
+			tool:  toolnames.Write,
 			input: fmt.Sprintf(`{"file_path":%s,"content":"x"}`, jsonPath(outsideFile)),
 			want:  permission.Access{Action: permission.ActionEdit, Path: outsideFile},
 		},
 		{
 			name:  "multiedit is an edit",
-			tool:  MultiEditToolName,
+			tool:  toolnames.MultiEdit,
 			input: `{"file_path":"a.go","edits":[]}`,
 			want:  permission.Access{Action: permission.ActionEdit, Path: filepath.Join(workDir, "a.go")},
 		},
 		{
 			name:  "replace symbol is an edit",
-			tool:  ReplaceSymbolToolName,
+			tool:  toolnames.LSPReplaceSymbol,
 			input: `{"symbol":"F","file_path":"a.go"}`,
 			want:  permission.Access{Action: permission.ActionEdit, Path: filepath.Join(workDir, "a.go")},
 		},
 		{
 			name:  "rename is an edit over its search root",
-			tool:  RenameToolName,
+			tool:  toolnames.LSPRename,
 			input: `{"symbol":"F","new_name":"G","path":"internal"}`,
 			want:  permission.Access{Action: permission.ActionEdit, Path: filepath.Join(workDir, "internal")},
 		},
 		{
 			name:  "view is a read",
-			tool:  ViewToolName,
+			tool:  toolnames.View,
 			input: `{"file_path":"a.go"}`,
 			want:  permission.Access{Action: permission.ActionRead, Path: filepath.Join(workDir, "a.go")},
 		},
 		{
 			name:  "ls is a list",
-			tool:  LSToolName,
+			tool:  toolnames.LS,
 			input: `{"path":"internal"}`,
 			want:  permission.Access{Action: permission.ActionList, Path: filepath.Join(workDir, "internal")},
 		},
 		{
 			name:  "glob folds the literal head of its pattern into the root",
-			tool:  GlobToolName,
+			tool:  toolnames.Glob,
 			input: `{"pattern":"internal/**/*.go"}`,
 			want:  permission.Access{Action: permission.ActionList, Path: filepath.Join(workDir, "internal")},
 		},
 		{
 			name:  "glob cannot climb out unnoticed",
-			tool:  GlobToolName,
+			tool:  toolnames.Glob,
 			input: `{"pattern":"../../etc/*.conf"}`,
 			want:  permission.Access{Action: permission.ActionList, Path: filepath.Join(workDir, "..", "..", "etc")},
 		},
 		{
 			name:  "grep is a read of its search root",
-			tool:  GrepToolName,
+			tool:  toolnames.Grep,
 			input: fmt.Sprintf(`{"pattern":"x","path":%s}`, jsonPath(outside)),
 			want:  permission.Access{Action: permission.ActionRead, Path: outside},
 		},
 		{
 			name:  "download carries both the url and the file it lands in",
-			tool:  DownloadToolName,
+			tool:  toolnames.Download,
 			input: `{"url":"https://example.com/x.sh","file_path":"x.sh"}`,
 			want: permission.Access{
 				Action: permission.ActionNetwork,
@@ -127,25 +128,25 @@ func TestAccessOf(t *testing.T) {
 		},
 		{
 			name:  "web fetch is a network access",
-			tool:  WebFetchToolName,
+			tool:  toolnames.WebFetch,
 			input: `{"url":"https://example.com"}`,
 			want:  permission.Access{Action: permission.ActionNetwork, URL: "https://example.com"},
 		},
 		{
 			name:  "list mcp resources names its server",
-			tool:  ListMCPResourcesToolName,
+			tool:  toolnames.ListMCPResources,
 			input: `{"mcp_name":"docker"}`,
 			want:  permission.Access{Action: permission.ActionMCP, Server: "docker"},
 		},
 		{
 			name:  "job kill reaches only a shell this agent started",
-			tool:  JobKillToolName,
+			tool:  toolnames.JobKill,
 			input: `{"shell_id":"abc"}`,
 			want:  permission.Access{Action: permission.ActionRead},
 		},
 		{
 			name:  "todos reads state the agent already has",
-			tool:  TodosToolName,
+			tool:  toolnames.Todos,
 			input: `{"todos":[]}`,
 			want:  permission.Access{Action: permission.ActionRead},
 		},
@@ -176,8 +177,8 @@ func TestAccessOfFailsClosed(t *testing.T) {
 		input string
 	}{
 		{"unregistered tool", "brand_new_tool", `{}`},
-		{"malformed input", BashToolName, `{"command":`},
-		{"wrongly typed field", ViewToolName, `{"file_path":42}`},
+		{"malformed input", toolnames.Bash, `{"command":`},
+		{"wrongly typed field", toolnames.View, `{"file_path":42}`},
 		{"mcp prefix without a tool name", "mcp_docker", `{}`},
 	}
 
@@ -197,39 +198,39 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 	t.Parallel()
 
 	toolNames := []string{
-		agentToolName,
-		AngelaInfoToolName,
-		AngelaLogsToolName,
-		BashToolName,
-		CallHierarchyToolName,
-		DefinitionToolName,
-		DiagnosticsToolName,
-		DownloadToolName,
-		EditToolName,
-		FetchToolName,
-		GlobToolName,
-		GrepToolName,
-		JobKillToolName,
-		JobOutputToolName,
-		LSPRestartToolName,
-		LSToolName,
-		ListMCPResourcesToolName,
-		MultiEditToolName,
-		ProposalEditToolName,
-		ProposalReadToolName,
-		ProposalWriteToolName,
-		QuestionToolName,
-		ReadMCPResourceToolName,
-		ReferencesToolName,
-		RenameToolName,
-		ReplaceSymbolToolName,
-		SourcegraphToolName,
-		SymbolsToolName,
-		TodosToolName,
-		ViewToolName,
-		WebFetchToolName,
-		WebSearchToolName,
-		WriteToolName,
+		toolnames.Agent,
+		toolnames.AngelaInfo,
+		toolnames.AngelaLogs,
+		toolnames.Bash,
+		toolnames.LSPCallHierarchy,
+		toolnames.LSPDefinition,
+		toolnames.LSPDiagnostics,
+		toolnames.Download,
+		toolnames.Edit,
+		toolnames.Fetch,
+		toolnames.Glob,
+		toolnames.Grep,
+		toolnames.JobKill,
+		toolnames.JobOutput,
+		toolnames.LSPRestart,
+		toolnames.LS,
+		toolnames.ListMCPResources,
+		toolnames.MultiEdit,
+		toolnames.ProposalEdit,
+		toolnames.ProposalRead,
+		toolnames.ProposalWrite,
+		toolnames.Question,
+		toolnames.ReadMCPResource,
+		toolnames.LSPReferences,
+		toolnames.LSPRename,
+		toolnames.LSPReplaceSymbol,
+		toolnames.Sourcegraph,
+		toolnames.LSPSymbols,
+		toolnames.Todos,
+		toolnames.View,
+		toolnames.WebFetch,
+		toolnames.WebSearch,
+		toolnames.Write,
 	}
 
 	for _, name := range toolNames {
@@ -246,7 +247,7 @@ func TestAccessOfResolvesPathsAbsolutely(t *testing.T) {
 	t.Parallel()
 
 	workDir := t.TempDir()
-	access, ok := AccessOf(ViewToolName, `{"file_path":"a/../b.go"}`, workDir)
+	access, ok := AccessOf(toolnames.View, `{"file_path":"a/../b.go"}`, workDir)
 	require.True(t, ok)
 	require.True(t, filepath.IsAbs(access.Path))
 	require.Equal(t, filepath.Join(workDir, "b.go"), access.Path)
@@ -265,7 +266,7 @@ func TestAccessOfJudgesThePathTheToolWillTouch(t *testing.T) {
 	for _, input := range []string{"/etc/hosts", "sub/a.go", "a/../b.go", "."} {
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()
-			access, ok := AccessOf(ViewToolName,
+			access, ok := AccessOf(toolnames.View,
 				fmt.Sprintf(`{"file_path":%q}`, input), workDir)
 			require.True(t, ok)
 			require.Equal(t,
@@ -289,15 +290,15 @@ func TestPreviewOfFeedsTheDialog(t *testing.T) {
 		input string
 		want  any
 	}{
-		{BashToolName, `{"command":"rm -rf x","description":"clean"}`, BashPermissionsParams{}},
-		{ViewToolName, `{"file_path":"/etc/hosts"}`, ViewPermissionsParams{}},
-		{LSToolName, `{"path":"/etc"}`, LSPermissionsParams{}},
-		{DownloadToolName, `{"url":"https://x/y","file_path":"y"}`, DownloadPermissionsParams{}},
-		{FetchToolName, `{"url":"https://x"}`, FetchPermissionsParams{}},
-		{WebFetchToolName, `{"url":"https://x"}`, WebFetchPermissionsParams{}},
-		{WebSearchToolName, `{"query":"go"}`, WebSearchPermissionsParams{}},
-		{ListMCPResourcesToolName, `{"mcp_name":"srv"}`, ListMCPResourcesPermissionsParams{}},
-		{ReadMCPResourceToolName, `{"mcp_name":"srv","uri":"u"}`, ReadMCPResourcePermissionsParams{}},
+		{toolnames.Bash, `{"command":"rm -rf x","description":"clean"}`, BashPermissionsParams{}},
+		{toolnames.View, `{"file_path":"/etc/hosts"}`, ViewPermissionsParams{}},
+		{toolnames.LS, `{"path":"/etc"}`, LSPermissionsParams{}},
+		{toolnames.Download, `{"url":"https://x/y","file_path":"y"}`, DownloadPermissionsParams{}},
+		{toolnames.Fetch, `{"url":"https://x"}`, FetchPermissionsParams{}},
+		{toolnames.WebFetch, `{"url":"https://x"}`, WebFetchPermissionsParams{}},
+		{toolnames.WebSearch, `{"query":"go"}`, WebSearchPermissionsParams{}},
+		{toolnames.ListMCPResources, `{"mcp_name":"srv"}`, ListMCPResourcesPermissionsParams{}},
+		{toolnames.ReadMCPResource, `{"mcp_name":"srv","uri":"u"}`, ReadMCPResourcePermissionsParams{}},
 	}
 
 	for _, tc := range cases {
@@ -319,8 +320,8 @@ func TestPreviewOfSkipsPlanners(t *testing.T) {
 	t.Parallel()
 
 	for _, tool := range []string{
-		EditToolName, MultiEditToolName, WriteToolName,
-		ReplaceSymbolToolName, RenameToolName, MergeToolName,
+		toolnames.Edit, toolnames.MultiEdit, toolnames.Write,
+		toolnames.LSPReplaceSymbol, toolnames.LSPRename, toolnames.Merge,
 	} {
 		t.Run(tool, func(t *testing.T) {
 			t.Parallel()
@@ -390,10 +391,10 @@ func TestMCPIdentityComesFromTheTool(t *testing.T) {
 func TestAccessOfMerge(t *testing.T) {
 	t.Parallel()
 
-	access, ok := AccessOf(MergeToolName, `{}`, "/work")
+	access, ok := AccessOf(toolnames.Merge, `{}`, "/work")
 	require.True(t, ok)
 	require.Equal(t, permission.Access{
-		Tool:   MergeToolName,
+		Tool:   toolnames.Merge,
 		Action: permission.ActionMerge,
 	}, access)
 }
@@ -405,7 +406,7 @@ func TestAccessOfMerge(t *testing.T) {
 func TestAccessOfProposalToolsOnlyRead(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{ProposalWriteToolName, ProposalEditToolName, ProposalReadToolName} {
+	for _, name := range []string{toolnames.ProposalWrite, toolnames.ProposalEdit, toolnames.ProposalRead} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			access, ok := AccessOf(name, `{}`, "/work")

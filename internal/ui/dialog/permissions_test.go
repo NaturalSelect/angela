@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
@@ -111,7 +112,7 @@ func TestPermissions_RenameShowsSymbolChange(t *testing.T) {
 	p := NewPermissions(com, permission.PermissionRequest{
 		ID:         "perm-test",
 		ToolCallID: "tool-call-test",
-		ToolName:   tools.RenameToolName,
+		ToolName:   toolnames.LSPRename,
 		Params: tools.RenamePermissionsParams{
 			Symbol:  "OldName",
 			NewName: "NewName",
@@ -130,7 +131,7 @@ func newMergePermissions(doc string) *Permissions {
 	p := NewPermissions(com, permission.PermissionRequest{
 		ID:         "perm-test",
 		ToolCallID: "tool-call-test",
-		ToolName:   tools.MergeToolName,
+		ToolName:   toolnames.Merge,
 		Params: tools.MergePermissionsParams{
 			Name:       tools.ProposalDocumentName,
 			NewContent: doc,

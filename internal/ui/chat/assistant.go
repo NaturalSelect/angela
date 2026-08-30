@@ -31,6 +31,11 @@ const assistantMessageTailWindowFormat = "… %d earlier lines hidden [click or 
 // maxCollapsedThinkingHeight defines the maximum height of the thinking
 const maxCollapsedThinkingHeight = 10
 
+// thinkingBoxIndent is the extra left indent that sets thinking text apart
+// from the reply. Must match Messages.ThinkingBox's PaddingLeft, since the
+// text is wrapped to width-thinkingBoxIndent before that padding is added.
+const thinkingBoxIndent = 2
+
 // Default copy for a provider-refusal banner. The agent persists only
 // the FinishReasonContentFilter reason; the TUI owns this text and
 // fills it in when the finish part carries no message/details (the
@@ -555,8 +560,9 @@ func (a *AssistantMessageItem) cachedError(width int) string {
 // ThinkingBox style is applied on top of the (already-windowed)
 // lines so the visual box matches what the user sees today.
 func (a *AssistantMessageItem) renderThinking(thinking string, width int) string {
-	renderer := common.QuietMarkdownRenderer(a.sty, width)
-	rendered := a.streamingThinking.Render(thinking, width, renderer)
+	contentWidth := width - thinkingBoxIndent
+	renderer := common.QuietMarkdownRenderer(a.sty, contentWidth)
+	rendered := a.streamingThinking.Render(thinking, contentWidth, renderer)
 	rendered = strings.TrimSpace(rendered)
 
 	// Count lines and, for the windowed view modes, slice the tail

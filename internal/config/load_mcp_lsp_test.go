@@ -19,7 +19,6 @@ func isolateReloadEnv(t *testing.T) (workDir, dataDir string) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(isolated, ".config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(isolated, ".local", "share"))
 	t.Setenv("ANGELA_GLOBAL_CONFIG", filepath.Join(isolated, ".config", "angela"))
-	t.Setenv("ANGELA_GLOBAL_DATA", filepath.Join(isolated, ".local", "share", "angela"))
 	return t.TempDir(), t.TempDir()
 }
 

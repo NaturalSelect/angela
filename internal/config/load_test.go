@@ -44,13 +44,11 @@ func TestConfig_LoadFromBytes(t *testing.T) {
 }
 
 func TestLookupConfigs_BoundedByProject(t *testing.T) {
-	// Force GlobalConfig and GlobalConfigData to point at locations we
-	// control so they can be present in the result without polluting
-	// the developer's real config.
+	// Force GlobalConfig to point at a location we control so it can be
+	// present in the result without polluting the developer's real
+	// config.
 	globalDir := t.TempDir()
-	dataDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dataDir)
 
 	t.Run("does not pick up angela.json above non-git project", func(t *testing.T) {
 		parent := t.TempDir()
@@ -129,10 +127,9 @@ func TestLookupConfigs_BoundedByProject(t *testing.T) {
 		project := t.TempDir()
 
 		got := lookupConfigs(project)
-		// Global config and global data path are always prepended,
-		// even when no project file exists.
+		// Global config is always prepended, even when no project file
+		// exists.
 		require.Contains(t, got, GlobalConfig())
-		require.Contains(t, got, GlobalConfigData())
 	})
 
 	t.Run("project angela.json and .angela.json are discovered", func(t *testing.T) {
@@ -197,7 +194,6 @@ func TestLoadFromConfigPaths_InvalidJSON(t *testing.T) {
 func TestLookupConfigs_IgnoresAngelarc(t *testing.T) {
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", t.TempDir())
 	require.NoError(t, os.WriteFile(filepath.Join(globalDir, "angelarc"), []byte("option debug true\n"), 0o644))
 
 	project := t.TempDir()
@@ -2057,90 +2053,6 @@ func TestSelectedModelVariantsSurviveResolution(t *testing.T) {
 	// every reader while the source config stays writable.
 	resolved.Main.Variants["extra"] = SelectedModelOverride{}
 	require.NotContains(t, cfg.Models[ModelMain].Variants, "extra")
-}
-
-func TestConfig_configureProviders_HyperAPIKeyFromEnv(t *testing.T) {
-	// Test that HYPER_API_KEY environment variable works without config
-	knownProviders := []catwalk.Provider{
-		{
-			ID:                  "hyper",
-			APIKey:              "", // No API key in provider definition
-			DefaultLargeModelID: "large-model",
-			DefaultSmallModelID: "small-model",
-			Models: []catwalk.Model{
-				{
-					ID:               "large-model",
-					DefaultMaxTokens: 1000,
-				},
-				{
-					ID:               "small-model",
-					DefaultMaxTokens: 500,
-				},
-			},
-		},
-	}
-
-	cfg := &Config{}
-	cfg.setDefaults("/tmp", "")
-	env := env.NewFromMap(map[string]string{
-		"HYPER_API_KEY": "env-api-key",
-	})
-	resolver := NewShellVariableResolver(env)
-	err := cfg.configureProviders(context.Background(), testStore(cfg), env, resolver, knownProviders)
-	require.NoError(t, err)
-	require.Equal(t, 1, cfg.Providers.Len())
-
-	// Verify Hyper provider is configured with the env var API key
-	pc, ok := cfg.Providers.Get("hyper")
-	require.True(t, ok, "Hyper provider should be configured")
-	require.Equal(t, "env-api-key", pc.APIKey)
-	require.Equal(t, "env-api-key", pc.APIKeyTemplate)
-}
-
-func TestConfig_configureProviders_HyperAPIKeyFromConfigOverrides(t *testing.T) {
-	// Test that config API key takes precedence when HYPER_API_KEY is also set
-	knownProviders := []catwalk.Provider{
-		{
-			ID:                  "hyper",
-			APIKey:              "provider-api-key",
-			DefaultLargeModelID: "large-model",
-			DefaultSmallModelID: "small-model",
-			Models: []catwalk.Model{
-				{
-					ID:               "large-model",
-					DefaultMaxTokens: 1000,
-				},
-				{
-					ID:               "small-model",
-					DefaultMaxTokens: 500,
-				},
-			},
-		},
-	}
-
-	// User has Hyper configured with an API key
-	cfg := &Config{
-		Providers: csync.NewMapFrom(map[string]ProviderConfig{
-			"hyper": {
-				APIKey: "config-api-key",
-			},
-		}),
-	}
-	cfg.setDefaults("/tmp", "")
-
-	// But they also have HYPER_API_KEY set - env var should take precedence
-	env := env.NewFromMap(map[string]string{
-		"HYPER_API_KEY": "env-api-key",
-	})
-	resolver := NewShellVariableResolver(env)
-	err := cfg.configureProviders(context.Background(), testStore(cfg), env, resolver, knownProviders)
-	require.NoError(t, err)
-	require.Equal(t, 1, cfg.Providers.Len())
-
-	// Verify env var takes precedence (as per requirements)
-	pc, ok := cfg.Providers.Get("hyper")
-	require.True(t, ok, "Hyper provider should be configured")
-	require.Equal(t, "env-api-key", pc.APIKey)
 }
 
 // TestConfig_configureProviders_ProviderHeaderResolveError verifies

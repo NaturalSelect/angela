@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,12 +14,10 @@ import (
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
-	hyperp "github.com/NaturalSelect/angela/internal/agent/hyper"
 	"github.com/NaturalSelect/angela/internal/env"
 	"github.com/NaturalSelect/angela/internal/lock"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/oauth/copilot"
-	"github.com/NaturalSelect/angela/internal/oauth/hyper"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/singleflight"
@@ -91,7 +90,7 @@ type ConfigStore struct {
 	config             *Config
 	workingDir         string
 	resolver           VariableResolver
-	globalDataPath     string   // ~/.local/share/angela/angela.json
+	globalDataPath     string   // ~/.config/angela/angela.json
 	workspacePath      string   // .angela/angela.json
 	loadedPaths        []string // config files that were successfully loaded
 	knownProviders     []catwalk.Provider
@@ -180,70 +179,6 @@ func (s *ConfigStore) KnownProviders() []catwalk.Provider {
 	s.writeMu.RLock()
 	defer s.writeMu.RUnlock()
 	return s.knownProviders
-}
-
-// RefetchHyperProvider re-fetches the Hyper provider catalog from the
-// remote API and updates the in-memory known providers list and config.
-// This is called after OAuth authentication completes so the latest
-// models are available without restarting.
-func (s *ConfigStore) RefetchHyperProvider(ctx context.Context) error {
-	// Build a fresh client that reads the API key from the live config,
-	// not the stale snapshot captured at startup. The syncer's original
-	// client closes over the startup config and would send an expired
-	// token after OAuth re-authentication.
-	freshClient := realHyperClient{
-		baseURL:    hyperp.BaseURL(),
-		resolveKey: func() string { return resolveHyperAPIKey(s.Config()) },
-	}
-	hyperSyncer.SetClient(freshClient)
-
-	hyperProvider, err := hyperSyncer.Refetch(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to refetch Hyper provider: %w", err)
-	}
-	if hyperProvider.ID == "" {
-		return nil
-	}
-
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-
-	// Replace or insert the Hyper entry in knownProviders.
-	found := false
-	for i, p := range s.knownProviders {
-		if string(p.ID) == string(hyperProvider.ID) {
-			s.knownProviders[i] = hyperProvider
-			found = true
-			break
-		}
-	}
-	if !found {
-		s.knownProviders = append([]catwalk.Provider{hyperProvider}, s.knownProviders...)
-	}
-
-	// Update the Hyper provider config with the refreshed model list
-	// and endpoint. Use cloneForWrite so readers always see a consistent
-	// snapshot (the store's contract forbids in-place config mutation).
-	nc := s.config.cloneForWrite()
-	if pc, ok := nc.Providers.Get(string(hyperProvider.ID)); ok {
-		pc.Models = hyperProvider.Models
-		if hyperProvider.APIEndpoint != "" {
-			pc.BaseURL = hyperProvider.APIEndpoint
-		}
-		nc.Providers.Set(string(hyperProvider.ID), pc)
-	}
-	// Finish the clone before it is published: a second setConfig here
-	// would let readers observe nc with the last refetch's Agents for
-	// one window, and calling the public SetupAgents would deadlock
-	// re-acquiring writeMu.
-	prepareResolvedConfig(nc)
-	s.setConfig(nc)
-
-	// Also update the memoized provider list so callers of
-	// config.Providers() (e.g. the models dialog) see fresh data.
-	UpdateProviderInList(hyperProvider)
-
-	return nil
 }
 
 // SetupAgents resolves the agent set from the live config and
@@ -339,7 +274,19 @@ func (s *ConfigStore) atomicWrite(scope Scope, fn func(current []byte) ([]byte, 
 		return err
 	}
 
-	return atomicWriteFile(path, newData, 0o600)
+	return atomicWriteFile(path, indentJSON(newData), 0o600)
+}
+
+// indentJSON pretty-prints config JSON so the file stays readable and
+// hand-editable. sjson emits compact output, which collapses the entire
+// config onto a single line. Content that does not parse is written
+// through unchanged rather than dropped.
+func indentJSON(data []byte) []byte {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, data, "", "  "); err != nil {
+		return data
+	}
+	return append(buf.Bytes(), '\n')
 }
 
 // configPath returns the file path for the given scope.
@@ -599,9 +546,18 @@ func (s *ConfigStore) PruneRecentModels(scope Scope, modelType ModelConfigName, 
 // ProviderConfig: the loader merges the whole catalog into that one, so
 // writing it back would freeze hundreds of catalog models into the
 // user's config and stop them tracking catalog updates.
+//
+// The provider must already exist in the active configuration or in the
+// known provider catalog. Writing a model for an unknown provider would
+// leave an unusable fragment in the config file because
+// configureProviders removes providers that lack an endpoint.
 func (s *ConfigStore) UpsertProviderModel(scope Scope, providerID string, model catwalk.Model) error {
 	if providerID == "" || model.ID == "" {
 		return fmt.Errorf("provider id and model id are required")
+	}
+
+	if !s.isKnownProvider(providerID) {
+		return fmt.Errorf("provider %q is not configured or known", providerID)
 	}
 
 	key := fmt.Sprintf("providers.%s.models", escapePathKey(providerID))
@@ -629,11 +585,39 @@ func (s *ConfigStore) UpsertProviderModel(scope Scope, providerID string, model 
 		return err
 	}
 
-	if err := s.autoReload(context.Background()); err != nil {
+	// Use a blocking reload instead of autoReload. autoReload skips
+	// when another goroutine holds writeMu, which can leave the
+	// in-memory config stale — the model is persisted but unresolved.
+	// Callers like onboarding depend on the model being available
+	// immediately for UpdatePreferredModel and InitCoderAgent.
+	if err := s.ReloadFromDisk(context.Background()); err != nil {
 		slog.Warn("Config file updated but failed to reload in-memory state", "error", err)
 	}
 
 	return nil
+}
+
+// isKnownProvider reports whether providerID exists in the active
+// configuration or in the known provider catalog.
+func (s *ConfigStore) isKnownProvider(providerID string) bool {
+	s.writeMu.RLock()
+	defer s.writeMu.RUnlock()
+
+	// Check active config providers.
+	if s.config != nil {
+		if _, ok := s.config.Providers.Get(providerID); ok {
+			return true
+		}
+	}
+
+	// Check known providers from catalog.
+	for _, p := range s.knownProviders {
+		if string(p.ID) == providerID {
+			return true
+		}
+	}
+
+	return false
 }
 
 // updatePreferredModelFields builds the fields map for persisting a preferred
@@ -743,13 +727,6 @@ func (s *ConfigStore) SetProviderAPIKey(scope Scope, providerID string, apiKey a
 		cfg.Providers.Set(providerID, providerConfig)
 	}
 
-	// After authenticating with Hyper, re-fetch the provider catalog so
-	// the latest models are available without restarting.
-	if providerID == "hyper" {
-		if refetchErr := s.RefetchHyperProvider(context.Background()); refetchErr != nil {
-			slog.Warn("Failed to refetch Hyper provider after auth", "error", refetchErr)
-		}
-	}
 	// Signal here rather than at a caller: this is where a credential
 	// actually lands, and both the in-process workspace and the server's
 	// config endpoint reach it. A turn parked in
@@ -760,7 +737,7 @@ func (s *ConfigStore) SetProviderAPIKey(scope Scope, providerID string, apiKey a
 
 // RefreshOAuthToken refreshes the OAuth token for the given provider.
 //
-// Providers like Hyper rotate refresh tokens: each exchange consumes the
+// Some providers rotate refresh tokens: each exchange consumes the
 // caller's refresh token, issues a new pair, and revokes the old one. If
 // two angela instances (or two goroutines) refresh concurrently with the
 // same stored refresh token, the second exchange reuses an already-revoked
@@ -994,8 +971,6 @@ func (s *ConfigStore) exchange(ctx context.Context, providerID, refreshToken str
 	switch providerID {
 	case string(catwalk.InferenceProviderCopilot):
 		return copilot.RefreshToken(ctx, refreshToken)
-	case hyperp.Name:
-		return hyper.ExchangeToken(ctx, refreshToken)
 	default:
 		return nil, fmt.Errorf("OAuth refresh not supported for provider %s", providerID)
 	}

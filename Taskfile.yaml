@@ -51,7 +51,6 @@ tasks:
       - go.mod
       - internal/agent/**/*.md
       - internal/agent/**/*.md.tpl
-      - internal/agent/hyper/provider.json
     generates:
       - angela{{exeExt}}
 
@@ -72,7 +71,6 @@ tasks:
   run:onboarding:
     desc: Run build with custom config to test onboarding
     env:
-      ANGELA_GLOBAL_DATA: tmp/onboarding/data
       ANGELA_GLOBAL_CONFIG: tmp/onboarding/config
     cmds:
       - task: build
@@ -125,7 +123,6 @@ tasks:
       - go.mod
       - internal/agent/**/*.md
       - internal/agent/**/*.md.tpl
-      - internal/agent/hyper/provider.json
 
   profile:cpu:
     desc: 10s CPU profile
@@ -149,13 +146,6 @@ tasks:
       - echo "Generated schema.json"
     generates:
       - schema.json
-
-  hyper:
-    desc: Update Hyper embedded provider.json
-    cmds:
-      - go generate ./internal/agent/hyper/...
-    generates:
-      - ./internal/agent/hyper/provider.json
 
   release:
     desc: Create and push a new tag following semver

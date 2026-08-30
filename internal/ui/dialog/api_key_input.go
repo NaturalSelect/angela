@@ -257,7 +257,7 @@ func (m *APIKeyInput) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		m.fieldView(apiKeyFieldKey),
 		m.fieldView(apiKeyFieldBaseURL),
 		textStyle.Render("This will be written in your global configuration:"),
-		textStyle.Render(config.GlobalConfigData()),
+		textStyle.Render(config.GlobalConfig()),
 		"",
 		helpView,
 	}, "\n")

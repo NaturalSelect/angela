@@ -6,7 +6,7 @@ import "fmt"
 type Scope int
 
 const (
-	// ScopeGlobal targets the global data config (~/.local/share/angela/angela.json).
+	// ScopeGlobal targets the global config (~/.config/angela/angela.json).
 	ScopeGlobal Scope = iota
 	// ScopeWorkspace targets the workspace config (.angela/angela.json).
 	ScopeWorkspace

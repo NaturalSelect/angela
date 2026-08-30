@@ -158,7 +158,7 @@ func quickStyle(o quickStyleOpts) Styles {
 			StylePrimitive: ansi.StylePrimitive{
 				// BlockPrefix: "\n",
 				// BlockSuffix: "\n",
-				Color: hex(o.fgSubtle),
+				Color: hex(o.fgBase),
 			},
 			// Margin: new(uint(defaultMargin)),
 		},
@@ -179,15 +179,19 @@ func quickStyle(o quickStyleOpts) Styles {
 		},
 		// Headings are told apart by color and weight, not by literal hash
 		// marks — a rendered document should not still show its markup.
+		// H1/H2 carry the brand hue so a rendered document has one clear
+		// point of color instead of reading as pure grayscale; the lower
+		// levels stay on the neutral ramp so hierarchy still reads by
+		// brightness, not just by which headings happen to be colored.
 		H1: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
-				Color: hex(o.fgBase),
+				Color: hex(o.primary),
 				Bold:  new(true),
 			},
 		},
 		H2: ansi.StyleBlock{
 			StylePrimitive: ansi.StylePrimitive{
-				Color: hex(o.fgBase),
+				Color: hex(o.primary),
 				Bold:  new(true),
 			},
 		},
@@ -218,11 +222,17 @@ func quickStyle(o quickStyleOpts) Styles {
 		Strikethrough: ansi.StylePrimitive{
 			CrossedOut: new(true),
 		},
+		// Emph/Strong get a color too, one step off the heading hue so
+		// frequent inline emphasis doesn't compete with H1/H2 for
+		// attention: accent (darker) for the quieter italic, secondary
+		// (lighter) for the more assertive bold.
 		Emph: ansi.StylePrimitive{
+			Color:  hex(o.accent),
 			Italic: new(true),
 		},
 		Strong: ansi.StylePrimitive{
-			Bold: new(true),
+			Color: hex(o.secondary),
+			Bold:  new(true),
 		},
 		HorizontalRule: ansi.StylePrimitive{
 			Color:  hex(o.separator),
@@ -239,12 +249,14 @@ func quickStyle(o quickStyleOpts) Styles {
 			Ticked:         "[✓] ",
 			Unticked:       "[ ] ",
 		},
+		// Links use the info blue so they read as links on sight, matching
+		// the near-universal convention instead of blending into prose.
 		Link: ansi.StylePrimitive{
-			Color:     hex(o.fgSubtle),
+			Color:     hex(o.info),
 			Underline: new(true),
 		},
 		LinkText: ansi.StylePrimitive{
-			Color: hex(o.fgSubtle),
+			Color: hex(o.info),
 			Bold:  new(true),
 		},
 		Image: ansi.StylePrimitive{
@@ -271,8 +283,11 @@ func quickStyle(o quickStyleOpts) Styles {
 				Margin: new(uint(defaultMargin)),
 			},
 			Chroma: &ansi.Chroma{
+				// Text and Name cover most of the characters in any snippet
+				// (plain tokens, identifiers), so they read at the normal
+				// foreground; only syntax categories below carry hue.
 				Text: ansi.StylePrimitive{
-					Color: hex(o.fgSubtle),
+					Color: hex(o.fgBase),
 				},
 				Error: ansi.StylePrimitive{
 					Color:           hex(o.onPrimary),
@@ -303,7 +318,7 @@ func quickStyle(o quickStyleOpts) Styles {
 					Color: hex(o.warningSubtle),
 				},
 				Name: ansi.StylePrimitive{
-					Color: hex(o.fgSubtle),
+					Color: hex(o.fgBase),
 				},
 				NameBuiltin: ansi.StylePrimitive{
 					Color: hex(charmtone.Cheeky),
@@ -556,29 +571,36 @@ func quickStyle(o quickStyleOpts) Styles {
 			LineNumber: lipgloss.NewStyle().
 				Foreground(o.fgMoreSubtle).
 				Background(o.bgBase),
+			// Unchanged context is most of what a diff shows, so its code
+			// text reads at the normal foreground rather than the dim
+			// gutter tone — otherwise the whole preview looks washed out.
 			Code: lipgloss.NewStyle().
-				Foreground(o.fgMoreSubtle).
+				Foreground(o.fgBase).
 				Background(o.bgBase),
 		},
+		// Insert/delete backgrounds are pushed toward a visibly saturated
+		// green/red rather than a near-neutral tint, so a changed line
+		// reads at a glance instead of blending into the unchanged rows
+		// around it.
 		InsertLine: diffview.LineStyle{
 			LineNumber: lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#629657")).
-				Background(lipgloss.Color("#2b322a")),
+				Background(lipgloss.Color("#1f2e21")),
 			Symbol: lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#629657")).
-				Background(lipgloss.Color("#323931")),
+				Background(lipgloss.Color("#28402c")),
 			Code: lipgloss.NewStyle().
-				Background(lipgloss.Color("#323931")),
+				Background(lipgloss.Color("#28402c")),
 		},
 		DeleteLine: diffview.LineStyle{
 			LineNumber: lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#a45c59")).
-				Background(lipgloss.Color("#312929")),
+				Background(lipgloss.Color("#2e2020")),
 			Symbol: lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#a45c59")).
-				Background(lipgloss.Color("#383030")),
+				Background(lipgloss.Color("#402828")),
 			Code: lipgloss.NewStyle().
-				Background(lipgloss.Color("#383030")),
+				Background(lipgloss.Color("#402828")),
 		},
 		Filename: diffview.LineStyle{
 			LineNumber: lipgloss.NewStyle().
@@ -635,9 +657,13 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Tool.ParamMain = subtle
 	s.Tool.ParamKey = subtle
 
-	// Content rendering - prepared styles that accept width parameter
-	s.Tool.ContentLine = muted.Background(o.bgLeastVisible)
-	s.Tool.ContentTruncation = muted.Background(o.bgLeastVisible)
+	// Content rendering - prepared styles that accept width parameter.
+	// Plain content carries no background: a full-row fill reads as a
+	// table cell, not chat output. ContentAccent instead marks a content
+	// line with a thin left bar, distinct from the message-focus "▌" bar.
+	s.Tool.ContentLine = muted
+	s.Tool.ContentAccent = lipgloss.NewStyle().Foreground(o.separator)
+	s.Tool.ContentTruncation = muted
 	s.Tool.ContentCodeLine = base.Background(o.bgBase).PaddingLeft(2)
 	s.Tool.ContentCodeTruncation = muted.Background(o.bgBase).PaddingLeft(2)
 	s.Tool.ContentCodeBg = o.bgBase
@@ -873,15 +899,16 @@ func quickStyle(o quickStyleOpts) Styles {
 	}
 
 	s.Messages.NoContent = lipgloss.NewStyle().Foreground(o.fgBase)
-	s.Messages.UserBand = lipgloss.NewStyle().Background(o.bgLessVisible).Foreground(o.fgSubtle)
-	s.Messages.UserBandPrompt = lipgloss.NewStyle().
-		Background(o.bgLessVisible).Foreground(o.fgBase).Bold(true)
-	s.Messages.UserBandTimestamp = lipgloss.NewStyle().
-		Background(o.bgLessVisible).Foreground(o.fgMoreSubtle)
-	s.Messages.UserBandAccentFocused = lipgloss.NewStyle().
-		Background(o.bgLessVisible).Foreground(o.fgSubtle)
-	s.Messages.UserBandAccentBlurred = lipgloss.NewStyle().
-		Background(o.bgLessVisible).Foreground(o.fgMostSubtle)
+	// The user band carries no background fill: a solid block was the one
+	// filled surface in an otherwise flat chat log, which read as a stray
+	// UI widget and washed out plain (uncolored) message text sitting on
+	// it. The left accent bar alone marks it as a user message now, same
+	// as assistant/tool messages do when focused.
+	s.Messages.UserBand = lipgloss.NewStyle().Foreground(o.fgBase)
+	s.Messages.UserBandPrompt = lipgloss.NewStyle().Foreground(o.fgBase).Bold(true)
+	s.Messages.UserBandTimestamp = lipgloss.NewStyle().Foreground(o.fgMoreSubtle)
+	s.Messages.UserBandAccentFocused = lipgloss.NewStyle().Foreground(o.fgSubtle)
+	s.Messages.UserBandAccentBlurred = lipgloss.NewStyle().Foreground(o.fgMostSubtle)
 	s.Messages.AssistantBlurred = s.Messages.NoContent.PaddingLeft(2)
 	s.Messages.AssistantFocused = s.Messages.NoContent.PaddingLeft(1).BorderLeft(true).
 		BorderForeground(o.fgMoreSubtle).BorderStyle(messageFocussedBorder)
@@ -930,10 +957,15 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Messages.AssistantInfoDuration = subtle
 	s.Messages.AssistantCanceled = lipgloss.NewStyle().Foreground(o.fgSubtle).Italic(true)
 
-	// Thinking section styles
-	s.Messages.ThinkingBox = subtle.Background(o.bgLeastVisible)
+	// Thinking section styles. The PaddingLeft nudges thinking text past
+	// the rest of the message so it reads as nested under the reply
+	// rather than level with it; thinkingBoxIndent (chat package) must
+	// match it so the pre-wrapped text still fits.
+	s.Messages.ThinkingBox = subtle.Background(o.bgLeastVisible).PaddingLeft(2)
 	s.Messages.ThinkingTruncationHint = muted
-	s.Messages.ThinkingFooterTitle = subtle
+	s.Messages.QueuedMarker = subtle
+	s.Messages.QueuedText = muted
+	s.Messages.ThinkingFooterTitle = subtle.PaddingLeft(2)
 	s.Messages.ThinkingFooterDuration = subtle
 
 	// Text selection.

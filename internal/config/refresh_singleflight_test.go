@@ -10,20 +10,23 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/stretchr/testify/require"
 )
 
-// writeTokenToDisk persists token as the hyper provider credential in the
+// writeTokenToDisk persists token as the acme provider credential in the
 // config file at path, mimicking what another angela instance would leave
 // behind after a successful refresh.
 func writeTokenToDisk(t *testing.T, path string, token *oauth.Token) {
 	t.Helper()
 	configContent := fmt.Sprintf(`{
 		"providers": {
-			"hyper": {
+			"acme": {
+				"base_url": %q,
 				"api_key": %q,
+				"models": [{"id": "acme-model", "name": "Acme Model"}],
 				"oauth": {
 					"access_token": %q,
 					"refresh_token": %q,
@@ -32,11 +35,18 @@ func writeTokenToDisk(t *testing.T, path string, token *oauth.Token) {
 				}
 			}
 		}
-	}`, token.AccessToken, token.AccessToken, token.RefreshToken, token.ExpiresIn, token.ExpiresAt)
+	}`, acmeBaseURL, token.AccessToken, token.AccessToken, token.RefreshToken, token.ExpiresIn, token.ExpiresAt)
 	require.NoError(t, os.WriteFile(path, []byte(configContent), 0o600))
 }
 
-// newRefreshTestStore builds a ConfigStore whose hyper provider holds an
+// acmeBaseURL is the base URL given to the acme test fixture provider.
+// configureProviders drops any custom provider without one, and without
+// at least one model, during the reload that RefreshOAuthToken triggers
+// after a successful exchange, so the fixture needs both to survive past
+// the refresh.
+const acmeBaseURL = "https://acme.example.test/v1"
+
+// newRefreshTestStore builds a ConfigStore whose acme provider holds an
 // expired OAuth token, persisted both in memory and on disk at configPath.
 // Stores that share a configPath also share the per-provider refresh lock,
 // which lets a single test process faithfully simulate two angela instances:
@@ -54,9 +64,11 @@ func newRefreshTestStore(t *testing.T, configPath string, exchange func(ctx cont
 	writeTokenToDisk(t, configPath, expired)
 
 	providers := csync.NewMap[string, ProviderConfig]()
-	providers.Set("hyper", ProviderConfig{
-		ID:         "hyper",
-		Name:       "Hyper",
+	providers.Set("acme", ProviderConfig{
+		ID:         "acme",
+		Name:       "Acme",
+		BaseURL:    acmeBaseURL,
+		Models:     []catwalk.Model{{ID: "acme-model", Name: "Acme Model"}},
 		APIKey:     expired.AccessToken,
 		OAuthToken: expired,
 	})
@@ -96,7 +108,7 @@ func TestRefreshOAuthToken_InProcessSingleFlight(t *testing.T) {
 	for range goroutines {
 		wg.Go(func() {
 			<-start
-			errs <- store.RefreshOAuthToken(context.Background(), ScopeGlobal, "hyper")
+			errs <- store.RefreshOAuthToken(context.Background(), ScopeGlobal, "acme")
 		})
 	}
 	close(start)
@@ -108,7 +120,7 @@ func TestRefreshOAuthToken_InProcessSingleFlight(t *testing.T) {
 	}
 	require.Equal(t, int64(1), exchanges.Load(), "concurrent refreshes should collapse into one exchange")
 
-	pc, ok := store.config.Providers.Get("hyper")
+	pc, ok := store.config.Providers.Get("acme")
 	require.True(t, ok)
 	require.Equal(t, "at1", pc.OAuthToken.AccessToken)
 	require.Equal(t, "rt1", pc.OAuthToken.RefreshToken)
@@ -160,7 +172,7 @@ func TestRefreshOAuthToken_CrossProcessAdopt(t *testing.T) {
 	for _, s := range []*ConfigStore{a, b} {
 		wg.Go(func() {
 			<-start
-			errs <- s.RefreshOAuthToken(context.Background(), ScopeGlobal, "hyper")
+			errs <- s.RefreshOAuthToken(context.Background(), ScopeGlobal, "acme")
 		})
 	}
 	close(start)
@@ -176,7 +188,7 @@ func TestRefreshOAuthToken_CrossProcessAdopt(t *testing.T) {
 
 	// Both instances converge on the rotated token.
 	for name, s := range map[string]*ConfigStore{"a": a, "b": b} {
-		pc, ok := s.config.Providers.Get("hyper")
+		pc, ok := s.config.Providers.Get("acme")
 		require.True(t, ok, name)
 		require.Equal(t, "at1", pc.OAuthToken.AccessToken, name)
 		require.Equal(t, "rt1", pc.OAuthToken.RefreshToken, name)
@@ -237,11 +249,11 @@ func TestRefreshOAuthToken_StalePeerBorrowsRotatedRefreshToken(t *testing.T) {
 		ExpiresAt:    time.Now().Add(-time.Minute).Unix(),
 	})
 
-	require.NoError(t, store.RefreshOAuthToken(context.Background(), ScopeGlobal, "hyper"))
+	require.NoError(t, store.RefreshOAuthToken(context.Background(), ScopeGlobal, "acme"))
 	require.Equal(t, int64(1), exchanges.Load())
 	require.Equal(t, int64(0), reuse.Load(), "must not present its own revoked refresh token")
 
-	pc, ok := store.config.Providers.Get("hyper")
+	pc, ok := store.config.Providers.Get("acme")
 	require.True(t, ok)
 	require.Equal(t, "at4", pc.OAuthToken.AccessToken)
 	require.Equal(t, "rt4", pc.OAuthToken.RefreshToken)
@@ -265,10 +277,10 @@ func TestRefreshOAuthToken_AdoptsFresherDiskToken(t *testing.T) {
 		ExpiresAt:    time.Now().Add(time.Hour).Unix(),
 	})
 
-	require.NoError(t, store.RefreshOAuthToken(context.Background(), ScopeGlobal, "hyper"))
+	require.NoError(t, store.RefreshOAuthToken(context.Background(), ScopeGlobal, "acme"))
 	require.Equal(t, int64(0), exchanges.Load(), "a usable peer token needs no exchange")
 
-	pc, ok := store.config.Providers.Get("hyper")
+	pc, ok := store.config.Providers.Get("acme")
 	require.True(t, ok)
 	require.Equal(t, "at9", pc.OAuthToken.AccessToken)
 	require.Equal(t, "at9", pc.APIKey)
@@ -291,11 +303,11 @@ func TestRefreshOAuthToken_IgnoresOlderDiskToken(t *testing.T) {
 		ExpiresAt:    time.Now().Add(-24 * time.Hour).Unix(),
 	})
 
-	require.NoError(t, store.RefreshOAuthToken(context.Background(), ScopeGlobal, "hyper"))
+	require.NoError(t, store.RefreshOAuthToken(context.Background(), ScopeGlobal, "acme"))
 	require.Equal(t, int64(1), exchanges.Load())
 	require.Equal(t, int64(0), reuse.Load())
 
-	pc, ok := store.config.Providers.Get("hyper")
+	pc, ok := store.config.Providers.Get("acme")
 	require.True(t, ok)
 	require.Equal(t, "rt1", pc.OAuthToken.RefreshToken)
 }

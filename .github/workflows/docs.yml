@@ -203,7 +203,6 @@ jobs:
             }
             ' > "${RUNNER_TEMP}/angela-config/angela.json"
           echo "ANGELA_GLOBAL_CONFIG=${RUNNER_TEMP}/angela-config" >> "$GITHUB_ENV"
-          echo "ANGELA_GLOBAL_DATA=${RUNNER_TEMP}/angela-global-data" >> "$GITHUB_ENV"
 
       - name: Collect commits and build prompt
         working-directory: pr

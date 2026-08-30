@@ -831,7 +831,6 @@
             "azure",
             "bedrock",
             "google-vertex",
-            "hyper",
             "litellm",
             "llamacpp",
             "lmstudio",
@@ -840,6 +839,10 @@
           ],
           "description": "Provider type that determines the API format",
           "default": "openai"
+        },
+        "use_responses": {
+          "type": "boolean",
+          "description": "Force the OpenAI Responses API on or off for this provider; unset picks per model from its ID"
         },
         "api_key": {
           "type": "string",

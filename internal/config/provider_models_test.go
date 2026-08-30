@@ -25,18 +25,24 @@ func readProviderModels(t *testing.T, path, providerID string) []catwalk.Model {
 	return out.Providers[providerID].Models
 }
 
-func newUpsertStore(t *testing.T) *ConfigStore {
+func newUpsertStore(t *testing.T, providers ...string) *ConfigStore {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := &Config{}
 	cfg.setDefaults(dir, "")
+	for _, id := range providers {
+		cfg.Providers.Set(id, ProviderConfig{
+			ID:      id,
+			BaseURL: "http://localhost",
+		})
+	}
 	return testStoreWithPath(cfg, dir)
 }
 
 func TestUpsertProviderModel_AddsAModelTheCatalogNeverListed(t *testing.T) {
 	t.Parallel()
 
-	store := newUpsertStore(t)
+	store := newUpsertStore(t, "acme")
 	model := catwalk.Model{
 		ID:               "typed-model",
 		Name:             "typed-model",
@@ -52,7 +58,7 @@ func TestUpsertProviderModel_AddsAModelTheCatalogNeverListed(t *testing.T) {
 func TestUpsertProviderModel_ReplacesTheEntryWithTheSameID(t *testing.T) {
 	t.Parallel()
 
-	store := newUpsertStore(t)
+	store := newUpsertStore(t, "acme")
 	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "acme",
 		catwalk.Model{ID: "m1", ContextWindow: 1000}))
 	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "acme",
@@ -74,12 +80,13 @@ func TestUpsertProviderModel_ReplacesTheEntryWithTheSameID(t *testing.T) {
 func TestUpsertProviderModel_LeavesTheCatalogOutOfTheConfigFile(t *testing.T) {
 	t.Parallel()
 
-	store := newUpsertStore(t)
+	store := newUpsertStore(t, "acme")
 	// A store whose in-memory provider carries a full catalog, as it
 	// does after a real load.
 	cfg := store.Config()
 	cfg.Providers.Set("acme", ProviderConfig{
-		ID: "acme",
+		ID:      "acme",
+		BaseURL: "http://localhost",
 		Models: []catwalk.Model{
 			{ID: "catalog-a"}, {ID: "catalog-b"}, {ID: "catalog-c"},
 		},
@@ -96,9 +103,21 @@ func TestUpsertProviderModel_LeavesTheCatalogOutOfTheConfigFile(t *testing.T) {
 func TestUpsertProviderModel_RejectsEmptyIdentifiers(t *testing.T) {
 	t.Parallel()
 
-	store := newUpsertStore(t)
+	store := newUpsertStore(t, "acme")
 	require.Error(t, store.UpsertProviderModel(ScopeGlobal, "", catwalk.Model{ID: "m"}))
 	require.Error(t, store.UpsertProviderModel(ScopeGlobal, "acme", catwalk.Model{}))
+}
+
+// TestUpsertProviderModel_RejectsUnknownProvider verifies that writing a
+// model for a provider that is neither configured nor in the catalog
+// returns an error instead of leaving an unusable fragment.
+func TestUpsertProviderModel_RejectsUnknownProvider(t *testing.T) {
+	t.Parallel()
+
+	store := newUpsertStore(t)
+	err := store.UpsertProviderModel(ScopeGlobal, "no-such-provider", catwalk.Model{ID: "m"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not configured or known")
 }
 
 // TestUpsertProviderModel_EscapesTheProviderKey keeps a provider id with
@@ -106,7 +125,7 @@ func TestUpsertProviderModel_RejectsEmptyIdentifiers(t *testing.T) {
 func TestUpsertProviderModel_EscapesTheProviderKey(t *testing.T) {
 	t.Parallel()
 
-	store := newUpsertStore(t)
+	store := newUpsertStore(t, "my.provider")
 	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "my.provider",
 		catwalk.Model{ID: "m1"}))
 

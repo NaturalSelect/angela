@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
-	"github.com/NaturalSelect/angela/internal/agent/hyper"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/discover"
 	"github.com/NaturalSelect/angela/internal/env"
@@ -53,7 +52,7 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	store := &ConfigStore{
 		config:         cfg,
 		workingDir:     workingDir,
-		globalDataPath: GlobalConfigData(),
+		globalDataPath: GlobalConfig(),
 		workspacePath:  filepath.Join(cfg.Options.DataDirectory, fmt.Sprintf("%s.json", appName)),
 		loadedPaths:    loadedPaths,
 	}
@@ -105,11 +104,8 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	// Load known providers, this loads the config from catwalk. A failed
 	// refresh still yields the cached or embedded catalog, so only an empty
 	// list is fatal: starting up without providers is worse than starting
-	// up with slightly stale ones. Pass a Hyper token refresher so the
-	// catalog fetch can retry on 401.
-	providers, err := Providers(cfg, func(ctx context.Context) error {
-		return store.RefreshOAuthToken(ctx, ScopeGlobal, "hyper")
-	})
+	// up with slightly stale ones.
+	providers, err := Providers(cfg)
 	if err != nil {
 		if len(providers) == 0 {
 			return nil, err
@@ -190,38 +186,8 @@ func mustMarshalConfig(cfg *Config) []byte {
 	return data
 }
 
-func PushPopAngelaEnv() func() {
-	var found []string
-	for _, ev := range os.Environ() {
-		if strings.HasPrefix(ev, "ANGELA_") {
-			pair := strings.SplitN(ev, "=", 2)
-			if len(pair) != 2 {
-				continue
-			}
-			found = append(found, strings.TrimPrefix(pair[0], "ANGELA_"))
-		}
-	}
-	backups := make(map[string]string)
-	for _, ev := range found {
-		backups[ev] = os.Getenv(ev)
-	}
-
-	for _, ev := range found {
-		os.Setenv(ev, os.Getenv("ANGELA_"+ev))
-	}
-
-	restore := func() {
-		for k, v := range backups {
-			os.Setenv(k, v)
-		}
-	}
-	return restore
-}
-
 func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
 	knownProviderNames := make(map[string]bool)
-	restore := PushPopAngelaEnv()
-	defer restore()
 
 	// When disable_default_providers is enabled, skip all default/embedded
 	// providers entirely. Users must fully specify any providers they want.
@@ -359,20 +325,6 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 				}
 				continue
 			}
-		case catwalk.InferenceProvider("hyper"):
-			if apiKey := env.Get("HYPER_API_KEY"); apiKey != "" {
-				prepared.APIKey = apiKey
-				prepared.APIKeyTemplate = apiKey
-			} else {
-				v, err := resolver.ResolveValue(p.APIKey)
-				if v == "" || err != nil {
-					if configExists {
-						slog.Warn("Skipping Hyper provider due to missing API key", "provider", p.ID)
-						c.Providers.Del(string(p.ID))
-					}
-					continue
-				}
-			}
 		default:
 			// if the provider api or endpoint are missing we skip them
 			v, err := resolver.ResolveValue(p.APIKey)
@@ -448,7 +400,6 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 		// Default to OpenAI if not set.
 		providerConfig.Type = cmp.Or(providerConfig.Type, catwalk.TypeOpenAICompat)
 		if !slices.Contains(catwalk.KnownProviderTypes(), providerConfig.Type) &&
-			providerConfig.Type != hyper.Name &&
 			!discover.IsKnownCustomProvider(string(providerConfig.Type)) {
 			slog.Warn("Skipping custom provider due to unsupported provider type", "provider", id)
 			c.Providers.Del(id)
@@ -931,12 +882,11 @@ func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (reso
 // up. Global user-level config locations are always included
 // regardless of the boundary.
 func lookupConfigs(cwd string) []string {
-	// Prepend global user config and machine-owned data JSON. Missing files
-	// are skipped when loaded.
+	// Prepend the global user config. Missing files are skipped when
+	// loaded.
 	configPaths := []string{
 		systemConfigPath,
 		GlobalConfig(),
-		GlobalConfigData(),
 	}
 
 	// Ordered high-to-low priority within a directory. LookupBounded returns
@@ -1188,44 +1138,31 @@ func hasAWSCredentials(env env.Env) bool {
 }
 
 // migrateDisableNotifications migrates the deprecated disable_notifications
-// and notification_style fields to the unified notifications field. It checks
-// both the user config (~/.config) and data config (~/.local) files. If
-// disable_notifications is true, it sets notifications to "disabled" in the
-// data file. If notification_style is set, it moves the value to notifications.
-// Regardless of value, it removes the deprecated fields from any file that
-// contains them.
+// and notification_style fields to the unified notifications field. If
+// disable_notifications is true, it sets notifications to "disabled". If
+// notification_style is set, it moves the value to notifications.
+// Regardless of value, it removes the deprecated fields from the global
+// config file if it contains them.
 func migrateDisableNotifications() {
 	globalConfig := GlobalConfig()
-	dataConfig := GlobalConfigData()
+
+	data, err := os.ReadFile(globalConfig)
+	if err != nil {
+		return
+	}
 
 	var wasDisabled bool
 	var styleValue string
-	filesToClean := []string{}
-
-	for _, path := range []string{globalConfig, dataConfig} {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		needsClean := false
-		if gjson.Get(string(data), "options.disable_notifications").Exists() {
-			needsClean = true
-			if gjson.Get(string(data), "options.disable_notifications").Bool() {
-				wasDisabled = true
-			}
-		}
-		if v := gjson.Get(string(data), "options.notification_style"); v.Exists() {
-			needsClean = true
-			if styleValue == "" {
-				styleValue = v.String()
-			}
-		}
-		if needsClean {
-			filesToClean = append(filesToClean, path)
-		}
+	needsClean := false
+	if gjson.Get(string(data), "options.disable_notifications").Exists() {
+		needsClean = true
+		wasDisabled = gjson.Get(string(data), "options.disable_notifications").Bool()
 	}
-
-	if len(filesToClean) == 0 {
+	if v := gjson.Get(string(data), "options.notification_style"); v.Exists() {
+		needsClean = true
+		styleValue = v.String()
+	}
+	if !needsClean {
 		return
 	}
 
@@ -1236,37 +1173,20 @@ func migrateDisableNotifications() {
 		migratedValue = "disabled"
 	}
 
-	if migratedValue != "" {
-		data, err := os.ReadFile(dataConfig)
-		if err == nil {
-			if !gjson.Get(string(data), "options.notifications").Exists() {
-				updated, err := sjson.Set(string(data), "options.notifications", migratedValue)
-				if err == nil {
-					if err := atomicWriteFile(dataConfig, []byte(updated), 0o600); err != nil {
-						slog.Warn("Failed to migrate to notifications field", "error", err)
-					} else {
-						slog.Info("Migrated notification settings to notifications field", "value", migratedValue)
-					}
-				}
-			}
+	updated := string(data)
+	if migratedValue != "" && !gjson.Get(updated, "options.notifications").Exists() {
+		if v, err := sjson.Set(updated, "options.notifications", migratedValue); err == nil {
+			updated = v
+			slog.Info("Migrated notification settings to notifications field", "value", migratedValue)
 		}
 	}
-
-	// Remove deprecated fields from all files that contain them.
-	for _, path := range filesToClean {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		updated := string(data)
-		updated, _ = sjson.Delete(updated, "options.disable_notifications")
-		updated, _ = sjson.Delete(updated, "options.notification_style")
-		if updated == string(data) {
-			continue
-		}
-		if err := atomicWriteFile(path, []byte(updated), 0o600); err != nil {
-			slog.Warn("Failed to write migrated config", "path", path, "error", err)
-		}
+	updated, _ = sjson.Delete(updated, "options.disable_notifications")
+	updated, _ = sjson.Delete(updated, "options.notification_style")
+	if updated == string(data) {
+		return
+	}
+	if err := atomicWriteFile(globalConfig, []byte(updated), 0o600); err != nil {
+		slog.Warn("Failed to write migrated config", "path", globalConfig, "error", err)
 	}
 }
 
@@ -1302,37 +1222,13 @@ func ProjectConfigs(cwd string) []string {
 	return lookupConfigs(cwd)
 }
 
-// GlobalConfigData returns the path to the main data directory for the application.
-// this config is used when the app overrides configurations instead of updating the global config.
-func GlobalConfigData() string {
-	if angelaData := os.Getenv("ANGELA_GLOBAL_DATA"); angelaData != "" {
-		return filepath.Join(angelaData, fmt.Sprintf("%s.json", appName))
-	}
-	if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
-		return filepath.Join(xdgDataHome, appName, fmt.Sprintf("%s.json", appName))
-	}
-
-	// return the path to the main data directory
-	// for windows, it should be in `%LOCALAPPDATA%/angela/`
-	// for linux and macOS, it should be in `$HOME/.local/share/angela/`
-	if runtime.GOOS == "windows" {
-		localAppData := cmp.Or(
-			os.Getenv("LOCALAPPDATA"),
-			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
-		)
-		return filepath.Join(localAppData, appName, fmt.Sprintf("%s.json", appName))
-	}
-
-	return filepath.Join(home.Dir(), ".local", "share", appName, fmt.Sprintf("%s.json", appName))
-}
-
 // GlobalWorkspaceDir returns the path to the global server workspace
 // directory. This directory acts as a meta-workspace for the server
 // process, giving it a real workingDir so that config loading, scoped
 // writes, and provider resolution behave identically to project
 // workspaces.
 func GlobalWorkspaceDir() string {
-	return filepath.Dir(GlobalConfigData())
+	return filepath.Dir(GlobalConfig())
 }
 
 func assignIfNil[T any](ptr **T, val T) {

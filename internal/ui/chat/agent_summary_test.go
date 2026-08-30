@@ -156,3 +156,43 @@ func TestAgentSummaryReachesTheRenderedBlock(t *testing.T) {
 	require.Contains(t, out, agentSummaryArrow)
 	require.Contains(t, out, "LoadConfig")
 }
+
+// The header must name the sub-agent the call dispatches to, so a
+// transcript full of agent blocks stays tellable apart.
+func TestAgentToolTitleNamesTheSubagent(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		call     message.ToolCall
+		expected string
+	}{
+		{
+			name:     "explicit subagent type",
+			call:     message.ToolCall{Input: `{"subagent_type":"plan-architect"}`, Finished: true},
+			expected: "Agent(plan-architect)",
+		},
+		{
+			name:     "omitted type falls back to the tool's own default",
+			call:     message.ToolCall{Input: `{"prompt":"find it"}`, Finished: true},
+			expected: "Agent(explore)",
+		},
+		{
+			name:     "unfinished input never guesses the default",
+			call:     message.ToolCall{Input: `{"prompt":"find it"}`},
+			expected: "Agent",
+		},
+		{
+			name:     "half-streamed json stays generic",
+			call:     message.ToolCall{Input: `{"subagent_type":"expl`},
+			expected: "Agent",
+		},
+		{
+			name:     "empty input stays generic",
+			call:     message.ToolCall{},
+			expected: "Agent",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, agentToolTitle(tt.call))
+		})
+	}
+}

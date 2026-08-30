@@ -19,8 +19,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"math"
-	"net/http"
 	"os"
 	"regexp"
 	"slices"
@@ -40,7 +38,6 @@ import (
 	"charm.land/fantasy/providers/openrouter"
 	"charm.land/fantasy/providers/vercel"
 	"charm.land/lipgloss/v2"
-	"github.com/NaturalSelect/angela/internal/agent/hyper"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
@@ -730,6 +727,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		FailedMCPServers:     failedMCP,
 		PendingMCPServers:    pendingMCP,
 		UserReminders:        a.reminders,
+		CanDispatch:          hasAgentTool(agentTools),
 	}) {
 		slog.Debug("Injecting system reminder", "source", notice.Source, "session_id", call.SessionID)
 		history = append(history, fantasy.NewUserMessage(reminder.Wrap(notice.Text)))
@@ -997,7 +995,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				"output_tokens", usage.OutputTokens,
 				"estimated_usage", estimated,
 			)
-			extractHyperCredits(stepResult.ProviderMetadata)
 			_, sessionErr := a.sessions.Save(ctx, updatedSession)
 			if sessionErr != nil {
 				return sessionErr
@@ -1035,12 +1032,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	a.eventPromptResponded(call.SessionID, runModel, time.Since(startTime).Truncate(time.Second))
 
 	if err != nil {
-		isHyper := runModel.ModelCfg.Provider == hyper.Name
 		isCancelErr := errors.Is(err, context.Canceled)
 		slog.Info("Agent stream returned error",
 			"error", err.Error(),
 			"error_type", fmt.Sprintf("%T", err),
-			"is_hyper", isHyper,
 			"is_cancel", isCancelErr)
 		if currentAssistant == nil {
 			// Cancel-before-assistant-creation window: the run was
@@ -1128,8 +1123,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		linkStyle := lipgloss.NewStyle().Foreground(charmtone.Guac).Underline(true)
 		if isCancelErr {
 			currentAssistant.AddFinish(message.FinishReasonCanceled, "User canceled request", "")
-		} else if isHyper && errors.As(err, &providerErr) && providerErr.StatusCode == http.StatusUnauthorized {
-			currentAssistant.AddFinish(message.FinishReasonError, "Unauthorized", `Please re-authenticate with Hyper. You can also run "angela auth" to re-authenticate.`)
 		} else if errors.As(err, &providerErr) {
 			if providerErr.Message == "The requested model is not supported." {
 				url := "https://github.com/settings/copilot/features"
@@ -1460,7 +1453,6 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 			}
 			costOverride = &newCost
 		}
-		extractHyperCredits(step.ProviderMetadata)
 	}
 
 	a.updateSessionUsage(compact.Model, &currentSession, resp.TotalUsage, costOverride, false)
@@ -1612,6 +1604,15 @@ func splitUnavailableMCP(servers []mcp.ClientInfo) (failed, pending []string) {
 	sort.Strings(failed)
 	sort.Strings(pending)
 	return failed, pending
+}
+
+// hasAgentTool reports whether the Agent tool survived this turn's tool
+// filtering. An agent it was filtered out of cannot delegate, so the
+// reminder that weighs delegation has nothing to say to it.
+func hasAgentTool(tools []fantasy.AgentTool) bool {
+	return slices.ContainsFunc(tools, func(t fantasy.AgentTool) bool {
+		return t.Info().Name == toolnames.Agent
+	})
 }
 
 // turnsSinceTodosCall counts the assistant turns that have passed since the
@@ -1858,25 +1859,6 @@ func openrouterCost(metadata fantasy.ProviderMetadata) *float64 {
 		return nil
 	}
 	return &opts.Usage.Cost
-}
-
-// extractHyperCredits reads usage.remaining.hypercredits from OpenAI
-// provider metadata and stores it for the next FetchCredits call.
-func extractHyperCredits(metadata fantasy.ProviderMetadata) {
-	openaiMeta, ok := metadata[openai.Name]
-	if !ok {
-		return
-	}
-	pm, ok := openaiMeta.(*openai.ProviderMetadata)
-	if !ok {
-		return
-	}
-	var remaining struct {
-		Hypercredits float64 `json:"hypercredits"`
-	}
-	if pm.ExtraField("remaining", &remaining) && remaining.Hypercredits > 0 {
-		hyper.SetBalance(int(math.Round(remaining.Hypercredits)))
-	}
 }
 
 func (a *sessionAgent) updateSessionUsage(model Model, session *session.Session, usage fantasy.Usage, overrideCost *float64, estimated bool) {

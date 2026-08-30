@@ -5,7 +5,7 @@
 Angela is a fork of Crush which is a terminal-based AI coding assistant built in Go by
 [Charm](https://charm.land). It connects to LLMs and gives them tools to read,
 write, and execute code. It supports multiple providers (Anthropic, OpenAI,
-Gemini, Bedrock, Copilot, Hyper, MiniMax, Vercel, and more), integrates with
+Gemini, Bedrock, Copilot, MiniMax, Vercel, and more), integrates with
 LSPs for code intelligence, and supports extensibility via MCP servers and
 agent skills.
 
@@ -28,7 +28,6 @@ internal/
     hooked_tool.go                 Decorator that runs PreToolUse hooks before tool execution
     prompts.go                     Loads Go-template system prompts
     agenttest/                     Test helpers for Coordinator construction (mock providers)
-    hyper/                         Charm Hyper meta-model proxy provider adapter
     notify/                        Agent lifecycle notification events (done, error, auth, SSO)
     prompt/                        System prompt template engine (Go templates + runtime data)
     templates/                     System prompt templates (coder.md.tpl, task.md.tpl, etc.)
@@ -64,7 +63,7 @@ internal/
   filetracker/                     Tracks files touched per session
   history/                         Prompt history
   projects/                        Recent projects tracking & persistence
-  oauth/                           OAuth2 token models & credential persistence (Copilot, Hyper, MCP)
+  oauth/                           OAuth2 token models & credential persistence (Copilot, MCP)
   discover/                        Local LLM service auto-discovery (Ollama, LM Studio, etc.)
   toolnames/                       Built-in tool name constants (breaks import cycles)
   diff/                            Unified diff text generation & line stats

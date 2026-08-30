@@ -27,16 +27,12 @@ var logoutCmd = &cobra.Command{
 	Long: `Logout Angela from a specified platform, removing stored credentials.
 The platform should be provided as an argument.
 If no argument is given, a list of logged-in platforms will be shown.
-Available platforms are: hyper, copilot.`,
+Available platforms are: copilot.`,
 	Example: `
-# Sign out from Charm Hyper
-angela logout hyper
-
 # Sign out from GitHub Copilot
 angela logout copilot
   `,
 	ValidArgs: []cobra.Completion{
-		"hyper",
 		"copilot",
 		"github",
 		"github-copilot",
@@ -80,28 +76,12 @@ angela logout copilot
 		}
 
 		switch provider {
-		case "hyper":
-			return logoutHyper(c, ws.ID)
 		case "copilot", "github", "github-copilot":
 			return logoutCopilot(c, ws.ID)
 		default:
 			return fmt.Errorf("unknown platform: %s", provider)
 		}
 	},
-}
-
-func logoutHyper(c *client.Client, wsID string) error {
-	ctx := getLogoutContext()
-
-	if err := cmp.Or(
-		c.RemoveConfigField(ctx, wsID, config.ScopeGlobal, "providers.hyper.api_key"),
-		c.RemoveConfigField(ctx, wsID, config.ScopeGlobal, "providers.hyper.oauth"),
-	); err != nil {
-		return err
-	}
-
-	fmt.Println(logoutHeaderStyle.Render("Successfully logged out of Hyper."))
-	return nil
 }
 
 func logoutCopilot(c *client.Client, wsID string) error {
@@ -134,7 +114,6 @@ func pickLoggedInProvider(c *client.Client, wsID string) (string, error) {
 	// Only OAuth-based providers support login/logout. Keep this list in sync
 	// with the switch in RunE and the login command.
 	oauthProviders := map[string]string{
-		"hyper":   "Hyper",
 		"copilot": "GitHub Copilot",
 	}
 

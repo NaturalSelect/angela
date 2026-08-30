@@ -234,7 +234,6 @@ jobs:
           OUT_DIR: ${{ env.BACKPORT_TMP }}
           ANGELA_BIN: ${{ runner.temp }}/bin/angela
           ANGELA_GLOBAL_CONFIG: ${{ env.BACKPORT_TMP }}/angela-config
-          ANGELA_GLOBAL_DATA: ${{ env.BACKPORT_TMP }}/angela-global-data
           MIGRATE_MODEL: ${{ secrets.ANGELA_BACKPORT_MODEL }}
           WINDOW_END: ${{ steps.discover.outputs.window_end }}
           WORKDIR: ${{ github.workspace }}

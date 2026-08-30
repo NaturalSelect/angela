@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"charm.land/catwalk/pkg/catwalk"
-	"github.com/NaturalSelect/angela/internal/agent/hyper"
 	"github.com/NaturalSelect/angela/internal/discover"
 )
 
@@ -40,7 +39,7 @@ func NormalizeBaseURL(baseURL string, providerType catwalk.Type) string {
 // version segment.
 func isOpenAIStyle(providerType catwalk.Type) bool {
 	switch providerType {
-	case catwalk.TypeOpenAI, catwalk.TypeOpenAICompat, catwalk.TypeOpenRouter, catwalk.Type(hyper.Name):
+	case catwalk.TypeOpenAI, catwalk.TypeOpenAICompat, catwalk.TypeOpenRouter:
 		return true
 	default:
 		return discover.IsKnownCustomProvider(string(providerType))

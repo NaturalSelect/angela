@@ -32,7 +32,7 @@ func DrawOnSurface(scr uv.Screen, area uv.Rectangle, base uv.Style, content stri
 	for y := area.Min.Y; y < area.Max.Y; y++ {
 		for x := area.Min.X; x < area.Max.X; x++ {
 			cell := scr.CellAt(x, y)
-			if cell == nil {
+			if cell == nil || isWidePlaceholder(cell) {
 				continue
 			}
 			if cell.Content == "" {
@@ -40,8 +40,9 @@ func DrawOnSurface(scr uv.Screen, area uv.Rectangle, base uv.Style, content stri
 				continue
 			}
 			if cell.Style.Bg == nil {
-				cell.Style.Bg = base.Bg
-				scr.SetCell(x, y, cell)
+				updated := *cell
+				updated.Style.Bg = base.Bg
+				scr.SetCell(x, y, &updated)
 			}
 		}
 	}
@@ -83,13 +84,22 @@ func SetSpan(scr uv.Screen, x, y int, style uv.Style, content string) {
 
 	for i := range width {
 		cell := scr.CellAt(x+i, y)
-		if cell == nil {
+		if cell == nil || isWidePlaceholder(cell) {
 			continue
 		}
-		cell.Style = style
+		updated := *cell
+		updated.Style = style
 		if style.Bg == nil {
-			cell.Style.Bg = under[i]
+			updated.Style.Bg = under[i]
 		}
-		scr.SetCell(x+i, y, cell)
+		scr.SetCell(x+i, y, &updated)
 	}
+}
+
+// isWidePlaceholder reports whether the cell is the continuation column of a
+// wide grapheme. It holds no content of its own, and writing to it makes the
+// buffer blank out the wide cell it belongs to — which is how CJK text used
+// to vanish from a surface.
+func isWidePlaceholder(cell *uv.Cell) bool {
+	return cell.Width == 0
 }

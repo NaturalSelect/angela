@@ -199,7 +199,7 @@ func NewViewTool(
 			if isSkillFile {
 				maxContentSize = 0
 			}
-			content, hasMore, err := readTextFile(filePath, params.Offset, params.Limit, maxContentSize)
+			read, err := readTextFile(filePath, params.Offset, params.Limit, maxContentSize)
 			if err != nil {
 				var tooLarge contentTooLargeError
 				if errors.As(err, &tooLarge) {
@@ -208,26 +208,22 @@ func NewViewTool(
 				}
 				return fantasy.ToolResponse{}, fmt.Errorf("error reading file: %w", err)
 			}
-			if !utf8.ValidString(content) {
+			if !utf8.ValidString(read.content) {
 				return fantasy.NewTextErrorResponse("File content is not valid UTF-8"), nil
 			}
 
 			openInLSPs(ctx, lspManager, filePath)
 			waitForLSPDiagnostics(ctx, lspManager, filePath, 300*time.Millisecond)
 			output := "<file>\n"
-			output += addLineNumbers(content, params.Offset+1)
-
-			if hasMore {
-				output += fmt.Sprintf("\n\n(File has more lines. Use 'offset' parameter to read beyond line %d)",
-					params.Offset+len(strings.Split(content, "\n")))
-			}
+			output += addLineNumbers(read.content, params.Offset+1)
+			output += readNotices(read, params.Offset)
 			output += "\n</file>\n"
 			output += getDiagnostics(filePath, lspManager)
 			filetracker.RecordRead(ctx, sessionID, filePath)
 
 			meta := ViewResponseMetadata{
 				FilePath: filePath,
-				Content:  content,
+				Content:  read.content,
 			}
 			if isSkillFile {
 				if skill, err := skills.Parse(filePath); err == nil {
@@ -244,6 +240,36 @@ func NewViewTool(
 			), nil
 		},
 	)
+}
+
+// readNotices describes what the content alone cannot show: an empty file,
+// an offset past the end, lines cut short, or more content waiting. Without
+// these the model reads an empty envelope and cannot tell whether the file
+// was empty, the offset overran, or the read failed.
+func readNotices(read fileRead, offset int) string {
+	var notices []string
+	switch {
+	case read.offsetPastEOF:
+		notices = append(notices, fmt.Sprintf(
+			"(Offset %d is past the end of this file, which has %d lines)",
+			offset, read.totalLines))
+	case read.content == "":
+		notices = append(notices, "(File exists but its contents are empty)")
+	}
+	if read.truncatedLines > 0 {
+		notices = append(notices, fmt.Sprintf(
+			"(%d line(s) longer than %d characters were truncated, each marked with a trailing \"...\")",
+			read.truncatedLines, MaxLineLength))
+	}
+	if read.hasMore {
+		notices = append(notices, fmt.Sprintf(
+			"(File has more lines. Use 'offset' parameter to read beyond line %d)",
+			offset+len(strings.Split(read.content, "\n"))))
+	}
+	if len(notices) == 0 {
+		return ""
+	}
+	return "\n\n" + strings.Join(notices, "\n")
 }
 
 func addLineNumbers(content string, startLine int) string {
@@ -271,33 +297,53 @@ func addLineNumbers(content string, startLine int) string {
 	return strings.Join(result, "\n")
 }
 
-func readTextFile(filePath string, offset, limit, maxContentSize int) (string, bool, error) {
+// fileRead carries what a read observed beyond the text itself, so the tool
+// can explain why the content looks the way it does. Without these the model
+// cannot tell an empty file from a failed read, or a truncated line from a
+// line that genuinely ends there.
+type fileRead struct {
+	content string
+	hasMore bool
+	// offsetPastEOF reports that the requested offset sits beyond the last
+	// line; totalLines then holds the file's actual length.
+	offsetPastEOF bool
+	totalLines    int
+	// truncatedLines counts lines cut short at MaxLineLength.
+	truncatedLines int
+}
+
+func readTextFile(filePath string, offset, limit, maxContentSize int) (fileRead, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return "", false, err
+		return fileRead{}, err
 	}
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
 	skipped := 0
 	for skipped < offset {
-		_, err := reader.ReadString('\n')
+		lineText, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				return "", false, nil
+				// A final line without a trailing newline still counts.
+				if lineText != "" {
+					skipped++
+				}
+				return fileRead{offsetPastEOF: true, totalLines: skipped}, nil
 			}
-			return "", false, err
+			return fileRead{}, err
 		}
 		skipped++
 	}
 
+	read := fileRead{}
 	lines := make([]string, 0, min(limit, DefaultReadLimit))
 	contentSize := 0
 
 	for len(lines) < limit {
 		lineText, err := reader.ReadString('\n')
 		if err != nil && err != io.EOF {
-			return "", false, err
+			return fileRead{}, err
 		}
 		lineText = strings.TrimSuffix(lineText, "\n")
 		lineText = strings.TrimSuffix(lineText, "\r")
@@ -305,13 +351,14 @@ func readTextFile(filePath string, offset, limit, maxContentSize int) (string, b
 			// Truncate at a rune boundary to avoid splitting
 			// multi-byte characters.
 			lineText = strings.ToValidUTF8(lineText[:MaxLineLength], "") + "..."
+			read.truncatedLines++
 		}
 		projectedSize := contentSize + len(lineText)
 		if len(lines) > 0 {
 			projectedSize++
 		}
 		if maxContentSize > 0 && projectedSize > maxContentSize {
-			return "", false, contentTooLargeError{Size: projectedSize, Max: maxContentSize}
+			return fileRead{}, contentTooLargeError{Size: projectedSize, Max: maxContentSize}
 		}
 		contentSize = projectedSize
 		lines = append(lines, lineText)
@@ -321,13 +368,13 @@ func readTextFile(filePath string, offset, limit, maxContentSize int) (string, b
 	}
 
 	// Peek one more line only when we filled the limit.
-	hasMore := false
 	if len(lines) == limit {
 		lineText, peekErr := reader.ReadString('\n')
-		hasMore = len(lineText) > 0 || peekErr == nil
+		read.hasMore = len(lineText) > 0 || peekErr == nil
 	}
 
-	return strings.Join(lines, "\n"), hasMore, nil
+	read.content = strings.Join(lines, "\n")
+	return read, nil
 }
 
 func getImageMimeType(filePath string) (bool, string) {

@@ -1,0 +1,7 @@
+<system-reminder>
+These standing reminders come from the user's Angela configuration:
+
+Always run gofumpt before you finish a change.
+
+Never add a dependency without asking first.
+</system-reminder>

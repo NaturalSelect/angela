@@ -409,6 +409,7 @@ type Options struct {
 	ContextPaths       []string           `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=ANGELA.md"`
 	GlobalContextPaths []string           `json:"global_context_paths,omitempty" jsonschema:"description=Paths to files containing global context information for the AI,default=~/.config/angela/ANGELA.md,default=~/.config/AGENTS.md"`
 	SkillsPaths        []string           `json:"skills_paths,omitempty" jsonschema:"description=Paths to directories containing Agent Skills (folders with SKILL.md files),example=~/.config/angela/skills,example=./skills"`
+	Reminders          []string           `json:"reminders,omitempty" jsonschema:"description=Extra notices injected as a system reminder at the end of every turn. Unlike context files\\, which sit in the system prompt and fade as a conversation grows\\, these are re-sent each turn so they stay in view. The text is used verbatim\\, so keep each entry short - every entry costs tokens on every turn.,example=Always run gofumpt before you finish a change"`
 	TUI                *TUIOptions        `json:"tui,omitempty" jsonschema:"description=Terminal user interface options"`
 	Compaction         *CompactionOptions `json:"compaction,omitempty" jsonschema:"description=Conversation compaction options"`
 	Debug              bool               `json:"debug,omitempty" jsonschema:"description=Enable debug logging,default=false"`

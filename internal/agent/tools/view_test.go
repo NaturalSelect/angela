@@ -69,10 +69,10 @@ func TestReadTextFileBoundaryCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			gotContent, gotHasMore, err := readTextFile(filePath, tt.offset, tt.limit, 0)
+			got, err := readTextFile(filePath, tt.offset, tt.limit, 0)
 			require.NoError(t, err)
-			require.Equal(t, tt.wantContent, gotContent)
-			require.Equal(t, tt.wantHasMore, gotHasMore)
+			require.Equal(t, tt.wantContent, got.content)
+			require.Equal(t, tt.wantHasMore, got.hasMore)
 		})
 	}
 }
@@ -86,10 +86,11 @@ func TestReadTextFileTruncatesLongLines(t *testing.T) {
 	longLine := strings.Repeat("a", MaxLineLength+10)
 	require.NoError(t, os.WriteFile(filePath, []byte(longLine), 0o644))
 
-	content, hasMore, err := readTextFile(filePath, 0, 1, 0)
+	got, err := readTextFile(filePath, 0, 1, 0)
 	require.NoError(t, err)
-	require.False(t, hasMore)
-	require.Equal(t, strings.Repeat("a", MaxLineLength)+"...", content)
+	require.False(t, got.hasMore)
+	require.Equal(t, strings.Repeat("a", MaxLineLength)+"...", got.content)
+	require.Equal(t, 1, got.truncatedLines, "the truncation must be reported, not silent")
 }
 
 func TestReadTextFileLineExceeding1MB(t *testing.T) {
@@ -101,10 +102,11 @@ func TestReadTextFileLineExceeding1MB(t *testing.T) {
 	hugeLine := strings.Repeat("A", 2*1024*1024) // 2MB — exceeds bufio.Scanner max
 	require.NoError(t, os.WriteFile(filePath, []byte(hugeLine), 0o644))
 
-	content, hasMore, err := readTextFile(filePath, 0, 1, 0)
+	got, err := readTextFile(filePath, 0, 1, 0)
 	require.NoError(t, err)
-	require.False(t, hasMore)
-	require.Equal(t, strings.Repeat("A", MaxLineLength)+"...", content)
+	require.False(t, got.hasMore)
+	require.Equal(t, strings.Repeat("A", MaxLineLength)+"...", got.content)
+	require.Equal(t, 1, got.truncatedLines)
 }
 
 func TestViewToolAllowsSmallSectionsOfLargeFiles(t *testing.T) {
@@ -183,15 +185,15 @@ func TestReadTextFileEnforcesMaxContentSize(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0o644))
 
-	content, hasMore, err := readTextFile(filePath, 0, len(lines), MaxLineLength)
+	got, err := readTextFile(filePath, 0, len(lines), MaxLineLength)
 	require.ErrorAs(t, err, &contentTooLargeError{})
-	require.Empty(t, content)
-	require.False(t, hasMore)
+	require.Empty(t, got.content)
+	require.False(t, got.hasMore)
 
-	content, hasMore, err = readTextFile(filePath, 2, 1, MaxLineLength)
+	got, err = readTextFile(filePath, 2, 1, MaxLineLength)
 	require.NoError(t, err)
-	require.Equal(t, "target line", content)
-	require.False(t, hasMore)
+	require.Equal(t, "target line", got.content)
+	require.False(t, got.hasMore)
 }
 
 func TestReadTextFileAllowsExactMaxContentSize(t *testing.T) {
@@ -201,10 +203,76 @@ func TestReadTextFileAllowsExactMaxContentSize(t *testing.T) {
 	filePath := filepath.Join(workingDir, "exact-size.txt")
 	require.NoError(t, os.WriteFile(filePath, []byte("abcd\nefgh"), 0o644))
 
-	content, hasMore, err := readTextFile(filePath, 0, 2, len("abcd\nefgh"))
+	got, err := readTextFile(filePath, 0, 2, len("abcd\nefgh"))
 	require.NoError(t, err)
-	require.Equal(t, "abcd\nefgh", content)
-	require.False(t, hasMore)
+	require.Equal(t, "abcd\nefgh", got.content)
+	require.False(t, got.hasMore)
+}
+
+func TestReadTextFileReportsAnEmptyFile(t *testing.T) {
+	t.Parallel()
+
+	filePath := filepath.Join(t.TempDir(), "empty.txt")
+	require.NoError(t, os.WriteFile(filePath, nil, 0o644))
+
+	got, err := readTextFile(filePath, 0, 10, 0)
+	require.NoError(t, err)
+	require.Empty(t, got.content)
+	require.False(t, got.offsetPastEOF, "an empty file is not an overrun offset")
+	require.Contains(t, readNotices(got, 0), "empty",
+		"an empty envelope alone leaves the model guessing why")
+}
+
+func TestReadTextFileReportsAnOverrunOffset(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		body           string
+		wantTotalLines int
+	}{
+		{"trailing newline", "one\ntwo\nthree\n", 3},
+		{"no trailing newline", "one\ntwo\nthree", 3},
+		{"single line", "only", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			filePath := filepath.Join(t.TempDir(), "f.txt")
+			require.NoError(t, os.WriteFile(filePath, []byte(tt.body), 0o644))
+
+			got, err := readTextFile(filePath, 50, 10, 0)
+			require.NoError(t, err)
+			require.True(t, got.offsetPastEOF)
+			require.Equal(t, tt.wantTotalLines, got.totalLines,
+				"the model needs the real length to pick a valid offset")
+
+			notice := readNotices(got, 50)
+			require.Contains(t, notice, "past the end")
+			require.Contains(t, notice, fmt.Sprintf("%d lines", tt.wantTotalLines))
+		})
+	}
+}
+
+func TestReadNoticesStaysSilentOnAnOrdinaryRead(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, readNotices(fileRead{content: "hello\nworld"}, 0))
+}
+
+func TestReadNoticesCombinesTruncationWithMoreLines(t *testing.T) {
+	t.Parallel()
+
+	notice := readNotices(fileRead{
+		content:        "a\nb",
+		hasMore:        true,
+		truncatedLines: 2,
+	}, 4)
+
+	require.Contains(t, notice, "were truncated")
+	require.Contains(t, notice, "File has more lines")
 }
 
 type mockFileTracker struct{}

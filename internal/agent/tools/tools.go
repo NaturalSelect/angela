@@ -3,9 +3,9 @@ package tools
 import (
 	"bytes"
 	"context"
-	"html/template"
 	"os/exec"
 	"testing"
+	"text/template"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/permission"

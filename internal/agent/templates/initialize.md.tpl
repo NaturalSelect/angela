@@ -7,11 +7,12 @@ Analyze this codebase and create/update **{{.Config.Options.InitializeAs}}** to 
 **Discovery process**:
 
 1. Check directory contents with `ls`
-2. Look for existing rule files (`.cursor/rules/*.md`, `.cursorrules`, `.github/copilot-instructions.md`, `claude.md`, `agents.md`) - only read if they exist
-3. Identify project type from config files and directory structure
-4. Find build/test/lint commands from config files, scripts, Makefiles, or CI configs
-5. Read representative source files to understand code patterns, architecture, control/data flow
-6. If {{.Config.Options.InitializeAs}} exists, read and improve it
+2. Look for existing rule files (`.cursor/rules/*.md`, `.cursorrules`, `.github/copilot-instructions.md`, `claude.md`, `agents.md`) - only read if they exist, and carry over the important parts
+3. If there is a README.md, read it and include the important parts
+4. Identify project type from config files and directory structure
+5. Find build/test/lint commands from config files, scripts, Makefiles, or CI configs
+6. Read representative source files to understand code patterns, architecture, control/data flow
+7. If {{.Config.Options.InitializeAs}} exists, read it and suggest improvements rather than starting over
 
 **Content to include**:
 
@@ -21,6 +22,13 @@ Analyze this codebase and create/update **{{.Config.Options.InitializeAs}}** to 
 - Testing approach and patterns
 - Important gotchas or non-obvious patterns
 - Any project-specific context from existing rule files
+
+**What to leave out**:
+
+- Do not repeat yourself, and do not include obvious instructions like "Provide helpful error messages to users", "Write unit tests for all new utilities", or "Never include sensitive information in code or commits"
+- Do not list every component or file structure that can be easily discovered
+- Do not include generic development practices that apply to any project
+- Do not make up sections such as "Common Development Tasks", "Tips for Development", or "Support and Documentation" unless they are expressly included in files you actually read
 
 **Note:** LLM agents learn and adapt to their context as they obtain it, so mentioning obvious details they would immediately pick up from reading a file or two is actively detrimental. Keep the principles of progressive disclosure in mind and focus primarily on non-obvious knowledge that saves the agent from trial-and-error discovery: gotchas, implicit conventions, commands with surprising flags, and context that isn't self-evident from the code in a single file.
 

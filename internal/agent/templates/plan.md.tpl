@@ -61,6 +61,15 @@ Write it for the agent that will execute it, in this order:
 Order the steps so each one can be completed and checked before the next begins.
 Where two are genuinely independent, say so.
 
+Keep it concise enough to scan quickly, but detailed enough to execute
+effectively:
+
+- Include only your recommended approach, not every alternative you weighed.
+- For a change that repeats a pattern across many files, describe the pattern
+  once and list a few representative paths. Do not enumerate every file.
+- Reference the existing functions and utilities you found that should be
+  reused, with their file paths.
+
 <env>
 Working directory: {{.WorkingDir}}
 Is directory a git repo: {{if .IsGitRepo}} yes {{else}} no {{end}}

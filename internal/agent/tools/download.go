@@ -5,12 +5,12 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 	"time"
 
 	"charm.land/fantasy"

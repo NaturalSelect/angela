@@ -6,10 +6,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"html/template"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"

@@ -8,7 +8,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"text/template"
 	"time"
 
 	"charm.land/fantasy"

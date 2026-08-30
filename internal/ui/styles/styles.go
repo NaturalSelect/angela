@@ -345,6 +345,10 @@ type Styles struct {
 		AssistantInfoProvider  lipgloss.Style
 		AssistantInfoDuration  lipgloss.Style
 		AssistantCanceled      lipgloss.Style // Italic "Canceled" footer
+
+		// Queued prompt styles.
+		QueuedMarker lipgloss.Style // "queued" tag on a waiting prompt
+		QueuedText   lipgloss.Style // The waiting prompt's own text
 	}
 
 	// Tool - styles for tool call rendering
@@ -368,7 +372,8 @@ type Styles struct {
 		ParamKey  lipgloss.Style
 
 		// Content rendering styles
-		ContentLine           lipgloss.Style // Individual content line with background and width
+		ContentLine           lipgloss.Style // Individual content line, no background
+		ContentAccent         lipgloss.Style // Left accent bar marking a plain content line
 		ContentTruncation     lipgloss.Style // Truncation message "… (N lines)"
 		ContentCodeLine       lipgloss.Style // Code line with background and width
 		ContentCodeTruncation lipgloss.Style // Code truncation message with bgBase

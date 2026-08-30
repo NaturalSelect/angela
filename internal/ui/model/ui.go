@@ -146,6 +146,9 @@ type shellStreamMsg struct {
 type (
 	// cancelTimerExpiredMsg is sent when the cancel timer expires.
 	cancelTimerExpiredMsg struct{}
+	// jumpToBottomTimerExpiredMsg is sent when the jump-to-bottom timer
+	// expires.
+	jumpToBottomTimerExpiredMsg struct{}
 	// userCommandsLoadedMsg is sent when user commands are loaded.
 	userCommandsLoadedMsg struct {
 		Commands []commands.CustomCommand
@@ -167,13 +170,6 @@ type (
 
 	// closeDialogMsg is sent to close the current dialog.
 	closeDialogMsg struct{}
-
-	// hyperRefreshDoneMsg is sent after a silent Hyper OAuth refresh
-	// finishes. It carries the original model-selection action so the
-	// selection can be resumed.
-	hyperRefreshDoneMsg struct {
-		action dialog.ActionSelectModel
-	}
 
 	// copyChatHighlightMsg is sent to copy the current chat highlight to clipboard.
 	copyChatHighlightMsg struct{}
@@ -223,6 +219,10 @@ type UI struct {
 
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
+
+	// isJumpingToBottom tracks whether the user has pressed down once to
+	// return to the end of the transcript.
+	isJumpingToBottom bool
 
 	// sessionIsBranch memoizes whether the loaded session is a branch.
 	// Resolving it reads config through the workspace, which the status
@@ -982,6 +982,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleQuestionNotification(msg.Payload)
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
+	case jumpToBottomTimerExpiredMsg:
+		m.isJumpingToBottom = false
 	case tea.TerminalVersionMsg:
 		termVersion := strings.ToLower(msg.Name)
 		// Only enable progress bar for the following terminals.
@@ -1301,10 +1303,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		cmds = append(cmds, m.loadPromptHistory())
-	case hyperRefreshDoneMsg:
-		if cmd := m.handleSelectModel(msg.action); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
 	case dialog.ModelsCatalogMsg:
 		// Routed here rather than through the overlay: the catalog can
 		// land after another dialog has been stacked on top, and only
@@ -2149,22 +2147,6 @@ func substituteArgs(content string, args map[string]string) string {
 	return content
 }
 
-// refreshHyperAndRetrySelect returns a command that silently refreshes
-// the Hyper OAuth token and then re-runs the model selection. If the
-// refresh fails, the selection resumes with ReAuthenticate set so the
-// OAuth dialog opens.
-func (m *UI) refreshHyperAndRetrySelect(msg dialog.ActionSelectModel) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if err := m.com.Workspace.RefreshOAuthToken(ctx, config.ScopeGlobal, "hyper"); err != nil {
-			slog.Warn("Hyper OAuth refresh failed, requesting re-auth", "error", err)
-			msg.ReAuthenticate = true
-		}
-		return hyperRefreshDoneMsg{action: msg}
-	}
-}
-
 // modelPickTarget says where picking a model for a slot lands.
 type modelPickTarget int
 
@@ -2250,7 +2232,7 @@ func (m *UI) toggleThinkingCmd() tea.Cmd {
 }
 
 // handleSelectModel performs the model selection after any provider
-// pre-checks (such as a silent Hyper OAuth refresh) have completed.
+// pre-checks have completed.
 // handleSelectAgent points the current session at the chosen primary
 // agent. The switch lands on the session's agent instance, so it takes
 // effect from the next turn; a turn already streaming keeps the agent it
@@ -2385,16 +2367,6 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 		isConfigured = func() bool { _, ok := cfg.Providers.Get(providerID); return ok }
 		isOnboarding = m.state == uiOnboarding
 	)
-
-	// For Hyper, if the stored OAuth token is expired, try a silent
-	// refresh before deciding whether the provider is configured. Keeps
-	// users from hitting a 401 on their first message after the
-	// short-lived access token ages out.
-	if !msg.ReAuthenticate && providerID == "hyper" {
-		if pc, ok := cfg.Providers.Get(providerID); ok && pc.OAuthToken != nil && pc.OAuthToken.IsExpired() {
-			return m.refreshHyperAndRetrySelect(msg)
-		}
-	}
 
 	// Attempt to import GitHub Copilot tokens from VSCode if available.
 	if isCopilot && !isConfigured() && !msg.ReAuthenticate {
@@ -2576,8 +2548,6 @@ func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.Se
 	)
 
 	switch provider.ID {
-	case "hyper":
-		dlg, cmd = dialog.NewOAuthHyper(m.com, isOnboarding, provider, model, modelType)
 	case catwalk.InferenceProviderCopilot:
 		dlg, cmd = dialog.NewOAuthCopilot(m.com, isOnboarding, provider, model, modelType)
 	default:
@@ -3995,6 +3965,11 @@ func mimeOf(content []byte) string {
 // editorPlaceholder returns the textarea placeholder for the current input
 // mode. Narrow terminals get the bare prompt without the hint tail.
 func (m *UI) editorPlaceholder() string {
+	// A pending jump is transient and directly actionable, so it speaks
+	// over the mode prompts for the couple of seconds it lasts.
+	if m.isJumpingToBottom {
+		return "Press ↓ again to jump to the latest message"
+	}
 	if m.bangMode {
 		return "Run a shell command"
 	}
@@ -4004,7 +3979,7 @@ func (m *UI) editorPlaceholder() string {
 	if m.width < narrowWidthBreakpoint {
 		return "Ask anything…"
 	}
-	return "Ask anything — / for commands, @ for agents, # for files"
+	return "Ask anything — / for commands, @ for agents, # for files, ↓↓ for latest"
 }
 
 // editorCaption returns the one-line run context: which agent and model the
@@ -4161,6 +4136,10 @@ func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.
 	// Start the turn timer.
 	common.StartTurn()
 
+	// Sending is an explicit "I am here now": drop whatever scrollback the
+	// user was reading and follow the reply as it streams in.
+	m.chat.ScrollToBottom()
+
 	var cmds []tea.Cmd
 	if !m.hasSession() {
 		newSession, err := m.com.Workspace.CreateSession(context.Background(), "New Session")
@@ -4311,6 +4290,16 @@ const cancelTimerDuration = 2 * time.Second
 func cancelTimerCmd() tea.Cmd {
 	return tea.Tick(cancelTimerDuration, func(time.Time) tea.Msg {
 		return cancelTimerExpiredMsg{}
+	})
+}
+
+const jumpToBottomTimerDuration = 2 * time.Second
+
+// jumpToBottomTimerCmd creates a command that expires the jump-to-bottom
+// timer.
+func jumpToBottomTimerCmd() tea.Cmd {
+	return tea.Tick(jumpToBottomTimerDuration, func(time.Time) tea.Msg {
+		return jumpToBottomTimerExpiredMsg{}
 	})
 }
 

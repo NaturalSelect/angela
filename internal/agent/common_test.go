@@ -47,7 +47,7 @@ type modelPair struct {
 	smallModel builderFunc
 }
 
-func hyperBuilder(model string) builderFunc {
+func mundusBuilder(model string) builderFunc {
 	return func(t *testing.T, r *vcr.Recorder) (fantasy.LanguageModel, error) {
 		provider, err := openaicompat.New(
 			openaicompat.WithBaseURL("https://ai.mundus.cc/v1"),

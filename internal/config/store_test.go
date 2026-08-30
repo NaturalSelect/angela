@@ -254,12 +254,12 @@ func TestLoad_ResolvesAgentsWithoutProvider(t *testing.T) {
 
 func TestGlobalWorkspaceDir(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
 
 	wsDir := GlobalWorkspaceDir()
-	globalData := GlobalConfigData()
+	globalConfig := GlobalConfig()
 
-	require.Equal(t, filepath.Dir(globalData), wsDir)
+	require.Equal(t, filepath.Dir(globalConfig), wsDir)
 	require.Equal(t, dir, wsDir)
 }
 
@@ -686,7 +686,7 @@ func TestLoadTokenFromDisk_ReturnsNewerToken(t *testing.T) {
 	// Create config file with a newer token on disk
 	configContent := `{
 		"providers": {
-			"hyper": {
+			"acme": {
 				"oauth": {
 					"access_token": "newer-token-from-disk",
 					"refresh_token": "refresh-abc",
@@ -703,7 +703,7 @@ func TestLoadTokenFromDisk_ReturnsNewerToken(t *testing.T) {
 		globalDataPath: configPath,
 	}
 
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
+	token, err := store.loadTokenFromDisk(ScopeGlobal, "acme")
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	require.Equal(t, "newer-token-from-disk", token.AccessToken)
@@ -721,7 +721,7 @@ func TestLoadTokenFromDisk_ReturnsNilWhenSameToken(t *testing.T) {
 	// Create config file with the same token
 	configContent := `{
 		"providers": {
-			"hyper": {
+			"acme": {
 				"oauth": {
 					"access_token": "same-token",
 					"refresh_token": "refresh-abc",
@@ -738,7 +738,7 @@ func TestLoadTokenFromDisk_ReturnsNilWhenSameToken(t *testing.T) {
 		globalDataPath: configPath,
 	}
 
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
+	token, err := store.loadTokenFromDisk(ScopeGlobal, "acme")
 	require.NoError(t, err)
 	require.NotNil(t, token)
 	require.Equal(t, "same-token", token.AccessToken)
@@ -755,7 +755,7 @@ func TestLoadTokenFromDisk_ReturnsNilWhenFileMissing(t *testing.T) {
 		globalDataPath: configPath,
 	}
 
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
+	token, err := store.loadTokenFromDisk(ScopeGlobal, "acme")
 	require.NoError(t, err)
 	require.Nil(t, token)
 }
@@ -766,7 +766,7 @@ func TestLoadTokenFromDisk_ReturnsNilWhenProviderMissing(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "angela.json")
 
-	// Create config file without the hyper provider
+	// Create config file without the acme provider
 	configContent := `{"providers": {"openai": {"api_key": "test-key"}}}`
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o600))
 
@@ -775,7 +775,7 @@ func TestLoadTokenFromDisk_ReturnsNilWhenProviderMissing(t *testing.T) {
 		globalDataPath: configPath,
 	}
 
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
+	token, err := store.loadTokenFromDisk(ScopeGlobal, "acme")
 	require.NoError(t, err)
 	require.Nil(t, token)
 }
@@ -787,7 +787,7 @@ func TestLoadTokenFromDisk_ReturnsNilWhenOAuthMissing(t *testing.T) {
 	configPath := filepath.Join(dir, "angela.json")
 
 	// Create config file with provider but no OAuth token
-	configContent := `{"providers": {"hyper": {"api_key": "test-key"}}}`
+	configContent := `{"providers": {"acme": {"api_key": "test-key"}}}`
 	require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0o600))
 
 	store := &ConfigStore{
@@ -795,7 +795,7 @@ func TestLoadTokenFromDisk_ReturnsNilWhenOAuthMissing(t *testing.T) {
 		globalDataPath: configPath,
 	}
 
-	token, err := store.loadTokenFromDisk(ScopeGlobal, "hyper")
+	token, err := store.loadTokenFromDisk(ScopeGlobal, "acme")
 	require.NoError(t, err)
 	require.Nil(t, token)
 }
@@ -809,7 +809,7 @@ func TestRefreshOAuthToken_UsesDiskTokenWhenDifferent(t *testing.T) {
 	// Create config file with a newer token on disk
 	configContent := `{
 		"providers": {
-			"hyper": {
+			"acme": {
 				"api_key": "newer-access-token",
 				"oauth": {
 					"access_token": "newer-access-token",
@@ -831,9 +831,9 @@ func TestRefreshOAuthToken_UsesDiskTokenWhenDifferent(t *testing.T) {
 	}
 
 	providers := csync.NewMap[string, ProviderConfig]()
-	providers.Set("hyper", ProviderConfig{
-		ID:         "hyper",
-		Name:       "Hyper",
+	providers.Set("acme", ProviderConfig{
+		ID:         "acme",
+		Name:       "Acme",
 		APIKey:     oldToken.AccessToken,
 		OAuthToken: oldToken,
 	})
@@ -846,11 +846,11 @@ func TestRefreshOAuthToken_UsesDiskTokenWhenDifferent(t *testing.T) {
 	}
 
 	// Refresh should use the disk token without making an external call
-	err := store.RefreshOAuthToken(context.Background(), ScopeGlobal, "hyper")
+	err := store.RefreshOAuthToken(context.Background(), ScopeGlobal, "acme")
 	require.NoError(t, err)
 
 	// Verify the in-memory token was updated to the disk token
-	updatedConfig, ok := store.config.Providers.Get("hyper")
+	updatedConfig, ok := store.config.Providers.Get("acme")
 	require.True(t, ok)
 	require.Equal(t, "newer-access-token", updatedConfig.APIKey)
 	require.Equal(t, "newer-access-token", updatedConfig.OAuthToken.AccessToken)

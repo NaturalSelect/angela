@@ -36,6 +36,24 @@ func TestOsEnv_Env(t *testing.T) {
 	}
 }
 
+func TestOsEnv_Get_AngelaPrefixOverride(t *testing.T) {
+	t.Setenv("TEST_OVERRIDE_VAR", "from_bare")
+	t.Setenv("ANGELA_TEST_OVERRIDE_VAR", "from_angela")
+
+	env := &osEnv{}
+	require.Equal(t, "from_angela", env.Get("TEST_OVERRIDE_VAR"))
+}
+
+func TestOsEnv_Env_AngelaPrefixOverride(t *testing.T) {
+	t.Setenv("ANGELA_TEST_ENV_OVERRIDE_VAR", "from_angela")
+
+	env := &osEnv{}
+	envMap := toMap(t, env.Env())
+
+	require.Equal(t, "from_angela", envMap["TEST_ENV_OVERRIDE_VAR"])
+	require.Equal(t, "from_angela", envMap["ANGELA_TEST_ENV_OVERRIDE_VAR"])
+}
+
 func TestNewFromMap(t *testing.T) {
 	testMap := map[string]string{
 		"KEY1": "value1",
@@ -61,6 +79,25 @@ func TestMapEnv_Get(t *testing.T) {
 
 	// Test getting non-existent key
 	require.Equal(t, "", env.Get("NON_EXISTENT"))
+}
+
+func TestMapEnv_Get_AngelaPrefixOverride(t *testing.T) {
+	env := NewFromMap(map[string]string{
+		"API_KEY":        "from_bare",
+		"ANGELA_API_KEY": "from_angela",
+	})
+
+	require.Equal(t, "from_angela", env.Get("API_KEY"))
+}
+
+func TestMapEnv_Env_AngelaPrefixOverride(t *testing.T) {
+	env := NewFromMap(map[string]string{
+		"ANGELA_API_KEY": "from_angela",
+	})
+
+	envMap := toMap(t, env.Env())
+	require.Equal(t, "from_angela", envMap["API_KEY"])
+	require.Equal(t, "from_angela", envMap["ANGELA_API_KEY"])
 }
 
 func TestMapEnv_Env(t *testing.T) {
@@ -139,4 +176,17 @@ func TestMapEnv_EnvFormat(t *testing.T) {
 
 	require.True(t, found["equals"], "Should handle values with equals signs")
 	require.True(t, found["spaces"], "Should handle values with spaces")
+}
+
+// toMap converts a "KEY=VALUE" pair list into a map for assertions,
+// since Env() order is not guaranteed.
+func toMap(t *testing.T, pairs []string) map[string]string {
+	t.Helper()
+	m := make(map[string]string, len(pairs))
+	for _, kv := range pairs {
+		name, value, ok := strings.Cut(kv, "=")
+		require.True(t, ok, "malformed env pair %q", kv)
+		m[name] = value
+	}
+	return m
 }

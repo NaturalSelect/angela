@@ -29,7 +29,7 @@ var mu sync.Mutex
 
 // projectsFilePath returns the path to the projects.json file.
 func projectsFilePath() string {
-	return filepath.Join(filepath.Dir(config.GlobalConfigData()), projectsFileName)
+	return filepath.Join(filepath.Dir(config.GlobalConfig()), projectsFileName)
 }
 
 // Load reads the projects list from disk.

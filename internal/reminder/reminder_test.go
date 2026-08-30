@@ -326,6 +326,40 @@ func TestUserRemindersFireForSubagentsToo(t *testing.T) {
 	require.Contains(t, got, "keep me")
 }
 
+func TestDispatchRendered(t *testing.T) {
+	t.Parallel()
+
+	requireGolden(t, Wrap(dispatch{}.Collect(State{CanDispatch: true})))
+}
+
+func TestDispatchFiresOnlyWhenDelegationIsPossible(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		state     State
+		wantFired bool
+	}{
+		{"a main agent holding the tool is nudged", State{CanDispatch: true}, true},
+		{"the nudge repeats, it is not a first-turn briefing", State{CanDispatch: true, TurnsSinceTodos: 9}, true},
+		{"an agent the tool was filtered out of has nowhere to send work", State{}, false},
+		{"a subagent does not re-delegate its own assignment", State{IsSubAgent: true, CanDispatch: true}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := dispatch{}.Collect(tt.state)
+			if !tt.wantFired {
+				require.Empty(t, got)
+				return
+			}
+			require.Contains(t, got, toolnames.Agent, "the nudge must name the tool it is nudging toward")
+		})
+	}
+}
+
 func TestDefaultSourcesAreUsable(t *testing.T) {
 	t.Parallel()
 

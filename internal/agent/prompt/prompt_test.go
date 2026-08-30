@@ -21,7 +21,7 @@ func TestPrompt_AgentContextPathsOverrideGlobal(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.md"), []byte("agent content"), 0o644))
 
 	// Isolate the global config dir and disable default providers so
-	// Init does not reach out to catwalk/Hyper over the network or
+	// Init does not reach out to catwalk over the network or
 	// touch the real user's ~/.local/share/angela.
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)

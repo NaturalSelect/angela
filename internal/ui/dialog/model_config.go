@@ -263,7 +263,7 @@ func (m *ModelConfig) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	helpView := m.frame.RenderHelp(&m.help, m, m.metrics.ContentWidth)
 
 	footer := t.Dialog.SecondaryText.Render("This will be written in your global configuration:") + "\n" +
-		t.Dialog.SecondaryText.Render(config.GlobalConfigData())
+		t.Dialog.SecondaryText.Render(config.GlobalConfig())
 	if m.err != "" {
 		footer = t.Dialog.TitleError.PaddingLeft(1).Render(m.err)
 	}

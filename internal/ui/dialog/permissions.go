@@ -593,7 +593,11 @@ func (p *Permissions) renderBashContent(width int) string {
 	}
 
 	cmd := common.StripBashDisplayPrefix(params.Command, p.com.Workspace.WorkingDir())
-	command, err := common.SyntaxHighlightLexerName(p.com.Styles, cmd, "bash", nil)
+	// Chroma resets the style after every token; without an explicit
+	// background each reset also clears renderContentPanel's fill, so the
+	// panel's own background must be threaded through here too (as
+	// renderDefaultContent already does for generic JSON params).
+	command, err := common.SyntaxHighlightLexerName(p.com.Styles, cmd, "bash", p.com.Styles.Dialog.Permissions.ParamsBg)
 	if err != nil {
 		command = cmd
 	}

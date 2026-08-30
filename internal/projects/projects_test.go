@@ -11,8 +11,7 @@ func TestRegisterAndList(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Override the projects file path for testing
-	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", filepath.Join(tmpDir, "angela"))
+	t.Setenv("ANGELA_GLOBAL_CONFIG", filepath.Join(tmpDir, "angela"))
 
 	// Test registering a project
 	err := Register("/home/user/project1", "/home/user/project1/.angela")
@@ -61,8 +60,7 @@ func TestRegisterAndList(t *testing.T) {
 
 func TestRegisterUpdatesExisting(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", filepath.Join(tmpDir, "angela"))
+	t.Setenv("ANGELA_GLOBAL_CONFIG", filepath.Join(tmpDir, "angela"))
 
 	// Register a project
 	err := Register("/home/user/project1", "/home/user/project1/.angela")
@@ -98,8 +96,7 @@ func TestRegisterUpdatesExisting(t *testing.T) {
 
 func TestLoadEmptyFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", filepath.Join(tmpDir, "angela"))
+	t.Setenv("ANGELA_GLOBAL_CONFIG", filepath.Join(tmpDir, "angela"))
 
 	// List before any projects exist
 	projects, err := List()
@@ -114,8 +111,7 @@ func TestLoadEmptyFile(t *testing.T) {
 
 func TestProjectsFilePath(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", filepath.Join(tmpDir, "angela"))
+	t.Setenv("ANGELA_GLOBAL_CONFIG", filepath.Join(tmpDir, "angela"))
 
 	expected := filepath.Join(tmpDir, "angela", "projects.json")
 	actual := projectsFilePath()
@@ -127,8 +123,7 @@ func TestProjectsFilePath(t *testing.T) {
 
 func TestRegisterWithParentDataDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", filepath.Join(tmpDir, "angela"))
+	t.Setenv("ANGELA_GLOBAL_CONFIG", filepath.Join(tmpDir, "angela"))
 
 	// Register a project where .angela is in a parent directory.
 	// e.g., working in /home/user/monorepo/packages/app but .angela is at /home/user/monorepo/.angela
@@ -157,8 +152,7 @@ func TestRegisterWithParentDataDir(t *testing.T) {
 
 func TestRegisterWithExternalDataDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", tmpDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", filepath.Join(tmpDir, "angela"))
+	t.Setenv("ANGELA_GLOBAL_CONFIG", filepath.Join(tmpDir, "angela"))
 
 	// Register a project where .angela is in a completely different location.
 	// e.g., project at /home/user/project but data stored at /var/data/angela/myproject

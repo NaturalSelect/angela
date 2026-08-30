@@ -1,3 +1,2 @@
 *.golden linguist-generated=true -text
-internal/agent/hyper/provider.json linguist-generated=true
 internal/agent/testdata/**/*.yaml -diff linguist-generated=true

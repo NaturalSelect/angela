@@ -57,8 +57,6 @@
   - "/gemini/i"
 "provider: google vertex":
   - "/vertex/i"
-"provider: hyper":
-  - "/hyper/i"
 "provider: kimi":
   - "/kimi/i"
 "provider: minimax":

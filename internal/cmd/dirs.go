@@ -38,7 +38,6 @@ func collectDirs(cmd *cobra.Command) []string {
 	var dirs []string
 
 	dirs = append(dirs, filepath.Dir(config.GlobalConfig()))
-	dirs = append(dirs, filepath.Dir(config.GlobalConfigData()))
 
 	cwd, err := ResolveCwd(cmd)
 	if err != nil {
@@ -47,8 +46,8 @@ func collectDirs(cmd *cobra.Command) []string {
 
 	for _, p := range config.ProjectConfigs(cwd) {
 		d := filepath.Dir(p)
-		// Skip global paths, already shown.
-		if d == filepath.Dir(config.GlobalConfig()) || d == filepath.Dir(config.GlobalConfigData()) {
+		// Skip the global config dir, already shown.
+		if d == filepath.Dir(config.GlobalConfig()) {
 			continue
 		}
 		dirs = append(dirs, d)
@@ -83,8 +82,6 @@ func dirLabel(i int) string {
 	switch i {
 	case 0:
 		return "Config"
-	case 1:
-		return "Data"
 	default:
 		return "Project"
 	}

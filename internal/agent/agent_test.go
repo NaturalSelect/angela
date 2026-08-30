@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 }
 
 var modelPairs = []modelPair{
-	{"glm-5.2", hyperBuilder("glm-5.2"), hyperBuilder("glm-5.2")},
+	{"glm-5.2", mundusBuilder("glm-5.2"), mundusBuilder("glm-5.2")},
 }
 
 func getModels(t *testing.T, r *vcr.Recorder, pair modelPair) (fantasy.LanguageModel, fantasy.LanguageModel) {

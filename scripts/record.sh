@@ -31,7 +31,7 @@ filter="${1:-}"
 
 if [[ -z "${MUNDUS_API_KEY:-}" ]]; then
   echo "MUNDUS_API_KEY is not set; recording would produce empty cassettes." >&2
-  echo "Export it and re-run. It is read by hyperBuilder in internal/agent/common_test.go." >&2
+  echo "Export it and re-run. It is read by mundusBuilder in internal/agent/common_test.go." >&2
   exit 1
 fi
 

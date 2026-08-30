@@ -63,7 +63,7 @@ func TestSetProviderAPIKeyOAuthSendsKind(t *testing.T) {
 
 	tok := &oauth.Token{AccessToken: "a", RefreshToken: "r", ExpiresIn: 60, ExpiresAt: 1234567890}
 	c := captureClient(t, srv)
-	require.NoError(t, c.SetProviderAPIKey(context.Background(), "ws1", config.ScopeGlobal, "hyper", tok))
+	require.NoError(t, c.SetProviderAPIKey(context.Background(), "ws1", config.ScopeGlobal, "acme", tok))
 
 	require.Equal(t, proto.APIKeyKindOAuth, got.Kind)
 	decoded, err := got.DecodeAPIKey()

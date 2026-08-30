@@ -19,14 +19,12 @@ import (
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
-	"github.com/NaturalSelect/angela/internal/agent/hyper"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/discover"
-	"github.com/NaturalSelect/angela/internal/event"
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/hooks"
@@ -431,17 +429,6 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	result, originalErr := run()
 	logTurnSkillUsage(sessionID, prompt, c.activeSkills, c.skillTracker, beforeLoaded)
 
-	// Notify only if still unauthorized after retry — a successful
-	// retry means the user doesn't need to re-authenticate. AWS SSO is
-	// handled transparently inside OnAuthRefresh, so it needs no post-run
-	// notification here.
-	if originalErr != nil && isUnauthorized(originalErr) && c.notify != nil && model.ModelCfg.Provider == hyper.Name {
-		c.notify.Publish(pubsub.CreatedEvent, notify.Notification{
-			Type:       notify.TypeReAuthenticate,
-			ProviderID: model.ModelCfg.Provider,
-		})
-	}
-
 	if hasLatest && c.runComplete != nil {
 		c.runComplete.PublishMustDeliver(ctx, pubsub.UpdatedEvent, latest)
 		// Signal to the dispatcher (backend.runAgent) that the
@@ -453,17 +440,42 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	return result, originalErr
 }
 
+// openaiCompatUsesResponses reports whether an openai-compat provider
+// dispatches this model to the Responses API. It mirrors the transport
+// choice made in buildOpenaiCompatProvider, where an explicit
+// use_responses setting replaces the per-provider table.
+func openaiCompatUsesResponses(providerCfg config.ProviderConfig, modelID string) bool {
+	if providerCfg.UseResponses != nil {
+		return *providerCfg.UseResponses
+	}
+	fn, ok := openaiCompatResponsesAPIFunc(providerCfg.ID)
+	return ok && fn(modelID)
+}
+
+// responsesAPIEnabled reports whether a model on this provider talks the
+// OpenAI Responses API. An explicit use_responses setting decides
+// outright; left unset the choice falls back to recognizing the model ID,
+// which only knows OpenAI's own names and misses gateway aliases.
+func responsesAPIEnabled(providerCfg config.ProviderConfig, modelID string) bool {
+	if providerCfg.UseResponses != nil {
+		return *providerCfg.UseResponses
+	}
+	return openai.IsResponsesModel(modelID)
+}
+
 // effectiveReasoningEffort returns the reasoning effort to apply for provider calls.
-// It prefers the user-selected effort when valid, otherwise the model default when
-// valid, and finally falls back to the first configured reasoning level.
+// An effort set explicitly in the model config wins outright: it is the user's own
+// statement that the model reasons, and catalog metadata cannot know about hand-typed
+// models or gateway aliases. Otherwise it takes the model default when valid, and
+// finally falls back to the first configured reasoning level.
 func effectiveReasoningEffort(model Model) string {
+	if effort := model.ModelCfg.ReasoningEffort; effort != "" {
+		return effort
+	}
 	if !model.CatwalkCfg.CanReason {
 		return ""
 	}
 
-	if effort := model.ModelCfg.ReasoningEffort; effort != "" && slices.Contains(model.CatwalkCfg.ReasoningLevels, effort) {
-		return effort
-	}
 	if effort := model.CatwalkCfg.DefaultReasoningEffort; effort != "" && slices.Contains(model.CatwalkCfg.ReasoningLevels, effort) {
 		return effort
 	}
@@ -561,9 +573,9 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 	}
 
 	reasoningEffort := effectiveReasoningEffort(model)
-	shouldSetEffort := model.CatwalkCfg.CanReason &&
-		reasoningEffort != "" &&
-		slices.Contains(model.CatwalkCfg.ReasoningLevels, reasoningEffort)
+	// effectiveReasoningEffort already applied the catalog rules, so a
+	// non-empty result is by itself the decision to send an effort.
+	shouldSetEffort := reasoningEffort != ""
 
 	switch providerCfg.Type {
 	case openai.Name, azure.Name:
@@ -574,8 +586,8 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 		if _, hasPromptCacheKey := mergedOptions["prompt_cache_key"]; !hasPromptCacheKey && promptCacheKey != "" {
 			mergedOptions["prompt_cache_key"] = promptCacheKey
 		}
-		if openai.IsResponsesModel(model.CatwalkCfg.ID) {
-			if openai.IsResponsesReasoningModel(model.CatwalkCfg.ID) {
+		if responsesAPIEnabled(providerCfg, model.CatwalkCfg.ID) {
+			if openai.IsResponsesReasoningModel(model.CatwalkCfg.ID) || shouldSetEffort {
 				mergedOptions["reasoning_summary"] = "auto"
 				mergedOptions["include"] = []openai.IncludeType{openai.IncludeReasoningEncryptedContent}
 			}
@@ -628,6 +640,8 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 			}
 		}
 
+		requestVisibleThinking(mergedOptions)
+
 		parsed, err := anthropic.ParseOptions(mergedOptions)
 		if err == nil {
 			options[anthropic.Name] = parsed
@@ -679,7 +693,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 			options[google.Name] = parsed
 		}
 
-	case openaicompat.Name, hyper.Name:
+	case openaicompat.Name:
 		extraBody, _ := mergedOptions["extra_body"].(map[string]any)
 		if extraBody == nil {
 			extraBody = make(map[string]any)
@@ -707,8 +721,6 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 		// TODO: Abstract this in Fantasy somehow?
 		// TODO: Allow custom providers to specify how to set this?
 		switch providerCfg.ID {
-		case hyper.Name:
-			extraBody["thinking"] = model.ModelCfg.Think
 		case string(catwalk.InferenceProviderIoNet):
 			if _, ok := extraBody["reasoning"]; !ok && model.CatwalkCfg.CanReason {
 				if model.ModelCfg.Think {
@@ -774,7 +786,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 		// configured through it silently disappears from the request.
 		// Fields with no Responses equivalent are dropped by
 		// ParseResponsesOptions like any other unrecognized JSON key.
-		if fn, ok := openaiCompatResponsesAPIFunc(providerCfg.ID); ok && fn(model.CatwalkCfg.ID) {
+		if openaiCompatUsesResponses(providerCfg, model.CatwalkCfg.ID) {
 			if respParsed, err := openai.ParseResponsesOptions(extraBody); err == nil {
 				options[openai.Name] = respParsed
 			}
@@ -808,6 +820,19 @@ func withPromptCacheKey(extraBody map[string]any, promptCacheKey string) map[str
 		extraBody["prompt_cache_key"] = promptCacheKey
 	}
 	return extraBody
+}
+
+// requestVisibleThinking asks Anthropic to stream its thinking summary.
+// Adaptive thinking — which the effort option always selects — omits the
+// trace unless display says otherwise, and the default is decided per
+// model ID, so a gateway-served or renamed model thinks with nothing to
+// show. Setting display here short-circuits that lookup for every model;
+// an explicit user setting still wins.
+func requestVisibleThinking(mergedOptions map[string]any) {
+	if _, ok := mergedOptions["thinking_display"]; ok {
+		return
+	}
+	mergedOptions["thinking_display"] = string(anthropic.ThinkingDisplaySummarized)
 }
 
 // withAnthropicUserID sets extraBody["metadata"]["user_id"] to a value
@@ -1443,10 +1468,24 @@ func (c *coordinator) buildAnthropicProvider(baseURL, apiKey string, headers map
 	return anthropic.New(opts...)
 }
 
-func (c *coordinator) buildOpenaiProvider(baseURL, apiKey string, headers map[string]string) (fantasy.Provider, error) {
+func (c *coordinator) buildOpenaiProvider(baseURL, apiKey string, headers map[string]string, useResponses *bool) (fantasy.Provider, error) {
 	opts := []openai.Option{
 		openai.WithAPIKey(apiKey),
 		openai.WithUseResponsesAPI(),
+		// Gateways are routinely configured as a plain "openai" provider
+		// (the type defaults to it) while answering in the
+		// chat-completions shape, where reasoning arrives as
+		// delta.reasoning_content. The openai provider parses reasoning
+		// only on its Responses path, so without these hooks the text is
+		// read into nothing and the turn renders with no thinking at all.
+		openai.WithLanguageModelOptions(
+			openai.WithLanguageModelStreamExtraFunc(openaicompat.StreamExtraFunc),
+			openai.WithLanguageModelExtraContentFunc(openaicompat.ExtraContentFunc),
+		),
+	}
+	if useResponses != nil {
+		forced := *useResponses
+		opts = append(opts, openai.WithResponsesAPIFunc(func(string) bool { return forced }))
 	}
 	if c.cfg.Config().Options.Debug {
 		httpClient := log.NewHTTPClient()
@@ -1489,14 +1528,22 @@ func (c *coordinator) buildVercelProvider(_, apiKey string, headers map[string]s
 	return vercel.New(opts...)
 }
 
-func (c *coordinator) buildOpenaiCompatProvider(baseURL, apiKey string, headers map[string]string, extraBody map[string]any, providerID string, isSubAgent bool) (fantasy.Provider, error) {
+func (c *coordinator) buildOpenaiCompatProvider(baseURL, apiKey string, headers map[string]string, extraBody map[string]any, providerID string, isSubAgent bool, useResponses *bool) (fantasy.Provider, error) {
 	opts := []openaicompat.Option{
 		openaicompat.WithBaseURL(config.NormalizeBaseURL(baseURL, catwalk.TypeOpenAICompat)),
 		openaicompat.WithAPIKey(apiKey),
 	}
 
-	if fn, ok := openaiCompatResponsesAPIFunc(providerID); ok {
-		opts = append(opts, openaicompat.WithUseResponsesAPI(), openaicompat.WithResponsesAPIFunc(fn))
+	switch {
+	case useResponses != nil:
+		if *useResponses {
+			opts = append(opts, openaicompat.WithUseResponsesAPI(),
+				openaicompat.WithResponsesAPIFunc(func(string) bool { return true }))
+		}
+	default:
+		if fn, ok := openaiCompatResponsesAPIFunc(providerID); ok {
+			opts = append(opts, openaicompat.WithUseResponsesAPI(), openaicompat.WithResponsesAPIFunc(fn))
+		}
 	}
 
 	// Set HTTP client based on provider and debug mode.
@@ -1643,7 +1690,7 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 
 	switch providerCfg.Type {
 	case openai.Name:
-		return c.buildOpenaiProvider(baseURL, apiKey, headers)
+		return c.buildOpenaiProvider(baseURL, apiKey, headers, providerCfg.UseResponses)
 	case anthropic.Name:
 		return c.buildAnthropicProvider(baseURL, apiKey, headers, providerCfg.ID)
 	case openrouter.Name:
@@ -1658,11 +1705,8 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 		return c.buildGoogleProvider(baseURL, apiKey, headers)
 	case "google-vertex":
 		return c.buildGoogleVertexProvider(headers, providerCfg.ExtraParams)
-	case openaicompat.Name, hyper.Name:
+	case openaicompat.Name:
 		switch providerCfg.ID {
-		case hyper.Name:
-			baseURL = hyper.BaseURL() + "/v1"
-			headers["x-angela-id"] = event.GetID()
 		case string(catwalk.InferenceProviderZAI):
 			// providerCfg is a value copy, but ExtraBody still aliases
 			// the published config snapshot that other turns read.
@@ -1672,12 +1716,12 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 			}
 			providerCfg.ExtraBody["tool_stream"] = true
 		}
-		return c.buildOpenaiCompatProvider(baseURL, apiKey, headers, providerCfg.ExtraBody, providerCfg.ID, isSubAgent)
+		return c.buildOpenaiCompatProvider(baseURL, apiKey, headers, providerCfg.ExtraBody, providerCfg.ID, isSubAgent, providerCfg.UseResponses)
 	default:
 		// Known custom providers (litellm, ollama, omlx) are
 		// openai-compat under the hood.
 		if discover.IsKnownCustomProvider(string(providerCfg.Type)) {
-			return c.buildOpenaiCompatProvider(baseURL, apiKey, headers, providerCfg.ExtraBody, providerCfg.ID, isSubAgent)
+			return c.buildOpenaiCompatProvider(baseURL, apiKey, headers, providerCfg.ExtraBody, providerCfg.ID, isSubAgent, providerCfg.UseResponses)
 		}
 		return nil, fmt.Errorf("provider type not supported: %q", providerCfg.Type)
 	}
@@ -2120,14 +2164,6 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 		})
 	}
 	result, err := run()
-	// Notify only if still unauthorized after retry. AWS SSO is handled
-	// transparently inside OnAuthRefresh, so it needs no post-run notice.
-	if err != nil && isUnauthorized(err) && c.notify != nil && model.ModelCfg.Provider == hyper.Name {
-		c.notify.Publish(pubsub.CreatedEvent, notify.Notification{
-			Type:       notify.TypeReAuthenticate,
-			ProviderID: model.ModelCfg.Provider,
-		})
-	}
 	if err != nil {
 		return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to generate response: %s", err)), nil
 	}

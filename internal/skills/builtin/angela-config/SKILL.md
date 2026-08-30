@@ -26,12 +26,10 @@ hard error.
 1. `/etc/angela/angela.json` — system-wide (Unix only; not read on Windows).
 2. **Global user config** — `$ANGELA_GLOBAL_CONFIG/angela.json` when that
    variable is set, otherwise `~/.config/angela/angela.json`
-   (`%USERPROFILE%\.config\angela\angela.json` on Windows).
-3. **Global data config** — `$ANGELA_GLOBAL_DATA/angela.json`, else
-   `$XDG_DATA_HOME/angela/angela.json`, else
-   `~/.local/share/angela/angela.json`
-   (`%LOCALAPPDATA%\angela\angela.json` on Windows).
-4. **Project configs** — Angela walks up from the working directory looking
+   (`%USERPROFILE%\.config\angela\angela.json` on Windows). Angela also
+   writes to this file itself — the selected model, recent models, and
+   OAuth tokens — so it is both hand-editable and machine-updated.
+3. **Project configs** — Angela walks up from the working directory looking
    for `.angela.json` and `angela.json` in each directory.
 
 The upward walk stops at the **git working tree root** when one can be
@@ -48,13 +46,6 @@ higher-priority layer, and **arrays are concatenated** rather than replaced.
 The one exception is an agent's `allowed_tools` / `allowed_mcp` / `disabled_tools`,
 which are taken whole from the highest-priority layer that mentions them —
 concatenating a list with `"inherited"` would be meaningless.
-
-> [!IMPORTANT]
-> The **data config** (layer 3) is machine-owned: Angela writes the selected
-> model, recent models, and OAuth tokens there. Data directories
-> (`~/.local/share/angela`, `%LOCALAPPDATA%\angela`) hold that state, not
-> hand-written settings. Put user settings in the global user config
-> (layer 2) or the project config (layer 4) instead.
 
 ## Shell expansion
 
@@ -621,6 +612,5 @@ user-invocable: true
 | Variable                | Effect                                              |
 | ----------------------- | --------------------------------------------------- |
 | `ANGELA_GLOBAL_CONFIG`  | Directory holding the global `angela.json`           |
-| `ANGELA_GLOBAL_DATA`    | Directory holding the machine-owned data `angela.json` |
 | `ANGELA_CACHE_DIR`      | Override the cache directory                         |
 | `ANGELA_SKILLS_DIR`     | Replace the default global skills directories        |

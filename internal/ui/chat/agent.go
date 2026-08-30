@@ -8,12 +8,14 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/tree"
 	"github.com/NaturalSelect/angela/internal/agent"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // -----------------------------------------------------------------------------
@@ -26,6 +28,34 @@ const agentActionTargetWidth = 40
 
 // agentSummaryArrow marks the one-line summary beneath the task prompt.
 const agentSummaryArrow = "↳ "
+
+// agentTitleSeparator sits between the sub-agent's name and its task.
+const agentTitleSeparator = " — "
+
+// agentToolLabel is the bare tool name, shown until the call names the
+// sub-agent it dispatches to.
+const agentToolLabel = "Agent"
+
+// agentToolTitle names the sub-agent a call dispatches to, so the header
+// reads "Agent(explore)" rather than the bare tool name. Input that is
+// still streaming in cannot be parsed yet; an omitted subagent_type
+// dispatches to explore, mirroring the agent tool itself.
+func agentToolTitle(toolCall message.ToolCall) string {
+	var params agent.AgentParams
+	if err := json.Unmarshal([]byte(toolCall.Input), &params); err != nil {
+		return agentToolLabel
+	}
+	name := params.SubagentType
+	if name == "" {
+		// The field may simply not have streamed in yet, so only assume
+		// the tool's own default once the input is complete.
+		if !toolCall.Finished {
+			return agentToolLabel
+		}
+		name = config.AgentExplore
+	}
+	return agentToolLabel + "(" + name + ")"
+}
 
 // NestedToolContainer is an interface for tool items that can contain nested tool calls.
 type NestedToolContainer interface {
@@ -216,80 +246,72 @@ func (a *AgentToolMessageItem) summaryLine(sty *styles.Styles, done bool) string
 	return sty.Tool.AgentPrompt.MarginLeft(2).Render(agentSummaryArrow + text)
 }
 
+// agentToolDescription is the short task label the dispatch carries. It
+// falls back to the prompt's first line, since a caller may omit the
+// description but never the prompt.
+func agentToolDescription(toolCall message.ToolCall) string {
+	var params agent.AgentParams
+	if err := json.Unmarshal([]byte(toolCall.Input), &params); err != nil {
+		return ""
+	}
+	if params.Description != "" {
+		return params.Description
+	}
+	first, _, _ := strings.Cut(params.Prompt, "\n")
+	return first
+}
+
 // AgentToolRenderContext renders agent tool messages.
 type AgentToolRenderContext struct {
 	agent *AgentToolMessageItem
 }
 
+// agentHeader draws the title line: status icon, the sub-agent's name, and
+// the task it was given. It mirrors toolHeader but keys the icon on the
+// tool's own name, because the title carries the sub-agent's name and would
+// not match the icon table.
+func (r *AgentToolRenderContext) agentHeader(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
+	icon := toolStatusStyle(sty, opts.Status).Render(toolKindIcon(toolnames.Agent))
+	nameStyle := sty.Tool.NameNormal
+	if opts.Compact {
+		nameStyle = sty.Tool.NameNested
+	}
+	prefix := icon + " " + nameStyle.Render(agentToolTitle(opts.ToolCall))
+
+	desc := agentToolDescription(opts.ToolCall)
+	if desc == "" {
+		return prefix
+	}
+	remaining := width - lipgloss.Width(prefix) - lipgloss.Width(agentTitleSeparator)
+	if remaining <= 0 {
+		return prefix
+	}
+	desc = ansi.Truncate(strings.ReplaceAll(desc, "\n", " "), remaining, "…")
+	return prefix + sty.Tool.AgentPrompt.Render(agentTitleSeparator+desc)
+}
+
 // RenderTool implements the [ToolRenderer] interface.
+//
+// The block stays two lines: a title naming the sub-agent and its task, and
+// a single summary line tracking progress. The sub-agent's own tool calls
+// and its report live in its session, which enter opens — inlining them
+// here buried the parent transcript under work the user did not ask to see.
 func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
-	cappedWidth := cappedMessageWidth(width)
 	if !opts.ToolCall.Finished && !opts.IsCanceled() && len(r.agent.nestedTools) == 0 {
-		return pendingTool(sty, "Agent", opts.Anim, opts.Compact)
+		return pendingTool(sty, agentToolTitle(opts.ToolCall), opts.Anim, opts.Compact)
 	}
 
-	var params agent.AgentParams
-	_ = json.Unmarshal([]byte(opts.ToolCall.Input), &params)
-
-	prompt := params.Prompt
-	if !opts.ExpandedContent {
-		prompt = strings.ReplaceAll(prompt, "\n", " ")
-	}
-
-	header := toolHeader(sty, opts.Status, "Agent", cappedWidth, opts)
+	header := r.agentHeader(sty, cappedMessageWidth(width), opts)
 	if opts.Compact {
 		return header
 	}
 
-	// Build the task tag and prompt.
-	taskTag := sty.Tool.AgentTaskTag.Render("Task")
-	taskTagWidth := lipgloss.Width(taskTag)
-
-	// Calculate remaining width for prompt.
-	remainingWidth := min(cappedWidth-taskTagWidth-3, maxTextWidth-taskTagWidth-3) // -3 for spacing
-
-	promptText := sty.Tool.AgentPrompt.Width(remainingWidth).Render(prompt)
-
-	headerParts := []string{
-		header,
-		"",
-		lipgloss.JoinHorizontal(
-			lipgloss.Left,
-			taskTag,
-			" ",
-			promptText,
-		),
-	}
+	parts := []string{header}
 	if summary := r.agent.summaryLine(sty, opts.HasResult() || opts.IsCanceled()); summary != "" {
-		headerParts = append(headerParts, summary)
+		parts = append(parts, summary)
 	}
-
-	header = lipgloss.JoinVertical(lipgloss.Left, headerParts...)
-
-	// Build tree with nested tool calls.
-	childTools := tree.Root(header)
-
-	for _, nestedTool := range r.agent.nestedTools {
-		childView := nestedTool.Render(remainingWidth)
-		childTools.Child(childView)
-	}
-
-	// Build parts.
-	var parts []string
-	parts = append(parts, childTools.Enumerator(roundedEnumerator(2, taskTagWidth-5)).String())
-
-	// Show animation if still running.
 	if !opts.HasResult() && !opts.IsCanceled() {
 		parts = append(parts, "", opts.Anim.Render())
 	}
-
-	result := lipgloss.JoinVertical(lipgloss.Left, parts...)
-
-	// Add body content when completed.
-	if opts.HasResult() && opts.Result.Content != "" {
-		body := toolOutputMarkdownContent(sty, opts.Result.Content, cappedWidth-toolBodyLeftPaddingTotal, opts.ExpandedContent)
-		return joinToolParts(result, body)
-	}
-
-	return result
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

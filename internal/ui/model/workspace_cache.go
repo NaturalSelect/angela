@@ -31,6 +31,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
@@ -282,10 +283,24 @@ func (m *UI) applyPromptQueue(msg promptQueueMsg) []tea.Cmd {
 	countChanged := len(msg.prompts) != m.promptQueue
 	m.promptQueueItems = msg.prompts
 	m.promptQueue = len(msg.prompts)
+	m.syncQueuedChatItems()
 	if countChanged {
 		m.updateLayoutAndSize()
 	}
 	return nil
+}
+
+// syncQueuedChatItems mirrors the queued prompts into the transcript so
+// the user can read what is still waiting, not just how many there are.
+func (m *UI) syncQueuedChatItems() {
+	if m.chat == nil {
+		return
+	}
+	items := make([]chat.MessageItem, 0, len(m.promptQueueItems))
+	for i, prompt := range m.promptQueueItems {
+		items = append(items, chat.NewQueuedMessageItem(m.com.Styles, prompt, i))
+	}
+	m.chat.SetQueued(items...)
 }
 
 // staleWorkspaceRefreshCmds is the TTL backstop, called at the tail of

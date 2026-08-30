@@ -33,6 +33,9 @@ type State struct {
 	// UserReminders holds the standing notices from the user's config,
 	// used verbatim.
 	UserReminders []string
+	// CanDispatch reports that the Agent tool survived this turn's tool
+	// filtering, so there is somewhere to delegate to.
+	CanDispatch bool
 }
 
 // Source produces at most one notice per turn. Returning an empty string
@@ -58,6 +61,7 @@ func DefaultSources() []Source {
 		todoRecency{},
 		mcpUnavailable{},
 		skillsAfterCompaction{},
+		dispatch{},
 	}
 }
 

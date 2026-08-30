@@ -50,7 +50,7 @@ func TestConfigProviderKeyRequestOAuthRoundTrip(t *testing.T) {
 
 	src := proto.ConfigProviderKeyRequest{
 		Scope:      config.ScopeGlobal,
-		ProviderID: "hyper",
+		ProviderID: "acme",
 		Kind:       proto.APIKeyKindOAuth,
 		APIKey:     apiKey,
 	}

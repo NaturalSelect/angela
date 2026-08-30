@@ -147,8 +147,8 @@ func (q Question) identifier() string {
 	}
 	if q.Text != "" {
 		t := q.Text
-		if len(t) > 40 {
-			t = t[:40] + "…"
+		if r := []rune(t); len(r) > 40 {
+			t = string(r[:40]) + "…"
 		}
 		return fmt.Sprintf("[%s]", t)
 	}

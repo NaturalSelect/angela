@@ -9,7 +9,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/tree"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/diff"
@@ -699,6 +698,12 @@ func toolHeader(sty *styles.Styles, status ToolStatus, name string, width int, o
 	return prefix + paramsStr
 }
 
+// toolContentAccentGlyph marks a plain-text output line as tool content. It
+// is a thin rule rather than the "▌" block used for message focus, so the
+// two never read as the same signal when a focused tool call's body shows
+// both.
+const toolContentAccentGlyph = "│ "
+
 // toolOutputPlainContent renders plain text with optional expansion support.
 func toolOutputPlainContent(sty *styles.Styles, content string, width int, expanded bool) string {
 	content = stringext.NormalizeSpace(content)
@@ -711,23 +716,24 @@ func toolOutputPlainContent(sty *styles.Styles, content string, width int, expan
 		maxLines = len(lines) // Show all
 	}
 
+	bar := sty.Tool.ContentAccent.Render(toolContentAccentGlyph)
+	lineWidth := width - lipgloss.Width(bar)
+
 	var out []string
 	for i, ln := range lines {
 		if i >= maxLines {
 			break
 		}
-		ln = " " + ln
-		if lipgloss.Width(ln) > width {
-			ln = ansi.Truncate(ln, width, "…")
+		if lipgloss.Width(ln) > lineWidth {
+			ln = ansi.Truncate(ln, lineWidth, "…")
 		}
-		out = append(out, sty.Tool.ContentLine.Width(width).Render(ln))
+		out = append(out, bar+sty.Tool.ContentLine.Render(ln))
 	}
 
 	wasTruncated := len(lines) > responseContextHeight
 
 	if !expanded && wasTruncated {
-		out = append(out, sty.Tool.ContentTruncation.
-			Width(width).
+		out = append(out, bar+sty.Tool.ContentTruncation.
 			Render(fmt.Sprintf(assistantMessageTruncateFormat, len(lines)-responseContextHeight)))
 	}
 
@@ -1100,24 +1106,6 @@ func toolOutputMultiEditDiffContent(sty *styles.Styles, file string, meta tools.
 	}
 
 	return sty.Tool.Body.Render(formatted)
-}
-
-// roundedEnumerator creates a tree enumerator with rounded corners.
-func roundedEnumerator(lPadding, width int) tree.Enumerator {
-	if width == 0 {
-		width = 2
-	}
-	if lPadding == 0 {
-		lPadding = 1
-	}
-	return func(children tree.Children, index int) string {
-		line := strings.Repeat("─", width)
-		padding := strings.Repeat(" ", lPadding)
-		if children.Length()-1 == index {
-			return padding + "╰" + line
-		}
-		return padding + "├" + line
-	}
 }
 
 // toolOutputMarkdownContent renders markdown content with optional truncation.

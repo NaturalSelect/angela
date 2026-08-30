@@ -3,6 +3,7 @@ package config
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
@@ -10,13 +11,14 @@ import (
 )
 
 // capturePath starts a test server that records the request path it
-// received and responds with statusCode. The returned pointer is
-// populated once the server has been hit.
+// received and responds with statusCode and an empty JSON document, which
+// is the shape TestConnection requires of a real API endpoint.
 func capturePath(statusCode int) (*httptest.Server, *string) {
 	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		w.WriteHeader(statusCode)
+		w.Write([]byte(`{}`))
 	}))
 	return server, &gotPath
 }
@@ -105,4 +107,49 @@ func TestTestConnection404NoHintWhenAlreadyVersioned(t *testing.T) {
 	err := c.TestConnection(IdentityResolver())
 	require.ErrorContains(t, err, "404")
 	require.NotContains(t, err.Error(), "no version segment")
+}
+
+// spaGateway mimics new-api/one-api: the API lives under "/v1" and every
+// other route falls through to the admin single-page app, which answers
+// 200 with an HTML shell. Probing the wrong root therefore looks like
+// success to anything that only reads the status code.
+func spaGateway() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/") {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"object":"list","data":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("<!doctype html><html><head><title>New API</title></head></html>"))
+	}))
+}
+
+// TestTestConnectionRejectsSPAFallback pins the bug this guards against:
+// a base_url missing the "/v1" segment lands on the gateway's HTML shell,
+// which used to pass the probe on its 200 alone and then left every real
+// request hitting that same HTML.
+func TestTestConnectionRejectsSPAFallback(t *testing.T) {
+	t.Parallel()
+
+	server := spaGateway()
+	defer server.Close()
+
+	c := &ProviderConfig{ID: "openai", Type: catwalk.TypeOpenAI, BaseURL: server.URL, APIKey: "key"}
+	err := c.TestConnection(IdentityResolver())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "not JSON")
+	require.ErrorContains(t, err, "no version segment")
+}
+
+// TestTestConnectionAcceptsVersionedGatewayRoot pins the other half: the
+// same gateway passes once base_url names the actual API root.
+func TestTestConnectionAcceptsVersionedGatewayRoot(t *testing.T) {
+	t.Parallel()
+
+	server := spaGateway()
+	defer server.Close()
+
+	c := &ProviderConfig{ID: "openai", Type: catwalk.TypeOpenAI, BaseURL: server.URL + "/v1", APIKey: "key"}
+	require.NoError(t, c.TestConnection(IdentityResolver()))
 }

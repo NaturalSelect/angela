@@ -116,7 +116,6 @@ func (c *coordinator) generateSessionTitle(ctx context.Context, sessionID, userP
 			}
 			costOverride = &newCost
 		}
-		extractHyperCredits(step.ProviderMetadata)
 	}
 
 	modelConfig := model.CatwalkCfg

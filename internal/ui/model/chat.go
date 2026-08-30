@@ -106,6 +106,10 @@ type Chat struct {
 	// bottom on new messages.
 	follow bool
 
+	// queued holds the prompts waiting their turn, parked at the end of
+	// the list so the transcript indices above them stay stable.
+	queued []chat.MessageItem
+
 	// drawCache memoizes the decoded form of the last list.Render output so
 	// repeat frames with byte-identical content skip the per-cell ANSI
 	// reparse that uv.StyledString.Draw performs every call. See F9
@@ -393,6 +397,7 @@ func (m *Chat) SetMessages(msgs ...chat.MessageItem) tea.Cmd {
 	m.idInxMap = make(map[string]int)
 	m.pausedAnimations = make(map[string]struct{})
 	m.scrollbarVisible = false // Reset scrollbar visibility on new session load
+	m.queued = nil             // The whole list is replaced, tail included.
 
 	items := make([]list.Item, len(msgs))
 	for i, msg := range msgs {
@@ -412,6 +417,11 @@ func (m *Chat) SetMessages(msgs ...chat.MessageItem) tea.Cmd {
 
 // AppendMessages appends a new message item to the chat list.
 func (m *Chat) AppendMessages(msgs ...chat.MessageItem) {
+	// Real messages belong above whatever is still waiting to be sent, so
+	// lift the queued tail out of the way and put it back afterwards.
+	queued := m.queued
+	m.dropQueuedTail()
+
 	items := make([]list.Item, len(msgs))
 	indexOffset := m.list.Len()
 	for i, msg := range msgs {
@@ -425,6 +435,45 @@ func (m *Chat) AppendMessages(msgs ...chat.MessageItem) {
 		items[i] = msg
 	}
 	m.list.AppendItems(items...)
+	m.appendQueuedTail(queued)
+}
+
+// dropQueuedTail removes the queued entries parked at the end of the
+// list, leaving the transcript above them untouched.
+func (m *Chat) dropQueuedTail() {
+	for range m.queued {
+		m.list.RemoveItem(m.list.Len() - 1)
+	}
+	m.queued = nil
+}
+
+// appendQueuedTail parks queued entries at the end of the list.
+func (m *Chat) appendQueuedTail(queued []chat.MessageItem) {
+	if len(queued) == 0 {
+		m.queued = nil
+		return
+	}
+	items := make([]list.Item, len(queued))
+	for i, q := range queued {
+		items[i] = q
+	}
+	m.list.AppendItems(items...)
+	m.queued = queued
+}
+
+// SetQueued shows the prompts that are waiting their turn at the end of
+// the transcript. They are not real messages: they carry no session
+// history and are replaced wholesale whenever the queue changes.
+func (m *Chat) SetQueued(queued ...chat.MessageItem) tea.Cmd {
+	if len(queued) == 0 && len(m.queued) == 0 {
+		return nil
+	}
+	m.dropQueuedTail()
+	m.appendQueuedTail(queued)
+	if m.follow {
+		m.list.ScrollToBottom()
+	}
+	return nil
 }
 
 // UpdateNestedToolIDs updates the ID map for nested tools within a container.

@@ -89,7 +89,7 @@ func TestEditorPlaceholderHasNoPersonality(t *testing.T) {
 	m := newBusyUI(&countingWorkspace{ready: true})
 	m.width = 120
 
-	require.Equal(t, "Ask anything — / for commands, @ for agents, # for files", m.editorPlaceholder())
+	require.Equal(t, "Ask anything — / for commands, @ for agents, # for files, ↓↓ for latest", m.editorPlaceholder())
 
 	m.width = 40
 	require.Equal(t, "Ask anything…", m.editorPlaceholder())

@@ -1,10 +1,12 @@
 package config
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -26,6 +28,18 @@ const (
 	appName              = "angela"
 	defaultDataDirectory = ".angela"
 	defaultInitializeAs  = "AGENTS.md"
+
+	// jsonSniffLimit caps how much of a connection-probe response is read
+	// to decide whether it is JSON. Only the first non-space byte matters.
+	jsonSniffLimit = 512
+
+	// connectionProbeTimeout bounds a single connection test. A model
+	// list is not a small response — a gateway fronting hundreds of
+	// models sends tens of kilobytes — and a probe that gives up too
+	// early fails on the correct base URL while a wrong one that lands
+	// on a small error page answers instantly, which teaches users to
+	// save the wrong endpoint.
+	connectionProbeTimeout = 30 * time.Second
 )
 
 var defaultContextPaths = []string{
@@ -143,6 +157,11 @@ type ProviderConfig struct {
 	BaseURL string `json:"base_url,omitempty" jsonschema:"description=Base URL for the provider's API,format=uri,example=https://api.openai.com/v1"`
 	// The provider type, e.g. "openai", "anthropic", etc. if empty it defaults to openai.
 	Type catwalk.Type `json:"type,omitempty" jsonschema:"description=Provider type that determines the API format,default=openai"`
+	// UseResponses forces the OpenAI Responses API on or off for every
+	// model of this provider. Left unset, the choice is made per model
+	// from its ID, which only recognizes OpenAI's own names and so
+	// misses gateway aliases that do speak one API or the other.
+	UseResponses *bool `json:"use_responses,omitempty" jsonschema:"description=Force the OpenAI Responses API on or off for this provider; unset picks per model from its ID"`
 	// The provider's API key.
 	APIKey string `json:"api_key,omitempty" jsonschema:"description=API key for authentication with the provider,example=$OPENAI_API_KEY"`
 	// The original API key template before resolution (for re-resolution on auth errors).
@@ -1089,7 +1108,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name: "Coder",
 			// Coder is the inheritance root, so both of its sets must
 			// be explicit rather than inherited.
-			Description:  "An agent that helps with executing coding tasks.",
+			Description:  "Angela's default agent — writes and edits code, runs commands, and delegates the rest.",
 			Mode:         AgentModePrimary,
 			Model:        ModelMain,
 			ContextPaths: contextPaths,
@@ -1103,7 +1122,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentExplore: {
 			ID:           AgentExplore,
 			Name:         "Explore",
-			Description:  "Fast agent specialized for exploring codebases. Use for file searches, code keyword searches, or questions about the codebase structure.",
+			Description:  "Fast read-only codebase scout — it locates and reports code, never reviews or judges it. Use it proactively, without waiting to be asked, whenever answering would mean searching or reading across several files: finding files by pattern, locating a symbol, definition or its callers, tracing a flow across modules, or mapping the conventions a package follows. Delegating keeps the conclusion in your context instead of the file dumps. Not for a single-fact lookup in a file you can already name, and not for judgment calls — what to build belongs to plan, a root cause that resists investigation to deep_research. It reads excerpts rather than whole files, so state the breadth you need: \"quick\" for one targeted lookup, \"medium\" for moderate exploration, \"very thorough\" for multiple locations and naming conventions.",
 			Mode:         AgentModeSubagent,
 			Model:        ModelMain,
 			ContextPaths: contextPaths,
@@ -1113,7 +1132,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentGeneral: {
 			ID:           AgentGeneral,
 			Name:         "General",
-			Description:  "General-purpose agent for researching complex questions and executing multi-step tasks in parallel.",
+			Description:  "General-purpose agent that carries a whole task through and reports back — it inherits the coder's tools, so it can search, analyze, run commands, and edit. Use it for work that is genuinely independent and big enough to be worth a fresh context: a wide multi-file investigation, or several unrelated tracks dispatched as parallel calls. Prefer explore when you only need to locate and read code, and do the work yourself when it fits in a handful of tool calls. Brief it completely — it starts with no memory of this conversation and cannot come back to ask what you meant.",
 			Mode:         AgentModeSubagent,
 			Model:        ModelMain,
 			ContextPaths: contextPaths,
@@ -1152,7 +1171,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentWebFetch: {
 			ID:           AgentWebFetch,
 			Name:         "WebFetch",
-			Description:  "Fetches and analyzes web pages or searches the web, then answers a question about what it found. Use it instead of the fetch tool when the answer needs extraction, summarization, or following links.",
+			Description:  "Fetches and reads web pages, or searches the web, then answers a question about what it found — the pages never enter your context, only its report. Put the full URL(s) in the prompt together with the question itself: a summary is a task, so ask it for the summary rather than for the page to summarize yourself. Use it instead of the fetch tool whenever the answer needs extraction, summarization, or following links across several pages. It WILL FAIL on authenticated or private URLs (Google Docs, Confluence, Jira, private repositories) — use `gh` or an authenticated MCP tool for those.",
 			Mode:         AgentModeSubagent,
 			Model:        ModelChore,
 			ContextPaths: contextPaths,
@@ -1501,7 +1520,7 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 		return errors.New("not a valid vercel api key")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), connectionProbeTimeout)
 	defer cancel()
 
 	client := &http.Client{}
@@ -1534,8 +1553,32 @@ func (c *ProviderConfig) TestConnection(resolver VariableResolver) error {
 			}
 			return fmt.Errorf("failed to connect to provider %s: %s", c.ID, resp.Status)
 		}
+		if err := checkJSONBody(resp.Body); err != nil {
+			return fmt.Errorf("failed to connect to provider %s: %w%s", c.ID, err, hint)
+		}
 	}
 	return nil
+}
+
+// checkJSONBody reports whether a probe response actually carries a JSON
+// payload. A status code alone cannot distinguish a working API root from
+// a base URL that merely resolves: gateways that serve a single-page admin
+// UI (new-api, one-api) answer every unmatched route with 200 and an HTML
+// shell, so probing the wrong root looks identical to success and the
+// runtime request later lands on that same HTML.
+func checkJSONBody(body io.Reader) error {
+	head, err := io.ReadAll(io.LimitReader(body, jsonSniffLimit))
+	if err != nil {
+		return fmt.Errorf("could not read response: %w", err)
+	}
+	switch trimmed := bytes.TrimSpace(head); {
+	case len(trimmed) == 0:
+		return errors.New("empty response")
+	case trimmed[0] == '{' || trimmed[0] == '[':
+		return nil
+	default:
+		return errors.New("response is not JSON, so this is not an API endpoint")
+	}
 }
 
 // resolveEnvs expands every value in envs through the given resolver

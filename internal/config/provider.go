@@ -4,21 +4,17 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/catwalk/pkg/embedded"
-	"github.com/NaturalSelect/angela/internal/agent/hyper"
-	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/home"
 	"github.com/charmbracelet/x/etag"
 )
@@ -89,67 +85,7 @@ func UpdateProviders(pathOrURL string) error {
 	return nil
 }
 
-// resolveHyperAPIKey returns the Hyper API key from the environment or
-// the raw config value. The env var takes precedence.
-func resolveHyperAPIKey(cfg *Config) string {
-	if key := os.Getenv("HYPER_API_KEY"); key != "" {
-		return key
-	}
-	if cfg == nil || cfg.Providers == nil {
-		return ""
-	}
-	pc, ok := cfg.Providers.Get("hyper")
-	if !ok {
-		return ""
-	}
-	return pc.APIKey
-}
-
-// HyperTokenRefresher is a function that refreshes the Hyper OAuth
-// token. It is passed to Providers so the catalog fetch can retry on
-// 401 without relying on package-global state.
-type HyperTokenRefresher func(context.Context) error
-
-// UpdateHyper updates the Hyper provider information from a specified URL.
-func UpdateHyper(pathOrURL string) error {
-	var provider catwalk.Provider
-	pathOrURL = cmp.Or(pathOrURL, hyper.BaseURL())
-
-	switch {
-	case pathOrURL == "embedded":
-		provider = hyper.Embedded()
-	case strings.HasPrefix(pathOrURL, "http://") || strings.HasPrefix(pathOrURL, "https://"):
-		client := realHyperClient{
-			baseURL:    pathOrURL,
-			resolveKey: func() string { return resolveHyperAPIKey(nil) },
-		}
-		var err error
-		provider, err = client.Get(context.Background(), "")
-		if err != nil {
-			return fmt.Errorf("failed to fetch provider from Hyper: %w", err)
-		}
-	default:
-		content, err := os.ReadFile(pathOrURL)
-		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
-		}
-		if err := json.Unmarshal(content, &provider); err != nil {
-			return fmt.Errorf("failed to unmarshal provider data: %w", err)
-		}
-	}
-
-	if err := newCache[catwalk.Provider](cachePathFor("hyper")).Store(provider); err != nil {
-		return fmt.Errorf("failed to save Hyper provider to cache: %w", err)
-	}
-
-	slog.Info("Hyper provider updated successfully", "from", pathOrURL, "to", cachePathFor("hyper"))
-	return nil
-}
-
-var (
-	catwalkSyncer = &catwalkSync{}
-	hyperSyncer   = &hyperSync{}
-)
+var catwalkSyncer = &catwalkSync{}
 
 // Providers returns the list of providers, taking into account cached results
 // and whether or not auto update is enabled.
@@ -167,96 +103,34 @@ var (
 // using the returned list. A refresh that simply could not reach the network
 // is not an error at all: the cached or embedded catalog is a sound answer, so
 // those are logged and the fallback is returned.
-func Providers(cfg *Config, opts ...HyperTokenRefresher) ([]catwalk.Provider, error) {
+func Providers(cfg *Config) ([]catwalk.Provider, error) {
 	providerOnce.Do(func() {
-		var wg sync.WaitGroup
-		providers := csync.NewSlice[catwalk.Provider]()
 		autoupdate := !cfg.Options.DisableProviderAutoUpdate
 		customProvidersOnly := cfg.Options.DisableDefaultProviders
+		if customProvidersOnly {
+			return
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 
-		// Each goroutine owns its own error so the two can report
-		// independently without racing on a shared slice.
-		var catwalkErr, hyperErr error
-		var hyperProvider catwalk.Provider
+		catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
+		client := catwalk.NewWithURL(catwalkURL)
+		path := cachePathFor("providers")
+		catwalkSyncer.Init(client, path, autoupdate)
 
-		wg.Go(func() {
-			if customProvidersOnly {
-				return
-			}
-			catwalkURL := cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL)
-			client := catwalk.NewWithURL(catwalkURL)
-			path := cachePathFor("providers")
-			catwalkSyncer.Init(client, path, autoupdate)
-
-			// A failure to refresh or cache the catalog is worth
-			// reporting, but the syncer still hands back the cached or
-			// embedded list. Dropping that would leave the user with no
-			// providers at all over a transient disk or network problem.
-			items, err := catwalkSyncer.Get(ctx)
-			if err != nil {
-				catwalkURL := fmt.Sprintf("%s/v2/providers", cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL))
-				catwalkErr = fmt.Errorf("Angela was unable to fetch an updated list of providers from %s. Consider setting ANGELA_DISABLE_PROVIDER_AUTO_UPDATE=1 to use the embedded providers bundled at the time of this Angela release. You can also update providers manually. For more info see angela update-providers --help.\n\nCause: %w", catwalkURL, err) //nolint:staticcheck
-			}
-			providers.Append(items...)
-		})
-
-		wg.Go(func() {
-			if customProvidersOnly {
-				return
-			}
-			path := cachePathFor("hyper")
-			cfgSnapshot := cfg
-			var refresher func(context.Context) error
-			if len(opts) > 0 {
-				refresher = opts[0]
-			}
-			hyperSyncer.Init(realHyperClient{
-				baseURL:      hyper.BaseURL(),
-				resolveKey:   func() string { return resolveHyperAPIKey(cfgSnapshot) },
-				refreshToken: refresher,
-			}, path, autoupdate)
-
-			// As above: keep whatever provider we were handed. The syncer
-			// already falls back to the cached or embedded copy, so an
-			// error here means "could not refresh", not "no Hyper". This
-			// matters more than for other providers because Hyper's
-			// endpoint and model list live in the catalog rather than in
-			// the user's config: dropping it signs a logged-in user out.
-			item, err := hyperSyncer.Get(ctx)
-			if err != nil {
-				hyperErr = fmt.Errorf("Angela was unable to fetch updated information from Hyper: %w", err) //nolint:staticcheck
-			}
-			hyperProvider = item
-		})
-
-		wg.Wait()
-
-		if hyperProvider.ID != "" {
-			providerList = append([]catwalk.Provider{hyperProvider}, slices.Collect(providers.Seq())...)
-		} else {
-			providerList = slices.Collect(providers.Seq())
+		// A failure to refresh or cache the catalog is worth
+		// reporting, but the syncer still hands back the cached or
+		// embedded list. Dropping that would leave the user with no
+		// providers at all over a transient disk or network problem.
+		items, err := catwalkSyncer.Get(ctx)
+		if err != nil {
+			catwalkURL := fmt.Sprintf("%s/v2/providers", cmp.Or(os.Getenv("CATWALK_URL"), defaultCatwalkURL))
+			providerErr = fmt.Errorf("Angela was unable to fetch an updated list of providers from %s. Consider setting ANGELA_DISABLE_PROVIDER_AUTO_UPDATE=1 to use the embedded providers bundled at the time of this Angela release. You can also update providers manually. For more info see angela update-providers --help.\n\nCause: %w", catwalkURL, err) //nolint:staticcheck
 		}
-		providerErr = errors.Join(catwalkErr, hyperErr)
+		providerList = items
 	})
 	return providerList, providerErr
-}
-
-// UpdateProviderInList replaces a provider in the memoized provider list
-// returned by Providers(). This is used after re-fetching a single
-// provider (e.g. Hyper after OAuth) so that all callers of Providers()
-// see the updated entry without needing to reset sync.Once.
-func UpdateProviderInList(provider catwalk.Provider) {
-	for i, p := range providerList {
-		if p.ID == provider.ID {
-			providerList[i] = provider
-			return
-		}
-	}
-	// Provider not found in list; prepend it.
-	providerList = append([]catwalk.Provider{provider}, providerList...)
 }
 
 type cache[T any] struct {

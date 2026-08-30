@@ -1,4 +1,4 @@
-Execute shell commands; long-running commands automatically move to background and return a shell ID.
+Executes a given bash command and returns its output. Long-running commands automatically move to background and return a shell ID.
 
 <cross_platform>
 Uses mvdan/sh interpreter (Bash-compatible on all platforms including Windows).
@@ -7,7 +7,7 @@ Common shell builtins and core utils available on Windows.
 </cross_platform>
 
 <execution_steps>
-1. Directory Verification: If creating directories/files, use LS tool to verify parent exists
+1. Directory Verification: If your command will create new directories or files, first use the LS tool to verify the parent directory exists and is the correct location
 2. Security Check: Banned commands ({{ .BannedCommands }}) return error - explain to user. Safe read-only commands execute without prompts
 3. Command Execution: Execute with proper quoting, capture output
 4. Auto-Background: Commands exceeding 1 minute (default, configurable via `auto_background_after`) automatically move to background and return shell ID
@@ -17,14 +17,42 @@ Common shell builtins and core utils available on Windows.
 
 <usage_notes>
 - Command required, working_dir optional (defaults to current directory)
-- IMPORTANT: Use Grep/Glob/Agent tools instead of 'find'/'grep'. Use View/LS tools instead of 'cat'/'head'/'tail'/'ls'
+- Always quote file paths that contain spaces with double quotes (e.g., `cd "path with spaces/file.txt"`)
+- Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the user explicitly requests it. In particular, never prepend `cd <current-directory>` to a `git` command — `git` already operates on the current working tree, and the compound triggers a permission prompt
+- Each command runs in an independent shell; the working directory persists between commands but shell state does not
 - Chain with ';' or '&&', avoid newlines except in quoted strings
-- Each command runs in independent shell (no state persistence between calls)
-- Prefer absolute paths over 'cd' (use 'cd' only if user explicitly requests)
+- IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `ls`, `sed`, `awk` and similar commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Use the appropriate dedicated tool instead — it provides a much better experience for the user and makes tool calls easier to review and approve:
+  - File search: Use glob (NOT find or ls)
+  - Content search: Use grep (NOT grep or rg)
+  - Read files: Use view (NOT cat/head/tail)
+  - Edit files: Use edit or multiedit (NOT sed/awk)
+  - Write files: Use write (NOT echo >/cat <<EOF)
+  - Communication: Output text directly (NOT echo/printf)
 {{- if .RgAvailable }}
-- Ripgrep (`rg`) is available; prefer it over `grep` for faster, more intuitive searching
+- Ripgrep (`rg`) is available on this machine, but still prefer the grep tool; reach for `rg` directly only when you need an aggregate the grep tool cannot produce
 {{- end }}
 </usage_notes>
+
+<description_parameter>
+Clear, concise description of what this command does in active voice. Never use words like "complex" or "risk" in the description - just describe what it does.
+
+For simple commands (git, npm, standard CLI tools), keep it brief:
+- ls → "List files in current directory"
+- git status → "Show working tree status"
+- npm install → "Install package dependencies"
+
+For commands that are harder to parse at a glance (piped commands, obscure flags, etc.), add enough context to clarify what it does:
+- find . -name "*.tmp" -exec rm {} \; → "Find and delete all .tmp files recursively"
+- git reset --hard origin/main → "Discard all local changes and match remote main"
+</description_parameter>
+
+<sleep>
+- Do not sleep between commands that can run immediately — just run them.
+- If you must poll an external process, use a check command (e.g. `gh run view`) rather than sleeping first.
+- If you must sleep, keep the duration short to avoid blocking the user.
+- If waiting for a background task you started with `run_in_background`, use job_output to read it when you need it — do not poll in a sleep loop.
+- Do not retry failing commands in a sleep loop — diagnose the root cause.
+</sleep>
 
 <background_execution>
 - Set run_in_background=true to run commands in a separate background shell
@@ -44,6 +72,19 @@ Common shell builtins and core utils available on Windows.
   * File operations
   * Short-lived scripts
 </background_execution>
+
+<git_safety>
+- NEVER update the git config
+- NEVER run destructive git commands (push --force, reset --hard, checkout ., restore ., clean -f, branch -D) unless the user explicitly requests these actions. Taking unauthorized destructive actions is unhelpful and can result in lost work, so it's best to ONLY run these commands when given direct instructions
+- Before running any destructive operation, consider whether there is a safer alternative that achieves the same goal. Only use destructive operations when they are truly the best approach
+- NEVER skip hooks (--no-verify, --no-gpg-sign, etc) unless the user explicitly requests it. If a hook fails, investigate and fix the underlying issue
+- NEVER run force push to main/master, warn the user if they request it
+- CRITICAL: Always create NEW commits rather than amending, unless the user explicitly requests a git amend. When a pre-commit hook fails, the commit did NOT happen — so --amend would modify the PREVIOUS commit, which may result in destroying work or losing previous changes. Instead, after hook failure, fix the issue, re-stage, and create a NEW commit
+- When staging files, prefer adding specific files by name rather than using "git add -A" or "git add .", which can accidentally include sensitive files (.env, credentials) or large binaries
+- NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive
+- IMPORTANT: Never use git commands with the -i flag (like git rebase -i or git add -i) since they require interactive input which is not supported
+- IMPORTANT: Do not use --no-edit with git rebase commands, as the --no-edit flag is not a valid option for git rebase
+</git_safety>
 
 <git_message_quality>
 These rules apply whenever creating or updating commit messages, PR titles, or PR bodies:
@@ -71,26 +112,27 @@ Commit messages are for future readers scanning history. Before committing:
 </commit_messages>
 
 <git_commits>
-When user asks to create git commit:
+Only create commits when requested by the user. If unclear, ask first. When the user asks you to create a new git commit, follow these steps carefully.
 
-1. Single message with three tool_use blocks (IMPORTANT for speed):
-   - git status (untracked files)
-   - git diff (staged/unstaged changes)
-   - git log (recent commit message style)
+You can call multiple tools in a single response. When multiple independent pieces of information are requested and all commands are likely to succeed, run multiple tool calls in parallel for optimal performance. The numbered steps below indicate which commands should be batched in parallel.
 
-2. Add relevant untracked files to staging. Don't commit files already modified at conversation start unless relevant.
+Follow <git_safety> throughout.
 
-3. Analyze staged changes in <commit_analysis> tags:
-   - List changed/added files, summarize nature (feature/enhancement/bug fix/refactoring/test/docs)
-   - Brainstorm purpose/motivation, assess project impact, check for sensitive info
-   - Don't use tools beyond the context of git
+1. Run the following bash commands in parallel:
+   - Run a git status command to see all untracked files. IMPORTANT: Never use the -uall flag as it can cause memory issues on large repos.
+   - Run a git diff command to see both staged and unstaged changes that will be committed.
+   - Run a git log command to see recent commit messages, so that you can follow this repository's commit message style.
 
-4. Draft a commit message:
-   - Follow <commit_messages>
-   - Review draft against the litmus test before committing
+2. Analyze all staged changes (both previously staged and newly added) and draft a commit message:
+   - Summarize the nature of the changes (eg. new feature, enhancement to an existing feature, bug fix, refactoring, test, docs, etc.). Ensure the message accurately reflects the changes and their purpose.
+   - Do not commit files that likely contain secrets (.env, credentials.json, etc). Warn the user if they specifically request to commit those files.
+   - Draft the message following <commit_messages>, and review the draft against the litmus test in <git_message_quality> before committing.
+   - Do not run additional commands to read or explore code beyond git commands.
 
-5. Create commit{{ if or (eq .Attribution.TrailerStyle "assisted-by") (eq .Attribution.TrailerStyle "co-authored-by")}} with attribution{{ end }} using HEREDOC:
-   git commit -m "$(cat <<'EOF'
+3. Run the following commands in parallel:
+   - Add relevant untracked files to the staging area. Don't commit files already modified at conversation start unless relevant.
+   - Create the commit{{ if or (eq .Attribution.TrailerStyle "assisted-by") (eq .Attribution.TrailerStyle "co-authored-by")}} with attribution{{ end }}. In order to ensure good formatting, ALWAYS pass the commit message via a HEREDOC:
+     git commit -m "$(cat <<'EOF'
 Commit message here.
 
 {{ if .Attribution.GeneratedWith }}
@@ -105,66 +147,56 @@ Co-Authored-By: Angela <angela@users.noreply.github.com>
 {{ end }}
 EOF
 )"
+   - Run git status after the commit completes to verify success. Note: git status depends on the commit completing, so run it sequentially after the commit.
 
-6. If pre-commit hook fails, retry ONCE. If fails again, hook preventing commit. If succeeds but files modified, MUST amend.
+4. If the commit fails due to a pre-commit hook, the commit did NOT happen. Fix the issue, re-stage, and create a NEW commit — never `--amend`.
 
-7. Run git status to verify.
-
-Notes: Use "git commit -am" when possible, don't stage unrelated files, NEVER update config, don't push, no -i flags, no empty commits, return empty response, when rebasing always use -m.
+Notes: If there are no changes to commit (no untracked files and no modifications), do not create an empty commit. Do not push to the remote repository unless the user explicitly asks you to. Do not use the todos or agent tools while committing.
 </git_commits>
 
 <pull_requests>
 {{ if .GhAvailable -}}
-   Use the `gh` command for ALL GitHub tasks.
+Use the `gh` command via the bash tool for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a GitHub URL use the `gh` command to get the information needed.
 {{- end }}
 
-When user asks you to create or update a PR:
+IMPORTANT: When the user asks you to create a pull request, follow these steps carefully:
 
-1. Single message with multiple tool_use blocks (VERY IMPORTANT for speed):
-   - git status (untracked files)
-   - git diff (staged/unstaged changes)
-   - Check if branch tracks remote and is up to date
-   - git log and 'git diff main...HEAD' (full commit history from main divergence)
+1. Run the following bash commands in parallel, in order to understand the current state of the branch since it diverged from the main branch:
+   - Run a git status command to see all untracked files (never use -uall flag)
+   - Run a git diff command to see both staged and unstaged changes that will be committed
+   - Check if the current branch tracks a remote branch and is up to date with the remote, so you know if you need to push to the remote
+   - Run a git log command and `git diff [base-branch]...HEAD` to understand the full commit history for the current branch (from the time it diverged from the base branch)
 
-2. Create new branch if needed
-
-3. Commit changes if needed
-
-4. Push to remote with -u flag if needed
-
-5. Analyze changes in <pr_analysis> tags:
-   - List commits since diverging from main
-   - Summarize nature of changes
-   - Brainstorm purpose/motivation
-   - Assess project impact
-   - Don't use tools beyond git context
-   - Check for sensitive information
-
-6. Draft a PR message:
+2. Analyze all changes that will be included in the pull request, making sure to look at all relevant commits (NOT just the latest commit, but ALL commits that will be included in the pull request!!!), and draft a pull request title and summary:
    - Follow <git_message_quality>
-   - Draft concise (1-2 bullet points) PR summary focusing on "why"
-   - Ensure summary reflects ALL changes since main divergence
-   - Use clear, concise language
-   - Provide an accurate reflection of changes and purpose
-   - Avoid generic summaries; messages should be thoughtful
-   - Review draft against the litmus test before creating or updating the PR
+   - Keep the PR title short (under 70 characters)
+   - Use the description/body for details, not the title
+   - Ensure the summary reflects ALL changes since the base branch diverged
+   - Do not run commands beyond git context, and check for sensitive information
 
-7. Create PR with gh pr create using HEREDOC:
-   gh pr create --title "title" --body "$(cat <<'EOF'
+3. Run the following commands in parallel:
+   - Create new branch if needed
+   - Push to remote with -u flag if needed
+   - Create PR using `gh pr create` with the format below. Use a HEREDOC to pass the body to ensure correct formatting:
+     gh pr create --title "the pr title" --body "$(cat <<'EOF'
+## Summary
+<1-3 bullet points>
 
-<summary>
-
-{{ if .Attribution.GeneratedWith -}}
+## Test plan
+<checklist of TODOs for verifying the pull request>
+{{ if .Attribution.GeneratedWith }}
 💘 Generated with Angela
 {{- end }}
-
 EOF
 )"
 
 Important:
-
-- Return empty response - user sees gh output
+- Do not use the todos or agent tools while creating a PR
 - Never update git config
+- Return the PR URL when you're done, so the user can see it
+
+Other common operations:
+- View comments on a GitHub PR: gh api repos/foo/bar/pulls/123/comments
 </pull_requests>
 
 <examples>

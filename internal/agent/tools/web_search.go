@@ -4,9 +4,9 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
+	"text/template"
 	"time"
 
 	"charm.land/fantasy"

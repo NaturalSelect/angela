@@ -7,12 +7,12 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"text/template"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"

@@ -5,10 +5,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"

@@ -4,10 +4,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"strings"
+	"text/template"
 	"time"
 	"unicode/utf8"
 

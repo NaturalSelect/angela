@@ -1,5 +1,10 @@
 Ask the user a structured question and wait for their response. Use this
-when you need clarification, confirmation, or a choice before proceeding.
+tool only when you are blocked on a decision that is genuinely the user's
+to make: one you cannot resolve from the request, the code, or sensible
+defaults.
+
+If you recommend a specific option, make that the first option in the list
+and add "(Recommended)" at the end of the label.
 
 ## How it works
 
@@ -86,9 +91,15 @@ Example — multiple questions with confirmation:
 
 ## When to use
 
-- Confirm destructive or ambiguous actions
-- User's request has multiple valid interpretations
-- Need the user to pick from options
+Reserve this for decisions where the user's answer changes what you do
+next — not for choices with a conventional default or facts you can verify
+in the codebase yourself. In those cases pick the obvious option, mention
+it in your response, and proceed.
+
+- Confirm destructive or hard-to-reverse actions
+- User's request has multiple valid interpretations that lead to
+  materially different work
+- Need the user to pick between approaches with real tradeoffs
 - Gather multiple related answers at once
 
 ## When NOT to use
@@ -96,3 +107,4 @@ Example — multiple questions with confirmation:
 - Questions answerable by reading code or docs
 - Information obtainable via other tools
 - Asking permission (use the permission system)
+- Routine confirmation of a step the user already approved

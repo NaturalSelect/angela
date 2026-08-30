@@ -1,6 +1,10 @@
-Launch a new agent to handle complex, multistep tasks autonomously.
+Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.
 
-When using the agent tool, you must specify a subagent_type parameter to select which agent type to use.
+When using the agent tool, specify a subagent_type parameter to select which agent type to use.
+
+## When to use
+
+Reach for this when the task matches an available agent type, when you have independent work to run in parallel, or when answering would mean reading across several files — delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.
 
 When NOT to use the agent tool:
 - If you want to read a specific file path, use the View or Glob tool instead, to find the match more quickly
@@ -8,13 +12,16 @@ When NOT to use the agent tool:
 - If you are searching for code within a specific file or set of 2-3 files, use the View tool instead, to find the match more quickly
 - If no available agent is a good fit for the task, use other tools directly
 
-Usage notes:
-1. Launch multiple agents concurrently whenever possible, to maximize performance
-2. Once you have delegated work to an agent, do not duplicate that work yourself
-3. When the agent is done, it will return a single message back to you. The result is not visible to the user — summarize it for them
-4. Each agent invocation starts with a fresh context. Your prompt should contain a highly detailed task description
-5. The agent's outputs should generally be trusted
-6. Clearly tell the agent whether you expect it to write code or just do research
+## Usage notes
+
+- Always include a short description summarizing what the agent will do.
+- The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters in a concise summary.
+- Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.
+- Each agent invocation starts with a fresh context and has no memory of prior runs, so the prompt must be self-contained and highly detailed.
+- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches), since a fresh agent is not aware of the user's intent.
+- Each agent type's model and tool access come from its definition; you cannot override them per call.
+- If the user asks you to run agents "in parallel", send a single message with multiple agent tool use blocks.
+- Once you have delegated work to an agent, do not duplicate that work yourself while it runs.
 
 Available agent types:
 {{- range .Agents}}

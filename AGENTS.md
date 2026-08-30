@@ -27,9 +27,19 @@ internal/
     coordinator.go                 Coordinator: manages named agents ("coder", "task")
     hooked_tool.go                 Decorator that runs PreToolUse hooks before tool execution
     prompts.go                     Loads Go-template system prompts
+    agenttest/                     Test helpers for Coordinator construction (mock providers)
+    hyper/                         Charm Hyper meta-model proxy provider adapter
+    notify/                        Agent lifecycle notification events (done, error, auth, SSO)
+    prompt/                        System prompt template engine (Go templates + runtime data)
     templates/                     System prompt templates (coder.md.tpl, task.md.tpl, etc.)
     tools/                         All built-in tools (bash, edit, view, grep, glob, etc.)
       mcp/                         MCP client integration
+  backend/                         Transport-agnostic backend: workspace, session, agent, events
+  server/                          HTTP/REST + SSE daemon server (Unix socket / TCP)
+  client/                          RPC/REST client SDK for connecting to the daemon
+  workspace/                       Unified workspace interface (local AppWorkspace + remote)
+  proto/                           Client/server protocol DTOs and SSE event payloads
+  swagger/                         Auto-generated OpenAPI/Swagger 2.0 API docs
   hooks/                           Hook engine: runs user shell commands on hook events
     hooks.go                       Decision types, aggregation logic, event constants
     runner.go                      Parallel hook execution, timeout, dedup
@@ -42,12 +52,38 @@ internal/
   lsp/                             LSP client manager, auto-discovery, on-demand startup
   ui/                              Bubble Tea v2 TUI (see internal/ui/AGENTS.md)
   permission/                      Tool permission checking and allow-lists
+    shellscan/                     Shell command AST scanner for permission decisions
   skills/                          Skill file discovery and loading
+    builtin/                       Embedded builtin skills (setup, hooks, config, jq, etc.)
   shell/                           Bash command execution with background job support
+  commands/                        Slash commands and MCP prompt discovery & parsing
+  question/                        Interactive user question service via PubSub
+  reminder/                        System prompt <system-reminder> injection (todo, skills, MCP)
   event/                           Telemetry (PostHog)
   pubsub/                          Internal pub/sub for cross-component messaging
   filetracker/                     Tracks files touched per session
   history/                         Prompt history
+  projects/                        Recent projects tracking & persistence
+  oauth/                           OAuth2 token models & credential persistence (Copilot, Hyper, MCP)
+  discover/                        Local LLM service auto-discovery (Ollama, LM Studio, etc.)
+  toolnames/                       Built-in tool name constants (breaks import cycles)
+  diff/                            Unified diff text generation & line stats
+  diffdetect/                      Detect unified diff format markers in text
+  clipboard/                       Cross-platform clipboard read/write (text + PNG)
+  format/                          Non-interactive spinner & display formatting
+  log/                             Structured logging (slog + lumberjack rotation)
+  env/                             Environment variable abstraction (testable)
+  home/                            Home directory & XDG config path resolution
+  lock/                            Cross-process advisory file locking
+  version/                         App version, commit SHA, build ID
+  update/                          GitHub release update checker
+  ansiext/                         ANSI control char escaping for safe terminal display
+  csync/                           Concurrency-safe generic collections (Map, Slice, etc.)
+  filepathext/                     Cross-platform filepath utilities (SmartJoin, glob prefix)
+  fsext/                           Extended filesystem utilities (find-up, ownership, ignore)
+  stringext/                       String utilities (capitalize, normalize, base64 check)
+  dns/                             Android/Termux DNS resolver fallback config
+  herdr/                           herdr terminal multiplexer integration (status reporting)
 ```
 
 ### Key Dependency Roles
@@ -94,17 +130,21 @@ internal/
 
 - **Build**: `go build .` or `go run .`
 - **Test**: `task test` or `go test ./...` (run single test:
-  `go test ./internal/llm/prompt -run TestGetContextFromPaths`)
+  `go test ./internal/agent/prompt -run TestPrompt_BuildRendersContextFiles`)
 - **Update Golden Files**: `go test ./... -update` (regenerates `.golden`
   files when test output changes)
   - Update specific package:
-    `go test ./internal/tui/components/core -update` (in this case,
-    we're updating "core")
+    `go test ./internal/ui/diffview -update` (in this case,
+    we're updating "diffview")
 - **Lint**: `task lint:fix`
 - **Format**: `task fmt` (`gofumpt -w .`)
 - **Modernize**: `task modernize` (runs `modernize` which makes code
   simplifications)
 - **Dev**: `task dev` (runs with profiling enabled)
+- **Install**: `task install` (builds and installs the binary)
+- **Schema**: `task schema` (generates `schema.json` for config validation)
+- **SQLC**: `task sqlc` (regenerates Go code from SQL queries)
+- **Swagger**: `task swag` (regenerates OpenAPI spec from annotations)
 
 ## Code Style Guidelines
 

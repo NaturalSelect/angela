@@ -9,7 +9,7 @@ tasks to specialized sub-agents via the `agent` tool.
 |-----------|-----------|------------------------------------------------------------------------|
 | `coder`   | primary   | Main agent for executing coding tasks. Has access to all tools.        |
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
-| `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, View, Fetch, Sourcegraph, LSP (read-only). |
+| `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, View, Fetch, Sourcegraph, AngelaInfo, LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
 | `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. Read-only. |
 | `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: Fetch, WebFetch, WebSearch, Glob, Grep, View, Sourcegraph. |
@@ -109,8 +109,14 @@ If you want it to do more, override it like any other agent. Giving it `bash`
 lets it dig through `git log` and `git blame`, at the cost of a permission
 prompt per command:
 
-```bash
-agent set plan --allowed-tools "$(agent get plan --allowed-tools),bash"
+```json
+{
+  "agents": {
+    "plan": {
+      "allowed_tools": ["Glob", "Grep", "LS", "View", "Fetch", "Sourcegraph", "AngelaInfo", "Bash"]
+    }
+  }
+}
 ```
 
 ### `deep-research`
@@ -134,12 +140,8 @@ its only product, and acting on it is the coder's job.
 
 ### Configuring one
 
-```bash
-agent add pairing \
-  --mode branch \
-  --description "Work through a problem together before committing to an approach" \
-  --prompt "You are exploring a problem with the user. Ask before assuming."
-```
+Add a branch agent in `angela.json` or as a markdown file in an agent
+directory:
 
 ```json
 {
@@ -217,7 +219,7 @@ resolved, so an abandoned branch still has to be abandoned explicitly.
 
 Agents can be configured through three layers (later layers override earlier ones):
 
-1. **Built-in defaults** — The four agents above.
+1. **Built-in defaults** — The agents above.
 2. **Markdown files** — `*.md` files in agent directories.
 3. **JSON config** — The `agents` section in `angela.json`.
 
@@ -316,7 +318,7 @@ The body becomes the agent's system prompt. Frontmatter fields:
 |-----------------|------------|----------------------------------|
 | `name`          | string     | Display name                     |
 | `description`   | string     | What the agent does              |
-| `mode`          | string     | `primary` or `subagent` (see Agent Modes) |
+| `mode`          | string     | `primary`, `subagent`, or `branch` (see Agent Modes) |
 | `model`         | string     | `main` or `chore`                |
 | `temperature`   | float      | Sampling temperature (0-1)       |
 | `allowed_tools` | []string, `"all"`, or `"inherited"` | Tool whitelist (see Permission Inheritance) |

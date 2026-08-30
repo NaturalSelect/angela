@@ -860,6 +860,8 @@ func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
 		Notify:        c.notify,
 		RunComplete:   c.runComplete,
 		GenerateTitle: c.generateSessionTitle,
+		SkillTracker:  c.skillTracker,
+		Reminders:     c.cfg.Config().Options.Reminders,
 	})
 }
 

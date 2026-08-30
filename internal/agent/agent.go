@@ -18,10 +18,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,8 +47,11 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
+	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/stringext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/charmbracelet/x/exp/charmtone"
 )
@@ -227,6 +233,15 @@ type sessionAgent struct {
 	// caller owns which model and prompt produce it.
 	generateTitle func(ctx context.Context, sessionID, userPrompt string)
 
+	// skillTracker names the skills read this session. It is consulted
+	// only to rebuild that fact for the model after a compaction drops
+	// the messages that carried it.
+	skillTracker *skills.Tracker
+
+	// reminders holds the user's standing notices from config, snapshotted
+	// when the agent is built, the same way compaction is.
+	reminders []string
+
 	// runState carries everything keyed by session ID that decides
 	// whether a prompt runs now, queues, or is dropped by a cancel.
 	*runState
@@ -245,6 +260,12 @@ type SessionAgentOptions struct {
 	// GenerateTitle, when non-nil, is called once per session on the
 	// first user prompt.
 	GenerateTitle func(ctx context.Context, sessionID, userPrompt string)
+
+	// SkillTracker names the skills read this session.
+	SkillTracker *skills.Tracker
+
+	// Reminders holds the user's standing notices from config.
+	Reminders []string
 }
 
 func NewSessionAgent(
@@ -260,6 +281,8 @@ func NewSessionAgent(
 		notify:        opts.Notify,
 		runComplete:   opts.RunComplete,
 		generateTitle: opts.GenerateTitle,
+		skillTracker:  opts.SkillTracker,
+		reminders:     opts.Reminders,
 		runState:      newRunState(),
 	}
 }
@@ -697,6 +720,20 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	}()
 
 	history, files := a.preparePrompt(msgs, runModel.CatwalkCfg.SupportsImages, call.Attachments...)
+	failedMCP, pendingMCP := unavailableMCPServers()
+	for _, notice := range reminder.Collect(reminder.DefaultSources(), reminder.State{
+		IsSubAgent:           a.isSubAgent,
+		TurnsSinceTodos:      turnsSinceTodosCall(msgs),
+		Compacted:            currentSession.SummaryMessageID != "",
+		TurnsSinceCompaction: assistantTurns(msgs),
+		LoadedSkills:         a.skillTracker.LoadedNames(),
+		FailedMCPServers:     failedMCP,
+		PendingMCPServers:    pendingMCP,
+		UserReminders:        a.reminders,
+	}) {
+		slog.Debug("Injecting system reminder", "source", notice.Source, "session_id", call.SessionID)
+		history = append(history, fantasy.NewUserMessage(reminder.Wrap(notice.Text)))
+	}
 
 	startTime := time.Now()
 	a.eventPromptSent(call.SessionID, runModel)
@@ -1536,18 +1573,70 @@ func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentC
 	return msg, nil
 }
 
-// emptyTodoListReminder nudges the main agent toward the todos tool. Its
-// exact bytes are matched by the recorded provider cassettes, so editing
-// the wording means re-recording internal/agent/testdata.
-const emptyTodoListReminder = `<system_reminder>This is a reminder that your todo list is currently empty. DO NOT mention this to the user explicitly because they are already aware.
-If you are working on tasks that would benefit from a todo list please use the "todos" tool to create one.
-If not, please feel free to ignore. Again do not mention this message to the user.</system_reminder>`
+// assistantTurns counts the assistant messages in msgs. After a summary the
+// slice starts at that summary, so this doubles as the number of turns taken
+// since the conversation was compacted.
+func assistantTurns(msgs []message.Message) int {
+	turns := 0
+	for _, m := range msgs {
+		if m.Role == message.Assistant {
+			turns++
+		}
+	}
+	return turns
+}
+
+// unavailableMCPServers splits the servers whose tools are missing from this
+// turn into the ones that failed and the ones still starting.
+func unavailableMCPServers() (failed, pending []string) {
+	return splitUnavailableMCP(slices.Collect(maps.Values(mcp.GetStates())))
+}
+
+// splitUnavailableMCP formats the servers the model should know about.
+// Disabled servers are left out: the user turned those off deliberately.
+// Both lists are sorted because GetStates returns a map, and the reminder's
+// bytes would otherwise churn from turn to turn.
+func splitUnavailableMCP(servers []mcp.ClientInfo) (failed, pending []string) {
+	for _, server := range servers {
+		switch server.State {
+		case mcp.StateError, mcp.StateNeedsAuth:
+			reason := server.State.String()
+			if server.Error != nil {
+				reason = server.Error.Error()
+			}
+			failed = append(failed, server.Name+": "+reason)
+		case mcp.StateStarting:
+			pending = append(pending, server.Name)
+		}
+	}
+	sort.Strings(failed)
+	sort.Strings(pending)
+	return failed, pending
+}
+
+// turnsSinceTodosCall counts the assistant turns that have passed since the
+// model last called the todos tool, and the number of assistant turns so far
+// when it never has. Assistant messages are counted rather than user ones so
+// the result does not shift depending on whether the current turn's user
+// message has been persisted yet.
+func turnsSinceTodosCall(msgs []message.Message) int {
+	turns := 0
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role != message.Assistant {
+			continue
+		}
+		for _, tc := range msgs[i].ToolCalls() {
+			if tc.Name == toolnames.Todos {
+				return turns
+			}
+		}
+		turns++
+	}
+	return turns
+}
 
 func (a *sessionAgent) preparePrompt(msgs []message.Message, supportsImages bool, attachments ...message.Attachment) ([]fantasy.Message, []fantasy.FilePart) {
 	var history []fantasy.Message
-	if !a.isSubAgent {
-		history = append(history, fantasy.NewUserMessage(emptyTodoListReminder))
-	}
 	// Collect all tool call IDs present in assistant messages and all tool
 	// result IDs present in tool messages. This lets us detect both orphaned
 	// tool results (result without a call) and orphaned tool calls (call
@@ -1648,7 +1737,7 @@ func filterOrphanedToolResults(m message.Message, knownToolCallIDs map[string]st
 			continue
 		}
 		if _, known := knownToolCallIDs[tr.ToolCallID]; known {
-			validParts = append(validParts, part)
+			validParts = append(validParts, escapeReminderTags(tr))
 		} else {
 			slog.Warn(
 				"Dropping orphaned tool result with no matching tool call",
@@ -1662,6 +1751,23 @@ func filterOrphanedToolResults(m message.Message, knownToolCallIDs map[string]st
 	msg := aiMsgs[0]
 	msg.Content = validParts
 	return msg, true
+}
+
+// escapeReminderTags neutralizes reminder tags in a tool's output. File
+// contents and command output are untrusted, so without this a result could
+// close the reminder block and pose as a reminder itself. Only the payload
+// sent to the model is rewritten; the stored message keeps its exact bytes.
+func escapeReminderTags(tr fantasy.ToolResultPart) fantasy.ToolResultPart {
+	switch out := tr.Output.(type) {
+	case fantasy.ToolResultOutputContentText:
+		out.Text = reminder.Escape(out.Text)
+		tr.Output = out
+	case fantasy.ToolResultOutputContentError:
+		tr.Output = fantasy.ToolResultOutputContentError{
+			Error: errors.New(reminder.Escape(out.Error.Error())),
+		}
+	}
+	return tr
 }
 
 // syntheticToolResultsForOrphanedCalls returns a tool message containing

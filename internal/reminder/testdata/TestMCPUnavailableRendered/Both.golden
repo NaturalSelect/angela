@@ -1,0 +1,13 @@
+<system-reminder>
+The following MCP servers are configured but failed to connect, so their tools are unavailable for this session:
+- github: dial tcp: connection refused
+- sentry: needs auth
+
+Treat this as a connection failure, not a missing capability: do not conclude the integration does not exist or was never configured. If the user's request depends on one of these servers, tell them it failed to connect so they can fix or retry it.
+
+The following MCP servers are still starting, so their tools have not appeared yet:
+- linear
+- notion
+
+Do not report a capability as missing on their account. If the user's request depends on one of them, say that it is still connecting.
+</system-reminder>

@@ -620,6 +620,16 @@
           "type": "array",
           "description": "Paths to directories containing Agent Skills (folders with SKILL.md files)"
         },
+        "reminders": {
+          "items": {
+            "type": "string",
+            "examples": [
+              "Always run gofumpt before you finish a change"
+            ]
+          },
+          "type": "array",
+          "description": "Extra notices injected as a system reminder at the end of every turn. Unlike context files, which sit in the system prompt and fade as a conversation grows, these are re-sent each turn so they stay in view. The text is used verbatim, so keep each entry short - every entry costs tokens on every turn."
+        },
         "tui": {
           "$ref": "#/$defs/TUIOptions",
           "description": "Terminal user interface options"

@@ -1,0 +1,4 @@
+The following MCP servers are still starting, so their tools have not appeared yet:
+{{range .}}- {{.}}
+{{end}}
+Do not report a capability as missing on their account. If the user's request depends on one of them, say that it is still connecting.

@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -169,12 +170,12 @@ func TestAngelaInfo_AllowedTools(t *testing.T) {
 
 	cfg := config.NewTestStore(&config.Config{
 		Providers:   csync.NewMap[string, config.ProviderConfig](),
-		Permissions: &config.Permissions{AllowedTools: []string{"edit:write", "bash"}},
+		Permissions: &config.Permissions{AllowedTools: []string{toolnames.Edit + ":write", toolnames.Bash}},
 	})
 
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
 	require.Contains(t, output, "[permissions]")
-	require.Contains(t, output, "allowed_tools = bash, edit:write")
+	require.Contains(t, output, "allowed_tools = "+toolnames.Bash+", "+toolnames.Edit+":write")
 }
 
 func TestAngelaInfo_DisabledTools(t *testing.T) {
@@ -182,12 +183,12 @@ func TestAngelaInfo_DisabledTools(t *testing.T) {
 
 	cfg := config.NewTestStore(&config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),
-		Options:   &config.Options{DisabledTools: []string{"sourcegraph", "web_fetch"}},
+		Options:   &config.Options{DisabledTools: []string{toolnames.Sourcegraph, toolnames.WebFetch}},
 	})
 
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
 	require.Contains(t, output, "[tools]")
-	require.Contains(t, output, "disabled = sourcegraph, web_fetch")
+	require.Contains(t, output, "disabled = "+toolnames.Sourcegraph+", "+toolnames.WebFetch)
 }
 
 var (

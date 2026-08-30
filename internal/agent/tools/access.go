@@ -25,7 +25,7 @@ type MergePermissionsParams struct {
 // server and the tool they call.
 //
 // Their generated name cannot be taken apart again: both halves may
-// hold underscores, so mcp_prod_admin_delete_user reads equally well as
+// hold underscores, so MCP_prod_admin_delete_user reads equally well as
 // prod/admin_delete_user and prod_admin/delete_user. Guessing decides
 // which rules apply, so the identity has to come from the tool.
 type MCPIdentity interface {
@@ -308,7 +308,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 
 	case toolnames.Agent, toolnames.Todos, toolnames.Question, toolnames.AngelaInfo,
-		toolnames.AngelaLogs, toolnames.JobOutput:
+		toolnames.AngelaLogs, toolnames.JobOutput, toolnames.LoadReport:
 		// These read state the agent already has. The real gate sits on
 		// the calls a subagent goes on to make.
 		access.Action = permission.ActionRead

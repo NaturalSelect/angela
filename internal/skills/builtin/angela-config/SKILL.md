@@ -222,7 +222,7 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 | ---------------- | ------ | ------------------------------------------------------------------ |
 | `name`           | string | Display name                                                        |
 | `description`    | string | What the agent does; shown to the dispatching model                 |
-| `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user) |
+| `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user) |
 | `model`          | string | A slot name from `models`. Default `main` — this is how a subagent is pointed at a cheaper model |
 | `variant`        | string | A variant name on that model slot                                   |
 | `max_tokens`     | int    | Output-token cap; omit for the model default                        |
@@ -250,7 +250,7 @@ layer turned off.
       "mode": "subagent",
       "model": "main",
       "variant": "deep",
-      "allowed_tools": ["view", "grep", "glob", "ls"],
+      "allowed_tools": ["View", "Grep", "Glob", "LS"],
       "allowed_mcp": { "github": ["create_issue"] }
     }
   }
@@ -378,7 +378,7 @@ including those a dispatched subagent makes.
   "event": "PreToolUse",
   "session_id": "abc-123",
   "cwd": "/path/to/project",
-  "tool_name": "bash",
+  "tool_name": "Bash",
   "tool_input": { "command": "ls -la" },
   "agent_id": "coder",
   "depth": 0
@@ -472,12 +472,12 @@ governs whether a call is approved.
 ```json
 {
   "permissions": {
-    "allowed_tools": ["view", "ls", "grep", "edit"],
+    "allowed_tools": ["View", "LS", "Grep", "Edit"],
     "prompt": "ask",
     "rules": [
-      { "action": "deny", "tool": "edit", "pattern": "**/.env", "mode": "path" },
-      { "action": "deny", "tool": "edit", "pattern": "**/id_rsa", "mode": "path" },
-      { "action": "allow", "tool": "bash", "pattern": "git status*" },
+      { "action": "deny", "tool": "Edit", "pattern": "**/.env", "mode": "path" },
+      { "action": "deny", "tool": "Edit", "pattern": "**/id_rsa", "mode": "path" },
+      { "action": "allow", "tool": "Bash", "pattern": "git status*" },
       { "action": "deny", "pattern": "evil.example.com", "mode": "domain" }
     ]
   }
@@ -501,7 +501,7 @@ governs whether a call is approved.
 | `auto_lsp`                     | bool   | `true`             | Auto-configure LSPs from root markers                           |
 | `progress`                     | bool   | `true`             | Indeterminate progress updates during long operations           |
 | `notifications`                | string | `auto`             | `auto`, `native`, `osc`, `bell`, `disabled`                     |
-| `subagent_depth`               | int    | `1`                | Levels of subagent nesting via the agent tool. `0` disables delegation; must be non-negative. Raising it multiplies token and time cost per dispatch chain |
+| `subagent_depth`               | int    | `1`                | Levels of subagent nesting via the Agent tool. `0` disables delegation; must be non-negative. Raising it multiplies token and time cost per dispatch chain |
 | `disable_metrics`              | bool   | `false`            | Stop sending metrics                                            |
 | `disable_provider_auto_update` | bool   | `false`            | Stop auto-updating the provider catalog                         |
 | `disable_default_providers`    | bool   | `false`            | Ignore all embedded providers. Every provider must then be fully specified with `base_url`, `models`, and `api_key` — no merging with defaults |
@@ -545,7 +545,7 @@ Note the negative phrasing: `disable_metrics: true` turns metrics **off**.
     "progress": false,
     "skills_paths": ["./skills"],
     "disabled_skills": ["angela-config"],
-    "disabled_tools": ["sourcegraph"],
+    "disabled_tools": ["Sourcegraph"],
     "subagent_depth": 2,
     "attribution": { "trailer_style": "assisted-by", "generated_with": true },
     "tui": { "compact_mode": true, "diff_mode": "unified" }

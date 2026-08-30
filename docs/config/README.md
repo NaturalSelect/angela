@@ -27,7 +27,7 @@ starts and configures the agent.
     }
   },
   "permissions": {
-    "allowed_tools": ["view", "edit"]
+    "allowed_tools": ["View", "Edit"]
   },
   "mcp": {
     "github": {
@@ -393,7 +393,7 @@ Flags:
 ```
 
 ```bash
-hook add PreToolUse --matcher "^bash$" \
+hook add PreToolUse --matcher "^Bash$" \
   --command "./hooks/no-haskell.sh" --name no-haskell
 ```
 
@@ -676,7 +676,7 @@ Layers are deep-merged, with the one closest to the project winning.
   "models": {
     "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
   },
-  "permissions": { "allowed_tools": ["view", "ls", "grep"] },
+  "permissions": { "allowed_tools": ["View", "LS", "Grep"] },
 }
 ```
 

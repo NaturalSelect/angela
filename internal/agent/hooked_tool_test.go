@@ -9,6 +9,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/hooks"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +51,7 @@ func newRunner(t *testing.T, cmd string) *hooks.Runner {
 func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 	t.Parallel()
 
-	inner := &fakeTool{name: "view", resp: fantasy.NewTextResponse("ok")}
+	inner := &fakeTool{name: toolnames.View, resp: fantasy.NewTextResponse("ok")}
 	runner := newRunner(t, `echo '{"decision":"allow"}'`)
 	tool := newHookedTool(inner, runner)
 
@@ -65,7 +66,7 @@ func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 		SessionID:  "s1",
 		ToolCallID: "call-1",
 		Access: permission.Access{
-			Tool:   "edit",
+			Tool:   toolnames.Edit,
 			Action: permission.ActionEdit,
 			Path:   filepath.Join(dir, "a.go"),
 		},
@@ -76,7 +77,7 @@ func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 	t.Parallel()
 
-	inner := &fakeTool{name: "view", resp: fantasy.NewTextResponse("ok")}
+	inner := &fakeTool{name: toolnames.View, resp: fantasy.NewTextResponse("ok")}
 	runner := newRunner(t, `exit 0`) // no stdout, no decision
 	tool := newHookedTool(inner, runner)
 
@@ -96,7 +97,7 @@ func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 		SessionID:  "s1",
 		ToolCallID: "call-2",
 		Access: permission.Access{
-			Tool:   "edit",
+			Tool:   toolnames.Edit,
 			Action: permission.ActionEdit,
 			Path:   filepath.Join(dir, "a.go"),
 		},
@@ -109,11 +110,11 @@ func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 func TestHookedTool_DenySkipsInnerTool(t *testing.T) {
 	t.Parallel()
 
-	inner := &fakeTool{name: "bash"}
+	inner := &fakeTool{name: toolnames.Bash}
 	runner := newRunner(t, `echo "blocked" >&2; exit 2`)
 	tool := newHookedTool(inner, runner)
 
-	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-3", Name: "bash"})
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-3", Name: toolnames.Bash})
 	require.NoError(t, err)
 	require.False(t, inner.called, "denied call must not reach the inner tool")
 	require.True(t, resp.IsError)

@@ -755,20 +755,20 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 	assert.Equal(t, ToolSetScope, coderAgent.AllowedTools.Kind)
-	assert.Equal(t, filterSlice(allToolNames(), []string{"web_fetch", "web_search"}, false), coderAgent.AllowedTools.Tools)
+	assert.Equal(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch"}, false), coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"angela_info", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "fetch", "glob", "grep", "ls", "sourcegraph", "view"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "Grep", "LS", "Sourcegraph", "View"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 	cfg := &Config{
 		Options: &Options{
 			DisabledTools: []string{
-				"edit",
-				"download",
-				"grep",
+				"Edit",
+				"Download",
+				"Grep",
 			},
 		},
 	}
@@ -777,25 +777,25 @@ func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 
-	assert.Equal(t, []string{"agent", "load_report", "bash", "angela_info", "angela_logs", "job_output", "job_kill", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "lsp_rename", "lsp_replace_symbol", "fetch", "glob", "ls", "question", "sourcegraph", "todos", "view", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"Agent", "LoadReport", "Bash", "AngelaInfo", "AngelaLogs", "JobOutput", "JobKill", "MultiEdit", "LSPDiagnostics", "LSPReferences", "LSPRestart", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "LSPRename", "LSPReplaceSymbol", "Fetch", "Glob", "LS", "Question", "Sourcegraph", "Todos", "View", "Write", "ListMCPResources", "ReadMCPResource"}, coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"angela_info", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "fetch", "glob", "ls", "sourcegraph", "view"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "LS", "Sourcegraph", "View"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	cfg := &Config{
 		Options: &Options{
 			DisabledTools: []string{
-				"glob",
-				"grep",
-				"ls",
-				"lsp_call_hierarchy",
-				"lsp_definition",
-				"lsp_symbols",
-				"sourcegraph",
-				"view",
+				"Glob",
+				"Grep",
+				"LS",
+				"LSPCallHierarchy",
+				"LSPDefinition",
+				"LSPSymbols",
+				"Sourcegraph",
+				"View",
 			},
 		},
 	}
@@ -803,12 +803,12 @@ func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	cfg.SetupAgents()
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
-	assert.Equal(t, []string{"agent", "load_report", "bash", "angela_info", "angela_logs", "job_output", "job_kill", "download", "edit", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_rename", "lsp_replace_symbol", "fetch", "question", "todos", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"Agent", "LoadReport", "Bash", "AngelaInfo", "AngelaLogs", "JobOutput", "JobKill", "Download", "Edit", "MultiEdit", "LSPDiagnostics", "LSPReferences", "LSPRestart", "LSPRename", "LSPReplaceSymbol", "Fetch", "Question", "Todos", "Write", "ListMCPResources", "ReadMCPResource"}, coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
 	assert.Equal(t, ToolSetScope, exploreAgent.AllowedTools.Kind)
-	assert.Equal(t, []string{"angela_info", "fetch"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"AngelaInfo", "Fetch"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_configureProvidersWithDisabledProvider(t *testing.T) {

@@ -28,7 +28,7 @@ Problems solved and any ongoing troubleshooting efforts. Architecture decisions 
 
 ## 6. Available Sub-Agent Reports
 
-Each `agent` dispatch in this conversation returned its output beneath a header of the form `[report id=rpt_xxxxxxxx agent=<type> task="<description>"]`. Those reports remain loadable by id after this summary replaces the conversation, so their ids are the only way back to the full text.
+Each `Agent` dispatch in this conversation returned its output beneath a header of the form `[report id=rpt_xxxxxxxx agent=<type> task="<description>"]`. Those reports remain loadable by id after this summary replaces the conversation, so their ids are the only way back to the full text.
 
 List every report whose content may still be needed for the remaining work — a plan being executed, a design that was agreed on, findings the next step depends on. For each one give the id exactly as it appears in its header, the agent type, and a one-line note on what it holds and why it still matters.
 

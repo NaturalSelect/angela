@@ -24,7 +24,7 @@ func TestToolKindIconsDistinguishKinds(t *testing.T) {
 		"agent":  toolKindIcon(toolnames.Agent),
 		"todo":   toolKindIcon(toolnames.Todos),
 		"lsp":    toolKindIcon(toolnames.LSPDiagnostics),
-		"mcp":    toolKindIcon("mcp_something"),
+		"mcp":    toolKindIcon(toolnames.MCPPrefix + "something"),
 	}
 
 	seen := map[string]string{}
@@ -51,7 +51,7 @@ func TestToolKindIconGroupsAndFallback(t *testing.T) {
 	require.Equal(t, toolKindIcon(toolnames.LSPDiagnostics), toolKindIcon(toolnames.LSPSymbols))
 
 	require.Equal(t, styles.ToolIconGeneric, toolKindIcon("some_unregistered_tool"))
-	require.Equal(t, styles.ToolIconMCP, toolKindIcon("mcp_github_search"))
+	require.Equal(t, styles.ToolIconMCP, toolKindIcon(toolnames.MCPPrefix+"github_search"))
 }
 
 // The status styles carry their own glyph. If it is not cleared, lipgloss

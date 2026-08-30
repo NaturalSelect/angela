@@ -20,6 +20,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -405,7 +406,7 @@ func TestRunSubAgent(t *testing.T) {
 				SessionID:  call.SessionID,
 				ToolCallID: "child-call",
 				Access: permission.Access{
-					Tool:   "web_fetch",
+					Tool:   toolnames.WebFetch,
 					Action: permission.ActionNetwork,
 					URL:    "https://example.com",
 				},

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,10 +35,10 @@ func TestBranchAgentsNeverWrite(t *testing.T) {
 			coord := newGateTestCoordinator(t, true)
 			names := toolNamesFor(t, coord, id, 1)
 
-			for _, tool := range []string{"view", "grep", "glob", "ls", "lsp_definition", "lsp_references"} {
+			for _, tool := range []string{toolnames.View, toolnames.Grep, toolnames.Glob, toolnames.LS, toolnames.LSPDefinition, toolnames.LSPReferences} {
 				require.Contains(t, names, tool, "a branch must be able to read the codebase")
 			}
-			for _, tool := range []string{"edit", "multiedit", "write", "download", "lsp_rename", "lsp_replace_symbol", "todos"} {
+			for _, tool := range []string{toolnames.Edit, toolnames.MultiEdit, toolnames.Write, toolnames.Download, toolnames.LSPRename, toolnames.LSPReplaceSymbol, toolnames.Todos} {
 				require.NotContains(t, names, tool, "a branch must not be able to change anything")
 			}
 		})
@@ -53,7 +54,7 @@ func TestBranchAgentsGetTheBranchTools(t *testing.T) {
 			coord := newGateTestCoordinator(t, true)
 			names := toolNamesFor(t, coord, id, 1)
 
-			for _, tool := range []string{"merge", "proposal_write", "proposal_edit", "proposal_read"} {
+			for _, tool := range []string{toolnames.Merge, toolnames.ProposalWrite, toolnames.ProposalEdit, toolnames.ProposalRead} {
 				require.Contains(t, names, tool, "a branch must be able to draft its result and end")
 			}
 		})
@@ -94,11 +95,11 @@ func TestBranchAgentsAreDispatchableAsBranches(t *testing.T) {
 func TestBranchExecutionBoundaryDiffers(t *testing.T) {
 	coord := newGateTestCoordinator(t, true)
 
-	require.NotContains(t, toolNamesFor(t, coord, config.AgentPlan, 1), "bash",
+	require.NotContains(t, toolNamesFor(t, coord, config.AgentPlan, 1), toolnames.Bash,
 		"plan reasons from what it reads")
 
 	deepResearch := toolNamesFor(t, coord, config.AgentDeepResearch, 1)
-	for _, tool := range []string{"bash", "job_output", "job_kill"} {
+	for _, tool := range []string{toolnames.Bash, toolnames.JobOutput, toolnames.JobKill} {
 		require.Contains(t, deepResearch, tool,
 			"deep-research must be able to run a command and collect its output")
 	}
@@ -113,17 +114,17 @@ func TestQuestionToolReachesBranchesButNotSubagents(t *testing.T) {
 	t.Run("branches are asked to talk to the user, so they get the tool", func(t *testing.T) {
 		coord := newGateTestCoordinator(t, true)
 		for _, id := range builtinBranches {
-			require.Contains(t, toolNamesFor(t, coord, id, 1), "question", id)
+			require.Contains(t, toolNamesFor(t, coord, id, 1), toolnames.Question, id)
 		}
 	})
 
 	t.Run("ordinary subagent has no user to ask", func(t *testing.T) {
 		coord := newGateTestCoordinator(t, true)
-		require.NotContains(t, toolNamesFor(t, coord, config.AgentExplore, 1), "question")
+		require.NotContains(t, toolNamesFor(t, coord, config.AgentExplore, 1), toolnames.Question)
 	})
 
 	t.Run("non-interactive has no user at all", func(t *testing.T) {
 		coord := newGateTestCoordinator(t, false)
-		require.NotContains(t, toolNamesFor(t, coord, config.AgentPlan, 1), "question")
+		require.NotContains(t, toolNamesFor(t, coord, config.AgentPlan, 1), toolnames.Question)
 	})
 }

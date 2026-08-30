@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -402,11 +403,11 @@ func TestPolicyMCPPatterns(t *testing.T) {
 	}, nil)
 
 	require.True(t, p.Evaluate(Access{
-		Tool: "mcp_docker_mcp-find", Action: ActionMCP, Server: "docker", MCPTool: "mcp-find",
+		Tool: toolnames.MCPPrefix + "docker_mcp-find", Action: ActionMCP, Server: "docker", MCPTool: "mcp-find",
 	}, policyCwd).Matched)
 
 	require.False(t, p.Evaluate(Access{
-		Tool: "mcp_other_thing", Action: ActionMCP, Server: "other", MCPTool: "thing",
+		Tool: toolnames.MCPPrefix + "other_thing", Action: ActionMCP, Server: "other", MCPTool: "thing",
 	}, policyCwd).Matched)
 }
 

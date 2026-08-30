@@ -10,6 +10,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/permission/shellscan"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/invopop/jsonschema"
 )
@@ -142,7 +143,7 @@ type Rule struct {
 	Action RuleAction `json:"action"`
 	// Tool narrows the rule. It matches either an access category
 	// ("read", "edit", "execute", "network", "mcp", "list") or a single
-	// tool name ("bash", "view"). Empty matches everything.
+	// tool name ("Bash", "View"). Empty matches everything.
 	Tool string `json:"tool,omitempty"`
 	// Pattern narrows the rule further. Empty or "*" matches everything.
 	Pattern string `json:"pattern,omitempty"`
@@ -203,11 +204,11 @@ type Policy struct {
 // ordinary allow rules rather than a hardcoded bypass, so a user's deny
 // or ask rule still overrules them.
 var builtinAllowedTools = []string{
-	"mcp_docker_mcp-find",
-	"mcp_docker_mcp-add",
-	"mcp_docker_mcp-remove",
-	"mcp_docker_mcp-config-set",
-	"mcp_docker_code-mode",
+	fmt.Sprintf("%sdocker_mcp-find", toolnames.MCPPrefix),
+	fmt.Sprintf("%sdocker_mcp-add", toolnames.MCPPrefix),
+	fmt.Sprintf("%sdocker_mcp-remove", toolnames.MCPPrefix),
+	fmt.Sprintf("%sdocker_mcp-config-set", toolnames.MCPPrefix),
+	fmt.Sprintf("%sdocker_code-mode", toolnames.MCPPrefix),
 }
 
 // CompilePolicy validates rules and folds the legacy flat allow-list
@@ -429,7 +430,7 @@ func ruleMatches(rule Rule, access Access, pathForms []string) bool {
 }
 
 // toolFilterMatches accepts either an access category or a concrete
-// tool name, so "execute" covers every command runner while "bash"
+// tool name, so "execute" covers every command runner while "Bash"
 // singles one out.
 func toolFilterMatches(filter string, access Access) bool {
 	if filter == "" || filter == "*" {

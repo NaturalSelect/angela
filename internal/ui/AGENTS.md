@@ -170,7 +170,7 @@ tool names to specific types:
 | `chat/references.go`  | References                                     |
 | `chat/lsp_restart.go` | LSPRestart                                     |
 | `chat/todos.go`       | Todos                                          |
-| `chat/mcp.go`         | MCP tools (`mcp_` prefix)                      |
+| `chat/mcp.go`         | MCP tools (`MCP_` prefix)                      |
 | `chat/generic.go`     | Fallback for unrecognized tools                |
 | `chat/assistant.go`   | Assistant messages (thinking, content, errors) |
 | `chat/user.go`        | User messages (input + attachments)            |

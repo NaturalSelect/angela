@@ -35,8 +35,10 @@ These are always available without user configuration.
 
 ## Existing Builtin Skills
 
-| Skill          | Directory               | Description                                |
-| -------------- | ----------------------- | ------------------------------------------ |
-| `angela-config` | `builtin/angela-config/` | Angela configuration help                   |
-| `angela-hooks`  | `builtin/angela-hooks/`  | Authoring, configuring and debugging hooks |
-| `jq`           | `builtin/jq/`           | jq JSON processor usage guide              |
+| Skill            | Directory                 | Description                                       |
+| ---------------- | ------------------------- | ------------------------------------------------- |
+| `angela-config`  | `builtin/angela-config/`  | Angela configuration help                         |
+| `angela-hooks`   | `builtin/angela-hooks/`   | Authoring, configuring and debugging hooks        |
+| `angela-migrate` | `builtin/angela-migrate/` | Migrate config from Claude Code, OpenCode, Cursor |
+| `angela-setup`   | `builtin/angela-setup/`   | Interactive new-user onboarding and setup guide   |
+| `jq`             | `builtin/jq/`             | jq JSON processor usage guide                     |

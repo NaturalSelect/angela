@@ -1,12 +1,12 @@
 Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.
 
-When using the agent tool, specify a subagent_type parameter to select which agent type to use.
+When using the Agent tool, specify a subagent_type parameter to select which agent type to use.
 
 ## When to use
 
 Reach for this when the task matches an available agent type, when you have independent work to run in parallel, or when answering would mean reading across several files — delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.
 
-When NOT to use the agent tool:
+When NOT to use the Agent tool:
 - If you want to read a specific file path, use the View or Glob tool instead, to find the match more quickly
 - If you are searching for a specific definition like "func Foo", use the Grep tool instead, to find the match more quickly
 - If you are searching for code within a specific file or set of 2-3 files, use the View tool instead, to find the match more quickly
@@ -20,7 +20,7 @@ When NOT to use the agent tool:
 - Each agent invocation starts with a fresh context and has no memory of prior runs, so the prompt must be self-contained and highly detailed.
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches), since a fresh agent is not aware of the user's intent.
 - Each agent type's model and tool access come from its definition; you cannot override them per call.
-- If the user asks you to run agents "in parallel", send a single message with multiple agent tool use blocks.
+- If the user asks you to run agents "in parallel", send a single message with multiple Agent tool use blocks.
 - Once you have delegated work to an agent, do not duplicate that work yourself while it runs.
 
 Available agent types:

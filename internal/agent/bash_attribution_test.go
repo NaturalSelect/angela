@@ -6,6 +6,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,7 +15,7 @@ import (
 func bashToolDescription(t *testing.T, toolList []fantasy.AgentTool) string {
 	t.Helper()
 	for _, tool := range toolList {
-		if tool.Info().Name == "bash" {
+		if tool.Info().Name == toolnames.Bash {
 			return tool.Info().Description
 		}
 	}

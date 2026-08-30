@@ -807,7 +807,7 @@ func TestPreparePrompt_OrphanedToolUse(t *testing.T) {
 			message.TextContent{Text: "let me check"},
 			message.ToolCall{
 				ID:       "call_orphaned_1",
-				Name:     "agent",
+				Name:     toolnames.Agent,
 				Input:    `{"prompt":"do something"}`,
 				Finished: true,
 			},
@@ -871,13 +871,13 @@ func TestPreparePrompt_OrphanedToolUseMixed(t *testing.T) {
 		Parts: []message.ContentPart{
 			message.ToolCall{
 				ID:       "call_ok",
-				Name:     "view",
+				Name:     toolnames.View,
 				Input:    `{"path":"/foo"}`,
 				Finished: true,
 			},
 			message.ToolCall{
 				ID:       "call_orphaned",
-				Name:     "agent",
+				Name:     toolnames.Agent,
 				Input:    `{"prompt":"search"}`,
 				Finished: true,
 			},
@@ -891,7 +891,7 @@ func TestPreparePrompt_OrphanedToolUseMixed(t *testing.T) {
 		Parts: []message.ContentPart{
 			message.ToolResult{
 				ToolCallID: "call_ok",
-				Name:       "view",
+				Name:       toolnames.View,
 				Content:    "file contents",
 			},
 		},

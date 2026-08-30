@@ -84,579 +84,237 @@ Data directories (`~/.local/share/angela` on Unix-like systems and
 > (`%LOCALAPPDATA%\angela` on Windows). This is application state, and should
 > not be edited by hand.
 
-## Command Reference
+## Configuration Reference
 
-The sections below read like CLI help. Entity commands use `add` to create or
-update something and `remove` (or `rm`) to delete it. Booleans accept
-`true/false/1/0/yes/no`, in any case.
+All configuration is done through `angela.json`. For the complete schema, see
+[`schema.json`](../../schema.json).
 
-```text
-Available Commands:
-  provider      Manage model providers
-  model         Manage models and model selection
-  mcp           Manage MCP servers
-  lsp           Manage language servers
-  hook          Manage hooks
-  permissions   Configure tool permissions
-  option        Configure general Angela behavior
+### Providers
+
+```jsonc
+{
+  "providers": {
+    "deepseek": {
+      "type": "openai-compat",        // openai, openai-compat, anthropic, ollama, ...
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key": "$DEEPSEEK_API_KEY", // shell expansion works
+      "disabled": false,              // disable without removing
+      "flat_rate": false,             // use flat-rate billing
+      "discover_models": false,       // auto-discover and merge provider models
+      "system_prompt_prefix": "",     // text prepended to the system prompt
+      "extra_headers": {},            // additional HTTP headers
+      "extra_body": {},               // merged into request bodies
+      "provider_options": {},         // provider-specific options
+      "models": [                     // custom models on this provider
+        {
+          "id": "deepseek-chat",
+          "name": "DeepSeek Chat",
+          "context_window": 128000,
+          "default_max_tokens": 8192,
+          "can_reason": false,
+          "supports_images": false,
+          "price_input": 0.27,        // per 1M tokens
+          "price_output": 1.10,
+          "price_cache_create": 0.0,
+          "price_cache_hit": 0.0,
+          "reasoning_effort": "",     // low, medium, or high
+          "reasoning_levels": []      // supported effort levels
+        }
+      ]
+    }
+  }
+}
 ```
 
-### provider
+The `base_url` convention differs by `type`. The Anthropic SDK appends
+`v1/messages` itself, so `type: "anthropic"` wants the bare host
+(`https://api.anthropic.com`); a trailing `/v1` is stripped automatically.
+`openai`, `openai-compat`, and `openrouter` never add a version segment,
+so `base_url` must include it.
 
-Manage model providers.
+Headers whose value resolves to the empty string are dropped from the
+outgoing request.
 
-```text
-Usage:
-  provider [command]
+### Models
 
-Available Commands:
-  add       Add or update a provider
-  remove    Remove a provider and its custom models
-  rm        Alias for remove
+```jsonc
+{
+  "models": {
+    "main": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514",
+      "think": false,                 // enable thinking mode
+      "reasoning_effort": "",         // low, medium, or high
+      "max_tokens": 0,                // maximum output tokens
+      "temperature": 0.0,            // sampling temperature
+      "top_p": 0.0,                  // top-p sampling (0–1)
+      "top_k": 0,                    // top-k sampling
+      "frequency_penalty": 0.0,
+      "presence_penalty": 0.0,
+      "provider_options": {}          // provider-specific options
+    },
+    "chore": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-20250514"
+    }
+  }
+}
 ```
 
-#### `provider add`
+### MCP Servers
 
-Add a provider, or update an existing provider with the same ID.
-
-```text
-Usage:
-  provider add <id> [flags]
-
-Flags:
-      --name string                 display name
-      --type string                 provider type (openai, openai-compat, anthropic, ollama, …)
-      --api-key string              API key
-      --base-url string             API base URL
-      --disable bool                disable without removing
-      --flat-rate bool              use flat-rate billing
-      --discover-models bool        auto-discover and merge provider models
-      --system-prompt-prefix string text prepended to the system prompt
-      --extra-header key value      add an HTTP header (repeatable)
-      --extra-body JSON             merge a JSON object into request bodies
-      --provider-options JSON       merge a provider-specific JSON object
+```jsonc
+{
+  "mcp": {
+    "github": {
+      "type": "http",                  // stdio, sse, or http
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer $GH_PAT" },
+      "timeout": 10,                   // startup timeout in seconds
+      "disabled": false,
+      "disabled_tools": [],            // tools from this server to hide
+      "enabled_tools": [],             // allow only these tools
+      "oauth": false,                  // enable OAuth 2.1 flow (HTTP only)
+      "oauth_client_id": "",           // pre-registered OAuth client ID
+      "oauth_client_secret": "",       // pre-registered OAuth client secret
+      "oauth_callback_port": 0         // fixed localhost port for OAuth callback
+    },
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-filesystem"],
+      "env": { "HOME": "/home/user" }
+    }
+  }
+}
 ```
 
-```bash
-provider add deepseek \
-  --type openai-compat \
-  --base-url "https://api.deepseek.com/v1" \
-  --api-key "${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}"
+### LSP Servers
+
+```jsonc
+{
+  "lsp": {
+    "go": {
+      "command": "gopls",
+      "args": [],
+      "env": { "GOPATH": "$HOME/go" },
+      "filetypes": ["go", "mod"],
+      "root_markers": ["go.mod"],
+      "timeout": 30,                   // startup timeout in seconds
+      "disabled": false,
+      "init_options": {},              // initialization options
+      "options": {}                    // server-specific settings
+    }
+  }
+}
 ```
 
-`--base-url` conventions differ by `--type`. The Anthropic SDK appends
-`v1/messages` to the base URL itself, so `--type anthropic` wants the
-bare host — `https://api.anthropic.com`, not `.../v1` — and a stray
-trailing `/v1` is stripped automatically:
+### Hooks
 
-```bash
-provider add my-anthropic-proxy \
-  --type anthropic \
-  --base-url "https://my-proxy.example.com"
+See the [hooks docs](../hooks/) for the full guide.
+
+```jsonc
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "name": "no-rm-rf",           // friendly name shown in the TUI
+        "matcher": "^Bash$",          // regex tested against the tool name
+        "command": "./hooks/no-rm-rf.sh",
+        "timeout": 10                 // seconds; default 30
+      }
+    ]
+  }
+}
 ```
 
-`openai`, `openai-compat`, and `openrouter` never add a version segment
-themselves, so `--base-url` must already be the exact value the vendor's
-docs show, `/v1` (or whatever path they use) included — Angela does not
-guess a missing one.
+### Permissions
 
-Headers whose value resolves to the empty string (an unset `$VAR`, a
-`$(...)` that prints nothing, or a literal `""`) are dropped from the
-outgoing request. This makes env-gated headers safe:
+```jsonc
+{
+  "permissions": {
+    // Tools that don't require permission prompts.
+    "allowed_tools": ["View", "LS", "Grep"],
 
-```bash
-provider add openai \
-  --extra-header OpenAI-Organization "$OPENAI_ORG_ID"
+    // Declarative permission rules. Precedence: deny > ask > allow.
+    "rules": [
+      { "action": "deny",  "tool": "read",    "path": "**/.env" },
+      { "action": "allow", "tool": "bash",    "pattern": "git status*" },
+      { "action": "allow", "tool": "network", "domain": "docs.example.com" }
+    ],
+
+    // What to do when no rule matches: "ask" (default) or "deny".
+    "prompt": "ask"
+  }
+}
 ```
 
-If `OPENAI_ORG_ID` is unset, the header is simply not sent.
-
-#### `provider remove`
-
-Remove a provider and all custom models registered on it.
-
-```text
-Usage:
-  provider remove <id>
-  provider rm <id>
-```
-
-### model
-
-Manage custom models and the main/chore model slots. Model references use the
-same `<provider>/<id>` form printed by `angela models`.
-
-```text
-Usage:
-  model [command]
-
-Available Commands:
-  add       Register a custom model on an existing provider
-  remove    Remove a custom model
-  rm        Alias for remove
-  main      Set or print the main model
-  chore     Set or print the chore model
-```
-
-#### `model add`
-
-Register a custom model on an existing provider.
-
-```text
-Usage:
-  model add <provider>/<id> [flags]
-
-Flags:
-      --name string                 display name
-      --context-window int          context window in tokens
-      --default-max-tokens int      default maximum output tokens
-      --can-reason bool             model supports reasoning
-      --supports-images bool        model accepts image input
-      --price-input float           input price per 1M tokens
-      --price-output float          output price per 1M tokens
-      --price-cache-create float    cache-creation price per 1M tokens
-      --price-cache-hit float       cache-hit price per 1M tokens
-      --reasoning-effort string     low, medium, or high
-      --reasoning-level string      supported effort level, repeatable
-```
-
-#### `model remove`
-
-Remove a custom model from its provider.
-
-```text
-Usage:
-  model remove <provider>/<id>
-  model rm <provider>/<id>
-```
-
-#### `model main`, `model chore`
-
-Set the main or chore model slot. With no model argument, print the current
-selection.
-
-```text
-Usage:
-  model main [<provider>/<id>] [flags]
-  model chore [<provider>/<id>] [flags]
-
-Flags:
-      --think                       enable thinking mode
-      --reasoning-effort string     low, medium, or high
-      --max-tokens int              maximum output tokens
-      --temperature float           sampling temperature
-      --top-p float                 top-p sampling (0–1)
-      --top-k int                   top-k sampling
-      --frequency-penalty float     frequency penalty
-      --presence-penalty float      presence penalty
-      --provider-options JSON       merge a provider-specific JSON object
-```
-
-```bash
-model main openai/gpt-4o --think
-echo "coding with: $(model main)"   # prints: openai/gpt-4o
-```
-
-### mcp
-
-Manage Model Context Protocol servers.
-
-```text
-Usage:
-  mcp [command]
-
-Available Commands:
-  add       Add or update an MCP server
-  remove    Remove an MCP server
-  rm        Alias for remove
-```
-
-#### `mcp add`
-
-Add an MCP server, or update an existing server with the same name.
-
-```text
-Usage:
-  mcp add <name> [flags]
-
-Flags:
-      --type string              stdio, sse, or http (default "stdio")
-      --command string           executable for stdio servers
-      --args string              command argument (repeatable)
-      --env key value            environment variable (repeatable)
-      --url string               URL for HTTP/SSE servers
-      --header key value         HTTP header (repeatable)
-      --timeout int              startup timeout in seconds
-      --disabled bool            disable without removing
-      --disabled-tools string       deny a server tool (repeatable)
-      --enabled-tools string        allow only these server tools (repeatable)
-      --oauth bool                  enable OAuth 2.1 flow (HTTP only)
-      --oauth-client-id string      pre-registered OAuth client ID
-      --oauth-client-secret string  pre-registered OAuth client secret
-      --oauth-callback-port int     fixed localhost port for the OAuth callback
-```
-
-```bash
-mcp add github --type http \
-  --url "https://api.githubcopilot.com/mcp/" \
-  --header Authorization "Bearer $GH_PAT"
-```
-
-As with providers, a header whose value resolves to the empty string is
-dropped from the outgoing request.
-
-#### `mcp remove`
-
-Remove an MCP server.
-
-```text
-Usage:
-  mcp remove <name>
-  mcp rm <name>
-```
-
-### lsp
-
-Manage language servers.
-
-```text
-Usage:
-  lsp [command]
-
-Available Commands:
-  add       Add or update a language server
-  remove    Remove a language server
-  rm        Alias for remove
-```
-
-#### `lsp add`
-
-Add a language server, or update an existing server with the same name.
-
-```text
-Usage:
-  lsp add <name> --command <command> [flags]
-
-Flags:
-      --args string              command argument (repeatable)
-      --env key value            environment variable (repeatable)
-      --filetypes string         file type to attach to (repeatable)
-      --root-markers string      root marker file (repeatable)
-      --timeout int              startup timeout in seconds
-      --disabled bool            disable without removing
-      --init-options JSON        initialization options
-      --options JSON             server settings
-```
-
-```bash
-lsp add go --command gopls --env GOPATH "$HOME/go"
-```
-
-#### `lsp remove`
-
-Remove a language server.
-
-```text
-Usage:
-  lsp remove <name>
-  lsp rm <name>
-```
-
-### hook
-
-Manage hooks. See the [hooks docs](../hooks/) for what they can do and how
-they run.
-
-```text
-Usage:
-  hook [command]
-
-Available Commands:
-  add       Add a hook to an event
-  remove    Remove a named hook, or clear an event
-  rm        Alias for remove
-```
-
-#### `hook add`
-
-Add a shell command that runs when the given hook event fires.
-
-```text
-Usage:
-  hook add <event> --command <command> [flags]
-
-Flags:
-      --command string           shell command to run (required)
-      --name string              name used for later removal
-      --matcher string           regex tested against the tool name
-      --timeout int              timeout in seconds (default 30)
-```
-
-```bash
-hook add PreToolUse --matcher "^Bash$" \
-  --command "./hooks/no-haskell.sh" --name no-haskell
-```
-
-#### `hook remove`
-
-Remove hooks from an event. Without `--name`, remove every hook for the event.
-
-```text
-Usage:
-  hook remove <event> [--name <name>]
-  hook rm <event> [--name <name>]
-
-Flags:
-      --name string              remove hooks with this name
-```
-
-### permissions
-
-Configure tool permissions. `allow` skips approval prompts; `deny` hides tools
-from the agent entirely.
-
-```text
-Usage:
-  permissions [command]
-
-Available Commands:
-  allow     Allow tools without prompting
-  deny      Hide tools from the agent
-  rule      Add a permission rule
-  prompt    Set what happens when no rule matches
-```
-
-#### `permissions allow`
-
-Allow one or more tools to run without prompting.
-
-```text
-Usage:
-  permissions allow <tool> [<tool> ...]
-```
-
-#### `permissions deny`
-
-Hide one or more tools from the agent so they cannot be called.
-
-```text
-Usage:
-  permissions deny <tool> [<tool> ...]
-```
-
-```bash
-permissions allow view ls grep edit
-permissions deny bash
-```
-
-#### `permissions rule`
-
-Add a rule. Rules are more precise than `allow`/`deny`: they match on what a
-call actually reaches — a path, a command, a host — instead of just the tool
-name.
-
-```text
-Usage:
-  permissions rule allow|deny|ask [flags] <pattern> [<pattern> ...]
-
-Flags:
-  --tool <filter>   Limit to an access category (read, list, edit, execute,
-                    network, mcp) or a single tool name (bash, view, ...).
-  --path            Match as a filesystem path. '*' stops at '/', '**' does not.
-  --free            Match as free text. '*' crosses anything.
-  --domain          Match a URL host, including its subdomains.
-```
-
-Without a mode flag the mode is picked from the action: paths for file access,
-free text for commands, domains for network calls.
-
-```bash
-# Never read secrets, whoever asks. This covers `view .env` and `cat .env`
-# alike, because both are the same read.
-permissions rule deny --tool read '**/.env' '**/.env.*' '**/id_rsa'
-
-# Never write outside the source tree.
-permissions rule deny --tool edit '/etc/**' '~/**'
-
-# Let routine git commands through without a prompt.
-permissions rule allow --tool bash 'git status*' 'git diff*' 'git log*'
-
-# Fetch from the docs site freely, ask for anywhere else.
-permissions rule allow --tool network --domain 'docs.example.com'
-```
-
-**Precedence is deny, then ask, then allow** — a `deny` always wins, no matter
-what order the rules are written in, and no matter how they were granted:
-neither "Allow for Session" nor `--yolo` can override a `deny` rule.
-
-**Commands are judged link by link.** Allowing `ls*` does not let
-`ls && rm -rf /` through: every command in a chain has to be allowed on its
-own, and any one of them being denied denies the whole line.
-
-**A download is judged twice** — once as the fetch, once as the file it
-writes. Opening a domain does not hand out the filesystem, so this asks
-before writing even though the host is allowed:
-
-```bash
-permissions rule allow --tool network --domain 'releases.example.com'
-```
-
-To let a download through without a prompt, cover both legs — or name the
-tool, which covers everything it does:
-
-```bash
-permissions rule allow --tool network --domain 'releases.example.com'
-permissions rule allow --tool edit --path './vendor/**'
-
-# Or, more bluntly:
-permissions rule allow --tool download
-```
-
-A `deny` on the destination refuses the download whatever the network rules
-say, and approving one download covers the directory it landed in, not the
-whole host.
-
-**Some things always prompt.** Destructive verbs (`rm`, `kill`, `chmod`,
-`dd`, `git push`, ...) and commands that can carry another command inside them
-(`sudo`, `sh`, `xargs`, `find -exec`, ...) ask every time. A session grant
-cannot silence them, because the command you approved is not the command they
-end up running.
-
-#### `permissions prompt`
-
-Set what happens to a request no rule settled.
-
-```text
-Usage:
-  permissions prompt ask|deny
-```
-
-`ask` is the default and prompts you. `deny` refuses instead, which turns your
-rules into a strict allowlist — useful for unattended runs.
-
-```bash
-permissions rule allow --tool bash 'go test*' 'go build*'
-permissions rule allow --tool read '**'
-permissions prompt deny
-```
-
-#### What never needs a rule
-
-Reading inside the directory you started Angela in is free, and so are
-read-only commands that stay inside it — looking around the workspace is the
-job. Everything else (writes, network, MCP, anything outside the workspace)
-goes through the rules above.
-
-"Stays inside it" means the machine as well as the directory. A command that
-contacts something — `kubectl`, `git ls-remote` — is asked about even though
-it only reads, because what comes back is not yours and the credentials it
-sends are. Write a rule for the ones you want to run unprompted:
-
-```bash
-permissions rule allow --tool bash 'kubectl get *'
-```
-
-Symlinks are resolved before any of this is decided, so a link inside the
-workspace pointing outside it is treated as outside — and a rule naming a
-real path catches whatever reaches it through a link.
-
-### option
-
-Configure general Angela behavior, paths, attribution, and the terminal UI.
-Boolean values are optional and default to `true`.
-
-```text
-Usage:
-  option <key> [value]
-  option [command]
-
-Available Commands:
-  reset     Clear every value from a list option
-  ui        Configure terminal UI behavior
-
-Boolean Keys:
-  debug                          enable debug logging
-  debug-lsp                      enable LSP debug logging
-  auto-lsp                       automatically configure language servers
-  progress                       show progress indicators
-  metrics                        send anonymous usage metrics
-  auto-summarize                 automatically summarize long conversations
-  provider-auto-update           update the provider catalog automatically
-  default-providers              include built-in providers
-  attribution-generated-with     add the Generated with Angela line
-
-String Keys:
-  data-directory string            directory for project data and state
-  initialize-as string             context filename created by angela init
-  notifications string             notification style: auto, native, osc, bell,
-                                   or disabled
-  attribution-trailer-style string attribution trailer: none, co-authored-by,
-                                   or assisted-by
-
-Integer Keys:
-  subagent-depth int               maximum levels of subagent nesting allowed
-                                   through the agent tool (default 1)
-
-List Keys:
-  context-path string             append a project context path
-  global-context-path string      append a global context path
-  skill-path string                append a skill directory
-  disable-skill string            hide a skill from the agent
-```
-
-```bash
-option progress false
-option skill-path ./skills
-option attribution-trailer-style assisted-by
-option subagent-depth 2
-```
-
-#### `option reset`
-
-Clear every value previously added to a list option. Values added after the
-reset are kept.
-
-```text
-Usage:
-  option reset <key>
-
-Available Keys:
-  context-path          clear project context paths
-  global-context-path   clear global context paths
-  skill-path            clear additional skill directories
-  disable-skill         clear disabled skill names
-```
-
-#### `option ui`
-
-Configure terminal UI presentation and completion-list limits.
-
-```text
-Usage:
-  option ui <key> <value>
-
-Available Keys:
-  compact bool                  use the compact chat layout
-  diff unified|split            choose unified or side-by-side diffs
-  transparent bool              use the terminal background
-  scrollbar string              control chat scrollbar visibility: default,
-                                always, or never
-  completions-max-depth int     maximum directory depth shown by completions
-  completions-max-items int     maximum items returned to completions
-```
-
-```bash
-option ui compact true
-option ui diff unified
-option ui transparent true
-option ui scrollbar always
-option ui completions-max-depth 4
-option ui completions-max-items 200
+**Deny always wins** regardless of rule order. Commands are judged link
+by link — allowing `ls*` does not let `ls && rm -rf /` through. Some
+verbs (`rm`, `kill`, `git push`, ...) always prompt.
+
+### Options
+
+```jsonc
+{
+  "options": {
+    // Paths and directories
+    "context_paths": [".cursorrules", "ANGELA.md"],
+    "global_context_paths": ["~/.config/angela/ANGELA.md"],
+    "skills_paths": ["./skills"],
+    "agent_paths": ["~/.config/angela/agents"],
+    "data_directory": ".angela",
+    "initialize_as": "AGENTS.md",
+    "disabled_skills": [],
+    "disabled_tools": [],
+
+    // Reminders injected at the end of every turn (unlike context files,
+    // these stay in view as the conversation grows).
+    "reminders": ["Always run gofumpt before you finish a change"],
+
+    // Behavior
+    "debug": false,
+    "debug_lsp": false,
+    "auto_lsp": true,
+    "progress": true,
+    "disable_metrics": false,
+    "disable_provider_auto_update": false,
+    "disable_default_providers": false,
+    "notifications": "auto",          // auto, native, osc, bell, or disabled
+    "subagent_depth": 1,              // max nesting for agent tool dispatches
+
+    // Attribution
+    "attribution": {
+      "trailer_style": "assisted-by", // none, co-authored-by, or assisted-by
+      "generated_with": true
+    },
+
+    // Compaction (auto-summarize long conversations)
+    "compaction": {
+      "auto": true,
+      "large_context_threshold": 200000,
+      "reserved": 20000,
+      "small_context_ratio": 0.2
+    },
+
+    // Terminal UI
+    "tui": {
+      "compact_mode": false,
+      "diff_mode": "split",           // unified or split
+      "transparent": false,
+      "scrollbar": "default",         // default, always, or never
+      "completions": {
+        "max_depth": 0,
+        "max_items": 1000
+      }
+    }
+  }
+}
 ```
 
 > [!IMPORTANT]
-> These skill paths load by default — you do NOT need `skill-path`
-> for them: `.agents/skills`, `.angela/skills`, `.claude/skills`,
+> These skill paths load by default — you do NOT need to add them to
+> `skills_paths`: `.agents/skills`, `.angela/skills`, `.claude/skills`,
 > `.cursor/skills`.
 
 ## Composing configs

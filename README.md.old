@@ -250,55 +250,60 @@ Angela’s default model listing is managed in [Catwalk](https://github.com/char
 > you can just tell what you want it to configure and it will get the job done.
 
 Angela runs great with no configuration. That said, if you do need or want to
-customize Angela, you can, with a `angelarc`.
+customize Angela, you can, with `angela.json`.
 
-A `angelarc` is just Bash with some Angela-specific builtins. It’s a lot like
-a `.bashrc`, just for your Angela. Because Angela has a native, built-in Bash
-interpreter, Bash-based config works identically across all platforms, including
-Windows.
+Angela is configured with JSON. Configuration can live at the project level or
+globally. For example:
 
-For example:
-
-```bash
-# Add Ollama.
-provider add ollama --type ollama --base-url "http://localhost:11434/v1"
-
-# Register a model on Ollama.
-model add ollama/llama3.3 --name "Llama 3.3" --context-window 128000
-
-# Auto-approve some tools.
-permissions allow view edit
-
-# Include some other file on a specific machine.
-if [[ $HOSTNAME == "babysquid" ]]; then
-    source ~/my-stuff/babysquid.sh
-fi
-
-# Add an MCP server, with a GitHub API token stored in 1password.
-mcp add github \
-  --type http \
-  --url "https://api.githubcopilot.com/mcp/" \
-  --header Authorization "Bearer $(op read 'op://my-secret-key')"
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "models": [
+        { "id": "llama3.3", "name": "Llama 3.3", "context_window": 128000 }
+      ]
+    }
+  },
+  "permissions": {
+    "allowed_tools": ["View", "Edit"]
+  },
+  "mcp": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer $(op read 'op://my-secret-key')" }
+    }
+  }
+}
 ```
+
+Selected string fields — API keys, MCP headers, and similar credential-bearing
+values — run through shell expansion when they are used, so `$VAR` and
+`$(cmd)` work.
 
 Configuration can be added either local to the project itself, or globally,
 with the following priority:
 
-| Priority | Unix-like                 | Windows                               |
-| -------- | ------------------------- | ------------------------------------- |
-| 1        | `./.angelarc`              | `.\.angelarc`                          |
-| 2        | `./angelarc`               | `.\angelarc`                           |
-| 3        | `~/.config/angela/angelarc` | `%USERPROFILE%\.config\angela\angelarc` |
+| Priority | Unix-like                             | Windows                                |
+| -------- | ------------------------------------- | -------------------------------------- |
+| 1        | `./.angela.json`                      | `.\.angela.json`                       |
+| 2        | `./angela.json`                       | `.\angela.json`                        |
+| 3        | `~/.config/angela/angela.json`        | `%USERPROFILE%\.config\angela\angela.json` |
+
+Project config is discovered by walking up from the working directory to the
+git worktree root, so an unrelated `angela.json` above the project is never
+picked up. Everything found is deep-merged, with project settings overriding
+global ones.
 
 (Angela respects the [XDG Base Directory Specification][xdg], so your paths
-may differ depending on your `XDG_CONFIG_HOME` value. Data directories such as
-`~/.local/share/angela` and `%LOCALAPPDATA%\angela` contain JSON state only; Angela
-does not execute a `angelarc` from them.)
+may differ depending on your `XDG_CONFIG_HOME` value.)
 
 [xdg]: https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
 
-What about the old JSON format? It’s still supported, but it should be
-consdiered deprecated. See: [the config docs](./docs/config/) for details.
+For the full configuration reference, see the [config docs](./docs/config/).
 
 > [!TIP]
 > You can override the user and data config locations by setting:
@@ -320,10 +325,9 @@ $HOME/.local/share/angela/angela.json
 
 #### A note on security
 
-Both `angelarc` and `angela.json` are trusted code; `angelarc` runs in a full
-shell, and any `$(...)` in `angela.json` runs at load time. Don't launch Angela
-in a directory whose config you haven't reviewed, and don't randomly `source`
-files from the internet into your config.
+`angela.json` is trusted code: any `$(...)` in values runs at load time with
+your shell privileges. Don't launch Angela in a directory whose config you
+haven't reviewed.
 
 ### Environment Variables
 

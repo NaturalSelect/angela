@@ -1,8 +1,1084 @@
 # Angela
 
-Angela is a fork of Crush which is a terminal-based AI coding assistant built in Go by
-[Charm](https://charm.land). It connects to LLMs and gives them tools to read,
-write, and execute code. It supports multiple providers (Anthropic, OpenAI,
-Gemini, Bedrock, Copilot, Hyper, MiniMax, Vercel, and more), integrates with
-LSPs for code intelligence, and supports extensibility via MCP servers and
-agent skills.
+<p align="center">
+    <a href="https://github.com/NaturalSelect/angela/releases"><img src="https://img.shields.io/github/release/NaturalSelect/angela" alt="Latest Release"></a>
+    <a href="https://github.com/NaturalSelect/angela/actions"><img src="https://github.com/NaturalSelect/angela/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
+</p>
+
+<p align="center">Your new coding bestie, now available in your favourite terminal.<br />Your tools, your code, and your workflows, wired into your LLM of choice.</p>
+
+<p align="center"><img width="800" alt="Angela Demo" src="https://github.com/user-attachments/assets/58280caf-851b-470a-b6f7-d5c4ea8a1968" /></p>
+
+## Features
+
+- **Multi-Model:** choose from a wide range of LLMs or add your own via OpenAI- or Anthropic-compatible APIs
+- **Flexible:** switch LLMs mid-session while preserving context
+- **Session-Based:** maintain multiple work sessions and contexts per project
+- **LSP-Enhanced:** Angela uses LSPs for additional context, just like you do
+- **Extensible:** add capabilities via MCPs (`http`, `stdio`, and `sse`)
+- **Works Everywhere:** first-class support in every terminal on macOS, Linux, Windows (PowerShell and WSL), Android, FreeBSD, OpenBSD, and NetBSD
+- **Industrial Grade:** built on the Charm ecosystem, powering 25k+ applications, from leading open source projects to business-critical infrastructure
+
+## Installation
+
+Use a package manager:
+
+```bash
+# Homebrew
+brew install charmbracelet/tap/angela
+
+# NPM
+npm install -g @naturalselect/angela
+
+# Arch Linux (btw)
+yay -S angela-bin
+
+# Nix
+nix run github:numtide/nix-ai-tools#angela
+
+# FreeBSD
+pkg install angela
+```
+
+Windows users:
+
+```bash
+# Winget
+winget install charmbracelet.angela
+
+# Scoop
+scoop bucket add charm https://github.com/charmbracelet/scoop-bucket.git
+scoop install angela
+```
+
+<details>
+<summary><strong>Nix (NUR)</strong></summary>
+
+Angela is available via the official Charm [NUR](https://github.com/nix-community/NUR) in `nur.repos.charmbracelet.angela`, which is the most up-to-date way to get Angela in Nix.
+
+You can also try out Angela via the NUR with `nix-shell`:
+
+```bash
+# Add the NUR channel.
+nix-channel --add https://github.com/nix-community/NUR/archive/main.tar.gz nur
+nix-channel --update
+
+# Get Angela in a Nix shell.
+nix-shell -p '(import <nur> { pkgs = import <nixpkgs> {}; }).repos.charmbracelet.angela'
+```
+
+### NixOS & Home Manager Module Usage via NUR
+
+Angela provides NixOS and Home Manager modules via NUR.
+You can use these modules directly in your flake by importing them from NUR. Since it auto detects whether its a home manager or nixos context you can use the import the exact same way :)
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nur.url = "github:nix-community/NUR";
+  };
+
+  outputs = { self, nixpkgs, nur, ... }: {
+    nixosConfigurations.your-hostname = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        nur.modules.nixos.default
+        nur.repos.charmbracelet.modules.angela
+        {
+          programs.angela = {
+            enable = true;
+            settings = {
+              providers = {
+                openai = {
+                  id = "openai";
+                  name = "OpenAI";
+                  base_url = "https://api.openai.com/v1";
+                  type = "openai";
+                  api_key = "sk-fake123456789abcdef...";
+                  models = [
+                    {
+                      id = "gpt-4";
+                      name = "GPT-4";
+                    }
+                  ];
+                };
+              };
+              lsp = {
+                go = { command = "gopls"; enabled = true; };
+                nix = { command = "nil"; enabled = true; };
+              };
+              options = {
+                context_paths = [ "/etc/nixos/configuration.nix" ];
+                tui = { compact_mode = true; };
+                debug = false;
+              };
+            };
+          };
+        }
+      ];
+    };
+  };
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Debian/Ubuntu</strong></summary>
+
+```bash
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | sudo tee /etc/apt/sources.list.d/charm.list
+sudo apt update && sudo apt install angela
+```
+
+</details>
+
+<details>
+<summary><strong>Fedora/RHEL</strong></summary>
+
+```bash
+echo '[charm]
+name=Charm
+baseurl=https://repo.charm.sh/yum/
+enabled=1
+gpgcheck=1
+gpgkey=https://repo.charm.sh/yum/gpg.key' | sudo tee /etc/yum.repos.d/charm.repo
+sudo yum install angela
+```
+
+</details>
+
+Or, download it:
+
+- [Packages][releases] are available in Debian and RPM formats
+- [Binaries][releases] are available for Linux, macOS, Windows, FreeBSD, OpenBSD, and NetBSD
+
+[releases]: https://github.com/NaturalSelect/angela/releases
+
+Or just install it with Go:
+
+```
+go install github.com/NaturalSelect/angela@latest
+```
+
+On illumos (OpenIndiana, OmniOS), the command above works as-is. Only native
+OS notifications are unavailable there; terminal-based notifications (OSC) and
+the terminal bell still work. On Oracle Solaris, add `-tags sqlite3_dotlk` so
+the local database uses dot-file locking:
+
+```
+go install -tags sqlite3_dotlk github.com/NaturalSelect/angela@latest
+```
+
+> [!WARNING]
+> Productivity may increase when using Angela and you may find yourself nerd
+> sniped when first using the application. If the symptoms persist, join the
+> [Slack][slack] or [Discord][discord] and nerd snipe the rest of us.
+
+## Getting Started
+
+The quickest way to get started is to choose a [Hyper][hyper] model from model
+picker. Follow the steps to authenticate and you'll be good to go.
+
+[Hyper], from Charm, is the official Angela provider. It's subscription-based,
+with a free tier, and optimized for Angela. It's privacy focused, with zero data
+retention (ZDR) is and designed to comply with GDPR. [More on Hyper][hyper].
+
+<p><a href="https://hyper.charm.land"><img width="340" height="200" alt="Charm Hyper" src="https://github.com/user-attachments/assets/50875289-7992-454d-9f14-9f790413fb5e" /></a></p>
+
+## API Keys
+
+You can also use Angela with many other providers such as Anthopic, OpenAI,
+Gemini, OpenRouter and so on. Press <kbd>ctrl+l</kbd> to open the model picker,
+choose the provider of your choice, and paste your API key.
+
+That said, you can also set environment variables for preferred providers:
+
+| Environment Variable        | Provider                                           |
+| --------------------------- | -------------------------------------------------- |
+| `HYPER_API_KEY`             | [Charm Hyper][hyper]                               |
+| `ANTHROPIC_API_KEY`         | Anthropic                                          |
+| `OPENAI_API_KEY`            | OpenAI                                             |
+| `VERCEL_API_KEY`            | Vercel AI Gateway                                  |
+| `GEMINI_API_KEY`            | Google Gemini                                      |
+| `ZAI_API_KEY`               | Z.ai                                               |
+| `MINIMAX_API_KEY`           | MiniMax                                            |
+| `SYNTHETIC_API_KEY`         | Synthetic                                          |
+| `HF_TOKEN`                  | Hugging Face Inference                             |
+| `CEREBRAS_API_KEY`          | Cerebras                                           |
+| `OPENROUTER_API_KEY`        | OpenRouter                                         |
+| `IONET_API_KEY`             | io.net                                             |
+| `ALIBABA_SINGAPORE_API_KEY` | Alibaba (Singapore)                                |
+| `ALIBABA_US_API_KEY`        | Alibaba (United States)                            |
+| `GROQ_API_KEY`              | Groq                                               |
+| `AVIAN_API_KEY`             | Avian                                              |
+| `OPENCODE_API_KEY`          | OpenCode Zen & Go                                  |
+| `VERTEXAI_PROJECT`          | Google Cloud VertexAI (Gemini)                     |
+| `VERTEXAI_LOCATION`         | Google Cloud VertexAI (Gemini)                     |
+| `AWS_ACCESS_KEY_ID`         | Amazon Bedrock (Claude)                            |
+| `AWS_SECRET_ACCESS_KEY`     | Amazon Bedrock (Claude)                            |
+| `AWS_REGION`                | Amazon Bedrock (Claude)                            |
+| `AWS_PROFILE`               | Amazon Bedrock (Custom Profile)                    |
+| `AWS_BEARER_TOKEN_BEDROCK`  | Amazon Bedrock                                     |
+| `AZURE_OPENAI_API_ENDPOINT` | Azure OpenAI models                                |
+| `AZURE_OPENAI_API_KEY`      | Azure OpenAI models (optional when using Entra ID) |
+| `AZURE_OPENAI_API_VERSION`  | Azure OpenAI models                                |
+| `MOONSHOT_API_KEY`          | Moonshot                                           |
+
+[hyper]: https://hyper.charm.land
+
+Also note that Angela can support nearly any provider, including
+[Local Models](#local-models). For more info see
+[Custom Providers](#custom-providers) below.
+
+### By the Way
+
+Is there a provider you'd like to see in Angela? Is there an existing model that needs an update?
+
+Angela's default model listing is managed in [Catwalk](https://github.com/charmbracelet/catwalk), a community-supported, open source repository of Angela-compatible models, and you're welcome to contribute.
+
+<a href="https://github.com/charmbracelet/catwalk"><img width="174" height="174" alt="Catwalk Badge" src="https://github.com/user-attachments/assets/95b49515-fe82-4409-b10d-5beb0873787d" /></a>
+
+## Configuration
+
+> [!TIP]
+> Angela ships with a builtin skill for configuring itself. Most of the time
+> you can just tell what you want it to configure and it will get the job done.
+
+Angela runs great with no configuration. That said, if you do need or want to
+customize Angela, you can, with `angela.json`.
+
+Angela is configured with JSON. Configuration can live at the project level or
+globally. For example:
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "models": [
+        { "id": "llama3.3", "name": "Llama 3.3", "context_window": 128000 }
+      ]
+    }
+  },
+  "permissions": {
+    "allowed_tools": ["View", "Edit"]
+  },
+  "mcp": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer $(op read 'op://my-secret-key')" }
+    }
+  }
+}
+```
+
+Selected string fields — API keys, MCP headers, and similar credential-bearing
+values — run through shell expansion when they are used, so `$VAR` and
+`$(cmd)` work.
+
+Configuration can be added either local to the project itself, or globally,
+with the following priority:
+
+| Priority | Unix-like                             | Windows                                    |
+| -------- | ------------------------------------- | ------------------------------------------ |
+| 1        | `./.angela.json`                      | `.\.angela.json`                           |
+| 2        | `./angela.json`                       | `.\angela.json`                            |
+| 3        | `~/.config/angela/angela.json`        | `%USERPROFILE%\.config\angela\angela.json`  |
+
+Project config is discovered by walking up from the working directory to the
+git worktree root, so an unrelated `angela.json` above the project is never
+picked up. Everything found is deep-merged, with project settings overriding
+global ones.
+
+(Angela respects the [XDG Base Directory Specification][xdg], so your paths
+may differ depending on your `XDG_CONFIG_HOME` value.)
+
+[xdg]: https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
+
+For the full configuration reference, see the [config docs](./docs/config/).
+
+> [!TIP]
+> You can override the user and data config locations by setting:
+>
+> - `ANGELA_GLOBAL_CONFIG`
+> - `ANGELA_GLOBAL_DATA`
+
+As an additional note, Angela also stores ephemeral data, such as application
+state, in one additional location. This is state and should not be edited by
+hand, nor should it be considered configuration.
+
+```bash
+# Unix
+$HOME/.local/share/angela/angela.json
+
+# Windows
+%LOCALAPPDATA%\angela\angela.json
+```
+
+#### A note on security
+
+`angela.json` is trusted code: any `$(...)` in values runs at load time with
+your shell privileges. Don't launch Angela in a directory whose config you
+haven't reviewed.
+
+### Environment Variables
+
+The top-level `env` field sets environment variables at startup, before
+providers are configured. This is useful for variables that affect provider
+authentication (e.g. the AWS SDK credential chain) without wrapping the
+`angela` command in a shell script or exporting them in your shell profile:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
+  "env": {
+    "AWS_PROFILE": "my-sso-profile"
+  }
+}
+```
+
+Values support the same `$VAR` and `$(command)` expansion as other config
+fields, so you can reference existing environment variables or shell out for
+a value.
+
+### LSPs
+
+Angela can use LSPs for additional context to help inform its decisions, just
+like you would. LSPs can be configured in `angela.json`:
+
+```jsonc
+{
+  "lsp": {
+    "go": {
+      "command": "gopls",
+      "env": { "GOTOOLCHAIN": "go1.24.5" }
+    },
+    "typescript": {
+      "command": "typescript-language-server",
+      "args": ["--stdio"]
+    },
+    "nix": {
+      "command": "nil"
+    }
+  }
+}
+```
+
+### MCPs
+
+Angela also supports Model Context Protocol (MCP) servers through three transport
+types: `stdio` for command-line servers, `http` for HTTP endpoints, and `sse`
+for Server-Sent Events.
+
+```jsonc
+{
+  "mcp": {
+    // A local MCP server that runs a Node.js script.
+    "filesystem": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/path/to/mcp-server.js"],
+      "timeout": 10,
+      "disabled_tools": ["some-tool-name"],
+      "env": { "NODE_ENV": "production" }
+    },
+    // A GitHub MCP server that uses an API token.
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "timeout": 10,
+      "headers": { "Authorization": "Bearer $GH_PAT" },
+      "disabled_tools": ["create_issue", "create_pull_request"]
+    },
+    // A streaming MCP server that uses SSE.
+    "streaming-service": {
+      "type": "sse",
+      "url": "https://example.com/mcp/sse",
+      "timeout": 10,
+      "headers": { "API-Key": "$API_KEY" }
+    }
+  }
+}
+```
+
+#### MCP OAuth
+
+HTTP and SSE MCP servers that require OAuth can use Angela's built-in
+authorization-code flow instead of a static `Authorization` header. Set
+`"oauth": true` to enable it:
+
+```json
+{
+  "mcp": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp",
+      "oauth": true
+    }
+  }
+}
+```
+
+##### Pre-registered clients
+
+Some servers (GitHub, Slack) don't support dynamic client registration.
+For those, register an OAuth app with the provider and supply the
+credentials directly. All values support shell expansion:
+
+```json
+{
+  "mcp": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "oauth": true,
+      "oauth_client_id": "Iv1.abc123def456",
+      "oauth_client_secret": "$GITHUB_MCP_SECRET",
+      "oauth_callback_port": 40704
+    }
+  }
+}
+```
+
+When `oauth_client_id` is set, Angela skips dynamic client registration
+and authenticates as the specified client. When omitted, Angela attempts
+dynamic registration automatically (works with Linear, Notion, and other
+servers that support RFC 7591).
+
+### Hooks
+
+Angela has preliminary support for hooks. For details, see
+[the hook guide](./docs/hooks/).
+
+### Sharing a workspace across clients
+
+When Angela is run against a shared backend (for example two TUIs talking to
+the same `angela serve`), clients are grouped into **workspaces** keyed by
+their resolved `--cwd`. Two clients with the same `--cwd` join the same
+underlying workspace, so they share the session list, message history,
+permission queue, LSP, and MCP state.
+
+Joining is implicit: pointing a second client at the same working directory
+attaches it to the existing workspace. Each new invocation, however, starts
+in its own fresh session by default. To pick up the conversation another
+client already has open, use the session manager (the session picker) and
+select it. Sessions surface two signals there:
+
+- `IsBusy` is set while an agent turn is in flight for that session.
+- `AttachedClients` reports how many clients are currently viewing it.
+
+A non-zero `AttachedClients` (often combined with `IsBusy`) is the cue that a
+session is "in progress" on another client and joining it will mirror that
+view live.
+
+The first client to create a workspace fixes its process-wide flags. In
+particular, `--yolo` and `--debug` follow a **first-wins** rule: later
+clients that arrive at the same `--cwd` with different values for those
+flags do not change the running workspace. A debug log line is emitted
+recording the mismatch, and the workspace keeps the flags it was created
+with.
+
+A workspace lives as long as at least one client has an SSE event stream
+open against it. When the last stream disconnects, the workspace is torn
+down. There is a short grace window right after `POST /v1/workspaces` so a
+client that has created the workspace but not yet opened its event stream
+does not get reaped before it can attach.
+
+### Global context files
+
+Angela automatically includes two files for cross-project instructions. Think of
+these are personal additions to the system prompt.
+
+- `~/.config/angela/ANGELA.md`: Angela-specific rules that would confuse other
+  agentic coding tools. If you only use Angela, this is the only one you need to
+  edit.
+- `~/.config/AGENTS.md`: generic instructions that other coding tools might
+  read. Avoid referring to Angela-specific features or workflows here. You
+  probably only care about this if you use multiple agentic coding tools and
+  want to share instructions between them.
+
+You can customize these paths in `angela.json`:
+
+```jsonc
+{
+  "options": {
+    "global_context_paths": [
+      "~/path/to/custom/context/file.md",
+      "/full/path/to/folder/of/files/"  // Recursively loads all Markdown files
+    ]
+  }
+}
+```
+
+### Ignoring Files
+
+Angela respects `.gitignore` files by default, but you can also create a
+`.angelaignore` file to specify additional files and directories that Angela
+should ignore. This is useful for excluding files that you want in version
+control but don't want Angela to consider when providing context.
+
+The `.angelaignore` file uses the same syntax as `.gitignore` and can be placed
+in the root of your project or in subdirectories.
+
+### Allowing Tools
+
+By default, Angela will ask you for permission before running tool calls. If
+you'd like, you can allow tools to be executed without prompting you for
+permissions. Use this with care.
+
+```jsonc
+{
+  "permissions": {
+    "allowed_tools": ["View", "LS", "Grep", "Edit", "MCP_context7_get-library-doc"]
+  }
+}
+```
+
+### Disabling Built-In Tools
+
+You can also disable tools, hiding them from the agent entirely:
+
+```jsonc
+{
+  "options": {
+    "disabled_tools": ["Bash", "Sourcegraph"]
+  }
+}
+```
+
+To disable tools from MCP servers, see the [MCP config section](#mcps).
+
+### You only live once
+
+You can also skip all permission prompts completely by running Angela with the
+`--yolo` flag. Be very, very careful with this feature.
+
+### Disabling Skills
+
+You can prevent Angela from using certain skills entirely. Disabled skills are
+hidden from the agent, including builtin skills and skills discovered from
+disk.
+
+```jsonc
+{
+  "options": {
+    "disabled_skills": ["angela-config"]
+  }
+}
+```
+
+### Agent Skills
+
+Angela supports the [Agent Skills](https://agentskills.io) open standard for
+extending agent capabilities with reusable skill packages. Skills are folders
+containing a `SKILL.md` file with instructions that Angela can discover and
+activate on demand.
+
+The global paths we looks for skills are:
+
+- `$ANGELA_SKILLS_DIR`
+- `$XDG_CONFIG_HOME/agents/skills` or `~/.config/agents/skills/`
+- `$XDG_CONFIG_HOME/angela/skills` or `~/.config/angela/skills/`
+- `~/.agents/skills/`
+- `~/.claude/skills/`
+- On Windows, we _also_ look at
+  - `%LOCALAPPDATA%\agents\skills\` or `%USERPROFILE%\AppData\Local\agents\skills\`
+  - `%LOCALAPPDATA%\angela\skills\` or `%USERPROFILE%\AppData\Local\angela\skills\`
+- Additional paths configured via `options.skills_paths`
+
+On top of that, we _also_ load skills in your project from the following
+relative paths:
+
+- `.agents/skills`
+- `.angela/skills`
+- `.claude/skills`
+- `.cursor/skills`
+
+Or load additional skill directories in your config:
+
+```jsonc
+{
+  "options": {
+    "skills_paths": ["~/squid-skills", "./other-skills"]
+  }
+}
+```
+
+You can get started with example skills from [anthropics/skills](https://github.com/anthropics/skills):
+
+```bash
+# Unix
+mkdir -p ~/.config/angela/skills
+cd ~/.config/angela/skills
+git clone https://github.com/anthropics/skills.git _temp
+mv _temp/skills/* . && rm -rf _temp
+```
+
+```powershell
+# Windows (PowerShell)
+mkdir -Force "$env:LOCALAPPDATA\angela\skills"
+cd "$env:LOCALAPPDATA\angela\skills"
+git clone https://github.com/anthropics/skills.git _temp
+mv _temp/skills/* . ; rm -r -force _temp
+```
+
+#### User-Invocable Skills
+
+Skills can be made invocable as commands from the commands palette
+(<kbd>ctrl+p</kbd>). Add `user-invocable: true` to the skill's YAML
+frontmatter:
+
+```yaml
+---
+name: my-hot-skill
+description: A skill that can be invoked as a command.
+user-invocable: true
+---
+```
+
+User-invocable skills appear in the commands palette with a `user:` or `project:` prefix:
+
+- Skills from global directories show as `user:skill-name`
+- Skills from project directories show as `project:skill-name`
+
+When invoked, the skill's instructions are loaded into the conversation context.
+
+To prevent the model from auto-triggering a skill (while still allowing user invocation), add `disable-model-invocation: true`:
+
+```yaml
+---
+name: my-skill
+description: Only invocable by users, not the model.
+user-invocable: true
+disable-model-invocation: true
+---
+```
+
+Skills with `disable-model-invocation` won't appear in the model's available skills list but can still be invoked manually by users.
+
+### Desktop notifications
+
+Angela sends desktop notifications when a tool call requires permission and when
+the agent finishes its turn. They're only sent when the terminal window isn't
+focused _and_ your terminal supports reporting the focus state.
+
+```jsonc
+{
+  "options": {
+    // Choose: "auto", "native", "osc", "bell", or "disabled"
+    "notifications": "disabled"
+  }
+}
+```
+
+`auto` uses native notifications locally and OSC notifications over SSH when
+supported.
+
+### Initialization
+
+When you initialize a project, Angela analyzes your codebase and creates
+a context file that helps it work more effectively in future sessions. By
+default, this file is named `AGENTS.md`, but you can customize the name and
+location:
+
+```jsonc
+{
+  "options": {
+    "initialize_as": "ANGELA.md"  // or "docs/LLMs.md", etc.
+  }
+}
+```
+
+This is useful if you prefer a different naming convention or want to place the
+file in a specific directory. Angela will fill the file with project-specific
+context like build commands, code patterns, and conventions it discovered
+during initialization.
+
+### Attribution Settings
+
+By default, Angela adds attribution information to Git commits and pull requests
+it creates. You can customize this behavior:
+
+```jsonc
+{
+  "options": {
+    "attribution": {
+      "trailer_style": "co-authored-by",
+      "generated_with": true
+    }
+  }
+}
+```
+
+- `trailer_style`: Controls the attribution trailer added to commit messages
+  (default: `assisted-by`)
+  - `assisted-by`: Adds `Assisted-by: Angela:[ModelID]` as specified in [the convention](https://docs.kernel.org/process/coding-assistants.html#attribution)
+  - `co-authored-by`: Adds `Co-Authored-By: Angela <angela@users.noreply.github.com>`
+  - `none`: No attribution trailer
+- `generated_with`: When true (default), adds `Generated with Angela` line to
+  commit messages and PR descriptions
+
+### Custom Providers
+
+Angela supports custom provider configurations for both OpenAI-compatible and
+Anthropic-compatible APIs.
+
+> [!NOTE]
+> Note that we support two "types" for OpenAI. Make sure to choose the right one
+> to ensure the best experience!
+>
+> - `openai` should be used when proxying or routing requests through OpenAI.
+> - `openai-compat` should be used when using non-OpenAI providers that have OpenAI-compatible APIs.
+
+#### OpenAI-Compatible APIs
+
+Here's an example configuration for Deepseek, which uses an OpenAI-compatible
+API. Don't forget to set `DEEPSEEK_API_KEY` in your environment.
+
+```jsonc
+{
+  "providers": {
+    "deepseek": {
+      "type": "openai-compat",
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key": "$DEEPSEEK_API_KEY",
+      "models": [
+        {
+          "id": "deepseek-chat",
+          "name": "Deepseek V3",
+          "context_window": 64000,
+          "default_max_tokens": 5000,
+          "price_input": 0.27,
+          "price_output": 1.1,
+          "price_cache_create": 1.1,
+          "price_cache_hit": 0.07
+        }
+      ]
+    }
+  }
+}
+```
+
+#### Anthropic-Compatible APIs
+
+Custom Anthropic-compatible providers follow this format:
+
+```jsonc
+{
+  "providers": {
+    "custom-anthropic": {
+      "type": "anthropic",
+      "base_url": "https://api.anthropic.com",
+      "api_key": "$ANTHROPIC_API_KEY",
+      "extra_headers": { "anthropic-version": "2023-06-01" },
+      "models": [
+        {
+          "id": "claude-sonnet-4-20250514",
+          "name": "Claude Sonnet 4",
+          "context_window": 200000,
+          "default_max_tokens": 50000,
+          "can_reason": true,
+          "supports_images": true,
+          "price_input": 3,
+          "price_output": 15,
+          "price_cache_create": 3.75,
+          "price_cache_hit": 0.3
+        }
+      ]
+    }
+  }
+}
+```
+
+### Amazon Bedrock
+
+Angela currently supports running Anthropic models through Bedrock, with caching disabled.
+
+A Bedrock provider appears once Angela can find AWS credentials. You can
+authenticate in one of two ways:
+
+**API key.** Set `AWS_BEARER_TOKEN_BEDROCK` to a Bedrock API key. This is the
+simplest option and never expires mid-session.
+
+**AWS credential chain (SSO, profiles, access keys).** Configure AWS the usual
+way with `aws configure` or `aws configure sso`. Angela picks up whatever the
+AWS SDK credential chain resolves, including `AWS_PROFILE`, `AWS_ACCESS_KEY_ID`
+/ `AWS_SECRET_ACCESS_KEY`, or an SSO session. To select a specific profile,
+set `AWS_PROFILE` in your shell (`AWS_PROFILE=myprofile angela`) or in the
+top-level [`env`](#environment-variables) config.
+
+If you authenticate via AWS SSO, your session expires periodically. Set
+`aws_auth_refresh` to a command that refreshes it. When Bedrock returns a
+credential error, Angela runs the command, then retries the request in place
+(no duplicate messages, no manual restart):
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
+  "env": {
+    "AWS_PROFILE": "my-sso-profile"
+  },
+  "providers": {
+    "bedrock": {
+      "aws_auth_refresh": "aws sso login --profile my-sso-profile"
+    },
+    "bedrock-europe": {
+      "aws_auth_refresh": "aws sso login --profile my-eu-sso-profile"
+    }
+  }
+}
+```
+
+- `aws_auth_refresh` — shell command run when AWS credentials expire (e.g. `aws sso login`)
+
+### Vertex AI Platform
+
+Vertex AI will appear in the list of available providers when `VERTEXAI_PROJECT` and `VERTEXAI_LOCATION` are set. You will also need to be authenticated:
+
+```bash
+$ gcloud auth application-default login
+```
+
+To add specific models to the configuration:
+
+```jsonc
+{
+  "providers": {
+    "vertexai": {
+      "type": "google-vertex",
+      // Authentication comes from gcloud and the VERTEXAI_* env vars.
+      "models": [
+        {
+          "id": "claude-sonnet-4@20250514",
+          "name": "VertexAI Sonnet 4",
+          "context_window": 200000,
+          "default_max_tokens": 50000,
+          "can_reason": true,
+          "supports_images": true,
+          "price_input": 3,
+          "price_output": 15,
+          "price_cache_create": 3.75,
+          "price_cache_hit": 0.3
+        }
+      ]
+    }
+  }
+}
+```
+
+### Local Models
+
+Angela auto-discovers models from local providers. Add a custom provider
+with `type` set to `llamacpp`, `omlx`, `lmstudio`, `litellm`, or `ollama`
+and leave out the models list. Angela will populate the model list
+automatically.
+
+```jsonc
+{
+  "providers": {
+    "ollama": {
+      "name": "Ollama",
+      "type": "ollama",
+      "base_url": "http://localhost:11434/v1/"
+    }
+  }
+}
+```
+
+For llama.cpp (`llama-server`), point at the server's base URL:
+
+```jsonc
+{
+  "providers": {
+    "llamacpp": {
+      "name": "llama.cpp",
+      "type": "llamacpp",
+      "base_url": "http://localhost:2222"
+    }
+  }
+}
+```
+
+#### Manual Model Configuration
+
+You can still list models explicitly. User-defined models always take
+precedence over discovered ones, and any fields you set won't be overwritten
+by auto-discovery. Auto discovery will run if the model list is empty for any
+`openai-compat` provider or if you set `"discover_models": true` it will merge
+the found models with your hand configured ones.
+
+```jsonc
+{
+  "providers": {
+    "ollama": {
+      "name": "Ollama",
+      "type": "ollama",
+      "base_url": "http://localhost:11434/v1/",
+      "discover_models": true,
+      "models": [
+        {
+          "id": "qwen3:30b",
+          "name": "Qwen 3 30B",
+          "context_window": 256000,
+          "default_max_tokens": 20000
+        }
+      ]
+    }
+  }
+}
+```
+
+The `discover_models` flag merges discovered models with the ones above;
+your explicit model fields win on conflicts.
+
+## Logging
+
+Sometimes you need to look at logs. Luckily, Angela logs all sorts of
+stuff. Logs are stored in `./.angela/logs/angela.log` relative to the project.
+
+The CLI also contains some helper commands to make perusing recent logs easier:
+
+```bash
+# Print the last 1000 lines
+angela logs
+
+# Print the last 500 lines
+angela logs --tail 500
+
+# Follow logs in real time
+angela logs --follow
+```
+
+Want more logging? Run `angela` with the `--debug` flag, or enable it in your
+config:
+
+```jsonc
+{
+  "options": {
+    "debug": true,
+    "debug_lsp": true
+  }
+}
+```
+
+## Provider Auto-Updates
+
+By default, Angela automatically checks for the latest and greatest list of
+providers and models from [Catwalk](https://github.com/charmbracelet/catwalk),
+the open source Angela provider database. This means that when new providers and
+models are available, or when model metadata changes, Angela automatically
+updates your local configuration.
+
+### Disabling automatic provider updates
+
+For those with restricted internet access, or those who prefer to work in
+air-gapped environments, this might not be want you want, and this feature can
+be disabled.
+
+In `angela.json`:
+
+```jsonc
+{
+  "options": {
+    "disable_provider_auto_update": true
+  }
+}
+```
+
+Or set the `ANGELA_DISABLE_PROVIDER_AUTO_UPDATE` environment variable:
+
+```bash
+export ANGELA_DISABLE_PROVIDER_AUTO_UPDATE=1
+```
+
+### Manually updating providers
+
+Manually updating providers is possible with the `angela update-providers`
+command:
+
+```bash
+# Update providers remotely from Catwalk.
+angela update-providers
+
+# Update providers from a custom Catwalk base URL.
+angela update-providers https://example.com/
+
+# Update providers from a local file.
+angela update-providers /path/to/local-providers.json
+
+# Reset providers to the embedded version, embedded at angela at build time.
+angela update-providers embedded
+
+# For more info:
+angela update-providers --help
+```
+
+## Metrics
+
+Angela records pseudonymous usage metrics (tied to a device-specific hash),
+which maintainers rely on to inform development and support priorities. The
+metrics include solely usage metadata; prompts and responses are NEVER
+collected.
+
+Details on exactly what's collected are in the source code
+([here](https://github.com/NaturalSelect/angela/tree/main/internal/event)).
+
+You can opt out of metrics collection at any time by setting the following
+in your environment:
+
+```bash
+export ANGELA_DISABLE_METRICS=1
+```
+
+Angela also respects the [`DO_NOT_TRACK`](https://donottrack.sh/) convention
+which can be enabled via `export DO_NOT_TRACK=1`.
+
+## Q&A
+
+### Why is clipboard copy and paste not working?
+
+Installing an extra tool might be needed on Unix-like environments.
+
+| Environment         | Tool                     |
+| ------------------- | ------------------------ |
+| Windows             | Native support           |
+| macOS               | Native support           |
+| Linux/BSD + Wayland | `wl-copy` and `wl-paste` |
+| Linux/BSD + X11     | `xclip` or `xsel`        |
+
+## Contributing
+
+See the [contributing guide](https://github.com/NaturalSelect/angela?tab=contributing-ov-file#contributing).
+
+## Whatcha think?
+
+We'd love to hear your thoughts on this project. Need help? We gotchu. You can find us on:
+
+- [Twitter](https://twitter.com/charmcli)
+- [Slack][slack]
+- [Discord][discord]
+- [The Fediverse](https://mastodon.social/@charmcli)
+- [Bluesky](https://bsky.app/profile/charm.land)
+
+[slack]: https://charm.land/slack
+[discord]: https://charm.land/discord
+
+## License
+
+[FSL-1.1-MIT](https://github.com/NaturalSelect/angela/raw/main/LICENSE.md)
+
+---
+
+Part of [Charm](https://charm.land).
+
+<a href="https://charm.land/"><img alt="The Charm logo" width="400" src="https://stuff.charm.sh/charm-banner-softy.jpg" /></a>
+
+<!--prettier-ignore-->
+Charm loves open source

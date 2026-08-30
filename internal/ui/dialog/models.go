@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -25,8 +26,12 @@ type ModelsCatalogMsg struct {
 }
 
 const (
-	onboardingModelInputPlaceholder = "Find your fave"
+	onboardingModelInputPlaceholder = "Find your fave, or type a model ID"
 	modelInputPlaceholder           = "Choose a model"
+
+	// customModelGroupTitle labels the entry built from whatever the
+	// user typed when no catalog model carries that ID.
+	customModelGroupTitle = "Custom model"
 )
 
 // ModelsID is the identifier for the model selection dialog.
@@ -81,6 +86,10 @@ type Models struct {
 	// config — that is a synchronous HTTP round-trip in client/server
 	// mode — so the removal is deferred to a command.
 	staleRecents []config.SelectedModel
+
+	// restrictedProvider is the provider the custom entry is attributed
+	// to. Only a restricted list has an unambiguous one.
+	restrictedProvider catwalk.Provider
 }
 
 var _ Dialog = (*Models)(nil)
@@ -248,6 +257,7 @@ func (m *Models) HandleMsg(msg tea.Msg) Action {
 			value := m.input.Value()
 			m.list.Focus()
 			m.list.SetFilter(value)
+			m.syncCustomItem(value)
 			m.list.SelectFirst()
 			m.list.ScrollToTop()
 			return ActionCmd{cmd}
@@ -469,6 +479,8 @@ func (m *Models) setProviderItems() {
 		groups = append(groups, group)
 	}
 
+	m.indexListedModels(itemsMap)
+
 	if len(recentItems) > 0 && m.restrictTo == "" {
 		recentGroup := NewModelGroup(t, "Recently used", false)
 
@@ -505,6 +517,9 @@ func (m *Models) setProviderItems() {
 
 	// Set model groups in the list.
 	m.list.SetGroups(groups...)
+	// The catalog can land after the user has typed, so a custom entry
+	// built against the earlier, shorter list is re-judged here.
+	m.syncCustomItem(m.input.Value())
 	m.list.SetSelectedItem(selectedItemID)
 	if selectedItemID != "" {
 		m.list.ScrollToSelected()
@@ -523,4 +538,44 @@ func modelKey(providerID, modelID string) string {
 		return ""
 	}
 	return providerID + ":" + modelID
+}
+
+// indexListedModels records the provider a custom entry belongs to. Only
+// a restricted list has an unambiguous one.
+func (m *Models) indexListedModels(items map[string]*ModelItem) {
+	m.restrictedProvider = catwalk.Provider{}
+	for _, item := range items {
+		if item.prov.ID == m.restrictTo {
+			m.restrictedProvider = item.prov
+			return
+		}
+	}
+}
+
+// syncCustomItem offers whatever the user typed as a selectable model
+// when nothing in the catalog matches it. It runs after the filter has
+// been applied, because "matches nothing" is the filter's verdict — the
+// list filters on model names, so an exact model ID surfaces no row of
+// its own and would otherwise be a dead end.
+//
+// It is limited to onboarding because that is the only flow that goes on
+// to register the model under its provider; elsewhere an unregistered
+// model does not survive a config reload.
+func (m *Models) syncCustomItem(query string) {
+	id := strings.TrimSpace(query)
+	if !m.isOnboarding || m.restrictTo == "" || id == "" || m.list.HasMatches() {
+		m.list.SetCustom(nil)
+		return
+	}
+
+	if current := m.list.Custom(); current != nil && current.model.ID == id {
+		return
+	}
+
+	prov := m.restrictedProvider
+	if prov.ID == "" {
+		prov = catwalk.Provider{ID: m.restrictTo}
+	}
+	model := catwalk.Model{ID: id, Name: id}
+	m.list.SetCustom(NewModelItem(m.com.Styles, prov, model, m.modelName, false))
 }

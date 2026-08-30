@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/stretchr/testify/require"
 
 	"github.com/NaturalSelect/angela/internal/agent/notify"
@@ -73,6 +74,10 @@ type countingWorkspace struct {
 	preferredModelCalls int
 	initAgentCalls      int
 	listMessageCalls    int
+
+	// upsertedModels records every model registered under a provider,
+	// which is what makes a hand-typed one survive a config reload.
+	upsertedModels []catwalk.Model
 
 	updateAgentModelCalls int
 	activeAfterRebuild    *workspace.ActiveAgent
@@ -199,6 +204,12 @@ func (w *countingWorkspace) UpdatePreferredModel(config.Scope, config.ModelConfi
 		return w.preferredModelErr
 	}
 	w.steps = append(w.steps, "persist")
+	return nil
+}
+
+func (w *countingWorkspace) UpsertProviderModel(_ config.Scope, _ string, model catwalk.Model) error {
+	w.upsertedModels = append(w.upsertedModels, model)
+	w.steps = append(w.steps, "register")
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/proto"
@@ -154,6 +155,24 @@ func (c *Client) SetProviderAPIKey(ctx context.Context, id string, scope config.
 	defer rsp.Body.Close()
 	if rsp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to set provider API key: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
+// UpsertProviderModel records a model under a provider's model list on
+// the server.
+func (c *Client) UpsertProviderModel(ctx context.Context, id string, scope config.Scope, providerID string, model catwalk.Model) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/provider-model", id), nil, jsonBody(proto.ConfigProviderModelRequest{
+		Scope:      scope,
+		ProviderID: providerID,
+		Model:      model,
+	}), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to upsert provider model: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return fmt.Errorf("failed to upsert provider model: %w", err)
 	}
 	return nil
 }

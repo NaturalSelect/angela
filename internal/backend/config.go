@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/agent"
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/commands"
@@ -135,6 +136,20 @@ func (b *Backend) SetProviderAPIKey(workspaceID string, scope config.Scope, prov
 		return err
 	}
 	if err := ws.Cfg.SetProviderAPIKey(scope, providerID, apiKey); err != nil {
+		return err
+	}
+	publishConfigChanged(ws)
+	return nil
+}
+
+// UpsertProviderModel records a model under a provider's model list,
+// replacing an entry with the same ID.
+func (b *Backend) UpsertProviderModel(workspaceID string, scope config.Scope, providerID string, model catwalk.Model) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	if err := ws.Cfg.UpsertProviderModel(scope, providerID, model); err != nil {
 		return err
 	}
 	publishConfigChanged(ws)

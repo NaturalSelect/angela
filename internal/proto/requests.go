@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/oauth"
 )
@@ -70,6 +71,14 @@ type ConfigProviderKeyRequest struct {
 	ProviderID string          `json:"provider_id"`
 	Kind       APIKeyKind      `json:"kind"`
 	APIKey     json.RawMessage `json:"api_key"`
+}
+
+// ConfigProviderModelRequest represents a request to record a model
+// under a provider's model list.
+type ConfigProviderModelRequest struct {
+	Scope      config.Scope  `json:"scope"`
+	ProviderID string        `json:"provider_id"`
+	Model      catwalk.Model `json:"model"`
 }
 
 // DecodeAPIKey decodes APIKey into the Go type indicated by Kind. It

@@ -44,6 +44,17 @@ type ActionSelectModel struct {
 	ReAuthenticate bool
 }
 
+// ActionConfigureModel is emitted once the user has settled the
+// parameters a freshly picked model runs with. Catwalk is the entry to
+// register under the provider: a model missing from that list does not
+// survive a config reload, so it is written alongside the selection.
+type ActionConfigureModel struct {
+	Provider  catwalk.Provider
+	Model     config.SelectedModel
+	Catwalk   catwalk.Model
+	ModelType config.ModelConfigName
+}
+
 // ActionSelectProvider is emitted when the user picks a provider, which
 // during onboarding precedes both authentication and model selection.
 // Configured reports whether the provider already holds credentials, so

@@ -217,6 +217,35 @@ func (c *controllerV1) handlePostWorkspaceConfigProviderKey(w http.ResponseWrite
 	w.WriteHeader(http.StatusOK)
 }
 
+// handlePostWorkspaceConfigProviderModel records a model under a provider.
+//
+//	@Summary		Upsert provider model
+//	@Tags			config
+//	@Accept			json
+//	@Param			id		path	string								true	"Workspace ID"
+//	@Param			request	body	proto.ConfigProviderModelRequest	true	"Config provider model request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/config/provider-model [post]
+func (c *controllerV1) handlePostWorkspaceConfigProviderModel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req proto.ConfigProviderModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if err := c.backend.UpsertProviderModel(id, req.Scope, req.ProviderID, req.Model); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handlePostWorkspaceConfigImportCopilot imports Copilot credentials.
 //
 //	@Summary		Import Copilot credentials

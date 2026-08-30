@@ -591,6 +591,51 @@ func (s *ConfigStore) PruneRecentModels(scope Scope, modelType ModelConfigName, 
 	})
 }
 
+// UpsertProviderModel records a model under a provider's model list in
+// the config file, replacing the entry with the same ID when one is
+// already there.
+//
+// It reads the array back out of the file rather than off the in-memory
+// ProviderConfig: the loader merges the whole catalog into that one, so
+// writing it back would freeze hundreds of catalog models into the
+// user's config and stop them tracking catalog updates.
+func (s *ConfigStore) UpsertProviderModel(scope Scope, providerID string, model catwalk.Model) error {
+	if providerID == "" || model.ID == "" {
+		return fmt.Errorf("provider id and model id are required")
+	}
+
+	key := fmt.Sprintf("providers.%s.models", escapePathKey(providerID))
+	err := s.atomicWrite(scope, func(data []byte) ([]byte, error) {
+		var models []catwalk.Model
+		if raw := gjson.Get(string(data), key); raw.Exists() {
+			if uErr := json.Unmarshal([]byte(raw.Raw), &models); uErr != nil {
+				return nil, fmt.Errorf("failed to read models for provider %s: %w", providerID, uErr)
+			}
+		}
+
+		if i := slices.IndexFunc(models, func(m catwalk.Model) bool { return m.ID == model.ID }); i >= 0 {
+			models[i] = model
+		} else {
+			models = append(models, model)
+		}
+
+		v, sErr := sjson.Set(string(data), key, models)
+		if sErr != nil {
+			return nil, fmt.Errorf("failed to write models for provider %s: %w", providerID, sErr)
+		}
+		return []byte(v), nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if err := s.autoReload(context.Background()); err != nil {
+		slog.Warn("Config file updated but failed to reload in-memory state", "error", err)
+	}
+
+	return nil
+}
+
 // updatePreferredModelFields builds the fields map for persisting a preferred
 // model change. Shared between UpdatePreferredModel and direct updateLocked
 // callers (e.g. Load). Caller must hold writeMu.

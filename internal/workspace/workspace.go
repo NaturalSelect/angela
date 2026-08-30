@@ -237,6 +237,11 @@ type Workspace interface {
 	// resolve. It names the entries to remove rather than the list to
 	// keep, so a pick recorded while the caller was deciding survives.
 	PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error
+	// UpsertProviderModel records a model under a provider's model
+	// list, replacing an entry with the same ID. A model absent from
+	// that list does not survive a config reload, so a hand-typed one
+	// has to be registered before it can be selected.
+	UpsertProviderModel(scope config.Scope, providerID string, model catwalk.Model) error
 	SetCompactMode(scope config.Scope, enabled bool) error
 	SetProviderAPIKey(scope config.Scope, providerID string, apiKey any) error
 	SetConfigField(scope config.Scope, key string, value any) error

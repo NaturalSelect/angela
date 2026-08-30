@@ -17,6 +17,11 @@ type ModelsList struct {
 	groups []ModelGroup
 	query  string
 	t      *styles.Styles
+
+	// custom is a model the user typed that the catalog does not list.
+	// It sits outside groups and bypasses the fuzzy filter, because the
+	// query it came from is the very thing that would filter it out.
+	custom *ModelItem
 }
 
 // NewModelsList creates a new list suitable for model items and groups.
@@ -36,7 +41,37 @@ func (f *ModelsList) Len() int {
 	for _, g := range f.groups {
 		n += len(g.Items)
 	}
+	if f.custom != nil {
+		n++
+	}
 	return n
+}
+
+// SetCustom installs a hand-typed model as a trailing entry, or clears
+// it when item is nil.
+func (f *ModelsList) SetCustom(item *ModelItem) {
+	if f.custom == item {
+		return
+	}
+	f.custom = item
+	f.SetItems(f.VisibleItems()...)
+}
+
+// Custom returns the hand-typed model entry, or nil when there is none.
+func (f *ModelsList) Custom() *ModelItem {
+	return f.custom
+}
+
+// HasMatches reports whether any catalog model survives the current
+// filter. The custom entry does not count: it exists precisely because
+// nothing matched, and counting it would retire it on sight.
+func (f *ModelsList) HasMatches() bool {
+	for i := range f.List.Len() {
+		if item, ok := f.ItemAt(i).(*ModelItem); ok && item != f.custom {
+			return true
+		}
+	}
+	return false
 }
 
 // SetGroups sets the model groups and updates the list items. It routes
@@ -180,7 +215,7 @@ func (f *ModelsList) VisibleItems() []list.Item {
 			// Add a space separator after each provider section
 			items = append(items, list.NewSpacerItem(1))
 		}
-		return items
+		return f.appendCustom(items)
 	}
 
 	filterableItems := make([]list.FilterableItem, 0, f.Len())
@@ -242,6 +277,19 @@ func (f *ModelsList) VisibleItems() []list.Item {
 		}
 	}
 
+	return f.appendCustom(items)
+}
+
+// appendCustom adds the hand-typed model as a trailing group. It is not
+// run through fuzzy.Find: the item exists precisely because the query
+// matched nothing, so filtering it would always drop it.
+func (f *ModelsList) appendCustom(items []list.Item) []list.Item {
+	if f.custom == nil {
+		return items
+	}
+	f.custom.SetMatch(fuzzy.Match{})
+	group := NewModelGroup(f.t, customModelGroupTitle, false, f.custom)
+	items = append(items, &group, f.custom, list.NewSpacerItem(1))
 	return items
 }
 

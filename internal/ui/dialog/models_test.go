@@ -1,14 +1,18 @@
 package dialog
 
 import (
+	"image"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/workspace"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -73,6 +77,25 @@ func newModelsDialog(t *testing.T, ws *configWorkspace, active *workspace.Active
 	t.Helper()
 	s := styles.CharmtonePantera()
 	return NewModels(&common.Common{Workspace: ws, Styles: &s}, false, active)
+}
+
+// newOnboardingModelsDialog builds the dialog as the third onboarding
+// step opens it: restricted to the provider picked one step earlier.
+func newOnboardingModelsDialog(t *testing.T, ws *configWorkspace) *Models {
+	t.Helper()
+	s := styles.CharmtonePantera()
+	m := NewModels(&common.Common{Workspace: ws, Styles: &s}, true, nil)
+	m.SetProviders(catalogFor())
+	m.RestrictToProvider(testProviderID)
+	return m
+}
+
+// typeQuery drives the dialog the way the user does, one key at a time,
+// so the custom entry is judged by the same path the TUI takes.
+func typeQuery(m *Models, query string) {
+	for _, r := range query {
+		m.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
 }
 
 // catalogFor mirrors the configured provider as the fetched catalog
@@ -363,4 +386,130 @@ func TestARestrictedListNeverPrunesRecents(t *testing.T) {
 	require.Nil(t, m.SetProviders(twoProviderCatalog()), "a restricted view must not prune")
 	require.Nil(t, m.staleRecents)
 	require.Empty(t, ws.pruned)
+}
+
+const typedModelID = "acme-experimental-2"
+
+// TestATypedModelIDBecomesSelectable is the whole point of the custom
+// entry: the catalog is never complete, and a filter that matches
+// nothing used to leave the user with no selection and no way forward.
+func TestATypedModelIDBecomesSelectable(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newOnboardingModelsDialog(t, ws)
+
+	typeQuery(m, typedModelID)
+
+	require.Equal(t, []string{typedModelID}, visibleModelIDs(m))
+	require.Equal(t, typedModelID, selectedModelID(t, m))
+}
+
+// TestConfirmingATypedModelCarriesItsID checks the pick that leaves the
+// dialog, not just the row that is drawn.
+func TestConfirmingATypedModelCarriesItsID(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newOnboardingModelsDialog(t, ws)
+
+	typeQuery(m, typedModelID)
+	action, ok := m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter}).(ActionSelectModel)
+
+	require.True(t, ok, "confirming a typed model must emit a pick")
+	require.Equal(t, typedModelID, action.Model.Model)
+	require.Equal(t, testProviderID, action.Model.Provider)
+}
+
+// TestATypedQueryThatMatchesIsNotOfferedAsCustom keeps a real catalog
+// row from being shadowed by an identical hand-typed one.
+func TestATypedQueryThatMatchesIsNotOfferedAsCustom(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newOnboardingModelsDialog(t, ws)
+
+	typeQuery(m, "Global Model")
+
+	require.Equal(t, []string{globalModelID}, visibleModelIDs(m))
+	require.Nil(t, m.list.Custom())
+}
+
+// TestAnExactModelIDStillReachesTheModel covers the seam between the two
+// mechanisms: the list filters on model names, so typing an exact ID
+// matches no row. The custom entry is what keeps that from being a dead
+// end, and the pick it emits carries the real ID.
+func TestAnExactModelIDStillReachesTheModel(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newOnboardingModelsDialog(t, ws)
+
+	typeQuery(m, globalModelID)
+
+	require.Equal(t, []string{globalModelID}, visibleModelIDs(m))
+	action, ok := m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter}).(ActionSelectModel)
+	require.True(t, ok)
+	require.Equal(t, globalModelID, action.Model.Model)
+}
+
+// TestTheCustomEntryIsOnboardingOnly guards the reason it is gated:
+// nothing outside onboarding registers the model under its provider, and
+// an unregistered model does not survive a config reload.
+func TestTheCustomEntryIsOnboardingOnly(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newModelsDialog(t, ws, nil)
+	m.SetProviders(catalogFor())
+	m.RestrictToProvider(testProviderID)
+
+	typeQuery(m, typedModelID)
+
+	require.Nil(t, m.list.Custom())
+	require.Empty(t, visibleModelIDs(m))
+}
+
+// TestTheCatalogLandingRetiresACustomEntry covers the async seam: the
+// catalog arrives after the user has typed, and may well offer the very
+// model the custom entry was standing in for.
+func TestTheCatalogLandingRetiresACustomEntry(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	s := styles.CharmtonePantera()
+	m := NewModels(&common.Common{Workspace: ws, Styles: &s}, true, nil)
+	m.RestrictToProvider(testProviderID)
+
+	typeQuery(m, "Late Model")
+	require.NotNil(t, m.list.Custom(), "an unmatched query stands in until the catalog lands")
+
+	m.SetProviders([]catwalk.Provider{{
+		ID:     testProviderID,
+		Name:   "Acme",
+		Models: []catwalk.Model{{ID: otherModelID, Name: "Late Model"}},
+	}})
+
+	require.Nil(t, m.list.Custom(), "the catalog entry supersedes the stand-in")
+	require.Equal(t, []string{otherModelID}, visibleModelIDs(m))
+}
+
+// TestTheCustomEntryActuallyDraws closes the gap between "the item is in
+// the list" and "the user can see it": the custom row is appended after
+// every group, where the list's height and scroll geometry decide
+// whether it lands on screen at all.
+func TestTheCustomEntryActuallyDraws(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newOnboardingModelsDialog(t, ws)
+	typeQuery(m, typedModelID)
+
+	const w, h = 80, 24
+	scr := uv.NewScreenBuffer(w, h)
+	m.Draw(scr, image.Rect(0, 0, w, h))
+
+	view := ansi.Strip(scr.Render())
+	require.Contains(t, view, typedModelID, "the typed model must be visible")
+	require.Contains(t, view, customModelGroupTitle, "the custom group header must be visible")
 }

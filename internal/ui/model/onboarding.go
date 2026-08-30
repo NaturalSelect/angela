@@ -25,7 +25,21 @@ const (
 	onboardingStepProvider onboardingStep = iota
 	onboardingStepAuth
 	onboardingStepModel
+	onboardingStepModelConfig
 )
+
+// previous names the step Esc walks back to, and reports false for the
+// first step, which has nowhere to go.
+func (s onboardingStep) previous() (onboardingStep, bool) {
+	switch s {
+	case onboardingStepModelConfig:
+		return onboardingStepModel, true
+	case onboardingStepAuth, onboardingStepModel:
+		return onboardingStepProvider, true
+	default:
+		return onboardingStepProvider, false
+	}
+}
 
 // openOnboardingStep moves the first-run flow onto a step, replacing the
 // dialog the previous one had open.
@@ -40,7 +54,27 @@ func (m *UI) openOnboardingStep(step onboardingStep) tea.Cmd {
 		return m.openAuthenticationDialog(m.onboarding.provider, config.SelectedModel{}, config.ModelMain)
 	case onboardingStepModel:
 		return m.openModelsDialogFor(m.onboarding.provider.ID)
+	case onboardingStepModelConfig:
+		return m.openModelConfigDialog()
 	}
+	return nil
+}
+
+// openModelConfigDialog opens the step that settles the parameters the
+// freshly picked model runs with.
+func (m *UI) openModelConfigDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.ModelConfigID) {
+		m.dialog.BringToFront(dialog.ModelConfigID)
+		return nil
+	}
+	m.dialog.OpenDialog(dialog.NewModelConfig(
+		m.com,
+		m.state == uiOnboarding,
+		m.onboarding.provider,
+		m.onboarding.model,
+		m.onboarding.catwalkModel,
+		config.ModelMain,
+	))
 	return nil
 }
 
@@ -60,10 +94,11 @@ func (m *UI) handleSelectProvider(msg dialog.ActionSelectProvider) tea.Cmd {
 // step but the first walks back one level. The first has nowhere to go,
 // and closing it would strand the user on an empty screen.
 func (m *UI) closeOnboardingDialog() tea.Cmd {
-	if m.onboarding.step == onboardingStepProvider {
+	previous, ok := m.onboarding.step.previous()
+	if !ok {
 		return nil
 	}
-	return m.openOnboardingStep(onboardingStepProvider)
+	return m.openOnboardingStep(previous)
 }
 
 // closeOnboardingDialogs clears every dialog the flow can have open, so
@@ -73,6 +108,7 @@ func (m *UI) closeOnboardingDialogs() {
 	m.dialog.CloseDialog(dialog.APIKeyInputID)
 	m.dialog.CloseDialog(dialog.OAuthID)
 	m.dialog.CloseDialog(dialog.ModelsID)
+	m.dialog.CloseDialog(dialog.ModelConfigID)
 }
 
 // markProjectInitializedCmd marks the current project as initialized in the config.

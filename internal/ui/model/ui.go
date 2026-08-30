@@ -286,6 +286,12 @@ type UI struct {
 		// picked in its first step, which the later steps act on.
 		step     onboardingStep
 		provider catwalk.Provider
+
+		// model is the pick the configuration step edits, and
+		// catwalkModel its catalog entry — zero for a hand-typed model
+		// the catalog has never listed.
+		model        config.SelectedModel
+		catwalkModel catwalk.Model
 	}
 
 	// lspStates / lspDiagnostics memoize the workspace LSP state and
@@ -2050,6 +2056,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if cmd := m.handleSelectModel(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.ActionConfigureModel:
+		if cmd := m.handleConfigureModel(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.ActionSelectAgent:
 		if cmd := m.handleSelectAgent(msg); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -2399,6 +2409,20 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 
+	// The onboarding pick is not final: its parameters, and for a
+	// hand-typed model its very existence in the catalog, are settled by
+	// the configuration step. This sits after the credential branch so
+	// an unconfigured provider still authenticates first and re-enters
+	// here once it succeeds.
+	if isOnboarding && m.onboarding.step == onboardingStepModel {
+		m.onboarding.model = msg.Model
+		m.onboarding.catwalkModel = catwalk.Model{}
+		if catwalkModel := cfg.GetModel(msg.Model.Provider, msg.Model.Model); catwalkModel != nil {
+			m.onboarding.catwalkModel = *catwalkModel
+		}
+		return m.openOnboardingStep(onboardingStepModelConfig)
+	}
+
 	// Picking a model for the role the session's agent runs on edits
 	// that session's instance and leaves the global default alone.
 	// Picking one for any other slot (the chore model, say), or picking
@@ -2460,6 +2484,44 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	}
 
 	return tea.Batch(cmds...)
+}
+
+// handleConfigureModel finishes onboarding once the model's parameters
+// are settled: it registers the model, persists the pick, and starts the
+// agent on it.
+func (m *UI) handleConfigureModel(msg dialog.ActionConfigureModel) tea.Cmd {
+	m.closeOnboardingDialogs()
+	m.setState(uiLanding, uiFocusEditor)
+
+	done := func() tea.Msg {
+		name := cmp.Or(msg.Catwalk.Name, msg.Model.Model)
+		return util.NewInfoMsg(fmt.Sprintf("%s model changed to %s",
+			stringext.Capitalize(string(msg.ModelType)), name))
+	}
+	return m.refreshActiveAgentCmd(m.applyOnboardingModelCmd(msg, done))
+}
+
+// applyOnboardingModelCmd registers the model under its provider, saves
+// it as the preference, and starts the agent.
+//
+// The steps live in one command because each depends on the one before
+// having succeeded, and their order is load-bearing: a model absent from
+// the provider's list does not resolve, so registering it last would
+// leave both the preference write and the agent start falling back to
+// the default model.
+func (m *UI) applyOnboardingModelCmd(msg dialog.ActionConfigureModel, done func() tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.com.Workspace.UpsertProviderModel(config.ScopeGlobal, msg.Model.Provider, msg.Catwalk); err != nil {
+			return util.ReportError(err)()
+		}
+		if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, msg.ModelType, msg.Model); err != nil {
+			return util.ReportError(err)()
+		}
+		if err := m.com.Workspace.InitCoderAgent(context.TODO()); err != nil {
+			return util.ReportError(err)()
+		}
+		return done()
+	}
 }
 
 // applyGlobalModelCmd persists a global model pick and brings the agent

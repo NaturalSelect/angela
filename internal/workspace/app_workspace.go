@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/agent"
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/app"
@@ -381,6 +382,10 @@ func (w *AppWorkspace) RecordRecentModel(scope config.Scope, name config.ModelCo
 
 func (w *AppWorkspace) PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
 	return w.store.PruneRecentModels(scope, name, stale)
+}
+
+func (w *AppWorkspace) UpsertProviderModel(scope config.Scope, providerID string, model catwalk.Model) error {
+	return w.store.UpsertProviderModel(scope, providerID, model)
 }
 
 func (w *AppWorkspace) SetCompactMode(scope config.Scope, enabled bool) error {

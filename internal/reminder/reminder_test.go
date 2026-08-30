@@ -9,13 +9,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTodoRecencyRendered pins the exact bytes the model receives. These
-// bytes travel in the recorded provider cassettes under
-// internal/agent/testdata, so a diff here means those need retargeting too.
+// requireGolden compares a rendered reminder against its committed golden
+// file. Line endings are normalized first: the templates are checked out
+// with the platform's endings, so on Windows they render CRLF while the
+// golden files stay LF. That difference is a checkout artifact and says
+// nothing about what the reminder tells the model.
+func requireGolden(t *testing.T, got string) {
+	t.Helper()
+	golden.RequireEqual(t, []byte(strings.ReplaceAll(got, "\r\n", "\n")))
+}
+
+// TestTodoRecencyRendered pins the text the model receives. These bytes
+// travel in the recorded provider cassettes under internal/agent/testdata,
+// so a diff here means those need retargeting too.
 func TestTodoRecencyRendered(t *testing.T) {
 	t.Parallel()
 
-	golden.RequireEqual(t, []byte(Wrap(todoRecencyText)))
+	requireGolden(t, Wrap(todoRecencyText))
 }
 
 func TestTodoRecencyFiresOnAnInterval(t *testing.T) {
@@ -161,7 +171,7 @@ func TestMCPUnavailableRendered(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			golden.RequireEqual(t, []byte(Wrap(mcpUnavailable{}.Collect(tt.state))))
+			requireGolden(t, Wrap(mcpUnavailable{}.Collect(tt.state)))
 		})
 	}
 }
@@ -188,10 +198,10 @@ func TestMCPUnavailableEscapesServerNames(t *testing.T) {
 func TestSkillsAfterCompactionRendered(t *testing.T) {
 	t.Parallel()
 
-	golden.RequireEqual(t, []byte(Wrap(skillsAfterCompaction{}.Collect(State{
+	requireGolden(t, Wrap(skillsAfterCompaction{}.Collect(State{
 		Compacted:    true,
 		LoadedSkills: []string{"builtin-skills", "shell-builtins"},
-	}))))
+	})))
 }
 
 func TestSkillsAfterCompactionFiresOnceAfterTheSummary(t *testing.T) {
@@ -256,12 +266,12 @@ func TestSkillsAfterCompactionEscapesSkillNames(t *testing.T) {
 func TestUserRemindersRendered(t *testing.T) {
 	t.Parallel()
 
-	golden.RequireEqual(t, []byte(Wrap(user{}.Collect(State{
+	requireGolden(t, Wrap(user{}.Collect(State{
 		UserReminders: []string{
 			"Always run gofumpt before you finish a change.",
 			"Never add a dependency without asking first.",
 		},
-	}))))
+	})))
 }
 
 func TestUserRemindersKeepTheTextVerbatim(t *testing.T) {

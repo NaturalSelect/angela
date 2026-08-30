@@ -12,9 +12,8 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
-
-const AngelaInfoToolName = "angela_info"
 
 //go:embed angela_info.md
 var angelaInfoDescription string
@@ -29,7 +28,7 @@ func NewAngelaInfoTool(
 	skillTracker *skills.Tracker,
 ) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		AngelaInfoToolName,
+		toolnames.AngelaInfo,
 		angelaInfoDescription,
 		func(ctx context.Context, _ AngelaInfoParams, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			return fantasy.NewTextResponse(buildAngelaInfo(cfg, lspManager, allSkills, activeSkills, skillTracker)), nil

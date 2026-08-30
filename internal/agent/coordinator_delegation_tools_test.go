@@ -7,6 +7,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/hooks"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +36,7 @@ func TestSubagentsHaveNoDelegationTools(t *testing.T) {
 	for _, id := range []string{config.AgentExplore, config.AgentGeneral} {
 		t.Run(id, func(t *testing.T) {
 			names := toolNames(t, id, 1)
-			require.NotContains(t, names, AgentToolName, "sub-agent %q must not hold the agent tool", id)
+			require.NotContains(t, names, toolnames.Agent, "sub-agent %q must not hold the agent tool", id)
 		})
 	}
 
@@ -46,7 +47,7 @@ func TestSubagentsHaveNoDelegationTools(t *testing.T) {
 
 	t.Run(config.AgentCoder, func(t *testing.T) {
 		names := toolNames(t, config.AgentCoder, 0)
-		require.Contains(t, names, AgentToolName, "coder must hold the agent tool")
+		require.Contains(t, names, toolnames.Agent, "coder must hold the agent tool")
 	})
 }
 
@@ -73,7 +74,7 @@ func TestBuildToolsOmitsAgentToolWhenNoSubagents(t *testing.T) {
 	for _, tool := range toolList {
 		names = append(names, tool.Info().Name)
 	}
-	require.NotContains(t, names, AgentToolName)
+	require.NotContains(t, names, toolnames.Agent)
 	require.Contains(t, names, "bash", "the rest of the tool list must survive")
 }
 
@@ -189,9 +190,9 @@ func TestSubagentDepthBudget(t *testing.T) {
 				names = append(names, tool.Info().Name)
 			}
 			if tc.delegate {
-				require.Contains(t, names, AgentToolName)
+				require.Contains(t, names, toolnames.Agent)
 			} else {
-				require.NotContains(t, names, AgentToolName)
+				require.NotContains(t, names, toolnames.Agent)
 			}
 		})
 	}

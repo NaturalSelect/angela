@@ -9,6 +9,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 type CallHierarchyParams struct {
@@ -17,14 +18,12 @@ type CallHierarchyParams struct {
 	Path      string `json:"path,omitempty" description:"The directory to search in. Defaults to the current working directory."`
 }
 
-const CallHierarchyToolName = "lsp_call_hierarchy"
-
 //go:embed lsp_call_hierarchy.md
 var callHierarchyDescription string
 
 func NewCallHierarchyTool(lspManager *lsp.Manager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		CallHierarchyToolName,
+		toolnames.LSPCallHierarchy,
 		callHierarchyDescription,
 		func(ctx context.Context, params CallHierarchyParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Symbol == "" {

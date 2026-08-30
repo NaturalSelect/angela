@@ -14,10 +14,10 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
 	"charm.land/x/vcr"
-	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -117,7 +117,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.ViewToolName {
+							if tc.Name == toolnames.View {
 								tcID = tc.ID
 							}
 						}
@@ -160,10 +160,10 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.ViewToolName {
+							if tc.Name == toolnames.View {
 								readTCID = tc.ID
 							}
-							if tc.Name == tools.EditToolName || tc.Name == tools.WriteToolName {
+							if tc.Name == toolnames.Edit || tc.Name == toolnames.Write {
 								writeTCID = tc.ID
 							}
 						}
@@ -212,7 +212,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.BashToolName {
+							if tc.Name == toolnames.Bash {
 								bashTCID = tc.ID
 							}
 						}
@@ -257,7 +257,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.DownloadToolName {
+							if tc.Name == toolnames.Download {
 								downloadTCID = tc.ID
 							}
 						}
@@ -301,7 +301,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.FetchToolName {
+							if tc.Name == toolnames.Fetch {
 								fetchTCID = tc.ID
 							}
 						}
@@ -341,7 +341,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.GlobToolName {
+							if tc.Name == toolnames.Glob {
 								globTCID = tc.ID
 							}
 						}
@@ -382,7 +382,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.GrepToolName {
+							if tc.Name == toolnames.Grep {
 								grepTCID = tc.ID
 							}
 						}
@@ -423,7 +423,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.LSToolName {
+							if tc.Name == toolnames.LS {
 								lsTCID = tc.ID
 							}
 						}
@@ -465,7 +465,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.MultiEditToolName {
+							if tc.Name == toolnames.MultiEdit {
 								multiEditTCID = tc.ID
 							}
 						}
@@ -510,7 +510,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.SourcegraphToolName {
+							if tc.Name == toolnames.Sourcegraph {
 								sourcegraphTCID = tc.ID
 							}
 						}
@@ -550,7 +550,7 @@ func TestCoderAgent(t *testing.T) {
 				for _, msg := range msgs {
 					if msg.Role == message.Assistant {
 						for _, tc := range msg.ToolCalls() {
-							if tc.Name == tools.WriteToolName {
+							if tc.Name == toolnames.Write {
 								writeTCID = tc.ID
 							}
 						}
@@ -613,11 +613,11 @@ func TestCoderAgent(t *testing.T) {
 				var globTCID, lsTCID string
 
 				for _, tc := range toolCalls {
-					if tc.Name == tools.GlobToolName {
+					if tc.Name == toolnames.Glob {
 						foundGlob = true
 						globTCID = tc.ID
 					}
-					if tc.Name == tools.LSToolName {
+					if tc.Name == toolnames.LS {
 						foundLS = true
 						lsTCID = tc.ID
 					}

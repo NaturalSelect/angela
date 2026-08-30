@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed web_fetch.md.tpl
@@ -59,7 +60,7 @@ func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 	}
 
 	return fantasy.NewParallelAgentTool(
-		WebFetchToolName,
+		toolnames.WebFetch,
 		renderToolDescription(webFetchDescriptionTpl),
 		func(ctx context.Context, params WebFetchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.URL == "" {

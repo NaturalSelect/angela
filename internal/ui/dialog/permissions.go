@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/stringext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -321,8 +322,8 @@ func (p *Permissions) respond(action PermissionAction) tea.Msg {
 
 func (p *Permissions) hasDiffView() bool {
 	switch p.permission.ToolName {
-	case tools.EditToolName, tools.WriteToolName, tools.MultiEditToolName,
-		tools.ReplaceSymbolToolName, tools.MergeToolName:
+	case toolnames.Edit, toolnames.Write, toolnames.MultiEdit,
+		toolnames.LSPReplaceSymbol, toolnames.Merge:
 		return true
 	}
 	return false
@@ -466,10 +467,10 @@ func (p *Permissions) renderHeader(contentWidth int) string {
 
 	// Show generic Path only for tools that don't render their own file/path line.
 	switch p.permission.ToolName {
-	case tools.EditToolName, tools.WriteToolName, tools.MultiEditToolName,
-		tools.ViewToolName, tools.ReplaceSymbolToolName,
-		tools.DownloadToolName, tools.LSToolName,
-		tools.MergeToolName:
+	case toolnames.Edit, toolnames.Write, toolnames.MultiEdit,
+		toolnames.View, toolnames.LSPReplaceSymbol,
+		toolnames.Download, toolnames.LS,
+		toolnames.Merge:
 		// These tools show their own File/Directory line below.
 	default:
 		lines = append(lines, p.renderKeyValue("Path", fsext.PrettyPath(p.permission.Path), contentWidth))
@@ -477,16 +478,16 @@ func (p *Permissions) renderHeader(contentWidth int) string {
 
 	// Add tool-specific header info.
 	switch p.permission.ToolName {
-	case tools.BashToolName:
+	case toolnames.Bash:
 		if params, ok := p.permission.Params.(tools.BashPermissionsParams); ok {
 			lines = append(lines, p.renderKeyValue("Desc", params.Description, contentWidth))
 		}
-	case tools.DownloadToolName:
+	case toolnames.Download:
 		if params, ok := p.permission.Params.(tools.DownloadPermissionsParams); ok {
 			lines = append(lines, p.renderKeyValue("URL", params.URL, contentWidth))
 			lines = append(lines, p.renderKeyValue("File", fsext.PrettyPath(params.FilePath), contentWidth))
 		}
-	case tools.EditToolName, tools.WriteToolName, tools.MultiEditToolName, tools.ViewToolName, tools.ReplaceSymbolToolName:
+	case toolnames.Edit, toolnames.Write, toolnames.MultiEdit, toolnames.View, toolnames.LSPReplaceSymbol:
 		var filePath string
 		switch params := p.permission.Params.(type) {
 		case tools.EditPermissionsParams:
@@ -503,11 +504,11 @@ func (p *Permissions) renderHeader(contentWidth int) string {
 		if filePath != "" {
 			lines = append(lines, p.renderKeyValue("File", fsext.PrettyPath(filePath), contentWidth))
 		}
-	case tools.LSToolName:
+	case toolnames.LS:
 		if params, ok := p.permission.Params.(tools.LSPermissionsParams); ok {
 			lines = append(lines, p.renderKeyValue("Directory", fsext.PrettyPath(params.Path), contentWidth))
 		}
-	case tools.MergeToolName:
+	case toolnames.Merge:
 		// Named, not path-shortened: the proposal is held in memory and
 		// has no file behind it.
 		if params, ok := p.permission.Params.(tools.MergePermissionsParams); ok {
@@ -533,7 +534,7 @@ func (p *Permissions) renderToolName(width int) string {
 	toolName := p.permission.ToolName
 
 	// Check if this is an MCP tool (format: mcp_<mcpname>_<toolname>).
-	if strings.HasPrefix(toolName, "mcp_") {
+	if strings.HasPrefix(toolName, toolnames.MCPPrefix) {
 		parts := strings.SplitN(toolName, "_", 3)
 		if len(parts) == 3 {
 			mcpName := prettyName(parts[1])
@@ -554,31 +555,31 @@ func prettyName(name string) string {
 
 func (p *Permissions) renderContent(width int) string {
 	switch p.permission.ToolName {
-	case tools.BashToolName:
+	case toolnames.Bash:
 		return p.renderBashContent(width)
-	case tools.EditToolName:
+	case toolnames.Edit:
 		return p.renderEditContent(width)
-	case tools.WriteToolName:
+	case toolnames.Write:
 		return p.renderWriteContent(width)
-	case tools.MultiEditToolName:
+	case toolnames.MultiEdit:
 		return p.renderMultiEditContent(width)
-	case tools.ReplaceSymbolToolName:
+	case toolnames.LSPReplaceSymbol:
 		return p.renderReplaceSymbolContent(width)
-	case tools.MergeToolName:
+	case toolnames.Merge:
 		return p.renderMergeContent(width)
-	case tools.RenameToolName:
+	case toolnames.LSPRename:
 		return p.renderRenameContent(width)
-	case tools.DownloadToolName:
+	case toolnames.Download:
 		return p.renderDownloadContent(width)
-	case tools.FetchToolName:
+	case toolnames.Fetch:
 		return p.renderFetchContent(width)
-	case tools.WebFetchToolName:
+	case toolnames.WebFetch:
 		return p.renderWebFetchContent(width)
-	case tools.WebSearchToolName:
+	case toolnames.WebSearch:
 		return p.renderWebSearchContent(width)
-	case tools.ViewToolName:
+	case toolnames.View:
 		return p.renderViewContent(width)
-	case tools.LSToolName:
+	case toolnames.LS:
 		return p.renderLSContent(width)
 	default:
 		return p.renderDefaultContent(width)
@@ -759,7 +760,7 @@ func (p *Permissions) renderDefaultContent(width int) string {
 	t := p.com.Styles
 	var content string
 	// do not add the description for mcp tools
-	if !strings.HasPrefix(p.permission.ToolName, "mcp_") {
+	if !strings.HasPrefix(p.permission.ToolName, toolnames.MCPPrefix) {
 		content = p.permission.Description
 	}
 

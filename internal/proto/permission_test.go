@@ -6,6 +6,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +27,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 	}{
 		{
 			name:     "bash",
-			toolName: tools.BashToolName,
+			toolName: toolnames.Bash,
 			params: tools.BashPermissionsParams{
 				Description:     "list files",
 				Command:         "ls -la",
@@ -43,7 +44,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "edit",
-			toolName: tools.EditToolName,
+			toolName: toolnames.Edit,
 			params: tools.EditPermissionsParams{
 				FilePath:   "/tmp/x.go",
 				OldContent: "old",
@@ -59,7 +60,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "write",
-			toolName: tools.WriteToolName,
+			toolName: toolnames.Write,
 			params: tools.WritePermissionsParams{
 				FilePath:   "/tmp/x.go",
 				NewContent: "new",
@@ -73,7 +74,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "multiedit",
-			toolName: tools.MultiEditToolName,
+			toolName: toolnames.MultiEdit,
 			params: tools.MultiEditPermissionsParams{
 				FilePath:   "/tmp/x.go",
 				OldContent: "old",
@@ -87,7 +88,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "ls",
-			toolName: tools.LSToolName,
+			toolName: toolnames.LS,
 			params: tools.LSPermissionsParams{
 				Path:   "/tmp",
 				Ignore: []string{".git"},
@@ -103,7 +104,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "view",
-			toolName: tools.ViewToolName,
+			toolName: toolnames.View,
 			params: tools.ViewPermissionsParams{
 				FilePath: "/tmp/x.go",
 				Offset:   10,
@@ -117,7 +118,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "fetch",
-			toolName: tools.FetchToolName,
+			toolName: toolnames.Fetch,
 			params: tools.FetchPermissionsParams{
 				URL:    "https://example.com",
 				Format: "text",
@@ -130,7 +131,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "download",
-			toolName: tools.DownloadToolName,
+			toolName: toolnames.Download,
 			params: tools.DownloadPermissionsParams{
 				URL:      "https://example.com/x.zip",
 				FilePath: "/tmp/x.zip",
@@ -145,7 +146,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "web_fetch",
-			toolName: tools.WebFetchToolName,
+			toolName: toolnames.WebFetch,
 			params: tools.WebFetchPermissionsParams{
 				URL: "https://example.com",
 			},
@@ -157,7 +158,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "web_search",
-			toolName: tools.WebSearchToolName,
+			toolName: toolnames.WebSearch,
 			params: tools.WebSearchPermissionsParams{
 				Query:      "web fetch permissions",
 				MaxResults: 5,
@@ -171,7 +172,7 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 		},
 		{
 			name:     "lsp_rename",
-			toolName: tools.RenameToolName,
+			toolName: toolnames.LSPRename,
 			params: tools.RenamePermissionsParams{
 				Symbol:  "OldName",
 				NewName: "NewName",

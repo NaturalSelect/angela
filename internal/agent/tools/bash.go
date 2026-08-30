@@ -18,6 +18,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/shell"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 type BashParams struct {
@@ -47,8 +48,6 @@ type BashResponseMetadata struct {
 }
 
 const (
-	BashToolName = "bash"
-
 	DefaultAutoBackgroundAfter = 60 // Commands taking longer automatically become background jobs
 	MaxOutputLength            = 30000
 	BashNoOutput               = "no output"
@@ -195,7 +194,7 @@ func blockFuncs() []shell.BlockFunc {
 
 func NewBashTool(workingDir string, attribution *config.Attribution, modelID string) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		BashToolName,
+		toolnames.Bash,
 		string(bashDescription(attribution, modelID)),
 		func(ctx context.Context, params BashParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Command == "" {

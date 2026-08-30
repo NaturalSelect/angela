@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -202,5 +203,5 @@ func TestWebFetchSubagentIsRegistered(t *testing.T) {
 	require.Contains(t, names, "web_search")
 	require.Contains(t, names, "view")
 	require.NotContains(t, names, "bash")
-	require.NotContains(t, names, AgentToolName)
+	require.NotContains(t, names, toolnames.Agent)
 }

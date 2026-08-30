@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +38,7 @@ func TestWriteToolWritesEmptyNewFile(t *testing.T) {
 
 	resp, err := tool.Run(ctx, fantasy.ToolCall{
 		ID:    "test-call",
-		Name:  WriteToolName,
+		Name:  toolnames.Write,
 		Input: string(input),
 	})
 	require.NoError(t, err)
@@ -60,7 +61,7 @@ func writePlan(t *testing.T, workingDir string, params WriteParams) Plan {
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
 
 	plan, err := tool.Plan(ctx, fantasy.ToolCall{
-		ID: "call-1", Name: WriteToolName, Input: string(input),
+		ID: "call-1", Name: toolnames.Write, Input: string(input),
 	})
 	require.NoError(t, err)
 	return plan

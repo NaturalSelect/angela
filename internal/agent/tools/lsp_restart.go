@@ -11,9 +11,8 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
-
-const LSPRestartToolName = "lsp_restart"
 
 //go:embed lsp_restart.md
 var lspRestartDescription string
@@ -26,7 +25,7 @@ type LSPRestartParams struct {
 
 func NewLSPRestartTool(lspManager *lsp.Manager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		LSPRestartToolName,
+		toolnames.LSPRestart,
 		lspRestartDescription,
 		func(ctx context.Context, params LSPRestartParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			clientsToRestart := make(map[string]*lsp.Client)

@@ -10,6 +10,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/shell"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,7 +67,7 @@ func runBashTool(t *testing.T, tool fantasy.AgentTool, ctx context.Context, para
 
 	call := fantasy.ToolCall{
 		ID:    "test-call",
-		Name:  BashToolName,
+		Name:  toolnames.Bash,
 		Input: string(input),
 	}
 

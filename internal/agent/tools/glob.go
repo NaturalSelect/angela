@@ -18,9 +18,8 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/fsext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
-
-const GlobToolName = "glob"
 
 //go:embed glob.md.tpl
 var globDescriptionTmpl []byte
@@ -52,7 +51,7 @@ type GlobResponseMetadata struct {
 
 func NewGlobTool(workingDir string, cfg config.ToolGlob) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		GlobToolName,
+		toolnames.Glob,
 		globDescription(),
 		func(ctx context.Context, params GlobParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Pattern == "" {

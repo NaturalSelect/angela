@@ -3,8 +3,7 @@ package chat
 import (
 	"testing"
 
-	"github.com/NaturalSelect/angela/internal/agent"
-	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -16,15 +15,15 @@ func TestToolKindIconsDistinguishKinds(t *testing.T) {
 	t.Parallel()
 
 	byKind := map[string]string{
-		"shell":  toolKindIcon(tools.BashToolName),
-		"write":  toolKindIcon(tools.EditToolName),
-		"read":   toolKindIcon(tools.ViewToolName),
-		"search": toolKindIcon(tools.GrepToolName),
-		"fetch":  toolKindIcon(tools.WebFetchToolName),
-		"web":    toolKindIcon(tools.WebSearchToolName),
-		"agent":  toolKindIcon(agent.AgentToolName),
-		"todo":   toolKindIcon(tools.TodosToolName),
-		"lsp":    toolKindIcon(tools.DiagnosticsToolName),
+		"shell":  toolKindIcon(toolnames.Bash),
+		"write":  toolKindIcon(toolnames.Edit),
+		"read":   toolKindIcon(toolnames.View),
+		"search": toolKindIcon(toolnames.Grep),
+		"fetch":  toolKindIcon(toolnames.WebFetch),
+		"web":    toolKindIcon(toolnames.WebSearch),
+		"agent":  toolKindIcon(toolnames.Agent),
+		"todo":   toolKindIcon(toolnames.Todos),
+		"lsp":    toolKindIcon(toolnames.LSPDiagnostics),
 		"mcp":    toolKindIcon("mcp_something"),
 	}
 
@@ -46,10 +45,10 @@ func TestToolKindIconsDistinguishKinds(t *testing.T) {
 func TestToolKindIconGroupsAndFallback(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, toolKindIcon(tools.BashToolName), toolKindIcon(tools.JobKillToolName))
-	require.Equal(t, toolKindIcon(tools.EditToolName), toolKindIcon(tools.MultiEditToolName))
-	require.Equal(t, toolKindIcon(tools.GrepToolName), toolKindIcon(tools.GlobToolName))
-	require.Equal(t, toolKindIcon(tools.DiagnosticsToolName), toolKindIcon(tools.SymbolsToolName))
+	require.Equal(t, toolKindIcon(toolnames.Bash), toolKindIcon(toolnames.JobKill))
+	require.Equal(t, toolKindIcon(toolnames.Edit), toolKindIcon(toolnames.MultiEdit))
+	require.Equal(t, toolKindIcon(toolnames.Grep), toolKindIcon(toolnames.Glob))
+	require.Equal(t, toolKindIcon(toolnames.LSPDiagnostics), toolKindIcon(toolnames.LSPSymbols))
 
 	require.Equal(t, styles.ToolIconGeneric, toolKindIcon("some_unregistered_tool"))
 	require.Equal(t, styles.ToolIconMCP, toolKindIcon("mcp_github_search"))

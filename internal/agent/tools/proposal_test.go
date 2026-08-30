@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,7 +80,7 @@ func TestProposalWriteStoresTheDocument(t *testing.T) {
 	store := NewProposalStore()
 	resp, err := NewProposalWriteTool(store).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalWriteToolName, `{"content":"# Plan\n\nStep one."}`),
+		proposalCall(toolnames.ProposalWrite, `{"content":"# Plan\n\nStep one."}`),
 	)
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
@@ -100,14 +101,14 @@ func TestProposalWritesDoNotEchoTheDocument(t *testing.T) {
 
 	written, err := NewProposalWriteTool(store).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalWriteToolName, `{"content":"`+body+`"}`),
+		proposalCall(toolnames.ProposalWrite, `{"content":"`+body+`"}`),
 	)
 	require.NoError(t, err)
 	require.NotContains(t, written.Content, body)
 
 	edited, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalEditToolName, `{"old_string":"quick","new_string":"slow"}`),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"quick","new_string":"slow"}`),
 	)
 	require.NoError(t, err)
 	require.NotContains(t, edited.Content, "brown fox",
@@ -119,7 +120,7 @@ func TestProposalWriteRejectsEmptyContent(t *testing.T) {
 
 	resp, err := NewProposalWriteTool(NewProposalStore()).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalWriteToolName, `{"content":""}`),
+		proposalCall(toolnames.ProposalWrite, `{"content":""}`),
 	)
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
@@ -133,7 +134,7 @@ func TestProposalEditReplacesInPlace(t *testing.T) {
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalEditToolName, `{"old_string":"Tuesday","new_string":"Friday"}`),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"Tuesday","new_string":"Friday"}`),
 	)
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
@@ -152,7 +153,7 @@ func TestProposalEditLeavesDocumentAloneOnFailure(t *testing.T) {
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalEditToolName, `{"old_string":"Wednesday","new_string":"Friday"}`),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"Wednesday","new_string":"Friday"}`),
 	)
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
@@ -170,7 +171,7 @@ func TestProposalEditNeedsAUniqueMatch(t *testing.T) {
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalEditToolName, `{"old_string":"step","new_string":"phase"}`),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"step","new_string":"phase"}`),
 	)
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
@@ -188,7 +189,7 @@ func TestProposalEditReplaceAll(t *testing.T) {
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalEditToolName, `{"old_string":"step","new_string":"phase","replace_all":true}`),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"step","new_string":"phase","replace_all":true}`),
 	)
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
@@ -202,11 +203,11 @@ func TestProposalEditBeforeAnyDraft(t *testing.T) {
 
 	resp, err := NewProposalEditTool(NewProposalStore()).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalEditToolName, `{"old_string":"a","new_string":"b"}`),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"a","new_string":"b"}`),
 	)
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
-	require.Contains(t, resp.Content, ProposalWriteToolName,
+	require.Contains(t, resp.Content, toolnames.ProposalWrite,
 		"the error has to name the tool that gets the model unstuck")
 }
 
@@ -218,7 +219,7 @@ func TestProposalReadReturnsTheWholeDocument(t *testing.T) {
 
 	resp, err := NewProposalReadTool(store).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalReadToolName, `{}`),
+		proposalCall(toolnames.ProposalRead, `{}`),
 	)
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
@@ -233,11 +234,11 @@ func TestProposalReadOnEmptyDocument(t *testing.T) {
 
 	resp, err := NewProposalReadTool(NewProposalStore()).Run(
 		proposalCtx(t, "s1"),
-		proposalCall(ProposalReadToolName, `{}`),
+		proposalCall(toolnames.ProposalRead, `{}`),
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.Content)
-	require.Contains(t, resp.Content, ProposalWriteToolName)
+	require.Contains(t, resp.Content, toolnames.ProposalWrite)
 }
 
 func TestProposalToolsNeedASession(t *testing.T) {
@@ -249,9 +250,9 @@ func TestProposalToolsNeedASession(t *testing.T) {
 		name  string
 		input string
 	}{
-		{NewProposalWriteTool(store), ProposalWriteToolName, `{"content":"x"}`},
-		{NewProposalEditTool(store), ProposalEditToolName, `{"old_string":"a","new_string":"b"}`},
-		{NewProposalReadTool(store), ProposalReadToolName, `{}`},
+		{NewProposalWriteTool(store), toolnames.ProposalWrite, `{"content":"x"}`},
+		{NewProposalEditTool(store), toolnames.ProposalEdit, `{"old_string":"a","new_string":"b"}`},
+		{NewProposalReadTool(store), toolnames.ProposalRead, `{}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

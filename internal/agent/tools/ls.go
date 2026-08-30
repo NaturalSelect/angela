@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/fsext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 type LSParams struct {
@@ -48,7 +49,6 @@ type LSResponseMetadata struct {
 }
 
 const (
-	LSToolName = "ls"
 	maxLSFiles = 1000
 )
 
@@ -72,7 +72,7 @@ func lsDescription() string {
 
 func NewLsTool(workingDir string, lsConfig config.ToolLs) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		LSToolName,
+		toolnames.LS,
 		lsDescription(),
 		func(ctx context.Context, params LSParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			searchPath, err := fsext.Expand(cmp.Or(params.Path, workingDir))

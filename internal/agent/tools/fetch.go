@@ -13,12 +13,12 @@ import (
 
 	"charm.land/fantasy"
 	md "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/PuerkitoBio/goquery"
 )
 
 const (
-	FetchToolName = "fetch"
-	MaxFetchSize  = 100 * 1024 // 100KB
+	MaxFetchSize = 100 * 1024 // 100KB
 )
 
 //go:embed fetch.md.tpl
@@ -55,7 +55,7 @@ func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 	}
 
 	return fantasy.NewParallelAgentTool(
-		FetchToolName,
+		toolnames.Fetch,
 		fetchDescription(),
 		func(ctx context.Context, params FetchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.URL == "" {

@@ -8,6 +8,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed proposal_write.md
@@ -18,12 +19,6 @@ var proposalEditDescription string
 
 //go:embed proposal_read.md
 var proposalReadDescription string
-
-const (
-	ProposalWriteToolName = "proposal_write"
-	ProposalEditToolName  = "proposal_edit"
-	ProposalReadToolName  = "proposal_read"
-)
 
 // ProposalDocumentName labels the document in the approval dialog. The
 // suffix is what picks the lexer that highlights it.
@@ -72,12 +67,12 @@ type ProposalReadParams struct{}
 
 func NewProposalWriteTool(store *ProposalStore) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		ProposalWriteToolName,
+		toolnames.ProposalWrite,
 		proposalWriteDescription,
 		func(ctx context.Context, params ProposalWriteParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", ProposalWriteToolName)
+				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", toolnames.ProposalWrite)
 			}
 			if params.Content == "" {
 				return fantasy.NewTextErrorResponse("content is required"), nil
@@ -89,7 +84,7 @@ func NewProposalWriteTool(store *ProposalStore) fantasy.AgentTool {
 			// editing in place saves on the way in.
 			return fantasy.NewTextResponse(fmt.Sprintf(
 				"Proposal saved, %d lines. Revise it with %s rather than writing it out again.",
-				lineCount(params.Content), ProposalEditToolName,
+				lineCount(params.Content), toolnames.ProposalEdit,
 			)), nil
 		},
 	)
@@ -97,23 +92,23 @@ func NewProposalWriteTool(store *ProposalStore) fantasy.AgentTool {
 
 func NewProposalEditTool(store *ProposalStore) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		ProposalEditToolName,
+		toolnames.ProposalEdit,
 		proposalEditDescription,
 		func(ctx context.Context, params ProposalEditParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", ProposalEditToolName)
+				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", toolnames.ProposalEdit)
 			}
 			if params.OldString == "" {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf(
-					"old_string is required. To start the proposal, use %s.", ProposalWriteToolName,
+					"old_string is required. To start the proposal, use %s.", toolnames.ProposalWrite,
 				)), nil
 			}
 
 			doc, ok := store.Get(sessionID)
 			if !ok {
 				return fantasy.NewTextErrorResponse(fmt.Sprintf(
-					"There is no proposal to edit yet. Draft it with %s first.", ProposalWriteToolName,
+					"There is no proposal to edit yet. Draft it with %s first.", toolnames.ProposalWrite,
 				)), nil
 			}
 
@@ -134,18 +129,18 @@ func NewProposalEditTool(store *ProposalStore) fantasy.AgentTool {
 
 func NewProposalReadTool(store *ProposalStore) fantasy.AgentTool {
 	return fantasy.NewParallelAgentTool(
-		ProposalReadToolName,
+		toolnames.ProposalRead,
 		proposalReadDescription,
 		func(ctx context.Context, params ProposalReadParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", ProposalReadToolName)
+				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", toolnames.ProposalRead)
 			}
 
 			doc, ok := store.Get(sessionID)
 			if !ok || doc == "" {
 				return fantasy.NewTextResponse(fmt.Sprintf(
-					"The proposal is empty. Draft it with %s.", ProposalWriteToolName,
+					"The proposal is empty. Draft it with %s.", toolnames.ProposalWrite,
 				)), nil
 			}
 			return fantasy.NewTextResponse(doc), nil

@@ -15,6 +15,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/filepathext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 type DownloadParams struct {
@@ -28,8 +29,6 @@ type DownloadPermissionsParams struct {
 	FilePath string `json:"file_path"`
 	Timeout  int    `json:"timeout,omitempty"`
 }
-
-const DownloadToolName = "download"
 
 //go:embed download.md.tpl
 var downloadDescriptionTmpl []byte
@@ -62,7 +61,7 @@ func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 		}
 	}
 	return fantasy.NewParallelAgentTool(
-		DownloadToolName,
+		toolnames.Download,
 		downloadDescription(),
 		func(ctx context.Context, params DownloadParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.URL == "" {

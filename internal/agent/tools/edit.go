@@ -17,6 +17,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -41,8 +42,6 @@ type EditResponseMetadata struct {
 	OldContent string `json:"old_content,omitempty"`
 	NewContent string `json:"new_content,omitempty"`
 }
-
-const EditToolName = "edit"
 
 //go:embed edit.md
 var editDescription string
@@ -75,7 +74,7 @@ func NewEditTool(
 		filetracker: filetracker,
 		workingDir:  workingDir,
 	}
-	t.AgentTool = fantasy.NewAgentTool(EditToolName, editDescription, t.run)
+	t.AgentTool = fantasy.NewAgentTool(toolnames.Edit, editDescription, t.run)
 	return t
 }
 
@@ -93,7 +92,7 @@ func (t *editTool) run(ctx context.Context, params EditParams, call fantasy.Tool
 func (t *editTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[EditParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", EditToolName)
+		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.Edit)
 	}
 	return t.plan(ctx, params)
 }

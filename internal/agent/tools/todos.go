@@ -7,12 +7,11 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed todos.md
 var todosDescription string
-
-const TodosToolName = "todos"
 
 type TodosParams struct {
 	Todos []TodoItem `json:"todos" description:"The updated todo list"`
@@ -35,7 +34,7 @@ type TodosResponseMetadata struct {
 
 func NewTodosTool(sessions session.Service) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		TodosToolName,
+		toolnames.Todos,
 		todosDescription,
 		func(ctx context.Context, params TodosParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			sessionID := GetSessionFromContext(ctx)

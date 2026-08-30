@@ -12,6 +12,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/filetracker"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -230,7 +231,7 @@ func runViewTool(t *testing.T, tool fantasy.AgentTool, ctx context.Context, para
 
 	call := fantasy.ToolCall{
 		ID:    "test-call",
-		Name:  ViewToolName,
+		Name:  toolnames.View,
 		Input: string(input),
 	}
 

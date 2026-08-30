@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +37,7 @@ func TestWebFetchToolScopesLargePagesToSession(t *testing.T) {
 		ctx := context.WithValue(context.Background(), SessionIDContextKey, sessionID)
 		input, err := json.Marshal(WebFetchParams{URL: srv.URL})
 		require.NoError(t, err)
-		resp, err := tool.Run(ctx, fantasy.ToolCall{ID: "call-" + sessionID, Name: WebFetchToolName, Input: string(input)})
+		resp, err := tool.Run(ctx, fantasy.ToolCall{ID: "call-" + sessionID, Name: toolnames.WebFetch, Input: string(input)})
 		require.NoError(t, err)
 		require.False(t, resp.IsError, resp.Content)
 		return resp.Content
@@ -128,7 +129,7 @@ func TestWebFetchToolRejectsPathTraversalSessionID(t *testing.T) {
 			input, err := json.Marshal(WebFetchParams{URL: srv.URL})
 			require.NoError(t, err)
 
-			_, err = tool.Run(ctx, fantasy.ToolCall{ID: "call-1", Name: WebFetchToolName, Input: string(input)})
+			_, err = tool.Run(ctx, fantasy.ToolCall{ID: "call-1", Name: toolnames.WebFetch, Input: string(input)})
 			require.Error(t, err, "an unsafe session id must fail the call instead of writing somewhere unexpected")
 
 			_, statErr := os.Stat(unsafeTarget)

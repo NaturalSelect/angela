@@ -14,6 +14,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
@@ -22,14 +23,12 @@ type ReferencesParams struct {
 	Path   string `json:"path,omitempty" description:"The directory to search in. Use a directory/file to narrow down the symbol search. Defaults to the current working directory."`
 }
 
-const ReferencesToolName = "lsp_references"
-
 //go:embed references.md
 var referencesDescription string
 
 func NewReferencesTool(lspManager *lsp.Manager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		ReferencesToolName,
+		toolnames.LSPReferences,
 		referencesDescription,
 		func(ctx context.Context, params ReferencesParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Symbol == "" {

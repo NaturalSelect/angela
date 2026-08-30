@@ -7,10 +7,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/shell"
-)
-
-const (
-	JobKillToolName = "job_kill"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed job_kill.md
@@ -28,7 +25,7 @@ type JobKillResponseMetadata struct {
 
 func NewJobKillTool() fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		JobKillToolName,
+		toolnames.JobKill,
 		jobKillDescription,
 		func(ctx context.Context, params JobKillParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.ShellID == "" {

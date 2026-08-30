@@ -9,12 +9,11 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed merge.md
 var mergeDescription string
-
-const MergeToolName = tools.MergeToolName
 
 // mergeParams is empty on purpose. What crosses back is the proposal
 // the branch has been drafting, so there is nothing left for the call
@@ -42,7 +41,7 @@ type mergeTool struct {
 
 func (c *coordinator) mergeTool() fantasy.AgentTool {
 	t := &mergeTool{c: c}
-	t.AgentTool = fantasy.NewAgentTool(MergeToolName, mergeDescription, t.run)
+	t.AgentTool = fantasy.NewAgentTool(toolnames.Merge, mergeDescription, t.run)
 	return t
 }
 
@@ -73,7 +72,7 @@ func (t *mergeTool) plan(ctx context.Context) (tools.Plan, error) {
 		// mistake to fix, not a decision to put to the user, and
 		// leaving the branch unresolved lets it draft and try again.
 		resp := fantasy.NewTextErrorResponse(
-			"There is no proposal to merge. Draft it with " + tools.ProposalWriteToolName + " first.",
+			"There is no proposal to merge. Draft it with " + toolnames.ProposalWrite + " first.",
 		)
 		return tools.Plan{Response: &resp}, nil
 	}

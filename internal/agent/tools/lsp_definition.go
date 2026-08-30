@@ -11,6 +11,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
@@ -18,8 +19,6 @@ type DefinitionParams struct {
 	Symbol string `json:"symbol" description:"The symbol name to find the definition of"`
 	Path   string `json:"path,omitempty" description:"The directory to search in. Defaults to the current working directory."`
 }
-
-const DefinitionToolName = "lsp_definition"
 
 //go:embed lsp_definition.md
 var definitionDescription string
@@ -33,7 +32,7 @@ type DefinitionResponseMetadata struct {
 
 func NewDefinitionTool(lspManager *lsp.Manager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		DefinitionToolName,
+		toolnames.LSPDefinition,
 		definitionDescription,
 		func(ctx context.Context, params DefinitionParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Symbol == "" {

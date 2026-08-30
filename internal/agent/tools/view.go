@@ -21,6 +21,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed view.md.tpl
@@ -71,7 +72,6 @@ type ViewResponseMetadata struct {
 }
 
 const (
-	ViewToolName     = "view"
 	MaxViewSize      = 200 * 1024 // 200KB
 	DefaultReadLimit = 200
 	MaxLineLength    = 2000
@@ -94,7 +94,7 @@ func NewViewTool(
 	skillsPaths ...string,
 ) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		ViewToolName,
+		toolnames.View,
 		viewDescription(),
 		func(ctx context.Context, params ViewParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.FilePath == "" {

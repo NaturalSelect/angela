@@ -10,9 +10,8 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
-
-const QuestionToolName = "question"
 
 //go:embed question.md
 var questionDescription string
@@ -82,7 +81,7 @@ type QuestionChoice struct {
 // NewQuestionTool creates a new question tool.
 func NewQuestionTool(svc question.Service) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		QuestionToolName,
+		toolnames.Question,
 		questionDescription,
 		func(ctx context.Context, params QuestionParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			sessionID := GetSessionFromContext(ctx)

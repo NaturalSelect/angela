@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 // TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted pins the backward
@@ -25,7 +26,7 @@ func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
 		ID:    "call-1",
-		Name:  AgentToolName,
+		Name:  toolnames.Agent,
 		Input: `{"prompt":"hello"}`,
 	})
 	require.Error(t, err)
@@ -44,7 +45,7 @@ func TestAgentToolUnknownSubagentTypeListsAvailable(t *testing.T) {
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
 		ID:    "call-1",
-		Name:  AgentToolName,
+		Name:  toolnames.Agent,
 		Input: `{"prompt":"hello","subagent_type":"bogus-type"}`,
 	})
 	require.NoError(t, err)

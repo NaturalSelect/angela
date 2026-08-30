@@ -15,9 +15,8 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
-
-const AngelaLogsToolName = "angela_logs"
 
 //go:embed angela_logs.md.tpl
 var angelaLogsDescriptionTmpl []byte
@@ -75,7 +74,7 @@ type AngelaLogsParams struct {
 
 func NewAngelaLogsTool(logFile string) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		AngelaLogsToolName,
+		toolnames.AngelaLogs,
 		angelaLogsDescription(),
 		func(ctx context.Context, params AngelaLogsParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			result := runAngelaLogs(logFile, params)

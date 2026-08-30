@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 //go:embed web_search.md.tpl
@@ -35,7 +36,7 @@ func NewWebSearchTool(workingDir string, client *http.Client) fantasy.AgentTool 
 	}
 
 	return fantasy.NewParallelAgentTool(
-		WebSearchToolName,
+		toolnames.WebSearch,
 		renderToolDescription(webSearchDescriptionTpl),
 		func(ctx context.Context, params WebSearchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Query == "" {

@@ -8,6 +8,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 )
 
@@ -15,14 +16,12 @@ type SymbolsParams struct {
 	FilePath string `json:"file_path" description:"The path to the file to get symbols for"`
 }
 
-const SymbolsToolName = "lsp_symbols"
-
 //go:embed lsp_symbols.md
 var symbolsDescription string
 
 func NewSymbolsTool(lspManager *lsp.Manager) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
-		SymbolsToolName,
+		toolnames.LSPSymbols,
 		symbolsDescription,
 		func(ctx context.Context, params SymbolsParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.FilePath == "" {

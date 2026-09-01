@@ -26,6 +26,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/home"
+	"github.com/NaturalSelect/angela/internal/hookevents"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
 	"github.com/qjebbs/go-jsons"
 	"github.com/tidwall/gjson"
@@ -1377,7 +1378,7 @@ func isAppleTerminal() bool { return os.Getenv("TERM_PROGRAM") == "Apple_Termina
 func normalizeHookEvent(name string) string {
 	switch strings.ToLower(strings.ReplaceAll(name, "_", "")) {
 	case "pretooluse":
-		return "PreToolUse"
+		return hookevents.PreToolUse
 	default:
 		return name
 	}

@@ -200,15 +200,21 @@ type Policy struct {
 	prompt PromptPolicy
 }
 
+// dockerMCPServerName mirrors config.DockerMCPName ("docker"), the name
+// Angela registers the Docker MCP gateway server under. This package
+// cannot import internal/config (config already imports permission), so
+// the value is duplicated here rather than shared.
+const dockerMCPServerName = "docker"
+
 // builtinAllowedTools are tool names that ship pre-approved. They are
 // ordinary allow rules rather than a hardcoded bypass, so a user's deny
 // or ask rule still overrules them.
 var builtinAllowedTools = []string{
-	fmt.Sprintf("%sdocker_mcp-find", toolnames.MCPPrefix),
-	fmt.Sprintf("%sdocker_mcp-add", toolnames.MCPPrefix),
-	fmt.Sprintf("%sdocker_mcp-remove", toolnames.MCPPrefix),
-	fmt.Sprintf("%sdocker_mcp-config-set", toolnames.MCPPrefix),
-	fmt.Sprintf("%sdocker_code-mode", toolnames.MCPPrefix),
+	toolnames.MCPPrefix + dockerMCPServerName + "_mcp-find",
+	toolnames.MCPPrefix + dockerMCPServerName + "_mcp-add",
+	toolnames.MCPPrefix + dockerMCPServerName + "_mcp-remove",
+	toolnames.MCPPrefix + dockerMCPServerName + "_mcp-config-set",
+	toolnames.MCPPrefix + dockerMCPServerName + "_code-mode",
 }
 
 // CompilePolicy validates rules and folds the legacy flat allow-list

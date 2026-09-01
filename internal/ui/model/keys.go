@@ -46,7 +46,7 @@ type KeyMap struct {
 		ClearHighlight key.Binding
 		Expand         key.Binding
 		OpenSubSession key.Binding
-		Back           key.Binding
+		ToParent       key.Binding
 		ScrollLeft     key.Binding
 		ScrollRight    key.Binding
 	}
@@ -59,14 +59,14 @@ type KeyMap struct {
 	}
 
 	// Global key maps
-	Quit       key.Binding
-	Help       key.Binding
-	Commands   key.Binding
-	Models     key.Binding
-	Suspend    key.Binding
-	Sessions   key.Binding
-	Tab        key.Binding
-	ToggleYolo key.Binding
+	Quit                key.Binding
+	Help                key.Binding
+	Commands            key.Binding
+	Models              key.Binding
+	Suspend             key.Binding
+	Sessions            key.Binding
+	Tab                 key.Binding
+	CyclePermissionMode key.Binding
 	// CycleVariant steps to the next parameter preset of the current
 	// model without opening a dialog, which is the point of variants:
 	// raising reasoning effort mid-task should cost one keystroke.
@@ -103,9 +103,9 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "change focus"),
 		),
-		ToggleYolo: key.NewBinding(
-			key.WithKeys("ctrl+y"),
-			key.WithHelp("ctrl+y", "toggle yolo"),
+		CyclePermissionMode: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("shift+tab", "cycle permission mode"),
 		),
 		CycleVariant: key.NewBinding(
 			key.WithKeys("ctrl+e"),
@@ -237,7 +237,7 @@ func DefaultKeyMap() KeyMap {
 		key.WithHelp("G", "end"),
 	)
 	km.Chat.EndFollow = key.NewBinding(
-		key.WithKeys("ctrl+end"),
+		key.WithKeys("ctrl+end", "ctrl+down"),
 	)
 	km.Chat.Copy = key.NewBinding(
 		key.WithKeys("c", "y", "C", "Y"),
@@ -251,9 +251,13 @@ func DefaultKeyMap() KeyMap {
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "open"),
 	)
-	km.Chat.Back = key.NewBinding(
-		key.WithKeys("esc", "alt+esc"),
-		key.WithHelp("esc", "back"),
+	// ToParent jumps straight to the session this one was drilled into or
+	// forked from, without waiting on a scroll position like the old
+	// up-up gesture did. It works from either focus, so it stays off the
+	// Editor group despite reaching past the chat pane.
+	km.Chat.ToParent = key.NewBinding(
+		key.WithKeys("ctrl+up"),
+		key.WithHelp("ctrl+up", "to parent"),
 	)
 	km.Chat.Expand = key.NewBinding(
 		key.WithKeys("space"),

@@ -77,18 +77,6 @@ func (m *UI) handleHistoryDown(msg tea.Msg) tea.Cmd {
 			// without this the cursor will show up in the wrong place.
 			return m.updateTextareaWithPrevHeight(nil, prevHeight)
 		}
-		// The editor has nothing further to move through, so down is
-		// free to mean "take me back to the live end of the transcript".
-		// It takes two presses: one stray down should not yank the view
-		// away from whatever the user scrolled up to read.
-		if m.chat != nil && !m.chat.AtBottom() {
-			if m.isJumpingToBottom {
-				m.isJumpingToBottom = false
-				return m.chat.ScrollToBottom()
-			}
-			m.isJumpingToBottom = true
-			return jumpToBottomTimerCmd()
-		}
 	}
 
 	// First move cursor to end before navigating history.
@@ -143,7 +131,7 @@ func (m *UI) syncBangModeFromTextarea() {
 		m.bangMode = false
 		m.bangWasEmpty = false
 	}
-	m.setEditorPrompt(m.yoloModeCached())
+	m.setEditorPrompt(m.permissionModeCached())
 }
 
 // historyPrev changes the text area content to the previous message in the history

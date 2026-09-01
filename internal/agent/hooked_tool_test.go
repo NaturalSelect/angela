@@ -61,7 +61,7 @@ func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 
 	// The inner tool's permission service can now treat call-1 as pre-approved.
 	dir := t.TempDir()
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	decision := svc.Gate(inner.gotCtx, permission.GateRequest{
 		SessionID:  "s1",
 		ToolCallID: "call-1",
@@ -90,7 +90,7 @@ func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 	// the context does not look pre-approved for this call ID: a request
 	// that no subscriber resolves blocks until cancelled.
 	dir := t.TempDir()
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	ctx, cancel := context.WithCancel(inner.gotCtx)
 	cancel()
 	decision := svc.Gate(ctx, permission.GateRequest{

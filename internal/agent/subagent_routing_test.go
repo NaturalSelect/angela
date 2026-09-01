@@ -32,7 +32,7 @@ func newRoutingFixture(t *testing.T) routingFixture {
 	env := testEnv(t)
 	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
 
-	main := &mockSessionAgent{agentID: "coder"}
+	main := newMockSessionAgent(t, "coder", nil)
 	coord.currentAgent = main
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
@@ -42,7 +42,7 @@ func newRoutingFixture(t *testing.T) routingFixture {
 	_, err = env.sessions.CreateTaskSession(t.Context(), childID, parent.ID, "explore run")
 	require.NoError(t, err)
 
-	child, _ := newMockAgent(providerID, 4096, nil)
+	child, _ := newMockAgent(t, providerID, 4096, nil)
 	child.agentID = "explore"
 
 	return routingFixture{
@@ -366,12 +366,12 @@ func TestRunSubAgentRegistersItsRoute(t *testing.T) {
 	const providerID = "test-provider"
 	env := testEnv(t)
 	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
-	coord.currentAgent = &mockSessionAgent{agentID: "coder"}
+	coord.currentAgent = newMockSessionAgent(t, "coder", nil)
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
 	require.NoError(t, err)
 
-	child, resolved := newMockAgent(providerID, 4096, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+	child, resolved := newMockAgent(t, providerID, 4096, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
 		return agentResultWithText("done"), nil
 	})
 	resolved.ID = "explore"
@@ -401,12 +401,12 @@ func TestRunSubAgentRecordsItsAgentOnTheSession(t *testing.T) {
 	const providerID = "test-provider"
 	env := testEnv(t)
 	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
-	coord.currentAgent = &mockSessionAgent{agentID: "coder"}
+	coord.currentAgent = newMockSessionAgent(t, "coder", nil)
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
 	require.NoError(t, err)
 
-	child, resolved := newMockAgent(providerID, 4096, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+	child, resolved := newMockAgent(t, providerID, 4096, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
 		return agentResultWithText("done"), nil
 	})
 	resolved.ID = "explore"

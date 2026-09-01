@@ -13,23 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockEditFileTracker struct {
-	lastRead time.Time
-	reads    []string
-}
-
-func (m *mockEditFileTracker) RecordRead(ctx context.Context, sessionID, path string) {
-	m.reads = append(m.reads, path)
-}
-
-func (m *mockEditFileTracker) LastReadTime(ctx context.Context, sessionID, path string) time.Time {
-	return m.lastRead
-}
-
-func (m *mockEditFileTracker) ListReadFiles(ctx context.Context, sessionID string) ([]string, error) {
-	return m.reads, nil
-}
-
 // editPlan builds a plan for one edit call, the way the permission
 // decorator does, and returns it with the context to apply it in.
 func editPlan(t *testing.T, dir string, tracker filetracker.Service, files history.Service, params EditParams) (Plan, context.Context) {
@@ -50,8 +33,8 @@ func TestReplaceContentPreservesCRLFAndMetadata(t *testing.T) {
 	filePath := filepath.Join(dir, "test.txt")
 	require.NoError(t, os.WriteFile(filePath, []byte("alpha\r\nbeta\r\n"), 0o644))
 
-	tracker := &mockEditFileTracker{lastRead: time.Now().Add(time.Second)}
-	plan, ctx := editPlan(t, dir, tracker, &mockHistoryService{}, EditParams{
+	tracker, reads := newRecordingFileTracker(t, time.Now().Add(time.Second))
+	plan, ctx := editPlan(t, dir, tracker, newHistoryService(t, "", false), EditParams{
 		FilePath: filePath, OldString: "beta", NewString: "BETA",
 	})
 
@@ -63,7 +46,7 @@ func TestReplaceContentPreservesCRLFAndMetadata(t *testing.T) {
 	content, err := os.ReadFile(filePath)
 	require.NoError(t, err)
 	require.Equal(t, "alpha\r\nBETA\r\n", string(content))
-	require.Equal(t, []string{filePath}, tracker.reads)
+	require.Equal(t, []string{filePath}, *reads)
 
 	var meta EditResponseMetadata
 	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
@@ -78,8 +61,8 @@ func TestDeleteContentRejectsMultipleMatchesWithoutReplaceAll(t *testing.T) {
 	filePath := filepath.Join(dir, "test.txt")
 	require.NoError(t, os.WriteFile(filePath, []byte("alpha\nbeta\nalpha\n"), 0o644))
 
-	tracker := &mockEditFileTracker{lastRead: time.Now().Add(time.Second)}
-	plan, _ := editPlan(t, dir, tracker, &mockHistoryService{}, EditParams{
+	tracker := newFileTracker(t, time.Now().Add(time.Second))
+	plan, _ := editPlan(t, dir, tracker, newHistoryService(t, "", false), EditParams{
 		FilePath: filePath, OldString: "alpha\n",
 	})
 
@@ -102,8 +85,8 @@ func TestEditCreatePlanCreatesNothing(t *testing.T) {
 	dir := t.TempDir()
 	nested := filepath.Join(dir, "a", "b", "new.txt")
 
-	tracker := &mockEditFileTracker{lastRead: time.Now()}
-	plan, ctx := editPlan(t, dir, tracker, &mockHistoryService{}, EditParams{
+	tracker := newFileTracker(t, time.Now())
+	plan, ctx := editPlan(t, dir, tracker, newHistoryService(t, "", false), EditParams{
 		FilePath: nested, NewString: "hello\n",
 	})
 
@@ -129,8 +112,8 @@ func TestEditPlanKeepsMismatchDiagnostics(t *testing.T) {
 	filePath := filepath.Join(dir, "test.go")
 	require.NoError(t, os.WriteFile(filePath, []byte("func main() {\n\tprintln(1)\n}\n"), 0o644))
 
-	tracker := &mockEditFileTracker{lastRead: time.Now().Add(time.Second)}
-	plan, _ := editPlan(t, dir, tracker, &mockHistoryService{}, EditParams{
+	tracker := newFileTracker(t, time.Now().Add(time.Second))
+	plan, _ := editPlan(t, dir, tracker, newHistoryService(t, "", false), EditParams{
 		FilePath: filePath, OldString: "println(2)", NewString: "println(3)",
 	})
 
@@ -149,8 +132,8 @@ func TestEditPlanPreviewsTheDiff(t *testing.T) {
 	filePath := filepath.Join(dir, "test.txt")
 	require.NoError(t, os.WriteFile(filePath, []byte("alpha\n"), 0o644))
 
-	tracker := &mockEditFileTracker{lastRead: time.Now().Add(time.Second)}
-	plan, _ := editPlan(t, dir, tracker, &mockHistoryService{}, EditParams{
+	tracker := newFileTracker(t, time.Now().Add(time.Second))
+	plan, _ := editPlan(t, dir, tracker, newHistoryService(t, "", false), EditParams{
 		FilePath: filePath, OldString: "alpha", NewString: "omega",
 	})
 
@@ -175,7 +158,7 @@ func TestEditPlanRefusesUnreadFile(t *testing.T) {
 	filePath := filepath.Join(dir, "test.txt")
 	require.NoError(t, os.WriteFile(filePath, []byte("alpha\n"), 0o644))
 
-	plan, _ := editPlan(t, dir, &mockEditFileTracker{}, &mockHistoryService{}, EditParams{
+	plan, _ := editPlan(t, dir, newFileTracker(t, time.Time{}), newHistoryService(t, "", false), EditParams{
 		FilePath: filePath, OldString: "alpha", NewString: "omega",
 	})
 

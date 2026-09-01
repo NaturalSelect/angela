@@ -76,3 +76,62 @@ func TestAbortCommandCarriesTheBranchSession(t *testing.T) {
 	require.True(t, ok, "abort must dispatch ActionAbortBranch")
 	require.Equal(t, "branch-1", action.SessionID)
 }
+
+// newCommandsWithParent builds the menu the way the dialog does, with only
+// the fields defaultCommands's go-to-parent gate reads. hasParent is
+// broader than inBranch — it also covers an ordinary sub-agent
+// transcript — so it is a field of its own rather than reusing inBranch.
+func newCommandsWithParent(t *testing.T, hasParent bool) *Commands {
+	t.Helper()
+
+	sty := styles.AngelaTeal()
+	return &Commands{
+		com: &common.Common{
+			Styles:    &sty,
+			Workspace: &configWorkspace{cfg: &config.Config{}},
+		},
+		sessionID:  "session-1",
+		hasSession: true,
+		hasParent:  hasParent,
+	}
+}
+
+// TestGoToParentCommandGatedOnHasParent pins that /parent is only offered
+// when the session in view actually has somewhere to go back to.
+func TestGoToParentCommandGatedOnHasParent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with a parent", func(t *testing.T) {
+		t.Parallel()
+
+		ids := commandIDs(newCommandsWithParent(t, true).defaultCommands())
+		require.Contains(t, ids, "go_to_parent")
+	})
+
+	t.Run("without a parent", func(t *testing.T) {
+		t.Parallel()
+
+		ids := commandIDs(newCommandsWithParent(t, false).defaultCommands())
+		require.NotContains(t, ids, "go_to_parent")
+	})
+}
+
+// TestGoToParentCommandDispatchesAction pins the action payload: none, since
+// the handler navigates from whatever session is current rather than from a
+// session ID captured at menu-build time — unlike abort_branch, /parent
+// never mutates a session, so there is nothing a stale ID would protect.
+func TestGoToParentCommandDispatchesAction(t *testing.T) {
+	t.Parallel()
+
+	var found *CommandItem
+	for _, item := range newCommandsWithParent(t, true).defaultCommands() {
+		if item.ID() == "go_to_parent" {
+			found = item
+			break
+		}
+	}
+	require.NotNil(t, found, "the menu must offer go-to-parent when hasParent is set")
+
+	_, ok := found.Action().(ActionGoToParent)
+	require.True(t, ok, "go-to-parent must dispatch ActionGoToParent")
+}

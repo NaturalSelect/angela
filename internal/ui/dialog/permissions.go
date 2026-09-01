@@ -62,7 +62,7 @@ type Permissions struct {
 	fullscreen   bool // true when dialog is fullscreen
 
 	permission     permission.PermissionRequest
-	selectedOption int // 0: Allow, 1: Allow for session, 2: Deny
+	selectedOption int // index into options()
 
 	viewport      viewport.Model
 	viewportDirty bool // true when viewport content needs to be re-rendered
@@ -74,6 +74,12 @@ type Permissions struct {
 	diffXOffset          int   // horizontal scroll offset for diff view
 	unifiedDiffContent   string
 	splitDiffContent     string
+
+	// Mouse state for button hover/click. buttonHit is rebuilt on every
+	// Draw at the buttons' actual screen position, since the dialog is
+	// centered and that position isn't known until the frame is sized.
+	hoverX, hoverY int
+	buttonHit      *lipgloss.Compositor
 
 	help   help.Model
 	keyMap permissionsKeyMap
@@ -202,9 +208,14 @@ func NewPermissions(com *common.Common, perm permission.PermissionRequest, opts 
 		permission:     perm,
 		selectedOption: 0,
 		viewport:       vp,
+		hoverX:         -1,
+		hoverY:         -1,
 		help:           h,
 		keyMap:         km,
 	}
+	// Diff-producing tools (Edit, Merge, etc.) default to fullscreen so the
+	// user can review the whole change without an extra keypress.
+	p.fullscreen = p.hasDiffView()
 
 	for _, opt := range opts {
 		opt(p)
@@ -240,16 +251,20 @@ func (p *Permissions) HandleMsg(msg tea.Msg) Action {
 			// Escape denies the permission request.
 			return p.respond(PermissionDeny)
 		case key.Matches(msg, p.keyMap.Right), key.Matches(msg, p.keyMap.Tab):
-			p.selectedOption = (p.selectedOption + 1) % 3
+			n := len(p.options())
+			p.selectedOption = (p.selectedOption + 1) % n
 		case key.Matches(msg, p.keyMap.Left):
-			// Add 2 instead of subtracting 1 to avoid negative modulo.
-			p.selectedOption = (p.selectedOption + 2) % 3
+			// Add n-1 instead of subtracting 1 to avoid negative modulo.
+			n := len(p.options())
+			p.selectedOption = (p.selectedOption + n - 1) % n
 		case key.Matches(msg, p.keyMap.Select):
 			return p.selectCurrentOption()
 		case key.Matches(msg, p.keyMap.Allow):
 			return p.respond(PermissionAllow)
 		case key.Matches(msg, p.keyMap.AllowSession):
-			return p.respond(PermissionAllowForSession)
+			if p.allowForSessionOffered() {
+				return p.respond(PermissionAllowForSession)
+			}
 		case key.Matches(msg, p.keyMap.Deny):
 			return p.respond(PermissionDeny)
 		case key.Matches(msg, p.keyMap.ToggleDiffMode):
@@ -279,6 +294,15 @@ func (p *Permissions) HandleMsg(msg tea.Msg) Action {
 				p.viewport, _ = p.viewport.Update(msg)
 			}
 		}
+	case tea.MouseClickMsg:
+		if msg.Button == uv.MouseLeft {
+			if idx := common.HitButtonIndex(p.buttonHit, msg.X, msg.Y); idx >= 0 {
+				p.selectedOption = idx
+				return p.respond(p.options()[idx].action)
+			}
+		}
+	case tea.MouseMotionMsg:
+		p.hoverX, p.hoverY = msg.X, msg.Y
 	case common.CoalescedWheelMsg:
 		if p.hasDiffView() {
 			if msg.DeltaX < 0 {
@@ -303,14 +327,48 @@ func (p *Permissions) HandleMsg(msg tea.Msg) Action {
 }
 
 func (p *Permissions) selectCurrentOption() tea.Msg {
-	switch p.selectedOption {
-	case 0:
-		return p.respond(PermissionAllow)
-	case 1:
-		return p.respond(PermissionAllowForSession)
-	default:
-		return p.respond(PermissionDeny)
+	return p.respond(p.options()[p.selectedOption].action)
+}
+
+// permissionOption pairs a displayed button with the action it sends.
+type permissionOption struct {
+	action         PermissionAction
+	label          string
+	underlineIndex int
+}
+
+// allowForSessionOffered reports whether "Allow for Session" makes sense
+// for this request. Merging ends the branch the instant it is approved
+// (mergeTool.apply sets StopTurn), so a session-wide grant for it could
+// never be consulted again — offering the button would only suggest it
+// does something distinct from Allow.
+func (p *Permissions) allowForSessionOffered() bool {
+	return p.permission.ToolName != toolnames.Merge
+}
+
+// options returns the buttons offered for this request, in display and
+// cycling order.
+func (p *Permissions) options() []permissionOption {
+	opts := []permissionOption{{PermissionAllow, "Allow", 0}}
+	if p.allowForSessionOffered() {
+		opts = append(opts, permissionOption{PermissionAllowForSession, "Allow for Session", 10})
 	}
+	return append(opts, permissionOption{PermissionDeny, "Deny", 0})
+}
+
+// buttonOpts renders options() into button widgets, marking the
+// currently selected one.
+func (p *Permissions) buttonOpts() []common.ButtonOpts {
+	opts := p.options()
+	buttons := make([]common.ButtonOpts, len(opts))
+	for i, o := range opts {
+		buttons[i] = common.ButtonOpts{
+			Text:           o.label,
+			UnderlineIndex: o.underlineIndex,
+			Selected:       p.selectedOption == i,
+		}
+	}
+	return buttons
 }
 
 func (p *Permissions) respond(action PermissionAction) tea.Msg {
@@ -400,7 +458,8 @@ func (p *Permissions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	contentWidth := p.calculateContentWidth(width)
 	header := p.renderHeader(contentWidth)
-	buttons := p.renderButtons(contentWidth, fullscreen)
+	buttonOpts := p.buttonOpts()
+	buttons, buttonsOffsetX, buttonsStacked := p.renderButtons(buttonOpts, contentWidth, fullscreen)
 	// Pack the hints to the content width so they truncate cleanly instead
 	// of overflowing. The dialog frame supplies the padding, so this renders
 	// the hint line without the extra help view inset that renderDialogHelp
@@ -443,14 +502,51 @@ func (p *Permissions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		content = joinScrollbar(t, content, availableHeight, p.viewport.TotalLineCount(), availableHeight, p.viewport.YOffset())
 	}
 
-	parts := []string{header}
+	// buttonsRow is where the buttons line lands within the assembled
+	// content (0-based), needed below to find its screen position for
+	// mouse hit-testing. Hover styling never changes a button's width,
+	// so this geometry holds regardless of hover state.
+	buttonsRow := lipgloss.Height(header)
 	if content != "" {
-		parts = append(parts, "", content)
+		buttonsRow += 1 + lipgloss.Height(content)
 	}
-	parts = append(parts, "", buttons, "", helpView)
+	buttonsRow++ // blank line separating content from buttons
 
-	innerContent := lipgloss.JoinVertical(lipgloss.Left, parts...)
-	DrawCenterCursor(scr, area, dialogStyle.Render(innerContent), nil)
+	buildView := func(btns string) string {
+		parts := []string{header}
+		if content != "" {
+			parts = append(parts, "", content)
+		}
+		parts = append(parts, "", btns, "", helpView)
+		return dialogStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+	}
+
+	view := buildView(buttons)
+
+	// Locate the buttons' absolute screen position for mouse hit-testing.
+	// The dialog is centered within area, so its origin isn't known
+	// until the view is fully sized.
+	vw, vh := lipgloss.Size(view)
+	center := common.CenterRect(area, min(vw, area.Dx()), min(vh, area.Dy()))
+	if buttonsStacked {
+		// Buttons wrapped to one per line; the horizontal layout
+		// ButtonHitCompositor assumes no longer applies.
+		p.buttonHit = nil
+	} else {
+		originX := center.Min.X + dialogStyle.GetBorderLeftSize() + dialogStyle.GetPaddingLeft() +
+			dialogStyle.GetMarginLeft() + buttonsOffsetX
+		originY := center.Min.Y + dialogStyle.GetBorderTopSize() + dialogStyle.GetPaddingTop() +
+			dialogStyle.GetMarginTop() + buttonsRow
+		p.buttonHit = common.ButtonHitCompositor(t, buttonOpts, "  ", originX, originY)
+	}
+
+	if hovered := common.HitButtonIndex(p.buttonHit, p.hoverX, p.hoverY); hovered >= 0 {
+		buttonOpts[hovered].Hovered = true
+		hoveredButtons, _, _ := p.renderButtons(buttonOpts, contentWidth, fullscreen)
+		view = buildView(hoveredButtons)
+	}
+
+	DrawCenterCursor(scr, area, view, nil)
 	return nil
 }
 
@@ -811,14 +907,14 @@ func (p *Permissions) renderContentPanel(content string, width int) string {
 	return panelStyle.Width(width).Render(content)
 }
 
-func (p *Permissions) renderButtons(contentWidth int, fullscreen bool) string {
-	buttons := []common.ButtonOpts{
-		{Text: "Allow", UnderlineIndex: 0, Selected: p.selectedOption == 0},
-		{Text: "Allow for Session", UnderlineIndex: 10, Selected: p.selectedOption == 1},
-		{Text: "Deny", UnderlineIndex: 0, Selected: p.selectedOption == 2},
-	}
-
-	content := common.ButtonGroup(p.com.Styles, buttons, "  ")
+// renderButtons renders the button row: right-aligned normally, and
+// centered when the dialog is fullscreen or the buttons don't fit on one
+// line. offsetX is where the row starts from the left edge of
+// contentWidth (meaningless when stacked), and stacked reports the
+// wrapped one-button-per-line layout. Draw uses both to locate buttons
+// on screen for mouse hit-testing.
+func (p *Permissions) renderButtons(opts []common.ButtonOpts, contentWidth int, fullscreen bool) (rendered string, offsetX int, stacked bool) {
+	row := common.ButtonGroup(p.com.Styles, opts, "  ")
 
 	// Center when stacked or when the dialog fills the screen; otherwise
 	// hug the right edge next to the content. Right-aligning across a
@@ -827,15 +923,21 @@ func (p *Permissions) renderButtons(contentWidth int, fullscreen bool) string {
 	if fullscreen {
 		align = lipgloss.Center
 	}
-	if lipgloss.Width(content) > contentWidth {
-		content = common.ButtonGroup(p.com.Styles, buttons, "\n")
+	if lipgloss.Width(row) > contentWidth {
+		stacked = true
 		align = lipgloss.Center
+		rendered = lipgloss.NewStyle().Width(contentWidth).Align(align).
+			Render(common.ButtonGroup(p.com.Styles, opts, "\n"))
+		return rendered, 0, stacked
 	}
 
-	return lipgloss.NewStyle().
-		Width(contentWidth).
-		Align(align).
-		Render(content)
+	if align == lipgloss.Center {
+		offsetX = (contentWidth - lipgloss.Width(row)) / 2
+	} else {
+		offsetX = contentWidth - lipgloss.Width(row)
+	}
+	rendered = lipgloss.NewStyle().Width(contentWidth).Align(align).Render(row)
+	return rendered, offsetX, stacked
 }
 
 func (p *Permissions) canScroll() bool {

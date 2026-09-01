@@ -21,15 +21,27 @@ import (
 // truncated in the collapsed state.
 const assistantMessageTruncateFormat = "… (%d lines hidden) [click or space to expand]"
 
+// assistantMessageThinkingTruncateFormat is shown above a collapsed
+// thinking block. It mirrors assistantMessageTruncateFormat but leads
+// with "+" instead of "…" so the fold state (collapsed) reads as a
+// distinct marker from the generic tool-output truncation hint, which
+// shares assistantMessageTruncateFormat across bash output, file
+// content, diffs, and other tool renderers.
+const assistantMessageThinkingTruncateFormat = "+ (%d lines hidden) [click or space to expand]"
+
 // assistantMessageTailWindowFormat is shown above a tail-windowed thinking
 // block to advertise that earlier lines exist and that the user can
 // promote the view to a full expansion. The promotion is wired through
 // the existing ToggleExpanded path (click / space) — F5 deliberately
-// does not add a new keybinding.
-const assistantMessageTailWindowFormat = "… %d earlier lines hidden [click or space for full view]"
+// does not add a new keybinding. Leads with "-" to mark the thinking
+// block as expanded (as opposed to "+" for the collapsed state).
+const assistantMessageTailWindowFormat = "- %d earlier lines hidden [click or space for full view]"
 
 // maxCollapsedThinkingHeight defines the maximum height of the thinking
-const maxCollapsedThinkingHeight = 10
+// box in the collapsed state, in lines. When the rendered thinking
+// exceeds it, the collapsed box shows only the truncation hint (no
+// content preview), keeping the collapsed state a single line.
+const maxCollapsedThinkingHeight = 1
 
 // thinkingBoxIndent is the extra left indent that sets thinking text apart
 // from the reply. Must match Messages.ThinkingBox's PaddingLeft, since the
@@ -576,11 +588,10 @@ func (a *AssistantMessageItem) renderThinking(thinking string, width int) string
 	case thinkingCollapsed:
 		totalLines = countLines(rendered)
 		if totalLines > maxCollapsedThinkingHeight {
-			tail, hidden := tailLines(rendered, maxCollapsedThinkingHeight, totalLines)
 			hint := a.sty.Messages.ThinkingTruncationHint.Render(
-				fmt.Sprintf(assistantMessageTruncateFormat, hidden),
+				fmt.Sprintf(assistantMessageThinkingTruncateFormat, totalLines),
 			)
-			lines = append([]string{hint, ""}, strings.Split(tail, "\n")...)
+			lines = []string{hint}
 		} else {
 			lines = strings.Split(rendered, "\n")
 		}

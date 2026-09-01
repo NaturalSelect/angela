@@ -496,7 +496,7 @@ func effectiveReasoningEffort(model Model) string {
 // not configured, yields the rest zero: a turn still runs, and only
 // compaction itself fails, which is what the previous shape did too.
 type compactCall struct {
-	agent         CompactAgent
+	agent         resolvedAgent
 	provider      config.ProviderConfig
 	options       fantasy.ProviderOptions
 	onAuthRefresh func(context.Context, *fantasy.ProviderError) error
@@ -879,7 +879,7 @@ func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
 		IsSubAgent:    isSubAgent,
 		AgentID:       agentID,
 		Compaction:    c.cfg.Config().Options.Compaction,
-		IsYolo:        c.permissions.SkipRequests(),
+		IsYolo:        c.permissions.Mode() == permission.ModeYolo,
 		Sessions:      c.sessions,
 		Messages:      c.messages,
 		Notify:        c.notify,

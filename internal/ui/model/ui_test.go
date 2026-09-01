@@ -8,6 +8,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // TestCurrentModelSupportsImages pins that the file-picker gate reads the
@@ -74,22 +75,19 @@ func TestCurrentModelSupportsImages(t *testing.T) {
 	})
 }
 
+// newTestUIWithConfig builds a UI with a mock workspace that returns cfg
+// from Config() and fails the test on any other workspace call — the mock
+// equivalent of the old hand-written fake's nil-embedded-interface panic.
 func newTestUIWithConfig(t *testing.T, cfg *config.Config) *UI {
 	t.Helper()
 
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return(cfg).AnyTimes()
+
 	return &UI{
 		com: &common.Common{
-			Workspace: &testWorkspace{cfg: cfg},
+			Workspace: ws,
 		},
 	}
-}
-
-// testWorkspace is a minimal [workspace.Workspace] stub for unit tests.
-type testWorkspace struct {
-	workspace.Workspace
-	cfg *config.Config
-}
-
-func (w *testWorkspace) Config() *config.Config {
-	return w.cfg
 }

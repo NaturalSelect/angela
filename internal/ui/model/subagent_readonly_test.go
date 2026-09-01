@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"image"
 	"strings"
 	"testing"
@@ -44,10 +45,23 @@ func TestSendMessageStillWorksOnAnOrdinarySession(t *testing.T) {
 	m := newSubSessionUI(t)
 	m.session = &session.Session{ID: "root", Title: "Root task"}
 
-	// subSessionWorkspace answers nothing beyond ID derivation, so getting
-	// past the guard means reaching a real workspace probe and panicking.
-	// That panic is the proof the guard let this one through.
-	require.Panics(t, func() { m.sendMessage("go on") })
+	// newSubSessionWorkspace answers nothing beyond ID derivation. Getting
+	// past the guard means sendMessage reaches AgentReadyErr instead of
+	// refusing outright — stub it with a distinctive error and check that
+	// error, not the sub-agent refusal, is what comes back. This replaces
+	// the old fake's panic-on-anything-else proof (gomock fails via
+	// t.Fatalf, not panic, so require.Panics no longer applies).
+	ws := m.com.Workspace.(*MockWorkspace)
+	ws.EXPECT().AgentReadyErr().Return(errors.New("not ready yet"))
+
+	cmd := m.sendMessage("go on")
+	require.NotNil(t, cmd, "the send was neither performed nor explained")
+
+	info, ok := cmd().(util.InfoMsg)
+	require.True(t, ok, "the guard let this through to AgentReadyErr")
+	require.Equal(t, util.InfoTypeError, info.Type)
+	require.Contains(t, info.Msg, "not ready yet")
+	require.NotContains(t, strings.ToLower(info.Msg), "sub-agent")
 }
 
 // Focus lands wherever the previous session left it. Loading a sub-agent
@@ -98,7 +112,8 @@ func TestLeavingASubAgentRestoresTheEditor(t *testing.T) {
 func TestPromptBoxShowsAReadOnlyNoticeForSubAgents(t *testing.T) {
 	pinTTLs(t)
 
-	m := newBusyUI(detailsWorkspace())
+	ws, _ := detailsMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.session = subAgentSession()
 	m.width = 60
 	m.textarea.SetWidth(60 - editorBoxBorders)

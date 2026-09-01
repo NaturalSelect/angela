@@ -13,6 +13,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
@@ -158,11 +159,25 @@ func TestAngelaInfo_YoloMode(t *testing.T) {
 		Providers:   csync.NewMap[string, config.ProviderConfig](),
 		Permissions: &config.Permissions{},
 	})
-	cfg.Overrides().SkipPermissionRequests = true
+	cfg.Overrides().PermissionMode = permission.ModeYolo
 
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
 	require.Contains(t, output, "[permissions]")
 	require.Contains(t, output, "mode = yolo")
+}
+
+func TestAngelaInfo_AutoAcceptEditsMode(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewTestStore(&config.Config{
+		Providers:   csync.NewMap[string, config.ProviderConfig](),
+		Permissions: &config.Permissions{},
+	})
+	cfg.Overrides().PermissionMode = permission.ModeAutoAcceptEdits
+
+	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
+	require.Contains(t, output, "[permissions]")
+	require.Contains(t, output, "mode = auto_accept_edits")
 }
 
 func TestAngelaInfo_AllowedTools(t *testing.T) {
@@ -270,7 +285,7 @@ func TestAngelaInfo_DeterministicOrdering(t *testing.T) {
 			AllowedTools: []string{"z-perm", "a-perm"},
 		},
 	})
-	cfg.Overrides().SkipPermissionRequests = true
+	cfg.Overrides().PermissionMode = permission.ModeYolo
 
 	// Test MCP ordering via writeMCP directly.
 	var mcpBuf strings.Builder

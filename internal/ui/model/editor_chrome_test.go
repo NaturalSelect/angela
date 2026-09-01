@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -19,23 +20,30 @@ import (
 func TestEditorPromptCarriesMode(t *testing.T) {
 	pinTTLs(t)
 
-	render := func(bang, yolo bool) string {
-		m := newBusyUI(&countingWorkspace{ready: true})
+	render := func(bang bool, mode permission.PermissionMode) string {
+		m, ws := newMockBusyUI(t)
+		ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 		m.textarea.Focus()
 		m.textarea.SetWidth(40)
 		m.bangMode = bang
-		m.yoloCache.set(yolo)
-		m.setEditorPrompt(yolo)
+		m.permissionModeCache.set(mode)
+		m.setEditorPrompt(mode)
 		return m.textarea.View()
 	}
 
-	normal, bang, yolo := render(false, false), render(true, false), render(false, true)
+	normal := render(false, permission.ModeManual)
+	bang := render(true, permission.ModeManual)
+	autoAccept := render(false, permission.ModeAutoAcceptEdits)
+	yolo := render(false, permission.ModeYolo)
 
 	require.NotEqual(t, normal, bang, "bang mode must recolor the prompt")
+	require.NotEqual(t, normal, autoAccept, "auto-accept-edits mode must recolor the prompt")
 	require.NotEqual(t, normal, yolo, "yolo mode must recolor the prompt")
+	require.NotEqual(t, autoAccept, yolo, "auto-accept-edits and yolo must use different colors")
 
 	// Colors differ, glyphs do not: the gutter keeps its width in every mode.
 	require.Equal(t, ansi.Strip(normal), ansi.Strip(bang))
+	require.Equal(t, ansi.Strip(normal), ansi.Strip(autoAccept))
 	require.Equal(t, ansi.Strip(normal), ansi.Strip(yolo))
 
 	lines := strings.Split(ansi.Strip(normal), "\n")
@@ -52,7 +60,8 @@ func TestEditorPromptCarriesMode(t *testing.T) {
 func TestEditorCaptionDegradesWithWidth(t *testing.T) {
 	pinTTLs(t)
 
-	m := newBusyUI(detailsWorkspace())
+	ws, _ := detailsMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.session = &session.Session{ID: "s1", Title: "a session"}
 	m.agentReady = true
 	m.agentActiveKnown = true
@@ -86,10 +95,11 @@ func TestEditorCaptionDegradesWithWidth(t *testing.T) {
 func TestEditorPlaceholderHasNoPersonality(t *testing.T) {
 	pinTTLs(t)
 
-	m := newBusyUI(&countingWorkspace{ready: true})
+	m, ws := newMockBusyUI(t)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 	m.width = 120
 
-	require.Equal(t, "Ask anything — / for commands, @ for agents, # for files, ↓↓ for latest", m.editorPlaceholder())
+	require.Equal(t, "Ask anything — / for commands, @ for agents, # for files", m.editorPlaceholder())
 
 	m.width = 40
 	require.Equal(t, "Ask anything…", m.editorPlaceholder())
@@ -99,8 +109,11 @@ func TestEditorPlaceholderHasNoPersonality(t *testing.T) {
 	require.Equal(t, "Run a shell command", m.editorPlaceholder())
 
 	m.bangMode = false
-	m.yoloCache.set(true)
+	m.permissionModeCache.set(permission.ModeYolo)
 	require.Contains(t, m.editorPlaceholder(), "permissions are skipped")
+
+	m.permissionModeCache.set(permission.ModeAutoAcceptEdits)
+	require.Contains(t, m.editorPlaceholder(), "Auto-accepting edits")
 }
 
 // TestEditorHeightIsStable pins the editor's vertical footprint: the textarea
@@ -108,22 +121,25 @@ func TestEditorPlaceholderHasNoPersonality(t *testing.T) {
 func TestEditorHeightIsStable(t *testing.T) {
 	pinTTLs(t)
 
-	m := newBusyUI(&countingWorkspace{ready: true})
+	m, ws := newMockBusyUI(t)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 	m.width = 120
 	m.textarea.SetWidth(100)
 
-	for _, mode := range []struct {
-		name       string
-		bang, yolo bool
+	for _, tc := range []struct {
+		name string
+		bang bool
+		mode permission.PermissionMode
 	}{
-		{"normal", false, false},
-		{"bang", true, false},
-		{"yolo", false, true},
+		{"normal", false, permission.ModeManual},
+		{"bang", true, permission.ModeManual},
+		{"auto-accept-edits", false, permission.ModeAutoAcceptEdits},
+		{"yolo", false, permission.ModeYolo},
 	} {
-		t.Run(mode.name, func(t *testing.T) {
-			m.bangMode = mode.bang
-			m.yoloCache.set(mode.yolo)
-			m.setEditorPrompt(mode.yolo)
+		t.Run(tc.name, func(t *testing.T) {
+			m.bangMode = tc.bang
+			m.permissionModeCache.set(tc.mode)
+			m.setEditorPrompt(tc.mode)
 
 			require.Equal(t, m.textarea.Height()+editorHeightMargin, m.editorHeight(),
 				"editor height must not depend on the input mode")
@@ -137,7 +153,8 @@ func TestEditorHeightIsStable(t *testing.T) {
 func TestPromptBoxDrawsBorderAndLabel(t *testing.T) {
 	pinTTLs(t)
 
-	m := newBusyUI(detailsWorkspace())
+	ws, _ := detailsMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.session = &session.Session{ID: "s1", Title: "a session"}
 	m.agentReady = true
 	m.agentActiveKnown = true
@@ -184,7 +201,8 @@ func TestPromptBoxDrawsBorderAndLabel(t *testing.T) {
 func TestPromptBoxPaintsNoBackground(t *testing.T) {
 	pinTTLs(t)
 
-	m := newBusyUI(detailsWorkspace())
+	ws, _ := detailsMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.session = &session.Session{ID: "s1", Title: "a session"}
 	m.agentReady = true
 	m.agentActiveKnown = true

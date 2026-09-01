@@ -25,11 +25,23 @@ type loadSessionOpt struct {
 	// ancestors are not the old stack, so keeping it would let Escape
 	// reload a stranger.
 	clearStack bool
+	// truncateStackTo trims sessionStack to this length on success. Used
+	// when the user jumps straight to an ancestor via the breadcrumb
+	// instead of leaving one level at a time.
+	truncateStackTo *int
 }
 
 // inSubSession reports whether the view is below the session the user opened.
 func (m *UI) inSubSession() bool {
 	return len(m.sessionStack) > 0
+}
+
+// hasParentSession reports whether the session in view was drilled into or
+// forked from another session, so there is a parent for /parent to reach.
+// This is broader than viewingBranch: it also covers an ordinary
+// read-only sub-agent transcript.
+func (m *UI) hasParentSession() bool {
+	return m.session != nil && m.session.ParentSessionID != ""
 }
 
 // viewingSubAgent reports that the transcript on screen belongs to a
@@ -102,19 +114,48 @@ func (m *UI) enterSubSession(item *chat.AgentToolMessageItem) tea.Cmd {
 // it while the view was elsewhere, so the copy we drilled down from is
 // already stale. The stack frame is popped only after the reload succeeds
 // so a transient error keeps the breadcrumb and lets the user retry.
+//
+// A branch opened without drilling down — picked straight from the session
+// switcher, for instance — has no frame on the stack to pop even though it
+// has a parent: that parent is data on the session itself, not a fact about
+// how the view got here. Falling back to it is what lets such a branch
+// still be left.
 func (m *UI) leaveSubSession() tea.Cmd {
-	top := len(m.sessionStack) - 1
-	parent := m.sessionStack[top]
-	return m.loadSession(parent.id, loadSessionOpt{leaveLevel: true})
+	if top := len(m.sessionStack) - 1; top >= 0 {
+		parent := m.sessionStack[top]
+		return m.loadSession(parent.id, loadSessionOpt{leaveLevel: true})
+	}
+	return m.loadSession(m.session.ParentSessionID)
+}
+
+// goToBreadcrumbLevel jumps directly to the ancestor session at the given
+// sessionStack index, dropping every level below it — the multi-level
+// counterpart to leaveSubSession, used when the user clicks a crumb in
+// the header breadcrumb instead of leaving one level at a time.
+func (m *UI) goToBreadcrumbLevel(index int) tea.Cmd {
+	if index < 0 || index >= len(m.sessionStack) {
+		return nil
+	}
+	frame := m.sessionStack[index]
+	return m.loadSession(frame.id, loadSessionOpt{truncateStackTo: &index})
 }
 
 // escapeCancels reports whether the escape key means "stop what is running"
 // rather than "go back a level".
 //
+// A sub-agent transcript never claims the key, busy or not: it is read
+// only, so there is nothing on screen for the gesture to stop, and the run
+// keeps going in the background no matter what is displayed. Skipping this
+// check meant the key could never back out of a still-running sub-agent,
+// since the overall turn stays busy for as long as its transcript exists.
+//
 // A branch claims the key even while idle: there the gesture is not stopping
 // a turn but abandoning the branch, which is the only way to release the
 // conversation suspended behind it.
 func (m *UI) escapeCancels() bool {
+	if m.viewingSubAgent() {
+		return false
+	}
 	return m.isAgentBusy() || m.viewingBranch()
 }
 
@@ -125,8 +166,13 @@ func (m *UI) escapeCancels() bool {
 // and the view follows it back. A busy one only loses its current turn and
 // the user keeps talking to it, so the view stays. This mirrors the split
 // coordinator.Cancel makes on the same signal.
+//
+// Unlike the sub-agent transcript's read-only guard, this does not also
+// require inSubSession: a branch always names its parent on the session
+// itself, so leaveSubSession can find its way back even with nothing on
+// the stack.
 func (m *UI) cancelLeavesBranch() bool {
-	return m.viewingBranch() && !m.isAgentBusy() && m.inSubSession()
+	return m.viewingBranch() && !m.isAgentBusy()
 }
 
 // abortBranch abandons a branch without merging and returns to the
@@ -143,10 +189,7 @@ func (m *UI) abortBranch(sessionID string) tea.Cmd {
 	m.turnIsSpinning = false
 	m.invalidateBusyCaches()
 
-	var cmds []tea.Cmd
-	if m.inSubSession() {
-		cmds = append(cmds, m.leaveSubSession())
-	}
+	cmds := []tea.Cmd{m.leaveSubSession()}
 	if cmd := m.dispatchBusyRefresh(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}

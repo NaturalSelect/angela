@@ -57,6 +57,9 @@ func (r *ReplaceSymbolToolRenderContext) RenderTool(sty *styles.Styles, width in
 	var meta tools.ReplaceSymbolResponseMetadata
 	if err := json.Unmarshal([]byte(opts.Result.Metadata), &meta); err == nil && meta.OldContent != "" || meta.NewContent != "" {
 		diff := toolOutputDiffContent(sty, file, meta.OldContent, meta.NewContent, width, opts.ExpandedContent)
+		if summary := changesSummaryLine(sty, meta.Additions, meta.Removals); summary != "" {
+			diff = summary + "\n" + diff
+		}
 
 		// On error, show error above the diff.
 		if opts.Result.IsError {

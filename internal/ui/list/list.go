@@ -143,6 +143,11 @@ func (l *List) AtBottom() bool {
 	return totalHeight-l.offsetLine <= l.height
 }
 
+// AtTop returns whether the list is showing the first item at the top.
+func (l *List) AtTop() bool {
+	return l.offsetIdx == 0 && l.offsetLine <= 0
+}
+
 // SetReverse shows the list in reverse order.
 func (l *List) SetReverse(reverse bool) {
 	l.reverse = reverse

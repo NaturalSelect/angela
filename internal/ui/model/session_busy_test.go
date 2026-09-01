@@ -8,14 +8,14 @@ import (
 
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/NaturalSelect/angela/internal/agent/notify"
-	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/attachments"
@@ -25,237 +25,12 @@ import (
 	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
-// countingWorkspace is a workspace.Workspace stub that counts every probe
-// that is a synchronous HTTP round-trip in client/server mode, split per
-// method so tests can pin exactly which probes ran. The embedded interface
-// panics on anything unimplemented.
-type countingWorkspace struct {
-	workspace.Workspace
-
-	ready     bool
-	agentBusy bool
-	// sessionBranch is what AgentIsSessionBranch answers: whether this
-	// process still holds a parent tool call suspended on the session.
-	sessionBranch bool
-	yolo          bool
-	queued        []string
-	active        workspace.ActiveAgent
-	// activeErr, when set, makes the agent probe fail the way a dropped
-	// connection would.
-	activeErr error
-	lspStates map[string]workspace.LSPClientInfo
-	lspDiags  map[string]lsp.DiagnosticCounts
-
-	// edits records every AgentEditActive the UI issued, so tests can
-	// assert what was changed and for which session.
-	edits []recordedEdit
-
-	// cfg, when set, is what the UI sees as global config. Most tests
-	// leave it nil: reaching for config is usually the bug they pin.
-	cfg *config.Config
-
-	readyCalls     int
-	agentBusyCalls int
-	// sessionBusyCalls and sessionBranchCalls count the per-session
-	// probes the load path makes. They stay out of syncProbes.
-	sessionBusyCalls   int
-	sessionBranchCalls int
-	queuedCalls        int
-	queueListCalls     int
-	permCalls          int
-	permSetCalls       int
-	clearQueueCalls    int
-	cancelCalls        int
-	modelCalls         int
-	lspStateCalls      int
-	lspDiagCalls       int
-
-	recentModelCalls    int
-	preferredModelCalls int
-	initAgentCalls      int
-	listMessageCalls    int
-
-	// upsertedModels records every model registered under a provider,
-	// which is what makes a hand-typed one survive a config reload.
-	upsertedModels []catwalk.Model
-
-	updateAgentModelCalls int
-	activeAfterRebuild    *workspace.ActiveAgent
-
-	// steps records the config and agent mutations in the order they
-	// land, so tests can assert on sequencing and not just on counts.
-	steps []string
-	// preferredModelErr, when set, makes UpdatePreferredModel fail, so
-	// tests can drive the persistence-failure path.
-	preferredModelErr error
-}
-
-func (w *countingWorkspace) AgentIsReady() bool { w.readyCalls++; return w.ready }
-func (w *countingWorkspace) AgentIsBusy() bool  { w.agentBusyCalls++; return w.agentBusy }
-
-// AgentIsSessionBusy is deliberately outside syncProbes: it is already
-// called synchronously from the session dialog's render path, which is a
-// pre-existing exception this counter must not be dragged into.
-func (w *countingWorkspace) AgentIsSessionBusy(string) bool {
-	w.sessionBusyCalls++
-	return w.agentBusy
-}
-
-func (w *countingWorkspace) AgentIsSessionBranch(string) bool {
-	w.sessionBranchCalls++
-	return w.sessionBranch
-}
-
-func (w *countingWorkspace) AgentReadyErr() error {
-	w.readyCalls++
-	if w.ready {
-		return nil
-	}
-	return workspace.ErrAgentNotInitialized
-}
-
-func (w *countingWorkspace) AgentQueuedPrompts(string) int {
-	w.queuedCalls++
-	return len(w.queued)
-}
-
-func (w *countingWorkspace) AgentQueuedPromptsList(string) []string {
-	w.queueListCalls++
-	return w.queued
-}
-
-func (w *countingWorkspace) PermissionSkipRequests() bool { w.permCalls++; return w.yolo }
-
-func (w *countingWorkspace) PermissionSetSkipRequests(skip bool) {
-	w.permSetCalls++
-	w.yolo = skip
-}
-
-func (w *countingWorkspace) AgentClearQueue(string) { w.clearQueueCalls++; w.queued = nil }
-func (w *countingWorkspace) AgentCancel(string)     { w.cancelCalls++ }
-
-func (w *countingWorkspace) AgentActive(context.Context, string) (workspace.ActiveAgent, error) {
-	w.modelCalls++
-	if w.activeErr != nil {
-		return workspace.ActiveAgent{}, w.activeErr
-	}
-	return w.active, nil
-}
-
-// recordedEdit is one AgentEditActive call.
-type recordedEdit struct {
-	sessionID string
-	edit      config.ActiveAgentEdit
-}
-
-// AgentEditActive stands in for the server: it applies the edit to the
-// instance it holds and answers with the result, so a toggle resolves
-// against the stub's value rather than the caller's.
-func (w *countingWorkspace) AgentEditActive(_ context.Context, sessionID string, edit config.ActiveAgentEdit) (workspace.ActiveAgent, error) {
-	w.edits = append(w.edits, recordedEdit{sessionID: sessionID, edit: edit})
-	if w.activeErr != nil {
-		return workspace.ActiveAgent{}, w.activeErr
-	}
-	switch {
-	case edit.ToggleThink:
-		w.active.ModelCfg.Think = !w.active.ModelCfg.Think
-	case edit.Think != nil:
-		w.active.ModelCfg.Think = *edit.Think
-	}
-	return w.active, nil
-}
-
-func (w *countingWorkspace) LSPGetStates() map[string]workspace.LSPClientInfo {
-	w.lspStateCalls++
-	return w.lspStates
-}
-
-func (w *countingWorkspace) LSPGetDiagnosticCounts(name string) lsp.DiagnosticCounts {
-	w.lspDiagCalls++
-	return w.lspDiags[name]
-}
-
-func (w *countingWorkspace) ListMessages(context.Context, string) ([]message.Message, error) {
-	w.listMessageCalls++
-	return nil, nil
-}
-
-func (w *countingWorkspace) ListUserMessages(context.Context, string) ([]message.Message, error) {
-	return nil, nil
-}
-
-func (w *countingWorkspace) WorkingDir() string { return "" }
-
-func (w *countingWorkspace) LSPStart(context.Context, string) {}
-
-func (w *countingWorkspace) Config() *config.Config { return w.cfg }
-
-// The three config writes a model pick can make. They are counted apart
-// from syncProbes: that sum is the "no probe on the Update goroutine"
-// invariant, while these pin when the write itself happens.
-func (w *countingWorkspace) RecordRecentModel(config.Scope, config.ModelConfigName, config.SelectedModel) error {
-	w.recentModelCalls++
-	return nil
-}
-
-func (w *countingWorkspace) UpdatePreferredModel(config.Scope, config.ModelConfigName, config.SelectedModel) error {
-	w.preferredModelCalls++
-	if w.preferredModelErr != nil {
-		return w.preferredModelErr
-	}
-	w.steps = append(w.steps, "persist")
-	return nil
-}
-
-func (w *countingWorkspace) UpsertProviderModel(_ config.Scope, _ string, model catwalk.Model) error {
-	w.upsertedModels = append(w.upsertedModels, model)
-	w.steps = append(w.steps, "register")
-	return nil
-}
-
-func (w *countingWorkspace) InitCoderAgent(context.Context) error {
-	w.initAgentCalls++
-	w.steps = append(w.steps, "init")
-	return nil
-}
-
-func (w *countingWorkspace) MCPGetStates() map[string]mcptools.ClientInfo {
-	return nil
-}
-
-func (w *countingWorkspace) UpdateAgentModel(context.Context) error {
-	w.updateAgentModelCalls++
-	w.steps = append(w.steps, "rebuild")
-	// Rebuilding the agent is what makes a new effective model
-	// observable, so the stub only starts reporting it from here on. A
-	// probe that runs first sees the old value, which is what makes
-	// ordering assertions possible.
-	if w.activeAfterRebuild != nil {
-		w.active = *w.activeAfterRebuild
-	}
-	return nil
-}
-
-// syncProbes sums every synchronous counter; Update/View must keep this at
-// zero — the invariant is that no workspace call ever happens on the Update
-// goroutine (which is also the render loop).
-func (w *countingWorkspace) syncProbes() int {
-	return w.readyCalls + w.agentBusyCalls +
-		w.queuedCalls + w.queueListCalls + w.permCalls +
-		w.modelCalls + w.lspStateCalls + w.lspDiagCalls
-}
-
-func (w *countingWorkspace) resetCounters() {
-	w.readyCalls, w.agentBusyCalls = 0, 0
-	w.queuedCalls, w.queueListCalls, w.permCalls = 0, 0, 0
-	w.permSetCalls, w.clearQueueCalls, w.cancelCalls = 0, 0, 0
-	w.modelCalls, w.lspStateCalls, w.lspDiagCalls = 0, 0, 0
-	w.listMessageCalls = 0
-}
-
-// newBusyUI builds a UI wired to the stub workspace with an active session
-// "s1", enough state for Update to run end to end.
-func newBusyUI(ws *countingWorkspace) *UI {
+// newBusyUIWithWorkspace builds a UI wired to ws with an active session
+// "s1", enough state for Update to run end to end. It is the shared body
+// behind every gomock-backed constructor (newMockBusyUI,
+// detailsMockWorkspace's callers, ...) that needs to pre-configure a
+// MockWorkspace before the UI is built around it.
+func newBusyUIWithWorkspace(ws workspace.Workspace) *UI {
 	com := common.DefaultCommon(ws)
 	t := com.Styles
 	return &UI{
@@ -283,6 +58,26 @@ func newBusyUI(ws *countingWorkspace) *UI {
 	}
 }
 
+// newMockBusyUI builds a UI wired to a MockWorkspace with an active
+// session "s1", enough state for Update to run end to end. Config()
+// defaults to nil — reaching for config is usually the bug a test pins —
+// and WorkingDir() to "", since the render path reads it incidentally
+// (header.go, ui.go) in tests that have nothing to do with it. Every
+// other method is left for each test to expect, since which calls
+// happen and how many times is exactly what these tests check: a call
+// this test never stubs fails immediately and names the method, which is
+// a strictly stronger check than the zero counters it replaces.
+func newMockBusyUI(t *testing.T) (*UI, *MockWorkspace) {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return((*config.Config)(nil)).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+
+	return newBusyUIWithWorkspace(ws), ws
+}
+
 // pinTTLs makes the TTL backstop inert for the duration of the test so
 // assertions about event-driven refreshes cannot flake by straddling a TTL
 // boundary (the tests using it must not call t.Parallel).
@@ -301,7 +96,7 @@ func pinTTLs(t *testing.T) {
 // leave it.
 func warmCaches(m *UI, busy bool) {
 	m.agentBusyCache.set(busy)
-	m.yoloCache.set(false)
+	m.permissionModeCache.set(permission.ModeManual)
 	m.agentReady = true
 	m.agentActiveKnown = true
 	m.agentActiveSession = m.currentSessionID()
@@ -362,42 +157,55 @@ func sequencedCmds(msg tea.Msg) []tea.Cmd {
 // traffic through Update.
 type plainMsg struct{}
 
+// stubBusyProbe wires AgentIsReady/AgentIsBusy/AgentActive/
+// PermissionMode on ws — the group dispatchBusyRefresh calls
+// together — to fixed ready/busy/mode values and to whatever *active
+// holds at call time, so a test can reassign it later (mirroring
+// countingWorkspace's mutable active field) and have the next probe see
+// the new value. Each expectation is AnyTimes: which of these run, and
+// how often, is not what the tests using this helper are pinning.
+func stubBusyProbe(ws *MockWorkspace, ready, busy bool, mode permission.PermissionMode, active *workspace.ActiveAgent) {
+	ws.EXPECT().AgentIsReady().Return(ready).AnyTimes()
+	ws.EXPECT().AgentIsBusy().Return(busy).AnyTimes()
+	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(context.Context, string) (workspace.ActiveAgent, error) {
+			return *active, nil
+		}).AnyTimes()
+	ws.EXPECT().PermissionMode().Return(mode).AnyTimes()
+}
+
 // TestUpdateDoesNotProbeWorkspacePerMessage pins the hot-path fix: Update
 // used to call AgentQueuedPrompts (a synchronous HTTP GET in client/server
 // mode) at the top of every message while the agent was busy, and the
-// placeholder path probed AgentIsReady/AgentIsBusy/PermissionSkipRequests —
+// placeholder path probed AgentIsReady/AgentIsBusy/PermissionMode —
 // every keystroke blocked the single Update goroutine on network round-
 // trips. Now Update performs no synchronous workspace call at all; refreshes
 // are dispatched as commands.
 func TestUpdateDoesNotProbeWorkspacePerMessage(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true}
-	m := newBusyUI(ws)
+	// Nothing beyond Config/WorkingDir is stubbed: any workspace call
+	// during these 25 messages fails immediately and names the method,
+	// which is what proves Update makes none.
+	m, _ := newMockBusyUI(t)
 
 	for range 25 {
 		m.Update(plainMsg{})
 	}
-	require.Zero(t, ws.queuedCalls,
-		"Update must not call AgentQueuedPrompts per message (HTTP per keystroke in client mode)")
-	require.Zero(t, ws.syncProbes(),
-		"Update must not make any synchronous workspace call")
 }
 
 // TestReadsNeverProbeWorkspace pins the read side of the invariant: the
-// busy/yolo getters used by render paths serve the memoized value and never
-// probe, so View can never block on HTTP.
+// busy/permission-mode getters used by render paths serve the memoized
+// value and never probe, so View can never block on HTTP.
 func TestReadsNeverProbeWorkspace(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, agentBusy: true}
-	m := newBusyUI(ws)
+	m, _ := newMockBusyUI(t)
 
 	for range 10 {
 		m.isAgentBusy()
-		m.yoloModeCached()
+		m.permissionModeCached()
 	}
-	require.Zero(t, ws.syncProbes(), "cache reads must never probe the workspace")
 }
 
 // TestStreamingUpdatedEventsDoNotProbe pins the streaming path: per-chunk
@@ -407,10 +215,8 @@ func TestReadsNeverProbeWorkspace(t *testing.T) {
 func TestStreamingUpdatedEventsDoNotProbe(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true}
-	m := newBusyUI(ws)
+	m, _ := newMockBusyUI(t)
 	warmCaches(m, true)
-	ws.resetCounters()
 
 	for range 25 {
 		m.Update(pubsub.Event[message.Message]{
@@ -418,8 +224,6 @@ func TestStreamingUpdatedEventsDoNotProbe(t *testing.T) {
 			Payload: message.Message{ID: "m1", SessionID: "s1", Role: message.Assistant},
 		})
 	}
-	require.Zero(t, ws.syncProbes(),
-		"per-chunk UpdatedEvents must not probe the workspace")
 	require.False(t, m.busyFetchInFlight,
 		"per-chunk UpdatedEvents must not schedule a busy refresh")
 	require.False(t, m.promptQueueInFlight,
@@ -432,18 +236,21 @@ func TestStreamingUpdatedEventsDoNotProbe(t *testing.T) {
 func TestMessageCreatedEventRefreshesBusyAndQueue(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, agentBusy: true, queued: []string{"queued prompt"}}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, false)
-	ws.resetCounters()
 
 	_, cmd := m.Update(pubsub.Event[message.Message]{
 		Type:    pubsub.CreatedEvent,
 		Payload: message.Message{ID: "m1", SessionID: "s1", Role: message.User},
 	})
-	require.Zero(t, ws.syncProbes(), "the event handler itself must not probe synchronously")
 	require.True(t, m.busyFetchInFlight, "CreatedEvent must schedule a busy refresh")
 	require.True(t, m.promptQueueInFlight, "CreatedEvent must schedule a queue refresh")
+	// Nothing stubbed yet beyond Config/WorkingDir: the event handler
+	// itself must not probe synchronously.
+
+	active := workspace.ActiveAgent{}
+	stubBusyProbe(ws, true, true, permission.ModeManual, &active)
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return([]string{"queued prompt"}).AnyTimes()
 
 	runCmds(m, cmd)
 	require.True(t, m.isAgentBusy(), "refreshed busy state must land in the cache")
@@ -461,10 +268,11 @@ func TestAgentTerminalNotificationsRefreshBusy(t *testing.T) {
 
 	for _, typ := range []notify.Type{notify.TypeAgentFinished, notify.TypeAgentError} {
 		t.Run(string(typ), func(t *testing.T) {
-			ws := &countingWorkspace{ready: true} // agent now idle
-			m := newBusyUI(ws)
+			m, ws := newMockBusyUI(t)
 			warmCaches(m, true) // stale: still busy
-			ws.resetCounters()
+			active := workspace.ActiveAgent{}
+			stubBusyProbe(ws, true, false, permission.ModeManual, &active) // agent now idle
+			ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
 			require.True(t, m.isAgentBusy())
 
 			_, cmd := m.Update(pubsub.Event[notify.Notification]{
@@ -487,12 +295,15 @@ func TestAgentTerminalNotificationsRefreshBusy(t *testing.T) {
 func TestSessionSwitchRefreshesQueueAndBusy(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, queued: []string{"a", "b"}}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, true)
 	m.promptQueue = 5 // stale queue pill from the previous session
 	m.promptQueueItems = []string{"x", "y", "z", "w", "v"}
-	ws.resetCounters()
+	active := workspace.ActiveAgent{}
+	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return([]string{"a", "b"}).AnyTimes()
+	ws.EXPECT().ListMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	ws.EXPECT().ListUserMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	_, cmd := m.Update(loadSessionMsg{session: &session.Session{ID: "s2"}})
 	require.Zero(t, m.promptQueue, "switching sessions must drop the old session's queue pill")
@@ -511,68 +322,87 @@ func TestSessionSwitchRefreshesQueueAndBusy(t *testing.T) {
 func TestSessionSwitchLoadsTheTranscriptOffThread(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, false)
-	ws.resetCounters()
 
 	_, cmd := m.Update(loadSessionMsg{session: &session.Session{ID: "s2"}})
-	require.Equal(t, 0, ws.listMessageCalls, "the transcript must not be fetched on the Update goroutine")
+	// ListMessages deliberately left unstubbed until after this point:
+	// the transcript must not be fetched on the Update goroutine.
+
+	active := workspace.ActiveAgent{}
+	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+	ws.EXPECT().ListUserMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	var listMessageCalls int
+	ws.EXPECT().ListMessages(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(context.Context, string) ([]message.Message, error) {
+			listMessageCalls++
+			return nil, nil
+		})
 
 	runCmds(m, cmd)
-	require.Equal(t, 1, ws.listMessageCalls, "the transcript must still be fetched")
+	require.Equal(t, 1, listMessageCalls, "the transcript must still be fetched")
 }
 
-// TestToggleYoloWritesThroughCache: both yolo toggle paths share
-// toggleYoloMode, which must write the known new value through the cache —
-// no invalidation, no re-probe.
-func TestToggleYoloWritesThroughCache(t *testing.T) {
+// TestCyclePermissionModeWritesThroughCache: both permission-mode cycle
+// paths share cyclePermissionMode, which must write the known new value
+// through the cache — no invalidation, no re-probe.
+func TestCyclePermissionModeWritesThroughCache(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, yolo: false}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 
-	got := m.toggleYoloMode()
-	require.True(t, got)
-	require.Equal(t, 1, ws.permSetCalls)
-	readsAfterToggle := ws.permCalls
-	require.Equal(t, 1, readsAfterToggle, "toggle reads the authoritative value exactly once")
+	// A single EXPECT (default Times(1)) both answers the cycle's read
+	// and proves nothing reads again afterwards: a second call would
+	// find no matching expectation left and fail.
+	ws.EXPECT().PermissionMode().Return(permission.ModeManual)
+	ws.EXPECT().PermissionSetMode(permission.ModeAutoAcceptEdits)
 
-	require.True(t, m.yoloModeCached(), "the new value must be served from the cache")
-	require.True(t, m.yoloCache.fresh(busyCacheTTL), "write-through must stamp the cache fresh")
-	m.yoloModeCached()
-	require.Equal(t, readsAfterToggle, ws.permCalls, "reads after the toggle must not re-probe")
+	got := m.cyclePermissionMode()
+	require.Equal(t, permission.ModeAutoAcceptEdits, got)
 
-	got = m.toggleYoloMode()
-	require.False(t, got)
-	require.False(t, m.yoloModeCached())
+	require.Equal(t, permission.ModeAutoAcceptEdits, m.permissionModeCached(), "the new value must be served from the cache")
+	require.True(t, m.permissionModeCache.fresh(busyCacheTTL), "write-through must stamp the cache fresh")
+	m.permissionModeCached()
+	m.permissionModeCached() // reads after the cycle must not re-probe
+
+	ws.EXPECT().PermissionMode().Return(permission.ModeAutoAcceptEdits)
+	ws.EXPECT().PermissionSetMode(permission.ModeYolo)
+	got = m.cyclePermissionMode()
+	require.Equal(t, permission.ModeYolo, got)
+	require.Equal(t, permission.ModeYolo, m.permissionModeCached())
 }
 
-// TestLocalYoloToggleSupersedesInFlightProbe pins the generation bump in
-// toggleYoloMode: a busy/yolo probe dispatched before the toggle carries the
-// old generation. Without advancing busyFetchGen its stale result would land
-// with a still-matching generation and clobber the just-toggled value.
-func TestLocalYoloToggleSupersedesInFlightProbe(t *testing.T) {
+// TestCyclePermissionModeSupersedesInFlightProbe pins the generation bump
+// in cyclePermissionMode: a busy/permission-mode probe dispatched before
+// the cycle carries the old generation. Without advancing busyFetchGen its
+// stale result would land with a still-matching generation and clobber the
+// just-cycled value.
+func TestCyclePermissionModeSupersedesInFlightProbe(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, yolo: false}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, false)
 
-	// A busy/yolo probe carrying the pre-toggle generation is in flight.
+	// A busy/permission-mode probe carrying the pre-cycle generation is in
+	// flight.
 	m.busyFetchInFlight = true
 	staleGen := m.busyFetchGen
 
-	require.True(t, m.toggleYoloMode())
+	ws.EXPECT().PermissionMode().Return(permission.ModeManual)
+	ws.EXPECT().PermissionSetMode(permission.ModeAutoAcceptEdits)
+	require.Equal(t, permission.ModeAutoAcceptEdits, m.cyclePermissionMode())
 	require.NotEqual(t, staleGen, m.busyFetchGen,
-		"toggle must advance the busy generation to supersede in-flight probes")
-	require.True(t, m.yoloModeCached(), "toggle must write the new value through the cache")
+		"cycling must advance the busy generation to supersede in-flight probes")
+	require.Equal(t, permission.ModeAutoAcceptEdits, m.permissionModeCached(), "cycling must write the new value through the cache")
 
-	// The stale probe (old generation, old yolo=false) lands.
+	// The stale probe (old generation, old mode) lands. This is a direct
+	// applyBusyState call, not a run command, so it triggers no further
+	// workspace calls even though it re-dispatches a refresh.
 	m.busyFetchInFlight = true
-	cmds := m.applyBusyState(busyStateMsg{gen: staleGen, yolo: false})
-	require.True(t, m.yoloModeCached(),
-		"stale probe must not overwrite the freshly toggled value")
+	cmds := m.applyBusyState(busyStateMsg{gen: staleGen, mode: permission.ModeManual})
+	require.Equal(t, permission.ModeAutoAcceptEdits, m.permissionModeCached(),
+		"stale probe must not overwrite the freshly cycled value")
 	require.NotEmpty(t, cmds, "stale probe must re-dispatch an authoritative refresh")
 	require.True(t, m.busyFetchInFlight, "re-dispatched refresh must be in flight")
 }
@@ -584,9 +414,9 @@ func TestLocalYoloToggleSupersedesInFlightProbe(t *testing.T) {
 func TestSendMessageSetsOptimisticBusy(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true} // workspace still reports idle
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, false)
+	ws.EXPECT().AgentReadyErr().Return(nil) // workspace still reports ready
 
 	require.False(t, m.isAgentBusy())
 	cmd := m.sendMessage("hello") // returned cmds (AgentRun etc.) deliberately not run
@@ -601,8 +431,8 @@ func TestSendMessageSetsOptimisticBusy(t *testing.T) {
 	require.True(t, m.isCanceling, "first esc press must arm cancellation")
 
 	// Second press must actually cancel.
+	ws.EXPECT().AgentCancel(gomock.Any())
 	m.cancelAgent()
-	require.Equal(t, 1, ws.cancelCalls, "second esc press must cancel the agent")
 }
 
 // TestCancelAgentClearsQueueFromCachedCount: the queue-clear decision must
@@ -611,18 +441,17 @@ func TestSendMessageSetsOptimisticBusy(t *testing.T) {
 func TestCancelAgentClearsQueueFromCachedCount(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, queued: []string{"a"}}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, true)
 	m.promptQueue = 1
 	m.promptQueueItems = []string{"a"}
-	ws.resetCounters()
+
+	ws.EXPECT().AgentClearQueue(gomock.Any())
+	// AgentQueuedPrompts/AgentQueuedPromptsList deliberately left
+	// unstubbed: the decision must use the cached count, not a probe.
 
 	cmd := m.cancelAgent()
 	require.Nil(t, cmd)
-	require.Equal(t, 1, ws.clearQueueCalls, "esc with a queue must clear it")
-	require.Zero(t, ws.queuedCalls, "the decision must use the cached count, not a probe")
-	require.Zero(t, ws.queueListCalls, "the decision must use the cached count, not a probe")
 	require.Zero(t, m.promptQueue, "the cached count must be zeroed immediately")
 	require.Empty(t, m.promptQueueItems)
 	require.False(t, m.isCanceling, "clearing the queue must not arm cancellation")
@@ -634,24 +463,35 @@ func TestCancelAgentClearsQueueFromCachedCount(t *testing.T) {
 func TestBackstopRefreshesStaleCaches(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, agentBusy: true}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	// Caches start at their zero value: stale by definition.
 
 	_, cmd := m.Update(plainMsg{})
 	require.True(t, m.busyFetchInFlight, "stale caches must trigger a backstop refresh")
-	require.Zero(t, ws.syncProbes(), "the backstop itself must not probe synchronously")
+	// Nothing stubbed yet: the backstop itself must not probe
+	// synchronously.
 
 	// A second Update while the fetch is in flight must not stack another.
 	before := m.busyFetchInFlight
 	m.Update(plainMsg{})
 	require.Equal(t, before, m.busyFetchInFlight)
-	require.Zero(t, ws.syncProbes())
+
+	var agentBusyCalls int
+	active := workspace.ActiveAgent{}
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+	ws.EXPECT().AgentIsBusy().DoAndReturn(func() bool { agentBusyCalls++; return true })
+	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(context.Context, string) (workspace.ActiveAgent, error) {
+			return active, nil
+		}).AnyTimes()
+	ws.EXPECT().PermissionMode().Return(permission.ModeManual).AnyTimes()
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+	ws.EXPECT().LSPGetStates().Return(nil).AnyTimes()
 
 	runCmds(m, cmd)
 	require.False(t, m.busyFetchInFlight)
 	require.True(t, m.isAgentBusy(), "the backstop result must land in the cache")
-	require.Equal(t, 1, ws.agentBusyCalls, "exactly one probe per backstop refresh")
+	require.Equal(t, 1, agentBusyCalls, "exactly one probe per backstop refresh")
 
 	// Freshly refreshed caches must not re-dispatch.
 	m.Update(plainMsg{})
@@ -667,8 +507,7 @@ func TestBackstopRefreshesStaleCaches(t *testing.T) {
 func TestSetSessionMessagesGatesAnimationsOnBusy(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, agentBusy: false}
-	m := newBusyUI(ws)
+	m, _ := newMockBusyUI(t)
 	warmCaches(m, false)
 
 	// A message that looks unfinished (no Finish part, no content).
@@ -703,8 +542,7 @@ func TestSetSessionMessagesGatesAnimationsOnBusy(t *testing.T) {
 func TestStaleBusyRefreshDiscardedAndReDispatched(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true}
-	m := newBusyUI(ws)
+	m, _ := newMockBusyUI(t)
 	warmCaches(m, false)
 
 	// A busy probe is in flight; capture the generation it was dispatched
@@ -714,7 +552,9 @@ func TestStaleBusyRefreshDiscardedAndReDispatched(t *testing.T) {
 	m.agentBusyCache.set(true) // optimistic busy
 	m.busyFetchGen++           // newer state transition
 
-	// The stale probe (agent reported idle) lands with the old generation.
+	// The stale probe (agent reported idle) lands with the old
+	// generation. This is a direct applyBusyState call, so re-dispatch
+	// only builds a cmd — it never invokes the workspace.
 	cmds := m.applyBusyState(busyStateMsg{gen: staleGen, agentBusy: false})
 	require.True(t, m.isAgentBusy(),
 		"a stale busy result must not overwrite the newer optimistic busy state")
@@ -735,8 +575,7 @@ func TestStaleBusyRefreshDiscardedAndReDispatched(t *testing.T) {
 func TestStalePromptQueueDiscardedAndReDispatched(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, queued: []string{"real"}}
-	m := newBusyUI(ws)
+	m, _ := newMockBusyUI(t)
 	warmCaches(m, false)
 	m.promptQueue = 1
 	m.promptQueueItems = []string{"real"}
@@ -770,8 +609,7 @@ func TestStalePromptQueueDiscardedAndReDispatched(t *testing.T) {
 func TestStalePromptQueuePreservesSessionScoping(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true}
-	m := newBusyUI(ws) // active session "s1"
+	m, _ := newMockBusyUI(t) // active session "s1"
 	warmCaches(m, false)
 	m.promptQueueInFlight = true
 	gen := m.promptQueueGen
@@ -795,8 +633,7 @@ func TestStalePromptQueuePreservesSessionScoping(t *testing.T) {
 func TestRenderHelpersDoNotProbeWorkspace(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true}
-	m := newBusyUI(ws)
+	m, _ := newMockBusyUI(t)
 	m.agentReady = true
 	m.agentActiveKnown = true
 	m.agentActiveSession = m.currentSessionID()
@@ -819,8 +656,6 @@ func TestRenderHelpersDoNotProbeWorkspace(t *testing.T) {
 	for range 10 {
 		m.modelInfo(40)
 	}
-
-	require.Zero(t, ws.syncProbes(), "render helpers must never probe the workspace")
 }
 
 // TestBusyRefreshCarriesReadyAndModel: the off-thread busy probe must also
@@ -829,12 +664,15 @@ func TestRenderHelpersDoNotProbeWorkspace(t *testing.T) {
 func TestBusyRefreshCarriesReadyAndModel(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{
-		ready:  true,
-		active: workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "test-model", Provider: "prov"}},
-	}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	require.Nil(t, m.activeAgent(), "before any probe the model is unknown")
+
+	// Caches start stale, so the plainMsg backstop below dispatches all
+	// three refreshes (busy, queue, LSP) at once.
+	active := workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "test-model", Provider: "prov"}}
+	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+	ws.EXPECT().LSPGetStates().Return(nil).AnyTimes()
 
 	_, cmd := m.Update(plainMsg{}) // stale caches: the backstop dispatches
 	runCmds(m, cmd)
@@ -852,18 +690,17 @@ func TestBusyRefreshCarriesReadyAndModel(t *testing.T) {
 func TestAgentModelChangedRefreshesModel(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{
-		ready:  true,
-		active: workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "new-model"}},
-	}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, false)
 	m.agentActive = workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "old-model"}}
-	ws.resetCounters()
 
 	_, cmd := m.Update(agentModelChangedMsg{})
-	require.Zero(t, ws.syncProbes(), "the model-change handler must not probe synchronously")
 	require.True(t, m.busyFetchInFlight, "a model change must schedule a ready/model refresh")
+	// Nothing stubbed yet: the model-change handler must not probe
+	// synchronously.
+
+	active := workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "new-model"}}
+	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
 
 	runCmds(m, cmd)
 	require.Equal(t, "new-model", m.agentActive.ModelCfg.Model,
@@ -878,22 +715,30 @@ func TestAgentModelChangedRefreshesModel(t *testing.T) {
 func TestMCPStateChangedRefreshesModel(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{
-		ready:  true,
-		active: workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "pre-mcp-model"}},
-		// Only the rebuild makes the new model observable, so a probe
-		// that runs before it — or a rebuild that never runs — leaves
-		// the memoized model at the old value.
-		activeAfterRebuild: &workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "post-mcp-model"}},
-	}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, false)
 	m.agentActive = workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "pre-mcp-model"}}
-	ws.resetCounters()
+
+	// active is shared between UpdateAgentModel (which rewrites it, the
+	// way a rebuild changes the effective model) and AgentActive (which
+	// reads whatever it currently holds). Only the rebuild makes the new
+	// model observable, so a probe that runs before it — or a rebuild
+	// that never runs — would read the old value; the assertion below
+	// is only satisfiable if the refresh actually runs after the
+	// rebuild.
+	active := workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "pre-mcp-model"}}
+	var updateAgentModelCalls int
+	ws.EXPECT().UpdateAgentModel(gomock.Any()).DoAndReturn(func(context.Context) error {
+		updateAgentModelCalls++
+		active = workspace.ActiveAgent{ModelCfg: config.SelectedModel{Model: "post-mcp-model"}}
+		return nil
+	})
+	ws.EXPECT().MCPGetStates().Return(nil).AnyTimes()
+	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
 
 	runCmds(m, m.handleStateChanged())
 
-	require.Equal(t, 1, ws.updateAgentModelCalls, "an MCP state change must rebuild the agent")
+	require.Equal(t, 1, updateAgentModelCalls, "an MCP state change must rebuild the agent")
 	require.True(t, m.agentReady)
 	require.Equal(t, "post-mcp-model", m.agentActive.ModelCfg.Model,
 		"the refresh must run after the rebuild, or it memoizes the pre-rebuild model")
@@ -908,28 +753,32 @@ func TestMCPStateChangedRefreshesModel(t *testing.T) {
 func TestLSPEventRefreshIsOffThreadAndDeduped(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{
-		ready:     true,
-		lspStates: map[string]workspace.LSPClientInfo{"gopls": {Name: "gopls", DiagnosticCount: 3}},
-		lspDiags:  map[string]lsp.DiagnosticCounts{"gopls": {Error: 2, Warning: 1}},
-	}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
 	warmCaches(m, false)
-	ws.resetCounters()
 
 	_, cmd := m.Update(pubsub.Event[workspace.LSPEvent]{
 		Payload: workspace.LSPEvent{Type: workspace.LSPEventDiagnosticsChanged, Name: "gopls"},
 	})
-	require.Zero(t, ws.syncProbes(), "the LSP event handler must not probe synchronously")
 	require.True(t, m.lspFetchInFlight, "an LSP event must schedule an off-thread refresh")
+	// Nothing stubbed yet: the LSP event handler must not probe
+	// synchronously.
 
 	// A second event while the fetch is in flight queues a re-fetch instead
 	// of stacking another dispatch.
 	m.Update(pubsub.Event[workspace.LSPEvent]{
 		Payload: workspace.LSPEvent{Type: workspace.LSPEventDiagnosticsChanged, Name: "gopls"},
 	})
-	require.Zero(t, ws.syncProbes())
 	require.True(t, m.lspRefreshQueued, "an event during an in-flight fetch must queue a re-fetch")
+	// Still nothing stubbed: a second event while one is in flight must
+	// not probe either.
+
+	var lspStateCalls int
+	ws.EXPECT().LSPGetStates().DoAndReturn(func() map[string]workspace.LSPClientInfo {
+		lspStateCalls++
+		return map[string]workspace.LSPClientInfo{"gopls": {Name: "gopls", DiagnosticCount: 3}}
+	}).Times(2)
+	ws.EXPECT().LSPGetDiagnosticCounts("gopls").
+		Return(lsp.DiagnosticCounts{Error: 2, Warning: 1}).AnyTimes()
 
 	runCmds(m, cmd)
 	require.False(t, m.lspFetchInFlight)
@@ -937,39 +786,38 @@ func TestLSPEventRefreshIsOffThreadAndDeduped(t *testing.T) {
 	require.Equal(t, 3, m.lspStates["gopls"].DiagnosticCount, "fetched states must land in the cache")
 	require.Equal(t, 2, m.lspDiagnostics["gopls"].Error, "fetched severity counts must land in the cache")
 	require.Equal(t, 3, m.lspErrorCount())
-	require.Equal(t, 2, ws.lspStateCalls, "one fetch plus the queued re-fetch")
+	require.Equal(t, 2, lspStateCalls, "one fetch plus the queued re-fetch")
 }
 
-// TestRemoteYoloToggleUpdatesEditorPrompt pins the second fix: when an
-// asynchronous busy-state refresh reports a yolo mode different from the
-// cached one (a remote toggle), applyBusyState must rebuild the textarea
-// prompt function too, not just the cache — otherwise the rail keeps
-// rendering the old mode's color.
-func TestRemoteYoloToggleUpdatesEditorPrompt(t *testing.T) {
+// TestRemotePermissionModeChangeUpdatesEditorPrompt pins the second fix:
+// when an asynchronous busy-state refresh reports a permission mode
+// different from the cached one (a remote change), applyBusyState must
+// rebuild the textarea prompt function too, not just the cache —
+// otherwise the rail keeps rendering the old mode's color.
+func TestRemotePermissionModeChangeUpdatesEditorPrompt(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true}
-	m := newBusyUI(ws)
+	m, _ := newMockBusyUI(t)
 	m.textarea.Focus()
 	m.textarea.SetWidth(40)
-	m.yoloCache.set(false)
-	m.setEditorPrompt(false)
+	m.permissionModeCache.set(permission.ModeManual)
+	m.setEditorPrompt(permission.ModeManual)
 	normalPrompt := m.textarea.View()
 	require.NotContains(t, m.editorCaption(100), "yolo")
 
-	// A remote toggle flips yolo on; delivered via an off-thread refresh.
-	m.applyBusyState(busyStateMsg{gen: m.busyFetchGen, yolo: true})
-	require.True(t, m.yoloModeCached(), "the refresh must write the new yolo value through the cache")
+	// A remote change switches to yolo; delivered via an off-thread refresh.
+	m.applyBusyState(busyStateMsg{gen: m.busyFetchGen, mode: permission.ModeYolo})
+	require.Equal(t, permission.ModeYolo, m.permissionModeCached(), "the refresh must write the new mode through the cache")
 	yoloPrompt := m.textarea.View()
 	require.NotEqual(t, normalPrompt, yoloPrompt,
-		"a remote yolo toggle must recolor the editor rail")
+		"a remote mode change must recolor the editor rail")
 	require.Contains(t, m.editorCaption(100), "yolo",
 		"the caption carries the mode for readers who cannot see the rail color")
 
-	// Flipping back off must restore the normal prompt.
-	m.applyBusyState(busyStateMsg{gen: m.busyFetchGen, yolo: false})
-	require.False(t, m.yoloModeCached())
+	// Switching back to manual must restore the normal prompt.
+	m.applyBusyState(busyStateMsg{gen: m.busyFetchGen, mode: permission.ModeManual})
+	require.Equal(t, permission.ModeManual, m.permissionModeCached())
 	require.Equal(t, normalPrompt, m.textarea.View(),
-		"toggling yolo off must restore the normal editor rail")
+		"switching back to manual must restore the normal editor rail")
 	require.NotContains(t, m.editorCaption(100), "yolo")
 }

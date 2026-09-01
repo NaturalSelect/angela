@@ -14,7 +14,8 @@ import (
 // status bar without a keymap because its tests never draw one.
 func drawableUI(t *testing.T, w, h int) *UI {
 	t.Helper()
-	m := newBusyUI(detailsWorkspace())
+	ws, _ := detailsMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.status = NewStatus(m.com, m)
 	m.width, m.height = w, h
 	m.session = &session.Session{ID: "s1", Title: "a fairly long session title here"}

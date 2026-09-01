@@ -146,10 +146,8 @@ type shellStreamMsg struct {
 type (
 	// cancelTimerExpiredMsg is sent when the cancel timer expires.
 	cancelTimerExpiredMsg struct{}
-	// jumpToBottomTimerExpiredMsg is sent when the jump-to-bottom timer
-	// expires.
-	jumpToBottomTimerExpiredMsg struct{}
 	// userCommandsLoadedMsg is sent when user commands are loaded.
+
 	userCommandsLoadedMsg struct {
 		Commands []commands.CustomCommand
 	}
@@ -219,10 +217,6 @@ type UI struct {
 
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
-
-	// isJumpingToBottom tracks whether the user has pressed down once to
-	// return to the end of the transcript.
-	isJumpingToBottom bool
 
 	// sessionIsBranch memoizes whether the loaded session is a branch.
 	// Resolving it reads config through the workspace, which the status
@@ -343,12 +337,13 @@ type UI struct {
 	// in-flight fetch captures it at dispatch and its result is discarded
 	// if the generation has moved on (see workspace_cache.go).
 	promptQueueGen uint64
-	// agentBusyCache / yoloCache memoize the workspace busy and permission
-	// probes (synchronous HTTP round-trips in client/server mode). Reads
-	// never probe; refreshes happen off-thread (see workspace_cache.go).
-	agentBusyCache    ttlCache
-	yoloCache         ttlCache
-	busyFetchInFlight bool
+	// agentBusyCache / permissionModeCache memoize the workspace busy and
+	// permission probes (synchronous HTTP round-trips in client/server
+	// mode). Reads never probe; refreshes happen off-thread (see
+	// workspace_cache.go).
+	agentBusyCache      ttlCache[bool]
+	permissionModeCache ttlCache[permission.PermissionMode]
+	busyFetchInFlight   bool
 	// agentReady / agentActive memoize the coordinator readiness and the
 	// agent the session runs on (AgentIsReady/AgentActive are
 	// synchronous HTTP GETs in client/server mode, and modelInfo renders
@@ -466,11 +461,11 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 
 	status := NewStatus(com, ui)
 
-	// Seed the yolo cache once at construction; afterwards it is kept
-	// fresh by write-through toggles and off-thread refreshes so Update
-	// and View never probe the workspace synchronously.
-	yolo := com.Workspace.PermissionSkipRequests()
-	ui.yoloCache.set(yolo)
+	// Seed the permission-mode cache once at construction; afterwards it
+	// is kept fresh by write-through toggles and off-thread refreshes so
+	// Update and View never probe the workspace synchronously.
+	mode := com.Workspace.PermissionMode()
+	ui.permissionModeCache.set(mode)
 
 	// Seed the memoized agent ready/active state the same way so the
 	// first frame renders the model info; the busy probe keeps it fresh
@@ -489,7 +484,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 			ui.agentActiveSession = ""
 		}
 	}
-	ui.setEditorPrompt(yolo)
+	ui.setEditorPrompt(mode)
 	ui.textarea.Placeholder = ui.editorPlaceholder()
 	ui.status = status
 
@@ -776,6 +771,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.leaveLevel && len(m.sessionStack) > 0 {
 			m.sessionStack = m.sessionStack[:len(m.sessionStack)-1]
 		}
+		if msg.truncateStackTo != nil && *msg.truncateStackTo <= len(m.sessionStack) {
+			m.sessionStack = m.sessionStack[:*msg.truncateStackTo]
+		}
 		if msg.clearStack {
 			m.sessionStack = nil
 		}
@@ -982,8 +980,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleQuestionNotification(msg.Payload)
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
-	case jumpToBottomTimerExpiredMsg:
-		m.isJumpingToBottom = false
 	case tea.TerminalVersionMsg:
 		termVersion := strings.ToLower(msg.Name)
 		// Only enable progress bar for the following terminals.
@@ -1014,8 +1010,14 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case copyChatHighlightMsg:
 		cmds = append(cmds, m.copyChatHighlight())
 	case DelayedClickMsg:
-		// Handle delayed single-click action (e.g., expansion).
-		m.chat.HandleDelayedClick(msg)
+		// Handle delayed single-click action (e.g., expansion, or
+		// drilling into a sub-agent/branch session when the click
+		// landed on an Agent tool call).
+		if m.chat.HandleDelayedClick(msg) {
+			if agentItem, ok := m.selectedAgentTool(); ok {
+				cmds = append(cmds, m.enterSubSession(agentItem))
+			}
+		}
 	case tea.MouseClickMsg:
 		// Pass mouse events to dialogs first if any are open.
 		if m.dialog.HasDialogs() {
@@ -1047,6 +1049,19 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activeInline == nil && msg.Button == uv.MouseLeft && len(m.attachments.List()) > 0 && msg.Y == m.layout.editor.Min.Y {
 			relX := msg.X - m.layout.editor.Min.X
 			if m.attachments.HandleClick(relX) {
+				return m, tea.Batch(cmds...)
+			}
+		}
+
+		// Check if the click landed on an ancestor crumb in the header
+		// breadcrumb. The level in view is never a click target — there
+		// is nowhere to jump to.
+		if msg.Button == uv.MouseLeft && msg.Y == m.layout.header.Min.Y {
+			relX := msg.X - m.layout.header.Min.X
+			if idx, ok := m.header.HitTestBreadcrumb(relX); ok {
+				if cmd := m.goToBreadcrumbLevel(idx); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 				return m, tea.Batch(cmds...)
 			}
 		}
@@ -1951,8 +1966,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 
 	// Command dialog messages.
-	case dialog.ActionToggleYoloMode:
-		m.toggleYoloMode()
+	case dialog.ActionCyclePermissionMode:
+		m.cyclePermissionMode()
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionSelectNotificationStyle:
 		cfg := m.com.Config()
@@ -1977,7 +1992,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionSummarize:
-		if m.isAgentBusy() {
+		// Session-scoped, not the busy cache: that cache answers for the
+		// whole process, so another session's run would block this one's
+		// compact even while it sits idle.
+		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before summarizing session..."))
 			break
 		}
@@ -1992,6 +2010,16 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionAbortBranch:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if cmd := m.abortBranch(msg.SessionID); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionGoToParent:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if cmd := m.leaveSubSession(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionScrollToBottom:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case dialog.ActionToggleHelp:
@@ -2596,6 +2624,11 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			m.detailsOpen = !m.detailsOpen
 			m.updateLayoutAndSize()
 			return true
+		case key.Matches(msg, m.keyMap.Chat.ToParent) && m.hasParentSession():
+			if cmd := m.leaveSubSession(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return true
 		case key.Matches(msg, m.keyMap.Chat.EndFollow):
 			if m.state == uiChat && m.hasSession() {
 				if cmd := m.chat.ScrollToBottomAndSelectLast(); cmd != nil {
@@ -2610,13 +2643,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			cmds = append(cmds, tea.Suspend)
 			return true
-		case key.Matches(msg, m.keyMap.ToggleYolo):
-			yolo := m.toggleYoloMode()
-			status := "disabled"
-			if yolo {
-				status = "enabled"
-			}
-			cmds = append(cmds, util.ReportInfo("Yolo mode "+status))
+		case key.Matches(msg, m.keyMap.CyclePermissionMode):
+			mode := m.cyclePermissionMode()
+			cmds = append(cmds, util.ReportInfo("Permission mode: "+permissionModeLabel(mode)))
 			return true
 		}
 		return false
@@ -2680,14 +2709,6 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			return tea.Batch(cmds...)
 		}
-	}
-
-	// Escape leaves a sub-session. It sits after the busy check so a running
-	// turn is stopped first, and ahead of the focus switch so it also works
-	// from the editor — but an open completion popup owns Escape while it is
-	// up, or dismissing it would throw the user out of the session instead.
-	if key.Matches(msg, m.keyMap.Chat.Back) && m.inSubSession() && !m.completionsOpen {
-		return tea.Batch(append(cmds, m.leaveSubSession())...)
 	}
 
 	switch m.state {
@@ -2769,7 +2790,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 				if m.bangMode && value != "" {
 					m.bangMode = false
-					m.setEditorPrompt(m.yoloModeCached())
+					m.setEditorPrompt(m.permissionModeCached())
 					m.textarea.Placeholder = m.editorPlaceholder()
 					m.historyReset()
 					return tea.Batch(m.runShellCommand(value))
@@ -2846,7 +2867,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				if m.bangMode && m.bangWasEmpty && msg.Code == tea.KeyBackspace {
 					m.bangMode = false
 					m.bangWasEmpty = false
-					m.setEditorPrompt(m.yoloModeCached())
+					m.setEditorPrompt(m.permissionModeCached())
 					break
 				}
 
@@ -2903,7 +2924,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					m.textarea.SetValue(stripped)
 					m.textarea.SetCursorColumn(max(0, col-(len(newVal)-len(stripped))))
 					_ = line // cursor line doesn't change; prefix removed
-					m.setEditorPrompt(m.yoloModeCached())
+					m.setEditorPrompt(m.permissionModeCached())
 				} else if m.bangMode && newVal == "" && curValue != "" {
 					// Just cleared last character; mark empty, stay in bang mode.
 					m.bangWasEmpty = true
@@ -2941,9 +2962,6 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 		case uiFocusMain:
 			switch {
 			case key.Matches(msg, m.keyMap.Tab):
-				if m.viewingSubAgent() {
-					break
-				}
 				m.focus = uiFocusEditor
 				cmds = append(cmds, m.textarea.Focus())
 				m.chat.Blur()
@@ -3174,7 +3192,7 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 			return nil
 		}
 
-		if m.textarea.Focused() && !m.viewingSubAgent() {
+		if m.textarea.Focused() {
 			cur := m.textarea.Cursor()
 			// App margin plus the box's left border.
 			cur.X += m.layout.editor.Min.X + 1
@@ -3321,13 +3339,6 @@ func (m *UI) ShortHelp() []key.Binding {
 		binds = append(binds, m.cancelHint())
 	}
 
-	// The way out of a sub-session leads the standing hints: it is the only
-	// one that is not discoverable anywhere else, so it must survive the
-	// trim on a narrow terminal.
-	if m.inSubSession() {
-		binds = append(binds, k.Chat.Back)
-	}
-
 	binds = append(binds, m.tabHint(), m.commandsHint())
 
 	switch m.focus {
@@ -3401,7 +3412,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 		k.CycleVariant,
 	}
 
-	app := []key.Binding{k.ToggleYolo, k.Suspend, less, k.Quit}
+	app := []key.Binding{k.CyclePermissionMode, k.Suspend, less, k.Quit}
 	if m.state == uiChat && m.isAgentBusy() {
 		app = append([]key.Binding{m.cancelHint()}, app...)
 	}
@@ -3710,21 +3721,23 @@ func (m *UI) openEditor(value string) tea.Cmd {
 
 // setEditorPrompt configures the textarea prompt function. The prompt is a
 // two-column gutter: marker, gap.
-func (m *UI) setEditorPrompt(yolo bool) {
-	m.textarea.SetPromptFunc(editorPromptWidth, m.editorPromptFunc(yolo))
+func (m *UI) setEditorPrompt(mode permission.PermissionMode) {
+	m.textarea.SetPromptFunc(editorPromptWidth, m.editorPromptFunc(mode))
 }
 
 // editorPromptFunc draws the editor gutter for one visual line. The marker
 // only appears on the first line, and carries the input mode in its color —
 // as does the box border, so no separate accent rail is needed.
-func (m *UI) editorPromptFunc(yolo bool) func(textarea.PromptInfo) string {
+func (m *UI) editorPromptFunc(mode permission.PermissionMode) func(textarea.PromptInfo) string {
 	t := m.com.Styles
-	mode := t.Editor.Rail
+	railStyle := t.Editor.Rail
 	switch {
 	case m.bangMode:
-		mode = t.Editor.RailBang
-	case yolo:
-		mode = t.Editor.RailYolo
+		railStyle = t.Editor.RailBang
+	case mode == permission.ModeYolo:
+		railStyle = t.Editor.RailYolo
+	case mode == permission.ModeAutoAcceptEdits:
+		railStyle = t.Editor.RailAutoAcceptEdits
 	}
 
 	return func(info textarea.PromptInfo) string {
@@ -3734,7 +3747,7 @@ func (m *UI) editorPromptFunc(yolo bool) func(textarea.PromptInfo) string {
 		if !info.Focused {
 			return t.Editor.PromptMarkerBlurred.Render(editorPromptGlyph)
 		}
-		return mode.Render(editorPromptGlyph)
+		return railStyle.Render(editorPromptGlyph)
 	}
 }
 
@@ -3963,23 +3976,35 @@ func mimeOf(content []byte) string {
 }
 
 // editorPlaceholder returns the textarea placeholder for the current input
+// permissionModeLabel renders a permission.PermissionMode for the toast
+// shown when Shift+Tab cycles it, since the wire/config spelling
+// ("auto_accept_edits") is not what a user should read.
+func permissionModeLabel(mode permission.PermissionMode) string {
+	switch mode {
+	case permission.ModeYolo:
+		return "Yolo"
+	case permission.ModeAutoAcceptEdits:
+		return "Auto-accept edits"
+	default:
+		return "Manual"
+	}
+}
+
 // mode. Narrow terminals get the bare prompt without the hint tail.
 func (m *UI) editorPlaceholder() string {
-	// A pending jump is transient and directly actionable, so it speaks
-	// over the mode prompts for the couple of seconds it lasts.
-	if m.isJumpingToBottom {
-		return "Press ↓ again to jump to the latest message"
-	}
 	if m.bangMode {
 		return "Run a shell command"
 	}
-	if m.yoloModeCached() {
+	switch m.permissionModeCached() {
+	case permission.ModeYolo:
 		return "Yolo mode — permissions are skipped"
+	case permission.ModeAutoAcceptEdits:
+		return "Auto-accepting edits — other actions still ask"
 	}
 	if m.width < narrowWidthBreakpoint {
 		return "Ask anything…"
 	}
-	return "Ask anything — / for commands, @ for agents, # for files, ↓↓ for latest"
+	return "Ask anything — / for commands, @ for agents, # for files"
 }
 
 // editorCaption returns the one-line run context: which agent and model the
@@ -4000,8 +4025,10 @@ func (m *UI) editorCaption(width int) string {
 	switch {
 	case m.bangMode:
 		mode = "shell"
-	case m.yoloModeCached():
+	case m.permissionModeCached() == permission.ModeYolo:
 		mode = "yolo"
+	case m.permissionModeCached() == permission.ModeAutoAcceptEdits:
+		mode = "auto-accept"
 	}
 
 	// Narrow terminals keep only what identifies the run: the model, and
@@ -4030,8 +4057,10 @@ func (m *UI) editorBorderStyle() lipgloss.Style {
 	switch {
 	case m.bangMode:
 		return t.Editor.RailBang
-	case m.yoloModeCached():
+	case m.permissionModeCached() == permission.ModeYolo:
 		return t.Editor.RailYolo
+	case m.permissionModeCached() == permission.ModeAutoAcceptEdits:
+		return t.Editor.RailAutoAcceptEdits
 	case m.focus == uiFocusEditor:
 		return t.Editor.BorderFocused
 	default:
@@ -4066,7 +4095,7 @@ func (m *UI) drawPromptBox(scr uv.Screen, area uv.Rectangle) {
 	}
 
 	content := m.textarea.View()
-	if m.viewingSubAgent() {
+	if m.viewingSubAgent() && !m.textarea.Focused() {
 		content = m.subAgentNotice(box.Dx() - editorBoxBorders)
 	}
 	uv.NewStyledString(content).Draw(scr, image.Rect(
@@ -4077,9 +4106,12 @@ func (m *UI) drawPromptBox(scr uv.Screen, area uv.Rectangle) {
 }
 
 // subAgentNotice replaces the prompt while a sub-agent's transcript is on
-// screen, so the box reads as a closed door rather than an empty one.
+// screen and the editor is not in use, so the box reads as a closed door
+// rather than an empty one. Tabbing or clicking in still opens it: a
+// command or a shell line is a local action, not a message queued behind
+// the parent's back, so only sendMessage needs to refuse those.
 func (m *UI) subAgentNotice(width int) string {
-	notice := "Sub-agent transcript · read only · esc to go back"
+	notice := "Sub-agent transcript · read only · ctrl+up to parent · tab for commands"
 	return m.com.Styles.Editor.Caption.Render(ansi.Truncate(notice, width, "…"))
 }
 
@@ -4127,7 +4159,7 @@ func (m *UI) attachSkill(skillID, name string) tea.Cmd {
 // sendMessage sends a message with the given content and attachments.
 func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.Cmd {
 	if m.viewingSubAgent() {
-		return util.ReportWarn("This is a sub-agent's transcript. Press esc to go back and reply there.")
+		return util.ReportWarn("This is a sub-agent's transcript. Press ctrl+up to go back and reply there.")
 	}
 	if err := m.com.Workspace.AgentReadyErr(); err != nil {
 		return util.ReportError(err)
@@ -4290,16 +4322,6 @@ const cancelTimerDuration = 2 * time.Second
 func cancelTimerCmd() tea.Cmd {
 	return tea.Tick(cancelTimerDuration, func(time.Time) tea.Msg {
 		return cancelTimerExpiredMsg{}
-	})
-}
-
-const jumpToBottomTimerDuration = 2 * time.Second
-
-// jumpToBottomTimerCmd creates a command that expires the jump-to-bottom
-// timer.
-func jumpToBottomTimerCmd() tea.Cmd {
-	return tea.Tick(jumpToBottomTimerDuration, func(time.Time) tea.Msg {
-		return jumpToBottomTimerExpiredMsg{}
 	})
 }
 
@@ -4477,7 +4499,7 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	hasTodos := hasSession && hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
 
-	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.viewingBranch(), m.activeAgent(), m.customCommands, m.mcpPrompts)
+	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.viewingBranch(), m.hasParentSession(), m.activeAgent(), m.customCommands, m.mcpPrompts)
 	if err != nil {
 		return util.ReportError(err)
 	}
@@ -4851,7 +4873,7 @@ func (m *UI) checkBangModeAfterPaste() {
 	m.textarea.SetValue(stripped)
 	col := m.textarea.Column()
 	m.textarea.SetCursorColumn(max(0, col-(len(val)-len(stripped))))
-	m.setEditorPrompt(m.yoloModeCached())
+	m.setEditorPrompt(m.permissionModeCached())
 }
 
 // handlePasteMsg handles a paste message.

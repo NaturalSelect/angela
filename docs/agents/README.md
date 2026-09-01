@@ -184,10 +184,12 @@ prompt follows and decides everything else.
 - **`/abort`** — abandons it outright, whether or not a turn is running.
   The command only appears while you are inside a branch.
 
-Escape no longer walks back out of a branch the way it leaves a sub-agent
-transcript, since it is reserved for stopping and abandoning. To look at the
-parent without giving up the branch, use the session switcher (`Ctrl+S`) —
-branches are not listed there, so the parent is the one you pick.
+Escape does not walk back out of a branch, since it is reserved for stopping
+and abandoning — the same as for a finished branch or an ordinary sub-agent
+transcript, where pressing up twice at the top of the view goes back instead.
+To look at the parent without giving up the branch, use the session switcher
+(`Ctrl+S`) — branches are not listed there, so the parent is the one you
+pick.
 
 ### Several branches at once
 

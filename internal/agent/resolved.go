@@ -34,6 +34,21 @@ type resolvedAgent struct {
 	// now. Refreshing credentials does not touch the instance frozen
 	// here, so a retry after a 401 needs a freshly built one.
 	RebuildModel func(context.Context) (fantasy.LanguageModel, error)
+
+	// Err holds why this agent could not be resolved. Only
+	// buildCompactAgent populates it: compaction is a recovery path,
+	// not a precondition, so a resolution failure is recorded here
+	// instead of aborting the turn. Callers must check Available
+	// before assuming Model is usable.
+	Err error
+}
+
+// Available reports whether this agent resolved cleanly and can
+// actually be run. Meaningful for values that might carry Err, such
+// as the compact agent; resolveAgent's own callers get a Go error
+// instead and never populate it.
+func (r resolvedAgent) Available() bool {
+	return r.Err == nil && r.Model.Model != nil
 }
 
 // resolveAgent turns an agent's configuration into the immutable value

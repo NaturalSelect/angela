@@ -1,0 +1,40 @@
+name: coverage
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CGO_ENABLED: 0
+  GOEXPERIMENT: greenteagc
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run tests with coverage
+        run: go test -coverprofile=coverage.out ./...
+      - name: Enforce coverage threshold
+        run: |
+          THRESHOLD=75
+          TOTAL=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${TOTAL}%"
+          PASS=$(awk -v t="$TOTAL" -v th="$THRESHOLD" 'BEGIN { print (t >= th) ? "1" : "0" }')
+          if [ "$PASS" != "1" ]; then
+            echo "::error::Total coverage ${TOTAL}% is below the required threshold of ${THRESHOLD}%"
+            exit 1
+          fi
+          echo "Coverage ${TOTAL}% meets the required threshold of ${THRESHOLD}%"

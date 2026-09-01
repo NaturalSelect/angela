@@ -48,17 +48,14 @@ func downloadDescription() string {
 	})
 }
 
+// downloadHTTPTimeout bounds a download's total request time. It is far
+// looser than defaultToolHTTPTimeout because downloads move larger
+// payloads than a page fetch or search.
+const downloadHTTPTimeout = 5 * time.Minute
+
 func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.MaxIdleConns = 100
-		transport.MaxIdleConnsPerHost = 10
-		transport.IdleConnTimeout = 90 * time.Second
-
-		client = &http.Client{
-			Timeout:   5 * time.Minute, // Default 5 minute timeout for downloads
-			Transport: transport,
-		}
+		client = newDefaultHTTPClient(downloadHTTPTimeout)
 	}
 	return fantasy.NewParallelAgentTool(
 		toolnames.Download,

@@ -343,7 +343,7 @@ func (t *baseToolMessageItem) RawRender(width int) string {
 			ExpandedContent: t.expandedContent,
 			Compact:         t.isCompact,
 			IsSpinning:      t.isSpinning(),
-			Status:          t.computeStatus(),
+			Status:          t.Status(),
 		})
 
 		// Prepend hook indicator if hooks ran for this tool call.
@@ -441,13 +441,11 @@ func (t *baseToolMessageItem) SetStatus(status ToolStatus) {
 	t.Bump()
 }
 
-// Status returns the current tool status.
+// Status returns the tool's effective status. A result overrides the
+// bookkeeping status the moment one arrives, so callers (like the turn
+// status line's "what is running now") see completion immediately instead
+// of whatever status a call was left in when SetResult was last called.
 func (t *baseToolMessageItem) Status() ToolStatus {
-	return t.status
-}
-
-// computeStatus computes the effective status considering the result.
-func (t *baseToolMessageItem) computeStatus() ToolStatus {
 	if t.result != nil {
 		if t.result.IsError {
 			return ToolStatusError
@@ -1652,39 +1650,39 @@ func (t *baseToolMessageItem) formatAgentResultForCopy() string {
 func prettifyToolName(name string) string {
 	switch name {
 	case toolnames.Agent:
-		return "Agent"
+		return toolnames.Agent
 	case toolnames.Bash:
-		return "Bash"
+		return toolnames.Bash
 	case toolnames.JobOutput:
 		return "Job: Output"
 	case toolnames.JobKill:
 		return "Job: Kill"
 	case toolnames.Download:
-		return "Download"
+		return toolnames.Download
 	case toolnames.Edit:
-		return "Edit"
+		return toolnames.Edit
 	case toolnames.MultiEdit:
 		return "Multi-Edit"
 	case toolnames.Fetch:
-		return "Fetch"
+		return toolnames.Fetch
 	case toolnames.WebFetch:
 		return "Fetch"
 	case toolnames.WebSearch:
 		return "Search"
 	case toolnames.Glob:
-		return "Glob"
+		return toolnames.Glob
 	case toolnames.Grep:
-		return "Grep"
+		return toolnames.Grep
 	case toolnames.LS:
 		return "List"
 	case toolnames.Sourcegraph:
-		return "Sourcegraph"
+		return toolnames.Sourcegraph
 	case toolnames.Todos:
 		return "To-Do"
 	case toolnames.View:
-		return "View"
+		return toolnames.View
 	case toolnames.Write:
-		return "Write"
+		return toolnames.Write
 	default:
 		return humanizedToolName(name)
 	}

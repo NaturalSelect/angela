@@ -12,17 +12,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type attachmentClickWorkspace struct {
-	historyWorkspace
-}
+// newAttachmentClickWorkspace returns the mock equivalent of the old
+// attachmentClickWorkspace fake: an unready agent on top of the history
+// workspace defaults, with any other workspace call failing the test.
+func newAttachmentClickWorkspace(t *testing.T) *MockWorkspace {
+	t.Helper()
 
-func (attachmentClickWorkspace) AgentIsReady() bool { return false }
+	ws := newHistoryTestWorkspace(t)
+	ws.EXPECT().AgentIsReady().Return(false).AnyTimes()
+	return ws
+}
 
 func newAttachmentClickTestUI(t *testing.T) (*UI, int) {
 	t.Helper()
 
 	u := newTestUI()
-	u.com.Workspace = attachmentClickWorkspace{}
+	u.com.Workspace = newAttachmentClickWorkspace(t)
 	u.dialog = dialog.NewOverlay()
 	sty := u.com.Styles.Attachments
 	renderer := attachments.NewRenderer(

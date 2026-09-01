@@ -20,7 +20,7 @@ const branchProviderID = "test-provider"
 // waiting for the user rather than for anything this dispatch controls.
 func idleBranchAgent(t *testing.T, seen chan<- string) (SessionAgent, resolvedAgent) {
 	t.Helper()
-	return newMockAgent(branchProviderID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+	return newMockAgent(t, branchProviderID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 		if seen != nil {
 			seen <- call.Prompt
 		}
@@ -315,7 +315,7 @@ func forkBusyBranch(t *testing.T, turnErr error) *busyBranchFixture {
 	// The turn ends on release rather than on ctx: mockSessionAgent.Cancel
 	// only records the call, so a turn waiting to be cancelled for real
 	// would never return and its goroutine would leak.
-	agent, resolved := newMockAgent(branchProviderID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+	agent, resolved := newMockAgent(t, branchProviderID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 		seen <- call.Prompt
 		<-f.release
 		if turnErr != nil {
@@ -476,7 +476,7 @@ func TestRunBranchAgentReportsAStartupFailure(t *testing.T) {
 	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
 	require.NoError(t, err)
 
-	agent, resolved := newMockAgent(branchProviderID, 4096,
+	agent, resolved := newMockAgent(t, branchProviderID, 4096,
 		func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
 			return nil, context.DeadlineExceeded
 		})

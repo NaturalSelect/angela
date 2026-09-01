@@ -425,16 +425,17 @@ func (w *ClientWorkspace) PermissionDeny(perm permission.PermissionRequest) bool
 	return resolved
 }
 
-func (w *ClientWorkspace) PermissionSkipRequests() bool {
-	skip, err := w.client.GetPermissionsSkipRequests(context.Background(), w.workspaceID())
+func (w *ClientWorkspace) PermissionMode() permission.PermissionMode {
+	s, err := w.client.GetPermissionMode(context.Background(), w.workspaceID())
 	if err != nil {
-		return false
+		return permission.ModeManual
 	}
-	return skip
+	mode, _ := permission.ParsePermissionMode(s)
+	return mode
 }
 
-func (w *ClientWorkspace) PermissionSetSkipRequests(skip bool) {
-	_ = w.client.SetPermissionsSkipRequests(context.Background(), w.workspaceID(), skip)
+func (w *ClientWorkspace) PermissionSetMode(mode permission.PermissionMode) {
+	_ = w.client.SetPermissionMode(context.Background(), w.workspaceID(), mode.String())
 }
 
 // -- Questions --
@@ -975,13 +976,13 @@ func (w *ClientWorkspace) recoverWorkspace() error {
 func (w *ClientWorkspace) recreateArgs() proto.Workspace {
 	ws := w.cached()
 	return proto.Workspace{
-		Path:     ws.Path,
-		DataDir:  ws.DataDir,
-		Debug:    ws.Debug,
-		YOLO:     ws.YOLO,
-		Channels: ws.Channels,
-		Env:      ws.Env,
-		Version:  version.Version,
+		Path:           ws.Path,
+		DataDir:        ws.DataDir,
+		Debug:          ws.Debug,
+		PermissionMode: ws.PermissionMode,
+		Channels:       ws.Channels,
+		Env:            ws.Env,
+		Version:        version.Version,
 	}
 }
 

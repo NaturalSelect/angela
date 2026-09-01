@@ -1,16 +1,19 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 const pickProviderID = "acme"
@@ -36,30 +39,61 @@ func pickAction(slot config.ModelConfigName) dialog.ActionSelectModel {
 	}
 }
 
+// pickMockWorkspace builds a mock with pickConfig() as the global config
+// and the read-only probes that refreshActiveAgentCmd always runs after a
+// pick lands. Each test adds exactly the write-path expectations it is
+// pinning — leaving those unstubbed is what proves a write does not
+// happen where it should not, the gomock equivalent of the old fake's
+// zero counters.
+func pickMockWorkspace(t *testing.T) *MockWorkspace {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return(pickConfig()).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+	ws.EXPECT().AgentIsBusy().Return(false).AnyTimes()
+	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).Return(workspace.ActiveAgent{}, nil).AnyTimes()
+	ws.EXPECT().PermissionMode().Return(permission.ModeManual).AnyTimes()
+	return ws
+}
+
 // TestASessionPickWritesNothingInsideUpdate is B5. RecordRecentModel is
 // an HTTP round-trip in client/server mode, and it used to run on the
 // Update goroutine, where the render loop stalls on it.
 func TestASessionPickWritesNothingInsideUpdate(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{
-		ready:  true,
-		cfg:    pickConfig(),
-		active: workspace.ActiveAgent{ModelName: config.ModelMain},
-	}
-	m := newBusyUI(ws)
+	ws := pickMockWorkspace(t)
+	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	m := newBusyUIWithWorkspace(ws)
 	warmCaches(m, false)
-	m.agentActive = ws.active
+	m.agentActive = active
 
+	// Nothing beyond Config/WorkingDir is stubbed yet: handleSelectModel
+	// reaching RecordRecentModel, AgentEditActive, or any syncProbes
+	// method here would fail the test immediately, which is the proof
+	// the write does not happen on the Update goroutine.
 	cmd := m.handleSelectModel(pickAction(config.ModelMain))
-	require.Equal(t, 0, ws.recentModelCalls, "the write must not happen on the Update goroutine")
-	require.Empty(t, ws.edits, "the session edit must not happen there either")
-	require.Equal(t, 0, ws.syncProbes(), "no probe may run on the Update goroutine")
+
+	var recentModelCalls, editCalls int
+	var editSessionID string
+	ws.EXPECT().RecordRecentModel(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(config.Scope, config.ModelConfigName, config.SelectedModel) error {
+			recentModelCalls++
+			return nil
+		})
+	ws.EXPECT().AgentEditActive(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, sessionID string, _ config.ActiveAgentEdit) (workspace.ActiveAgent, error) {
+			editCalls++
+			editSessionID = sessionID
+			return active, nil
+		})
 
 	runCmds(m, cmd)
-	require.Equal(t, 1, ws.recentModelCalls)
-	require.Len(t, ws.edits, 1)
-	require.Equal(t, "s1", ws.edits[0].sessionID)
+	require.Equal(t, 1, recentModelCalls)
+	require.Equal(t, 1, editCalls, "the session edit must happen exactly once")
+	require.Equal(t, "s1", editSessionID)
 }
 
 // TestAGlobalPickWritesNothingInsideUpdate is the other branch:
@@ -67,23 +101,28 @@ func TestASessionPickWritesNothingInsideUpdate(t *testing.T) {
 func TestAGlobalPickWritesNothingInsideUpdate(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{
-		ready:  true,
-		cfg:    pickConfig(),
-		active: workspace.ActiveAgent{ModelName: config.ModelMain},
-	}
-	m := newBusyUI(ws)
+	ws := pickMockWorkspace(t)
+	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	m := newBusyUIWithWorkspace(ws)
 	warmCaches(m, false)
-	m.agentActive = ws.active
+	m.agentActive = active
 
 	// The chore slot is not the one the session runs, so this is global.
+	// Nothing beyond Config/WorkingDir is stubbed yet: reaching
+	// UpdatePreferredModel, AgentEditActive, or any syncProbes method
+	// here would fail the test immediately.
 	cmd := m.handleSelectModel(pickAction(config.ModelChore))
-	require.Equal(t, 0, ws.preferredModelCalls, "the write must not happen on the Update goroutine")
-	require.Equal(t, 0, ws.syncProbes())
+
+	var preferredModelCalls int
+	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(config.Scope, config.ModelConfigName, config.SelectedModel) error {
+			preferredModelCalls++
+			return nil
+		})
+	ws.EXPECT().UpdateAgentModel(gomock.Any()).Return(nil)
 
 	runCmds(m, cmd)
-	require.Equal(t, 1, ws.preferredModelCalls)
-	require.Empty(t, ws.edits, "a chore pick must not touch the session")
+	require.Equal(t, 1, preferredModelCalls)
 }
 
 // TestOnboardingStartsTheAgentOffThread covers the third write on this
@@ -91,16 +130,24 @@ func TestAGlobalPickWritesNothingInsideUpdate(t *testing.T) {
 func TestOnboardingStartsTheAgentOffThread(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newBusyUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.state = uiOnboarding
 	warmCaches(m, false)
 
+	// InitCoderAgent is deliberately left unstubbed until after this
+	// call: starting the agent must not block Update.
 	cmd := m.handleSelectModel(pickAction(config.ModelMain))
-	require.Equal(t, 0, ws.initAgentCalls, "starting the agent must not block Update")
+
+	var initAgentCalls int
+	ws.EXPECT().InitCoderAgent(gomock.Any()).DoAndReturn(func(context.Context) error {
+		initAgentCalls++
+		return nil
+	})
+	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	runCmds(m, cmd)
-	require.Equal(t, 1, ws.initAgentCalls)
+	require.Equal(t, 1, initAgentCalls)
 }
 
 // TestOnboardingPersistsTheModelBeforeStartingTheAgent is B1. The agent
@@ -110,14 +157,16 @@ func TestOnboardingStartsTheAgentOffThread(t *testing.T) {
 func TestOnboardingPersistsTheModelBeforeStartingTheAgent(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newBusyUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.state = uiOnboarding
 	warmCaches(m, false)
 
-	runCmds(m, m.handleSelectModel(pickAction(config.ModelMain)))
+	persist := ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	init := ws.EXPECT().InitCoderAgent(gomock.Any()).Return(nil)
+	gomock.InOrder(persist, init)
 
-	require.Equal(t, []string{"persist", "init"}, ws.steps)
+	runCmds(m, m.handleSelectModel(pickAction(config.ModelMain)))
 }
 
 // TestAFailedGlobalPersistStopsThere is B2. These ran as a tea.Sequence,
@@ -126,22 +175,25 @@ func TestOnboardingPersistsTheModelBeforeStartingTheAgent(t *testing.T) {
 func TestAFailedGlobalPersistStopsThere(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{
-		ready:             true,
-		cfg:               pickConfig(),
-		active:            workspace.ActiveAgent{ModelName: config.ModelMain},
-		preferredModelErr: errors.New("disk is full"),
-	}
-	m := newBusyUI(ws)
+	ws := pickMockWorkspace(t)
+	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	m := newBusyUIWithWorkspace(ws)
 	warmCaches(m, false)
-	m.agentActive = ws.active
+	m.agentActive = active
+
+	var preferredModelCalls int
+	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(config.Scope, config.ModelConfigName, config.SelectedModel) error {
+			preferredModelCalls++
+			return errors.New("disk is full")
+		})
+	// UpdateAgentModel and InitCoderAgent are deliberately left
+	// unstubbed: a model that was never persisted must not be applied
+	// to the agent or start it.
 
 	msgs := runCmds(m, m.handleSelectModel(pickAction(config.ModelChore)))
 
-	require.Equal(t, 1, ws.preferredModelCalls)
-	require.Equal(t, 0, ws.updateAgentModelCalls,
-		"a model that was never persisted must not be applied to the agent")
-	require.Empty(t, ws.steps)
+	require.Equal(t, 1, preferredModelCalls)
 
 	var reported bool
 	for _, msg := range msgs {

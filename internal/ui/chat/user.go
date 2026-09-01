@@ -19,9 +19,8 @@ import (
 // Geometry of the user message band. The band is a filled surface, so these
 // are cell offsets into it rather than padding on a string.
 //
-//	[accent 1][gap 1][prompt 2][text ...][timestamp 10][pad 2]
+//	[gap 1][prompt 2][text ...][timestamp 10][pad 2]
 const (
-	userBandAccentWidth    = 1
 	userBandGap            = 1
 	userBandPromptWidth    = 2
 	userBandTimestampWidth = 10
@@ -29,15 +28,14 @@ const (
 	// userBandPadY is the blank row above and below the text. It belongs to
 	// the band because list gap rows are empty strings and cannot carry a
 	// background.
-	userBandPadY        = 1
-	userBandAccentGlyph = "▌"
-	userPromptGlyph     = "❯ "
+	userBandPadY    = 1
+	userPromptGlyph = "❯ "
 )
 
 // userBandTextX is the column where the message text starts.
-const userBandTextX = userBandAccentWidth + userBandGap + userBandPromptWidth
+const userBandTextX = userBandGap + userBandPromptWidth
 
-// userBandTextWidth is how much room the text gets once the accent column,
+// userBandTextWidth is how much room the text gets once the left gap,
 // prompt, reserved timestamp columns and right padding are taken out.
 func userBandTextWidth(width int) int {
 	return max(width-userBandTextX-userBandTimestampWidth-userBandPadRight, 1)
@@ -179,9 +177,9 @@ func (m *UserMessageItem) Render(width int) string {
 	return out
 }
 
-// renderBand paints the message onto a filled surface: an accent column, the
-// prompt glyph, the text, and a timestamp in reserved right-hand columns. The
-// text is wrapped short of those columns, so it can never collide with them.
+// renderBand paints the message onto a filled surface: the prompt glyph, the
+// text, and a timestamp in reserved right-hand columns. The text is wrapped
+// short of those columns, so it can never collide with them.
 func (m *UserMessageItem) renderBand(width int) string {
 	if width <= 0 {
 		return ""
@@ -195,15 +193,6 @@ func (m *UserMessageItem) renderBand(width int) string {
 	buf := uv.NewScreenBuffer(width, height)
 	common.FillRect(&buf, buf.Bounds(), base)
 
-	accent := m.sty.Messages.UserBandAccentBlurred
-	if m.focused {
-		accent = m.sty.Messages.UserBandAccentFocused
-	}
-	accentStyle := list.ToStyle(accent)
-	for y := range height {
-		common.SetSpan(&buf, 0, y, accentStyle, userBandAccentGlyph)
-	}
-
 	// The body keeps its own markdown colors, so it is drawn rather than
 	// spanned — only the cells it leaves without a background inherit the
 	// fill.
@@ -213,7 +202,7 @@ func (m *UserMessageItem) renderBand(width int) string {
 		userBandTextX+textWidth, userBandPadY+len(lines),
 	), base, body)
 
-	common.SetSpan(&buf, userBandAccentWidth+userBandGap, userBandPadY,
+	common.SetSpan(&buf, userBandGap, userBandPadY,
 		list.ToStyle(m.sty.Messages.UserBandPrompt), userPromptGlyph)
 
 	if ts := m.timestamp(); ts != "" {

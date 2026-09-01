@@ -6,6 +6,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // assistantWithCall is an assistant message carrying one unfinished tool
@@ -50,8 +51,9 @@ func toolItems(t *testing.T, items []chat.MessageItem) []chat.ToolMessageItem {
 func TestBuildSessionItemsMarksOrphansWhenSessionIsIdle(t *testing.T) {
 	t.Parallel()
 
-	ws := &countingWorkspace{ready: true, agentBusy: false}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(false).AnyTimes()
 
 	items, _ := m.buildSessionItems("s1", []message.Message{
 		assistantWithCall("m1", "c1"),
@@ -74,8 +76,9 @@ func TestBuildSessionItemsMarksOrphansWhenSessionIsIdle(t *testing.T) {
 func TestBuildSessionItemsKeepsOnlyTheLastAssistantRunning(t *testing.T) {
 	t.Parallel()
 
-	ws := &countingWorkspace{ready: true, agentBusy: true}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(true).AnyTimes()
 
 	items, _ := m.buildSessionItems("s1", []message.Message{
 		assistantWithCall("m1", "c1"),
@@ -96,16 +99,15 @@ func TestBuildSessionItemsKeepsOnlyTheLastAssistantRunning(t *testing.T) {
 func TestBuildSessionItemsSkipsTheProbeWithoutOrphans(t *testing.T) {
 	t.Parallel()
 
-	ws := &countingWorkspace{ready: true, agentBusy: false}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+	// AgentIsSessionBusy is deliberately left unstubbed: a transcript
+	// with no orphaned call must not probe for liveness at all.
 
 	items, _ := m.buildSessionItems("s1", []message.Message{
 		assistantWithCall("m1", "c1"),
 		toolResultMessage("t1", "c1"),
 	})
-
-	require.Zero(t, ws.sessionBusyCalls,
-		"a transcript with no orphaned call must not probe for liveness")
 
 	tools := toolItems(t, items)
 	require.Len(t, tools, 1)
@@ -119,8 +121,9 @@ func TestBuildSessionItemsSkipsTheProbeWithoutOrphans(t *testing.T) {
 func TestBuildSessionItemsAsksPerSession(t *testing.T) {
 	t.Parallel()
 
-	ws := &countingWorkspace{ready: true, agentBusy: false}
-	m := newBusyUI(ws)
+	m, ws := newMockBusyUI(t)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(false).Times(1)
 	// A stale global cache claiming the process is busy must not leak
 	// into the per-session answer.
 	m.agentBusyCache.set(true)
@@ -128,8 +131,6 @@ func TestBuildSessionItemsAsksPerSession(t *testing.T) {
 	items, _ := m.buildSessionItems("s1", []message.Message{
 		assistantWithCall("m1", "c1"),
 	})
-
-	require.Equal(t, 1, ws.sessionBusyCalls, "exactly one per-session probe")
 
 	tools := toolItems(t, items)
 	require.Len(t, tools, 1)

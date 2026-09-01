@@ -567,14 +567,14 @@ func resolveModelOverrides(
 	largeMatches, smallMatches := findModelMatches(providers, largeModel, smallModel)
 
 	if smallModel != "" {
-		found, err := validateModelMatches(smallMatches, smallModel, "chore")
+		found, err := validateModelMatches(smallMatches, smallModel, string(config.ModelChore))
 		if err != nil {
 			return nil, nil, err
 		}
 		small = &found
 	}
 	if largeModel != "" {
-		found, err := validateModelMatches(largeMatches, largeModel, "main")
+		found, err := validateModelMatches(largeMatches, largeModel, string(config.ModelMain))
 		if err != nil {
 			return nil, nil, err
 		}

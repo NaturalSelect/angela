@@ -82,7 +82,7 @@ func TestPermissionedTool_KnownBypassesAsk(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			svc := permission.NewPermissionService(dir, false, nil)
+			svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
 			resp := runGated(t, svc, dir, bashCall(t, command), false)
 			require.Contains(t, resp.Content, "User denied permission",
@@ -101,7 +101,7 @@ func TestPermissionedTool_SafeCommandsRunSilently(t *testing.T) {
 		t.Run(command, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			svc := permission.NewPermissionService(dir, false, nil)
+			svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
 			inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
 			gated := newPermissionedTool(inner, svc, dir)
@@ -121,7 +121,7 @@ func TestPermissionedTool_UnknownToolIsDenied(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	inner := &fakeTool{name: "brand_new_tool", resp: fantasy.NewTextResponse("ran")}
 	gated := newPermissionedTool(inner, svc, dir)
 
@@ -144,7 +144,7 @@ func TestPermissionedTool_DenyOutcomesDiffer(t *testing.T) {
 		{Action: permission.RuleDeny, Tool: toolnames.Bash, Pattern: "curl*"},
 	}, nil, permission.PromptAsk)
 	require.NoError(t, err)
-	svc := permission.NewPermissionService(dir, false, policy)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, policy)
 
 	inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
 	gated := newPermissionedTool(inner, svc, dir)
@@ -169,7 +169,7 @@ func TestPermissionedTool_PolicyDenyBeatsSkip(t *testing.T) {
 		{Action: permission.RuleDeny, Tool: permission.ActionEdit.String(), Pattern: "**/.env"},
 	}, nil, permission.PromptAsk)
 	require.NoError(t, err)
-	svc := permission.NewPermissionService(dir, true, policy)
+	svc := permission.NewPermissionService(dir, permission.ModeYolo, policy)
 
 	input, err := json.Marshal(map[string]string{
 		"file_path": filepath.Join(dir, ".env"),
@@ -195,7 +195,7 @@ func TestPermissionedTool_HookAllowReachesTheGate(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
 	inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
 	gated := newPermissionedTool(inner, svc, dir)
@@ -245,7 +245,7 @@ func TestPermissionedTool_SettledPlanSkipsTheGate(t *testing.T) {
 		plan:     tools.Plan{Response: &settled},
 	}
 
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	gated := newPermissionedTool(inner, svc, dir)
 
 	events := svc.Subscribe(t.Context())
@@ -281,7 +281,7 @@ func TestPermissionedTool_PolicyDenyPrecedesPlanning(t *testing.T) {
 		}},
 	}
 
-	svc := permission.NewPermissionService(dir, false, policy)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, policy)
 	gated := newPermissionedTool(inner, svc, dir)
 
 	resp, err := gated.Run(sessionCtx(t.Context()), editCall(t, filepath.Join(dir, ".env")))
@@ -317,7 +317,7 @@ func TestPermissionedTool_RefusalKeepsPreviewMetadata(t *testing.T) {
 		},
 	}
 
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	gated := newPermissionedTool(inner, svc, dir)
 
 	events := svc.Subscribe(t.Context())

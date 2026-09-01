@@ -778,15 +778,15 @@ func (c *Client) CancelQuestionBatch(ctx context.Context, id string) (bool, erro
 	return resp.Resolved, nil
 }
 
-// SetPermissionsSkipRequests sets the skip-requests flag for a workspace.
-func (c *Client) SetPermissionsSkipRequests(ctx context.Context, id string, skip bool) error {
-	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/permissions/skip", id), nil, jsonBody(proto.PermissionSkipRequest{Skip: skip}), http.Header{"Content-Type": []string{"application/json"}})
+// SetPermissionMode sets the permission mode for a workspace.
+func (c *Client) SetPermissionMode(ctx context.Context, id, mode string) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/permissions/mode", id), nil, jsonBody(proto.PermissionModeRequest{Mode: mode}), http.Header{"Content-Type": []string{"application/json"}})
 	if err != nil {
-		return fmt.Errorf("failed to set permissions skip requests: %w", err)
+		return fmt.Errorf("failed to set permission mode: %w", err)
 	}
 	defer rsp.Body.Close()
 	if rsp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to set permissions skip requests: status code %d", rsp.StatusCode)
+		return fmt.Errorf("failed to set permission mode: status code %d", rsp.StatusCode)
 	}
 	return nil
 }
@@ -806,21 +806,21 @@ func (c *Client) SetSessionUnattended(ctx context.Context, id, sessionID string,
 	return nil
 }
 
-// GetPermissionsSkipRequests retrieves the skip-requests flag for a workspace.
-func (c *Client) GetPermissionsSkipRequests(ctx context.Context, id string) (bool, error) {
-	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/permissions/skip", id), nil, nil)
+// GetPermissionMode retrieves the permission mode for a workspace.
+func (c *Client) GetPermissionMode(ctx context.Context, id string) (string, error) {
+	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/permissions/mode", id), nil, nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to get permissions skip requests: %w", err)
+		return "", fmt.Errorf("failed to get permission mode: %w", err)
 	}
 	defer rsp.Body.Close()
 	if rsp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("failed to get permissions skip requests: status code %d", rsp.StatusCode)
+		return "", fmt.Errorf("failed to get permission mode: status code %d", rsp.StatusCode)
 	}
-	var skip proto.PermissionSkipRequest
-	if err := json.NewDecoder(rsp.Body).Decode(&skip); err != nil {
-		return false, fmt.Errorf("failed to decode permissions skip requests: %w", err)
+	var mode proto.PermissionModeRequest
+	if err := json.NewDecoder(rsp.Body).Decode(&mode); err != nil {
+		return "", fmt.Errorf("failed to decode permission mode: %w", err)
 	}
-	return skip.Skip, nil
+	return mode.Mode, nil
 }
 
 // GetConfig retrieves the workspace-specific configuration.

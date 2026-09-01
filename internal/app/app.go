@@ -99,7 +99,6 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	messages := message.NewService(q)
 	files := history.NewService(q, conn)
 	cfg := store.Config()
-	skipPermissionsRequests := store.Overrides().SkipPermissionRequests
 
 	var rules []permission.Rule
 	var allowedTools []string
@@ -120,11 +119,13 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		return nil, err
 	}
 
+	permissionMode := store.Overrides().PermissionMode
+
 	app := &App{
 		Sessions:    sessions,
 		Messages:    messages,
 		History:     files,
-		Permissions: permission.NewPermissionService(store.WorkingDir(), skipPermissionsRequests, policy, cfg.Options.SkillsPaths...),
+		Permissions: permission.NewPermissionService(store.WorkingDir(), permissionMode, policy, cfg.Options.SkillsPaths...),
 		Questions:   question.NewService(),
 		FileTracker: filetracker.NewService(q),
 		LSPManager:  lsp.NewManager(store),
@@ -488,14 +489,14 @@ func (app *App) applyModelOverrides(largeModel, smallModel string) (*config.Sele
 	// model cannot leave the chore override already in place.
 	var small, large *modelMatch
 	if smallModel != "" {
-		found, err := validateMatches(smallMatches, smallModel, "chore")
+		found, err := validateMatches(smallMatches, smallModel, string(config.ModelChore))
 		if err != nil {
 			return nil, err
 		}
 		small = &found
 	}
 	if largeModel != "" {
-		found, err := validateMatches(largeMatches, largeModel, "main")
+		found, err := validateMatches(largeMatches, largeModel, string(config.ModelMain))
 		if err != nil {
 			return nil, err
 		}

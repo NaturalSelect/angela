@@ -46,16 +46,16 @@ func gateAsync(ctx context.Context, svc Service, sessionID, callID string, acces
 }
 
 func TestSkipRace(t *testing.T) {
-	svc := NewPermissionService("/tmp", false, nil)
+	svc := NewPermissionService("/tmp", ModeManual, nil)
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		svc.SetSkipRequests(true)
+		svc.SetMode(ModeYolo)
 	}()
 	go func() {
 		defer wg.Done()
-		svc.SkipRequests()
+		svc.Mode()
 	}()
 	wg.Wait()
 }
@@ -63,10 +63,56 @@ func TestSkipRace(t *testing.T) {
 func TestPermissionService_SkipMode(t *testing.T) {
 	t.Parallel()
 
-	service := NewPermissionService("/tmp", true, nil)
+	service := NewPermissionService("/tmp", ModeYolo, nil)
 
 	decision := gate(t.Context(), service, "test-session", "call-1", editAccess("/tmp/test.txt"))
 	assert.True(t, decision.Allowed(), "skip mode should grant without prompting")
+}
+
+// TestPermissionService_AutoAcceptEditsMode pins that ModeAutoAcceptEdits
+// only widens the ladder for edits: an edit is granted without a
+// prompt, but every other action still runs the normal ladder.
+func TestPermissionService_AutoAcceptEditsMode(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	outside := t.TempDir()
+	service := NewPermissionService(dir, ModeAutoAcceptEdits, nil)
+
+	edit := gate(t.Context(), service, "s1", "call-1", editAccess(filepath.Join(dir, "main.go")))
+	assert.True(t, edit.Allowed(), "auto-accept-edits mode should grant an edit without prompting")
+
+	events := service.Subscribe(t.Context())
+	wait := gateAsync(t.Context(), service, "s1", "call-2", Access{
+		Tool: "view", Action: ActionRead, Path: filepath.Join(outside, "secret"),
+	})
+	select {
+	case ev := <-events:
+		service.Deny(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("a non-edit action must still reach the prompt under auto-accept-edits mode")
+	}
+	assert.False(t, wait().Allowed())
+}
+
+// TestPermissionService_DenyRuleOutranksAutoAcceptEdits pins that a
+// deny rule still refuses an edit even when auto-accept-edits mode
+// would otherwise grant it without asking.
+func TestPermissionService_DenyRuleOutranksAutoAcceptEdits(t *testing.T) {
+	t.Parallel()
+
+	policy, err := CompilePolicy([]Rule{
+		{Action: RuleDeny, Tool: "edit", Pattern: "**/.env"},
+	}, nil, PromptAsk)
+	require.NoError(t, err)
+
+	service := NewPermissionService("/work", ModeAutoAcceptEdits, policy)
+
+	decision := gate(t.Context(), service, "s1", "call-1", editAccess("/work/.env"))
+	assert.Equal(t, OutcomePolicyDeny, decision.Outcome, "a deny rule must survive auto-accept-edits mode")
+
+	other := gate(t.Context(), service, "s1", "call-2", editAccess("/work/main.go"))
+	assert.True(t, other.Allowed())
 }
 
 // TestPermissionService_DenyRuleOutranksSkip pins the priority the
@@ -80,7 +126,7 @@ func TestPermissionService_DenyRuleOutranksSkip(t *testing.T) {
 	}, nil, PromptAsk)
 	require.NoError(t, err)
 
-	service := NewPermissionService("/work", true, policy)
+	service := NewPermissionService("/work", ModeYolo, policy)
 
 	decision := gate(t.Context(), service, "s1", "call-1", editAccess("/work/.env"))
 	assert.Equal(t, OutcomePolicyDeny, decision.Outcome,
@@ -98,7 +144,7 @@ func TestPermissionService_DenyRuleOutranksSkip(t *testing.T) {
 func TestPermissionService_DangerousCommandAlwaysPrompts(t *testing.T) {
 	t.Parallel()
 
-	service := NewPermissionService("/work", false, nil)
+	service := NewPermissionService("/work", ModeManual, nil)
 	service.SetSessionPromptPolicy("s1", PromptAllow)
 
 	access := Access{
@@ -138,7 +184,7 @@ func TestPermissionService_SafeCommandNeedsNoPrompt(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	service := NewPermissionService(dir, false, nil)
+	service := NewPermissionService(dir, ModeManual, nil)
 
 	decision := gate(t.Context(), service, "s1", "call-1", Access{
 		Tool:    "bash",
@@ -157,7 +203,7 @@ func TestPermissionService_ReadScope(t *testing.T) {
 	dir := t.TempDir()
 	outside := t.TempDir()
 	skills := t.TempDir()
-	service := NewPermissionService(dir, false, nil, skills)
+	service := NewPermissionService(dir, ModeManual, nil, skills)
 
 	inside := gate(t.Context(), service, "s1", "c1", Access{
 		Tool: "view", Action: ActionRead, Path: filepath.Join(dir, "main.go"),
@@ -191,7 +237,7 @@ func TestPermissionService_MergeAlwaysPrompts(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	service := NewPermissionService(dir, false, nil)
+	service := NewPermissionService(dir, ModeManual, nil)
 
 	events := service.Subscribe(t.Context())
 	wait := gateAsync(t.Context(), service, "s1", "c1", Access{
@@ -212,7 +258,7 @@ func TestPermissionService_MergeDenialIsNotRemembered(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	service := NewPermissionService(dir, false, nil)
+	service := NewPermissionService(dir, ModeManual, nil)
 	merge := Access{Tool: "merge", Action: ActionMerge}
 
 	events := service.Subscribe(t.Context())
@@ -241,7 +287,7 @@ func TestPermissionService_DenyOutcomesDiffer(t *testing.T) {
 		{Action: RuleDeny, Tool: "edit", Pattern: "**/vendor/**"},
 	}, nil, PromptAsk)
 	require.NoError(t, err)
-	service := NewPermissionService("/work", false, policy)
+	service := NewPermissionService("/work", ModeManual, policy)
 
 	byPolicy := gate(t.Context(), service, "s1", "c1", editAccess("/work/vendor/x.go"))
 	assert.Equal(t, OutcomePolicyDeny, byPolicy.Outcome)
@@ -259,7 +305,7 @@ func TestPermissionService_DenyOutcomesDiffer(t *testing.T) {
 func TestPermissionService_SessionsPromptConcurrently(t *testing.T) {
 	t.Parallel()
 
-	service := NewPermissionService("/work", false, nil)
+	service := NewPermissionService("/work", ModeManual, nil)
 	events := service.Subscribe(t.Context())
 
 	waitA := gateAsync(t.Context(), service, "session-a", "a1", editAccess("/work/a.go"))
@@ -289,7 +335,7 @@ func TestPermissionService_SessionsPromptConcurrently(t *testing.T) {
 func TestPermissionService_CancelledWhileQueued(t *testing.T) {
 	t.Parallel()
 
-	service := NewPermissionService("/work", false, nil)
+	service := NewPermissionService("/work", ModeManual, nil)
 	events := service.Subscribe(t.Context())
 
 	// First request takes the session's slot and holds it.
@@ -317,7 +363,7 @@ func TestPermissionService_HookApproval(t *testing.T) {
 
 	t.Run("matching tool call ID short-circuits the prompt", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 
 		ctx := WithHookApproval(t.Context(), "call-42")
 		decision := gate(ctx, service, "s1", "call-42", editAccess("/work/a.go"))
@@ -326,7 +372,7 @@ func TestPermissionService_HookApproval(t *testing.T) {
 
 	t.Run("approval is scoped to the stamped tool call ID", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 
 		ctx := WithHookApproval(t.Context(), "call-42")
 		events := service.Subscribe(t.Context())
@@ -339,7 +385,7 @@ func TestPermissionService_HookApproval(t *testing.T) {
 
 	t.Run("a hook cannot approve a dangerous command", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 
 		ctx := WithHookApproval(t.Context(), "call-7")
 		events := service.Subscribe(t.Context())
@@ -358,7 +404,7 @@ func TestPermissionService_HookApproval(t *testing.T) {
 
 	t.Run("notifies subscribers that permission was granted", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 
 		notifications := service.SubscribeNotifications(t.Context())
 
@@ -377,7 +423,7 @@ func TestPermissionService_SequentialProperties(t *testing.T) {
 
 	t.Run("persistent grant covers the repeat", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 		events := service.Subscribe(t.Context())
 
 		access := editAccess("/work/test.txt")
@@ -391,7 +437,7 @@ func TestPermissionService_SequentialProperties(t *testing.T) {
 
 	t.Run("a one-off grant does not cover the repeat", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 		events := service.Subscribe(t.Context())
 
 		access := editAccess("/work/test.txt")
@@ -406,7 +452,7 @@ func TestPermissionService_SequentialProperties(t *testing.T) {
 
 	t.Run("a grant does not leak across sessions", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 		events := service.Subscribe(t.Context())
 
 		access := editAccess("/work/test.txt")
@@ -434,7 +480,7 @@ func TestPermissionService_ResolveIdempotency(t *testing.T) {
 
 	t.Run("concurrent grants resolve exactly once", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 
 		events := service.Subscribe(t.Context())
 		notifications := service.SubscribeNotifications(t.Context())
@@ -507,7 +553,7 @@ func TestPermissionService_ResolveIdempotency(t *testing.T) {
 
 	t.Run("grant after deny is a no-op", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 
 		events := service.Subscribe(t.Context())
 		notifications := service.SubscribeNotifications(t.Context())
@@ -548,7 +594,7 @@ func TestPermissionService_ResolveIdempotency(t *testing.T) {
 
 	t.Run("losing GrantPersistent does not record session permission", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 
 		events := service.Subscribe(t.Context())
 		notifications := service.SubscribeNotifications(t.Context())
@@ -587,7 +633,7 @@ func TestPermissionService_ResolveIdempotency(t *testing.T) {
 
 	t.Run("grant for unknown id is a safe no-op", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 
 		notifications := service.SubscribeNotifications(t.Context())
 
@@ -628,7 +674,7 @@ func TestPermissionService_GrantScopeIsPerPath(t *testing.T) {
 	approved := filepath.Join(dir, "approved.go")
 	neighbour := filepath.Join(dir, "neighbour.go")
 
-	service := NewPermissionService(dir, false, nil)
+	service := NewPermissionService(dir, ModeManual, nil)
 	events := service.Subscribe(t.Context())
 
 	wait := gateAsync(t.Context(), service, "session1", "c1", editAccess(approved))
@@ -654,7 +700,7 @@ func TestPermissionService_CommandGrantScope(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	service := NewPermissionService(dir, false, nil).(*permissionService)
+	service := NewPermissionService(dir, ModeManual, nil).(*permissionService)
 
 	tests := []struct {
 		name    string
@@ -701,7 +747,7 @@ func TestDownloadGrantCoversWhereItLands(t *testing.T) {
 
 	t.Run("a grant does not follow the host to another directory", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService(workDir, false, nil)
+		service := NewPermissionService(workDir, ModeManual, nil)
 		events := service.Subscribe(t.Context())
 
 		wait := gateAsync(t.Context(), service, "s1", "c1", download(workDir, "a.sh"))
@@ -721,7 +767,7 @@ func TestDownloadGrantCoversWhereItLands(t *testing.T) {
 
 	t.Run("a grant still covers the same directory", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService(workDir, false, nil)
+		service := NewPermissionService(workDir, ModeManual, nil)
 		events := service.Subscribe(t.Context())
 
 		wait := gateAsync(t.Context(), service, "s2", "c1", download(outside, "a.sh"))
@@ -735,7 +781,7 @@ func TestDownloadGrantCoversWhereItLands(t *testing.T) {
 
 	t.Run("a fetch that writes nothing still grants by host", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService(workDir, false, nil).(*permissionService)
+		service := NewPermissionService(workDir, ModeManual, nil).(*permissionService)
 
 		first := Access{Tool: "web_fetch", Action: ActionNetwork, URL: "https://example.com/a"}
 		second := Access{Tool: "web_fetch", Action: ActionNetwork, URL: "https://example.com/b"}
@@ -761,7 +807,7 @@ func TestCommandGrantCoversWhereItRuns(t *testing.T) {
 
 	t.Run("a grant does not follow the command elsewhere", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService(workDir, false, nil)
+		service := NewPermissionService(workDir, ModeManual, nil)
 		events := service.Subscribe(t.Context())
 
 		wait := gateAsync(t.Context(), service, "s1", "c1", command(workDir, "go build ./..."))
@@ -781,7 +827,7 @@ func TestCommandGrantCoversWhereItRuns(t *testing.T) {
 
 	t.Run("a grant still covers the directory it was given for", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService(workDir, false, nil)
+		service := NewPermissionService(workDir, ModeManual, nil)
 		events := service.Subscribe(t.Context())
 
 		wait := gateAsync(t.Context(), service, "s2", "c1", command(workDir, "go build ./..."))
@@ -795,7 +841,7 @@ func TestCommandGrantCoversWhereItRuns(t *testing.T) {
 
 	t.Run("two spellings of one directory share the approval", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService(workDir, false, nil)
+		service := NewPermissionService(workDir, ModeManual, nil)
 		events := service.Subscribe(t.Context())
 
 		link := filepath.Join(t.TempDir(), "link")
@@ -823,7 +869,7 @@ func TestChdirInsideTheCommandIsFollowed(t *testing.T) {
 	outside := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "sub"), 0o755))
 
-	service := NewPermissionService(workDir, false, nil).(*permissionService)
+	service := NewPermissionService(workDir, ModeManual, nil).(*permissionService)
 	scoped := func(command string) bool {
 		_, ok := service.withinScope(Access{
 			Tool: "bash", Action: ActionExecute, Command: command, Path: workDir,
@@ -878,7 +924,7 @@ func TestReadOnlyCommandsStayInTheWorkspace(t *testing.T) {
 
 	workDir := t.TempDir()
 	outside := t.TempDir()
-	service := NewPermissionService(workDir, false, nil).(*permissionService)
+	service := NewPermissionService(workDir, ModeManual, nil).(*permissionService)
 
 	t.Run("inside the workspace it runs unprompted", func(t *testing.T) {
 		t.Parallel()
@@ -931,7 +977,7 @@ func TestUnattendedSessionRefusesRatherThanWaits(t *testing.T) {
 
 	unattendedRun := func(t *testing.T) Service {
 		t.Helper()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 		// Exactly what App.RunNonInteractive does.
 		service.SetSessionPromptPolicy("s1", PromptAllow)
 		service.SetSessionUnattended("s1", true)
@@ -978,7 +1024,7 @@ func TestUnattendedSessionRefusesRatherThanWaits(t *testing.T) {
 		t.Parallel()
 		policy, err := CompilePolicy([]Rule{{Action: RuleDeny, Tool: "edit"}}, nil, PromptAsk)
 		require.NoError(t, err)
-		service := NewPermissionService("/work", false, policy)
+		service := NewPermissionService("/work", ModeManual, policy)
 		service.SetSessionPromptPolicy("s1", PromptAllow)
 		service.SetSessionUnattended("s1", true)
 
@@ -1003,7 +1049,7 @@ func TestUnattendedIsInheritedByDispatchedWork(t *testing.T) {
 
 	t.Run("a child of a headless run refuses too", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 		service.SetSessionUnattended("root", true)
 
 		dispatch(service, "root", "child")
@@ -1017,7 +1063,7 @@ func TestUnattendedIsInheritedByDispatchedWork(t *testing.T) {
 
 	t.Run("a child of a watched session still asks", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 		// A TUI session: nothing marks it unattended.
 		dispatch(service, "root", "child")
 
@@ -1055,7 +1101,7 @@ func TestCommandsThatLeaveTheMachineReachTheUser(t *testing.T) {
 
 	t.Run("a remote read is not auto-approved", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 		service.SetSessionUnattended("s", true)
 
 		for _, c := range []string{
@@ -1071,7 +1117,7 @@ func TestCommandsThatLeaveTheMachineReachTheUser(t *testing.T) {
 
 	t.Run("a local read-only command still runs unprompted", func(t *testing.T) {
 		t.Parallel()
-		service := NewPermissionService("/work", false, nil)
+		service := NewPermissionService("/work", ModeManual, nil)
 		service.SetSessionUnattended("s", true)
 
 		for _, c := range []string{"ls -la", "git status", "git log --oneline"} {
@@ -1086,7 +1132,7 @@ func TestCommandsThatLeaveTheMachineReachTheUser(t *testing.T) {
 		policy := mustPolicy(t, []Rule{
 			{Action: RuleAllow, Tool: "bash", Pattern: "kubectl get *"},
 		}, nil)
-		service := NewPermissionService("/work", false, policy)
+		service := NewPermissionService("/work", ModeManual, policy)
 		service.SetSessionUnattended("s", true)
 
 		decision := settle(t, service, "s", command("kubectl get pods"))

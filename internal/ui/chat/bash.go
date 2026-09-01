@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
@@ -45,7 +46,7 @@ type BashToolRenderContext struct {
 func (b *BashToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Bash", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.Bash, opts.Anim, opts.Compact)
 	}
 
 	var params tools.BashParams
@@ -80,7 +81,7 @@ func (b *BashToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 		toolParams = append(toolParams, "background", "true")
 	}
 
-	header := toolHeader(sty, opts.Status, "Bash", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, toolnames.Bash, cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}

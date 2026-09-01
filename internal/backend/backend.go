@@ -20,6 +20,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
@@ -35,6 +36,7 @@ var (
 	ErrAgentNotInitialized     = errors.New("agent coordinator not initialized")
 	ErrPathRequired            = errors.New("path is required")
 	ErrInvalidPermissionAction = errors.New("invalid permission action")
+	ErrInvalidPermissionMode   = errors.New("invalid permission mode")
 	ErrUnknownCommand          = errors.New("unknown command")
 	ErrInvalidClientID         = errors.New("invalid client_id")
 	ErrClientNotAttached       = errors.New("client not attached")
@@ -434,7 +436,8 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 		return nil, proto.Workspace{}, fmt.Errorf("failed to initialize config: %w", err)
 	}
 
-	cfg.Overrides().SkipPermissionRequests = args.YOLO
+	mode, _ := permission.ParsePermissionMode(args.PermissionMode)
+	cfg.Overrides().PermissionMode = mode
 	cfg.Overrides().EnabledChannels = args.Channels
 
 	if err := createDotAngelaDir(cfg.Config().Options.DataDirectory); err != nil {
@@ -1100,15 +1103,15 @@ func validateClientID(id string) (string, error) {
 func workspaceToProto(ws *Workspace) proto.Workspace {
 	cfg := ws.Cfg.Config()
 	out := proto.Workspace{
-		ID:       ws.ID,
-		Path:     ws.Path,
-		YOLO:     ws.Cfg.Overrides().SkipPermissionRequests,
-		Channels: ws.Cfg.Overrides().EnabledChannels,
-		DataDir:  cfg.Options.DataDirectory,
-		Debug:    cfg.Options.Debug,
-		Config:   cfg,
-		Env:      ws.Env,
-		Version:  version.Version,
+		ID:             ws.ID,
+		Path:           ws.Path,
+		PermissionMode: ws.Cfg.Overrides().PermissionMode.String(),
+		Channels:       ws.Cfg.Overrides().EnabledChannels,
+		DataDir:        cfg.Options.DataDirectory,
+		Debug:          cfg.Options.Debug,
+		Config:         cfg,
+		Env:            ws.Env,
+		Version:        version.Version,
 	}
 	if ws.Skills != nil {
 		out.Skills = skillStatesToProto(ws.Skills.States())
@@ -1127,9 +1130,10 @@ func workspaceToProto(ws *Workspace) proto.Workspace {
 // while the first set one will still log the mismatch.
 func logFirstWinsMismatch(existing *Workspace, args proto.Workspace) {
 	existingCfg := existing.Cfg.Config()
-	existingYOLO := existing.Cfg.Overrides().SkipPermissionRequests
+	existingMode := existing.Cfg.Overrides().PermissionMode
+	requestedMode, _ := permission.ParsePermissionMode(args.PermissionMode)
 	existingChannels := existing.Cfg.Overrides().EnabledChannels
-	if existingYOLO == args.YOLO &&
+	if existingMode == requestedMode &&
 		existingCfg.Options.Debug == args.Debug &&
 		existingCfg.Options.DataDirectory == args.DataDir &&
 		stringSlicesEqual(existing.Env, args.Env) &&
@@ -1140,8 +1144,8 @@ func logFirstWinsMismatch(existing *Workspace, args proto.Workspace) {
 		"Workspace flag mismatch on duplicate create; first wins",
 		"workspace_id", existing.ID,
 		"path", existing.Path,
-		"existing_yolo", existingYOLO,
-		"requested_yolo", args.YOLO,
+		"existing_permission_mode", existingMode,
+		"requested_permission_mode", requestedMode,
 		"existing_debug", existingCfg.Options.Debug,
 		"requested_debug", args.Debug,
 		"existing_data_dir", existingCfg.Options.DataDirectory,

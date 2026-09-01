@@ -102,6 +102,55 @@ type GrantKey struct {
 	Scope string
 }
 
+// PermissionMode is the runtime-wide permission behavior the user
+// controls by cycling Shift+Tab. It replaces the old skip-only switch
+// with a third, narrower state that auto-approves edits but leaves
+// everything else on the normal ladder.
+type PermissionMode uint8
+
+const (
+	// ModeManual asks about every access the ladder does not already
+	// settle on its own.
+	ModeManual PermissionMode = iota
+	// ModeAutoAcceptEdits auto-approves ActionEdit accesses and asks
+	// about everything else, same as ModeManual would.
+	ModeAutoAcceptEdits
+	// ModeYolo skips every prompt. Only a deny rule survives it.
+	ModeYolo
+)
+
+var permissionModeNames = [...]string{
+	ModeManual:          "manual",
+	ModeAutoAcceptEdits: "auto_accept_edits",
+	ModeYolo:            "yolo",
+}
+
+func (m PermissionMode) String() string {
+	if int(m) >= len(permissionModeNames) {
+		return "manual"
+	}
+	return permissionModeNames[m]
+}
+
+// ParsePermissionMode parses the wire representation produced by
+// String. It reports false and ModeManual for anything else, so a
+// stale or corrupt value never escalates into a wider grant than the
+// caller asked for.
+func ParsePermissionMode(s string) (PermissionMode, bool) {
+	for i, name := range permissionModeNames {
+		if name == s {
+			return PermissionMode(i), true
+		}
+	}
+	return ModeManual, false
+}
+
+// Next returns the mode after this one in the Shift+Tab cycle,
+// wrapping back to ModeManual after ModeYolo.
+func (m PermissionMode) Next() PermissionMode {
+	return PermissionMode((int(m) + 1) % len(permissionModeNames))
+}
+
 type CreatePermissionRequest struct {
 	SessionID   string `json:"session_id"`
 	ToolCallID  string `json:"tool_call_id"`
@@ -164,8 +213,10 @@ type Service interface {
 	// SessionUnattended reports what SetSessionUnattended recorded, so a
 	// session spawned by another can inherit its answer.
 	SessionUnattended(sessionID string) bool
-	SetSkipRequests(skip bool)
-	SkipRequests() bool
+	// Mode reports the current permission mode.
+	Mode() PermissionMode
+	// SetMode changes the current permission mode.
+	SetMode(mode PermissionMode)
 	SubscribeNotifications(ctx context.Context) <-chan pubsub.Event[PermissionNotification]
 }
 
@@ -188,13 +239,13 @@ type permissionService struct {
 	// sessionGates serialises prompts per session, so one session
 	// waiting on the user never blocks another.
 	sessionGates *csync.Map[string, chan struct{}]
-	skip         atomic.Bool
+	mode         atomic.Uint32
 }
 
 // NewPermissionService builds the service. A nil policy settles nothing
 // on its own, leaving every request to the prompt. Reads are free
 // inside workingDir and any extra readRoots.
-func NewPermissionService(workingDir string, skip bool, policy *Policy, readRoots ...string) Service {
+func NewPermissionService(workingDir string, initialMode PermissionMode, policy *Policy, readRoots ...string) Service {
 	// Roots are resolved once here so every later comparison is
 	// link-to-link rather than link-to-name.
 	workingDir = resolvePath(workingDir, "")
@@ -218,13 +269,13 @@ func NewPermissionService(workingDir string, skip bool, policy *Policy, readRoot
 		sessionUnattended:  csync.NewMap[string, bool](),
 		sessionGates:       csync.NewMap[string, chan struct{}](),
 	}
-	svc.skip.Store(skip)
+	svc.mode.Store(uint32(initialMode))
 	return svc
 }
 
 // Gate walks the decision ladder. The order is load bearing: a deny
 // rule is the configuration's word and outranks even the user's own
-// skip switch, while a dangerous or unanalysable command outranks every
+// yolo mode, while a dangerous or unanalysable command outranks every
 // form of pre-approval below it.
 func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision {
 	access := req.Access
@@ -234,7 +285,8 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 		return decision
 	}
 
-	if s.skip.Load() {
+	mode := s.Mode()
+	if mode == ModeYolo {
 		return Decision{Outcome: OutcomeAllow, Reason: "permission prompts are disabled"}
 	}
 
@@ -253,6 +305,9 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 	}
 
 	if !forced {
+		if mode == ModeAutoAcceptEdits && access.Action == ActionEdit {
+			return Decision{Outcome: OutcomeAllow, Reason: "auto-accepting edits"}
+		}
 		if s.sessionPrompt(req.SessionID) == PromptAllow {
 			return Decision{Outcome: OutcomeAllow, Reason: "session runs without prompting"}
 		}
@@ -577,12 +632,12 @@ func (s *permissionService) SubscribeNotifications(ctx context.Context) <-chan p
 	return s.notificationBroker.Subscribe(ctx)
 }
 
-func (s *permissionService) SetSkipRequests(skip bool) {
-	s.skip.Store(skip)
+func (s *permissionService) Mode() PermissionMode {
+	return PermissionMode(s.mode.Load())
 }
 
-func (s *permissionService) SkipRequests() bool {
-	return s.skip.Load()
+func (s *permissionService) SetMode(mode PermissionMode) {
+	s.mode.Store(uint32(mode))
 }
 
 // withinScope reports the accesses that need no approval because they

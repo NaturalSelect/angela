@@ -1145,7 +1145,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentDeepResearch: {
 			ID:          AgentDeepResearch,
 			Name:        "DeepResearch",
-			Description: "Forks this conversation into a branch for a problem that resists ordinary investigation, and hands back a reasoned conclusion. Use it for a bug whose symptoms contradict the code you read, a fix that failed for reasons you cannot explain, an intermittent or timing-dependent failure, or an architectural choice that is hard to reverse and that you cannot decide with confidence. It reads, runs commands, and argues the question through with the user, but never edits — the finding is the product. Prefer plan when the question is what to build rather than what is true.",
+			Description: "Forks this conversation into a branch for a problem that resists ordinary investigation, and hands back a reasoned conclusion. Use it proactively, without waiting to be asked, for a bug whose symptoms contradict the code you read, a fix that failed for reasons you cannot explain, an intermittent or timing-dependent failure, or an architectural choice that is hard to reverse and that you cannot decide with confidence. It reads, runs commands, and argues the question through with the user, but never edits — the finding is the product. Prefer plan when the question is what to build rather than what is true.",
 			Mode:        AgentModeBranch,
 			Model:       ModelMain,
 			// A root cause is only credible against the conventions the
@@ -1158,7 +1158,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentPlan: {
 			ID:          AgentPlan,
 			Name:        "Plan",
-			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first. It is read-only — it reads, searches, and asks, but never edits.",
+			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it proactively, without waiting to be asked, before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first — getting sign-off before code changes prevents wasted effort. It is read-only — it reads, searches, and asks, but never edits.",
 			Mode:        AgentModeBranch,
 			Model:       ModelMain,
 			// The proposal is only worth as much as the conventions it

@@ -51,23 +51,28 @@ func (b *Backend) SetSessionUnattended(workspaceID, sessionID string, unattended
 	return nil
 }
 
-// SetPermissionsSkip sets whether permission prompts are skipped.
-func (b *Backend) SetPermissionsSkip(workspaceID string, skip bool) error {
+// SetPermissionMode sets the workspace's permission mode.
+func (b *Backend) SetPermissionMode(workspaceID, mode string) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return err
 	}
 
-	ws.Permissions.SetSkipRequests(skip)
+	parsed, ok := permission.ParsePermissionMode(mode)
+	if !ok {
+		return ErrInvalidPermissionMode
+	}
+
+	ws.Permissions.SetMode(parsed)
 	return nil
 }
 
-// GetPermissionsSkip returns whether permission prompts are skipped.
-func (b *Backend) GetPermissionsSkip(workspaceID string) (bool, error) {
+// GetPermissionMode returns the workspace's current permission mode.
+func (b *Backend) GetPermissionMode(workspaceID string) (string, error) {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
-	return ws.Permissions.SkipRequests(), nil
+	return ws.Permissions.Mode().String(), nil
 }

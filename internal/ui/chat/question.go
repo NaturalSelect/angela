@@ -7,6 +7,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -35,7 +36,7 @@ type QuestionToolRenderContext struct{}
 func (q *QuestionToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Question", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.Question, opts.Anim, opts.Compact)
 	}
 
 	var params tools.QuestionParams
@@ -44,7 +45,7 @@ func (q *QuestionToolRenderContext) RenderTool(sty *styles.Styles, width int, op
 	}
 
 	headerText := questionSummary(params)
-	header := toolHeader(sty, opts.Status, "Question", cappedWidth, opts, headerText)
+	header := toolHeader(sty, opts.Status, toolnames.Question, cappedWidth, opts, headerText)
 	if opts.Compact {
 		return header
 	}

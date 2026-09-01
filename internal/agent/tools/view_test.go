@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"charm.land/fantasy"
-	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
@@ -117,7 +116,7 @@ func TestViewToolAllowsSmallSectionsOfLargeFiles(t *testing.T) {
 	lines := []string{strings.Repeat("a", MaxViewSize+1), "target line", "after target"}
 	require.NoError(t, os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0o644))
 
-	tool := newViewToolForTest(workingDir)
+	tool := newViewToolForTest(t, workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 	resp := runViewTool(t, tool, ctx, ViewParams{
 		FilePath: filePath,
@@ -145,7 +144,7 @@ func TestViewToolBlocksOversizedReturnedSections(t *testing.T) {
 	}
 	require.NoError(t, os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0o644))
 
-	tool := newViewToolForTest(workingDir)
+	tool := newViewToolForTest(t, workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 	resp := runViewTool(t, tool, ctx, ViewParams{
 		FilePath: filePath,
@@ -162,7 +161,7 @@ func TestViewToolBlocksOversizedImages(t *testing.T) {
 	filePath := filepath.Join(workingDir, "large.png")
 	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", MaxViewSize+1)), 0o644))
 
-	tool := newViewToolForTest(workingDir)
+	tool := newViewToolForTest(t, workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 	ctx = context.WithValue(ctx, SupportsImagesContextKey, true)
 	resp := runViewTool(t, tool, ctx, ViewParams{
@@ -275,20 +274,8 @@ func TestReadNoticesCombinesTruncationWithMoreLines(t *testing.T) {
 	require.Contains(t, notice, "File has more lines")
 }
 
-type mockFileTracker struct{}
-
-func (m mockFileTracker) RecordRead(ctx context.Context, sessionID, path string) {}
-
-func (m mockFileTracker) LastReadTime(ctx context.Context, sessionID, path string) time.Time {
-	return time.Time{}
-}
-
-func (m mockFileTracker) ListReadFiles(ctx context.Context, sessionID string) ([]string, error) {
-	return nil, nil
-}
-
-func newViewToolForTest(workingDir string) fantasy.AgentTool {
-	return NewViewTool(nil, mockFileTracker{}, nil, workingDir)
+func newViewToolForTest(t *testing.T, workingDir string) fantasy.AgentTool {
+	return NewViewTool(nil, newFileTracker(t, time.Time{}), nil, workingDir)
 }
 
 func runViewTool(t *testing.T, tool fantasy.AgentTool, ctx context.Context, params ViewParams) fantasy.ToolResponse {
@@ -307,8 +294,6 @@ func runViewTool(t *testing.T, tool fantasy.AgentTool, ctx context.Context, para
 	require.NoError(t, err)
 	return resp
 }
-
-var _ filetracker.Service = mockFileTracker{}
 
 func TestReadBuiltinFile(t *testing.T) {
 	t.Parallel()

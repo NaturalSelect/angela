@@ -80,7 +80,7 @@ type (
 	ActionSuspend                 struct{}
 	ActionToggleThinking          struct{}
 	ActionExternalEditor          struct{}
-	ActionToggleYoloMode          struct{}
+	ActionCyclePermissionMode     struct{}
 	ActionToggleNotifications     struct{}
 	ActionSelectNotificationStyle struct {
 		Style string
@@ -95,6 +95,12 @@ type (
 	ActionAbortBranch struct {
 		SessionID string
 	}
+	// ActionGoToParent switches the view to the session in view's parent,
+	// without ending or otherwise touching it — the non-destructive
+	// counterpart to ActionAbortBranch.
+	ActionGoToParent struct{}
+	// ActionScrollToBottom scrolls the chat view to the latest message.
+	ActionScrollToBottom struct{}
 	// ActionSelectVariant is a message indicating a model variant has
 	// been selected. An empty Variant selects the model's baseline.
 	ActionSelectVariant struct {

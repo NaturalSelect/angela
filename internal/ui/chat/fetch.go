@@ -5,8 +5,14 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 )
+
+// fetchDisplayTitle is the header title for both the Fetch and WebFetch
+// tools; WebFetch deliberately borrows Fetch's shorter title instead of
+// spelling out its own wire name.
+const fetchDisplayTitle = toolnames.Fetch
 
 // -----------------------------------------------------------------------------
 // Fetch Tool
@@ -36,7 +42,7 @@ type FetchToolRenderContext struct{}
 func (f *FetchToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Fetch", opts.Anim, opts.Compact)
+		return pendingTool(sty, fetchDisplayTitle, opts.Anim, opts.Compact)
 	}
 
 	var params tools.FetchParams
@@ -52,7 +58,7 @@ func (f *FetchToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 		toolParams = append(toolParams, "timeout", formatTimeout(params.Timeout))
 	}
 
-	header := toolHeader(sty, opts.Status, "Fetch", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, fetchDisplayTitle, cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}
@@ -62,6 +68,10 @@ func (f *FetchToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	}
 
 	if opts.HasEmptyResult() {
+		return header
+	}
+
+	if !opts.ExpandedContent {
 		return header
 	}
 
@@ -111,7 +121,7 @@ type WebFetchToolRenderContext struct{}
 func (w *WebFetchToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Fetch", opts.Anim, opts.Compact)
+		return pendingTool(sty, fetchDisplayTitle, opts.Anim, opts.Compact)
 	}
 
 	var params tools.WebFetchParams
@@ -120,7 +130,7 @@ func (w *WebFetchToolRenderContext) RenderTool(sty *styles.Styles, width int, op
 	}
 
 	toolParams := []string{params.URL}
-	header := toolHeader(sty, opts.Status, "Fetch", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, fetchDisplayTitle, cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}
@@ -130,6 +140,10 @@ func (w *WebFetchToolRenderContext) RenderTool(sty *styles.Styles, width int, op
 	}
 
 	if opts.HasEmptyResult() {
+		return header
+	}
+
+	if !opts.ExpandedContent {
 		return header
 	}
 
@@ -184,6 +198,10 @@ func (w *WebSearchToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 	}
 
 	if opts.HasEmptyResult() {
+		return header
+	}
+
+	if !opts.ExpandedContent {
 		return header
 	}
 

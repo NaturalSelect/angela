@@ -7,12 +7,14 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // newOnboardingUI builds a UI parked on the first-run flow, as Init
 // leaves it.
-func newOnboardingUI(ws *countingWorkspace) *UI {
-	m := newBusyUI(ws)
+func newOnboardingUI(t *testing.T, ws *MockWorkspace) *UI {
+	t.Helper()
+	m := newBusyUIWithWorkspace(ws)
 	m.state = uiOnboarding
 	m.onboarding.step = onboardingStepProvider
 	warmCaches(m, false)
@@ -33,14 +35,15 @@ func pickProviderAction(configured, reAuth bool) dialog.ActionSelectProvider {
 func TestAProviderWithoutCredentialsGoesThroughTheCredentialStep(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newOnboardingUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newOnboardingUI(t, ws)
 
+	// InitCoderAgent is deliberately left unstubbed: the agent must not
+	// start before a model is picked.
 	m.handleSelectProvider(pickProviderAction(false, false))
 
 	require.Equal(t, onboardingStepAuth, m.onboarding.step)
 	require.True(t, m.dialog.ContainsDialog(dialog.APIKeyInputID))
-	require.Equal(t, 0, ws.initAgentCalls, "the agent must not start before a model is picked")
 }
 
 // TestAConfiguredProviderSkipsTheCredentialStep keeps the flow from
@@ -48,8 +51,8 @@ func TestAProviderWithoutCredentialsGoesThroughTheCredentialStep(t *testing.T) {
 func TestAConfiguredProviderSkipsTheCredentialStep(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newOnboardingUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newOnboardingUI(t, ws)
 
 	m.handleSelectProvider(pickProviderAction(true, false))
 
@@ -63,8 +66,8 @@ func TestAConfiguredProviderSkipsTheCredentialStep(t *testing.T) {
 func TestEditingAConfiguredProviderReopensCredentials(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newOnboardingUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newOnboardingUI(t, ws)
 
 	m.handleSelectProvider(pickProviderAction(true, true))
 
@@ -80,19 +83,19 @@ func TestEditingAConfiguredProviderReopensCredentials(t *testing.T) {
 func TestTheCredentialStepAdvancesInsteadOfStartingTheAgent(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newOnboardingUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newOnboardingUI(t, ws)
 	m.onboarding.step = onboardingStepAuth
 	m.onboarding.provider = catwalk.Provider{ID: pickProviderID}
 
-	// The returned command only fetches the catalog for the model list;
-	// what matters is that nothing was persisted or started.
+	// InitCoderAgent and UpdatePreferredModel are deliberately left
+	// unstubbed: no model has been picked yet, so a blank model must
+	// never be persisted or started. The returned command only fetches
+	// the catalog for the model list.
 	require.NotNil(t, m.handleSelectModel(pickAction(config.ModelMain)))
 
 	require.Equal(t, onboardingStepModel, m.onboarding.step)
 	require.True(t, m.dialog.ContainsDialog(dialog.ModelsID))
-	require.Equal(t, 0, ws.initAgentCalls, "no model has been picked yet")
-	require.Equal(t, 0, ws.preferredModelCalls, "a blank model must never be persisted")
 }
 
 // TestTheModelStepDefersToTheConfigurationStep pins that a pick is not
@@ -101,15 +104,17 @@ func TestTheCredentialStepAdvancesInsteadOfStartingTheAgent(t *testing.T) {
 func TestTheModelStepDefersToTheConfigurationStep(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newOnboardingUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newOnboardingUI(t, ws)
 	m.onboarding.step = onboardingStepModel
 
+	// UpsertProviderModel, UpdatePreferredModel, and InitCoderAgent are
+	// deliberately left unstubbed: nothing may be written before the
+	// parameters are settled.
 	runCmds(m, m.handleSelectModel(pickAction(config.ModelMain)))
 
 	require.Equal(t, onboardingStepModelConfig, m.onboarding.step)
 	require.True(t, m.dialog.ContainsDialog(dialog.ModelConfigID))
-	require.Empty(t, ws.steps, "nothing may be written before the parameters are settled")
 	require.Equal(t, config.SelectedModel{Provider: pickProviderID, Model: "picked-model"}, m.onboarding.model)
 }
 
@@ -120,9 +125,19 @@ func TestTheModelStepDefersToTheConfigurationStep(t *testing.T) {
 func TestTheConfigurationStepRegistersBeforePersisting(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newOnboardingUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newOnboardingUI(t, ws)
 	m.onboarding.step = onboardingStepModelConfig
+
+	var upsertedContextWindow int64
+	register := ws.EXPECT().UpsertProviderModel(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ config.Scope, _ string, model catwalk.Model) error {
+			upsertedContextWindow = model.ContextWindow
+			return nil
+		})
+	persist := ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	initAgent := ws.EXPECT().InitCoderAgent(gomock.Any()).Return(nil)
+	gomock.InOrder(register, persist, initAgent)
 
 	runCmds(m, m.handleConfigureModel(dialog.ActionConfigureModel{
 		Provider:  catwalk.Provider{ID: pickProviderID},
@@ -131,9 +146,7 @@ func TestTheConfigurationStepRegistersBeforePersisting(t *testing.T) {
 		ModelType: config.ModelMain,
 	}))
 
-	require.Equal(t, []string{"register", "persist", "init"}, ws.steps)
-	require.Len(t, ws.upsertedModels, 1)
-	require.Equal(t, int64(1048576), ws.upsertedModels[0].ContextWindow)
+	require.Equal(t, int64(1048576), upsertedContextWindow)
 	require.Equal(t, uiLanding, m.state)
 	require.False(t, m.dialog.ContainsDialog(dialog.ModelConfigID))
 }
@@ -155,8 +168,8 @@ func TestEscapeWalksBackOneStep(t *testing.T) {
 		{"the provider step stays put", onboardingStepProvider, onboardingStepProvider, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-			m := newOnboardingUI(ws)
+			ws := pickMockWorkspace(t)
+			m := newOnboardingUI(t, ws)
 			m.onboarding.provider = catwalk.Provider{ID: pickProviderID}
 			m.onboarding.step = tc.from
 
@@ -178,8 +191,8 @@ func TestEscapeWalksBackOneStep(t *testing.T) {
 func TestEachStepReplacesThePreviousDialog(t *testing.T) {
 	pinTTLs(t)
 
-	ws := &countingWorkspace{ready: true, cfg: pickConfig()}
-	m := newOnboardingUI(ws)
+	ws := pickMockWorkspace(t)
+	m := newOnboardingUI(t, ws)
 	m.onboarding.provider = catwalk.Provider{ID: pickProviderID}
 
 	m.openOnboardingStep(onboardingStepProvider)

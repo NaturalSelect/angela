@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/diff"
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/lsp"
@@ -32,6 +33,8 @@ type ReplaceSymbolResponseMetadata struct {
 	OldContent string `json:"old_content"`
 	NewContent string `json:"new_content"`
 	Action     string `json:"action"`
+	Additions  int    `json:"additions"`
+	Removals   int    `json:"removals"`
 }
 
 // ReplaceSymbolPermissionsParams carries diff data for the permission dialog.
@@ -217,11 +220,14 @@ func (t *replaceSymbolTool) apply(
 	}
 
 	resp := fantasy.NewTextResponse(summary + "\n" + getDiagnostics(params.FilePath, t.lspManager))
+	_, additions, removals := diff.GenerateDiff(oldContent, newContent, params.FilePath)
 	resp = fantasy.WithResponseMetadata(resp, ReplaceSymbolResponseMetadata{
 		FilePath:   params.FilePath,
 		OldContent: oldContent,
 		NewContent: newContent,
 		Action:     action,
+		Additions:  additions,
+		Removals:   removals,
 	})
 	return resp, nil
 }

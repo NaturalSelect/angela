@@ -602,6 +602,10 @@ definitions:
         type: string
       progress:
         type: boolean
+      reminders:
+        items:
+          type: string
+        type: array
       skills_paths:
         items:
           type: string
@@ -713,7 +717,7 @@ definitions:
         description: |-
           Tool narrows the rule. It matches either an access category
           ("read", "edit", "execute", "network", "mcp", "list") or a single
-          tool name ("bash", "view"). Empty matches everything.
+          tool name ("Bash", "View"). Empty matches everything.
         type: string
     type: object
   permission.RuleAction:
@@ -887,6 +891,15 @@ definitions:
         type: array
       kind:
         $ref: '#/definitions/proto.APIKeyKind'
+      provider_id:
+        type: string
+      scope:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
+    type: object
+  proto.ConfigProviderModelRequest:
+    properties:
+      model:
+        $ref: '#/definitions/catwalk.Model'
       provider_id:
         type: string
       scope:
@@ -1117,6 +1130,11 @@ definitions:
       resolved:
         type: boolean
     type: object
+  proto.PermissionModeRequest:
+    properties:
+      mode:
+        type: string
+    type: object
   proto.PermissionRequest:
     properties:
       action:
@@ -1134,11 +1152,6 @@ definitions:
         type: string
       tool_name:
         type: string
-    type: object
-  proto.PermissionSkipRequest:
-    properties:
-      skip:
-        type: boolean
     type: object
   proto.PermissionUnattendedRequest:
     properties:
@@ -1350,6 +1363,11 @@ definitions:
         type: string
       path:
         type: string
+      permission_mode:
+        description: |-
+          PermissionMode is the wire representation of permission.PermissionMode
+          ("manual", "auto_accept_edits", or "yolo").
+        type: string
       skills:
         description: |-
           Skills carries the snapshot of skill discovery state at workspace
@@ -1360,8 +1378,6 @@ definitions:
         type: array
       version:
         type: string
-      yolo:
-        type: boolean
     type: object
   time.Duration:
     enum:
@@ -2161,6 +2177,40 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Set provider API key
+      tags:
+      - config
+  /workspaces/{id}/config/provider-model:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Config provider model request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.ConfigProviderModelRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Upsert provider model
       tags:
       - config
   /workspaces/{id}/config/prune-recent-models:
@@ -3013,7 +3063,7 @@ paths:
       summary: Grant permission
       tags:
       - permissions
-  /workspaces/{id}/permissions/skip:
+  /workspaces/{id}/permissions/mode:
     get:
       parameters:
       - description: Workspace ID
@@ -3027,7 +3077,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.PermissionSkipRequest'
+            $ref: '#/definitions/proto.PermissionModeRequest'
         "404":
           description: Not Found
           schema:
@@ -3036,7 +3086,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/proto.Error'
-      summary: Get skip permissions status
+      summary: Get permission mode
       tags:
       - permissions
     post:
@@ -3048,12 +3098,12 @@ paths:
         name: id
         required: true
         type: string
-      - description: Permission skip request
+      - description: Permission mode request
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.PermissionSkipRequest'
+          $ref: '#/definitions/proto.PermissionModeRequest'
       responses:
         "200":
           description: OK
@@ -3069,7 +3119,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/proto.Error'
-      summary: Set skip permissions
+      summary: Set permission mode
       tags:
       - permissions
   /workspaces/{id}/permissions/unattended:

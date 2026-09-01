@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -9,24 +8,14 @@ import (
 
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
-
-type mockCatwalkClient struct {
-	providers []catwalk.Provider
-	err       error
-	callCount int
-}
-
-func (m *mockCatwalkClient) GetProviders(ctx context.Context, etag string) ([]catwalk.Provider, error) {
-	m.callCount++
-	return m.providers, m.err
-}
 
 func TestCatwalkSync_Init(t *testing.T) {
 	t.Parallel()
 
 	syncer := &catwalkSync{}
-	client := &mockCatwalkClient{}
+	client := NewMockCatwalkClient(gomock.NewController(t))
 	path := "/tmp/test.json"
 
 	syncer.Init(client, path, true)
@@ -50,9 +39,9 @@ func TestCatwalkSync_GetWithAutoUpdateDisabled(t *testing.T) {
 	t.Parallel()
 
 	syncer := &catwalkSync{}
-	client := &mockCatwalkClient{
-		providers: []catwalk.Provider{{Name: "should-not-be-used"}},
-	}
+	// No GetProviders expectation is set up: gomock fails the test if
+	// disabling autoupdate doesn't skip the network call.
+	client := NewMockCatwalkClient(gomock.NewController(t))
 	path := t.TempDir() + "/providers.json"
 
 	syncer.Init(client, path, false)
@@ -60,7 +49,6 @@ func TestCatwalkSync_GetWithAutoUpdateDisabled(t *testing.T) {
 	providers, err := syncer.Get(t.Context())
 	require.NoError(t, err)
 	require.NotEmpty(t, providers)
-	require.Equal(t, 0, client.callCount, "Client should not be called when autoupdate is disabled")
 
 	// Should return embedded providers.
 	for _, p := range providers {
@@ -72,11 +60,9 @@ func TestCatwalkSync_GetFreshProviders(t *testing.T) {
 	t.Parallel()
 
 	syncer := &catwalkSync{}
-	client := &mockCatwalkClient{
-		providers: []catwalk.Provider{
-			{Name: "Fresh Provider", ID: "fresh"},
-		},
-	}
+	client := NewMockCatwalkClient(gomock.NewController(t))
+	client.EXPECT().GetProviders(gomock.Any(), gomock.Any()).
+		Return([]catwalk.Provider{{Name: "Fresh Provider", ID: "fresh"}}, nil).Times(1)
 	path := t.TempDir() + "/providers.json"
 
 	syncer.Init(client, path, true)
@@ -85,7 +71,6 @@ func TestCatwalkSync_GetFreshProviders(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, providers, 1)
 	require.Equal(t, "Fresh Provider", providers[0].Name)
-	require.Equal(t, 1, client.callCount)
 
 	// Verify cache was written.
 	fileInfo, err := os.Stat(path)
@@ -108,9 +93,9 @@ func TestCatwalkSync_GetNotModifiedUsesCached(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, data, 0o644))
 
 	syncer := &catwalkSync{}
-	client := &mockCatwalkClient{
-		err: catwalk.ErrNotModified,
-	}
+	client := NewMockCatwalkClient(gomock.NewController(t))
+	client.EXPECT().GetProviders(gomock.Any(), gomock.Any()).
+		Return(nil, catwalk.ErrNotModified).Times(1)
 
 	syncer.Init(client, path, true)
 
@@ -118,7 +103,6 @@ func TestCatwalkSync_GetNotModifiedUsesCached(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, providers, 1)
 	require.Equal(t, "Cached Provider", providers[0].Name)
-	require.Equal(t, 1, client.callCount)
 }
 
 func TestCatwalkSync_GetEmptyResultFallbackToCached(t *testing.T) {
@@ -136,9 +120,9 @@ func TestCatwalkSync_GetEmptyResultFallbackToCached(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, data, 0o644))
 
 	syncer := &catwalkSync{}
-	client := &mockCatwalkClient{
-		providers: []catwalk.Provider{}, // Empty result.
-	}
+	client := NewMockCatwalkClient(gomock.NewController(t))
+	client.EXPECT().GetProviders(gomock.Any(), gomock.Any()).
+		Return([]catwalk.Provider{}, nil).Times(1) // Empty result.
 
 	syncer.Init(client, path, true)
 
@@ -162,9 +146,9 @@ func TestCatwalkSync_GetEmptyCacheDefaultsToEmbedded(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, data, 0o644))
 
 	syncer := &catwalkSync{}
-	client := &mockCatwalkClient{
-		err: errors.New("network error"),
-	}
+	client := NewMockCatwalkClient(gomock.NewController(t))
+	client.EXPECT().GetProviders(gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("network error")).Times(1)
 
 	syncer.Init(client, path, true)
 
@@ -183,9 +167,9 @@ func TestCatwalkSync_GetClientError(t *testing.T) {
 	path := tmpDir + "/providers.json"
 
 	syncer := &catwalkSync{}
-	client := &mockCatwalkClient{
-		err: errors.New("network error"),
-	}
+	client := NewMockCatwalkClient(gomock.NewController(t))
+	client.EXPECT().GetProviders(gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("network error")).Times(1)
 
 	syncer.Init(client, path, true)
 
@@ -198,11 +182,11 @@ func TestCatwalkSync_GetCalledMultipleTimesUsesOnce(t *testing.T) {
 	t.Parallel()
 
 	syncer := &catwalkSync{}
-	client := &mockCatwalkClient{
-		providers: []catwalk.Provider{
-			{Name: "Provider", ID: "test"},
-		},
-	}
+	client := NewMockCatwalkClient(gomock.NewController(t))
+	// Times(1) enforces the sync.Once guarantee: however many times
+	// Get is called, the client is only reached once.
+	client.EXPECT().GetProviders(gomock.Any(), gomock.Any()).
+		Return([]catwalk.Provider{{Name: "Provider", ID: "test"}}, nil).Times(1)
 	path := t.TempDir() + "/providers.json"
 
 	syncer.Init(client, path, true)
@@ -215,7 +199,4 @@ func TestCatwalkSync_GetCalledMultipleTimesUsesOnce(t *testing.T) {
 	providers2, err2 := syncer.Get(t.Context())
 	require.NoError(t, err2)
 	require.Len(t, providers2, 1)
-
-	// Client should only be called once due to sync.Once.
-	require.Equal(t, 1, client.callCount)
 }

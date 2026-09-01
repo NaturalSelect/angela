@@ -1194,6 +1194,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/config/provider-model": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Upsert provider model",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Config provider model request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.ConfigProviderModelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/config/prune-recent-models": {
             "post": {
                 "consumes": [
@@ -2494,7 +2546,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/workspaces/{id}/permissions/skip": {
+        "/workspaces/{id}/permissions/mode": {
             "get": {
                 "produces": [
                     "application/json"
@@ -2502,7 +2554,7 @@ const docTemplate = `{
                 "tags": [
                     "permissions"
                 ],
-                "summary": "Get skip permissions status",
+                "summary": "Get permission mode",
                 "parameters": [
                     {
                         "type": "string",
@@ -2516,7 +2568,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.PermissionSkipRequest"
+                            "$ref": "#/definitions/proto.PermissionModeRequest"
                         }
                     },
                     "404": {
@@ -2540,7 +2592,7 @@ const docTemplate = `{
                 "tags": [
                     "permissions"
                 ],
-                "summary": "Set skip permissions",
+                "summary": "Set permission mode",
                 "parameters": [
                     {
                         "type": "string",
@@ -2550,12 +2602,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Permission skip request",
+                        "description": "Permission mode request",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.PermissionSkipRequest"
+                            "$ref": "#/definitions/proto.PermissionModeRequest"
                         }
                     }
                 ],
@@ -4209,6 +4261,12 @@ const docTemplate = `{
                 "progress": {
                     "type": "boolean"
                 },
+                "reminders": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "skills_paths": {
                     "type": "array",
                     "items": {
@@ -4366,7 +4424,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tool": {
-                    "description": "Tool narrows the rule. It matches either an access category\n(\"read\", \"edit\", \"execute\", \"network\", \"mcp\", \"list\") or a single\ntool name (\"bash\", \"view\"). Empty matches everything.",
+                    "description": "Tool narrows the rule. It matches either an access category\n(\"read\", \"edit\", \"execute\", \"network\", \"mcp\", \"list\") or a single\ntool name (\"Bash\", \"View\"). Empty matches everything.",
                     "type": "string"
                 }
             }
@@ -4601,6 +4659,20 @@ const docTemplate = `{
                 },
                 "kind": {
                     "$ref": "#/definitions/proto.APIKeyKind"
+                },
+                "provider_id": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Scope"
+                }
+            }
+        },
+        "proto.ConfigProviderModelRequest": {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "$ref": "#/definitions/catwalk.Model"
                 },
                 "provider_id": {
                     "type": "string"
@@ -4944,6 +5016,14 @@ const docTemplate = `{
                 }
             }
         },
+        "proto.PermissionModeRequest": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
         "proto.PermissionRequest": {
             "type": "object",
             "properties": {
@@ -4968,14 +5048,6 @@ const docTemplate = `{
                 },
                 "tool_name": {
                     "type": "string"
-                }
-            }
-        },
-        "proto.PermissionSkipRequest": {
-            "type": "object",
-            "properties": {
-                "skip": {
-                    "type": "boolean"
                 }
             }
         },
@@ -5298,6 +5370,10 @@ const docTemplate = `{
                 "path": {
                     "type": "string"
                 },
+                "permission_mode": {
+                    "description": "PermissionMode is the wire representation of permission.PermissionMode\n(\"manual\", \"auto_accept_edits\", or \"yolo\").",
+                    "type": "string"
+                },
                 "skills": {
                     "description": "Skills carries the snapshot of skill discovery state at workspace\ncreation time. Subsequent updates flow through the SSE event\nstream.",
                     "type": "array",
@@ -5307,9 +5383,6 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "string"
-                },
-                "yolo": {
-                    "type": "boolean"
                 }
             }
         },

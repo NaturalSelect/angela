@@ -11,6 +11,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/oauth"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -117,13 +118,13 @@ func TestConfigStore_RuntimeOverrides_Independent(t *testing.T) {
 	store1 := &ConfigStore{config: &Config{}}
 	store2 := &ConfigStore{config: &Config{}}
 
-	require.False(t, store1.Overrides().SkipPermissionRequests)
-	require.False(t, store2.Overrides().SkipPermissionRequests)
+	require.Equal(t, permission.ModeManual, store1.Overrides().PermissionMode)
+	require.Equal(t, permission.ModeManual, store2.Overrides().PermissionMode)
 
-	store1.Overrides().SkipPermissionRequests = true
+	store1.Overrides().PermissionMode = permission.ModeYolo
 
-	require.True(t, store1.Overrides().SkipPermissionRequests)
-	require.False(t, store2.Overrides().SkipPermissionRequests)
+	require.Equal(t, permission.ModeYolo, store1.Overrides().PermissionMode)
+	require.Equal(t, permission.ModeManual, store2.Overrides().PermissionMode)
 }
 
 func TestConfigStore_RuntimeOverrides_MutableViaPointer(t *testing.T) {
@@ -132,10 +133,10 @@ func TestConfigStore_RuntimeOverrides_MutableViaPointer(t *testing.T) {
 	store := &ConfigStore{config: &Config{}}
 	overrides := store.Overrides()
 
-	require.False(t, overrides.SkipPermissionRequests)
+	require.Equal(t, permission.ModeManual, overrides.PermissionMode)
 
-	overrides.SkipPermissionRequests = true
-	require.True(t, store.Overrides().SkipPermissionRequests)
+	overrides.PermissionMode = permission.ModeYolo
+	require.Equal(t, permission.ModeYolo, store.Overrides().PermissionMode)
 }
 
 // TestConfigStore_SetupAgentsDoesNotMutatePublishedConfig locks in the

@@ -63,11 +63,11 @@ angela agent list`,
 			a := agents[id]
 			mode := string(a.Mode)
 			if mode == "" {
-				mode = "subagent"
+				mode = string(config.AgentModeSubagent)
 			}
 			model := string(a.Model)
 			if model == "" {
-				model = "main"
+				model = string(config.ModelMain)
 			}
 			fmt.Printf("%-15s %-12s %-8s %s\n", id, mode, model, truncateDescription(a.Description))
 		}

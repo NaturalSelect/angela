@@ -8,6 +8,7 @@ import (
 
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestDiscoverModels(t *testing.T) {
@@ -32,7 +33,7 @@ func TestDiscoverModels(t *testing.T) {
 		APIKey:  "test-key",
 	}
 
-	models, err := DiscoverModels(context.Background(), cfg, &mockResolver{})
+	models, err := DiscoverModels(context.Background(), cfg, newPassthroughResolver(t))
 	require.NoError(t, err)
 	require.Len(t, models, 2)
 	require.Equal(t, "model-a", models[0].ID)
@@ -60,7 +61,7 @@ func TestDiscoverModels_ExistingModelsWin(t *testing.T) {
 		},
 	}
 
-	models, err := DiscoverModels(context.Background(), cfg, &mockResolver{})
+	models, err := DiscoverModels(context.Background(), cfg, newPassthroughResolver(t))
 	require.NoError(t, err)
 	require.Len(t, models, 2)
 
@@ -85,7 +86,7 @@ func TestDiscoverModels_HTTPError(t *testing.T) {
 		APIKey:  "test-key",
 	}
 
-	models, err := DiscoverModels(context.Background(), cfg, &mockResolver{})
+	models, err := DiscoverModels(context.Background(), cfg, newPassthroughResolver(t))
 	require.Error(t, err)
 	require.Nil(t, models)
 }
@@ -107,14 +108,22 @@ func TestDiscoverModels_ExtraHeaders(t *testing.T) {
 		},
 	}
 
-	models, err := DiscoverModels(context.Background(), cfg, &mockResolver{})
+	models, err := DiscoverModels(context.Background(), cfg, newPassthroughResolver(t))
 	require.NoError(t, err)
 	require.Len(t, models, 1)
 }
 
-type mockResolver struct{}
-
-func (m *mockResolver) ResolveValue(val string) (string, error) { return val, nil }
+// newPassthroughResolver returns a MockResolver that echoes back
+// whatever value it's asked to resolve, mirroring the old
+// mockResolver stand-in used across this package's tests.
+func newPassthroughResolver(t *testing.T) *MockResolver {
+	t.Helper()
+	m := NewMockResolver(gomock.NewController(t))
+	m.EXPECT().ResolveValue(gomock.Any()).DoAndReturn(func(val string) (string, error) {
+		return val, nil
+	}).AnyTimes()
+	return m
+}
 
 type envResolver struct {
 	env map[string]string
@@ -196,7 +205,7 @@ func TestDiscoverModels_NoAuthWhenNoAPIKey(t *testing.T) {
 		APIKey:  "",
 	}
 
-	models, err := DiscoverModels(context.Background(), cfg, &mockResolver{})
+	models, err := DiscoverModels(context.Background(), cfg, newPassthroughResolver(t))
 	require.NoError(t, err)
 	require.Len(t, models, 1)
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -21,8 +22,8 @@ func TestRenameRecordsBothSides(t *testing.T) {
 	require.NoError(t, os.WriteFile(first, []byte("old one\n"), 0o644))
 	require.NoError(t, os.WriteFile(second, []byte("old two\n"), 0o644))
 
-	files := &mockHistoryService{missing: true}
-	tracker := &mockEditFileTracker{}
+	files, recorded := newRecordingHistoryService(t, "", true)
+	tracker, reads := newRecordingFileTracker(t, time.Time{})
 	tool := NewRenameTool(nil, files, tracker).(*renameTool)
 
 	paths := []string{first, second}
@@ -38,9 +39,9 @@ func TestRenameRecordsBothSides(t *testing.T) {
 
 	require.Equal(t,
 		[]string{"old one\n", "new one\n", "old two\n", "new two\n"},
-		files.recorded(),
+		*recorded,
 		"every renamed file leaves both of its sides in history")
-	require.Equal(t, paths, tracker.reads)
+	require.Equal(t, paths, *reads)
 }
 
 // TestRenameRecordsNothingWithoutSession pins that a rename outside a
@@ -53,14 +54,14 @@ func TestRenameRecordsNothingWithoutSession(t *testing.T) {
 	path := filepath.Join(dir, "a.go")
 	require.NoError(t, os.WriteFile(path, []byte("old\n"), 0o644))
 
-	files := &mockHistoryService{missing: true}
-	tracker := &mockEditFileTracker{}
+	files, recorded := newRecordingHistoryService(t, "", true)
+	tracker, reads := newRecordingFileTracker(t, time.Time{})
 	tool := NewRenameTool(nil, files, tracker).(*renameTool)
 
 	tool.recordRename(t.Context(), "", []string{path}, map[string]string{path: "old\n"})
 
-	require.Empty(t, files.recorded())
-	require.Empty(t, tracker.reads)
+	require.Empty(t, *recorded)
+	require.Empty(t, *reads)
 }
 
 // TestRenameSkipsUnreadableFiles pins that a file the tool could not
@@ -74,8 +75,8 @@ func TestRenameSkipsUnreadableFiles(t *testing.T) {
 	absent := filepath.Join(dir, "gone.go")
 	require.NoError(t, os.WriteFile(present, []byte("old\n"), 0o644))
 
-	files := &mockHistoryService{missing: true}
-	tool := NewRenameTool(nil, files, &mockEditFileTracker{}).(*renameTool)
+	files, recorded := newRecordingHistoryService(t, "", true)
+	tool := NewRenameTool(nil, files, newFileTracker(t, time.Time{})).(*renameTool)
 
 	before := tool.readAll([]string{present, absent})
 	require.NotContains(t, before, absent)
@@ -83,7 +84,7 @@ func TestRenameSkipsUnreadableFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(present, []byte("new\n"), 0o644))
 	tool.recordRename(t.Context(), "session", []string{present, absent}, before)
 
-	require.Equal(t, []string{"old\n", "new\n"}, files.recorded())
+	require.Equal(t, []string{"old\n", "new\n"}, *recorded)
 }
 
 // TestRenamePlanRejectsBadInput pins that the arguments are checked

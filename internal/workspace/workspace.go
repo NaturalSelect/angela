@@ -197,8 +197,10 @@ type Workspace interface {
 	PermissionGrant(perm permission.PermissionRequest) bool
 	PermissionGrantPersistent(perm permission.PermissionRequest) bool
 	PermissionDeny(perm permission.PermissionRequest) bool
-	PermissionSkipRequests() bool
-	PermissionSetSkipRequests(skip bool)
+	// PermissionMode reports the current permission mode.
+	PermissionMode() permission.PermissionMode
+	// PermissionSetMode changes the current permission mode.
+	PermissionSetMode(mode permission.PermissionMode)
 
 	// Questions
 	//

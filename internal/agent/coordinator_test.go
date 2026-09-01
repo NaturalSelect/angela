@@ -23,43 +23,43 @@ import (
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-// mockSessionAgent is a minimal mock for the SessionAgent interface.
+// mockSessionAgent pairs a gomock MockSessionAgent with the mutable state
+// tests poke directly, the way the old hand-written mockSessionAgent worked.
 type mockSessionAgent struct {
-	model     Model
+	*MockSessionAgent
 	agentID   string
-	runFunc   func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error)
+	busy      bool
+	queued    []string
 	cancelled []string
 	cleared   []string
 	cancelAll int
-	busy      bool
-	queued    []string
 }
 
-func (m *mockSessionAgent) Run(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
-	return m.runFunc(ctx, call)
-}
-
-func (m *mockSessionAgent) BeginAccepted(sessionID string) *AcceptedRun {
-	return &AcceptedRun{sessionID: sessionID}
-}
-
-func (m *mockSessionAgent) AgentID() string { return m.agentID }
-func (m *mockSessionAgent) Cancel(sessionID string) {
-	m.cancelled = append(m.cancelled, sessionID)
-}
-func (m *mockSessionAgent) CancelAll()                                  { m.cancelAll++ }
-func (m *mockSessionAgent) IsSessionBusy(sessionID string) bool         { return m.busy }
-func (m *mockSessionAgent) IsBusy() bool                                { return m.busy }
-func (m *mockSessionAgent) QueuedPrompts(sessionID string) int          { return len(m.queued) }
-func (m *mockSessionAgent) QueuedPromptsList(sessionID string) []string { return m.queued }
-func (m *mockSessionAgent) ClearQueue(sessionID string) {
-	m.cleared = append(m.cleared, sessionID)
-}
-
-func (m *mockSessionAgent) Summarize(context.Context, string, CompactAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error {
-	return nil
+// newMockSessionAgent wires a MockSessionAgent so every SessionAgent method
+// reads or updates the fields above, the way the old hand-written mock
+// worked. runFunc may be nil when the test never calls Run on this agent.
+func newMockSessionAgent(t *testing.T, agentID string, runFunc func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)) *mockSessionAgent {
+	t.Helper()
+	a := &mockSessionAgent{MockSessionAgent: NewMockSessionAgent(gomock.NewController(t)), agentID: agentID}
+	a.EXPECT().Run(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		return runFunc(ctx, call)
+	}).AnyTimes()
+	a.EXPECT().BeginAccepted(gomock.Any()).DoAndReturn(func(sessionID string) *AcceptedRun {
+		return &AcceptedRun{sessionID: sessionID}
+	}).AnyTimes()
+	a.EXPECT().AgentID().DoAndReturn(func() string { return a.agentID }).AnyTimes()
+	a.EXPECT().Cancel(gomock.Any()).Do(func(sessionID string) { a.cancelled = append(a.cancelled, sessionID) }).AnyTimes()
+	a.EXPECT().CancelAll().Do(func() { a.cancelAll++ }).AnyTimes()
+	a.EXPECT().IsSessionBusy(gomock.Any()).DoAndReturn(func(string) bool { return a.busy }).AnyTimes()
+	a.EXPECT().IsBusy().DoAndReturn(func() bool { return a.busy }).AnyTimes()
+	a.EXPECT().QueuedPrompts(gomock.Any()).DoAndReturn(func(string) int { return len(a.queued) }).AnyTimes()
+	a.EXPECT().QueuedPromptsList(gomock.Any()).DoAndReturn(func(string) []string { return a.queued }).AnyTimes()
+	a.EXPECT().ClearQueue(gomock.Any()).Do(func(sessionID string) { a.cleared = append(a.cleared, sessionID) }).AnyTimes()
+	a.EXPECT().Summarize(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	return a
 }
 
 // newTestCoordinator creates a minimal coordinator for unit testing runSubAgent.
@@ -82,7 +82,8 @@ func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCf
 // newMockAgent creates a mockSessionAgent plus the resolution a
 // dispatch would hand it, since model and token budget now travel on
 // the call rather than living on the agent.
-func newMockAgent(providerID string, maxTokens int64, runFunc func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)) (*mockSessionAgent, resolvedAgent) {
+func newMockAgent(t *testing.T, providerID string, maxTokens int64, runFunc func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)) (*mockSessionAgent, resolvedAgent) {
+	t.Helper()
 	model := Model{
 		CatwalkCfg: catwalk.Model{
 			DefaultMaxTokens: maxTokens,
@@ -91,7 +92,7 @@ func newMockAgent(providerID string, maxTokens int64, runFunc func(context.Conte
 			Provider: providerID,
 		},
 	}
-	return &mockSessionAgent{runFunc: runFunc},
+	return newMockSessionAgent(t, "", runFunc),
 		resolvedAgent{Model: model, MaxTokens: maxTokensFor(config.Agent{}, model)}
 }
 
@@ -117,7 +118,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(t, providerID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 			assert.Equal(t, "do something", call.Prompt)
 			assert.Equal(t, int64(4096), call.MaxOutputTokens)
 			return agentResultWithText("done"), nil
@@ -141,7 +142,7 @@ func TestRunSubAgent(t *testing.T) {
 		env := testEnv(t)
 		coord := newTestCoordinator(t, env, providerID, providerCfg)
 
-		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(t, providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return agentResultWithText("output before cost failure"), nil
 		})
 
@@ -166,7 +167,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(t, providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return agentResultWithText("the answer"), nil
 		})
 
@@ -191,7 +192,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(t, providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return nil, nil
 		})
 
@@ -216,7 +217,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(t, providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return &fantasy.AgentResult{}, nil
 		})
 
@@ -250,12 +251,10 @@ func TestRunSubAgent(t *testing.T) {
 				MaxTokens: 8192,
 			},
 		}
-		agent := &mockSessionAgent{
-			runFunc: func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
-				assert.Equal(t, int64(8192), call.MaxOutputTokens)
-				return agentResultWithText("ok"), nil
-			},
-		}
+		agent := newMockSessionAgent(t, "", func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+			assert.Equal(t, int64(8192), call.MaxOutputTokens)
+			return agentResultWithText("ok"), nil
+		})
 		resolved := resolvedAgent{Model: model, MaxTokens: maxTokensFor(config.Agent{}, model)}
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
@@ -278,7 +277,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent, resolved := newMockAgent(providerID, 4096, nil)
+		agent, resolved := newMockAgent(t, providerID, 4096, nil)
 
 		// Use a canceled context to trigger CreateTaskSession failure.
 		ctx, cancel := context.WithCancel(t.Context())
@@ -304,7 +303,7 @@ func TestRunSubAgent(t *testing.T) {
 		require.NoError(t, err)
 
 		// Agent references a provider that doesn't exist in config.
-		agent, resolved := newMockAgent("unknown-provider", 4096, nil)
+		agent, resolved := newMockAgent(t, "unknown-provider", 4096, nil)
 
 		_, err = coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
@@ -326,7 +325,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent, resolved := newMockAgent(providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(t, providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
 			return nil, errors.New("provider request failed")
 		})
 
@@ -352,7 +351,7 @@ func TestRunSubAgent(t *testing.T) {
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
-		agent, resolved := newMockAgent(providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(t, providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 			// Simulate the agent incurring cost by updating the child session.
 			childSession, err := env.sessions.Get(ctx, call.SessionID)
 			if err != nil {
@@ -395,13 +394,13 @@ func TestRunSubAgent(t *testing.T) {
 	t.Run("child session is pre-approved", func(t *testing.T) {
 		env := testEnv(t)
 		coord := newTestCoordinator(t, env, providerID, providerCfg)
-		coord.permissions = permission.NewPermissionService(env.workingDir, false, nil)
+		coord.permissions = permission.NewPermissionService(env.workingDir, permission.ModeManual, nil)
 
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
 
 		var granted bool
-		agent, resolved := newMockAgent(providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		agent, resolved := newMockAgent(t, providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 			decision := coord.permissions.Gate(ctx, permission.GateRequest{
 				SessionID:  call.SessionID,
 				ToolCallID: "child-call",
@@ -936,7 +935,7 @@ func TestSubAgentInheritsWhetherAnyoneCanApprove(t *testing.T) {
 	dispatch := func(t *testing.T, coord *coordinator, parentID, callID string) string {
 		t.Helper()
 		var childID string
-		agent, resolved := newMockAgent(providerID, 4096,
+		agent, resolved := newMockAgent(t, providerID, 4096,
 			func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 				childID = call.SessionID
 				return agentResultWithText("done"), nil

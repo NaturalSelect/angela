@@ -74,7 +74,7 @@ func TestSummarizeRefusesWhileATurnIsActive(t *testing.T) {
 		t.Fatal("main run never entered Stream")
 	}
 
-	compact := CompactAgent{Model: resolvedModel, SystemPrompt: "summarize"}
+	compact := resolvedAgent{Model: resolvedModel, SystemPrompt: "summarize"}
 	require.ErrorIs(t, sa.Summarize(t.Context(), sess.ID, compact, nil, nil), ErrSessionBusy)
 
 	close(turn.gate)
@@ -111,7 +111,7 @@ func TestConcurrentSummarizeElectsOneWinner(t *testing.T) {
 	require.NoError(t, err)
 
 	const callers = 4
-	compact := CompactAgent{Model: resolvedModel, SystemPrompt: "summarize"}
+	compact := resolvedAgent{Model: resolvedModel, SystemPrompt: "summarize"}
 
 	var wg sync.WaitGroup
 	results := make(chan error, callers)

@@ -7,6 +7,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/completions"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func mentionConfig() *config.Config {
@@ -57,8 +58,16 @@ func TestMentionableAgentsWithoutConfig(t *testing.T) {
 	require.Empty(t, m.mentionableAgents())
 }
 
-func newMentionUI(cfg *config.Config) *UI {
-	m := newBusyUI(&countingWorkspace{ready: true, cfg: cfg})
+func newMentionUI(t *testing.T, cfg *config.Config) *UI {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+	ws.EXPECT().Config().Return(cfg).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+
+	m := newBusyUIWithWorkspace(ws)
 	m.textarea.Focus()
 	m.textarea.SetWidth(60)
 	return m
@@ -76,7 +85,7 @@ func typeKeys(m *UI, keys ...string) {
 func TestAtOpensAgentCompletions(t *testing.T) {
 	pinTTLs(t)
 
-	m := newMentionUI(mentionConfig())
+	m := newMentionUI(t, mentionConfig())
 	typeKeys(m, "@")
 
 	require.True(t, m.completionsOpen)
@@ -92,7 +101,7 @@ func TestAtOpensAgentCompletions(t *testing.T) {
 func TestHashOpensFileCompletions(t *testing.T) {
 	pinTTLs(t)
 
-	m := newMentionUI(mentionConfig())
+	m := newMentionUI(t, mentionConfig())
 	typeKeys(m, "#")
 
 	require.True(t, m.completionsOpen)
@@ -106,7 +115,7 @@ func TestTriggerOnlyFiresAtWordStart(t *testing.T) {
 
 	for _, trigger := range []string{"@", "#"} {
 		t.Run(trigger, func(t *testing.T) {
-			m := newMentionUI(mentionConfig())
+			m := newMentionUI(t, mentionConfig())
 			typeKeys(m, "a", trigger)
 			require.False(t, m.completionsOpen)
 		})
@@ -124,7 +133,7 @@ func TestAtWithNoAgentsDoesNotOpen(t *testing.T) {
 		"coder": {ID: "coder", Mode: config.AgentModePrimary},
 	}
 
-	m := newMentionUI(cfg)
+	m := newMentionUI(t, cfg)
 	typeKeys(m, "@")
 
 	require.False(t, m.completionsOpen, "an empty popup would swallow Enter")
@@ -139,7 +148,7 @@ func TestInsertAgentCompletionKeepsSigil(t *testing.T) {
 	pinTTLs(t)
 
 	t.Run("agent keeps it", func(t *testing.T) {
-		m := newMentionUI(mentionConfig())
+		m := newMentionUI(t, mentionConfig())
 		m.textarea.SetValue("check @ex")
 		m.completionsStartIndex = 6
 		m.insertAgentCompletion("explore")
@@ -147,7 +156,7 @@ func TestInsertAgentCompletionKeepsSigil(t *testing.T) {
 	})
 
 	t.Run("file drops it", func(t *testing.T) {
-		m := newMentionUI(mentionConfig())
+		m := newMentionUI(t, mentionConfig())
 		m.textarea.SetValue("check #ma")
 		m.completionsStartIndex = 6
 		require.True(t, m.insertCompletionText("main.go"))

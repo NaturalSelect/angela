@@ -11,6 +11,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
@@ -350,15 +351,15 @@ func writePermissions(b *strings.Builder, cfg *config.ConfigStore) {
 	overrides := cfg.Overrides()
 
 	if c.Permissions == nil {
-		if !overrides.SkipPermissionRequests {
+		if overrides.PermissionMode == permission.ModeManual {
 			return
 		}
-	} else if !overrides.SkipPermissionRequests && len(c.Permissions.AllowedTools) == 0 {
+	} else if overrides.PermissionMode == permission.ModeManual && len(c.Permissions.AllowedTools) == 0 {
 		return
 	}
 	b.WriteString("[permissions]\n")
-	if overrides.SkipPermissionRequests {
-		b.WriteString("mode = yolo\n")
+	if overrides.PermissionMode != permission.ModeManual {
+		fmt.Fprintf(b, "mode = %s\n", overrides.PermissionMode)
 	}
 	if c.Permissions != nil && len(c.Permissions.AllowedTools) > 0 {
 		sorted := slices.Clone(c.Permissions.AllowedTools)

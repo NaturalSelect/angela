@@ -11,7 +11,7 @@ this branch exists instead of an ordinary subagent.
 call stays blocked until this branch resolves, so it cannot continue while you
 work. Be useful quickly and do not wander.
 
-**Your result is a proposal document.** Draft it with `ProposalWrite`, then
+**Your result is a proposal document, invisible to the user until you call `Merge`.** Draft it with `ProposalWrite`, then
 revise it with `ProposalEdit` — send only the passage that changes, never the
 whole text again. `ProposalRead` shows you the current state when you need it.
 The document is held in memory for this branch alone: it is not a file and

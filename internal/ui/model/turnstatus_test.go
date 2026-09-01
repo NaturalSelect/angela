@@ -9,8 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func busyStatusUI() *UI {
-	m := newBusyUI(detailsWorkspace())
+func busyStatusUI(t *testing.T) *UI {
+	t.Helper()
+	ws, _ := detailsMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.agentBusyCache.set(true)
 	m.session = &session.Session{
 		ID:               "s1",
@@ -32,7 +34,7 @@ func busyStatusUI() *UI {
 func TestTurnStatusNeverExceedsWidth(t *testing.T) {
 	t.Parallel()
 
-	m := busyStatusUI()
+	m := busyStatusUI(t)
 	for width := 1; width <= 200; width++ {
 		require.LessOrEqual(t, ansi.StringWidth(m.renderTurnStatus(width)), width,
 			"busy status overflows at width %d", width)
@@ -50,7 +52,7 @@ func TestTurnStatusNeverExceedsWidth(t *testing.T) {
 func TestTurnStatusDropsFieldsFromTheTail(t *testing.T) {
 	t.Parallel()
 
-	m := busyStatusUI()
+	m := busyStatusUI(t)
 	m.promptQueue = 2
 
 	wide := m.renderTurnStatus(200)
@@ -67,7 +69,7 @@ func TestTurnStatusDropsFieldsFromTheTail(t *testing.T) {
 func TestTurnStatusHintTracksCancelState(t *testing.T) {
 	t.Parallel()
 
-	m := busyStatusUI()
+	m := busyStatusUI(t)
 	require.Contains(t, m.renderTurnStatus(200), "stop")
 
 	m.promptQueue = 3
@@ -100,7 +102,7 @@ func TestFormatTokensCompact(t *testing.T) {
 func TestTurnStatusEmptyWithoutSession(t *testing.T) {
 	t.Parallel()
 
-	m := busyStatusUI()
+	m := busyStatusUI(t)
 	m.session = nil
 	require.Empty(t, m.renderTurnStatus(120))
 }
@@ -110,14 +112,14 @@ func TestTurnStatusEmptyWithoutSession(t *testing.T) {
 func TestTurnStatusDoesNotProbeWorkspace(t *testing.T) {
 	pinTTLs(t)
 
-	ws := detailsWorkspace()
-	m := newBusyUI(ws)
+	ws, counts := detailsMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
 	m.agentReady = true
 	m.agentActiveKnown = true
 	m.agentActiveSession = m.currentSessionID()
 	m.agentBusyCache.set(true)
 	m.session = &session.Session{ID: "s1", PromptTokens: 10, Cost: 0.5}
-	ws.resetCounters()
+	*counts = detailsSyncProbeCounts{}
 
 	for range 20 {
 		m.renderTurnStatus(120)
@@ -126,7 +128,7 @@ func TestTurnStatusDoesNotProbeWorkspace(t *testing.T) {
 		m.agentBusyCache.set(true)
 	}
 
-	require.Zero(t, ws.syncProbes(), "turn status must never probe the workspace")
+	require.Zero(t, counts.sum(), "turn status must never probe the workspace")
 }
 
 // The activity segment names the tool and what it is acting on, which is the
@@ -134,7 +136,7 @@ func TestTurnStatusDoesNotProbeWorkspace(t *testing.T) {
 func TestTurnStatusNamesTheRunningTool(t *testing.T) {
 	t.Parallel()
 
-	m := busyStatusUI()
+	m := busyStatusUI(t)
 	require.Contains(t, m.renderTurnStatus(200), "Thinking",
 		"with no pending tool the agent is thinking")
 

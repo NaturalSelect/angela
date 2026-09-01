@@ -13,15 +13,17 @@ import (
 // Workspace represents a running app.App workspace with its associated
 // resources and state.
 type Workspace struct {
-	ID       string         `json:"id"`
-	Path     string         `json:"path"`
-	YOLO     bool           `json:"yolo,omitempty"`
-	Debug    bool           `json:"debug,omitempty"`
-	DataDir  string         `json:"data_dir,omitempty"`
-	Version  string         `json:"version,omitempty"`
-	ClientID string         `json:"client_id,omitempty"`
-	Config   *config.Config `json:"config,omitempty"`
-	Env      []string       `json:"env,omitempty"`
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	// PermissionMode is the wire representation of permission.PermissionMode
+	// ("manual", "auto_accept_edits", or "yolo").
+	PermissionMode string         `json:"permission_mode,omitempty"`
+	Debug          bool           `json:"debug,omitempty"`
+	DataDir        string         `json:"data_dir,omitempty"`
+	Version        string         `json:"version,omitempty"`
+	ClientID       string         `json:"client_id,omitempty"`
+	Config         *config.Config `json:"config,omitempty"`
+	Env            []string       `json:"env,omitempty"`
 	// Channels lists the MCP servers opted in as channels for this workspace
 	// (from the --channels flag).
 	Channels []string `json:"channels,omitempty"`
@@ -266,9 +268,11 @@ type QuestionNotification struct {
 	BatchID string `json:"batch_id"`
 }
 
-// PermissionSkipRequest represents a request to skip permission prompts.
-type PermissionSkipRequest struct {
-	Skip bool `json:"skip"`
+// PermissionModeRequest carries the wire representation of
+// permission.PermissionMode for both the GET response and the POST
+// request body of the permission-mode endpoint.
+type PermissionModeRequest struct {
+	Mode string `json:"mode"`
 }
 
 // PermissionUnattendedRequest marks whether a session has anyone who

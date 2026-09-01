@@ -32,10 +32,6 @@ const agentSummaryArrow = "↳ "
 // agentTitleSeparator sits between the sub-agent's name and its task.
 const agentTitleSeparator = " — "
 
-// agentToolLabel is the bare tool name, shown until the call names the
-// sub-agent it dispatches to.
-const agentToolLabel = "Agent"
-
 // agentToolTitle names the sub-agent a call dispatches to, so the header
 // reads "Agent(explore)" rather than the bare tool name. Input that is
 // still streaming in cannot be parsed yet; an omitted subagent_type
@@ -43,18 +39,18 @@ const agentToolLabel = "Agent"
 func agentToolTitle(toolCall message.ToolCall) string {
 	var params agent.AgentParams
 	if err := json.Unmarshal([]byte(toolCall.Input), &params); err != nil {
-		return agentToolLabel
+		return toolnames.Agent
 	}
 	name := params.SubagentType
 	if name == "" {
 		// The field may simply not have streamed in yet, so only assume
 		// the tool's own default once the input is complete.
 		if !toolCall.Finished {
-			return agentToolLabel
+			return toolnames.Agent
 		}
 		name = config.AgentExplore
 	}
-	return agentToolLabel + "(" + name + ")"
+	return toolnames.Agent + "(" + name + ")"
 }
 
 // NestedToolContainer is an interface for tool items that can contain nested tool calls.
@@ -306,12 +302,15 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 		return header
 	}
 
-	parts := []string{header}
-	if summary := r.agent.summaryLine(sty, opts.HasResult() || opts.IsCanceled()); summary != "" {
-		parts = append(parts, summary)
+	summary := r.agent.summaryLine(sty, opts.HasResult() || opts.IsCanceled())
+	if summary == "" {
+		return header
 	}
 	if !opts.HasResult() && !opts.IsCanceled() {
-		parts = append(parts, "", opts.Anim.Render())
+		// The shimmer rides on the same line as the current step, mirroring
+		// pendingTool's icon+name+anim layout instead of a detached third
+		// row — the block stays exactly two lines while the sub-agent runs.
+		summary += " " + opts.Anim.Render()
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return lipgloss.JoinVertical(lipgloss.Left, header, summary)
 }

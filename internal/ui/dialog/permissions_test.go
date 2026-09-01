@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"image"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -9,6 +10,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -178,4 +180,85 @@ func TestPermissions_MergeOffersDiffControls(t *testing.T) {
 	}
 	require.Contains(t, names, p.keyMap.ToggleFullscreen.Help().Key)
 	require.Contains(t, names, p.keyMap.ToggleDiffMode.Help().Key)
+}
+
+// A merge ends the branch the instant it's approved (mergeTool.apply sets
+// StopTurn), so a session-wide grant for it could never be consulted
+// again. Offering "Allow for Session" would mislead the user into
+// thinking it does something distinct from Allow.
+func TestPermissions_MergeOffersNoAllowForSession(t *testing.T) {
+	t.Parallel()
+
+	p := newMergePermissions("# Plan\n\nRewrite the parser.")
+
+	var actions []PermissionAction
+	for _, o := range p.options() {
+		actions = append(actions, o.action)
+	}
+	require.Equal(t, []PermissionAction{PermissionAllow, PermissionDeny}, actions)
+
+	rendered, _, _ := p.renderButtons(p.buttonOpts(), 80, false)
+	require.NotContains(t, ansi.Strip(rendered), "Allow for Session")
+
+	// Tab must cycle between exactly the two remaining options.
+	require.Equal(t, 0, p.selectedOption)
+	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, 1, p.selectedOption)
+	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, 0, p.selectedOption)
+
+	// The direct "s" shortcut must also be a no-op.
+	require.Nil(t, p.HandleMsg(keyMsg('s')))
+}
+
+// buttonScreenPos scans a drawn dialog for the screen cell whose hit
+// compositor resolves to the given button index, mirroring how a real
+// mouse click would land on it.
+func buttonScreenPos(t *testing.T, p *Permissions, idx, maxW, maxH int) (x, y int) {
+	t.Helper()
+	for y := range maxH {
+		for x := range maxW {
+			if common.HitButtonIndex(p.buttonHit, x, y) == idx {
+				return x, y
+			}
+		}
+	}
+	t.Fatalf("button %d not found on screen", idx)
+	return 0, 0
+}
+
+// TestPermissions_MouseClickSelectsButton verifies that clicking a
+// button with the mouse resolves it, the same as pressing its key
+// shortcut would.
+func TestPermissions_MouseClickSelectsButton(t *testing.T) {
+	t.Parallel()
+
+	const w, h = 100, 30
+	p := newTestPermissions(t)
+	scr := uv.NewScreenBuffer(w, h)
+	p.Draw(scr, image.Rect(0, 0, w, h))
+	require.NotNil(t, p.buttonHit, "a normal-width dialog should offer a single-row button layout")
+
+	x, y := buttonScreenPos(t, p, 2, w, h) // Deny
+	action := p.HandleMsg(tea.MouseClickMsg{X: x, Y: y, Button: uv.MouseLeft})
+	resp, ok := action.(ActionPermissionResponse)
+	require.True(t, ok, "clicking the Deny button should produce a response")
+	require.Equal(t, PermissionDeny, resp.Action)
+	require.Equal(t, 2, p.selectedOption, "the click should also update the visible selection")
+}
+
+// TestPermissions_MouseHoverTracksButton verifies that mouse motion is
+// recorded and resolves to the hovered button through the same
+// compositor used for clicks.
+func TestPermissions_MouseHoverTracksButton(t *testing.T) {
+	t.Parallel()
+
+	const w, h = 100, 30
+	p := newTestPermissions(t)
+	scr := uv.NewScreenBuffer(w, h)
+	p.Draw(scr, image.Rect(0, 0, w, h))
+
+	x, y := buttonScreenPos(t, p, 0, w, h) // Allow
+	p.HandleMsg(tea.MouseMotionMsg{X: x, Y: y})
+	require.Equal(t, 0, common.HitButtonIndex(p.buttonHit, p.hoverX, p.hoverY))
 }

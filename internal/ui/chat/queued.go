@@ -52,9 +52,20 @@ func (m *QueuedMessageItem) RawRender(width int) string {
 	return m.render(width)
 }
 
-// Render implements list.Item.
+// Render implements list.Item. Queued entries get the same left gutter as
+// every other blurred message in the transcript (assistant replies, tool
+// calls) so they line up instead of sitting flush against the edge.
 func (m *QueuedMessageItem) Render(width int) string {
-	return m.render(width)
+	content := m.render(width)
+	if content == "" {
+		return content
+	}
+	prefix := m.sty.Messages.AssistantBlurred.Render()
+	lines := strings.Split(content, "\n")
+	for i, ln := range lines {
+		lines[i] = prefix + ln
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m *QueuedMessageItem) render(width int) string {

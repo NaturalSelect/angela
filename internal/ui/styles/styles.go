@@ -52,9 +52,6 @@ const (
 	RadioOn  string = "◉"
 	RadioOff string = "○"
 
-	BorderThin  string = "│"
-	BorderThick string = "▌"
-
 	SectionSeparator string = "─"
 
 	TodoCompletedIcon  string = "✓"
@@ -96,6 +93,7 @@ type Styles struct {
 		WorkingDir        lipgloss.Style // Style for current working directory
 		Separator         lipgloss.Style // Style for separator dots (•)
 		Wrapper           lipgloss.Style // Outer container for the entire header row
+		Band              lipgloss.Style // Background fill for the entire header row
 		SessionTitle      lipgloss.Style
 		Breadcrumb        lipgloss.Style // Ancestor levels and separators in the session trail
 		LogoGradCanvas    lipgloss.Style // Canvas for the compact "angela" gradient
@@ -145,9 +143,10 @@ type Styles struct {
 
 		// Mode colors. They tint the box border and the prompt marker, so
 		// the input's state stays legible without a separate accent rail.
-		Rail     lipgloss.Style
-		RailBang lipgloss.Style
-		RailYolo lipgloss.Style
+		Rail                lipgloss.Style
+		RailBang            lipgloss.Style
+		RailYolo            lipgloss.Style
+		RailAutoAcceptEdits lipgloss.Style
 
 		// Border is the box drawn around the textarea.
 		Border        lipgloss.Style
@@ -308,21 +307,19 @@ type Styles struct {
 	Messages struct {
 		// The user message band: a filled surface, not a text prefix.
 		// Text drawn onto it must carry no background of its own.
-		UserBand              lipgloss.Style
-		UserBandPrompt        lipgloss.Style
-		UserBandTimestamp     lipgloss.Style
-		UserBandAccentFocused lipgloss.Style
-		UserBandAccentBlurred lipgloss.Style
-		AssistantBlurred      lipgloss.Style
-		AssistantFocused      lipgloss.Style
-		NoContent             lipgloss.Style
-		Thinking              lipgloss.Style
-		ErrorTag              lipgloss.Style
-		ErrorTitle            lipgloss.Style
-		ErrorDetails          lipgloss.Style
-		ToolCallFocused       lipgloss.Style
-		ToolCallCompact       lipgloss.Style
-		ToolCallBlurred       lipgloss.Style
+		UserBand          lipgloss.Style
+		UserBandPrompt    lipgloss.Style
+		UserBandTimestamp lipgloss.Style
+		AssistantBlurred  lipgloss.Style
+		AssistantFocused  lipgloss.Style
+		NoContent         lipgloss.Style
+		Thinking          lipgloss.Style
+		ErrorTag          lipgloss.Style
+		ErrorTitle        lipgloss.Style
+		ErrorDetails      lipgloss.Style
+		ToolCallFocused   lipgloss.Style
+		ToolCallCompact   lipgloss.Style
+		ToolCallBlurred   lipgloss.Style
 
 		// Shell (bang mode) item styles.
 		ShellBarFocused    lipgloss.Style // Left vertical bar when focused.
@@ -337,7 +334,7 @@ type Styles struct {
 
 		// Thinking section styles
 		ThinkingBox            lipgloss.Style // Background for thinking content
-		ThinkingTruncationHint lipgloss.Style // "… (N lines hidden)" hint
+		ThinkingTruncationHint lipgloss.Style // "+ (N lines hidden)" / "- (N earlier lines hidden)" hint
 		ThinkingFooterTitle    lipgloss.Style // "Thought for" text
 		ThinkingFooterDuration lipgloss.Style // Duration value
 		AssistantInfoIcon      lipgloss.Style

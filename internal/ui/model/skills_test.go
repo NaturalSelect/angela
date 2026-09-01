@@ -8,6 +8,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	uistyles "github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // TestSkillStatusItemsIncludesBuiltinSkills verifies sidebar skills include
@@ -61,11 +62,15 @@ func TestSkillStatusItemsIncludesBuiltinSkills(t *testing.T) {
 func TestSkillStatusItemsExcludesDisabledSkills(t *testing.T) {
 	t.Parallel()
 
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return(&config.Config{Options: &config.Options{DisabledSkills: []string{"go-doc", "angela-config"}}}).AnyTimes()
+
 	st := uistyles.CharmtonePantera()
 	ui := &UI{
 		com: &common.Common{
 			Styles:    &st,
-			Workspace: &testWorkspace{cfg: &config.Config{Options: &config.Options{DisabledSkills: []string{"go-doc", "angela-config"}}}},
+			Workspace: ws,
 		},
 		skillStates: []*skills.SkillState{
 			{Name: "go-doc", Path: "/tmp/go-doc/SKILL.md", State: skills.StateNormal},

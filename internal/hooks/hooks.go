@@ -7,13 +7,19 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/NaturalSelect/angela/internal/hookevents"
 	"github.com/tidwall/sjson"
 )
 
 // Hook event name constants.
 const (
-	EventPreToolUse = "PreToolUse"
+	EventPreToolUse = hookevents.PreToolUse
 )
+
+// DenyExitCode is the exit code that blocks the current tool call. See
+// HaltExitCode for why 49 was chosen for the turn-halting counterpart
+// instead of a number adjacent to this one.
+const DenyExitCode = 2
 
 // HaltExitCode is the exit code that halts the whole turn. 2 blocks the
 // current tool call; 49 sits in the no-man's-land between the

@@ -87,7 +87,7 @@ type SessionAgentCall struct {
 	SummarizeProviderOptions fantasy.ProviderOptions
 	// Compact carries the model and system prompt used when this turn
 	// overflows the context window and auto-summarization kicks in.
-	Compact CompactAgent
+	Compact resolvedAgent
 	// SummarizeOnAuthRefresh refreshes credentials for the compact
 	// model's provider. It is separate from OnAuthRefresh because
 	// compaction can run on a different provider than the turn that
@@ -158,40 +158,8 @@ type SessionAgent interface {
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
-	Summarize(context.Context, string, CompactAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error
+	Summarize(context.Context, string, resolvedAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error
 	AgentID() string
-}
-
-// CompactAgent carries the model and system prompt a compaction run uses.
-// They are injected per call instead of living on the session agent so
-// that the agent stays bound to exactly one model.
-//
-// The user-side prompt is deliberately absent: it is derived from live
-// session state (todos) and must be built when compaction fires, not
-// when the call is dispatched — a turn can change the todo list before
-// it overflows.
-type CompactAgent struct {
-	Model              Model
-	SystemPrompt       string
-	SystemPromptPrefix string
-
-	// RebuildModel returns a freshly built model for this agent. It
-	// exists for the same reason resolvedAgent has one: fantasy asks
-	// ModelProvider which instance to retry with after a credential
-	// refresh, and the one captured at resolution still holds the
-	// credentials the provider just rejected.
-	RebuildModel func(context.Context) (fantasy.LanguageModel, error)
-
-	// Err holds why this compact agent could not be resolved. A turn
-	// still runs without a usable one — compaction is a recovery path,
-	// not a precondition — so callers must check before starting it
-	// rather than assume Model is populated.
-	Err error
-}
-
-// Available reports whether compaction can actually be run.
-func (c CompactAgent) Available() bool {
-	return c.Err == nil && c.Model.Model != nil
 }
 
 type Model struct {
@@ -392,7 +360,7 @@ func (a *sessionAgent) authRefreshRebuilding(
 // than the running turn's.
 func compactAuthRefreshRebuilding(
 	sessionID string,
-	compact CompactAgent,
+	compact resolvedAgent,
 	onAuthRefresh func(context.Context, *fantasy.ProviderError) error,
 	retryModel *atomic.Pointer[fantasy.LanguageModel],
 ) func(context.Context, *fantasy.ProviderError) error {
@@ -1314,7 +1282,7 @@ func reresolve(ctx context.Context, call SessionAgentCall) SessionAgentCall {
 	return call
 }
 
-func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact CompactAgent, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
+func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact resolvedAgent, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
 	if !compact.Available() {
 		if compact.Err != nil {
 			return fmt.Errorf("compact agent unavailable: %w", compact.Err)
@@ -1365,11 +1333,14 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 		}
 	}()
 
-	agent := fantasy.NewAgent(
-		compact.Model.Model,
+	agentOpts := []fantasy.AgentOption{
 		fantasy.WithSystemPrompt(compact.SystemPrompt),
 		fantasy.WithUserAgent(userAgent),
-	)
+	}
+	if compact.MaxTokens > 0 {
+		agentOpts = append(agentOpts, fantasy.WithMaxOutputTokens(compact.MaxTokens))
+	}
+	agent := fantasy.NewAgent(compact.Model.Model, agentOpts...)
 	summaryMessage, err := a.messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:             message.Assistant,
 		Model:            compact.Model.ModelCfg.Model,
@@ -1435,6 +1406,17 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 			return updateErr
 		}
 		return err
+	}
+
+	if resp.Response.FinishReason == fantasy.FinishReasonLength {
+		// Accepting this as SummaryMessageID would make the truncated text
+		// the session's only memory of everything before it, discarding
+		// the rest of the history the summary was supposed to preserve.
+		summaryMessage.AddFinish(message.FinishReasonMaxTokens, "Summarization Error", "the summary hit the output token limit before it finished")
+		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
+			return updateErr
+		}
+		return errors.New("summarization hit the output token limit")
 	}
 
 	summaryMessage.AddFinish(message.FinishReasonEndTurn, "", "")

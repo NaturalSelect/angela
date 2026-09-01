@@ -119,7 +119,7 @@ func TestMergeToolDeniedNeverRuns(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
 	c := mergeCoordinator()
 	done := c.branches.Register("s1", "parent-1")
@@ -156,7 +156,7 @@ func TestMergeToolRetriesAfterDenial(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
 	c := mergeCoordinator()
 	done := c.branches.Register("s1", "parent-1")
@@ -205,7 +205,7 @@ func TestProposalToolsNeverPrompt(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	svc := permission.NewPermissionService(dir, false, nil)
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	store := tools.NewProposalStore()
 	events := svc.Subscribe(t.Context())
 

@@ -9,6 +9,7 @@ import (
 
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func resetProviderState() {
@@ -155,9 +156,10 @@ func TestProviders_KeepsCatalogWhenCachingFails(t *testing.T) {
 
 	// Prime the syncer with a mock client so Providers reuses the memoized
 	// outcome instead of reaching the network.
-	catwalkSyncer.Init(&mockCatwalkClient{
-		providers: []catwalk.Provider{{Name: "Provider1", ID: "p1"}},
-	}, unwritable, true)
+	client := NewMockCatwalkClient(gomock.NewController(t))
+	client.EXPECT().GetProviders(gomock.Any(), gomock.Any()).
+		Return([]catwalk.Provider{{Name: "Provider1", ID: "p1"}}, nil).Times(1)
+	catwalkSyncer.Init(client, unwritable, true)
 
 	catwalkProviders, catwalkErr := catwalkSyncer.Get(t.Context())
 	require.Error(t, catwalkErr, "cache write should fail")

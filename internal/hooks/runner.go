@@ -225,7 +225,7 @@ func (r *Runner) runOne(parentCtx context.Context, hook config.HookConfig, envVa
 	if err != nil {
 		exitCode := shell.ExitCode(err)
 		switch exitCode {
-		case 2:
+		case DenyExitCode:
 			// Exit code 2 = block this tool call. Stderr is the reason.
 			reason := strings.TrimSpace(stderr.String())
 			if reason == "" {

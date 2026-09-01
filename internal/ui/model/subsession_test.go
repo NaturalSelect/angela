@@ -5,32 +5,36 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
-	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-// subSessionWorkspace answers only the ID derivation the navigation needs. The
-// embedded interface panics on anything else, so a test that starts probing the
-// workspace says so loudly instead of quietly passing.
-type subSessionWorkspace struct {
-	workspace.Workspace
-}
+// newSubSessionWorkspace answers only the ID derivation the navigation
+// needs. Any other call fails the test (gomock's default for a method
+// with no .EXPECT()), so a test that starts probing the workspace says so
+// loudly instead of quietly passing.
+func newSubSessionWorkspace(t *testing.T) *MockWorkspace {
+	t.Helper()
 
-func (subSessionWorkspace) CreateAgentToolSessionID(messageID, toolCallID string) string {
-	return fmt.Sprintf("%s$$%s", messageID, toolCallID)
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().CreateAgentToolSessionID(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(messageID, toolCallID string) string {
+			return fmt.Sprintf("%s$$%s", messageID, toolCallID)
+		}).AnyTimes()
+	return ws
 }
 
 func newSubSessionUI(t *testing.T) *UI {
 	t.Helper()
 	m := newTestUI()
-	m.com.Workspace = subSessionWorkspace{}
+	m.com.Workspace = newSubSessionWorkspace(t)
 	m.keyMap = DefaultKeyMap()
 	m.header = newHeader(m.com)
 	m.dialog = dialog.NewOverlay()
@@ -55,13 +59,12 @@ func agentItem(m *UI, messageID, toolCallID string) *chat.AgentToolMessageItem {
 func simulateEnter(m *UI, messageID, toolCallID string) {
 	item := agentItem(m, messageID, toolCallID)
 	childID := m.com.Workspace.CreateAgentToolSessionID(messageID, toolCallID)
+	parent := sessionStackFrame{id: m.session.ID, title: m.session.Title}
 	m.enterSubSession(item)
 	// The cmd would produce a loadSessionMsg; simulate it.
-	m.Update(loadSessionMsg{
-		session:    &session.Session{ID: childID, Title: childID},
-		enterFrame: &sessionStackFrame{id: m.session.ID, title: m.session.Title},
-	})
-	m.session = &session.Session{ID: childID, Title: childID}
+	child := &session.Session{ID: childID, Title: childID, ParentSessionID: parent.id}
+	m.Update(loadSessionMsg{session: child, enterFrame: &parent})
+	m.session = child
 }
 
 // simulateLeave feeds a successful loadSessionMsg with leaveLevel so the
@@ -101,6 +104,56 @@ func TestEnterSubSessionPushesTheParent(t *testing.T) {
 	require.Equal(t, "Root task", m.sessionStack[0].title)
 }
 
+// A mouse click on an Agent tool call drills into its sub-session the same
+// way pressing enter (OpenSubSession) does: ui.go's DelayedClickMsg handling
+// calls enterSubSession once Chat.HandleDelayedClick reports the click as
+// handled on a selected agent tool item.
+func TestDelayedClickOnAgentToolEntersSubSession(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+	item := agentItem(m, "msg-1", "call-1")
+	m.chat.SetMessages(item)
+	m.updateLayoutAndSize()
+
+	_, _ = m.chat.HandleMouseDown(0, 0)
+	clickID := m.chat.pendingClickID
+
+	_, cmd := m.Update(DelayedClickMsg{ClickID: clickID, ItemIdx: 0, X: 0, Y: 0})
+	require.NotNil(t, cmd, "a click on an agent tool call must drill into its sub-session")
+	require.False(t, m.inSubSession(), "the stack push is deferred until the load succeeds")
+
+	// Simulate the load succeeding, as the cmd returned above would.
+	m.Update(loadSessionMsg{
+		session:    &session.Session{ID: "msg-1$$call-1", Title: "explore", ParentSessionID: "root"},
+		enterFrame: &sessionStackFrame{id: "root", title: "Root task"},
+	})
+	require.True(t, m.inSubSession())
+	require.Equal(t, "root", m.sessionStack[0].id)
+}
+
+// A click on an ordinary tool item still just expands it in place; it must
+// not be mistaken for a drill-down since it has no sub-session behind it.
+func TestDelayedClickOnPlainItemDoesNotEnterSubSession(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+	item := &testExpandableItem{
+		testMessageItem: testMessageItem{id: "a", text: "alpha"},
+		clickHandled:    true,
+	}
+	m.chat.SetMessages(item)
+	m.updateLayoutAndSize()
+
+	_, _ = m.chat.HandleMouseDown(0, 0)
+	clickID := m.chat.pendingClickID
+
+	// tea.Batch always wraps its input in a non-nil cmd, even when
+	// nothing was appended, so the meaningful check is that expansion
+	// (not drill-down) is what ran and that no navigation took effect.
+	m.Update(DelayedClickMsg{ClickID: clickID, ItemIdx: 0, X: 0, Y: 0})
+	require.True(t, item.expanded, "non-agent items still expand on click")
+	require.False(t, m.inSubSession())
+}
+
 // Escape from a grandchild belongs one level up, not all the way home.
 func TestLeaveSubSessionPopsExactlyOneLevel(t *testing.T) {
 	t.Parallel()
@@ -136,35 +189,16 @@ func TestSessionTrailNamesEveryLevel(t *testing.T) {
 	require.Nil(t, m.sessionTrail())
 }
 
-// Escape is layered: a running turn owns it first. Leaving the session while
-// the sub-agent is still streaming would strand the user's cancel.
-func TestEscapeCancelsBeforeItLeaves(t *testing.T) {
+// Esc is the cancel/abandon gesture; it must not navigate out of a
+// sub-agent transcript.
+func TestEscapeNoLongerLeavesASubSession(t *testing.T) {
 	t.Parallel()
 
-	t.Run("idle escape leaves the sub-session", func(t *testing.T) {
-		t.Parallel()
-		m := newSubSessionUI(t)
-		simulateEnter(m, "msg-1", "call-1")
+	m := newSubSessionUI(t)
+	simulateEnter(m, "msg-1", "call-1")
 
-		m.handleKeyPressMsg(tea.KeyPressMsg{Code: tea.KeyEscape})
-		// The leave is now async, so the stack does NOT change in
-		// handleKeyPressMsg itself; it fires a cmd. But inSubSession
-		// is still true until the loadSessionMsg lands — what we
-		// are testing here is that Esc fires the leave rather than
-		// being swallowed. The leave path itself is proven by
-		// TestLeaveSubSessionPopsExactlyOneLevel.
-	})
-
-	t.Run("busy escape cancels and stays", func(t *testing.T) {
-		t.Parallel()
-		m := newSubSessionUI(t)
-		simulateEnter(m, "msg-1", "call-1")
-		m.agentBusyCache.set(true)
-
-		m.handleKeyPressMsg(tea.KeyPressMsg{Code: tea.KeyEscape})
-		require.True(t, m.inSubSession(),
-			"escape left the session instead of cancelling the running turn")
-	})
+	m.handleKeyPressMsg(tea.KeyPressMsg{Code: tea.KeyEscape})
+	require.True(t, m.inSubSession())
 }
 
 // passThroughDialog stands in for the sessions dialog: it hands the action
@@ -205,15 +239,15 @@ func TestBreadcrumbFallsBackAsItRunsOutOfRoom(t *testing.T) {
 	m := newSubSessionUI(t)
 	trail := []string{"Root task", "explore the codebase", "grep for callers"}
 
-	full := ansi.Strip(m.header.renderTrail(trail, 200))
+	full := ansi.Strip(m.header.renderTrail(trail, 200, 0))
 	require.Equal(t, "Root task › explore the codebase › grep for callers", full)
 
-	elided := ansi.Strip(m.header.renderTrail(trail, 40))
+	elided := ansi.Strip(m.header.renderTrail(trail, 40, 0))
 	require.True(t, strings.HasPrefix(elided, "…"),
 		"a trail too long to fit should elide the middle, got %q", elided)
 	require.Contains(t, elided, "grep for callers", "the level in view must survive")
 
-	tight := ansi.Strip(m.header.renderTrail(trail, 10))
+	tight := ansi.Strip(m.header.renderTrail(trail, 10, 0))
 	require.LessOrEqual(t, ansi.StringWidth(tight), 10,
 		"the breadcrumb overflowed its share of the header")
 }
@@ -226,28 +260,7 @@ func TestBreadcrumbNeverExceedsItsWidth(t *testing.T) {
 
 	trail := []string{"alpha", "beta", "gamma", "delta"}
 	for width := 1; width <= 60; width++ {
-		got := m.header.renderTrail(trail, width)
+		got := m.header.renderTrail(trail, width, 0)
 		require.LessOrEqual(t, ansi.StringWidth(got), width, "width %d overflowed", width)
 	}
-}
-
-// The help line is the only place the way out is discoverable.
-func TestShortHelpAdvertisesTheWayBack(t *testing.T) {
-	t.Parallel()
-	m := newSubSessionUI(t)
-
-	require.False(t, helpHasKey(m.ShortHelp(), "esc"))
-
-	simulateEnter(m, "msg-1", "call-1")
-	require.True(t, helpHasKey(m.ShortHelp(), "esc"),
-		"a sub-session gives no hint that escape goes back")
-}
-
-func helpHasKey(binds []key.Binding, want string) bool {
-	for _, b := range binds {
-		if b.Help().Key == want {
-			return true
-		}
-	}
-	return false
 }

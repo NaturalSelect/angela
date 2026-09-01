@@ -18,6 +18,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/lock"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/oauth/copilot"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/singleflight"
@@ -56,7 +57,9 @@ type fileSnapshot struct {
 // disk. They are applied on top of the loaded Config and survive only for
 // the lifetime of the process (or workspace).
 type RuntimeOverrides struct {
-	SkipPermissionRequests bool
+	// PermissionMode is the runtime permission mode (manual, auto-accept
+	// edits, or yolo). It defaults to permission.ModeManual.
+	PermissionMode permission.PermissionMode
 	// EnabledChannels lists the MCP servers opted in as channels for this
 	// session (via the --channels flag). A server present in MCP config only
 	// pushes channel events when it also appears here. Entries may be written

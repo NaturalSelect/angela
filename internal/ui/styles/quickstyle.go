@@ -48,6 +48,11 @@ type quickStyleOpts struct {
 	// screen.
 	bgSelected color.Color
 
+	// Surface behind the persistent header row. Kept independent from the
+	// rest of the bg ramp so the header can never end up sharing a token
+	// with a selected/interactive row elsewhere in the app.
+	bgHeader color.Color
+
 	// Statuses.
 	destructive       color.Color
 	error             color.Color
@@ -632,6 +637,7 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Header.WorkingDir = muted
 	s.Header.Separator = subtle
 	s.Header.Wrapper = lipgloss.NewStyle().Foreground(o.fgBase)
+	s.Header.Band = lipgloss.NewStyle().Background(o.bgHeader)
 	s.Header.SessionTitle = lipgloss.NewStyle().Foreground(o.fgBase)
 	s.Header.Breadcrumb = lipgloss.NewStyle().Foreground(o.fgMostSubtle)
 	s.Header.LogoGradCanvas = lipgloss.NewStyle()
@@ -699,9 +705,12 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Tool.JobPID = muted
 	s.Tool.JobDescription = subtle
 
-	// Agent task styles
+	// Agent task styles. fgSubtle rather than the dimmer "muted" ramp step:
+	// this text is the task description and the live "what is it doing
+	// now" line, which the user is meant to actually read while it works,
+	// not a decorative label that can recede.
 	s.Tool.AgentTaskTag = base.Bold(true).Padding(0, 1).MarginLeft(2).Foreground(o.fgMoreSubtle)
-	s.Tool.AgentPrompt = muted
+	s.Tool.AgentPrompt = lipgloss.NewStyle().Foreground(o.fgSubtle)
 
 	// Todo styles
 	s.Tool.TodoRatio = base.Foreground(o.fgMoreSubtle)
@@ -753,11 +762,10 @@ func quickStyle(o quickStyleOpts) Styles {
 	// Editor
 	s.Editor.Rail = lipgloss.NewStyle().Foreground(o.fgMoreSubtle)
 	s.Editor.RailBang = lipgloss.NewStyle().Foreground(o.busy)
-	s.Editor.RailYolo = lipgloss.NewStyle().Foreground(o.warning)
-	// Focus is a step on the gray ramp, not a change of hue. Brand color on
-	// a full box border makes chrome the loudest thing on screen.
-	s.Editor.Border = lipgloss.NewStyle().Foreground(o.separator)
-	s.Editor.BorderFocused = lipgloss.NewStyle().Foreground(o.bgMostVisible)
+	s.Editor.RailYolo = lipgloss.NewStyle().Foreground(o.error)
+	s.Editor.RailAutoAcceptEdits = lipgloss.NewStyle().Foreground(o.warning)
+	s.Editor.Border = lipgloss.NewStyle().Foreground(o.info)
+	s.Editor.BorderFocused = lipgloss.NewStyle().Foreground(o.info)
 	s.Editor.PromptMarkerFocused = lipgloss.NewStyle().Foreground(o.fgMoreSubtle)
 	s.Editor.PromptMarkerBlurred = lipgloss.NewStyle().Foreground(o.fgMostSubtle)
 	s.Editor.Caption = lipgloss.NewStyle().Foreground(o.fgMostSubtle)
@@ -902,13 +910,10 @@ func quickStyle(o quickStyleOpts) Styles {
 	// The user band carries no background fill: a solid block was the one
 	// filled surface in an otherwise flat chat log, which read as a stray
 	// UI widget and washed out plain (uncolored) message text sitting on
-	// it. The left accent bar alone marks it as a user message now, same
-	// as assistant/tool messages do when focused.
+	// it. The "❯" prompt glyph alone marks it as a user message now.
 	s.Messages.UserBand = lipgloss.NewStyle().Foreground(o.fgBase)
 	s.Messages.UserBandPrompt = lipgloss.NewStyle().Foreground(o.fgBase).Bold(true)
 	s.Messages.UserBandTimestamp = lipgloss.NewStyle().Foreground(o.fgMoreSubtle)
-	s.Messages.UserBandAccentFocused = lipgloss.NewStyle().Foreground(o.fgSubtle)
-	s.Messages.UserBandAccentBlurred = lipgloss.NewStyle().Foreground(o.fgMostSubtle)
 	s.Messages.AssistantBlurred = s.Messages.NoContent.PaddingLeft(2)
 	s.Messages.AssistantFocused = s.Messages.NoContent.PaddingLeft(1).BorderLeft(true).
 		BorderForeground(o.fgMoreSubtle).BorderStyle(messageFocussedBorder)
@@ -963,8 +968,11 @@ func quickStyle(o quickStyleOpts) Styles {
 	// match it so the pre-wrapped text still fits.
 	s.Messages.ThinkingBox = subtle.Background(o.bgLeastVisible).PaddingLeft(2)
 	s.Messages.ThinkingTruncationHint = muted
-	s.Messages.QueuedMarker = subtle
-	s.Messages.QueuedText = muted
+	// The marker is a label and can stay one ramp step dimmer, but the
+	// text is the user's own words waiting to send — it reads as legible
+	// content (fgSubtle), not as chrome, same tier as ShellOutput.
+	s.Messages.QueuedMarker = muted
+	s.Messages.QueuedText = lipgloss.NewStyle().Foreground(o.fgSubtle)
 	s.Messages.ThinkingFooterTitle = subtle.PaddingLeft(2)
 	s.Messages.ThinkingFooterDuration = subtle
 

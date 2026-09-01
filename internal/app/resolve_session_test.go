@@ -3,95 +3,46 @@ package app
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-// mockSessionService is a minimal mock of session.Service for testing resolveSession.
-type mockSessionService struct {
-	sessions []session.Session
-	created  []session.Session
-}
-
-func (m *mockSessionService) Subscribe(context.Context) <-chan pubsub.Event[session.Session] {
-	return make(chan pubsub.Event[session.Session])
-}
-
-func (m *mockSessionService) Create(_ context.Context, title string) (session.Session, error) {
-	s := session.Session{ID: "new-session-id", Title: title}
-	m.created = append(m.created, s)
-	return s, nil
-}
-
-func (m *mockSessionService) CreateTaskSession(context.Context, string, string, string) (session.Session, error) {
-	return session.Session{}, nil
-}
-
-func (m *mockSessionService) Get(_ context.Context, id string) (session.Session, error) {
-	for _, s := range m.sessions {
-		if s.ID == id {
-			return s, nil
+// newSessionServiceMock returns a MockSessionService seeded with sessions,
+// wired only for the methods resolveSession reaches. Create calls are
+// recorded into the returned slice pointer, mirroring the old
+// mockSessionService.created field.
+func newSessionServiceMock(t *testing.T, sessions []session.Session) (*MockSessionService, *[]session.Session) {
+	t.Helper()
+	m := NewMockSessionService(gomock.NewController(t))
+	created := &[]session.Session{}
+	m.EXPECT().Create(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, title string) (session.Session, error) {
+		s := session.Session{ID: "new-session-id", Title: title}
+		*created = append(*created, s)
+		return s, nil
+	}).AnyTimes()
+	m.EXPECT().Get(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, id string) (session.Session, error) {
+		for _, s := range sessions {
+			if s.ID == id {
+				return s, nil
+			}
 		}
-	}
-	return session.Session{}, sql.ErrNoRows
-}
-
-func (m *mockSessionService) GetLast(_ context.Context) (session.Session, error) {
-	if len(m.sessions) > 0 {
-		return m.sessions[0], nil
-	}
-	return session.Session{}, sql.ErrNoRows
-}
-
-func (m *mockSessionService) List(context.Context) ([]session.Session, error) {
-	return m.sessions, nil
-}
-
-func (m *mockSessionService) Save(_ context.Context, s session.Session) (session.Session, error) {
-	return s, nil
-}
-
-func (m *mockSessionService) UpdateTitleAndUsage(context.Context, string, string, int64, int64, float64) error {
-	return nil
-}
-
-func (m *mockSessionService) AddCost(context.Context, string, float64) error {
-	return nil
-}
-
-func (m *mockSessionService) UpdateActiveAgent(context.Context, string, config.ActiveAgentState) error {
-	return nil
-}
-
-func (m *mockSessionService) Rename(context.Context, string, string) error {
-	return nil
-}
-
-func (m *mockSessionService) Delete(context.Context, string) error {
-	return nil
-}
-
-func (m *mockSessionService) CreateAgentToolSessionID(messageID, toolCallID string) string {
-	return fmt.Sprintf("%s$$%s", messageID, toolCallID)
-}
-
-func (m *mockSessionService) ParseAgentToolSessionID(sessionID string) (string, string, bool) {
-	parts := strings.Split(sessionID, "$$")
-	if len(parts) != 2 {
-		return "", "", false
-	}
-	return parts[0], parts[1], true
-}
-
-func (m *mockSessionService) IsAgentToolSession(sessionID string) bool {
-	_, _, ok := m.ParseAgentToolSessionID(sessionID)
-	return ok
+		return session.Session{}, sql.ErrNoRows
+	}).AnyTimes()
+	m.EXPECT().GetLast(gomock.Any()).DoAndReturn(func(context.Context) (session.Session, error) {
+		if len(sessions) > 0 {
+			return sessions[0], nil
+		}
+		return session.Session{}, sql.ErrNoRows
+	}).AnyTimes()
+	m.EXPECT().IsAgentToolSession(gomock.Any()).DoAndReturn(func(sessionID string) bool {
+		parts := strings.Split(sessionID, "$$")
+		return len(parts) == 2
+	}).AnyTimes()
+	return m, created
 }
 
 func newTestApp(sessions session.Service) *App {
@@ -99,32 +50,30 @@ func newTestApp(sessions session.Service) *App {
 }
 
 func TestResolveSession_NewSession(t *testing.T) {
-	mock := &mockSessionService{}
+	mock, created := newSessionServiceMock(t, nil)
 	app := newTestApp(mock)
 
 	sess, err := app.resolveSession(t.Context(), "", false)
 	require.NoError(t, err)
 	require.Equal(t, "new-session-id", sess.ID)
-	require.Len(t, mock.created, 1)
+	require.Len(t, *created, 1)
 }
 
 func TestResolveSession_ContinueByID(t *testing.T) {
-	mock := &mockSessionService{
-		sessions: []session.Session{
-			{ID: "existing-id", Title: "Old session"},
-		},
-	}
+	mock, created := newSessionServiceMock(t, []session.Session{
+		{ID: "existing-id", Title: "Old session"},
+	})
 	app := newTestApp(mock)
 
 	sess, err := app.resolveSession(t.Context(), "existing-id", false)
 	require.NoError(t, err)
 	require.Equal(t, "existing-id", sess.ID)
 	require.Equal(t, "Old session", sess.Title)
-	require.Empty(t, mock.created)
+	require.Empty(t, *created)
 }
 
 func TestResolveSession_ContinueByID_NotFound(t *testing.T) {
-	mock := &mockSessionService{}
+	mock, _ := newSessionServiceMock(t, nil)
 	app := newTestApp(mock)
 
 	_, err := app.resolveSession(t.Context(), "nonexistent", false)
@@ -133,11 +82,9 @@ func TestResolveSession_ContinueByID_NotFound(t *testing.T) {
 }
 
 func TestResolveSession_ContinueByID_ChildSession(t *testing.T) {
-	mock := &mockSessionService{
-		sessions: []session.Session{
-			{ID: "child-id", ParentSessionID: "parent-id", Title: "Child session"},
-		},
-	}
+	mock, _ := newSessionServiceMock(t, []session.Session{
+		{ID: "child-id", ParentSessionID: "parent-id", Title: "Child session"},
+	})
 	app := newTestApp(mock)
 
 	_, err := app.resolveSession(t.Context(), "child-id", false)
@@ -146,7 +93,7 @@ func TestResolveSession_ContinueByID_ChildSession(t *testing.T) {
 }
 
 func TestResolveSession_ContinueByID_AgentToolSession(t *testing.T) {
-	mock := &mockSessionService{}
+	mock, _ := newSessionServiceMock(t, nil)
 	app := newTestApp(mock)
 
 	_, err := app.resolveSession(t.Context(), "msg123$$tool456", false)
@@ -155,22 +102,20 @@ func TestResolveSession_ContinueByID_AgentToolSession(t *testing.T) {
 }
 
 func TestResolveSession_Last(t *testing.T) {
-	mock := &mockSessionService{
-		sessions: []session.Session{
-			{ID: "most-recent", Title: "Latest session"},
-			{ID: "older", Title: "Older session"},
-		},
-	}
+	mock, created := newSessionServiceMock(t, []session.Session{
+		{ID: "most-recent", Title: "Latest session"},
+		{ID: "older", Title: "Older session"},
+	})
 	app := newTestApp(mock)
 
 	sess, err := app.resolveSession(t.Context(), "", true)
 	require.NoError(t, err)
 	require.Equal(t, "most-recent", sess.ID)
-	require.Empty(t, mock.created)
+	require.Empty(t, *created)
 }
 
 func TestResolveSession_Last_NoSessions(t *testing.T) {
-	mock := &mockSessionService{}
+	mock, _ := newSessionServiceMock(t, nil)
 	app := newTestApp(mock)
 
 	_, err := app.resolveSession(t.Context(), "", true)

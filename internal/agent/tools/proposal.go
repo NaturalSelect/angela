@@ -63,7 +63,10 @@ type ProposalEditParams struct {
 	ReplaceAll bool   `json:"replace_all,omitempty" description:"Replace all occurrences of old_string (default false)"`
 }
 
-type ProposalReadParams struct{}
+type ProposalReadParams struct {
+	Offset int `json:"offset,omitempty" description:"The line number to start reading from (0-based)"`
+	Limit  int `json:"limit,omitempty" description:"The number of lines to read (defaults to 200)"`
+}
 
 func NewProposalWriteTool(store *ProposalStore) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
@@ -143,9 +146,34 @@ func NewProposalReadTool(store *ProposalStore) fantasy.AgentTool {
 					"The proposal is empty. Draft it with %s.", toolnames.ProposalWrite,
 				)), nil
 			}
-			return fantasy.NewTextResponse(doc), nil
+
+			if params.Limit <= 0 {
+				params.Limit = DefaultReadLimit
+			}
+			return fantasy.NewTextResponse(sliceProposalLines(doc, params.Offset, params.Limit)), nil
 		},
 	)
+}
+
+// sliceProposalLines returns the [offset, offset+limit) window of doc's
+// lines (0-based), noting when the offset overruns the document or more
+// lines remain beyond the window — otherwise a paginated read looks
+// identical to the whole document.
+func sliceProposalLines(doc string, offset, limit int) string {
+	lines := strings.Split(doc, "\n")
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(lines) {
+		return fmt.Sprintf("(Offset %d is past the end of this document, which has %d lines)", offset, len(lines))
+	}
+
+	end := min(offset+limit, len(lines))
+	content := strings.Join(lines[offset:end], "\n")
+	if end < len(lines) {
+		content += fmt.Sprintf("\n\n(Document has more lines. Use 'offset' parameter to read beyond line %d)", end)
+	}
+	return content
 }
 
 func lineCount(content string) int {

@@ -6,6 +6,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 )
 
@@ -37,7 +38,7 @@ type GlobToolRenderContext struct{}
 func (g *GlobToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Glob", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.Glob, opts.Anim, opts.Compact)
 	}
 
 	var params tools.GlobParams
@@ -50,7 +51,7 @@ func (g *GlobToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 		toolParams = append(toolParams, "path", params.Path)
 	}
 
-	header := toolHeader(sty, opts.Status, "Glob", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, toolnames.Glob, cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}
@@ -60,6 +61,10 @@ func (g *GlobToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 	}
 
 	if !opts.HasResult() || opts.Result.Content == "" {
+		return header
+	}
+
+	if !opts.ExpandedContent {
 		return header
 	}
 
@@ -96,7 +101,7 @@ type GrepToolRenderContext struct{}
 func (g *GrepToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Grep", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.Grep, opts.Anim, opts.Compact)
 	}
 
 	var params tools.GrepParams
@@ -115,7 +120,7 @@ func (g *GrepToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 		toolParams = append(toolParams, "literal", "true")
 	}
 
-	header := toolHeader(sty, opts.Status, "Grep", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, toolnames.Grep, cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}
@@ -125,6 +130,10 @@ func (g *GrepToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 	}
 
 	if opts.HasEmptyResult() {
+		return header
+	}
+
+	if !opts.ExpandedContent {
 		return header
 	}
 
@@ -188,6 +197,10 @@ func (l *LSToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *To
 		return header
 	}
 
+	if !opts.ExpandedContent {
+		return header
+	}
+
 	bodyWidth := cappedWidth - toolBodyLeftPaddingTotal
 	body := sty.Tool.Body.Render(toolOutputPlainContent(sty, opts.Result.Content, bodyWidth, opts.ExpandedContent))
 	return joinToolParts(header, body)
@@ -221,7 +234,7 @@ type SourcegraphToolRenderContext struct{}
 func (s *SourcegraphToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Sourcegraph", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.Sourcegraph, opts.Anim, opts.Compact)
 	}
 
 	var params tools.SourcegraphParams
@@ -237,7 +250,7 @@ func (s *SourcegraphToolRenderContext) RenderTool(sty *styles.Styles, width int,
 		toolParams = append(toolParams, "context", formatNonZero(params.ContextWindow))
 	}
 
-	header := toolHeader(sty, opts.Status, "Sourcegraph", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, toolnames.Sourcegraph, cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}
@@ -247,6 +260,10 @@ func (s *SourcegraphToolRenderContext) RenderTool(sty *styles.Styles, width int,
 	}
 
 	if opts.HasEmptyResult() {
+		return header
+	}
+
+	if !opts.ExpandedContent {
 		return header
 	}
 

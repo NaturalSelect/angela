@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/logo"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -30,6 +31,19 @@ type header struct {
 	mark string
 
 	com *common.Common
+
+	// bounds are the ancestor crumbs' click regions from the most
+	// recent renderTrail call, for mouse hit-testing. Header-relative
+	// columns, keyed to the sessionStack index a click there jumps to.
+	bounds []crumbBound
+}
+
+// crumbBound is one ancestor breadcrumb segment's clickable X-range. The
+// level in view (always the trail's last entry) never gets one — it is
+// already on screen, so there is nowhere for a click on it to go.
+type crumbBound struct {
+	startX, endX int // header-relative columns, endX exclusive
+	stackIndex   int // index into UI.sessionStack
 }
 
 // newHeader creates a new header model.
@@ -58,42 +72,77 @@ func (h *header) drawHeader(
 	width int,
 	lspErrorCount int,
 ) {
-	uv.NewStyledString(h.renderBar(trail, width, lspErrorCount)).Draw(scr, area)
+	base := list.ToStyle(h.com.Styles.Header.Band)
+	common.DrawOnSurface(scr, area, base, h.renderBar(trail, width, lspErrorCount))
 }
 
 // renderTrail joins the session titles into a breadcrumb, shedding outer
 // levels as the width shrinks. The level in view is the last to go.
-func (h *header) renderTrail(trail []string, width int) string {
+// startX is the column the trail begins at within the header band, so the
+// recorded click bounds (see HitTestBreadcrumb) line up with mouse
+// coordinates.
+func (h *header) renderTrail(trail []string, width, startX int) string {
 	t := h.com.Styles
+	h.bounds = nil
 	if width <= 0 {
 		return ""
 	}
 
 	sep := t.Header.Breadcrumb.Render(" › ")
-	render := func(levels []string, elided bool) string {
+	sepW := lipgloss.Width(sep)
+
+	// render builds one candidate string for the suffix of the trail
+	// starting at sessionStack index first, plus the click bounds of its
+	// ancestor crumbs (every crumb but the last, which is the level in
+	// view and not clickable).
+	render := func(levels []string, first int, elided bool) (string, []crumbBound) {
 		parts := make([]string, 0, len(levels)+1)
+		var bounds []crumbBound
+		x := startX
 		if elided {
-			parts = append(parts, t.Header.Breadcrumb.Render("…"))
+			ell := t.Header.Breadcrumb.Render("…")
+			parts = append(parts, ell)
+			x += lipgloss.Width(ell) + sepW
 		}
 		for i, title := range levels {
 			style := t.Header.Breadcrumb
-			if i == len(levels)-1 {
+			last := i == len(levels)-1
+			if last {
 				style = t.Header.SessionTitle
 			}
-			parts = append(parts, style.Render(title))
+			rendered := style.Render(title)
+			w := lipgloss.Width(rendered)
+			if !last {
+				bounds = append(bounds, crumbBound{startX: x, endX: x + w, stackIndex: first + i})
+			}
+			parts = append(parts, rendered)
+			x += w + sepW
 		}
-		return strings.Join(parts, sep)
+		return strings.Join(parts, sep), bounds
 	}
 
 	// Drop ancestors one at a time. The leading "…" keeps the fact that there
 	// are levels above in view even once their names no longer fit.
 	for n := len(trail); n >= 1; n-- {
-		candidate := render(trail[len(trail)-n:], n < len(trail))
+		candidate, bounds := render(trail[len(trail)-n:], len(trail)-n, n < len(trail))
 		if lipgloss.Width(candidate) <= width {
+			h.bounds = bounds
 			return candidate
 		}
 	}
 	return t.Header.SessionTitle.Render(ansi.Truncate(trail[len(trail)-1], width, "…"))
+}
+
+// HitTestBreadcrumb returns the sessionStack index of the ancestor crumb
+// containing x (a header-relative column) in the most recently rendered
+// bar, and whether any crumb matched.
+func (h *header) HitTestBreadcrumb(x int) (int, bool) {
+	for _, b := range h.bounds {
+		if x >= b.startX && x < b.endX {
+			return b.stackIndex, true
+		}
+	}
+	return 0, false
 }
 
 // renderBar renders the one-row header: wordmark on the left, session title in
@@ -111,12 +160,14 @@ func (h *header) renderBar(trail []string, width int, lspErrorCount int) string 
 	)
 
 	left := h.mark
+	h.bounds = nil
 	if len(trail) > 0 {
 		divider := t.Header.Separator.Render(headerDivider)
 		avail := inner - markWidth - lipgloss.Width(details) -
 			logoToDetailSpacing - lipgloss.Width(divider)
 		if avail > 0 {
-			left += divider + h.renderTrail(trail, avail)
+			trailStartX := leftPadding + markWidth + lipgloss.Width(divider)
+			left += divider + h.renderTrail(trail, avail, trailStartX)
 		}
 	}
 

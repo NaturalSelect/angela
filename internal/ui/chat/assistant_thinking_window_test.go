@@ -465,6 +465,59 @@ func TestThinkingWindow_ToggleInvalidatesOnlyThinking(t *testing.T) {
 	require.Equal(t, second.errSec, third.errSec)
 }
 
+// TestThinkingWindow_CollapsedMarkerIsPlus guards the fold-state
+// marker introduced alongside the collapsed cap reduction (10 -> 3
+// lines): a truncated collapsed thinking block must lead its hint
+// line with "+", not the shared "…" used by the generic
+// tool-truncation hint (assistantMessageTruncateFormat, reused by
+// bash output, file content, and diffs), so the fold state reads as
+// a distinct, at-a-glance marker for thinking specifically.
+func TestThinkingWindow_CollapsedMarkerIsPlus(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	msg := thinkingMessageWithLines("collapsed-marker", 50)
+	item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)
+
+	require.Equal(t, thinkingCollapsed, item.thinkingViewMode)
+
+	const width = 105
+	_ = item.RawRender(width)
+	plain := ansi.Strip(item.thinkingSec.out)
+
+	require.Contains(t, plain, "+ (",
+		"collapsed thinking hint must lead with the \"+\" fold marker")
+	require.Contains(t, plain, "lines hidden")
+	require.NotContains(t, plain, "…",
+		"collapsed thinking hint must not use the shared ellipsis marker")
+}
+
+// TestThinkingWindow_TailWindowMarkerIsMinus mirrors
+// TestThinkingWindow_CollapsedMarkerIsPlus for the expanded side of
+// the toggle: a tail-windowed thinking block must lead its
+// affordance line with "-" instead of "…", marking it as expanded
+// (as opposed to "+" for collapsed).
+func TestThinkingWindow_TailWindowMarkerIsMinus(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	msg := thinkingMessageWithLines("tail-marker", 5000)
+	item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)
+
+	require.True(t, item.ToggleExpanded(), "first toggle should report expanded")
+	require.Equal(t, thinkingTailWindow, item.thinkingViewMode)
+
+	const width = 107
+	_ = item.RawRender(width)
+	plain := ansi.Strip(item.thinkingSec.out)
+
+	require.Contains(t, plain, "- ",
+		"tail-window thinking hint must lead with the \"-\" fold marker")
+	require.Contains(t, plain, "earlier lines hidden")
+	require.NotContains(t, plain, "…",
+		"tail-window thinking hint must not use the shared ellipsis marker")
+}
+
 // TestThinkingWindow_BoxHeightTracksWindow asserts that
 // thinkingBoxHeight reflects the WINDOWED render's height in
 // tail-window mode, not the (much larger) full thinking height.

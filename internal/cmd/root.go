@@ -31,6 +31,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/event"
 	"github.com/NaturalSelect/angela/internal/lock"
 	angelalog "github.com/NaturalSelect/angela/internal/log"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/projects"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/server"
@@ -343,7 +344,11 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	}
 
 	cfg := store.Config()
-	store.Overrides().SkipPermissionRequests = yolo
+	mode := permission.ModeManual
+	if yolo {
+		mode = permission.ModeYolo
+	}
+	store.Overrides().PermissionMode = mode
 	store.Overrides().EnabledChannels = channels
 
 	if err := os.MkdirAll(cfg.Options.DataDirectory, 0o700); err != nil {
@@ -455,6 +460,10 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
+	mode := permission.ModeManual
+	if yolo {
+		mode = permission.ModeYolo
+	}
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 
@@ -469,13 +478,13 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 	}
 
 	wsReq := proto.Workspace{
-		Path:     cwd,
-		DataDir:  dataDir,
-		Debug:    debug,
-		YOLO:     yolo,
-		Channels: channels,
-		Version:  version.Version,
-		Env:      os.Environ(),
+		Path:           cwd,
+		DataDir:        dataDir,
+		Debug:          debug,
+		PermissionMode: mode.String(),
+		Channels:       channels,
+		Version:        version.Version,
+		Env:            os.Environ(),
 	}
 
 	ws, err := createWorkspaceOnLiveServer(cmd.Context(), c, wsReq, func() error {

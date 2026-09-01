@@ -589,6 +589,11 @@ func (m *Chat) AtBottom() bool {
 	return m.list.AtBottom()
 }
 
+// AtTop returns whether the chat list is currently scrolled to the top.
+func (m *Chat) AtTop() bool {
+	return m.list.AtTop()
+}
+
 // Follow returns whether the chat view is in follow mode (auto-scroll to
 // bottom on new messages).
 func (m *Chat) Follow() bool {
@@ -1008,7 +1013,12 @@ func (m *Chat) HandleDelayedClick(msg DelayedClickMsg) bool {
 		// click. Items like AssistantMessageItem only report handled when
 		// the click is on their expandable region, so this avoids
 		// toggling expansion for clicks outside the clickable area.
-		if handled {
+		//
+		// Agent tool items are the exception: RenderTool ignores
+		// ExpandedContent, so a click on them drills into their
+		// sub-session instead (handled by ui.go once this returns).
+		_, isAgentTool := selectedItem.(*chat.AgentToolMessageItem)
+		if handled && !isAgentTool {
 			if expandable, ok := selectedItem.(chat.Expandable); ok {
 				wasFollowing := m.follow
 				if !expandable.ToggleExpanded() {

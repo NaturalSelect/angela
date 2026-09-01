@@ -51,6 +51,10 @@ func (r *DefinitionToolRenderContext) RenderTool(sty *styles.Styles, width int, 
 		return header
 	}
 
+	if !opts.ExpandedContent {
+		return header
+	}
+
 	// Try to render code with syntax highlighting using metadata.
 	var meta tools.DefinitionResponseMetadata
 	if err := json.Unmarshal([]byte(opts.Result.Metadata), &meta); err == nil && meta.Content != "" {

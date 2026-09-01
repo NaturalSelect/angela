@@ -51,17 +51,21 @@ func (c *coordinator) resolveInternalAgent(ctx context.Context, agentID string, 
 // compaction is a recovery path, and refusing to start the turn
 // because it could not be prepared would be worse than the turn
 // running without it. Callers check Available before using it.
-func (c *coordinator) buildCompactAgent(ctx context.Context, host config.ActiveAgent) CompactAgent {
-	_, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentCompact, host)
+func (c *coordinator) buildCompactAgent(ctx context.Context, host config.ActiveAgent) resolvedAgent {
+	active, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentCompact, host)
 	if err != nil {
 		slog.Error("Failed to resolve the compact agent", "error", err)
-		return CompactAgent{Err: err}
+		return resolvedAgent{Err: err}
 	}
 	providerCfg, _ := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
-	return CompactAgent{
+	return resolvedAgent{
+		ID:                 active.Agent.ID,
+		Name:               active.Agent.Name,
 		Model:              model,
 		SystemPrompt:       systemPrompt,
 		SystemPromptPrefix: providerCfg.SystemPromptPrefix,
+		MaxTokens:          maxTokensFor(active.Agent, model),
+		Host:               active,
 		RebuildModel: func(ctx context.Context) (fantasy.LanguageModel, error) {
 			_, rebuilt, _, err := c.resolveInternalAgent(ctx, config.AgentCompact, host)
 			if err != nil {

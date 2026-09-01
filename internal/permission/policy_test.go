@@ -374,7 +374,7 @@ func TestDenyPathRuleSeesThroughSymlinks(t *testing.T) {
 
 	t.Run("skip mode does not get past the deny rule", func(t *testing.T) {
 		t.Parallel()
-		svc := NewPermissionService(workspace, true, p)
+		svc := NewPermissionService(workspace, ModeYolo, p)
 
 		decision := svc.Gate(t.Context(), GateRequest{
 			SessionID: "s", ToolCallID: "c",

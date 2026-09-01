@@ -61,6 +61,10 @@ func (g *GenericToolRenderContext) RenderTool(sty *styles.Styles, width int, opt
 		return header
 	}
 
+	if !opts.ExpandedContent {
+		return header
+	}
+
 	bodyWidth := cappedWidth - toolBodyLeftPaddingTotal
 
 	if opts.Result.Data != "" && strings.HasPrefix(opts.Result.MIMEType, "image/") {

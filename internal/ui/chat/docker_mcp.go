@@ -114,7 +114,7 @@ func (d *DockerMCPToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 	}
 
 	if opts.IsPending() {
-		return pendingTool(sty, d.formatToolName(sty, tool), opts.Anim, false)
+		return pendingTool(sty, d.formatToolName(sty, tool), opts.Anim, opts.Compact)
 	}
 
 	header := d.makeHeader(sty, tool, cappedWidth, opts, toolParams...)
@@ -124,6 +124,10 @@ func (d *DockerMCPToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 
 	if earlyState, ok := toolEarlyStateContent(sty, opts, cappedWidth); ok {
 		return joinToolParts(header, earlyState)
+	}
+
+	if !opts.ExpandedContent {
+		return header
 	}
 
 	if tool == "mcp-find" {
@@ -212,10 +216,6 @@ func (d *DockerMCPToolRenderContext) renderMCPServers(sty *styles.Styles, opts *
 }
 
 func (d *DockerMCPToolRenderContext) makeHeader(sty *styles.Styles, tool string, width int, opts *ToolRenderOpts, params ...string) string {
-	if opts.Compact {
-		return d.makeCompactHeader(sty, tool, width, params...)
-	}
-
 	icon := toolIcon(sty, opts.Status)
 	if opts.IsPending() {
 		icon = sty.Tool.IconPending.Render()
@@ -252,30 +252,6 @@ func (d *DockerMCPToolRenderContext) formatToolName(sty *styles.Styles, tool str
 	toolNameStyled := sty.Tool.MCPName.Render(mainTool)
 	arrow := sty.Tool.MCPArrow.String()
 	return fmt.Sprintf("%s %s %s", toolNameStyled, arrow, actionStyle.Render(action))
-}
-
-func (d *DockerMCPToolRenderContext) makeCompactHeader(sty *styles.Styles, tool string, width int, params ...string) string {
-	action := tool
-	switch tool {
-	case "mcp-exec":
-		action = "exec"
-	case "mcp-config-set":
-		action = "config-set"
-	case "mcp-find":
-		action = "find"
-	case "mcp-add":
-		action = "add"
-	case "mcp-remove":
-		action = "remove"
-	case "code-mode":
-		action = "code-mode"
-	default:
-		action = strings.ReplaceAll(tool, "-", " ")
-		action = strings.ReplaceAll(action, "_", " ")
-	}
-
-	name := fmt.Sprintf("Docker MCP: %s", action)
-	return toolHeader(sty, ToolStatusSuccess, name, width, &ToolRenderOpts{Compact: true}, params...)
 }
 
 // IsDockerMCPTool returns true if the tool name is a Docker MCP tool.

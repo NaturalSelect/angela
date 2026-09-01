@@ -2,9 +2,11 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -24,8 +26,8 @@ func TestReplaceSymbolRecordsBothSides(t *testing.T) {
 	path := filepath.Join(dir, "a.go")
 	require.NoError(t, os.WriteFile(path, []byte("old\n"), 0o644))
 
-	files := &mockHistoryService{missing: true}
-	tool := NewReplaceSymbolTool(nil, files, mockFileTrackerService{}).(*replaceSymbolTool)
+	files, recorded := newRecordingHistoryService(t, "", true)
+	tool := NewReplaceSymbolTool(nil, files, newFileTracker(t, time.Now())).(*replaceSymbolTool)
 
 	resp, err := tool.apply(t.Context(),
 		ReplaceSymbolParams{Symbol: "Foo", FilePath: path},
@@ -33,12 +35,37 @@ func TestReplaceSymbolRecordsBothSides(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
 
-	require.Equal(t, []string{"old\n", "new\n"}, files.recorded(),
+	require.Equal(t, []string{"old\n", "new\n"}, *recorded,
 		"history must hold both sides of the change")
 
 	written, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, "new\n", string(written))
+}
+
+// TestReplaceSymbolRecordsAdditionsAndRemovals pins that, like Edit,
+// Write and MultiEdit, the applied change carries a precomputed +N/-M
+// count in its metadata. The renderer's summary line reads these fields
+// directly rather than diffing at render time.
+func TestReplaceSymbolRecordsAdditionsAndRemovals(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.go")
+	require.NoError(t, os.WriteFile(path, []byte("old\n"), 0o644))
+
+	tool := NewReplaceSymbolTool(nil, newHistoryService(t, "", true), newFileTracker(t, time.Now())).(*replaceSymbolTool)
+
+	resp, err := tool.apply(t.Context(),
+		ReplaceSymbolParams{Symbol: "Foo", FilePath: path},
+		"replace", "s1", "old\n", "new\n", 0, 0)
+	require.NoError(t, err)
+	require.False(t, resp.IsError)
+
+	var meta ReplaceSymbolResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.Equal(t, 1, meta.Additions)
+	require.Equal(t, 1, meta.Removals)
 }
 
 // TestReplaceSymbolKeepsContentChangedOutsideTheSession pins that a file
@@ -51,15 +78,15 @@ func TestReplaceSymbolKeepsContentChangedOutsideTheSession(t *testing.T) {
 	path := filepath.Join(dir, "a.go")
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0o644))
 
-	files := &mockHistoryService{existing: "what history last saw"}
-	tool := NewReplaceSymbolTool(nil, files, mockFileTrackerService{}).(*replaceSymbolTool)
+	files, recorded := newRecordingHistoryService(t, "what history last saw", false)
+	tool := NewReplaceSymbolTool(nil, files, newFileTracker(t, time.Now())).(*replaceSymbolTool)
 
 	_, err := tool.apply(t.Context(),
 		ReplaceSymbolParams{Symbol: "Foo", FilePath: path},
 		"replace", "s1", "what is on disk now", "new", 0, 0)
 	require.NoError(t, err)
 
-	require.Equal(t, []string{"what is on disk now", "new"}, files.recorded())
+	require.Equal(t, []string{"what is on disk now", "new"}, *recorded)
 }
 
 // TestSpliceSymbol pins the four ways a symbol's range can be rewritten.

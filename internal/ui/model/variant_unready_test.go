@@ -16,7 +16,8 @@ import (
 func TestVariantHelpersSurviveUnreadyAgent(t *testing.T) {
 	pinTTLs(t)
 
-	m := newBusyUI(&countingWorkspace{ready: true})
+	m, ws := newMockBusyUI(t)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 	m.session = &session.Session{ID: "session-1"}
 	m.agentReady = false
 

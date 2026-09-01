@@ -59,7 +59,11 @@ type Commands struct {
 	// meaningful from inside one, and offering it elsewhere would name a
 	// session the user is not looking at.
 	inBranch bool
-	selected CommandType
+	// hasParent gates the go-to-parent command. It is broader than
+	// inBranch: it also offers the jump from an ordinary sub-agent
+	// transcript, not only a branch.
+	hasParent bool
+	selected  CommandType
 	// active is the agent the session runs on, or nil when it is not
 	// known yet. The model-dependent commands (thinking, variants, file
 	// picker) are gated on it rather than on the global config, so the
@@ -88,7 +92,7 @@ type Commands struct {
 var _ Dialog = (*Commands)(nil)
 
 // NewCommands creates a new commands dialog.
-func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue, inBranch bool, active *workspace.ActiveAgent, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
+func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue, inBranch, hasParent bool, active *workspace.ActiveAgent, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
 	c := &Commands{
 		com:            com,
 		selected:       SystemCommands,
@@ -97,6 +101,7 @@ func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, has
 		hasTodos:       hasTodos,
 		hasQueue:       hasQueue,
 		inBranch:       inBranch,
+		hasParent:      hasParent,
 		active:         active,
 		customCommands: customCommands,
 		mcpPrompts:     mcpPrompts,
@@ -470,6 +475,14 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}).WithAliases("compact"))
 	}
 
+	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "scroll_to_bottom", "Scroll to Bottom", "", ActionScrollToBottom{}).WithAliases("bottom"))
+	}
+
+	if c.hasParent {
+		commands = append(commands, NewCommandItem(c.com.Styles, "go_to_parent", "Go to Parent", "ctrl+up", ActionGoToParent{}).WithAliases("parent"))
+	}
+
 	if c.inBranch {
 		commands = append(commands, NewCommandItem(c.com.Styles, "abort_branch", "Abort Branch", "", ActionAbortBranch{SessionID: c.sessionID}).WithAliases("abort"))
 	}
@@ -494,7 +507,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		}
 	}
 	if c.hasSession {
-		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_compact", "Toggle Compact Mode", "", ActionToggleCompactMode{}))
+		commands = append(commands, NewCommandItem(c.com.Styles, "toggle_compact", "Toggle Dense Mode", "", ActionToggleCompactMode{}))
 	}
 	if c.hasSession && c.active != nil && c.active.CatwalkCfg.SupportsImages {
 		commands = append(commands, NewCommandItem(c.com.Styles, "file_picker", "Open File Picker", "ctrl+f", ActionOpenDialog{
@@ -531,7 +544,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 
 	commands = append(
 		commands,
-		NewCommandItem(c.com.Styles, "toggle_yolo", "Toggle Yolo Mode", "ctrl+y", ActionToggleYoloMode{}),
+		NewCommandItem(c.com.Styles, "cycle_permission_mode", "Cycle Permission Mode", "shift+tab", ActionCyclePermissionMode{}),
 		NewCommandItem(c.com.Styles, "toggle_help", "Toggle Help", "ctrl+g", ActionToggleHelp{}),
 		NewCommandItem(c.com.Styles, "init", "Initialize Project", "", ActionInitializeProject{}),
 	)

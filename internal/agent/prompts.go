@@ -48,7 +48,7 @@ var generateAgentPromptTmpl []byte
 var branchPreambleTmpl []byte
 
 func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
-	systemPrompt, err := prompt.NewPrompt("coder", string(coderPromptTmpl), opts...)
+	systemPrompt, err := prompt.NewPrompt(config.AgentCoder, string(coderPromptTmpl), opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func coderPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 }
 
 func explorePrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
-	systemPrompt, err := prompt.NewPrompt("explore", string(explorePromptTmpl), opts...)
+	systemPrompt, err := prompt.NewPrompt(config.AgentExplore, string(explorePromptTmpl), opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func explorePrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 }
 
 func generalPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
-	systemPrompt, err := prompt.NewPrompt("general", string(generalPromptTmpl), opts...)
+	systemPrompt, err := prompt.NewPrompt(config.AgentGeneral, string(generalPromptTmpl), opts...)
 	if err != nil {
 		return nil, err
 	}

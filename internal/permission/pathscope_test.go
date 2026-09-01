@@ -41,7 +41,7 @@ func TestSymlinkEscapeFromWorkspaceBlocked(t *testing.T) {
 
 	t.Run("a tool reading through the link is not auto-allowed", func(t *testing.T) {
 		t.Parallel()
-		svc := NewPermissionService(workspace, false, nil).(*permissionService)
+		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
 			Tool: "view", Action: ActionRead, Path: through,
@@ -51,7 +51,7 @@ func TestSymlinkEscapeFromWorkspaceBlocked(t *testing.T) {
 
 	t.Run("a command reading through the link is not auto-allowed", func(t *testing.T) {
 		t.Parallel()
-		svc := NewPermissionService(workspace, false, nil).(*permissionService)
+		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
 			Tool: "bash", Action: ActionExecute,
@@ -62,7 +62,7 @@ func TestSymlinkEscapeFromWorkspaceBlocked(t *testing.T) {
 
 	t.Run("a genuine file inside the workspace still reads freely", func(t *testing.T) {
 		t.Parallel()
-		svc := NewPermissionService(workspace, false, nil).(*permissionService)
+		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		inside := filepath.Join(workspace, "main.go")
 		require.NoError(t, os.WriteFile(inside, []byte("package main"), 0o644))
@@ -81,7 +81,7 @@ func TestSymlinkEscapeReachesTheGate(t *testing.T) {
 	t.Parallel()
 
 	workspace, _ := linkedWorkspace(t)
-	svc := NewPermissionService(workspace, false, nil)
+	svc := NewPermissionService(workspace, ModeManual, nil)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -163,7 +163,7 @@ func TestScopeAgreesWithHowToolsOpenFiles(t *testing.T) {
 
 	t.Run("a rooted path outside the workspace is out of scope", func(t *testing.T) {
 		t.Parallel()
-		svc := NewPermissionService(workspace, false, nil).(*permissionService)
+		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
 			Tool: "view", Action: ActionRead, Path: rooted,
@@ -188,7 +188,7 @@ func TestContainmentComparesWholeComponents(t *testing.T) {
 
 	t.Run("a sibling sharing the name prefix is outside", func(t *testing.T) {
 		t.Parallel()
-		svc := NewPermissionService(workspace, false, nil).(*permissionService)
+		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
 			Tool: "view", Action: ActionRead,
@@ -201,7 +201,7 @@ func TestContainmentComparesWholeComponents(t *testing.T) {
 		t.Parallel()
 		dotted := filepath.Join(workspace, "..foo")
 		require.NoError(t, os.MkdirAll(dotted, 0o755))
-		svc := NewPermissionService(workspace, false, nil).(*permissionService)
+		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
 			Tool: "view", Action: ActionRead,
@@ -213,7 +213,7 @@ func TestContainmentComparesWholeComponents(t *testing.T) {
 
 	t.Run("the parent directory is outside", func(t *testing.T) {
 		t.Parallel()
-		svc := NewPermissionService(workspace, false, nil).(*permissionService)
+		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
 			Tool: "view", Action: ActionRead,

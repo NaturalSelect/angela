@@ -47,6 +47,11 @@ type loadSessionMsg struct {
 	// when switching to an unrelated session whose ancestors differ
 	// from those in the current stack.
 	clearStack bool
+
+	// truncateStackTo trims sessionStack to this length on success. Like
+	// enterFrame, the trim is deferred so a transient error never
+	// discards the breadcrumb.
+	truncateStackTo *int
 }
 
 // lspFilePaths returns deduplicated file paths from both modified and read
@@ -112,13 +117,14 @@ func (m *UI) loadSession(sessionID string, opts ...loadSessionOpt) tea.Cmd {
 		}
 
 		return loadSessionMsg{
-			session:    &session,
-			files:      sessionFiles,
-			readFiles:  readFiles,
-			isBranch:   m.com.Workspace.AgentIsSessionBranch(sessionID),
-			enterFrame: o.enterFrame,
-			leaveLevel: o.leaveLevel,
-			clearStack: o.clearStack,
+			session:         &session,
+			files:           sessionFiles,
+			readFiles:       readFiles,
+			isBranch:        m.com.Workspace.AgentIsSessionBranch(sessionID),
+			enterFrame:      o.enterFrame,
+			leaveLevel:      o.leaveLevel,
+			clearStack:      o.clearStack,
+			truncateStackTo: o.truncateStackTo,
 		}
 	}
 	return tea.Batch(load, m.reportCurrentSession(sessionID))

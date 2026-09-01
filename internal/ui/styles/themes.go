@@ -3,6 +3,7 @@ package styles
 import (
 	"image/color"
 
+	"charm.land/glamour/v2/ansi"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/exp/charmtone"
 )
@@ -12,73 +13,104 @@ func c(hex string) color.Color {
 	return lipgloss.Color(hex)
 }
 
-// AngelaTeal returns Angela's default theme: a near-monochrome graphite UI
-// built on a four-step gray ramp. Chrome — borders, spinners, prompts,
-// selection — never leaves that ramp. Hue is reserved for genuine status
-// signals (error, success, warning) and appears as a foreground color, never
-// as a filled chip. The one exception is the landing-page logo, which is the
-// only place the teal brand gradient is drawn.
+// AngelaTeal returns Angela's default theme: a dark palette modeled on
+// VS Code's Dark+ theme. Surfaces and text follow the editor/sidebar
+// backgrounds and foreground ramp; hue is reserved for genuine status
+// signals, code syntax categories, and heading/emphasis accents, mapped
+// onto VS Code's own keyword/type/string hues so the chat's markdown and
+// code blocks read as a natural extension of the editor.
 func AngelaTeal() Styles {
-	return quickStyle(quickStyleOpts{
-		// Brand. Used by the landing logo gradient and nothing else.
-		primary:   c("#2dd4bf"),
-		secondary: c("#5eead4"),
-		accent:    c("#14b8a6"),
-		keyword:   c("#bb9af7"),
+	s := quickStyle(quickStyleOpts{
+		// Brand. Drives H1/H2 headings, inline emphasis, and the landing
+		// logo gradient.
+		primary:   c("#569cd6"),
+		secondary: c("#4ec9b0"),
+		accent:    c("#9cdcfe"),
+		keyword:   c("#c586c0"),
 
-		// Text ramp: body, prose, labels, metadata.
-		fgBase:       c("#e1e1e1"),
-		fgSubtle:     c("#c8c8c8"),
-		fgMoreSubtle: c("#6c6c6c"),
-		fgMostSubtle: c("#585858"),
+		// Text ramp: body, prose, labels, metadata. Matches VS Code's
+		// editor foreground and its dimmer UI-text steps.
+		fgBase:       c("#d4d4d4"),
+		fgSubtle:     c("#cccccc"),
+		fgMoreSubtle: c("#9d9d9d"),
+		fgMostSubtle: c("#6a6a6a"),
 
-		// Surfaces, darkest to lightest.
-		bgBase:         c("#141414"),
-		bgLeastVisible: c("#1c1c1c"),
-		bgLessVisible:  c("#242424"),
-		bgMostVisible:  c("#505058"),
-		bgSelected:     c("#363636"),
+		// Surfaces, darkest to lightest. Matches VS Code's editor,
+		// sidebar, and input-widget backgrounds.
+		bgBase:         c("#1e1e1e"),
+		bgLeastVisible: c("#252526"),
+		bgLessVisible:  c("#2d2d2d"),
+		bgMostVisible:  c("#3c3c3c"),
+		bgSelected:     c("#04395e"),
+		bgHeader:       c("#252526"),
 
-		separator: c("#323237"),
+		separator: c("#454545"),
 
 		// Ink for text sitting on a saturated background.
-		onPrimary: c("#08100f"),
+		onPrimary: c("#1e1e1e"),
 
-		// Statuses. Desaturated on purpose: these read as signals against
-		// the gray ramp without competing with the text they annotate.
-		destructive:       c("#f7768e"),
-		error:             c("#f7768e"),
-		warning:           c("#e0af68"),
-		warningSubtle:     c("#c99a3f"),
-		attention:         c("#e0af68"),
-		busy:              c("#e0af68"),
-		info:              c("#7aa2f7"),
+		// Statuses, matching VS Code's editor diagnostic colors.
+		destructive:       c("#f44747"),
+		error:             c("#f44747"),
+		warning:           c("#cca700"),
+		warningSubtle:     c("#d7ba7d"),
+		attention:         c("#cca700"),
+		busy:              c("#cca700"),
+		info:              c("#3794ff"),
 		infoMoreSubtle:    c("#5aa9d6"),
-		infoMostSubtle:    c("#3f7fa3"),
-		success:           c("#9ece6a"),
-		successMoreSubtle: c("#7fae57"),
-		successMostSubtle: c("#68914a"),
+		infoMostSubtle:    c("#2d5c8a"),
+		success:           c("#89d185"),
+		successMoreSubtle: c("#6a9955"),
+		successMostSubtle: c("#4b7043"),
 
-		// ANSI 16-color palette for remapping raw terminal output
-		// (e.g. bang-mode shell commands) onto legible colors.
-		ansiBlack:   c("#1a1d20"),
-		ansiRed:     c("#f7768e"),
-		ansiGreen:   c("#9ece6a"),
-		ansiYellow:  c("#e0af68"),
-		ansiBlue:    c("#7aa2f7"),
-		ansiMagenta: c("#bb9af7"),
-		ansiCyan:    c("#2dd4bf"),
-		ansiWhite:   c("#b1bac4"),
+		// ANSI 16-color palette for remapping raw terminal output (e.g.
+		// bang-mode shell commands) onto VS Code's integrated terminal
+		// defaults.
+		ansiBlack:   c("#000000"),
+		ansiRed:     c("#cd3131"),
+		ansiGreen:   c("#0dbc79"),
+		ansiYellow:  c("#e5e510"),
+		ansiBlue:    c("#2472c8"),
+		ansiMagenta: c("#bc3fbc"),
+		ansiCyan:    c("#11a8cd"),
+		ansiWhite:   c("#e5e5e5"),
 
-		ansiBrightBlack:   c("#616a73"),
-		ansiBrightRed:     c("#ff8080"),
-		ansiBrightGreen:   c("#b4dd8a"),
-		ansiBrightYellow:  c("#f0c674"),
-		ansiBrightBlue:    c("#91cbff"),
-		ansiBrightMagenta: c("#e2c5ff"),
-		ansiBrightCyan:    c("#5eead4"),
-		ansiBrightWhite:   c("#e6e9ec"),
+		ansiBrightBlack:   c("#666666"),
+		ansiBrightRed:     c("#f14c4c"),
+		ansiBrightGreen:   c("#23d18b"),
+		ansiBrightYellow:  c("#f5f543"),
+		ansiBrightBlue:    c("#3b8eea"),
+		ansiBrightMagenta: c("#d670d6"),
+		ansiBrightCyan:    c("#29b8db"),
+		ansiBrightWhite:   c("#e5e5e5"),
 	})
+
+	// Code-block syntax highlighting: quickStyle leaves these Chroma
+	// token categories hardcoded to Charmtone colors pending
+	// tokenization (see internal/ui/AGENTS.md). Override them here with
+	// VS Code Dark+'s own token colors so code rendered in chat matches
+	// VS Code exactly, decoupled from shared UI tokens reused elsewhere
+	// (e.g. fgMostSubtle, successMostSubtle) for unrelated chrome.
+	chroma := s.Markdown.CodeBlock.Chroma
+	chroma.Comment = ansi.StylePrimitive{Color: hex(c("#6a9955"))}
+	chroma.CommentPreproc = ansi.StylePrimitive{Color: hex(c("#569cd6"))}
+	chroma.Keyword = ansi.StylePrimitive{Color: hex(c("#569cd6"))}
+	chroma.KeywordReserved = ansi.StylePrimitive{Color: hex(c("#c586c0"))}
+	chroma.KeywordNamespace = ansi.StylePrimitive{Color: hex(c("#c586c0"))}
+	chroma.KeywordType = ansi.StylePrimitive{Color: hex(c("#4ec9b0"))}
+	chroma.Operator = ansi.StylePrimitive{Color: hex(c("#d4d4d4"))}
+	chroma.Punctuation = ansi.StylePrimitive{Color: hex(c("#d4d4d4"))}
+	chroma.NameBuiltin = ansi.StylePrimitive{Color: hex(c("#569cd6"))}
+	chroma.NameTag = ansi.StylePrimitive{Color: hex(c("#569cd6"))}
+	chroma.NameAttribute = ansi.StylePrimitive{Color: hex(c("#9cdcfe"))}
+	chroma.NameClass = ansi.StylePrimitive{Color: hex(c("#4ec9b0"))}
+	chroma.NameDecorator = ansi.StylePrimitive{Color: hex(c("#dcdcaa"))}
+	chroma.NameFunction = ansi.StylePrimitive{Color: hex(c("#dcdcaa"))}
+	chroma.LiteralNumber = ansi.StylePrimitive{Color: hex(c("#b5cea8"))}
+	chroma.LiteralString = ansi.StylePrimitive{Color: hex(c("#ce9178"))}
+	chroma.LiteralStringEscape = ansi.StylePrimitive{Color: hex(c("#d7ba7d"))}
+
+	return s
 }
 
 // CharmtonePantera returns the Charmtone dark theme inherited from Crush.
@@ -101,6 +133,7 @@ func CharmtonePantera() Styles {
 		bgLessVisible:  charmtone.Char,
 		bgMostVisible:  charmtone.Iron,
 		bgSelected:     charmtone.Iron,
+		bgHeader:       charmtone.Char,
 
 		separator: charmtone.Char,
 
@@ -138,9 +171,10 @@ func CharmtonePantera() Styles {
 		ansiBrightWhite:   charmtone.Salt,
 	})
 
-	// Bang ! rail override - use the Hazy accent.
+	// Bang ! rail override - use the Hazy accent. Yolo keeps quickStyle's
+	// default (error-red), since it needs to read as dangerous rather than
+	// share Bang's color.
 	s.Editor.RailBang = s.Editor.RailBang.Foreground(charmtone.Hazy)
-	s.Editor.RailYolo = s.Editor.RailYolo.Foreground(charmtone.Hazy)
 
 	// Shell bar/prompt overrides - use Charple/Iron/Hazy colors.
 	s.Messages.ShellBarFocused = s.Messages.ShellBarFocused.

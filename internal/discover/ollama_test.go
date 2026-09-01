@@ -53,7 +53,7 @@ func TestOllamaEnricher(t *testing.T) {
 		}
 
 		e := &ollamaEnricher{}
-		result, err := e.EnrichModels(context.Background(), cfg, &mockResolver{}, models)
+		result, err := e.EnrichModels(context.Background(), cfg, newPassthroughResolver(t), models)
 		require.NoError(t, err)
 		require.Len(t, result, 3)
 		require.Equal(t, int64(8192), result[0].ContextWindow)
@@ -79,7 +79,7 @@ func TestOllamaEnricher(t *testing.T) {
 		}
 
 		e := &ollamaEnricher{}
-		result, err := e.EnrichModels(context.Background(), cfg, &mockResolver{}, models)
+		result, err := e.EnrichModels(context.Background(), cfg, newPassthroughResolver(t), models)
 		require.NoError(t, err)
 		require.Equal(t, int64(16384), result[0].ContextWindow)
 	})
@@ -101,7 +101,7 @@ func TestOllamaEnricher(t *testing.T) {
 		}
 
 		e := &ollamaEnricher{}
-		_, err := e.EnrichModels(context.Background(), cfg, &mockResolver{}, models)
+		_, err := e.EnrichModels(context.Background(), cfg, newPassthroughResolver(t), models)
 		require.NoError(t, err)
 		require.Equal(t, 0, calls)
 	})

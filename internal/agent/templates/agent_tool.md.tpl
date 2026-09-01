@@ -19,6 +19,7 @@ When NOT to use the Agent tool:
 - Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.
 - Each agent invocation starts with a fresh context and has no memory of prior runs, so the prompt must be self-contained and highly detailed.
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches), since a fresh agent is not aware of the user's intent.
+- If an agent's description says it should be used proactively, try your best to use it without the user having to ask for it first.
 - Each agent type's model and tool access come from its definition; you cannot override them per call.
 - If the user asks you to run agents "in parallel", send a single message with multiple Agent tool use blocks.
 - Once you have delegated work to an agent, do not duplicate that work yourself while it runs.

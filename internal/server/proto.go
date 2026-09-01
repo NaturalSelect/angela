@@ -1190,29 +1190,29 @@ func (c *controllerV1) handlePostWorkspaceQuestionsCancel(w http.ResponseWriter,
 	jsonEncode(w, proto.QuestionAnswerResponse{Resolved: cancelled})
 }
 
-// handlePostWorkspacePermissionsSkip sets whether to skip permission prompts.
+// handlePostWorkspacePermissionsMode sets the workspace's permission mode.
 //
-//	@Summary		Set skip permissions
+//	@Summary		Set permission mode
 //	@Tags			permissions
 //	@Accept			json
 //	@Param			id		path	string						true	"Workspace ID"
-//	@Param			request	body	proto.PermissionSkipRequest	true	"Permission skip request"
+//	@Param			request	body	proto.PermissionModeRequest	true	"Permission mode request"
 //	@Success		200
 //	@Failure		400	{object}	proto.Error
 //	@Failure		404	{object}	proto.Error
 //	@Failure		500	{object}	proto.Error
-//	@Router			/workspaces/{id}/permissions/skip [post]
-func (c *controllerV1) handlePostWorkspacePermissionsSkip(w http.ResponseWriter, r *http.Request) {
+//	@Router			/workspaces/{id}/permissions/mode [post]
+func (c *controllerV1) handlePostWorkspacePermissionsMode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	var req proto.PermissionSkipRequest
+	var req proto.PermissionModeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		c.server.logError(r, "Failed to decode request", "error", err)
 		jsonError(w, http.StatusBadRequest, "failed to decode request")
 		return
 	}
 
-	if err := c.backend.SetPermissionsSkip(id, req.Skip); err != nil {
+	if err := c.backend.SetPermissionMode(id, req.Mode); err != nil {
 		c.handleError(w, r, err)
 		return
 	}
@@ -1252,24 +1252,24 @@ func (c *controllerV1) handlePostWorkspacePermissionsUnattended(w http.ResponseW
 	}
 }
 
-// handleGetWorkspacePermissionsSkip returns whether permission prompts are skipped.
+// handleGetWorkspacePermissionsMode returns the workspace's current permission mode.
 //
-//	@Summary		Get skip permissions status
+//	@Summary		Get permission mode
 //	@Tags			permissions
 //	@Produce		json
 //	@Param			id	path		string						true	"Workspace ID"
-//	@Success		200	{object}	proto.PermissionSkipRequest
+//	@Success		200	{object}	proto.PermissionModeRequest
 //	@Failure		404	{object}	proto.Error
 //	@Failure		500	{object}	proto.Error
-//	@Router			/workspaces/{id}/permissions/skip [get]
-func (c *controllerV1) handleGetWorkspacePermissionsSkip(w http.ResponseWriter, r *http.Request) {
+//	@Router			/workspaces/{id}/permissions/mode [get]
+func (c *controllerV1) handleGetWorkspacePermissionsMode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	skip, err := c.backend.GetPermissionsSkip(id)
+	mode, err := c.backend.GetPermissionMode(id)
 	if err != nil {
 		c.handleError(w, r, err)
 		return
 	}
-	jsonEncode(w, proto.PermissionSkipRequest{Skip: skip})
+	jsonEncode(w, proto.PermissionModeRequest{Mode: mode})
 }
 
 // handleError maps backend errors to HTTP status codes and writes the
@@ -1303,6 +1303,8 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 	case errors.Is(err, backend.ErrPathRequired):
 		status = http.StatusBadRequest
 	case errors.Is(err, backend.ErrInvalidPermissionAction):
+		status = http.StatusBadRequest
+	case errors.Is(err, backend.ErrInvalidPermissionMode):
 		status = http.StatusBadRequest
 	case errors.Is(err, backend.ErrUnknownCommand):
 		status = http.StatusBadRequest

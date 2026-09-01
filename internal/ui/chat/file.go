@@ -8,6 +8,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 )
 
@@ -39,7 +40,7 @@ type ViewToolRenderContext struct{}
 func (v *ViewToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "View", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.View, opts.Anim, opts.Compact)
 	}
 
 	var params tools.ViewParams
@@ -56,7 +57,7 @@ func (v *ViewToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 		toolParams = append(toolParams, "offset", fmt.Sprintf("%d", params.Offset))
 	}
 
-	header := toolHeader(sty, opts.Status, "View", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, toolnames.View, cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}
@@ -66,6 +67,10 @@ func (v *ViewToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 	}
 
 	if !opts.HasResult() {
+		return header
+	}
+
+	if !opts.ExpandedContent {
 		return header
 	}
 
@@ -125,7 +130,7 @@ type WriteToolRenderContext struct{}
 func (w *WriteToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Write", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.Write, opts.Anim, opts.Compact)
 	}
 
 	var params tools.WriteParams
@@ -134,7 +139,7 @@ func (w *WriteToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	}
 
 	file := fsext.PrettyPath(params.FilePath)
-	header := toolHeader(sty, opts.Status, "Write", cappedWidth, opts, file)
+	header := toolHeader(sty, opts.Status, toolnames.Write, cappedWidth, opts, file)
 	if opts.Compact {
 		return header
 	}
@@ -152,6 +157,9 @@ func (w *WriteToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 		if err := json.Unmarshal([]byte(opts.Result.Metadata), &meta); err == nil && meta.Diff != "" {
 			errLine := toolErrorContent(sty, opts.Result, cappedWidth)
 			diff := toolOutputDiffContentFromUnified(sty, meta.Diff, cappedWidth, opts.ExpandedContent)
+			if summary := changesSummaryLine(sty, meta.Additions, meta.Removals); summary != "" {
+				return strings.Join([]string{header, "", errLine, "", summary, diff}, "\n")
+			}
 			return strings.Join([]string{header, "", errLine, "", diff}, "\n")
 		}
 		return joinToolParts(header, toolErrorContent(sty, opts.Result, cappedWidth))
@@ -160,10 +168,33 @@ func (w *WriteToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 	// Render code content with syntax highlighting.
 	if params.Content != "" {
 		body := toolOutputCodeContent(sty, params.FilePath, params.Content, 0, cappedWidth, opts.ExpandedContent)
+		var meta tools.WriteResponseMetadata
+		if err := json.Unmarshal([]byte(opts.Result.Metadata), &meta); err == nil {
+			if summary := changesSummaryLine(sty, meta.Additions, meta.Removals); summary != "" {
+				body = summary + "\n" + body
+			}
+		}
 		return joinToolParts(header, body)
 	}
 
 	return header
+}
+
+// changesSummaryLine renders the "↳ +N -M" badge shown above a write
+// tool's diff. It returns "" when there is nothing to report, so a lone
+// arrow with no numbers never gets appended to the render.
+func changesSummaryLine(sty *styles.Styles, additions, removals int) string {
+	var parts []string
+	if additions > 0 {
+		parts = append(parts, sty.Files.Additions.Render(fmt.Sprintf("+%d", additions)))
+	}
+	if removals > 0 {
+		parts = append(parts, sty.Files.Deletions.Render(fmt.Sprintf("-%d", removals)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return sty.Tool.ParamMain.Render(agentSummaryArrow) + strings.Join(parts, " ")
 }
 
 // -----------------------------------------------------------------------------
@@ -194,7 +225,7 @@ type EditToolRenderContext struct{}
 func (e *EditToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	// Edit tool uses full width for diffs.
 	if opts.IsPending() {
-		return pendingTool(sty, "Edit", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.Edit, opts.Anim, opts.Compact)
 	}
 
 	var params tools.EditParams
@@ -203,7 +234,7 @@ func (e *EditToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 	}
 
 	file := fsext.PrettyPath(params.FilePath)
-	header := toolHeader(sty, opts.Status, "Edit", width, opts, file)
+	header := toolHeader(sty, opts.Status, toolnames.Edit, width, opts, file)
 	if opts.Compact {
 		return header
 	}
@@ -224,13 +255,20 @@ func (e *EditToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 	}
 
 	diff := toolOutputDiffContent(sty, file, meta.OldContent, meta.NewContent, width, opts.ExpandedContent)
+	summary := changesSummaryLine(sty, meta.Additions, meta.Removals)
 
 	// On error (e.g. denied permission), show error above the diff.
 	if opts.Result.IsError {
 		errLine := toolErrorContent(sty, opts.Result, width)
+		if summary != "" {
+			return strings.Join([]string{header, "", errLine, "", summary, diff}, "\n")
+		}
 		return strings.Join([]string{header, "", errLine, "", diff}, "\n")
 	}
 
+	if summary != "" {
+		return joinToolParts(header, summary+"\n"+diff)
+	}
 	return joinToolParts(header, diff)
 }
 
@@ -298,13 +336,20 @@ func (m *MultiEditToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 
 	// Render diff with optional failed edits note.
 	diff := toolOutputMultiEditDiffContent(sty, file, meta, len(params.Edits), width, opts.ExpandedContent)
+	summary := changesSummaryLine(sty, meta.Additions, meta.Removals)
 
 	// On error (e.g. denied permission), show error above the diff.
 	if opts.Result.IsError {
 		errLine := toolErrorContent(sty, opts.Result, width)
+		if summary != "" {
+			return strings.Join([]string{header, "", errLine, "", summary, diff}, "\n")
+		}
 		return strings.Join([]string{header, "", errLine, "", diff}, "\n")
 	}
 
+	if summary != "" {
+		return joinToolParts(header, summary+"\n"+diff)
+	}
 	return joinToolParts(header, diff)
 }
 
@@ -336,7 +381,7 @@ type DownloadToolRenderContext struct{}
 func (d *DownloadToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
 	cappedWidth := cappedMessageWidth(width)
 	if opts.IsPending() {
-		return pendingTool(sty, "Download", opts.Anim, opts.Compact)
+		return pendingTool(sty, toolnames.Download, opts.Anim, opts.Compact)
 	}
 
 	var params tools.DownloadParams
@@ -352,7 +397,7 @@ func (d *DownloadToolRenderContext) RenderTool(sty *styles.Styles, width int, op
 		toolParams = append(toolParams, "timeout", formatTimeout(params.Timeout))
 	}
 
-	header := toolHeader(sty, opts.Status, "Download", cappedWidth, opts, toolParams...)
+	header := toolHeader(sty, opts.Status, toolnames.Download, cappedWidth, opts, toolParams...)
 	if opts.Compact {
 		return header
 	}
@@ -362,6 +407,10 @@ func (d *DownloadToolRenderContext) RenderTool(sty *styles.Styles, width int, op
 	}
 
 	if opts.HasEmptyResult() {
+		return header
+	}
+
+	if !opts.ExpandedContent {
 		return header
 	}
 

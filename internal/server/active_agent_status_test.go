@@ -24,7 +24,7 @@ import (
 // fixed error, which is how a test watches the status the transport
 // turns it into.
 type erroringCoordinator struct {
-	stubCoordinator
+	*MockCoordinator
 	err error
 }
 
@@ -43,8 +43,9 @@ func buildFailingAgentWorkspace(t *testing.T, err error) (*controllerV1, string)
 
 	b := backend.New(context.Background(), nil, nil)
 	wsID := uuid.New().String()
-	a := &app.App{AgentCoordinator: &erroringCoordinator{err: err}}
-	a.Sessions = &stubSessions{}
+	coord, _ := newCoordinator(t)
+	a := &app.App{AgentCoordinator: &erroringCoordinator{MockCoordinator: coord, err: err}}
+	a.Sessions = newSessions(t)
 
 	backend.InsertWorkspaceForTest(b, &backend.Workspace{
 		ID:   wsID,

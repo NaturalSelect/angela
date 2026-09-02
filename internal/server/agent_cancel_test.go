@@ -249,7 +249,7 @@ func TestPostAgent_DetachesRequestContext(t *testing.T) {
 func TestAbandonBranchEndpointReachesTheCoordinator(t *testing.T) {
 	t.Parallel()
 
-	coord := &stubCoordinator{}
+	coord, state := newCoordinator(t)
 	c, wsID := buildAgentWorkspace(t, coord)
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
@@ -261,5 +261,5 @@ func TestAbandonBranchEndpointReachesTheCoordinator(t *testing.T) {
 	c.handlePostWorkspaceAgentSessionAbandonBranch(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, []string{"branch-1"}, coord.abandoned)
+	require.Equal(t, []string{"branch-1"}, state.abandoned)
 }

@@ -3,98 +3,17 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"charm.land/fantasy"
-	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/backend"
-	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
-
-// stubCoordinator is a minimal agent.Coordinator that only reports
-// per-session busy state. Every other method returns a zero value so
-// the type satisfies the interface without dragging in the full
-// coordinator dependency graph.
-type stubCoordinator struct {
-	busy      map[string]bool
-	branch    map[string]bool
-	abandoned []string
-}
-
-func (s *stubCoordinator) Run(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error) {
-	return nil, nil
-}
-
-func (s *stubCoordinator) RunAccepted(ctx context.Context, accept *agent.AcceptedRun, sessionID, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error) {
-	return nil, nil
-}
-
-func (s *stubCoordinator) BeginAccepted(context.Context, string) *agent.AcceptedRun {
-	return nil
-}
-func (s *stubCoordinator) Cancel(string) {}
-func (s *stubCoordinator) AbandonBranch(id string) bool {
-	s.abandoned = append(s.abandoned, id)
-	return true
-}
-func (s *stubCoordinator) CancelAll()   {}
-func (s *stubCoordinator) IsBusy() bool { return false }
-func (s *stubCoordinator) IsSessionBusy(id string) bool {
-	return s.busy[id]
-}
-func (s *stubCoordinator) IsSessionBranch(id string) bool    { return s.branch[id] }
-func (s *stubCoordinator) QueuedPrompts(string) int          { return 0 }
-func (s *stubCoordinator) QueuedPromptsList(string) []string { return nil }
-func (s *stubCoordinator) ClearQueue(string)                 {}
-func (s *stubCoordinator) Summarize(context.Context, string) error {
-	return nil
-}
-func (s *stubCoordinator) DefaultModel() agent.Model { return agent.Model{} }
-func (s *stubCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
-	return config.ActiveAgent{}, nil
-}
-
-func (s *stubCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
-	return config.ActiveAgent{}, agent.Model{}, nil
-}
-func (s *stubCoordinator) UpdateModels(context.Context) error            { return nil }
-func (s *stubCoordinator) GenerateTitle(context.Context, string, string) {}
-func (s *stubCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
-	return config.Agent{}, "", nil
-}
-
-func (s *stubCoordinator) SwitchAgent(context.Context, string, string) error   { return nil }
-func (s *stubCoordinator) SwitchVariant(context.Context, string, string) error { return nil }
-
-// stubSessions is a minimal session.Service that returns a fixed list
-// (and supports Get by ID). All other methods return zero values; the
-// IsBusy tests do not exercise them.
-type stubSessions struct {
-	session.Service // embed nil to inherit the unexported broker methods
-	all             []session.Session
-}
-
-func (s *stubSessions) List(context.Context) ([]session.Session, error) {
-	return s.all, nil
-}
-
-func (s *stubSessions) Get(_ context.Context, id string) (session.Session, error) {
-	for _, sess := range s.all {
-		if sess.ID == id {
-			return sess, nil
-		}
-	}
-	return session.Session{}, errors.New("not found")
-}
 
 // buildBusyWorkspace returns a controller wired to a backend that owns
 // a single workspace whose AgentCoordinator reports the named session
@@ -104,9 +23,10 @@ func buildBusyWorkspace(t *testing.T, sessionID string, busy bool) (*controllerV
 
 	b := backend.New(context.Background(), nil, nil)
 	wsID := uuid.New().String()
-	coord := &stubCoordinator{busy: map[string]bool{sessionID: busy}}
+	coord, state := newCoordinator(t)
+	state.busy = map[string]bool{sessionID: busy}
 	a := &app.App{AgentCoordinator: coord}
-	a.Sessions = &stubSessions{all: []session.Session{{ID: sessionID, Title: "t"}}}
+	a.Sessions = newSessions(t, session.Session{ID: sessionID, Title: "t"})
 
 	ws := &backend.Workspace{
 		ID:   wsID,
@@ -180,9 +100,10 @@ func buildBranchWorkspace(t *testing.T, sessionID string, branch bool) (*control
 
 	b := backend.New(context.Background(), nil, nil)
 	wsID := uuid.New().String()
-	coord := &stubCoordinator{branch: map[string]bool{sessionID: branch}}
+	coord, state := newCoordinator(t)
+	state.branch = map[string]bool{sessionID: branch}
 	a := &app.App{AgentCoordinator: coord}
-	a.Sessions = &stubSessions{all: []session.Session{{ID: sessionID, Title: "t"}}}
+	a.Sessions = newSessions(t, session.Session{ID: sessionID, Title: "t"})
 
 	ws := &backend.Workspace{
 		ID:   wsID,
@@ -264,12 +185,13 @@ func buildMultiSessionWorkspace(t *testing.T, sessionIDs ...string) (*controller
 	t.Helper()
 
 	b := backend.New(context.Background(), nil, nil)
-	a := &app.App{AgentCoordinator: &stubCoordinator{}}
+	coord, _ := newCoordinator(t)
+	a := &app.App{AgentCoordinator: coord}
 	sessions := make([]session.Session, len(sessionIDs))
 	for i, sid := range sessionIDs {
 		sessions[i] = session.Session{ID: sid, Title: sid}
 	}
-	a.Sessions = &stubSessions{all: sessions}
+	a.Sessions = newSessions(t, sessions...)
 
 	ws := &backend.Workspace{
 		ID:   uuid.New().String(),

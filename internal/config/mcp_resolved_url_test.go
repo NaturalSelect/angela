@@ -1,11 +1,11 @@
 package config
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/env"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestMCPConfig_ResolvedURL(t *testing.T) {
@@ -14,7 +14,9 @@ func TestMCPConfig_ResolvedURL(t *testing.T) {
 	t.Run("empty url short-circuits without calling resolver", func(t *testing.T) {
 		t.Parallel()
 		m := MCPConfig{Type: MCPHttp}
-		got, err := m.ResolvedURL(stubResolver{err: errors.New("should not be called")})
+		// No EXPECT() is set, so the controller fails the test if
+		// ResolveValue is ever called.
+		got, err := m.ResolvedURL(NewMockVariableResolver(gomock.NewController(t)))
 		require.NoError(t, err)
 		require.Empty(t, got)
 	})
@@ -91,15 +93,4 @@ func TestMCPConfig_ResolvedURL(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, tmpl, got)
 	})
-}
-
-// stubResolver returns ("", err) for every call. Paired with a non-nil
-// err the empty-URL test asserts ResolvedURL short-circuits before
-// reaching ResolveValue: if it didn't, the test would fail with err.
-type stubResolver struct {
-	err error
-}
-
-func (s stubResolver) ResolveValue(v string) (string, error) {
-	return "", s.err
 }

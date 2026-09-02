@@ -12,6 +12,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.uber.org/mock/gomock"
 )
 
 func TestParseChannelParams(t *testing.T) {
@@ -300,24 +301,21 @@ func TestHasChannelCapability(t *testing.T) {
 	}
 }
 
-// fakeConn is a stub mcp.Connection that replays a fixed slice of messages and
-// then returns io.EOF.
-type fakeConn struct {
-	msgs []jsonrpc.Message
-	i    int
-}
-
-func (c *fakeConn) Read(context.Context) (jsonrpc.Message, error) {
-	if c.i >= len(c.msgs) {
-		return nil, io.EOF
+// newConn returns a MockConnection that replays msgs in call order and
+// then returns io.EOF, mirroring the old hand-written fakeConn. Write and
+// Close always succeed, and SessionID reports "fake".
+func newConn(t *testing.T, msgs ...jsonrpc.Message) *MockConnection {
+	t.Helper()
+	m := NewMockConnection(gomock.NewController(t))
+	for _, msg := range msgs {
+		m.EXPECT().Read(gomock.Any()).Return(msg, nil)
 	}
-	m := c.msgs[c.i]
-	c.i++
-	return m, nil
+	m.EXPECT().Read(gomock.Any()).Return(nil, io.EOF).AnyTimes()
+	m.EXPECT().Write(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	m.EXPECT().Close().Return(nil).AnyTimes()
+	m.EXPECT().SessionID().Return("fake").AnyTimes()
+	return m
 }
-func (c *fakeConn) Write(context.Context, jsonrpc.Message) error { return nil }
-func (c *fakeConn) Close() error                                 { return nil }
-func (c *fakeConn) SessionID() string                            { return "fake" }
 
 func channelNotification(t *testing.T, content string) *jsonrpc.Request {
 	t.Helper()
@@ -347,10 +345,10 @@ func TestChannelConnGateOpenInjects(t *testing.T) {
 	gate.resolve(true)
 	passthrough := &jsonrpc.Request{Method: "notifications/other"}
 	conn := &channelConn{
-		Connection: &fakeConn{msgs: []jsonrpc.Message{
+		Connection: newConn(t,
 			channelNotification(t, "build failed"),
 			passthrough,
-		}},
+		),
 		name: "webhook",
 		gate: gate,
 	}
@@ -389,10 +387,10 @@ func TestChannelConnGateClosedDropsEvents(t *testing.T) {
 	gate.resolve(false) // closed: not opted in / not a channel
 	passthrough := &jsonrpc.Request{Method: "notifications/other"}
 	conn := &channelConn{
-		Connection: &fakeConn{msgs: []jsonrpc.Message{
+		Connection: newConn(t,
 			channelNotification(t, "should be dropped"),
 			passthrough,
-		}},
+		),
 		name: "webhook",
 		gate: gate,
 	}
@@ -419,10 +417,10 @@ func TestChannelConnMalformedPayloadDropped(t *testing.T) {
 	gate.resolve(true)
 	bad := &jsonrpc.Request{Method: channelNotificationMethod, Params: json.RawMessage(`{"content":`)}
 	conn := &channelConn{
-		Connection: &fakeConn{msgs: []jsonrpc.Message{
+		Connection: newConn(t,
 			bad,
 			&jsonrpc.Request{Method: "notifications/other"},
-		}},
+		),
 		name: "webhook",
 		gate: gate,
 	}
@@ -508,10 +506,10 @@ func TestChannelConnBuffersDuringUndecidedGate(t *testing.T) {
 
 	gate := newChannelGate() // starts undecided
 	conn := &channelConn{
-		Connection: &fakeConn{msgs: []jsonrpc.Message{
+		Connection: newConn(t,
 			channelNotification(t, "buffered event"),
 			&jsonrpc.Request{Method: "notifications/other"},
-		}},
+		),
 		name: "webhook",
 		gate: gate,
 	}
@@ -560,10 +558,10 @@ func TestChannelConnDiscardsBufferOnClosedGate(t *testing.T) {
 
 	gate := newChannelGate()
 	conn := &channelConn{
-		Connection: &fakeConn{msgs: []jsonrpc.Message{
+		Connection: newConn(t,
 			channelNotification(t, "should be discarded"),
 			&jsonrpc.Request{Method: "notifications/other"},
-		}},
+		),
 		name: "webhook",
 		gate: gate,
 	}

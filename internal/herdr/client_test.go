@@ -4,87 +4,75 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 )
 
-// recordingSender captures state transitions without connecting to a
-// real Unix socket.
-type recordingSender struct {
-	states []string
-}
-
-func (r *recordingSender) send(req reportRequest) error {
-	r.states = append(r.states, req.Params.State)
-	return nil
-}
-
-func (r *recordingSender) close() {}
-
-// newTestClient creates a Client that records state transitions
-// without connecting to a real Unix socket.
-func newTestClient() *Client {
-	rec := &recordingSender{states: make([]string, 0, 16)}
-	return &Client{
-		state: stateIdle,
-		snd:   rec,
-	}
-}
-
-// reportedStates returns the states recorded by the test sender.
-func reportedStates(c *Client) []string {
-	return c.snd.(*recordingSender).states
+// newTestClient creates a Client backed by a MockSender that records
+// state transitions, in call order, without connecting to a real Unix
+// socket.
+func newTestClient(t *testing.T) (*Client, *[]string) {
+	t.Helper()
+	states := &[]string{}
+	m := NewMockSender(gomock.NewController(t))
+	m.EXPECT().send(gomock.Any()).DoAndReturn(func(req reportRequest) error {
+		*states = append(*states, req.Params.State)
+		return nil
+	}).AnyTimes()
+	m.EXPECT().close().AnyTimes()
+	return &Client{state: stateIdle, snd: m}, states
 }
 
 func TestBasicLifecycle(t *testing.T) {
 	t.Parallel()
-	c := newTestClient()
+	c, states := newTestClient(t)
 
 	// Assistant message starts working.
 	c.HandleEvent(AssistantMessage{SessionID: "sess-1"})
-	assert.Equal(t, []string{stateWorking}, reportedStates(c))
+	assert.Equal(t, []string{stateWorking}, *states)
 
 	// Run complete returns to idle.
 	c.HandleEvent(RunComplete{SessionID: "sess-1"})
-	assert.Equal(t, []string{stateWorking, stateIdle}, reportedStates(c))
+	assert.Equal(t, []string{stateWorking, stateIdle}, *states)
 }
 
 func TestPermissionBlockAndUnblock(t *testing.T) {
 	t.Parallel()
-	c := newTestClient()
+	c, states := newTestClient(t)
 
 	// Start working.
 	c.HandleEvent(AssistantMessage{SessionID: "sess-1"})
 
 	// Permission request blocks.
 	c.HandleEvent(PermissionRequested{})
-	assert.Equal(t, []string{stateWorking, stateBlocked}, reportedStates(c))
+	assert.Equal(t, []string{stateWorking, stateBlocked}, *states)
 
 	// Permission granted returns to working (run still active).
 	c.HandleEvent(PermissionResolved{})
-	assert.Equal(t, []string{stateWorking, stateBlocked, stateWorking}, reportedStates(c))
+	assert.Equal(t, []string{stateWorking, stateBlocked, stateWorking}, *states)
 
 	// Run complete returns to idle.
 	c.HandleEvent(RunComplete{SessionID: "sess-1"})
-	assert.Equal(t, []string{stateWorking, stateBlocked, stateWorking, stateIdle}, reportedStates(c))
+	assert.Equal(t, []string{stateWorking, stateBlocked, stateWorking, stateIdle}, *states)
 }
 
 func TestPermissionBeforeAssistantMessage(t *testing.T) {
 	t.Parallel()
-	c := newTestClient()
+	c, states := newTestClient(t)
 
 	// Permission request arrives before any assistant message.
 	// This can happen when tool calls fire before text output.
 	c.HandleEvent(PermissionRequested{})
-	assert.Equal(t, []string{stateBlocked}, reportedStates(c))
+	assert.Equal(t, []string{stateBlocked}, *states)
 
 	// Permission resolved should return to working, not idle,
 	// because the permission request implied a run was active.
 	c.HandleEvent(PermissionResolved{})
-	assert.Equal(t, []string{stateBlocked, stateWorking}, reportedStates(c))
+	assert.Equal(t, []string{stateBlocked, stateWorking}, *states)
 }
 
 func TestSessionIDPropagation(t *testing.T) {
 	t.Parallel()
-	c := newTestClient()
+	c, _ := newTestClient(t)
 
 	// SetSessionID before events.
 	c.SetSessionID("early-session")
@@ -97,25 +85,25 @@ func TestSessionIDPropagation(t *testing.T) {
 
 func TestDedupSkipsRedundantState(t *testing.T) {
 	t.Parallel()
-	c := newTestClient()
+	c, states := newTestClient(t)
 
 	// Two assistant messages in a row should only report working once.
 	c.HandleEvent(AssistantMessage{SessionID: "s1"})
 	c.HandleEvent(AssistantMessage{SessionID: "s1"})
-	assert.Equal(t, []string{stateWorking}, reportedStates(c))
+	assert.Equal(t, []string{stateWorking}, *states)
 }
 
 func TestSummarizingTriggersWorking(t *testing.T) {
 	t.Parallel()
-	c := newTestClient()
+	c, states := newTestClient(t)
 
 	// Summarizing event should trigger working.
 	c.HandleEvent(Summarizing{})
-	assert.Equal(t, []string{stateWorking}, reportedStates(c))
+	assert.Equal(t, []string{stateWorking}, *states)
 
 	// Second summarizing should not trigger another state change.
 	c.HandleEvent(Summarizing{})
-	assert.Equal(t, []string{stateWorking}, reportedStates(c))
+	assert.Equal(t, []string{stateWorking}, *states)
 }
 
 func TestNilClientSafe(t *testing.T) {
@@ -132,14 +120,10 @@ func TestNilClientSafe(t *testing.T) {
 
 func TestRegisterInitial(t *testing.T) {
 	t.Parallel()
-	rec := &recordingSender{states: make([]string, 0, 16)}
-	c := &Client{
-		state: stateIdle,
-		seq:   100,
-		snd:   rec,
-	}
+	c, states := newTestClient(t)
+	c.seq = 100
 	c.registerInitial()
-	assert.Equal(t, []string{stateIdle}, rec.states)
+	assert.Equal(t, []string{stateIdle}, *states)
 	// seq must strictly increase so herdr accepts the report.
 	assert.Equal(t, uint64(101), c.seq)
 }

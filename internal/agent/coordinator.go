@@ -2208,16 +2208,32 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 		)
 	}
 
+	parentSession, err := c.sessions.Get(ctx, params.SessionID)
+	if err != nil {
+		return fantasy.ToolResponse{}, fmt.Errorf("look up parent session: %w", err)
+	}
+
 	// Everything the caller had said and seen up to the call that forked
 	// it. The forking message itself is excluded: the branch is told what
 	// to do by the prompt below, so copying a tool call nobody will answer
 	// would only leave a dangling call in its history.
-	if err := c.messages.ForkSession(ctx, params.SessionID, session.ID, params.AgentMessageID); err != nil {
+	//
+	// When the parent was compacted, its own turns never see anything
+	// before its summary either — copying further back would hand the
+	// branch exactly the history compaction was meant to discard.
+	summaryID, err := c.messages.ForkSession(ctx, params.SessionID, session.ID, parentSession.SummaryMessageID, params.AgentMessageID)
+	if err != nil {
 		return fantasy.ToolResponse{}, fmt.Errorf("fork conversation into branch: %w", err)
+	}
+	if summaryID != "" {
+		session.SummaryMessageID = summaryID
+		if session, err = c.sessions.Save(ctx, session); err != nil {
+			return fantasy.ToolResponse{}, fmt.Errorf("record branch summary point: %w", err)
+		}
 	}
 
 	forkPrompt, err := renderBranchForkPrompt(branchForkPrompt{
-		ParentTitle: c.parentTitle(ctx, params.SessionID),
+		ParentTitle: parentSession.Title,
 		Prompt:      params.Prompt,
 	})
 	if err != nil {
@@ -2289,16 +2305,6 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 		OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
 	})
 	return err
-}
-
-// parentTitle names the conversation a branch was forked from, for the fork
-// prompt. Best effort: an unnamed parent just makes the prompt less specific.
-func (c *coordinator) parentTitle(ctx context.Context, sessionID string) string {
-	sess, err := c.sessions.Get(ctx, sessionID)
-	if err != nil {
-		return ""
-	}
-	return sess.Title
 }
 
 // branchDispatchRefusal reports why this caller may not fork a branch, or an

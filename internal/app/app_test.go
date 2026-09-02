@@ -2,14 +2,21 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/agent/notify"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // TestSetupSubscriber_NormalFlow verifies that events published to the source
@@ -180,4 +187,328 @@ func testNConsumers(t *testing.T, n int) {
 		})
 	}
 	wg.Wait()
+}
+
+// TestApp_ConfigAndStore verifies the Config and Store accessors return
+// exactly what the underlying ConfigStore holds.
+func TestApp_ConfigAndStore(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	store := config.NewTestStore(cfg)
+	app := &App{config: store}
+
+	require.Same(t, cfg, app.Config())
+	require.Same(t, store, app.Store())
+}
+
+// TestApp_SendEvent_DeliversToSubscriber verifies SendEvent publishes to
+// every subscriber returned by Events, and that ReportCurrentSession is
+// safe to call when no herdr client is attached (the common case in
+// tests and outside a herdr pane).
+func TestApp_SendEvent_DeliversToSubscriber(t *testing.T) {
+	t.Parallel()
+
+	app := NewForTest(t.Context())
+	defer app.ShutdownForTest()
+
+	app.ReportCurrentSession("session-1")
+
+	ch := app.Events(t.Context())
+	app.SendEvent(tea.Msg("hello"))
+
+	select {
+	case ev := <-ch:
+		require.Equal(t, tea.Msg("hello"), ev.Payload)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for SendEvent to be delivered")
+	}
+}
+
+// TestApp_AgentNotifications_FansIntoEvents verifies that publishing to
+// the broker returned by AgentNotifications is observable through
+// Events, exercising the fan-in wiring NewForTest sets up.
+func TestApp_AgentNotifications_FansIntoEvents(t *testing.T) {
+	t.Parallel()
+
+	app := NewForTest(t.Context())
+	defer app.ShutdownForTest()
+
+	require.NotNil(t, app.AgentNotifications())
+
+	ch := app.Events(t.Context())
+
+	// Yield so NewForTest's internal fan-in goroutine can subscribe to
+	// agentNotifications before we publish.
+	time.Sleep(10 * time.Millisecond)
+
+	app.AgentNotifications().Publish(pubsub.CreatedEvent, notify.Notification{
+		SessionID: "sess-1",
+		Type:      notify.TypeAgentError,
+		Message:   "boom",
+	})
+
+	select {
+	case ev := <-ch:
+		wrapped, ok := ev.Payload.(pubsub.Event[notify.Notification])
+		require.True(t, ok, "payload should be a pubsub.Event[notify.Notification], got %T", ev.Payload)
+		require.Equal(t, "sess-1", wrapped.Payload.SessionID)
+		require.Equal(t, notify.TypeAgentError, wrapped.Payload.Type)
+		require.Equal(t, "boom", wrapped.Payload.Message)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for agent notification to fan into events")
+	}
+}
+
+// TestApp_RunCompletions_FansIntoEvents verifies that publishing to the
+// broker returned by RunCompletions is observable through Events.
+func TestApp_RunCompletions_FansIntoEvents(t *testing.T) {
+	t.Parallel()
+
+	app := NewForTest(t.Context())
+	defer app.ShutdownForTest()
+
+	require.NotNil(t, app.RunCompletions())
+
+	ch := app.Events(t.Context())
+
+	// Yield so NewForTest's internal fan-in goroutine can subscribe to
+	// runCompletions before we publish.
+	time.Sleep(10 * time.Millisecond)
+
+	app.RunCompletions().Publish(pubsub.UpdatedEvent, notify.RunComplete{
+		SessionID: "sess-2",
+		MessageID: "msg-1",
+		Text:      "done",
+	})
+
+	select {
+	case ev := <-ch:
+		wrapped, ok := ev.Payload.(pubsub.Event[notify.RunComplete])
+		require.True(t, ok, "payload should be a pubsub.Event[notify.RunComplete], got %T", ev.Payload)
+		require.Equal(t, "sess-2", wrapped.Payload.SessionID)
+		require.Equal(t, "msg-1", wrapped.Payload.MessageID)
+		require.Equal(t, "done", wrapped.Payload.Text)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for run completion to fan into events")
+	}
+}
+
+// TestApp_ShutdownForTest_ClosesEventsChannelAndIsIdempotent verifies
+// that tearing down a NewForTest app closes existing Events
+// subscriptions, and that calling it a second time does not panic.
+func TestApp_ShutdownForTest_ClosesEventsChannelAndIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	app := NewForTest(t.Context())
+	ch := app.Events(t.Context())
+
+	app.ShutdownForTest()
+
+	select {
+	case _, ok := <-ch:
+		require.False(t, ok, "events channel should be closed after ShutdownForTest")
+	case <-time.After(5 * time.Second):
+		t.Fatal("events channel was not closed after ShutdownForTest")
+	}
+
+	app.ShutdownForTest()
+}
+
+func TestApp_UpdateAgentModel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T) *App
+		wantErr string
+	}{
+		{
+			name: "nil coordinator",
+			setup: func(t *testing.T) *App {
+				return &App{}
+			},
+			wantErr: "agent configuration is missing",
+		},
+		{
+			name: "coordinator succeeds",
+			setup: func(t *testing.T) *App {
+				coord := NewMockCoordinator(gomock.NewController(t))
+				coord.EXPECT().UpdateModels(gomock.Any()).Return(nil)
+				return &App{AgentCoordinator: coord}
+			},
+		},
+		{
+			name: "coordinator returns error",
+			setup: func(t *testing.T) *App {
+				coord := NewMockCoordinator(gomock.NewController(t))
+				coord.EXPECT().UpdateModels(gomock.Any()).Return(errors.New("update failed"))
+				return &App{AgentCoordinator: coord}
+			},
+			wantErr: "update failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := tt.setup(t)
+			err := app.UpdateAgentModel(t.Context())
+
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestApp_InitCoderAgent_MissingCoderConfig verifies both the
+// interactive and non-interactive coder-agent initializers reject a
+// config with no coder agent defined, before ever touching
+// agent.NewCoordinator.
+func TestApp_InitCoderAgent_MissingCoderConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		init func(app *App, ctx context.Context) error
+	}{
+		{name: "interactive", init: (*App).InitCoderAgent},
+		{name: "non-interactive", init: (*App).InitCoderAgentNonInteractive},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := &App{config: config.NewTestStore(&config.Config{})}
+			err := tt.init(app, t.Context())
+			require.ErrorContains(t, err, "coder agent configuration is missing")
+		})
+	}
+}
+
+// TestApp_Shutdown_CancelsCoordinatorAndRunsCleanup verifies that
+// Shutdown cancels the agent coordinator, tolerates a nil herdr client
+// and nil Messages service, tears down an LSP manager with no clients,
+// and runs every registered cleanup function.
+func TestApp_Shutdown_CancelsCoordinatorAndRunsCleanup(t *testing.T) {
+	t.Parallel()
+
+	coord := NewMockCoordinator(gomock.NewController(t))
+	coord.EXPECT().CancelAll()
+
+	store := config.NewTestStore(&config.Config{})
+	app := &App{
+		AgentCoordinator: coord,
+		LSPManager:       lsp.NewManager(store),
+	}
+
+	var cleaned bool
+	app.cleanupFuncs = []func(context.Context) error{
+		func(context.Context) error {
+			cleaned = true
+			return nil
+		},
+	}
+
+	app.Shutdown()
+
+	require.True(t, cleaned, "registered cleanup function should have run")
+}
+
+func newProviderConfigStore(providers map[string]config.ProviderConfig) *config.ConfigStore {
+	m := csync.NewMap[string, config.ProviderConfig]()
+	for name, p := range providers {
+		m.Set(name, p)
+	}
+	return config.NewTestStore(&config.Config{Providers: m})
+}
+
+// TestApp_ApplyModelOverrides covers the branches of applyModelOverrides:
+// resolving only the large model, only the small (chore) model, both,
+// and the error paths for an unknown model or provider. It also checks
+// that a failed large-model resolution never leaves a partially applied
+// chore override, per the "resolve both before applying either"
+// invariant documented on the function.
+func TestApp_ApplyModelOverrides(t *testing.T) {
+	t.Parallel()
+
+	providers := map[string]config.ProviderConfig{
+		"openai": {
+			ID:     "openai",
+			Models: []catwalk.Model{{ID: "gpt-4o"}},
+		},
+		"anthropic": {
+			ID:     "anthropic",
+			Models: []catwalk.Model{{ID: "claude-3-opus"}},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		large, small string
+		wantOverride *config.SelectedModel
+		wantErr      string
+		wantChoreSet bool
+		wantChore    config.SelectedModel
+	}{
+		{
+			name:         "large only",
+			large:        "openai/gpt-4o",
+			wantOverride: &config.SelectedModel{Provider: "openai", Model: "gpt-4o"},
+		},
+		{
+			name:         "small only applies chore override and returns nil",
+			small:        "anthropic/claude-3-opus",
+			wantChoreSet: true,
+			wantChore:    config.SelectedModel{Provider: "anthropic", Model: "claude-3-opus"},
+		},
+		{
+			name:         "both large and small",
+			large:        "openai/gpt-4o",
+			small:        "anthropic/claude-3-opus",
+			wantOverride: &config.SelectedModel{Provider: "openai", Model: "gpt-4o"},
+			wantChoreSet: true,
+			wantChore:    config.SelectedModel{Provider: "anthropic", Model: "claude-3-opus"},
+		},
+		{
+			name:    "large not found leaves chore untouched",
+			large:   "nonexistent-model",
+			small:   "anthropic/claude-3-opus",
+			wantErr: "not found",
+		},
+		{
+			name:    "unknown provider prefix",
+			large:   "bogus-provider/gpt-4o",
+			wantErr: "provider",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			store := newProviderConfigStore(providers)
+			app := &App{config: store}
+
+			got, err := app.applyModelOverrides(tt.large, tt.small)
+
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantOverride, got)
+
+			chore, ok := store.Config().ModelForName(config.ModelChore)
+			require.Equal(t, tt.wantChoreSet, ok)
+			if tt.wantChoreSet {
+				require.Equal(t, tt.wantChore, chore)
+			}
+		})
+	}
 }

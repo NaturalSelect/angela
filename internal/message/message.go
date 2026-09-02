@@ -58,14 +58,20 @@ type Service interface {
 	DeleteSessionMessages(ctx context.Context, sessionID string) error
 
 	// ForkSession seeds dstSessionID with a copy of every message in
-	// srcSessionID that precedes beforeMessageID, in order, with fresh IDs.
-	// It is an error for beforeMessageID not to belong to srcSessionID, and
-	// nothing is written in that case.
+	// srcSessionID from sinceMessageID (inclusive) up to beforeMessageID
+	// (exclusive), in order, with fresh IDs. An empty sinceMessageID copies
+	// from the start of the session, same as before this parameter existed.
+	//
+	// It is an error for beforeMessageID not to belong to srcSessionID, or
+	// for a non-empty sinceMessageID to not precede it; nothing is written
+	// in either case. It returns the copy's fresh ID for sinceMessageID, or
+	// "" when sinceMessageID was empty, so a caller forking a session that
+	// was itself summarized can point the destination at the same boundary.
 	//
 	// Nothing is published. The destination has no reader yet, and a create
 	// event per copied message would replay the source's entire tool history
 	// into whatever the user currently has on screen.
-	ForkSession(ctx context.Context, srcSessionID, dstSessionID, beforeMessageID string) error
+	ForkSession(ctx context.Context, srcSessionID, dstSessionID, sinceMessageID, beforeMessageID string) (string, error)
 
 	// Flush synchronously drains any pending debounced state for the
 	// given message ID, performs the SQL write, and publishes the
@@ -209,20 +215,29 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 	return message, nil
 }
 
-func (s *service) ForkSession(ctx context.Context, srcSessionID, dstSessionID, beforeMessageID string) error {
+func (s *service) ForkSession(ctx context.Context, srcSessionID, dstSessionID, sinceMessageID, beforeMessageID string) (string, error) {
 	rows, err := s.q.ListMessagesBySession(ctx, srcSessionID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	cut := slices.IndexFunc(rows, func(row db.Message) bool { return row.ID == beforeMessageID })
 	if cut < 0 {
-		return fmt.Errorf("fork point %q does not belong to session %s", beforeMessageID, srcSessionID)
+		return "", fmt.Errorf("fork point %q does not belong to session %s", beforeMessageID, srcSessionID)
 	}
-	for i, row := range rows[:cut] {
+	since := 0
+	if sinceMessageID != "" {
+		since = slices.IndexFunc(rows, func(row db.Message) bool { return row.ID == sinceMessageID })
+		if since < 0 || since > cut {
+			return "", fmt.Errorf("fork start %q does not precede %q in session %s", sinceMessageID, beforeMessageID, srcSessionID)
+		}
+	}
+	var sinceCopyID string
+	for i, row := range rows[since:cut] {
 		// Parts travels verbatim: it is already the marshalled form, and a
 		// decode/encode round trip would be a chance to lose something.
+		newID := uuid.New().String()
 		_, err := s.q.CreateMessage(ctx, db.CreateMessageParams{
-			ID:               uuid.New().String(),
+			ID:               newID,
 			SessionID:        dstSessionID,
 			Role:             row.Role,
 			Parts:            row.Parts,
@@ -232,10 +247,13 @@ func (s *service) ForkSession(ctx context.Context, srcSessionID, dstSessionID, b
 			IsSummaryMessage: row.IsSummaryMessage,
 		})
 		if err != nil {
-			return fmt.Errorf("copying message %d of %d into %s: %w", i+1, cut, dstSessionID, err)
+			return "", fmt.Errorf("copying message %d of %d into %s: %w", i+1, cut-since, dstSessionID, err)
+		}
+		if row.ID == sinceMessageID {
+			sinceCopyID = newID
 		}
 	}
-	return nil
+	return sinceCopyID, nil
 }
 
 func (s *service) DeleteSessionMessages(ctx context.Context, sessionID string) error {

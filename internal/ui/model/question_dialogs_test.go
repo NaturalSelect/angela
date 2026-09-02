@@ -221,3 +221,26 @@ func TestUpdate_MouseClick_CollapsedQuestionFormOutsideEditorReachesChat(t *test
 	require.Same(t, form, u.activeInline,
 		"a click outside the editor must not disturb the parked form")
 }
+
+func TestQuestionFormShortHelp_AdvertisesTabToViewChat(t *testing.T) {
+	t.Parallel()
+
+	// Tab is intercepted by the parent UI before it ever reaches the
+	// form's own HandleKey, so nothing here exercises the keybinding
+	// itself: this only guards that the hint advertising it stays in
+	// ShortHelp, since that hint is the only place this behavior is
+	// documented anywhere for the user.
+	u, _ := questionFormTestUI(t)
+	u.openBatchFormDialog(freeTextRequest("batch-1"))
+	form, ok := u.activeInline.(*dialog.QuestionForm)
+	require.True(t, ok)
+
+	var found bool
+	for _, b := range form.ShortHelp() {
+		if b.Help().Key == "tab" {
+			found = true
+			require.Equal(t, "view chat", b.Help().Desc)
+		}
+	}
+	require.True(t, found, "ShortHelp must advertise that tab views the chat")
+}

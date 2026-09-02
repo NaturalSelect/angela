@@ -30,6 +30,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 	"github.com/pkg/browser"
@@ -498,6 +499,24 @@ func (w *ClientWorkspace) ListSessionHistory(ctx context.Context, sessionID stri
 		return nil, err
 	}
 	return protoToFiles(files), nil
+}
+
+// -- Undo --
+
+func (w *ClientWorkspace) PreviewUndo(ctx context.Context, sessionID string) (undo.Preview, error) {
+	preview, err := w.client.PreviewUndo(ctx, w.workspaceID(), sessionID)
+	if err != nil {
+		return undo.Preview{}, err
+	}
+	return protoToUndoPreview(preview), nil
+}
+
+func (w *ClientWorkspace) Undo(ctx context.Context, sessionID, cutMessageID string) (undo.Result, error) {
+	result, err := w.client.Undo(ctx, w.workspaceID(), sessionID, cutMessageID)
+	if err != nil {
+		return undo.Result{}, err
+	}
+	return protoToUndoResult(result), nil
 }
 
 // -- LSP --
@@ -1382,6 +1401,38 @@ func protoToFiles(files []proto.File) []history.File {
 		out[i] = protoToFile(f)
 	}
 	return out
+}
+
+func protoToUndoSkippedFiles(files []proto.UndoSkippedFile) []undo.SkippedFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]undo.SkippedFile, len(files))
+	for i, f := range files {
+		out[i] = undo.SkippedFile{Path: f.Path, Reason: f.Reason}
+	}
+	return out
+}
+
+func protoToUndoPreview(p proto.UndoPreview) undo.Preview {
+	return undo.Preview{
+		CutMessageID: p.CutMessageID,
+		PoppedText:   p.PoppedText,
+		MessageCount: p.MessageCount,
+		Revert:       p.Revert,
+		Delete:       p.Delete,
+		Skipped:      protoToUndoSkippedFiles(p.Skipped),
+	}
+}
+
+func protoToUndoResult(r proto.UndoResult) undo.Result {
+	return undo.Result{
+		PoppedText:   r.PoppedText,
+		Reverted:     r.Reverted,
+		Deleted:      r.Deleted,
+		Skipped:      protoToUndoSkippedFiles(r.Skipped),
+		MessageCount: r.MessageCount,
+	}
 }
 
 func sessionToProto(s session.Session) proto.Session {

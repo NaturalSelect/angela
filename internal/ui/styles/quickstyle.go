@@ -719,7 +719,6 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Tool.TodoPendingIcon = base.Foreground(o.fgMoreSubtle)
 	s.Tool.TodoStatusNote = lipgloss.NewStyle().Foreground(o.fgMostSubtle)
 	s.Tool.TodoItem = lipgloss.NewStyle().Foreground(o.fgBase)
-	s.Tool.TodoJustStarted = lipgloss.NewStyle().Foreground(o.fgBase)
 
 	// MCP styles
 	s.Tool.MCPName = base.Foreground(o.fgBase).Bold(true)

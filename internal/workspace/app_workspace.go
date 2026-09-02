@@ -24,6 +24,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/shell"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/undo"
 )
 
 // AppWorkspace implements the Workspace interface by delegating
@@ -321,6 +322,16 @@ func (w *AppWorkspace) FileTrackerListReadFiles(ctx context.Context, sessionID s
 
 func (w *AppWorkspace) ListSessionHistory(ctx context.Context, sessionID string) ([]history.File, error) {
 	return w.app.History.ListBySession(ctx, sessionID)
+}
+
+// -- Undo --
+
+func (w *AppWorkspace) PreviewUndo(ctx context.Context, sessionID string) (undo.Preview, error) {
+	return w.app.Undo.Preview(ctx, sessionID)
+}
+
+func (w *AppWorkspace) Undo(ctx context.Context, sessionID, cutMessageID string) (undo.Result, error) {
+	return w.app.Undo.Undo(ctx, sessionID, cutMessageID)
 }
 
 // -- LSP --

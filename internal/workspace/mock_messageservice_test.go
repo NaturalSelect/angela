@@ -71,6 +71,21 @@ func (mr *MockMessageServiceMockRecorder) Delete(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockMessageService)(nil).Delete), ctx, id)
 }
 
+// DeleteFrom mocks base method.
+func (m *MockMessageService) DeleteFrom(ctx context.Context, sessionID, fromMessageID string) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteFrom", ctx, sessionID, fromMessageID)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteFrom indicates an expected call of DeleteFrom.
+func (mr *MockMessageServiceMockRecorder) DeleteFrom(ctx, sessionID, fromMessageID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteFrom", reflect.TypeOf((*MockMessageService)(nil).DeleteFrom), ctx, sessionID, fromMessageID)
+}
+
 // DeleteSessionMessages mocks base method.
 func (m *MockMessageService) DeleteSessionMessages(ctx context.Context, sessionID string) error {
 	m.ctrl.T.Helper()

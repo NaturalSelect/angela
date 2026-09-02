@@ -50,6 +50,10 @@ type MultiEditResponseMetadata struct {
 	NewContent   string       `json:"new_content,omitempty"`
 	EditsApplied int          `json:"edits_applied"`
 	EditsFailed  []FailedEdit `json:"edits_failed,omitempty"`
+	// Created reports whether the batch created FilePath rather than
+	// rewriting it, so a later undo knows to delete it instead of
+	// restoring OldContent (which is empty either way).
+	Created bool `json:"created,omitempty"`
 }
 
 //go:embed multiedit.md
@@ -185,6 +189,7 @@ func (t *multiEditTool) planWithCreation(edit editContext, params MultiEditParam
 		Removals:     removals,
 		EditsApplied: editsApplied,
 		EditsFailed:  failedEdits,
+		Created:      true,
 	}
 
 	return Plan{

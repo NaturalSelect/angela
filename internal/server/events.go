@@ -18,6 +18,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/undo"
 )
 
 // wrapEvent converts a raw tea.Msg (a pubsub.Event[T] from the app
@@ -264,6 +265,38 @@ func fileToProto(f history.File) proto.File {
 		Version:   f.Version,
 		CreatedAt: f.CreatedAt,
 		UpdatedAt: f.UpdatedAt,
+	}
+}
+
+func undoSkippedFilesToProto(files []undo.SkippedFile) []proto.UndoSkippedFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]proto.UndoSkippedFile, len(files))
+	for i, f := range files {
+		out[i] = proto.UndoSkippedFile{Path: f.Path, Reason: f.Reason}
+	}
+	return out
+}
+
+func undoPreviewToProto(p undo.Preview) proto.UndoPreview {
+	return proto.UndoPreview{
+		CutMessageID: p.CutMessageID,
+		PoppedText:   p.PoppedText,
+		MessageCount: p.MessageCount,
+		Revert:       p.Revert,
+		Delete:       p.Delete,
+		Skipped:      undoSkippedFilesToProto(p.Skipped),
+	}
+}
+
+func undoResultToProto(r undo.Result) proto.UndoResult {
+	return proto.UndoResult{
+		PoppedText:   r.PoppedText,
+		Reverted:     r.Reverted,
+		Deleted:      r.Deleted,
+		Skipped:      undoSkippedFilesToProto(r.Skipped),
+		MessageCount: r.MessageCount,
 	}
 }
 

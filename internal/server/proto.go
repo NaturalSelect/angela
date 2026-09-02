@@ -9,6 +9,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/backend"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/google/uuid"
 )
 
@@ -496,6 +497,65 @@ func (c *controllerV1) handleGetWorkspaceSessionHistory(w http.ResponseWriter, r
 		return
 	}
 	jsonEncode(w, history)
+}
+
+// handleGetWorkspaceSessionUndo previews what undoing a session's
+// last turn would do, without doing it.
+//
+//	@Summary		Preview undo
+//	@Tags			sessions
+//	@Produce		json
+//	@Param			id	path		string	true	"Workspace ID"
+//	@Param			sid	path		string	true	"Session ID"
+//	@Success		200	{object}	proto.UndoPreview
+//	@Failure		404	{object}	proto.Error
+//	@Failure		409	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/sessions/{sid}/undo [get]
+func (c *controllerV1) handleGetWorkspaceSessionUndo(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+	preview, err := c.backend.PreviewUndo(r.Context(), id, sid)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, undoPreviewToProto(preview))
+}
+
+// handlePostWorkspaceSessionUndo reverts the turn identified by the
+// request's cut message ID, as returned by a prior preview.
+//
+//	@Summary		Undo the last turn
+//	@Tags			sessions
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Workspace ID"
+//	@Param			sid		path		string				true	"Session ID"
+//	@Param			request	body		proto.UndoRequest	true	"Cut message ID from a prior preview"
+//	@Success		200		{object}	proto.UndoResult
+//	@Failure		400		{object}	proto.Error
+//	@Failure		404		{object}	proto.Error
+//	@Failure		409		{object}	proto.Error
+//	@Failure		500		{object}	proto.Error
+//	@Router			/workspaces/{id}/sessions/{sid}/undo [post]
+func (c *controllerV1) handlePostWorkspaceSessionUndo(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+
+	var req proto.UndoRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	result, err := c.backend.Undo(r.Context(), id, sid, req.CutMessageID)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, undoResultToProto(result))
 }
 
 // handleGetWorkspaceSessionMessages returns all messages for a session.
@@ -1319,6 +1379,14 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 	case errors.Is(err, backend.ErrWorkspaceClosing),
 		errors.Is(err, backend.ErrServerNotIdle),
 		errors.Is(err, backend.ErrClientRetired):
+		status = http.StatusConflict
+	case errors.Is(err, undo.ErrNothingToUndo),
+		errors.Is(err, undo.ErrStale),
+		errors.Is(err, undo.ErrSessionBusy):
+		// The session moved on (or never had anything to undo, or
+		// still has agent activity in progress) since the caller last
+		// looked, not a server fault; the caller can re-preview and
+		// decide whether to retry.
 		status = http.StatusConflict
 	case errors.Is(err, backend.ErrServerShuttingDown):
 		// 503, not 409: the request is not wrong, this process is just

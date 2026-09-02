@@ -102,6 +102,29 @@ func TestWritePlanPreviewsTheDiff(t *testing.T) {
 	require.NotEmpty(t, meta.Diff)
 }
 
+// TestWritePlanMarksCreatedFiles pins the Created/OldContent metadata
+// undo relies on to tell "this write made a new file" apart from "this
+// write overwrote an existing, possibly empty, file".
+func TestWritePlanMarksCreatedFiles(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	existing := filepath.Join(workingDir, "a.txt")
+	require.NoError(t, os.WriteFile(existing, []byte("old\n"), 0o644))
+
+	created := writePlan(t, workingDir, WriteParams{FilePath: "new.txt", Content: "new\n"})
+	meta, ok := created.Refusal.(WriteResponseMetadata)
+	require.True(t, ok)
+	require.True(t, meta.Created, "a write to a path that didn't exist creates it")
+	require.Empty(t, meta.OldContent)
+
+	overwritten := writePlan(t, workingDir, WriteParams{FilePath: "a.txt", Content: "new\n"})
+	meta, ok = overwritten.Refusal.(WriteResponseMetadata)
+	require.True(t, ok)
+	require.False(t, meta.Created, "a write to an existing path overwrites it")
+	require.Equal(t, "old\n", meta.OldContent)
+}
+
 // TestWritePlanSettlesWithoutPrompting pins that a write with nothing to
 // do never reaches the user. Asking someone to approve a no-op is noise,
 // and the model needs to read why instead.

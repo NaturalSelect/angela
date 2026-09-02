@@ -421,7 +421,6 @@ type Styles struct {
 		TodoPendingIcon    lipgloss.Style // Pending todo icon
 		TodoStatusNote     lipgloss.Style // " · completed N" / " · starting task" trailing note
 		TodoItem           lipgloss.Style // Default body text for todo list items
-		TodoJustStarted    lipgloss.Style // Text of the just-started todo in tool-call bodies
 
 		// MCP tools
 		MCPName     lipgloss.Style // The mcp name

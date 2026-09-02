@@ -28,6 +28,7 @@ import (
 	question "github.com/NaturalSelect/angela/internal/question"
 	session "github.com/NaturalSelect/angela/internal/session"
 	skills "github.com/NaturalSelect/angela/internal/skills"
+	undo "github.com/NaturalSelect/angela/internal/undo"
 	workspace "github.com/NaturalSelect/angela/internal/workspace"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -817,6 +818,21 @@ func (mr *MockWorkspaceMockRecorder) PermissionSetMode(mode any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PermissionSetMode", reflect.TypeOf((*MockWorkspace)(nil).PermissionSetMode), mode)
 }
 
+// PreviewUndo mocks base method.
+func (m *MockWorkspace) PreviewUndo(ctx context.Context, sessionID string) (undo.Preview, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PreviewUndo", ctx, sessionID)
+	ret0, _ := ret[0].(undo.Preview)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PreviewUndo indicates an expected call of PreviewUndo.
+func (mr *MockWorkspaceMockRecorder) PreviewUndo(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PreviewUndo", reflect.TypeOf((*MockWorkspace)(nil).PreviewUndo), ctx, sessionID)
+}
+
 // ProjectNeedsInitialization mocks base method.
 func (m *MockWorkspace) ProjectNeedsInitialization() (bool, error) {
 	m.ctrl.T.Helper()
@@ -1066,6 +1082,21 @@ func (m *MockWorkspace) Subscribe(program *tea.Program) {
 func (mr *MockWorkspaceMockRecorder) Subscribe(program any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Subscribe", reflect.TypeOf((*MockWorkspace)(nil).Subscribe), program)
+}
+
+// Undo mocks base method.
+func (m *MockWorkspace) Undo(ctx context.Context, sessionID, cutMessageID string) (undo.Result, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Undo", ctx, sessionID, cutMessageID)
+	ret0, _ := ret[0].(undo.Result)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Undo indicates an expected call of Undo.
+func (mr *MockWorkspaceMockRecorder) Undo(ctx, sessionID, cutMessageID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Undo", reflect.TypeOf((*MockWorkspace)(nil).Undo), ctx, sessionID, cutMessageID)
 }
 
 // UpdateAgentModel mocks base method.

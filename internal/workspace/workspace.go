@@ -23,6 +23,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/undo"
 )
 
 // Reasons the coder agent may be unavailable, returned by
@@ -221,6 +222,16 @@ type Workspace interface {
 
 	// History
 	ListSessionHistory(ctx context.Context, sessionID string) ([]history.File, error)
+
+	// Undo
+	//
+	// PreviewUndo reports what undoing sessionID's last turn would do,
+	// without doing it. Undo performs it: cutMessageID must be the
+	// CutMessageID a prior PreviewUndo for the same session returned,
+	// and Undo fails with a stale-session error if the session no
+	// longer agrees the turn starts there.
+	PreviewUndo(ctx context.Context, sessionID string) (undo.Preview, error)
+	Undo(ctx context.Context, sessionID, cutMessageID string) (undo.Result, error)
 
 	// LSP
 	LSPStart(ctx context.Context, path string)

@@ -58,6 +58,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/notification"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/ui/util"
+	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -750,6 +751,27 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.applySessionItems(msg.items); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case undoPreviewMsg:
+		// Drop a preview for a session the user has already navigated
+		// away from while the fetch was in flight.
+		if msg.sessionID != m.currentSessionID() {
+			break
+		}
+		m.dialog.OpenDialog(dialog.NewUndo(m.com, msg.sessionID, msg.preview))
+	case undoResultMsg:
+		if msg.result.PoppedText != "" {
+			if cmd := m.prependToEditor(msg.result.PoppedText); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		switch {
+		case len(msg.result.Skipped) > 0:
+			cmds = append(cmds, util.ReportWarn(fmt.Sprintf("Undid last turn, but skipped %d file(s) modified outside the session", len(msg.result.Skipped))))
+		case len(msg.result.Reverted) > 0 || len(msg.result.Deleted) > 0:
+			cmds = append(cmds, util.ReportInfo(fmt.Sprintf("Undid last turn: %d file(s) reverted, %d deleted", len(msg.result.Reverted), len(msg.result.Deleted))))
+		default:
+			cmds = append(cmds, util.ReportInfo("Undid last turn"))
+		}
 	case transparentToggledMsg:
 		m.isTransparent = msg.on
 		status := "disabled"
@@ -1036,7 +1058,17 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Route clicks to inline editors that support mouse interaction.
-		if m.activeInline != nil {
+		// A collapsed question form (Tab'd away to the chat) only renders
+		// a one-line summary; its component layout is stale, last built
+		// by a full Draw. Skip hit-testing it and fall through instead:
+		// handleClickFocus below re-expands it if the click landed in
+		// the editor area, and the chat pane handles it otherwise.
+		// Hit-testing it anyway risked matching stale coordinates and
+		// swallowing clicks meant for the chat pane underneath, such as
+		// the one that re-enters a parked branch session.
+		qf, isQuestionForm := m.activeInline.(*dialog.QuestionForm)
+		collapsed := isQuestionForm && m.shouldCollapseQuestion(qf)
+		if m.activeInline != nil && !collapsed {
 			if clickable, ok := m.activeInline.(dialog.MouseClickableEditor); ok {
 				if done, handled := clickable.HandleMouseClick(msg.X, msg.Y); handled {
 					if done {
@@ -1425,6 +1457,20 @@ type sessionMessagesMsg struct {
 	sessionID           string
 	items               []chat.MessageItem
 	lastUserMessageTime int64
+}
+
+// undoPreviewMsg carries the result of previewing an undo, fetched off
+// the Update goroutine, so the confirmation dialog can be opened with
+// it once it arrives.
+type undoPreviewMsg struct {
+	sessionID string
+	preview   undo.Preview
+}
+
+// undoResultMsg carries the result of an executed undo, so its popped
+// text can be restored to the editor and the outcome reported.
+type undoResultMsg struct {
+	result undo.Result
 }
 
 // loadSessionMessagesCmd fetches a session's transcript and builds its
@@ -2023,6 +2069,47 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			return nil
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionUndo:
+		// Session-scoped, matching ActionSummarize: the busy cache
+		// answers for the whole process and would block this session's
+		// undo even while it sits idle.
+		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
+			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before undoing..."))
+			break
+		}
+		m.dialog.CloseDialog(dialog.CommandsID)
+		sessionID := msg.SessionID
+		cmds = append(cmds, func() tea.Msg {
+			preview, err := m.com.Workspace.PreviewUndo(context.Background(), sessionID)
+			if err != nil {
+				if errors.Is(err, undo.ErrNothingToUndo) {
+					return util.ReportInfo("Nothing to undo")()
+				}
+				if errors.Is(err, undo.ErrSessionBusy) {
+					return util.ReportWarn("Agent is busy, please wait before undoing...")()
+				}
+				return util.ReportError(err)()
+			}
+			return undoPreviewMsg{sessionID: sessionID, preview: preview}
+		})
+	case dialog.ActionUndoConfirmed:
+		m.dialog.CloseDialog(dialog.UndoID)
+		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
+			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before undoing..."))
+			break
+		}
+		sessionID := msg.SessionID
+		cutMessageID := msg.CutMessageID
+		cmds = append(cmds, func() tea.Msg {
+			result, err := m.com.Workspace.Undo(context.Background(), sessionID, cutMessageID)
+			if err != nil {
+				if errors.Is(err, undo.ErrSessionBusy) {
+					return util.ReportWarn("Agent is busy, please wait before undoing...")()
+				}
+				return util.ReportError(err)()
+			}
+			return undoResultMsg{result: result}
+		})
 	case dialog.ActionAbortBranch:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if cmd := m.abortBranch(msg.SessionID); cmd != nil {
@@ -4419,8 +4506,14 @@ func (m *UI) popQueuedPromptsToEditor() tea.Cmd {
 	m.syncQueuedChatItems()
 	m.updateLayoutAndSize()
 
+	return m.prependToEditor(strings.Join(items, "\n\n"))
+}
+
+// prependToEditor places text ahead of whatever draft is being composed,
+// so a half-typed follow-up is never clobbered.
+func (m *UI) prependToEditor(text string) tea.Cmd {
 	prevHeight := m.textarea.Height()
-	restored := strings.Join(items, "\n\n")
+	restored := text
 	if draft := m.textarea.Value(); draft != "" {
 		restored += "\n\n" + draft
 	}

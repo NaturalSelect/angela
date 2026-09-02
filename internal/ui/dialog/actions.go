@@ -99,6 +99,19 @@ type (
 	ActionSummarize                   struct {
 		SessionID string
 	}
+	// ActionUndo asks for a preview of undoing sessionID's last turn,
+	// to be shown in a confirmation dialog before anything is reverted.
+	ActionUndo struct {
+		SessionID string
+	}
+	// ActionUndoConfirmed is emitted once the user approves an undo
+	// preview. CutMessageID pins it to the turn that preview described,
+	// so a session that moved on in the meantime is refused rather than
+	// undoing whatever turn happens to be last now.
+	ActionUndoConfirmed struct {
+		SessionID    string
+		CutMessageID string
+	}
 	// ActionAbortBranch abandons a branch session without merging and
 	// returns to the conversation it was forked from.
 	ActionAbortBranch struct {

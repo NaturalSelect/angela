@@ -43,9 +43,10 @@ type QuestionForm struct {
 	numQuestions int               // real question count (excludes confirm tab)
 	confirmComp  *ConfirmComponent // nil when no confirm tab
 
-	keyPrevTab key.Binding
-	keyNextTab key.Binding
-	keyClose   key.Binding
+	keyPrevTab  key.Binding
+	keyNextTab  key.Binding
+	keyClose    key.Binding
+	keyViewChat key.Binding // display-only: tab is intercepted by the parent UI
 
 	// Compositor for tab hit detection. Built during Draw() from
 	// tab layers positioned at their screen coordinates.
@@ -137,6 +138,10 @@ func NewQuestionForm(sty *styles.Styles, batch question.Request) *QuestionForm {
 			key.WithHelp("]", "next tab"),
 		),
 		keyClose: CloseKey,
+		keyViewChat: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "view chat"),
+		),
 	}
 
 	// Wire confirm callbacks.
@@ -336,6 +341,9 @@ func (f *QuestionForm) ShortHelp() []key.Binding {
 	if f.activeIdx < f.numQuestions {
 		bindings = append(bindings, f.questions[f.activeIdx].ShortHelp()...)
 	}
+	// Appended last: fitShortHelp's width trimming always keeps the
+	// final two entries, so this hint stays visible even when narrow.
+	bindings = append(bindings, f.keyViewChat)
 	return bindings
 }
 

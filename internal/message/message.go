@@ -61,12 +61,15 @@ type Service interface {
 	// srcSessionID from sinceMessageID (inclusive) up to beforeMessageID
 	// (exclusive), in order, with fresh IDs. An empty sinceMessageID copies
 	// from the start of the session, same as before this parameter existed.
+	// sinceMessageID equal to beforeMessageID is a valid, degenerate range:
+	// nothing is copied and "" is returned, the same as an empty sinceMessageID.
 	//
 	// It is an error for beforeMessageID not to belong to srcSessionID, or
-	// for a non-empty sinceMessageID to not precede it; nothing is written
+	// for a non-empty sinceMessageID to come after it; nothing is written
 	// in either case. It returns the copy's fresh ID for sinceMessageID, or
-	// "" when sinceMessageID was empty, so a caller forking a session that
-	// was itself summarized can point the destination at the same boundary.
+	// "" when sinceMessageID was empty or equal to beforeMessageID, so a
+	// caller forking a session that was itself summarized can point the
+	// destination at the same boundary.
 	//
 	// Nothing is published. The destination has no reader yet, and a create
 	// event per copied message would replay the source's entire tool history

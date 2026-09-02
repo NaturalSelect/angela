@@ -709,6 +709,28 @@ func TestUpdate_DelayedClickMsg_Dispatches(t *testing.T) {
 	})
 }
 
+// permissionClickDialog stands in for the real Permissions dialog: like
+// idOnlyDialog, it reports PermissionsID so handleDialogMsg's
+// dialog.ActionPermissionResponse branch has something to close, but
+// unlike idOnlyDialog it only reacts to a mouse click — exactly like a
+// rendered "Allow" button would — rather than echoing every message
+// back. This isolates the routing bug from real button geometry: the
+// dialog layer that turns a click into an action is already covered by
+// dialog.TestPermissions_MouseClickSelectsButton.
+type permissionClickDialog struct {
+	dialog.Dialog
+	perm permission.PermissionRequest
+}
+
+func (permissionClickDialog) ID() string { return dialog.PermissionsID }
+
+func (d permissionClickDialog) HandleMsg(msg tea.Msg) dialog.Action {
+	if _, ok := msg.(tea.MouseClickMsg); ok {
+		return dialog.ActionPermissionResponse{Permission: d.perm, Action: dialog.PermissionAllow}
+	}
+	return nil
+}
+
 func TestUpdate_MouseClickMsg(t *testing.T) {
 	t.Parallel()
 
@@ -720,6 +742,28 @@ func TestUpdate_MouseClickMsg(t *testing.T) {
 		require.NotPanics(t, func() {
 			m.Update(tea.MouseClickMsg{X: 5, Y: 5})
 		})
+	})
+
+	// Regression test: a click used to reach dialog.HandleMsg (which
+	// resolved to the clicked button, per
+	// dialog.TestPermissions_MouseClickSelectsButton) but Update then
+	// discarded the returned Action instead of routing it through
+	// handleDialogMsg like every other message type does, so approving
+	// or denying a permission request with the mouse silently did
+	// nothing. Compare TestCompactPaletteMouseClickNeverReachesWorkspace
+	// in compact_pipeline_test.go, which documents a still-open, unrelated
+	// gap in the Commands dialog.
+	t.Run("an allow response reaches the workspace and closes the dialog", func(t *testing.T) {
+		t.Parallel()
+		m, ws := newMockBusyUI(t)
+		perm := permission.PermissionRequest{ID: "p1", ToolCallID: "t1", ToolName: "bash"}
+		ws.EXPECT().PermissionGrant(perm).Return(true)
+		m.dialog = dialog.NewOverlay(permissionClickDialog{perm: perm})
+
+		m.Update(tea.MouseClickMsg{X: 5, Y: 5, Button: uv.MouseLeft})
+
+		require.False(t, m.dialog.ContainsDialog(dialog.PermissionsID),
+			"clicking Allow with the mouse should close the permissions dialog")
 	})
 
 	t.Run("a completed click clears the active inline editor", func(t *testing.T) {

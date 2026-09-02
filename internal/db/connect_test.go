@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -207,4 +208,104 @@ func TestConnect_ServerPathFailsWhenDataDirLocked(t *testing.T) {
 	_, err = Connect(context.Background(), dataDir, WithDataDirLock(true))
 	require.Error(t, err, "server-path Connect must refuse to open a locked data dir")
 	require.ErrorIs(t, err, ErrDataDirLocked)
+}
+
+func TestConnect_FailsWhenDataDirEmpty(t *testing.T) {
+	t.Cleanup(ResetPool)
+
+	_, err := Connect(context.Background(), "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "data.dir is not set")
+}
+
+// TestConnect_FailsWhenDataDirCannotBeCreated covers the os.MkdirAll
+// failure branch by pointing the data dir at a path whose parent
+// segment is a regular file, which MkdirAll refuses to descend into.
+func TestConnect_FailsWhenDataDirCannotBeCreated(t *testing.T) {
+	t.Cleanup(ResetPool)
+
+	tmp := t.TempDir()
+	blocker := filepath.Join(tmp, "blocker")
+	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o600))
+
+	dataDir := filepath.Join(blocker, "sub")
+	_, err := Connect(context.Background(), dataDir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create data directory")
+}
+
+func TestConnectReadOnly_EmptyPath(t *testing.T) {
+	_, err := ConnectReadOnly(context.Background(), "")
+	require.Error(t, err)
+}
+
+// TestConnectReadOnly_FailsWhenDatabaseMissing covers the read-only
+// Ping failure branch: mode=ro never creates the file, so pinging a
+// path that doesn't exist surfaces a clean error.
+func TestConnectReadOnly_FailsWhenDatabaseMissing(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "does-not-exist.db")
+
+	_, err := ConnectReadOnly(context.Background(), dbPath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to connect to database")
+}
+
+// TestConnect_FailsWhenPingFails covers the PingContext failure
+// branch and confirms the data-dir lock is released on that path too:
+// a directory at the database path can be opened lazily by sql.Open
+// but fails on the first real connection attempt.
+func TestConnect_FailsWhenPingFails(t *testing.T) {
+	t.Cleanup(ResetPool)
+
+	dataDir := t.TempDir()
+	dbPath := filepath.Join(dataDir, "angela.db")
+	require.NoError(t, os.Mkdir(dbPath, 0o700))
+
+	_, err := Connect(context.Background(), dataDir, WithDataDirLock(true))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to connect to database")
+
+	lockPath := filepath.Join(dataDir, dataDirLockFile)
+	release, lockErr := lock.TryFile(lockPath)
+	require.NoError(t, lockErr, "expected lock to be released after Ping failure")
+	release()
+}
+
+func TestConnectReadOnly_OpensExistingDatabase(t *testing.T) {
+	t.Cleanup(ResetPool)
+
+	dataDir := t.TempDir()
+	_, err := Connect(context.Background(), dataDir)
+	require.NoError(t, err)
+	require.NoError(t, Release(dataDir))
+
+	dbPath := filepath.Join(dataDir, "angela.db")
+	roConn, err := ConnectReadOnly(context.Background(), dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { roConn.Close() })
+
+	require.NoError(t, roConn.PingContext(context.Background()))
+}
+
+// TestResetPool_ClosesConnectionsAndReleasesLocks targets the loop
+// body of ResetPool directly: most other tests already release their
+// connections before cleanup runs, leaving the pool empty by the time
+// ResetPool executes.
+func TestResetPool_ClosesConnectionsAndReleasesLocks(t *testing.T) {
+	t.Cleanup(ResetPool)
+
+	dataDir := t.TempDir()
+	lockPath := filepath.Join(dataDir, dataDirLockFile)
+
+	conn, err := Connect(context.Background(), dataDir, WithDataDirLock(true))
+	require.NoError(t, err)
+	require.NoError(t, conn.PingContext(context.Background()))
+
+	ResetPool()
+
+	require.Error(t, conn.PingContext(context.Background()), "connection should be closed after ResetPool")
+
+	release, err := lock.TryFile(lockPath)
+	require.NoError(t, err, "expected data-dir lock to be released after ResetPool")
+	release()
 }

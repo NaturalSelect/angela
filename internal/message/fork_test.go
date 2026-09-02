@@ -50,7 +50,9 @@ func TestForkSessionCopiesOnlyWhatPrecedesTheForkPoint(t *testing.T) {
 
 	// Fork at "c": the branch inherits everything the parent had decided
 	// before it, and neither the forking message nor anything after it.
-	require.NoError(t, svc.ForkSession(t.Context(), src, dst, ids[2]))
+	sinceCopy, err := svc.ForkSession(t.Context(), src, dst, "", ids[2])
+	require.NoError(t, err)
+	require.Empty(t, sinceCopy, "an empty sinceMessageID must not report a boundary")
 
 	forked, err := svc.List(t.Context(), dst)
 	require.NoError(t, err)
@@ -77,7 +79,8 @@ func TestForkSessionRebuildsIdentityOfEveryCopy(t *testing.T) {
 	cut, err := svc.Create(t.Context(), src, CreateMessageParams{Role: Assistant})
 	require.NoError(t, err)
 
-	require.NoError(t, svc.ForkSession(t.Context(), src, dst, cut.ID))
+	_, err = svc.ForkSession(t.Context(), src, dst, "", cut.ID)
+	require.NoError(t, err)
 
 	original, err := svc.List(t.Context(), src)
 	require.NoError(t, err)
@@ -113,7 +116,8 @@ func TestForkSessionDoesNotRestampFinishOnCopies(t *testing.T) {
 	cut, err := svc.Create(t.Context(), src, CreateMessageParams{Role: Assistant})
 	require.NoError(t, err)
 
-	require.NoError(t, svc.ForkSession(t.Context(), src, dst, cut.ID))
+	_, err = svc.ForkSession(t.Context(), src, dst, "", cut.ID)
+	require.NoError(t, err)
 
 	forked, err := svc.List(t.Context(), dst)
 	require.NoError(t, err)
@@ -154,7 +158,8 @@ func TestForkSessionPublishesNothing(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 	collector.reset()
 
-	require.NoError(t, svc.ForkSession(t.Context(), src, dst, cut.ID))
+	_, err = svc.ForkSession(t.Context(), src, dst, "", cut.ID)
+	require.NoError(t, err)
 
 	time.Sleep(20 * time.Millisecond)
 	require.Empty(t, collector.snapshot(), "forking published events")
@@ -172,7 +177,7 @@ func TestForkSessionRejectsAForkPointFromAnotherSession(t *testing.T) {
 	require.NoError(t, err)
 
 	// A well-formed ID that simply is not part of the source.
-	err = svc.ForkSession(t.Context(), src, dst, uuid.New().String())
+	_, err = svc.ForkSession(t.Context(), src, dst, "", uuid.New().String())
 	require.Error(t, err)
 
 	forked, listErr := svc.List(t.Context(), dst)
@@ -193,9 +198,73 @@ func TestForkSessionAtTheFirstMessageCopiesNothing(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, svc.ForkSession(t.Context(), src, dst, first.ID))
+	_, err = svc.ForkSession(t.Context(), src, dst, "", first.ID)
+	require.NoError(t, err)
 
 	forked, err := svc.List(t.Context(), dst)
 	require.NoError(t, err)
 	require.Empty(t, forked)
+}
+
+// A session that was compacted before being forked must not hand the branch
+// what compaction was supposed to have discarded: the parent's own turns
+// never see anything before its summary, so neither should a branch of it.
+func TestForkSessionSinceASummaryExcludesWhatPrecedesIt(t *testing.T) {
+	t.Parallel()
+
+	svc, src, dst := forkFixture(t)
+
+	_, err := svc.Create(t.Context(), src, CreateMessageParams{
+		Role:  User,
+		Parts: []ContentPart{TextContent{Text: "stale"}},
+	})
+	require.NoError(t, err)
+
+	summary, err := svc.Create(t.Context(), src, CreateMessageParams{
+		Role:             Assistant,
+		Parts:            []ContentPart{TextContent{Text: "recap"}},
+		IsSummaryMessage: true,
+	})
+	require.NoError(t, err)
+
+	_, err = svc.Create(t.Context(), src, CreateMessageParams{
+		Role:  User,
+		Parts: []ContentPart{TextContent{Text: "since the recap"}},
+	})
+	require.NoError(t, err)
+
+	cut, err := svc.Create(t.Context(), src, CreateMessageParams{Role: Assistant})
+	require.NoError(t, err)
+
+	sinceCopy, err := svc.ForkSession(t.Context(), src, dst, summary.ID, cut.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, sinceCopy, "forking from a summary must report the copy's fresh ID")
+
+	forked, err := svc.List(t.Context(), dst)
+	require.NoError(t, err)
+	require.Equal(t, []string{"recap", "since the recap"}, texts(forked),
+		"the stale message before the summary must not be copied")
+	require.Equal(t, sinceCopy, forked[0].ID)
+	require.True(t, forked[0].IsSummaryMessage)
+}
+
+// A sinceMessageID that does not precede the fork point is caller error: it
+// would either copy nothing while claiming a boundary, or reach backward
+// into a session it does not belong to.
+func TestForkSessionRejectsASinceMessageIDThatDoesNotPrecedeTheForkPoint(t *testing.T) {
+	t.Parallel()
+
+	svc, src, dst := forkFixture(t)
+
+	_, err := svc.Create(t.Context(), src, CreateMessageParams{Role: User})
+	require.NoError(t, err)
+	cut, err := svc.Create(t.Context(), src, CreateMessageParams{Role: Assistant})
+	require.NoError(t, err)
+
+	_, err = svc.ForkSession(t.Context(), src, dst, uuid.New().String(), cut.ID)
+	require.Error(t, err)
+
+	forked, err := svc.List(t.Context(), dst)
+	require.NoError(t, err)
+	require.Empty(t, forked, "a rejected fork still wrote into the destination")
 }

@@ -104,6 +104,63 @@ func TestRunBranchAgentForkBoundary(t *testing.T) {
 	require.Equal(t, message.Assistant, msgs[1].Role)
 }
 
+// TestRunBranchAgentForkBoundaryAfterCompaction pins the same boundary as
+// TestRunBranchAgentForkBoundary, but for a parent that was compacted
+// first. The parent's own turns never see anything before its summary, so
+// a branch forked from it must not either — only the summary and what
+// came after it, both here and once the branch is running turns of its
+// own.
+func TestRunBranchAgentForkBoundaryAfterCompaction(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Refactor the auth layer")
+	require.NoError(t, err)
+
+	stale, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.User})
+	require.NoError(t, err)
+
+	summary, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{
+		Role:             message.Assistant,
+		IsSummaryMessage: true,
+	})
+	require.NoError(t, err)
+
+	parent.SummaryMessageID = summary.ID
+	parent, err = env.sessions.Save(t.Context(), parent)
+	require.NoError(t, err)
+
+	afterSummary, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.User})
+	require.NoError(t, err)
+
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 1)
+	agent, resolved := idleBranchAgent(t, seen)
+
+	go func() {
+		_, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+
+	requireBranchStarted(t, seen)
+	branchID := requireBranchSession(t, c, parent.ID)
+
+	msgs, err := env.messages.List(t.Context(), branchID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2, "only the summary and what came after it should be copied")
+	for _, m := range msgs {
+		require.NotEqual(t, stale.ID, m.ID, "history before the summary must not be copied")
+	}
+	require.True(t, msgs[0].IsSummaryMessage, "the copy's first message must still be marked as the summary")
+	require.Equal(t, afterSummary.Content(), msgs[1].Content())
+
+	branchSession, err := env.sessions.Get(t.Context(), branchID)
+	require.NoError(t, err)
+	require.Equal(t, msgs[0].ID, branchSession.SummaryMessageID,
+		"the branch must inherit the summary boundary so its own turns trim the same way")
+}
+
 func requireBranchStarted(t *testing.T, seen <-chan string) string {
 	t.Helper()
 	select {

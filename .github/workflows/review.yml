@@ -239,6 +239,16 @@ jobs:
           changed; only the source tells you whether it is correct. Never
           report a finding you validated from the diff alone.
 
+          Note which changed files are generated (a "Code generated ...
+          DO NOT EDIT" header, vendored dependencies, lockfiles, or
+          committed golden/snapshot fixtures). Confirm each is consistent
+          with the source change that produced it, then skip further angle
+          passes on its internal content — nobody hand-wrote it.
+
+          If the repository has contribution or style guideline files (for
+          example AGENTS.md or CONTRIBUTING.md), open them now: phase 3's
+          "Project conventions" angle needs their exact wording to quote.
+
           ### 2. Trace the complete call chain
 
           Before reporting any suspected issue, trace it through the real code:
@@ -279,6 +289,12 @@ jobs:
           one full sweep adds nothing. Then report everything you accumulated
           in that one answer — never hold findings back, never split them into
           "the important ones now" and a remainder.
+
+          A large diff can make repeated full sweeps expensive. If you are
+          running low on turns or time, stop sweeping, write down the
+          findings you have already gathered, and deliver the review now —
+          a thorough partial review posted on time beats a complete one
+          that never gets posted.
 
           Decide the verdict from the finished list, not from the sweeps: an
           empty list is \`LGTM\`, a list with any finding is
@@ -351,11 +367,20 @@ jobs:
              \`Needs changes\`, plus the main reason. \`LGTM\` requires an
              empty finding list; a single finding of any severity makes it
              \`Needs changes\`.
-          2. Findings grouped by severity (Critical / Important / Suggestion),
-             most severe first. Each finding gives: \`file_path:line\`, what is
-             wrong, why it is wrong, the concrete failure scenario, the traced
-             call chain (the upward and downward frames you read), and a
-             recommended fix.
+          2. Findings grouped by severity, most severe first:
+             - **Critical** — wrong behavior, a crash, data loss, or a
+               security hole reachable from a real entry point.
+             - **Important** — a genuine bug or broken contract confined
+               to an edge case, an error path, or an uncommon
+               configuration.
+             - **Suggestion** — correct as written; a concrete
+               improvement such as a missing test, a convention
+               violation, or a clarity fix.
+
+             Each finding gives: \`file_path:line\` (post-change line
+             numbers), what is wrong, why it is wrong, the concrete
+             failure scenario, the traced call chain (the upward and
+             downward frames you read), and a recommended fix.
 
           ## Commit list
 

@@ -57,7 +57,7 @@ func AngelaTeal() Styles {
 		attention:         c("#cca700"),
 		busy:              c("#cca700"),
 		info:              c("#3794ff"),
-		infoMoreSubtle:    c("#5aa9d6"),
+		infoMoreSubtle:    c("#9cdcfe"),
 		infoMostSubtle:    c("#2d5c8a"),
 		success:           c("#89d185"),
 		successMoreSubtle: c("#6a9955"),

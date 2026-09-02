@@ -178,18 +178,19 @@ prompt follows and decides everything else.
 
 ### Ending a branch without merging
 
-- **Escape twice** — abandons the branch and returns you to the parent. If a
-  turn is running, the first two presses stop that turn instead; press again
-  once it is idle to abandon.
-- **`/abort`** — abandons it outright, whether or not a turn is running.
-  The command only appears while you are inside a branch.
+- **`/abort`** — abandons the branch outright, whether or not a turn is
+  running, and returns you to the parent conversation. The command only
+  appears while you are inside a branch.
+- **Escape** — stops a turn that is running, the same as on any other
+  session. It never abandons the branch: once idle, escape does nothing
+  branch-specific, so `/abort` is the only way to give one up.
 
-Escape does not walk back out of a branch, since it is reserved for stopping
-and abandoning — the same as for a finished branch or an ordinary sub-agent
-transcript, where pressing up twice at the top of the view goes back instead.
-To look at the parent without giving up the branch, use the session switcher
-(`Ctrl+S`) — branches are not listed there, so the parent is the one you
-pick.
+Escape does not walk back out of a branch either, since idle presses do
+nothing here — the same as for a finished branch or an ordinary sub-agent
+transcript, where pressing up twice at the top of the view goes back
+instead. To look at the parent without giving up the branch, use the
+session switcher (`Ctrl+S`) — branches are not listed there, so the parent
+is the one you pick.
 
 ### Several branches at once
 

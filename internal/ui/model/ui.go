@@ -2961,7 +2961,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			}
 		case uiFocusMain:
 			switch {
-			case key.Matches(msg, m.keyMap.Tab):
+			case key.Matches(msg, m.keyMap.Tab) && !m.viewingSubAgent():
 				m.focus = uiFocusEditor
 				cmds = append(cmds, m.textarea.Focus())
 				m.chat.Blur()
@@ -4349,11 +4349,6 @@ func (m *UI) cancelAgent() tea.Cmd {
 			m.bangCancel = nil
 		}
 
-		// An idle branch is abandoned by this press rather than merely
-		// interrupted, so the view follows it back to the parent that was
-		// waiting on it.
-		leaving := m.cancelLeavesBranch()
-
 		m.com.Workspace.AgentCancel(m.session.ID)
 		// Stop the spinning turn indicator and drop the memoized busy
 		// state the cancel just changed; the turn status re-renders from
@@ -4361,9 +4356,6 @@ func (m *UI) cancelAgent() tea.Cmd {
 		// the agent's own events) land.
 		m.turnIsSpinning = false
 		m.invalidateBusyCaches()
-		if leaving {
-			return tea.Batch(m.leaveSubSession(), m.dispatchBusyRefresh())
-		}
 		return m.dispatchBusyRefresh()
 	}
 

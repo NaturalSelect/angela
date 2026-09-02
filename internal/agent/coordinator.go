@@ -123,12 +123,17 @@ type Coordinator interface {
 	// also rebuilds the session's route, which costs one database read
 	// and one agent resolution, once per child session per process.
 	BeginAccepted(ctx context.Context, sessionID string) *AcceptedRun
+	// Cancel interrupts a running turn. On a parent suspended waiting on
+	// one or more branches it reaches through and interrupts those too,
+	// since the parent has nothing of its own running — but it never
+	// abandons a branch, on the branch itself or through its parent.
+	// AbandonBranch is the only call that does that.
 	Cancel(sessionID string)
 	// AbandonBranch gives a branch up whether or not a turn is running,
-	// releasing the parent call suspended on it. Cancel is the gesture
-	// that interrupts a turn and only abandons an idle branch; this is
-	// the outcome a user names outright, and the two are kept apart so
-	// neither has to guess which one was meant.
+	// releasing the parent call suspended on it. This is the only call
+	// that ever abandons a branch — Cancel never does, on the branch or
+	// on the parent it suspends — so a user always reaches this outcome
+	// by naming it outright.
 	AbandonBranch(sessionID string) bool
 	CancelAll()
 	IsSessionBusy(sessionID string) bool
@@ -1758,17 +1763,29 @@ func (c *coordinator) BeginAccepted(ctx context.Context, sessionID string) *Acce
 }
 
 // branchAbandonedMessage is what a parent's suspended tool call resolves to
-// when the user gives a branch up. Both routes to abandonment — the cancel
-// gesture and the explicit command — report it, so the parent reads the same
-// outcome however the user got there.
+// when the user gives up the branch through /abort — the only call that
+// ever produces this outcome.
 const branchAbandonedMessage = "The user ended this branch without merging it."
 
 func (c *coordinator) Cancel(sessionID string) {
-	// A cancel that lands on a branch or on a conversation suspended by
-	// one means "give this up", not "interrupt this turn", so it resolves
-	// the rendezvous instead of tearing down a run.
-	if c.abortBranchFor(sessionID) {
-		return
+	// Cancel never abandons a branch, on the branch itself or on a parent
+	// suspended on one: a parent has nothing of its own running either
+	// way, so treating its cancel as "give up the branch" needs only one
+	// misplaced keystroke to trigger by accident — pressing escape on a
+	// freshly forked branch's parent, before the branch has even produced
+	// its first response, used to abandon it exactly this way. Ending a
+	// branch outright is what AbandonBranch is for, and it is the only
+	// call that ever does it.
+	//
+	// What a parent's cancel must still do is reach through: it has
+	// nothing of its own to interrupt, so the branches it is suspended
+	// on are interrupted in its place. branchesOf only lists them —
+	// nothing here ever calls Signal, so none of this can resolve a
+	// branch, only interrupt whatever turn happens to be running on it.
+	for _, branchSessionID := range c.branches.branchesOf(sessionID) {
+		if executor, ok := c.executorForSession(branchSessionID); ok {
+			executor.Cancel(branchSessionID)
+		}
 	}
 	if executor, ok := c.executorForSession(sessionID); ok {
 		executor.Cancel(sessionID)
@@ -1793,36 +1810,6 @@ func (c *coordinator) AbandonBranch(sessionID string) bool {
 		executor.Cancel(sessionID)
 	}
 	return true
-}
-
-// abortBranchFor turns a cancel into an abandoned branch where one applies,
-// reporting whether it handled the cancel. Only the user reaches it, through
-// Esc or /abort; no model can end a branch.
-//
-// Three cases:
-//   - a conversation suspended on branches: abandon them, and cancel their
-//     runs so they stop working for a result nobody will read. The suspended
-//     turn is left alone — it resumes with the abandonment as its tool result.
-//   - an idle branch: abandon it. There is no turn to interrupt, so a cancel
-//     here can only mean the branch itself.
-//   - a branch mid-turn: not handled. The cancel falls through and interrupts
-//     that turn, which is what lets the user stop a branch mid-thought and
-//     redirect it rather than lose it. A user who means to give the branch up
-//     regardless says so through AbandonBranch.
-func (c *coordinator) abortBranchFor(sessionID string) bool {
-	if aborted := c.branches.AbortByParent(sessionID, branchOutcome{Payload: branchAbandonedMessage}); len(aborted) > 0 {
-		for _, branchSessionID := range aborted {
-			if executor, ok := c.executorForSession(branchSessionID); ok {
-				executor.Cancel(branchSessionID)
-			}
-		}
-		return true
-	}
-
-	if c.branches.Waiting(sessionID) && !c.IsSessionBusy(sessionID) {
-		return c.branches.Signal(sessionID, branchOutcome{Payload: branchAbandonedMessage})
-	}
-	return false
 }
 
 func (c *coordinator) CancelAll() {
@@ -2244,11 +2231,17 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	defer c.branches.Forget(session.ID)
 	defer c.proposals.Discard(session.ID)
 
-	if err := c.startBranchTurn(ctx, session.ID, forkPrompt, params); err != nil {
+	if err := c.startBranchTurn(ctx, session.ID, forkPrompt, params); err != nil && !errors.Is(err, context.Canceled) {
 		// Reported through the rendezvous rather than returned, so that a
 		// user who abandoned the branch while it was failing to start
 		// still sees their own outcome: delivery happens once, and
 		// whichever came first wins.
+		//
+		// A plain cancellation is excluded: interrupting the opening
+		// turn — the same way any later turn can be interrupted — must
+		// leave the branch alive and idle, not end it. Only a genuine
+		// failure is reported here; ending the branch outright is still
+		// AbandonBranch's call alone.
 		slog.Error("Branch first turn failed", "session", session.ID, "error", err)
 		c.branches.Signal(session.ID, branchOutcome{
 			Payload: fmt.Sprintf("The branch could not be started: %s", err),

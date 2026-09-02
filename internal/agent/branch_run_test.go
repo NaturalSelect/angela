@@ -127,13 +127,7 @@ func requireBranchSession(t *testing.T, c *coordinator, parentID string) string 
 func requireBranchSessions(t *testing.T, c *coordinator, parentID string, want int) []string {
 	t.Helper()
 	for range 100 {
-		var ids []string
-		for id, w := range c.branches.waiters.Seq2() {
-			if w.parentSessionID == parentID {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) >= want {
+		if ids := c.branches.branchesOf(parentID); len(ids) >= want {
 			return ids
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -248,7 +242,8 @@ func TestRunBranchAgentReturnsTheMergedSummary(t *testing.T) {
 
 // Abandoning is not merging: the caller has to be able to tell that no
 // result was approved, and its turn ends rather than looping on a branch
-// that no longer exists.
+// that no longer exists. /abort reaches this through AbandonBranch, not
+// Cancel, which spares an idle branch on purpose.
 func TestRunBranchAgentReportsAbandonment(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
@@ -272,14 +267,58 @@ func TestRunBranchAgentReportsAbandonment(t *testing.T) {
 	requireBranchStarted(t, seen)
 	branchID := requireBranchSession(t, c, parent.ID)
 
-	// Through Cancel rather than Signal directly, so this covers the path
-	// Esc and /abort actually take.
-	c.Cancel(branchID)
+	require.True(t, c.AbandonBranch(branchID))
 
 	wg.Wait()
 	require.True(t, resp.IsError)
 	require.True(t, resp.StopTurn, "an abandoned branch must not leave the caller retrying")
 	require.Contains(t, resp.Content, "ended this branch")
+}
+
+// A cancel racing an idle branch must not read as "give this up": the
+// TUI's own busy check runs off a cache that can lag the turn actually
+// finishing, and if Cancel treated an idle branch as abandoned, that lag
+// alone would orphan a branch the user only meant to interrupt. Only
+// AbandonBranch may end a branch outright.
+func TestCancelOnAnIdleBranchDoesNotAbandonIt(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 1)
+	agent, resolved := newMockAgent(t, branchProviderID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		seen <- call.Prompt
+		return agentResultWithText("hello"), nil
+	})
+
+	var resp fantasy.ToolResponse
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+
+	requireBranchStarted(t, seen)
+	branchID := requireBranchSession(t, c, parent.ID)
+	require.False(t, c.IsSessionBusy(branchID), "the fixture must present an idle branch")
+
+	// Falls through to the ordinary interrupt path, same as any other
+	// session; on the real agent that is a no-op with nothing active to
+	// cancel. What matters here is what it must not do.
+	c.Cancel(branchID)
+	require.True(t, c.branches.Waiting(branchID),
+		"an idle branch must survive a cancel; only AbandonBranch may give it up")
+
+	// Still suspended, so it takes an explicit outcome to unblock the
+	// dispatch and let the goroutine finish.
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+	wg.Wait()
+	require.Equal(t, "done", resp.Content)
 }
 
 // busyBranchFixture is a branch whose opening turn has started and not
@@ -288,6 +327,7 @@ func TestRunBranchAgentReportsAbandonment(t *testing.T) {
 type busyBranchFixture struct {
 	c        *coordinator
 	agent    *mockSessionAgent
+	parentID string
 	branchID string
 	release  chan struct{}
 	resp     fantasy.ToolResponse
@@ -310,7 +350,7 @@ func forkBusyBranch(t *testing.T, turnErr error) *busyBranchFixture {
 	require.NoError(t, err)
 
 	seen := make(chan string, 1)
-	f := &busyBranchFixture{c: c, release: make(chan struct{})}
+	f := &busyBranchFixture{c: c, parentID: parent.ID, release: make(chan struct{})}
 
 	// The turn ends on release rather than on ctx: mockSessionAgent.Cancel
 	// only records the call, so a turn waiting to be cancelled for real
@@ -414,12 +454,22 @@ func TestCancelOnABusyBranchStillOnlyInterruptsTheTurn(t *testing.T) {
 	require.Equal(t, "done", f.finish(t).Content)
 }
 
-// Cancelling the conversation that is suspended reaches through to the
-// branch. Without it the caller is freed while the branch runs on, working
-// for a result nobody will read.
-func TestCancelOnTheParentAbandonsTheBranch(t *testing.T) {
+// A cancel that lands on the parent while it is suspended on a branch must
+// leave that branch alone rather than treat "nothing of the parent's own is
+// running" as "give up what it is waiting on". The parent looks busy for
+// the whole time its tool call is outstanding — including before the
+// branch has produced even its first response — so this is exactly what
+// pressing escape there used to hit by accident, abandoning a branch
+// nobody had asked to give up. Only /abort may end it; this fixture's
+// branch is idle by the time the cancel lands, so the companion test
+// TestCancelOnTheParentInterruptsABusyBranch covers the busy case, where
+// the cancel still has to do something.
+func TestCancelOnTheParentDoesNotAbandonTheBranch(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
+	// Cancel resolves a plain top-level session like the parent through
+	// currentAgent, which the other fixtures here never need.
+	c.currentAgent = newMockSessionAgent(t, "coder", nil)
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
 	require.NoError(t, err)
@@ -438,13 +488,42 @@ func TestCancelOnTheParentAbandonsTheBranch(t *testing.T) {
 	}()
 
 	requireBranchStarted(t, seen)
-	requireBranchSession(t, c, parent.ID)
+	branchID := requireBranchSession(t, c, parent.ID)
 
 	c.Cancel(parent.ID)
+	require.True(t, c.branches.Waiting(branchID),
+		"cancelling the parent must not give up a branch it is waiting on")
 
+	// Still suspended, so it takes an explicit outcome to unblock the
+	// dispatch and let the goroutine finish.
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
 	wg.Wait()
-	require.True(t, resp.IsError)
-	require.Contains(t, resp.Content, "ended this branch")
+	require.Equal(t, "done", resp.Content)
+}
+
+// A parent suspended on a branch has nothing of its own running, so its
+// cancel has to reach through and interrupt the branch's turn instead —
+// the same interrupt the user would get by cancelling the branch directly
+// — or escape pressed after switching back to look at the parent (see
+// docs/agents/README.md's session-switcher note) would silently do
+// nothing to the branch still running behind it. It still must not
+// abandon the branch: that outcome belongs to /abort alone.
+func TestCancelOnTheParentInterruptsABusyBranch(t *testing.T) {
+	f := forkBusyBranch(t, nil)
+	// Cancel resolves a plain top-level session like the parent through
+	// currentAgent, which the other fixtures here never need.
+	f.c.currentAgent = newMockSessionAgent(t, "coder", nil)
+
+	f.c.Cancel(f.parentID)
+	require.True(t, f.c.branches.Waiting(f.branchID),
+		"cancelling the parent must not give up a branch it is waiting on")
+	require.Equal(t, []string{f.branchID}, f.agent.cancelled,
+		"cancelling the parent must reach through and interrupt the branch's turn")
+
+	// Still suspended, so it takes an explicit outcome to unblock the
+	// dispatch and let the goroutine finish.
+	require.True(t, f.c.branches.Signal(f.branchID, branchOutcome{Merged: true, Payload: "done"}))
+	require.Equal(t, "done", f.finish(t).Content)
 }
 
 // A cancel that names neither a branch nor a suspended conversation must be
@@ -454,13 +533,13 @@ func TestCancelOnAnOrdinarySessionIsUnchanged(t *testing.T) {
 
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
+	c.currentAgent = newMockSessionAgent(t, "coder", nil)
 
-	require.False(t, c.abortBranchFor("nobody"),
-		"an ordinary session must fall through to the normal cancel path")
+	c.Cancel("nobody")
 
 	// And a live branch does not make its neighbours look like one.
 	c.branches.Register("branch-1", "parent-1")
-	require.False(t, c.abortBranchFor("unrelated"))
+	c.Cancel("unrelated")
 	require.True(t, c.branches.Waiting("branch-1"))
 }
 
@@ -485,6 +564,42 @@ func TestRunBranchAgentReportsAStartupFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "could not be started")
+}
+
+// Interrupting the opening turn must land exactly where interrupting any
+// later one does: the branch survives, idle, waiting for the user. Before
+// this, any error out of that turn — cancellation included — was reported
+// as "could not be started" and ended the branch, so escaping out of a
+// branch's first response abandoned it under an outcome nobody had chosen.
+func TestRunBranchAgentSurvivesACancelledOpeningTurn(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	agent, resolved := newMockAgent(t, branchProviderID, 4096,
+		func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+			return nil, context.Canceled
+		})
+
+	var resp fantasy.ToolResponse
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+
+	branchID := requireBranchSessions(t, c, parent.ID, 1)[0]
+	require.True(t, c.branches.Waiting(branchID),
+		"a cancelled opening turn must leave the branch alive, not report it as failed to start")
+
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+	wg.Wait()
+	require.Equal(t, "done", resp.Content)
 }
 
 // TestBranchDispatchRefusals covers the two ways a fork is turned down, and

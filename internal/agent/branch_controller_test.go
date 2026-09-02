@@ -94,109 +94,6 @@ func TestBranchControllerDeliversAtMostOnce(t *testing.T) {
 	require.Len(t, done, 1)
 }
 
-func TestBranchControllerAbortsThroughTheParent(t *testing.T) {
-	t.Parallel()
-
-	b := newBranchController()
-	done := b.Register("branch-1", "parent-1")
-
-	aborted := b.AbortByParent("parent-1", branchOutcome{Payload: "abandoned"})
-	require.Equal(t, []string{"branch-1"}, aborted,
-		"the caller needs the branch IDs to tear those runs down as well")
-
-	out := <-done
-	require.False(t, out.Merged)
-	require.Equal(t, "abandoned", out.Payload)
-	require.False(t, b.Waiting("branch-1"))
-}
-
-// One turn can suspend on two branches at once, because the agent tool
-// dispatches in parallel. Abandoning the parent has to reach both, or the
-// survivor runs on with nobody left to merge into.
-func TestBranchControllerAbortsEveryBranchOfAParent(t *testing.T) {
-	t.Parallel()
-
-	b := newBranchController()
-	first := b.Register("branch-1", "parent-1")
-	second := b.Register("branch-2", "parent-1")
-
-	aborted := b.AbortByParent("parent-1", branchOutcome{Payload: "abandoned"})
-	require.ElementsMatch(t, []string{"branch-1", "branch-2"}, aborted)
-
-	require.Len(t, first, 1)
-	require.Len(t, second, 1)
-	require.False(t, b.Waiting("branch-1"))
-	require.False(t, b.Waiting("branch-2"))
-}
-
-func TestBranchControllerAbortByParentLeavesOtherBranchesAlone(t *testing.T) {
-	t.Parallel()
-
-	// Map iteration order is randomized, so a controller that ignored the
-	// parent entirely would still pick the right branch by luck some of the
-	// time. Several decoys, repeated, leave luck no room.
-	for range 20 {
-		b := newBranchController()
-		mine := b.Register("branch-1", "parent-1")
-
-		others := map[string]<-chan branchOutcome{}
-		for _, id := range []string{"2", "3", "4", "5"} {
-			others["branch-"+id] = b.Register("branch-"+id, "parent-"+id)
-		}
-
-		require.Equal(t, []string{"branch-1"},
-			b.AbortByParent("parent-1", branchOutcome{Payload: "abandoned"}))
-		require.Len(t, mine, 1)
-
-		for id, ch := range others {
-			require.Empty(t, ch, "cancelling parent-1 also resolved %s", id)
-			require.True(t, b.Waiting(id), "%s lost its waiter", id)
-		}
-	}
-}
-
-func TestBranchControllerAbortByParentWithNoBranch(t *testing.T) {
-	t.Parallel()
-
-	b := newBranchController()
-	b.Register("branch-1", "parent-1")
-
-	require.Empty(t, b.AbortByParent("parent-2", branchOutcome{}))
-	require.True(t, b.Waiting("branch-1"))
-}
-
-// A merge landing just as the user cancels the parent must not double-resolve.
-func TestBranchControllerMergeAndParentAbortRace(t *testing.T) {
-	t.Parallel()
-
-	for range 50 {
-		b := newBranchController()
-		done := b.Register("branch-1", "parent-1")
-
-		var merged, aborted bool
-		var wg sync.WaitGroup
-		wg.Add(2)
-		start := make(chan struct{})
-
-		go func() {
-			defer wg.Done()
-			<-start
-			merged = b.Signal("branch-1", branchOutcome{Merged: true, Payload: "summary"})
-		}()
-		go func() {
-			defer wg.Done()
-			<-start
-			aborted = len(b.AbortByParent("parent-1", branchOutcome{Payload: "abandoned"})) > 0
-		}()
-
-		close(start)
-		wg.Wait()
-
-		require.NotEqual(t, merged, aborted, "exactly one of merge and abort must win")
-		require.Len(t, done, 1)
-	}
-}
-
 // TestIsSessionBranchTracksTheRendezvous pins where branch identity comes
 // from. The config outlives the process; the suspended call it describes
 // does not. Asking the rendezvous is what makes a restart read as "this
@@ -217,15 +114,15 @@ func TestIsSessionBranchTracksTheRendezvous(t *testing.T) {
 		"a merged branch is finished, so it stops being one")
 }
 
-// A branch abandoned through its parent has to stop reading as live too,
-// or the view would keep offering a merge with nothing behind it.
+// A branch abandoned by the user has to stop reading as live too, or the
+// view would keep offering a merge with nothing behind it.
 func TestIsSessionBranchClearsOnAbort(t *testing.T) {
 	t.Parallel()
 
 	c := &coordinator{branches: newBranchController()}
 	c.branches.Register("branch-1", "parent-1")
 
-	require.Len(t, c.branches.AbortByParent("parent-1", branchOutcome{Payload: "abandoned"}), 1)
+	require.True(t, c.branches.Signal("branch-1", branchOutcome{Payload: "abandoned"}))
 	require.False(t, c.IsSessionBranch("branch-1"))
 }
 

@@ -38,6 +38,8 @@ func TestMergeToolResolvesTheBranch(t *testing.T) {
 	require.False(t, resp.IsError)
 	require.True(t, resp.StopTurn,
 		"a merged branch must not keep taking turns after it has ended")
+	require.Contains(t, resp.Content, "found the leak",
+		"the branch's own result must keep the full proposal, since the store is discarded once the branch ends")
 
 	out := <-done
 	require.True(t, out.Merged)

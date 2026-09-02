@@ -34,6 +34,19 @@ type RenamePermissionsParams struct {
 	NewName string `json:"new_name"`
 }
 
+// RenameResponseMetadata records each renamed file's content before and
+// after the edit, so a later undo can restore it without re-deriving
+// the edit from the language server.
+type RenameResponseMetadata struct {
+	Files []RenamedFile `json:"files"`
+}
+
+type RenamedFile struct {
+	Path       string `json:"path"`
+	OldContent string `json:"old_content"`
+	NewContent string `json:"new_content"`
+}
+
 //go:embed lsp_rename.md
 var renameDescription string
 
@@ -122,7 +135,7 @@ func (t *renameTool) plan(ctx context.Context, params RenameParams) (Plan, error
 				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to apply rename edits: %s", err)), nil
 			}
 
-			t.recordRename(ctx, sessionID, affectedFiles, before)
+			renamed := t.recordRename(ctx, sessionID, affectedFiles, before)
 			notifyLSPs(ctx, t.lspManager, "")
 
 			var b strings.Builder
@@ -135,7 +148,7 @@ func (t *renameTool) plan(ctx context.Context, params RenameParams) (Plan, error
 			if len(affectedFiles) > 0 {
 				text += "\n" + getDiagnostics(affectedFiles[0], t.lspManager)
 			}
-			return fantasy.NewTextResponse(text), nil
+			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(text), RenameResponseMetadata{Files: renamed}), nil
 		},
 	}, nil
 }
@@ -155,10 +168,11 @@ func (t *renameTool) readAll(paths []string) map[string]string {
 	return before
 }
 
-func (t *renameTool) recordRename(ctx context.Context, sessionID string, paths []string, before map[string]string) {
+func (t *renameTool) recordRename(ctx context.Context, sessionID string, paths []string, before map[string]string) []RenamedFile {
 	if sessionID == "" {
-		return
+		return nil
 	}
+	var renamed []RenamedFile
 	for _, path := range paths {
 		if t.filetracker != nil {
 			t.filetracker.RecordRead(ctx, sessionID, path)
@@ -173,5 +187,7 @@ func (t *renameTool) recordRename(ctx context.Context, sessionID string, paths [
 			continue
 		}
 		recordFileVersions(ctx, t.files, sessionID, path, oldContent, string(after))
+		renamed = append(renamed, RenamedFile{Path: path, OldContent: oldContent, NewContent: string(after)})
 	}
+	return renamed
 }

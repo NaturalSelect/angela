@@ -3,6 +3,7 @@ package model
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/stretchr/testify/require"
@@ -157,4 +158,66 @@ func TestHandleQuestionNotification_NoActiveFormIsNoOp(t *testing.T) {
 		u.handleQuestionNotification(question.Notification{BatchID: "whatever"})
 	})
 	require.Nil(t, u.activeInline)
+}
+
+// ---------------------------------------------------------------------
+// Mouse clicks on a collapsed question form (internal/ui/model/ui.go)
+// ---------------------------------------------------------------------
+
+func TestUpdate_MouseClick_CollapsedQuestionFormRefocusesOnClick(t *testing.T) {
+	t.Parallel()
+
+	u, _ := questionFormTestUI(t)
+	u.openBatchFormDialog(freeTextRequest("batch-1"))
+
+	// Simulate having Tab'd away to the chat: the form loses editor
+	// focus, and shrinking the height clears the 2/5 collapse threshold
+	// for any non-trivial form, forcing the one-line summary render.
+	u.focus = uiFocusMain
+	u.height = 10
+	u.updateLayoutAndSize()
+	form, ok := u.activeInline.(*dialog.QuestionForm)
+	require.True(t, ok)
+	require.True(t, u.shouldCollapseQuestion(form),
+		"test setup must actually force the collapsed render path")
+	require.Positive(t, u.layout.editor.Dx())
+	require.Positive(t, u.layout.editor.Dy())
+
+	u.Update(tea.MouseClickMsg{X: u.layout.editor.Min.X, Y: u.layout.editor.Min.Y})
+
+	// Before the fix, every click was routed to the form's
+	// HandleMouseClick first, which hit-tests against layout coordinates
+	// from the last full (expanded) Draw. While collapsed that layout is
+	// stale, so a click here must fall through handleClickFocus instead
+	// of being swallowed or misrouted by the stale hit-test.
+	require.Equal(t, uiFocusEditor, u.focus,
+		"clicking the collapsed summary must re-expand and focus the form")
+	require.Same(t, form, u.activeInline,
+		"the same form must still be active, not cleared or replaced")
+}
+
+func TestUpdate_MouseClick_CollapsedQuestionFormOutsideEditorReachesChat(t *testing.T) {
+	t.Parallel()
+
+	u, _ := questionFormTestUI(t)
+	u.openBatchFormDialog(freeTextRequest("batch-1"))
+	u.focus = uiFocusMain
+	u.height = 10
+	u.updateLayoutAndSize()
+	form, ok := u.activeInline.(*dialog.QuestionForm)
+	require.True(t, ok)
+	require.True(t, u.shouldCollapseQuestion(form))
+	require.Positive(t, u.layout.main.Dx())
+	require.Positive(t, u.layout.main.Dy())
+
+	// A click above the editor band, in the chat pane, must not be
+	// captured by the collapsed form's stale hit-test: it stays routed
+	// to the chat pane (e.g. so re-entering a parked branch by clicking
+	// its Agent tool card keeps working).
+	require.NotPanics(t, func() {
+		u.Update(tea.MouseClickMsg{X: u.layout.main.Min.X, Y: u.layout.main.Min.Y})
+	})
+	require.Equal(t, uiFocusMain, u.focus)
+	require.Same(t, form, u.activeInline,
+		"a click outside the editor must not disturb the parked form")
 }

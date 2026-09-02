@@ -476,6 +476,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "undo", "Undo Last Turn", "", ActionUndo{SessionID: c.sessionID}).WithAliases("revert"))
+	}
+
+	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "scroll_to_bottom", "Scroll to Bottom", "ctrl+down", ActionScrollToBottom{}).WithAliases("bottom"))
 	}
 

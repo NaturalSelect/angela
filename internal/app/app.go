@@ -38,6 +38,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
+	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/NaturalSelect/angela/internal/update"
 	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/charmbracelet/x/ansi"
@@ -58,6 +59,7 @@ type App struct {
 	Permissions permission.Service
 	Questions   question.Service
 	FileTracker filetracker.Service
+	Undo        undo.Service
 
 	AgentCoordinator agent.Coordinator
 
@@ -89,6 +91,20 @@ type App struct {
 	herdrClient *herdr.Client
 }
 
+// coordinatorBusyChecker defers to app.AgentCoordinator at call time
+// instead of capturing it directly: New constructs Undo before
+// InitCoderAgent assigns AgentCoordinator, so a direct capture would
+// permanently see it as nil.
+type coordinatorBusyChecker struct{ app *App }
+
+func (c coordinatorBusyChecker) IsSessionBusy(sessionID string) bool {
+	return c.app.AgentCoordinator != nil && c.app.AgentCoordinator.IsSessionBusy(sessionID)
+}
+
+func (c coordinatorBusyChecker) IsSessionBranch(sessionID string) bool {
+	return c.app.AgentCoordinator != nil && c.app.AgentCoordinator.IsSessionBranch(sessionID)
+}
+
 // New initializes a new application instance. skillsMgr carries the
 // per-workspace skill discovery results computed by the caller; the
 // caller is responsible for constructing it (typically via
@@ -98,6 +114,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	sessions := session.NewService(q, conn)
 	messages := message.NewService(q)
 	files := history.NewService(q, conn)
+	fileTracker := filetracker.NewService(q)
 	cfg := store.Config()
 
 	var rules []permission.Rule
@@ -127,7 +144,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		History:     files,
 		Permissions: permission.NewPermissionService(store.WorkingDir(), permissionMode, policy, cfg.Options.SkillsPaths...),
 		Questions:   question.NewService(),
-		FileTracker: filetracker.NewService(q),
+		FileTracker: fileTracker,
 		LSPManager:  lsp.NewManager(store),
 		Skills:      skillsMgr,
 
@@ -141,6 +158,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		agentNotifications: pubsub.NewBroker[notify.Notification](),
 		runCompletions:     pubsub.NewBroker[notify.RunComplete](),
 	}
+	app.Undo = undo.NewService(messages, files, sessions, fileTracker, coordinatorBusyChecker{app: app}, store.WorkingDir())
 
 	app.setupEvents()
 

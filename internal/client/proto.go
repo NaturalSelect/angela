@@ -685,6 +685,43 @@ func (c *Client) ListSessionHistoryFiles(ctx context.Context, id string, session
 	return files, nil
 }
 
+// PreviewUndo previews what undoing a session's last turn would do,
+// without doing it.
+func (c *Client) PreviewUndo(ctx context.Context, id string, sessionID string) (proto.UndoPreview, error) {
+	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/sessions/%s/undo", id, sessionID), nil, nil)
+	if err != nil {
+		return proto.UndoPreview{}, fmt.Errorf("failed to preview undo: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return proto.UndoPreview{}, fmt.Errorf("failed to preview undo: %w", err)
+	}
+	var preview proto.UndoPreview
+	if err := json.NewDecoder(rsp.Body).Decode(&preview); err != nil {
+		return proto.UndoPreview{}, fmt.Errorf("failed to decode undo preview: %w", err)
+	}
+	return preview, nil
+}
+
+// Undo reverts the turn identified by cutMessageID, as returned by a
+// prior PreviewUndo for the same session.
+func (c *Client) Undo(ctx context.Context, id string, sessionID string, cutMessageID string) (proto.UndoResult, error) {
+	body := jsonBody(proto.UndoRequest{CutMessageID: cutMessageID})
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/sessions/%s/undo", id, sessionID), nil, body, http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return proto.UndoResult{}, fmt.Errorf("failed to undo: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return proto.UndoResult{}, fmt.Errorf("failed to undo: %w", err)
+	}
+	var result proto.UndoResult
+	if err := json.NewDecoder(rsp.Body).Decode(&result); err != nil {
+		return proto.UndoResult{}, fmt.Errorf("failed to decode undo result: %w", err)
+	}
+	return result, nil
+}
+
 // CreateSession creates a new session in a workspace as a proto type.
 func (c *Client) CreateSession(ctx context.Context, id string, title string) (*proto.Session, error) {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/sessions", id), nil, jsonBody(proto.Session{Title: title}), http.Header{"Content-Type": []string{"application/json"}})

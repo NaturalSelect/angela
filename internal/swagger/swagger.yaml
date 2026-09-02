@@ -1325,6 +1325,61 @@ definitions:
       status:
         type: string
     type: object
+  proto.UndoPreview:
+    properties:
+      cut_message_id:
+        description: |-
+          CutMessageID identifies the turn: it is the earliest message
+          Undo would remove, and must be passed back to Undo unchanged.
+        type: string
+      delete:
+        items:
+          type: string
+        type: array
+      message_count:
+        type: integer
+      popped_text:
+        type: string
+      revert:
+        items:
+          type: string
+        type: array
+      skipped:
+        items:
+          $ref: '#/definitions/proto.UndoSkippedFile'
+        type: array
+    type: object
+  proto.UndoRequest:
+    properties:
+      cut_message_id:
+        type: string
+    type: object
+  proto.UndoResult:
+    properties:
+      deleted:
+        items:
+          type: string
+        type: array
+      message_count:
+        type: integer
+      popped_text:
+        type: string
+      reverted:
+        items:
+          type: string
+        type: array
+      skipped:
+        items:
+          $ref: '#/definitions/proto.UndoSkippedFile'
+        type: array
+    type: object
+  proto.UndoSkippedFile:
+    properties:
+      path:
+        type: string
+      reason:
+        type: string
+    type: object
   proto.VersionInfo:
     properties:
       build_id:
@@ -3614,6 +3669,87 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Get user messages for session
+      tags:
+      - sessions
+  /workspaces/{id}/sessions/{sid}/undo:
+    get:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.UndoPreview'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Preview undo
+      tags:
+      - sessions
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: Cut message ID from a prior preview
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.UndoRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.UndoResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Undo the last turn
       tags:
       - sessions
   /workspaces/{id}/skills:

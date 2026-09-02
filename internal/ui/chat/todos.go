@@ -82,7 +82,6 @@ func (t *TodosToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 					} else {
 						headerText = fmt.Sprintf("created %d todos", meta.Total)
 					}
-					body = FormatTodosList(sty, meta.Todos, styles.ArrowRightIcon, cappedWidth)
 				} else {
 					// Build header based on what changed.
 					hasCompleted := len(meta.JustCompleted) > 0
@@ -104,16 +103,11 @@ func (t *TodosToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 					} else {
 						headerText = ratio
 					}
-
-					// Build body with details.
-					if allCompleted {
-						// Show all todos when all are completed, like when created.
-						body = FormatTodosList(sty, meta.Todos, styles.ArrowRightIcon, cappedWidth)
-					} else if meta.JustStarted != "" {
-						body = sty.Tool.TodoInProgressIcon.Render(styles.ArrowRightIcon+" ") +
-							sty.Tool.TodoJustStarted.Render(meta.JustStarted)
-					}
 				}
+
+				// Always show the full list, so the whole plan stays visible
+				// rather than just the item that just changed.
+				body = FormatTodosList(sty, meta.Todos, styles.ArrowRightIcon, cappedWidth)
 			}
 		}
 	}

@@ -41,6 +41,10 @@ type EditResponseMetadata struct {
 	Removals   int    `json:"removals"`
 	OldContent string `json:"old_content,omitempty"`
 	NewContent string `json:"new_content,omitempty"`
+	// Created reports whether the edit created filePath rather than
+	// rewriting it, so a later undo knows to delete it instead of
+	// restoring OldContent (which is empty either way).
+	Created bool `json:"created,omitempty"`
 }
 
 //go:embed edit.md
@@ -160,6 +164,7 @@ func (t *editTool) planCreateNewFile(edit editContext, filePath, content string)
 		NewContent: content,
 		Additions:  additions,
 		Removals:   removals,
+		Created:    true,
 	}
 
 	return Plan{

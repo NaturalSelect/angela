@@ -57,6 +57,15 @@ type Service interface {
 	Delete(ctx context.Context, id string) error
 	DeleteSessionMessages(ctx context.Context, sessionID string) error
 
+	// DeleteFrom removes fromMessageID and every message after it in
+	// sessionID, deleting newest first so a caller observing the
+	// session mid-delete never sees later messages survive their
+	// earlier ones. It returns the number of messages removed.
+	//
+	// It is an error for fromMessageID not to belong to sessionID;
+	// nothing is deleted in that case.
+	DeleteFrom(ctx context.Context, sessionID, fromMessageID string) (int, error)
+
 	// ForkSession seeds dstSessionID with a copy of every message in
 	// srcSessionID from sinceMessageID (inclusive) up to beforeMessageID
 	// (exclusive), in order, with fresh IDs. An empty sinceMessageID copies
@@ -273,6 +282,24 @@ func (s *service) DeleteSessionMessages(ctx context.Context, sessionID string) e
 		}
 	}
 	return nil
+}
+
+func (s *service) DeleteFrom(ctx context.Context, sessionID, fromMessageID string) (int, error) {
+	messages, err := s.List(ctx, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	cut := slices.IndexFunc(messages, func(m Message) bool { return m.ID == fromMessageID })
+	if cut < 0 {
+		return 0, fmt.Errorf("message %q does not belong to session %s", fromMessageID, sessionID)
+	}
+	toDelete := messages[cut:]
+	for i := len(toDelete) - 1; i >= 0; i-- {
+		if err := s.Delete(ctx, toDelete[i].ID); err != nil {
+			return 0, err
+		}
+	}
+	return len(toDelete), nil
 }
 
 // Update accepts a new state for a message and either flushes

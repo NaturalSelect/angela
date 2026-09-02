@@ -36,9 +36,14 @@ type WritePermissionsParams struct {
 }
 
 type WriteResponseMetadata struct {
-	Diff      string `json:"diff"`
-	Additions int    `json:"additions"`
-	Removals  int    `json:"removals"`
+	Diff       string `json:"diff"`
+	Additions  int    `json:"additions"`
+	Removals   int    `json:"removals"`
+	OldContent string `json:"old_content,omitempty"`
+	// Created reports whether the write created FilePath rather than
+	// overwriting it, so a later undo knows to delete it instead of
+	// restoring OldContent (which is empty either way).
+	Created bool `json:"created,omitempty"`
 }
 
 type writeTool struct {
@@ -102,6 +107,7 @@ func (t *writeTool) plan(ctx context.Context, params WriteParams) (Plan, error) 
 
 	oldContent := ""
 	fileInfo, err := os.Stat(filePath)
+	created := os.IsNotExist(err)
 	switch {
 	case err == nil:
 		if fileInfo.IsDir() {
@@ -131,9 +137,11 @@ func (t *writeTool) plan(ctx context.Context, params WriteParams) (Plan, error) 
 		strings.TrimPrefix(filePath, t.workingDir),
 	)
 	metadata := WriteResponseMetadata{
-		Diff:      unified,
-		Additions: additions,
-		Removals:  removals,
+		Diff:       unified,
+		Additions:  additions,
+		Removals:   removals,
+		OldContent: oldContent,
+		Created:    created,
 	}
 
 	return Plan{

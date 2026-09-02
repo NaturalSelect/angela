@@ -65,6 +65,15 @@ type ActionSelectProvider struct {
 	ReAuthenticate bool
 }
 
+// ActionAddCustomProvider is emitted when the user picks the trailing
+// "add custom provider" row instead of a catalog entry. Catalog is the
+// list already fetched by the providers dialog, handed along so the
+// custom provider form can check for ID collisions without repeating a
+// catalog fetch on the Update goroutine.
+type ActionAddCustomProvider struct {
+	Catalog []catwalk.Provider
+}
+
 // ActionSelectAgent is emitted when the user picks the primary agent
 // the session should run on.
 type ActionSelectAgent struct {
@@ -165,6 +174,13 @@ type (
 type (
 	ActionChangeAPIKeyState struct {
 		State APIKeyInputState
+	}
+)
+
+// Messages for the custom provider dialog.
+type (
+	ActionChangeCustomProviderState struct {
+		State CustomProviderState
 	}
 )
 

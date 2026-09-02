@@ -26,6 +26,13 @@ const (
 	onboardingStepAuth
 	onboardingStepModel
 	onboardingStepModelConfig
+	// onboardingStepCustomProvider is reached from the trailing "add
+	// custom provider" row instead of a catalog pick. It stands in for
+	// both onboardingStepAuth and the provider pick itself: the form
+	// collects the id, endpoint, and key in one screen and hands back
+	// an already-configured provider, so it goes straight on to
+	// onboardingStepModel from there like any other configured pick.
+	onboardingStepCustomProvider
 )
 
 // previous names the step Esc walks back to, and reports false for the
@@ -34,7 +41,7 @@ func (s onboardingStep) previous() (onboardingStep, bool) {
 	switch s {
 	case onboardingStepModelConfig:
 		return onboardingStepModel, true
-	case onboardingStepAuth, onboardingStepModel:
+	case onboardingStepAuth, onboardingStepModel, onboardingStepCustomProvider:
 		return onboardingStepProvider, true
 	default:
 		return onboardingStepProvider, false
@@ -56,8 +63,23 @@ func (m *UI) openOnboardingStep(step onboardingStep) tea.Cmd {
 		return m.openModelsDialogFor(m.onboarding.provider.ID)
 	case onboardingStepModelConfig:
 		return m.openModelConfigDialog()
+	case onboardingStepCustomProvider:
+		return m.openCustomProviderDialog()
 	}
 	return nil
+}
+
+// openCustomProviderDialog opens the form for a provider absent from
+// both the catalog and the user's config.
+func (m *UI) openCustomProviderDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.CustomProviderID) {
+		m.dialog.BringToFront(dialog.CustomProviderID)
+		return nil
+	}
+
+	dlg, cmd := dialog.NewCustomProvider(m.com, m.state == uiOnboarding, m.onboarding.catalog)
+	m.dialog.OpenDialog(dlg)
+	return cmd
 }
 
 // openModelConfigDialog opens the step that settles the parameters the
@@ -90,6 +112,16 @@ func (m *UI) handleSelectProvider(msg dialog.ActionSelectProvider) tea.Cmd {
 	return m.openOnboardingStep(step)
 }
 
+// handleAddCustomProvider advances the first-run flow into the custom
+// provider form when the user picks the trailing row instead of a
+// catalog entry. The form itself settles both the provider and its
+// credentials, so it later reports back through ActionSelectProvider
+// like any other pick.
+func (m *UI) handleAddCustomProvider(msg dialog.ActionAddCustomProvider) tea.Cmd {
+	m.onboarding.catalog = msg.Catalog
+	return m.openOnboardingStep(onboardingStepCustomProvider)
+}
+
 // closeOnboardingDialog handles Esc during the first-run flow: every
 // step but the first walks back one level. The first has nowhere to go,
 // and closing it would strand the user on an empty screen.
@@ -109,6 +141,7 @@ func (m *UI) closeOnboardingDialogs() {
 	m.dialog.CloseDialog(dialog.OAuthID)
 	m.dialog.CloseDialog(dialog.ModelsID)
 	m.dialog.CloseDialog(dialog.ModelConfigID)
+	m.dialog.CloseDialog(dialog.CustomProviderID)
 }
 
 // markProjectInitializedCmd marks the current project as initialized in the config.

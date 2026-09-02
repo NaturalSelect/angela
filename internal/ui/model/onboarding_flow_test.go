@@ -61,6 +61,24 @@ func TestAConfiguredProviderSkipsTheCredentialStep(t *testing.T) {
 	require.False(t, m.dialog.ContainsDialog(dialog.APIKeyInputID))
 }
 
+// TestAddingACustomProviderOpensItsForm is how the flow hands off to
+// the custom provider dialog instead of a catalog pick: the catalog
+// already fetched by the providers dialog is carried along so the form
+// can check for id collisions without fetching it again.
+func TestAddingACustomProviderOpensItsForm(t *testing.T) {
+	pinTTLs(t)
+
+	ws := pickMockWorkspace(t)
+	m := newOnboardingUI(t, ws)
+	catalog := []catwalk.Provider{{ID: pickProviderID, Name: "Acme"}}
+
+	m.handleAddCustomProvider(dialog.ActionAddCustomProvider{Catalog: catalog})
+
+	require.Equal(t, onboardingStepCustomProvider, m.onboarding.step)
+	require.True(t, m.dialog.ContainsDialog(dialog.CustomProviderID))
+	require.Equal(t, catalog, m.onboarding.catalog)
+}
+
 // TestEditingAConfiguredProviderReopensCredentials is how a user reaches
 // the base URL of a provider that is already set up.
 func TestEditingAConfiguredProviderReopensCredentials(t *testing.T) {
@@ -165,6 +183,7 @@ func TestEscapeWalksBackOneStep(t *testing.T) {
 		{"the credential step goes back", onboardingStepAuth, onboardingStepProvider, dialog.ProvidersID},
 		{"the model step goes back", onboardingStepModel, onboardingStepProvider, dialog.ProvidersID},
 		{"the configuration step goes back to the model list", onboardingStepModelConfig, onboardingStepModel, dialog.ModelsID},
+		{"the custom provider step goes back", onboardingStepCustomProvider, onboardingStepProvider, dialog.ProvidersID},
 		{"the provider step stays put", onboardingStepProvider, onboardingStepProvider, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -198,9 +217,13 @@ func TestEachStepReplacesThePreviousDialog(t *testing.T) {
 	m.openOnboardingStep(onboardingStepProvider)
 	require.True(t, m.dialog.ContainsDialog(dialog.ProvidersID))
 
+	m.openOnboardingStep(onboardingStepCustomProvider)
+	require.True(t, m.dialog.ContainsDialog(dialog.CustomProviderID))
+	require.False(t, m.dialog.ContainsDialog(dialog.ProvidersID))
+
 	m.openOnboardingStep(onboardingStepAuth)
 	require.True(t, m.dialog.ContainsDialog(dialog.APIKeyInputID))
-	require.False(t, m.dialog.ContainsDialog(dialog.ProvidersID))
+	require.False(t, m.dialog.ContainsDialog(dialog.CustomProviderID))
 
 	m.openOnboardingStep(onboardingStepModel)
 	require.True(t, m.dialog.ContainsDialog(dialog.ModelsID))

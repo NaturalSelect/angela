@@ -281,6 +281,12 @@ type UI struct {
 		step     onboardingStep
 		provider catwalk.Provider
 
+		// catalog is the provider list the providers dialog had already
+		// fetched when the user chose to add a custom provider instead
+		// of a catalog entry. Carried along so the custom provider form
+		// can check for id collisions without fetching it again.
+		catalog []catwalk.Provider
+
 		// model is the pick the configuration step edits, and
 		// catwalkModel its catalog entry — zero for a hand-typed model
 		// the catalog has never listed.
@@ -718,6 +724,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case busyStateMsg:
 		cmds = append(cmds, m.applyBusyState(msg)...)
+	case branchStatusMsg:
+		m.applyBranchStatus(msg)
 	case promptQueueMsg:
 		cmds = append(cmds, m.applyPromptQueue(msg)...)
 	case lspStatesMsg:
@@ -2084,6 +2092,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 
 	case dialog.ActionSelectProvider:
 		if cmd := m.handleSelectProvider(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionAddCustomProvider:
+		if cmd := m.handleAddCustomProvider(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case dialog.ActionSelectModel:
@@ -4744,6 +4756,14 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	}
 	if cmd := m.dispatchPromptQueueRefresh(); cmd != nil {
 		cmds = append(cmds, cmd)
+	}
+	// The turn that just ended may have been the one merging the branch
+	// on screen. Re-probe rather than assume: most turns on a branch are
+	// ordinary drafting, not its last one.
+	if n.SessionID == m.currentSessionID() && m.viewingBranch() {
+		if cmd := m.dispatchBranchStatusRefresh(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	}
 	return tea.Batch(cmds...)
 }

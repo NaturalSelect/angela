@@ -82,8 +82,8 @@ func (m *UI) busyStatusFields() []string {
 	if done, total, ok := todoProgress(m.session.Todos); ok {
 		fields = append(fields, t.TurnStatus.Field.Render(fmt.Sprintf("%s%d/%d", styles.TodoCompletedIcon, done, total)))
 	}
-	if tokens := m.session.PromptTokens + m.session.CompletionTokens; tokens > 0 {
-		fields = append(fields, t.TurnStatus.Field.Render("⇣"+formatTokensCompact(tokens)))
+	if usage := m.tokenUsageField(); usage != "" {
+		fields = append(fields, t.TurnStatus.Field.Render(usage))
 	}
 	if cost := formatCost(m.session.Cost); cost != "" {
 		fields = append(fields, t.TurnStatus.Field.Render(cost))
@@ -121,7 +121,8 @@ func (m *UI) renderTurnHint() string {
 	return t.TurnStatus.HintKey.Render("esc") + t.TurnStatus.HintDesc.Render(" "+desc)
 }
 
-// renderIdleStatus renders the between-turns line: model, context use, cost.
+// renderIdleStatus renders the between-turns line: model, token/context use,
+// cost.
 func (m *UI) renderIdleStatus(width int) string {
 	t := m.com.Styles
 
@@ -131,12 +132,10 @@ func (m *UI) renderIdleStatus(width int) string {
 	if m.viewingBranch() {
 		fields = append(fields, t.TurnStatus.Idle.Render("branch · merge to return · /abort to abandon"))
 	}
-	if active := m.activeAgent(); active != nil {
-		// The model name already sits on the prompt box's bottom border;
-		// repeating it here only doubles the noise.
-		if pct := m.contextPercent(active.CatwalkCfg.ContextWindow); pct != "" {
-			fields = append(fields, t.TurnStatus.Idle.Render(pct+" context"))
-		}
+	// The model name already sits on the prompt box's bottom border;
+	// repeating it here only doubles the noise.
+	if usage := m.tokenUsageField(); usage != "" {
+		fields = append(fields, t.TurnStatus.Idle.Render(usage))
 	}
 	if cost := formatCost(m.session.Cost); cost != "" {
 		fields = append(fields, t.TurnStatus.Idle.Render(cost))
@@ -147,6 +146,25 @@ func (m *UI) renderIdleStatus(width int) string {
 
 	icon := t.TurnStatus.Idle.Render("◇")
 	return joinStatusLine(t, icon, fields, "", width)
+}
+
+// tokenUsageField formats the running token count together with the
+// percentage of the context window it fills, so the two numbers always
+// appear side by side instead of one depending on whether a turn is
+// in flight. The percentage is omitted until the context window size is
+// known.
+func (m *UI) tokenUsageField() string {
+	tokens := m.session.PromptTokens + m.session.CompletionTokens
+	if tokens <= 0 {
+		return ""
+	}
+	usage := "⇣" + formatTokensCompact(tokens)
+	if active := m.activeAgent(); active != nil {
+		if pct := m.contextPercent(active.CatwalkCfg.ContextWindow); pct != "" {
+			usage = pct + " " + usage
+		}
+	}
+	return usage
 }
 
 // contextPercent formats how much of the context window the session fills.

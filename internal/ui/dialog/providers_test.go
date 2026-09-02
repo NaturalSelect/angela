@@ -134,3 +134,53 @@ func TestFilteringNarrowsTheProviderList(t *testing.T) {
 
 	require.Equal(t, []string{otherProviderID}, visibleProviderIDs(m))
 }
+
+// TestTheAddProviderRowIsAlwaysPresent pins the way out when nothing in
+// the catalog is what the user wants: unlike every other row, it must
+// survive both an empty query and one that matches nothing.
+func TestTheAddProviderRowIsAlwaysPresent(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newProvidersDialog(t, ws)
+	m.SetProviders(twoProviderCatalog())
+
+	requireTrailingAddRow := func(t *testing.T) {
+		t.Helper()
+		require.Positive(t, m.list.Len())
+		_, ok := m.list.ItemAt(m.list.Len() - 1).(*AddProviderItem)
+		require.True(t, ok, "the add-provider row must be the last item")
+	}
+
+	requireTrailingAddRow(t)
+	require.Equal(t, len(twoProviderCatalog())+1, m.list.Len(),
+		"the add-provider row is one more than the provider count")
+
+	for _, r := range "nonexistentquery" {
+		m.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	require.Equal(t, 1, m.list.Len(), "a query matching nothing still leaves the add-provider row")
+	requireTrailingAddRow(t)
+}
+
+// TestSelectingTheAddProviderRowReturnsAddCustomProvider is how the
+// list hands off to the custom provider form instead of a catalog pick.
+func TestSelectingTheAddProviderRowReturnsAddCustomProvider(t *testing.T) {
+	t.Parallel()
+
+	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
+	ctrlE := tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl}
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newProvidersDialog(t, ws)
+	m.SetProviders(twoProviderCatalog())
+	m.list.SetSelected(m.list.Len() - 1)
+
+	require.Nil(t, m.HandleMsg(ctrlE), "ctrl+e has no credentials to edit on the add-provider row")
+
+	action, ok := m.HandleMsg(enter).(ActionAddCustomProvider)
+	require.True(t, ok)
+	require.Equal(t, twoProviderCatalog(), action.Catalog,
+		"the already-fetched catalog is carried along instead of being fetched again")
+}

@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -77,6 +79,47 @@ func TestTurnStatusHintTracksCancelState(t *testing.T) {
 
 	m.isCanceling = true
 	require.Contains(t, m.renderTurnStatus(200), "again to cancel")
+}
+
+// Token usage and context-window usage are two views of the same number;
+// showing one without the other left the reader guessing what the visible
+// one meant, so both turn states must carry them together.
+func TestTurnStatusShowsTokensAndContextTogether(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.agentReady = true
+	m.agentActiveKnown = true
+	m.agentActiveSession = m.currentSessionID()
+	m.agentActive = workspace.ActiveAgent{
+		CatwalkCfg: catwalk.Model{ContextWindow: 10_000},
+	}
+
+	busy := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, busy, "32%", "busy status must show the context percentage")
+	require.Contains(t, busy, "3.2k", "busy status must show the raw token count")
+
+	m.agentBusyCache.set(false)
+	idle := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, idle, "32%", "idle status must show the context percentage")
+	require.Contains(t, idle, "3.2k", "idle status must show the raw token count")
+}
+
+// Without a known context window there is nothing to take a percentage of,
+// so both states fall back to the raw count alone rather than a bare "%".
+func TestTurnStatusTokenUsageWithoutContextWindow(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+
+	busy := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, busy, "3.2k")
+	require.NotContains(t, busy, "%")
+
+	m.agentBusyCache.set(false)
+	idle := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, idle, "3.2k")
+	require.NotContains(t, idle, "%")
 }
 
 // A sub-cent turn must not read as free.

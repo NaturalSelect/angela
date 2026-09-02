@@ -95,6 +95,15 @@ type busyStateMsg struct {
 	activeKnown bool
 }
 
+// branchStatusMsg delivers the result of an off-thread branch-liveness
+// probe.
+type branchStatusMsg struct {
+	// forSession is the session the probe was scoped to. A result that
+	// raced a session switch describes the wrong one and is discarded.
+	forSession string
+	isBranch   bool
+}
+
 // promptQueueMsg delivers the queued prompts fetched off-thread.
 type promptQueueMsg struct {
 	// forSession is the session the fetch was scoped to; a result that
@@ -230,6 +239,38 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 		cmds = append(cmds, cmd)
 	}
 	return cmds
+}
+
+// dispatchBranchStatusRefresh probes whether the current session is still a
+// live branch, delivering a branchStatusMsg. Called only on the notification
+// edge that could resolve one — the session's own turn ending — so this
+// never runs per frame or off an unrelated state edge.
+func (m *UI) dispatchBranchStatusRefresh() tea.Cmd {
+	if m.com == nil || m.com.Workspace == nil {
+		return nil
+	}
+	ws := m.com.Workspace
+	sessionID := m.currentSessionID()
+	return func() tea.Msg {
+		return branchStatusMsg{forSession: sessionID, isBranch: ws.AgentIsSessionBranch(sessionID)}
+	}
+}
+
+// applyBranchStatus stores an off-thread branch-liveness probe result. A
+// branch that stopped being one (merged, or abandoned) freezes exactly like
+// an ordinary sub-agent transcript: focus leaves the editor so the
+// read-only notice and the sendMessage/Tab gates take over immediately,
+// without the user having to leave and reload the session to see it.
+func (m *UI) applyBranchStatus(msg branchStatusMsg) {
+	if msg.forSession != m.currentSessionID() || msg.isBranch == m.sessionIsBranch {
+		return
+	}
+	m.sessionIsBranch = msg.isBranch
+	if !msg.isBranch {
+		m.textarea.Blur()
+		m.chat.Focus()
+		m.setState(m.state, uiFocusMain)
+	}
 }
 
 // dispatchPromptQueueRefresh returns a command that fetches the queued

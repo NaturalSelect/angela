@@ -41,6 +41,7 @@ type Providers struct {
 
 	providers []catwalk.Provider
 	items     []*ProviderItem
+	addItem   *AddProviderItem
 
 	// catalogLoaded reports whether the catalog arrived. Until it does
 	// the dialog lists the already-configured providers, so it always
@@ -86,6 +87,8 @@ func NewProviders(com *common.Common, isOnboarding bool) *Providers {
 	m.list = list.NewList()
 	m.list.RegisterRenderCallback(list.FocusedRenderCallback(m.list))
 	m.list.Focus()
+
+	m.addItem = NewAddProviderItem(t)
 
 	m.input = textinput.New()
 	m.input.SetVirtualCursor(false)
@@ -216,13 +219,17 @@ func (m *Providers) selectCurrentProvider() {
 func (m *Providers) visibleItems() []list.Item {
 	query := strings.ToLower(strings.ReplaceAll(m.input.Value(), " ", ""))
 
+	// The add-custom-provider row is not fuzzy-matched: it is the way
+	// out when the query matches nothing, so it must survive filtering
+	// unconditionally rather than disappearing along with every other
+	// row.
 	if query == "" {
-		items := make([]list.Item, 0, len(m.items))
+		items := make([]list.Item, 0, len(m.items)+1)
 		for _, item := range m.items {
 			item.SetMatch(fuzzy.Match{})
 			items = append(items, item)
 		}
-		return items
+		return append(items, m.addItem)
 	}
 
 	names := make([]string, len(m.items))
@@ -235,13 +242,13 @@ func (m *Providers) visibleItems() []list.Item {
 		return matches[i].Index < matches[j].Index
 	})
 
-	items := make([]list.Item, 0, len(matches))
+	items := make([]list.Item, 0, len(matches)+1)
 	for _, match := range matches {
 		item := m.items[match.Index]
 		item.SetMatch(match)
 		items = append(items, item)
 	}
-	return items
+	return append(items, m.addItem)
 }
 
 // SelectedProvider returns the highlighted provider item, or nil when
@@ -275,14 +282,19 @@ func (m *Providers) HandleMsg(msg tea.Msg) Action {
 			}
 			m.list.ScrollToSelected()
 		case key.Matches(msg, m.keyMap.Select, m.keyMap.Edit):
-			item := m.SelectedProvider()
-			if item == nil {
-				break
-			}
-			return ActionSelectProvider{
-				Provider:       item.prov,
-				Configured:     item.configured,
-				ReAuthenticate: key.Matches(msg, m.keyMap.Edit),
+			switch item := m.list.SelectedItem().(type) {
+			case *ProviderItem:
+				return ActionSelectProvider{
+					Provider:       item.prov,
+					Configured:     item.configured,
+					ReAuthenticate: key.Matches(msg, m.keyMap.Edit),
+				}
+			case *AddProviderItem:
+				// Edit has nothing to reauthenticate here — the row has
+				// no credentials of its own yet.
+				if !key.Matches(msg, m.keyMap.Edit) {
+					return ActionAddCustomProvider{Catalog: m.providers}
+				}
 			}
 		default:
 			var cmd tea.Cmd

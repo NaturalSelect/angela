@@ -119,7 +119,7 @@ func runCmds(m *UI, cmd tea.Cmd) []tea.Msg {
 		for _, c := range msg {
 			msgs = append(msgs, runCmds(m, c)...)
 		}
-	case busyStateMsg, promptQueueMsg, agentRunSubmittedMsg, lspStatesMsg, agentModelChangedMsg:
+	case busyStateMsg, promptQueueMsg, agentRunSubmittedMsg, lspStatesMsg, agentModelChangedMsg, branchStatusMsg:
 		msgs = append(msgs, msg)
 		_, next := m.Update(msg)
 		msgs = append(msgs, runCmds(m, next)...)
@@ -287,6 +287,68 @@ func TestAgentTerminalNotificationsRefreshBusy(t *testing.T) {
 				"busy→idle edge must reach the cache without waiting for the TTL")
 		})
 	}
+}
+
+// TestMergedBranchFreezesWithoutLeavingTheSession pins the reactive half of
+// freezing a merged branch: a user who watches the merge happen, without
+// navigating away and back, must lose the editor the instant the branch
+// resolves — mirroring how an ordinary sub-agent transcript already
+// behaves rather than requiring a reload to notice. The busy→idle edge is
+// what triggers the re-probe, since that is the only edge a branch's last
+// turn can end on without the user leaving.
+func TestMergedBranchFreezesWithoutLeavingTheSession(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	m.session.ParentSessionID = "parent-1"
+	m.sessionIsBranch = true
+	m.textarea.Focus()
+	warmCaches(m, true) // stale: still busy
+	active := workspace.ActiveAgent{}
+	stubBusyProbe(ws, true, false, permission.ModeManual, &active) // agent now idle
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+	ws.EXPECT().AgentIsSessionBranch("s1").Return(false) // the merge just resolved it
+
+	require.True(t, m.viewingBranch(), "fixture must start on a live branch")
+
+	_, cmd := m.Update(pubsub.Event[notify.Notification]{
+		Type:    pubsub.CreatedEvent,
+		Payload: notify.Notification{Type: notify.TypeAgentFinished, SessionID: "s1"},
+	})
+	runCmds(m, cmd)
+
+	require.False(t, m.sessionIsBranch, "a resolved branch must stop reporting as one")
+	require.True(t, m.viewingSubAgent(), "a merged branch freezes exactly like a sub-agent transcript")
+	require.False(t, m.textarea.Focused(), "the editor must give up focus once the branch freezes")
+	require.Equal(t, uiFocusMain, m.focus)
+}
+
+// TestBranchStatusRefreshLeavesALiveBranchAlone pins the other side: most
+// turns on a live branch are ordinary drafting, not the one that merges
+// it, so a re-probe confirming the branch is still waiting must leave the
+// editor alone rather than churn focus every turn.
+func TestBranchStatusRefreshLeavesALiveBranchAlone(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	m.session.ParentSessionID = "parent-1"
+	m.sessionIsBranch = true
+	m.textarea.Focus()
+	warmCaches(m, true)
+	active := workspace.ActiveAgent{}
+	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+	ws.EXPECT().AgentIsSessionBranch("s1").Return(true) // still waiting on the user
+
+	_, cmd := m.Update(pubsub.Event[notify.Notification]{
+		Type:    pubsub.CreatedEvent,
+		Payload: notify.Notification{Type: notify.TypeAgentFinished, SessionID: "s1"},
+	})
+	runCmds(m, cmd)
+
+	require.True(t, m.sessionIsBranch)
+	require.False(t, m.viewingSubAgent(), "a branch still waiting on the user must keep its editor")
+	require.True(t, m.textarea.Focused())
 }
 
 // TestSessionSwitchRefreshesQueueAndBusy: switching sessions must drop the

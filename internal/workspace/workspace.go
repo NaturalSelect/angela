@@ -144,11 +144,15 @@ type Workspace interface {
 	// Agent
 	AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error
 	AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (proto.ShellCommandResponse, error)
+	// AgentCancel interrupts a running turn. On a conversation suspended
+	// waiting on one or more branches it reaches through and interrupts
+	// those too, since the parent has nothing running of its own. It
+	// never gives up a branch outright, whether named directly or
+	// reached through its parent.
 	AgentCancel(sessionID string)
 	// AgentAbandonBranch gives a branch up whether or not a turn is
-	// running on it, releasing the parent call suspended on it.
-	// AgentCancel interrupts a turn and only abandons an idle branch;
-	// this is the outcome the user names outright.
+	// running on it, releasing the parent call suspended on it. This is
+	// the only call that ever abandons a branch outright.
 	AgentAbandonBranch(sessionID string)
 	AgentIsBusy() bool
 	AgentIsSessionBusy(sessionID string) bool

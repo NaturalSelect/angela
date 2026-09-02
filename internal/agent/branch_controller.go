@@ -65,29 +65,23 @@ func (b *branchController) Signal(branchSessionID string, out branchOutcome) boo
 	return true
 }
 
-// AbortByParent resolves every branch the given parent is suspended on and
-// returns their session IDs so the caller can tear those runs down too.
-// Cancelling a parent has to reach through: otherwise the parent is freed and
-// the branch keeps running with nobody left to merge into.
-//
-// It resolves all of them rather than the first because the agent tool
-// dispatches in parallel, so one turn can suspend on two branches at once.
-func (b *branchController) AbortByParent(parentSessionID string, out branchOutcome) []string {
-	var aborted []string
-	for branchSessionID, w := range b.waiters.Seq2() {
-		if w.parentSessionID != parentSessionID {
-			continue
-		}
-		if b.Signal(branchSessionID, out) {
-			aborted = append(aborted, branchSessionID)
-		}
-	}
-	return aborted
-}
-
 // Waiting reports whether a session is a branch with a parent still suspended
 // on it.
 func (b *branchController) Waiting(branchSessionID string) bool {
 	_, ok := b.waiters.Get(branchSessionID)
 	return ok
+}
+
+// branchesOf lists the branch session IDs still suspending the given parent,
+// without resolving any of them. This is what lets a cancel arriving on the
+// parent reach through to interrupt their turns while leaving the rendezvous
+// itself untouched — only Signal may resolve a branch.
+func (b *branchController) branchesOf(parentSessionID string) []string {
+	var ids []string
+	for branchSessionID, w := range b.waiters.Seq2() {
+		if w.parentSessionID == parentSessionID {
+			ids = append(ids, branchSessionID)
+		}
+	}
+	return ids
 }

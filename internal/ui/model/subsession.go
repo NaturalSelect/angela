@@ -149,30 +149,18 @@ func (m *UI) goToBreadcrumbLevel(index int) tea.Cmd {
 // check meant the key could never back out of a still-running sub-agent,
 // since the overall turn stays busy for as long as its transcript exists.
 //
-// A branch claims the key even while idle: there the gesture is not stopping
-// a turn but abandoning the branch, which is the only way to release the
-// conversation suspended behind it.
+// A branch is otherwise treated like any other session: escape interrupts
+// its turn while busy, same as elsewhere, but never abandons it. /abort is
+// the only way to give a branch up, so that one key keeps one job.
+//
+// An open completions popup keeps its own, more local meaning for escape
+// (close the popup) regardless of busy state: typing "/" or "@" and backing
+// out of it is routine and must not be read as a cancel press.
 func (m *UI) escapeCancels() bool {
-	if m.viewingSubAgent() {
+	if m.viewingSubAgent() || m.completionsOpen {
 		return false
 	}
-	return m.isAgentBusy() || m.viewingBranch()
-}
-
-// cancelLeavesBranch reports whether a confirmed cancel also returns to the
-// parent conversation.
-//
-// An idle branch is abandoned by the gesture, so its transcript is finished
-// and the view follows it back. A busy one only loses its current turn and
-// the user keeps talking to it, so the view stays. This mirrors the split
-// coordinator.Cancel makes on the same signal.
-//
-// Unlike the sub-agent transcript's read-only guard, this does not also
-// require inSubSession: a branch always names its parent on the session
-// itself, so leaveSubSession can find its way back even with nothing on
-// the stack.
-func (m *UI) cancelLeavesBranch() bool {
-	return m.viewingBranch() && !m.isAgentBusy()
+	return m.isAgentBusy()
 }
 
 // abortBranch abandons a branch without merging and returns to the

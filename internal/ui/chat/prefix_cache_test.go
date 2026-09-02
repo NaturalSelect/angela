@@ -98,8 +98,12 @@ func TestAssistantMessageItemRender_PrefixCacheHighlightOnTop(t *testing.T) {
 	require.Equal(t, plain, plainAfter, "clearing the highlight must restore the cached prefixed output exactly")
 }
 
-// TestUserMessageItemRender_PrefixCacheFocusBlur is the user-message
-// counterpart of the assistant focus/blur cache test.
+// TestUserMessageItemRender_PrefixCacheFocusBlur pins that the user band
+// renders identically regardless of focus. Unlike the assistant item, it
+// carries no focus-only accent (see the no-background-fill rationale on
+// UserBand in quickstyle.go) — the "❯" prompt glyph alone marks a user
+// message, focused or not, so the prefix cache must serve the same output
+// either way.
 func TestUserMessageItemRender_PrefixCacheFocusBlur(t *testing.T) {
 	t.Parallel()
 
@@ -130,7 +134,7 @@ func TestUserMessageItemRender_PrefixCacheFocusBlur(t *testing.T) {
 
 	item.SetFocused(false)
 	blurred := item.Render(width)
-	require.NotEqual(t, focused1, blurred)
+	require.Equal(t, focused1, blurred, "the user band has no focus-only accent, so blurring must not change its render")
 
 	item.SetFocused(true)
 	focused3 := item.Render(width)

@@ -476,7 +476,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
-		commands = append(commands, NewCommandItem(c.com.Styles, "scroll_to_bottom", "Scroll to Bottom", "", ActionScrollToBottom{}).WithAliases("bottom"))
+		commands = append(commands, NewCommandItem(c.com.Styles, "scroll_to_bottom", "Scroll to Bottom", "ctrl+down", ActionScrollToBottom{}).WithAliases("bottom"))
 	}
 
 	if c.hasParent {

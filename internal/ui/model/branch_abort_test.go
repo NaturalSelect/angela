@@ -25,9 +25,8 @@ type cancelCalls struct {
 }
 
 // newIdleMockWorkspace stubs the quietest answers (not ready, not busy,
-// permissions not skipped) for tests that only resolve escapeCancels() /
-// cancelLeavesBranch() and never reach AgentCancel, AgentAbandonBranch,
-// or GetSession.
+// permissions not skipped) for tests that only resolve escapeCancels() and
+// never reach AgentCancel, AgentAbandonBranch, or GetSession.
 func newIdleMockWorkspace(t *testing.T) *MockWorkspace {
 	t.Helper()
 
@@ -81,7 +80,8 @@ func drain(cmd tea.Cmd) {
 }
 
 // newBranchCancelUI builds a UI sitting inside a branch with one frame on
-// the session stack, which is the shape both abort entry points act on.
+// the session stack, which is the shape both the shared cancel and /abort
+// act on.
 func newBranchCancelUI(t *testing.T, busy bool) (*UI, *cancelCalls) {
 	t.Helper()
 
@@ -98,17 +98,18 @@ func newBranchCancelUI(t *testing.T, busy bool) (*UI, *cancelCalls) {
 }
 
 // TestEscapeCancelsGate pins which sessions let escape mean "stop" instead
-// of "go back". An idle branch is the case the feature adds: it has no
-// running turn, so before this the key fell through to navigation and the
-// branch could never be abandoned.
+// of "go back". A branch is otherwise an ordinary session: only a running
+// turn gives escape something to stop, since /abort — not escape — is how
+// a branch is given up.
 func TestEscapeCancelsGate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("an idle branch claims the key", func(t *testing.T) {
+	t.Run("an idle branch does not claim the key", func(t *testing.T) {
 		t.Parallel()
 
 		ui, _ := newBranchCancelUI(t, false)
-		require.True(t, ui.escapeCancels())
+		require.False(t, ui.escapeCancels(),
+			"only /abort gives up a branch; escape must leave an idle one alone")
 	})
 
 	t.Run("a busy branch claims the key", func(t *testing.T) {
@@ -116,6 +117,17 @@ func TestEscapeCancelsGate(t *testing.T) {
 
 		ui, _ := newBranchCancelUI(t, true)
 		require.True(t, ui.escapeCancels())
+	})
+
+	// Regression: typing "/" or "@" and backing out of the completions
+	// popup is routine and must close the popup, not interrupt the turn.
+	t.Run("a busy branch with completions open does not", func(t *testing.T) {
+		t.Parallel()
+
+		ui, _ := newBranchCancelUI(t, true)
+		ui.completionsOpen = true
+		require.False(t, ui.escapeCancels(),
+			"escape must close the completions popup, not interrupt the turn")
 	})
 
 	t.Run("an idle root session does not", func(t *testing.T) {
@@ -174,84 +186,6 @@ func TestEscapeCancelsGate(t *testing.T) {
 		ui.agentBusyCache.set(true)
 		require.True(t, ui.escapeCancels(), "regression: busy sessions always cancelled")
 	})
-}
-
-// TestCancelLeavesBranchGate pins the other half of the split: whether a
-// confirmed cancel also navigates back. Getting this wrong either strands
-// the user on a dead transcript or throws them out mid-conversation.
-func TestCancelLeavesBranchGate(t *testing.T) {
-	t.Parallel()
-
-	t.Run("an idle branch is abandoned, so the view goes back", func(t *testing.T) {
-		t.Parallel()
-
-		ui, _ := newBranchCancelUI(t, false)
-		require.True(t, ui.cancelLeavesBranch())
-	})
-
-	t.Run("a busy branch only loses its turn, so the view stays", func(t *testing.T) {
-		t.Parallel()
-
-		ui, _ := newBranchCancelUI(t, true)
-		require.False(t, ui.cancelLeavesBranch(),
-			"interrupting a reply must not throw the user out of the branch")
-	})
-
-	t.Run("an ordinary busy session never navigates on cancel", func(t *testing.T) {
-		t.Parallel()
-
-		ui := &UI{
-			com:        &common.Common{Workspace: newIdleMockWorkspace(t)},
-			session:    &session.Session{ID: "root"},
-			agentReady: true,
-		}
-		ui.agentBusyCache.set(true)
-		require.False(t, ui.cancelLeavesBranch())
-	})
-
-	// Regression: a branch opened without drilling down (e.g. picked
-	// straight from the session switcher, which clears the session
-	// stack) has nothing on sessionStack to pop even though it has a
-	// parent. cancelLeavesBranch used to also require inSubSession and
-	// so answered false here, leaving the view stranded on an abandoned
-	// branch instead of following it back.
-	t.Run("an idle branch with nothing on the stack still goes back", func(t *testing.T) {
-		t.Parallel()
-
-		ui := &UI{
-			com:        &common.Common{Workspace: newIdleMockWorkspace(t)},
-			session:    &session.Session{ID: "branch-1", ParentSessionID: "parent-1", Agent: "pairing"},
-			agentReady: true,
-		}
-		ui.sessionIsBranch = true
-		ui.agentBusyCache.set(false)
-
-		require.False(t, ui.inSubSession(), "the fixture must start with nothing on the stack")
-		require.True(t, ui.cancelLeavesBranch(),
-			"a branch always names its own parent, so leaving must not depend on a breadcrumb")
-	})
-}
-
-// TestEscOnAnIdleBranchAborts drives the real two-step cancel: the first
-// press must only arm, and the second must reach AgentCancel naming the
-// branch rather than the parent it returns to.
-func TestEscOnAnIdleBranchAborts(t *testing.T) {
-	t.Parallel()
-
-	ui, ws := newBranchCancelUI(t, false)
-
-	ui.cancelAgent()
-	require.True(t, ui.isCanceling, "the first press arms the two-step cancel")
-	require.Empty(t, ws.cancelled, "the first press must not abandon the branch")
-
-	drain(ui.cancelAgent())
-	require.False(t, ui.isCanceling)
-	require.Equal(t, []string{"branch-1"}, ws.cancelled,
-		"the abort must name the branch, not the parent it returns to")
-	require.Empty(t, ws.abandoned,
-		"escape stays on the shared cancel, which abandons an idle branch itself")
-	require.Contains(t, ws.loaded, "parent-1",
-		"an abandoned branch must hand the view back to its parent")
 }
 
 // TestEscOnABusyBranchOnlyInterruptsTheTurn pins that a running turn can be
@@ -336,42 +270,10 @@ func TestAbortBranchIsUnconditional(t *testing.T) {
 	}
 }
 
-// TestEscOnAnIdleBranchWithNoStackStillReachesTheParent is the full-chain
-// regression for a branch opened without drilling down — e.g. picked
-// directly from the session switcher, which clears the session stack via
-// loadSessionOpt.clearStack. Before the fix, leaveSubSession indexed
-// sessionStack unconditionally and cancelLeavesBranch refused to call it
-// unless the stack was non-empty, so such a branch could be abandoned on
-// the backend by the second Esc press while the view stayed on the now-dead
-// transcript. leaveSubSession must fall back to the session's own
-// ParentSessionID, and the two-step cancel must reach it end to end.
-func TestEscOnAnIdleBranchWithNoStackStillReachesTheParent(t *testing.T) {
-	t.Parallel()
-
-	ws, calls := newCancelRecordingWorkspace(t)
-	ui := &UI{
-		com:        &common.Common{Workspace: ws},
-		session:    &session.Session{ID: "branch-1", ParentSessionID: "parent-1", Agent: "pairing"},
-		agentReady: true,
-	}
-	ui.sessionIsBranch = true
-	ui.agentBusyCache.set(false)
-	require.False(t, ui.inSubSession(), "the fixture must start with nothing on the stack")
-
-	ui.cancelAgent()
-	require.True(t, ui.isCanceling, "the first press arms the two-step cancel")
-	require.Empty(t, calls.cancelled, "the first press must not abandon the branch")
-
-	drain(ui.cancelAgent())
-	require.False(t, ui.isCanceling)
-	require.Equal(t, []string{"branch-1"}, calls.cancelled,
-		"the abort must name the branch, not the parent it returns to")
-	require.Contains(t, calls.loaded, "parent-1",
-		"a branch with no stack frame must still hand the view back to its parent")
-}
-
-// TestAbortBranchWithNoStackStillReachesTheParent is /abort's counterpart
-// to the Esc regression above: abortBranch used to gate the return
+// TestAbortBranchWithNoStackStillReachesTheParent is the regression for a
+// branch opened without drilling down — e.g. picked directly from the
+// session switcher, which clears the session stack via
+// loadSessionOpt.clearStack. abortBranch used to gate the return
 // navigation on inSubSession too, so /abort on a switcher-opened branch
 // would abandon it on the backend and then strand the view on the dead
 // transcript instead of returning to the parent.

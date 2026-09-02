@@ -31,7 +31,6 @@ func TestLoadingADeadBranchIsReadOnly(t *testing.T) {
 	require.False(t, m.textarea.Focused())
 	require.False(t, m.escapeCancels(),
 		"esc must go back a level, not abandon a branch that is already over")
-	require.False(t, m.cancelLeavesBranch())
 }
 
 // TestLoadingALiveBranchKeepsTheEditor is the control for the case above:
@@ -51,8 +50,8 @@ func TestLoadingALiveBranchKeepsTheEditor(t *testing.T) {
 	require.False(t, m.viewingSubAgent(), "a branch must keep its editor")
 	require.Equal(t, uiFocusEditor, m.focus)
 	require.True(t, m.textarea.Focused())
-	require.True(t, m.escapeCancels(),
-		"esc on an idle branch abandons it, which is the only way to release the parent")
+	require.False(t, m.escapeCancels(),
+		"esc never abandons a branch; only /abort does, so an idle branch leaves escape alone")
 }
 
 // TestViewingSubAgentExcludesBranches is the guard that makes a branch

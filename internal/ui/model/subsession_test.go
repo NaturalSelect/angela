@@ -189,7 +189,7 @@ func TestSessionTrailNamesEveryLevel(t *testing.T) {
 	require.Nil(t, m.sessionTrail())
 }
 
-// Esc is the cancel/abandon gesture; it must not navigate out of a
+// Esc is the cancel gesture; it must not navigate out of a
 // sub-agent transcript.
 func TestEscapeNoLongerLeavesASubSession(t *testing.T) {
 	t.Parallel()

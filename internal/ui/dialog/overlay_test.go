@@ -5,22 +5,24 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-// stubDialog is a minimal Dialog for testing Overlay behavior.
-type stubDialog struct {
-	id       string
-	received []tea.Msg
+// newDialog returns a MockDialog with the given id whose HandleMsg
+// records every message it receives, in call order, mirroring the old
+// hand-written stubDialog.
+func newDialog(t *testing.T, id string) (*MockDialog, *[]tea.Msg) {
+	t.Helper()
+	received := &[]tea.Msg{}
+	m := NewMockDialog(gomock.NewController(t))
+	m.EXPECT().ID().Return(id).AnyTimes()
+	m.EXPECT().HandleMsg(gomock.Any()).Do(func(msg tea.Msg) {
+		*received = append(*received, msg)
+	}).Return(nil).AnyTimes()
+	m.EXPECT().Draw(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	return m, received
 }
-
-func (s *stubDialog) ID() string { return s.id }
-func (s *stubDialog) HandleMsg(msg tea.Msg) Action {
-	s.received = append(s.received, msg)
-	return nil
-}
-func (s *stubDialog) Draw(_ uv.Screen, _ uv.Rectangle) *tea.Cursor { return nil }
 
 func keyMsg(r rune) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: r, Text: string(r)}
@@ -32,14 +34,14 @@ func keyMsg(r rune) tea.KeyPressMsg {
 func TestOverlay_GracePeriodSwallowsKeys(t *testing.T) {
 	t.Parallel()
 
-	d := &stubDialog{id: "test"}
+	d, received := newDialog(t, "test")
 	o := NewOverlay()
 	o.OpenDialogWithGrace(d)
 
 	for _, r := range []rune{'a', 's', 'd', 'x', 'z'} {
 		o.Update(keyMsg(r))
 	}
-	require.Empty(t, d.received, "no keys should reach the dialog during grace period")
+	require.Empty(t, *received, "no keys should reach the dialog during grace period")
 }
 
 // TestOverlay_GracePeriodArmsAfterQuiet verifies that once input has been
@@ -47,7 +49,7 @@ func TestOverlay_GracePeriodSwallowsKeys(t *testing.T) {
 func TestOverlay_GracePeriodArmsAfterQuiet(t *testing.T) {
 	t.Parallel()
 
-	d := &stubDialog{id: "test"}
+	d, received := newDialog(t, "test")
 	o := NewOverlay()
 	o.OpenDialogWithGrace(d)
 
@@ -56,7 +58,7 @@ func TestOverlay_GracePeriodArmsAfterQuiet(t *testing.T) {
 	o.graceLastInputAt = time.Now().Add(-graceQuietPeriod - time.Millisecond)
 
 	o.Update(keyMsg('a'))
-	require.Len(t, d.received, 1, "key after grace period should reach the dialog")
+	require.Len(t, *received, 1, "key after grace period should reach the dialog")
 }
 
 // TestOverlay_GracePeriodBurstExtendsQuietWindow verifies that a sustained
@@ -65,7 +67,7 @@ func TestOverlay_GracePeriodArmsAfterQuiet(t *testing.T) {
 func TestOverlay_GracePeriodBurstExtendsQuietWindow(t *testing.T) {
 	t.Parallel()
 
-	d := &stubDialog{id: "test"}
+	d, received := newDialog(t, "test")
 	o := NewOverlay()
 	o.OpenDialogWithGrace(d)
 
@@ -75,14 +77,14 @@ func TestOverlay_GracePeriodBurstExtendsQuietWindow(t *testing.T) {
 		o.graceLastInputAt = time.Now().Add(-40 * time.Millisecond)
 		o.Update(keyMsg('a'))
 	}
-	require.Empty(t, d.received, "burst within max delay should be absorbed")
+	require.Empty(t, *received, "burst within max delay should be absorbed")
 
 	// Now exceed the max delay ceiling. Even though lastInputAt is recent,
 	// the fixed deadline forces arming.
 	o.graceOpenedAt = time.Now().Add(-graceMaxDelay - time.Millisecond)
 	o.graceLastInputAt = time.Now() // just typed, but max delay wins
 	o.Update(keyMsg('b'))
-	require.Len(t, d.received, 1, "key after max delay should reach dialog even during burst")
+	require.Len(t, *received, 1, "key after max delay should reach dialog even during burst")
 }
 
 // TestOverlay_OpenDialogWithoutGraceHasNoGuard verifies that dialogs
@@ -90,12 +92,12 @@ func TestOverlay_GracePeriodBurstExtendsQuietWindow(t *testing.T) {
 func TestOverlay_OpenDialogWithoutGraceHasNoGuard(t *testing.T) {
 	t.Parallel()
 
-	d := &stubDialog{id: "test"}
+	d, received := newDialog(t, "test")
 	o := NewOverlay()
 	o.OpenDialog(d)
 
 	o.Update(keyMsg('a'))
-	require.Len(t, d.received, 1, "dialog without grace should receive keys immediately")
+	require.Len(t, *received, 1, "dialog without grace should receive keys immediately")
 }
 
 // TestOverlay_GraceClearedOnClose verifies that closing the front dialog
@@ -104,8 +106,8 @@ func TestOverlay_OpenDialogWithoutGraceHasNoGuard(t *testing.T) {
 func TestOverlay_GraceClearedOnClose(t *testing.T) {
 	t.Parallel()
 
-	d1 := &stubDialog{id: "first"}
-	d2 := &stubDialog{id: "second"}
+	d1, _ := newDialog(t, "first")
+	d2, received2 := newDialog(t, "second")
 	o := NewOverlay()
 	o.OpenDialogWithGrace(d1)
 
@@ -114,7 +116,7 @@ func TestOverlay_GraceClearedOnClose(t *testing.T) {
 	o.OpenDialog(d2)
 
 	o.Update(keyMsg('a'))
-	require.Len(t, d2.received, 1, "new dialog after grace close should receive keys immediately")
+	require.Len(t, *received2, 1, "new dialog after grace close should receive keys immediately")
 }
 
 // TestOverlay_NonKeyMessagesPassDuringGrace verifies that non-keypress
@@ -122,12 +124,12 @@ func TestOverlay_GraceClearedOnClose(t *testing.T) {
 func TestOverlay_NonKeyMessagesPassDuringGrace(t *testing.T) {
 	t.Parallel()
 
-	d := &stubDialog{id: "test"}
+	d, received := newDialog(t, "test")
 	o := NewOverlay()
 	o.OpenDialogWithGrace(d)
 
 	o.Update(tea.MouseWheelMsg{})
-	require.Len(t, d.received, 1, "non-key messages should pass through during grace")
+	require.Len(t, *received, 1, "non-key messages should pass through during grace")
 }
 
 // TestOverlay_ReopenSameDialogSkipsGrace verifies that when a dialog is
@@ -137,18 +139,18 @@ func TestOverlay_NonKeyMessagesPassDuringGrace(t *testing.T) {
 func TestOverlay_ReopenSameDialogSkipsGrace(t *testing.T) {
 	t.Parallel()
 
-	d1 := &stubDialog{id: "permissions"}
+	d1, _ := newDialog(t, "permissions")
 	o := NewOverlay()
 	o.OpenDialogWithGrace(d1)
 
 	// Close and immediately reopen with the same ID.
 	o.CloseDialog("permissions")
-	d2 := &stubDialog{id: "permissions"}
+	d2, received2 := newDialog(t, "permissions")
 	o.OpenDialogWithGrace(d2)
 
 	// Keys should reach the new dialog immediately — no grace.
 	o.Update(keyMsg('a'))
-	require.Len(t, d2.received, 1, "reopened dialog with same ID should skip grace")
+	require.Len(t, *received2, 1, "reopened dialog with same ID should skip grace")
 }
 
 // TestOverlay_ReopenDifferentDialogKeepsGrace verifies that reopening a
@@ -156,16 +158,16 @@ func TestOverlay_ReopenSameDialogSkipsGrace(t *testing.T) {
 func TestOverlay_ReopenDifferentDialogKeepsGrace(t *testing.T) {
 	t.Parallel()
 
-	d1 := &stubDialog{id: "permissions"}
+	d1, _ := newDialog(t, "permissions")
 	o := NewOverlay()
 	o.OpenDialogWithGrace(d1)
 	o.CloseDialog("permissions")
 
-	d2 := &stubDialog{id: "other"}
+	d2, received2 := newDialog(t, "other")
 	o.OpenDialogWithGrace(d2)
 
 	o.Update(keyMsg('a'))
-	require.Empty(t, d2.received, "different dialog ID should still have grace period")
+	require.Empty(t, *received2, "different dialog ID should still have grace period")
 }
 
 // TestOverlay_ReopenAfterWindowExpiresKeepsGrace verifies that if enough
@@ -173,7 +175,7 @@ func TestOverlay_ReopenDifferentDialogKeepsGrace(t *testing.T) {
 func TestOverlay_ReopenAfterWindowExpiresKeepsGrace(t *testing.T) {
 	t.Parallel()
 
-	d1 := &stubDialog{id: "permissions"}
+	d1, _ := newDialog(t, "permissions")
 	o := NewOverlay()
 	o.OpenDialogWithGrace(d1)
 	o.CloseDialog("permissions")
@@ -181,9 +183,9 @@ func TestOverlay_ReopenAfterWindowExpiresKeepsGrace(t *testing.T) {
 	// Backdate the close time so it falls outside the reopen window.
 	o.lastClosedAt = time.Now().Add(-reopenGraceWindow - time.Millisecond)
 
-	d2 := &stubDialog{id: "permissions"}
+	d2, received2 := newDialog(t, "permissions")
 	o.OpenDialogWithGrace(d2)
 
 	o.Update(keyMsg('a'))
-	require.Empty(t, d2.received, "reopened dialog after window expires should have grace")
+	require.Empty(t, *received2, "reopened dialog after window expires should have grace")
 }

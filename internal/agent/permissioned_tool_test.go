@@ -29,7 +29,7 @@ func sessionCtx(ctx context.Context) context.Context {
 func runGated(t *testing.T, svc permission.Service, dir string, call fantasy.ToolCall, approve bool) fantasy.ToolResponse {
 	t.Helper()
 
-	inner := &fakeTool{name: call.Name, resp: fantasy.NewTextResponse("ran")}
+	inner, _ := newFakeTool(t, call.Name, fantasy.NewTextResponse("ran"))
 	gated := newPermissionedTool(inner, svc, dir)
 
 	events := svc.Subscribe(t.Context())
@@ -103,13 +103,13 @@ func TestPermissionedTool_SafeCommandsRunSilently(t *testing.T) {
 			dir := t.TempDir()
 			svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
-			inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
+			inner, rec := newFakeTool(t, toolnames.Bash, fantasy.NewTextResponse("ran"))
 			gated := newPermissionedTool(inner, svc, dir)
 
 			resp, err := gated.Run(sessionCtx(t.Context()), bashCall(t, command))
 			require.NoError(t, err)
 			require.False(t, resp.IsError)
-			require.True(t, inner.called, "a safe command should reach the tool")
+			require.True(t, rec.called, "a safe command should reach the tool")
 		})
 	}
 }
@@ -122,7 +122,7 @@ func TestPermissionedTool_UnknownToolIsDenied(t *testing.T) {
 
 	dir := t.TempDir()
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
-	inner := &fakeTool{name: "brand_new_tool", resp: fantasy.NewTextResponse("ran")}
+	inner, rec := newFakeTool(t, "brand_new_tool", fantasy.NewTextResponse("ran"))
 	gated := newPermissionedTool(inner, svc, dir)
 
 	resp, err := gated.Run(sessionCtx(t.Context()), fantasy.ToolCall{
@@ -130,7 +130,7 @@ func TestPermissionedTool_UnknownToolIsDenied(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
-	require.False(t, inner.called, "an undescribed tool must not run")
+	require.False(t, rec.called, "an undescribed tool must not run")
 }
 
 // TestPermissionedTool_DenyOutcomesDiffer pins that the model is told
@@ -146,7 +146,7 @@ func TestPermissionedTool_DenyOutcomesDiffer(t *testing.T) {
 	require.NoError(t, err)
 	svc := permission.NewPermissionService(dir, permission.ModeManual, policy)
 
-	inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
+	inner, _ := newFakeTool(t, toolnames.Bash, fantasy.NewTextResponse("ran"))
 	gated := newPermissionedTool(inner, svc, dir)
 
 	byPolicy, err := gated.Run(sessionCtx(t.Context()), bashCall(t, "curl http://evil"))
@@ -177,7 +177,7 @@ func TestPermissionedTool_PolicyDenyBeatsSkip(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	inner := &fakeTool{name: toolnames.Write, resp: fantasy.NewTextResponse("wrote")}
+	inner, rec := newFakeTool(t, toolnames.Write, fantasy.NewTextResponse("wrote"))
 	gated := newPermissionedTool(inner, svc, dir)
 
 	resp, err := gated.Run(sessionCtx(t.Context()), fantasy.ToolCall{
@@ -185,7 +185,7 @@ func TestPermissionedTool_PolicyDenyBeatsSkip(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
-	require.False(t, inner.called, "a deny rule must survive --yolo")
+	require.False(t, rec.called, "a deny rule must survive --yolo")
 }
 
 // TestPermissionedTool_HookAllowReachesTheGate pins the wrapper order:
@@ -197,23 +197,33 @@ func TestPermissionedTool_HookAllowReachesTheGate(t *testing.T) {
 	dir := t.TempDir()
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
-	inner := &fakeTool{name: toolnames.Bash, resp: fantasy.NewTextResponse("ran")}
+	inner, rec := newFakeTool(t, toolnames.Bash, fantasy.NewTextResponse("ran"))
 	gated := newPermissionedTool(inner, svc, dir)
 	hooked := newHookedTool(gated, newRunner(t, `echo '{"decision":"allow"}'`))
 
 	resp, err := hooked.Run(sessionCtx(t.Context()), bashCall(t, "touch out.txt"))
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
-	require.True(t, inner.called, "a hook allow should carry the call past the gate")
+	require.True(t, rec.called, "a hook allow should carry the call past the gate")
 }
 
 // planningTool is a fake Planner that records whether it was asked to
 // plan, so tests can tell "the gate refused" apart from "the gate
 // refused before anything was read".
 type planningTool struct {
-	fakeTool
+	*MockAgentTool
+	call    *fakeToolCall
 	planned int
 	plan    tools.Plan
+}
+
+// newPlanningTool wires a planningTool around a MockAgentTool the way
+// newFakeTool does, so Plan-aware tests keep the same call/gotCtx
+// visibility the old hand-written fakeTool embedding gave them.
+func newPlanningTool(t *testing.T, name string, plan tools.Plan) *planningTool {
+	t.Helper()
+	m, rec := newFakeTool(t, name, fantasy.ToolResponse{})
+	return &planningTool{MockAgentTool: m, call: rec, plan: plan}
 }
 
 func (p *planningTool) Plan(context.Context, fantasy.ToolCall) (tools.Plan, error) {
@@ -240,10 +250,7 @@ func TestPermissionedTool_SettledPlanSkipsTheGate(t *testing.T) {
 
 	dir := t.TempDir()
 	settled := fantasy.NewTextErrorResponse("old_string not found")
-	inner := &planningTool{
-		fakeTool: fakeTool{name: toolnames.Edit},
-		plan:     tools.Plan{Response: &settled},
-	}
+	inner := newPlanningTool(t, toolnames.Edit, tools.Plan{Response: &settled})
 
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	gated := newPermissionedTool(inner, svc, dir)
@@ -254,7 +261,7 @@ func TestPermissionedTool_SettledPlanSkipsTheGate(t *testing.T) {
 
 	require.Equal(t, settled.Content, resp.Content)
 	require.Equal(t, 1, inner.planned)
-	require.False(t, inner.called, "a settled plan must not be applied")
+	require.False(t, inner.call.called, "a settled plan must not be applied")
 	require.Empty(t, events, "a settled plan must not prompt the user")
 }
 
@@ -273,13 +280,10 @@ func TestPermissionedTool_PolicyDenyPrecedesPlanning(t *testing.T) {
 	require.NoError(t, err)
 
 	applied := false
-	inner := &planningTool{
-		fakeTool: fakeTool{name: toolnames.Edit},
-		plan: tools.Plan{Apply: func(context.Context) (fantasy.ToolResponse, error) {
-			applied = true
-			return fantasy.NewTextResponse("wrote"), nil
-		}},
-	}
+	inner := newPlanningTool(t, toolnames.Edit, tools.Plan{Apply: func(context.Context) (fantasy.ToolResponse, error) {
+		applied = true
+		return fantasy.NewTextResponse("wrote"), nil
+	}})
 
 	svc := permission.NewPermissionService(dir, permission.ModeManual, policy)
 	gated := newPermissionedTool(inner, svc, dir)
@@ -303,19 +307,16 @@ func TestPermissionedTool_RefusalKeepsPreviewMetadata(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	inner := &planningTool{
-		fakeTool: fakeTool{name: toolnames.Edit},
-		plan: tools.Plan{
-			Preview: permission.Preview{Description: "Replace content"},
-			Refusal: tools.EditResponseMetadata{
-				Additions: 1, Removals: 1,
-				OldContent: "a\n", NewContent: "b\n",
-			},
-			Apply: func(context.Context) (fantasy.ToolResponse, error) {
-				return fantasy.NewTextResponse("wrote"), nil
-			},
+	inner := newPlanningTool(t, toolnames.Edit, tools.Plan{
+		Preview: permission.Preview{Description: "Replace content"},
+		Refusal: tools.EditResponseMetadata{
+			Additions: 1, Removals: 1,
+			OldContent: "a\n", NewContent: "b\n",
 		},
-	}
+		Apply: func(context.Context) (fantasy.ToolResponse, error) {
+			return fantasy.NewTextResponse("wrote"), nil
+		},
+	})
 
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	gated := newPermissionedTool(inner, svc, dir)

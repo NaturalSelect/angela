@@ -7,6 +7,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/charmbracelet/x/exp/golden"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // requireGolden compares a rendered reminder against its committed golden
@@ -123,21 +124,23 @@ func TestWrapEnclosesTheNotice(t *testing.T) {
 	require.Equal(t, "<system-reminder>\nhello\n</system-reminder>", got)
 }
 
-type stubSource struct {
-	name string
-	text string
+// newSource returns a MockSource whose Collect always returns text and
+// whose Name reports name, mirroring the old hand-written stubSource.
+func newSource(t *testing.T, name, text string) *MockSource {
+	t.Helper()
+	m := NewMockSource(gomock.NewController(t))
+	m.EXPECT().Name().Return(name).AnyTimes()
+	m.EXPECT().Collect(gomock.Any()).Return(text).AnyTimes()
+	return m
 }
-
-func (s stubSource) Name() string         { return s.name }
-func (s stubSource) Collect(State) string { return s.text }
 
 func TestCollectKeepsOnlyTheSourcesThatFired(t *testing.T) {
 	t.Parallel()
 
 	got := Collect([]Source{
-		stubSource{name: "quiet", text: ""},
-		stubSource{name: "loud", text: "something happened"},
-		stubSource{name: "also quiet", text: ""},
+		newSource(t, "quiet", ""),
+		newSource(t, "loud", "something happened"),
+		newSource(t, "also quiet", ""),
 	}, State{})
 
 	require.Equal(t, []Notice{{Source: "loud", Text: "something happened"}}, got)

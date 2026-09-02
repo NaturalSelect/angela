@@ -11,29 +11,33 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-// fakeTool records the context it was invoked with so tests can assert on
-// values stamped onto it by the hookedTool decorator.
-type fakeTool struct {
-	name   string
+// fakeToolCall records the context and completion of a Run invocation so
+// tests can assert on values stamped onto it by decorators.
+type fakeToolCall struct {
 	called bool
 	gotCtx context.Context
-	resp   fantasy.ToolResponse
 }
 
-func (f *fakeTool) Info() fantasy.ToolInfo {
-	return fantasy.ToolInfo{Name: f.name}
+// newFakeTool wires a MockAgentTool so Run reports the call context and
+// completion via the returned record, and Info reports name, the way the
+// old hand-written fakeTool worked.
+func newFakeTool(t *testing.T, name string, resp fantasy.ToolResponse) (*MockAgentTool, *fakeToolCall) {
+	t.Helper()
+	rec := &fakeToolCall{}
+	m := NewMockAgentTool(gomock.NewController(t))
+	m.EXPECT().Info().Return(fantasy.ToolInfo{Name: name}).AnyTimes()
+	m.EXPECT().Run(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		rec.called = true
+		rec.gotCtx = ctx
+		return resp, nil
+	}).AnyTimes()
+	m.EXPECT().ProviderOptions().Return(nil).AnyTimes()
+	m.EXPECT().SetProviderOptions(gomock.Any()).AnyTimes()
+	return m, rec
 }
-
-func (f *fakeTool) Run(ctx context.Context, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	f.called = true
-	f.gotCtx = ctx
-	return f.resp, nil
-}
-
-func (f *fakeTool) ProviderOptions() fantasy.ProviderOptions     { return nil }
-func (f *fakeTool) SetProviderOptions(_ fantasy.ProviderOptions) {}
 
 // newRunner builds a hooks.Runner from a single HookConfig, running the
 // config-loader path that compiles the matcher regex.
@@ -51,18 +55,18 @@ func newRunner(t *testing.T, cmd string) *hooks.Runner {
 func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 	t.Parallel()
 
-	inner := &fakeTool{name: toolnames.View, resp: fantasy.NewTextResponse("ok")}
+	inner, rec := newFakeTool(t, toolnames.View, fantasy.NewTextResponse("ok"))
 	runner := newRunner(t, `echo '{"decision":"allow"}'`)
 	tool := newHookedTool(inner, runner)
 
 	_, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-1", Name: "view"})
 	require.NoError(t, err)
-	require.True(t, inner.called, "inner tool should have run")
+	require.True(t, rec.called, "inner tool should have run")
 
 	// The inner tool's permission service can now treat call-1 as pre-approved.
 	dir := t.TempDir()
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
-	decision := svc.Gate(inner.gotCtx, permission.GateRequest{
+	decision := svc.Gate(rec.gotCtx, permission.GateRequest{
 		SessionID:  "s1",
 		ToolCallID: "call-1",
 		Access: permission.Access{
@@ -77,13 +81,13 @@ func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 	t.Parallel()
 
-	inner := &fakeTool{name: toolnames.View, resp: fantasy.NewTextResponse("ok")}
+	inner, rec := newFakeTool(t, toolnames.View, fantasy.NewTextResponse("ok"))
 	runner := newRunner(t, `exit 0`) // no stdout, no decision
 	tool := newHookedTool(inner, runner)
 
 	_, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-2", Name: "view"})
 	require.NoError(t, err)
-	require.True(t, inner.called)
+	require.True(t, rec.called)
 
 	// With no hook opinion, a fresh permission request has nothing stamped
 	// and must fall through to the normal flow. We verify by checking that
@@ -91,7 +95,7 @@ func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 	// that no subscriber resolves blocks until cancelled.
 	dir := t.TempDir()
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
-	ctx, cancel := context.WithCancel(inner.gotCtx)
+	ctx, cancel := context.WithCancel(rec.gotCtx)
 	cancel()
 	decision := svc.Gate(ctx, permission.GateRequest{
 		SessionID:  "s1",
@@ -110,13 +114,13 @@ func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 func TestHookedTool_DenySkipsInnerTool(t *testing.T) {
 	t.Parallel()
 
-	inner := &fakeTool{name: toolnames.Bash}
+	inner, rec := newFakeTool(t, toolnames.Bash, fantasy.ToolResponse{})
 	runner := newRunner(t, `echo "blocked" >&2; exit 2`)
 	tool := newHookedTool(inner, runner)
 
 	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-3", Name: toolnames.Bash})
 	require.NoError(t, err)
-	require.False(t, inner.called, "denied call must not reach the inner tool")
+	require.False(t, rec.called, "denied call must not reach the inner tool")
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "blocked")
 }
@@ -125,7 +129,9 @@ func TestWrapToolsWithHooks(t *testing.T) {
 	t.Parallel()
 
 	runner := newRunner(t, `exit 0`)
-	inputs := []fantasy.AgentTool{&fakeTool{name: "a"}, &fakeTool{name: "b"}}
+	a, _ := newFakeTool(t, "a", fantasy.ToolResponse{})
+	b, _ := newFakeTool(t, "b", fantasy.ToolResponse{})
+	inputs := []fantasy.AgentTool{a, b}
 
 	// Sub-agents used to be exempt from this wrap, which let a delegated
 	// write reach the disk without ever facing the user's PreToolUse

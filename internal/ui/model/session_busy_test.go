@@ -437,7 +437,8 @@ func TestSendMessageSetsOptimisticBusy(t *testing.T) {
 
 // TestCancelAgentClearsQueueFromCachedCount: the queue-clear decision must
 // come from the memoized count — no synchronous AgentQueuedPrompts probe —
-// and clearing must zero the cached count immediately.
+// clearing must zero the cached count immediately, and the queued text
+// must reappear in the editor instead of being discarded.
 func TestCancelAgentClearsQueueFromCachedCount(t *testing.T) {
 	pinTTLs(t)
 
@@ -450,11 +451,54 @@ func TestCancelAgentClearsQueueFromCachedCount(t *testing.T) {
 	// AgentQueuedPrompts/AgentQueuedPromptsList deliberately left
 	// unstubbed: the decision must use the cached count, not a probe.
 
-	cmd := m.cancelAgent()
-	require.Nil(t, cmd)
+	m.cancelAgent()
 	require.Zero(t, m.promptQueue, "the cached count must be zeroed immediately")
 	require.Empty(t, m.promptQueueItems)
 	require.False(t, m.isCanceling, "clearing the queue must not arm cancellation")
+	require.Equal(t, "a", m.textarea.Value(),
+		"the queued prompt must reappear in the editor instead of being lost")
+}
+
+// TestCancelAgentRestoresQueueOnActiveCancel: the second esc press cancels
+// the active turn, which also drops any prompts still queued behind it on
+// the backend. That must not lose the text — it has to reappear in the
+// editor exactly like a queue-only clear does.
+func TestCancelAgentRestoresQueueOnActiveCancel(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.isCanceling = true       // first esc press already armed cancellation
+	m.busyFetchInFlight = true // keeps dispatchBusyRefresh's returned cmd nil
+	m.promptQueue = 1
+	m.promptQueueItems = []string{"queued follow-up"}
+
+	ws.EXPECT().AgentCancel(gomock.Any())
+
+	m.cancelAgent()
+	require.Zero(t, m.promptQueue, "the cached count must be zeroed immediately")
+	require.Empty(t, m.promptQueueItems)
+	require.Equal(t, "queued follow-up", m.textarea.Value(),
+		"a prompt still queued behind the cancelled turn must reappear in the editor")
+}
+
+// TestCancelAgentRestoresQueueAheadOfDraft pins the merge order: restored
+// queue text must lead, in queue order, with whatever the user was
+// already typing kept intact after it — a cancel must never clobber a
+// half-typed follow-up.
+func TestCancelAgentRestoresQueueAheadOfDraft(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.promptQueue = 2
+	m.promptQueueItems = []string{"first queued", "second queued"}
+	m.textarea.SetValue("still typing this")
+
+	ws.EXPECT().AgentClearQueue(gomock.Any())
+
+	m.cancelAgent()
+	require.Equal(t, "first queued\n\nsecond queued\n\nstill typing this", m.textarea.Value())
 }
 
 // TestBackstopRefreshesStaleCaches: when the memoized state outlives its TTL

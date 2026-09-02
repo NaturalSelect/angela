@@ -4357,6 +4357,10 @@ func (m *UI) cancelAgent() tea.Cmd {
 			m.bangCancel = nil
 		}
 
+		// AgentCancel drops any prompts still waiting behind the active
+		// turn on the backend, so pop them back into the editor first —
+		// cancelling must never silently lose typed text.
+		restoreCmd := m.popQueuedPromptsToEditor()
 		m.com.Workspace.AgentCancel(m.session.ID)
 		// Stop the spinning turn indicator and drop the memoized busy
 		// state the cancel just changed; the turn status re-renders from
@@ -4364,26 +4368,54 @@ func (m *UI) cancelAgent() tea.Cmd {
 		// the agent's own events) land.
 		m.turnIsSpinning = false
 		m.invalidateBusyCaches()
-		return m.dispatchBusyRefresh()
+		return tea.Batch(restoreCmd, m.dispatchBusyRefresh())
 	}
 
-	// Queued prompts pending: esc clears the queue. Decide from the cached
-	// count (event-driven) instead of a synchronous workspace probe.
+	// Queued prompts pending: esc pops them back into the editor instead
+	// of discarding them. Decide from the cached count (event-driven)
+	// instead of a synchronous workspace probe.
 	if m.promptQueue > 0 {
+		restoreCmd := m.popQueuedPromptsToEditor()
 		m.com.Workspace.AgentClearQueue(m.session.ID)
-		m.promptQueue = 0
-		m.promptQueueItems = nil
-		m.promptQueueCheckedAt = time.Now()
-		// Bump the queue generation so a fetch started before this clear
-		// cannot land and repopulate the pill we just emptied.
-		m.invalidatePromptQueue()
-		m.updateLayoutAndSize()
-		return nil
+		return restoreCmd
 	}
 
 	// First escape press - set canceling state and start timer.
 	m.isCanceling = true
 	return cancelTimerCmd()
+}
+
+// popQueuedPromptsToEditor clears the UI's mirror of the session's queued
+// prompts and, if any were waiting, restores their text into the editor
+// and syncs the transcript so the "queued" entries disappear along with
+// them. It never touches the backend queue itself — callers pair it with
+// AgentCancel or AgentClearQueue, which is what actually drops the queue
+// there. Restored text is placed ahead of whatever draft the user was
+// already composing, in queue order, so a half-typed follow-up is never
+// clobbered and nothing queued is ever silently lost.
+func (m *UI) popQueuedPromptsToEditor() tea.Cmd {
+	items := m.promptQueueItems
+	if len(items) == 0 {
+		return nil
+	}
+	m.promptQueue = 0
+	m.promptQueueItems = nil
+	m.promptQueueCheckedAt = time.Now()
+	// Bump the queue generation so a fetch started before this clear
+	// cannot land and repopulate the pill we just emptied.
+	m.invalidatePromptQueue()
+	m.syncQueuedChatItems()
+	m.updateLayoutAndSize()
+
+	prevHeight := m.textarea.Height()
+	restored := strings.Join(items, "\n\n")
+	if draft := m.textarea.Value(); draft != "" {
+		restored += "\n\n" + draft
+	}
+	m.textarea.SetValue(restored)
+	m.textarea.MoveToEnd()
+	m.syncBangModeFromTextarea()
+	return m.updateTextareaWithPrevHeight(nil, prevHeight)
 }
 
 // openDialog opens a dialog by its ID.

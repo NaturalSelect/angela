@@ -250,6 +250,7 @@ func TestRunTool_ContentVariants(t *testing.T) {
 }
 
 func TestRefreshTools(t *testing.T) {
+	t.Parallel()
 	t.Run("no session logs and returns without touching state", func(t *testing.T) {
 		t.Parallel()
 

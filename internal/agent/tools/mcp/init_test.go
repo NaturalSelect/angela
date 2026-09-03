@@ -1089,7 +1089,7 @@ func TestHeaderRoundTripper(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	rt := headerRoundTripper{headers: map[string]string{"X-Test": "value", "Authorization": "Bearer tok"}}
-	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)
 
 	resp, err := (&http.Client{Transport: rt}).Do(req)
@@ -1133,7 +1133,7 @@ func TestOAuthRoundTripper(t *testing.T) {
 		h.EXPECT().TokenSource(gomock.Any()).Return(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "secret-tok"}), nil)
 
 		rt := newOAuthRoundTripper(h, http.DefaultTransport)
-		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 		require.NoError(t, err)
 
 		resp, err := rt.RoundTrip(req)
@@ -1158,7 +1158,7 @@ func TestOAuthRoundTripper(t *testing.T) {
 		h.EXPECT().TokenSource(gomock.Any()).Return(nil, nil)
 
 		rt := newOAuthRoundTripper(h, http.DefaultTransport)
-		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 		require.NoError(t, err)
 
 		resp, err := rt.RoundTrip(req)
@@ -1178,10 +1178,13 @@ func TestOAuthRoundTripper(t *testing.T) {
 			return nil, nil
 		})
 		rt := newOAuthRoundTripper(h, base)
-		req, err := http.NewRequest(http.MethodGet, "http://example.invalid", nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://example.invalid", nil)
 		require.NoError(t, err)
 
 		resp, err := rt.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		require.Error(t, err)
 		require.Nil(t, resp)
 		require.Contains(t, err.Error(), "oauth token source")
@@ -1199,11 +1202,12 @@ func TestOAuthRoundTripper(t *testing.T) {
 		h.EXPECT().Authorize(gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("authorize failed"))
 
 		rt := newOAuthRoundTripper(h, http.DefaultTransport)
-		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 		require.NoError(t, err)
 
 		resp, err := rt.RoundTrip(req)
 		require.NoError(t, err, "a failed Authorize is swallowed; the original response is returned")
+		defer resp.Body.Close()
 		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 		require.Equal(t, 1, *seen, "no retry should be attempted when Authorize fails")
 	})
@@ -1220,7 +1224,7 @@ func TestOAuthRoundTripper(t *testing.T) {
 		h.EXPECT().Authorize(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 		rt := newOAuthRoundTripper(h, http.DefaultTransport)
-		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 		require.NoError(t, err)
 
 		resp, err := rt.RoundTrip(req)
@@ -1261,12 +1265,12 @@ func TestStdioCheck(t *testing.T) {
 
 	t.Run("success returns nil", func(t *testing.T) {
 		t.Parallel()
-		require.NoError(t, stdioCheck(exec.Command("true")))
+		require.NoError(t, stdioCheck(exec.CommandContext(t.Context(), "true")))
 	})
 
 	t.Run("failure returns error with captured output", func(t *testing.T) {
 		t.Parallel()
-		err := stdioCheck(exec.Command("false"))
+		err := stdioCheck(exec.CommandContext(t.Context(), "false"))
 		require.Error(t, err)
 	})
 }
@@ -1277,7 +1281,7 @@ func TestMaybeStdioErr(t *testing.T) {
 	t.Run("non-EOF error returned unchanged", func(t *testing.T) {
 		t.Parallel()
 		orig := errors.New("boom")
-		got := maybeStdioErr(orig, &mcp.CommandTransport{Command: exec.Command("true")})
+		got := maybeStdioErr(orig, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "true")})
 		require.Equal(t, orig, got)
 	})
 
@@ -1294,13 +1298,13 @@ func TestMaybeStdioErr(t *testing.T) {
 
 	t.Run("EOF with command transport that now succeeds stays plain EOF", func(t *testing.T) {
 		t.Parallel()
-		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.Command("true")})
+		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "true")})
 		require.Equal(t, io.EOF, got, "a successful recheck must not join extra output onto the error")
 	})
 
 	t.Run("EOF with command transport that still fails is joined with recheck output", func(t *testing.T) {
 		t.Parallel()
-		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.Command("false")})
+		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "false")})
 		require.ErrorIs(t, got, io.EOF)
 		require.NotEqual(t, io.EOF.Error(), got.Error(), "a failing recheck must join its output onto the error")
 	})
@@ -1548,6 +1552,7 @@ func TestInitialize_DisabledServerSkipsConnectionAttempt(t *testing.T) {
 // don't require a real connection: an unknown server errors, and a disabled
 // one records StateDisabled and returns without attempting to connect.
 func TestInitializeSingle(t *testing.T) {
+	t.Parallel()
 	t.Run("unknown server", func(t *testing.T) {
 		t.Parallel()
 		cfg := config.NewTestStore(&config.Config{})

@@ -64,6 +64,12 @@ const (
 	// initial delay and 2x backoff, this caps the worst-case wait at
 	// 5+10+20+40+80 = 155s before the error reaches the user.
 	streamMaxRetries = 5
+
+	// autoContinuePrompt is the fixed follow-up sent when a turn's
+	// text output is cut off by the output token limit, so the model
+	// resumes instead of leaving a truncated response as the final
+	// answer.
+	autoContinuePrompt = "Continue exactly where you left off in your previous response. Do not repeat any content already provided."
 )
 
 var userAgent = fmt.Sprintf("Angela/%s (https://github.com/NaturalSelect/angela)", version.Version)
@@ -1137,6 +1143,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		return nil, err
 	}
 
+	// hitMaxTokens is re-checked once after a possible summarize below:
+	// a turn interrupted mid-tool-use takes the existing
+	// too-long-resume path instead, so the two continuations never
+	// both fire for the same turn.
+	hitMaxTokens := currentAssistant.FinishReason() == message.FinishReasonMaxTokens
 	if shouldSummarize {
 		// Release only our own entry, for the same reason the deferred
 		// cleanup above is conditional: a plain Del here would drop
@@ -1154,7 +1165,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			call.Prompt = fmt.Sprintf("The previous session was interrupted because it got too long, the initial user request was: `%s`", call.Prompt)
 			existing = append(existing, call)
 			a.messageQueue.Set(call.SessionID, existing)
+			hitMaxTokens = false
 		}
+	}
+	if hitMaxTokens {
+		a.enqueueAutoContinue(call)
 	}
 
 	// Release active request before publishing the notification.
@@ -1278,6 +1293,23 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		a.publishRunComplete(ctx, call, complete)
 	}
 	return a.Run(ctx, reresolve(ctx, firstQueuedMessage))
+}
+
+// enqueueAutoContinue re-queues call with a fixed follow-up prompt so a
+// turn whose text output was cut off by the model's own output token
+// limit resumes automatically instead of leaving a truncated response
+// as the final answer. It reuses call as-is (same RunID, same Agent)
+// so the continuation is treated as part of the same turn rather than
+// a new queued prompt, the same way the tool-calls-pending
+// continuation above does.
+func (a *sessionAgent) enqueueAutoContinue(call SessionAgentCall) {
+	existing, ok := a.messageQueue.Get(call.SessionID)
+	if !ok {
+		existing = []SessionAgentCall{}
+	}
+	call.Prompt = autoContinuePrompt
+	existing = append(existing, call)
+	a.messageQueue.Set(call.SessionID, existing)
 }
 
 // reresolve refreshes a dequeued call's agent against the session as it

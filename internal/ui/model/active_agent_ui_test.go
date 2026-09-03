@@ -245,7 +245,8 @@ func TestAnUnprobedAgentIsNotAGlobalPick(t *testing.T) {
 }
 
 // TestNoSessionMeansNoSessionScopedEdit pins that the landing screen,
-// which has no session to own an agent, cannot produce a session edit.
+// which has no session to own an agent, cannot produce a session edit
+// and must not silently overwrite the saved default either.
 func TestNoSessionMeansNoSessionScopedEdit(t *testing.T) {
 	pinTTLs(t)
 
@@ -253,7 +254,7 @@ func TestNoSessionMeansNoSessionScopedEdit(t *testing.T) {
 	m.session = nil
 	warmCaches(m, false)
 
-	require.Equal(t, modelPickGlobal, m.modelPickScope(config.ModelMain))
+	require.Equal(t, modelPickEphemeral, m.modelPickScope(config.ModelMain))
 	// AgentEditActive deliberately left unstubbed: no session means no
 	// edit, so a call here would fail the test.
 	require.NotNil(t, m.toggleThinkingCmd()(), "thinking must warn, not edit")

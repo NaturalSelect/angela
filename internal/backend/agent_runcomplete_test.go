@@ -40,17 +40,18 @@ func (c *errorCoordinator) RunAccepted(ctx context.Context, accept *agent.Accept
 func (c *errorCoordinator) BeginAccepted(context.Context, string) *agent.AcceptedRun {
 	return nil
 }
-func (c *errorCoordinator) Cancel(string)                           {}
-func (c *errorCoordinator) AbandonBranch(string) bool               { return false }
-func (c *errorCoordinator) CancelAll()                              {}
-func (c *errorCoordinator) IsBusy() bool                            { return false }
-func (c *errorCoordinator) IsSessionBusy(string) bool               { return false }
-func (c *errorCoordinator) IsSessionBranch(string) bool             { return false }
-func (c *errorCoordinator) QueuedPrompts(string) int                { return 0 }
-func (c *errorCoordinator) QueuedPromptsList(string) []string       { return nil }
-func (c *errorCoordinator) ClearQueue(string)                       {}
-func (c *errorCoordinator) Summarize(context.Context, string) error { return nil }
-func (c *errorCoordinator) DefaultModel() agent.Model               { return agent.Model{} }
+func (c *errorCoordinator) LockSession(context.Context, string) (func(), bool) { return nil, false }
+func (c *errorCoordinator) Cancel(string)                                      {}
+func (c *errorCoordinator) AbandonBranch(string) bool                          { return false }
+func (c *errorCoordinator) CancelAll()                                         {}
+func (c *errorCoordinator) IsBusy() bool                                       { return false }
+func (c *errorCoordinator) IsSessionBusy(string) bool                          { return false }
+func (c *errorCoordinator) IsSessionBranch(string) bool                        { return false }
+func (c *errorCoordinator) QueuedPrompts(string) int                           { return 0 }
+func (c *errorCoordinator) QueuedPromptsList(string) []string                  { return nil }
+func (c *errorCoordinator) ClearQueue(string)                                  {}
+func (c *errorCoordinator) Summarize(context.Context, string) error            { return nil }
+func (c *errorCoordinator) DefaultModel() agent.Model                          { return agent.Model{} }
 
 func (c *errorCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
 	return config.ActiveAgent{}, nil

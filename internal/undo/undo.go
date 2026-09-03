@@ -96,11 +96,67 @@ type Service interface {
 }
 
 // BusyChecker reports whether a session has agent activity in this
-// process that undo must not disturb. agent.Coordinator satisfies it
-// without this package importing agent.
+// process that undo must not disturb, and lets undo reserve a session
+// against a concurrent turn start for the extent of an undo operation.
+// agent.Coordinator satisfies it without this package importing agent.
 type BusyChecker interface {
 	IsSessionBusy(sessionID string) bool
 	IsSessionBranch(sessionID string) bool
+	// LockSession blocks until it can guarantee sessionID is not about
+	// to transition to a new active turn, then returns a release func
+	// the caller must call exactly once. ok is false when the session
+	// has no resolvable executor, meaning nothing runs there and there
+	// is nothing to guard against; release is nil in that case.
+	LockSession(ctx context.Context, sessionID string) (release func(), ok bool)
+}
+
+// sessionReservation accumulates the per-session locks Undo acquires as
+// it discovers sessions to touch — the top-level session up front, then
+// each subagent session as walkMessages finds it — and releases them
+// all, in reverse acquisition order, exactly once. A nil
+// *sessionReservation is valid and every method on it is a no-op, so
+// Preview's read-only path (which must not hold anything) can share the
+// same plan/walkMessages code as Undo by passing nil.
+type sessionReservation struct {
+	busy    BusyChecker
+	locked  map[string]bool
+	release []func()
+}
+
+// acquire locks sessionID against a concurrent turn start and remembers
+// the release. Locking the same session twice within one reservation
+// (which should not happen — session IDs are unique per turn — but
+// would deadlock on a non-reentrant mutex if it ever did) is guarded
+// against explicitly. A session with no resolvable executor has
+// nothing to guard against and is silently skipped, matching how an
+// unresolvable child session is already treated elsewhere in undo.
+func (r *sessionReservation) acquire(ctx context.Context, sessionID string) {
+	if r == nil {
+		return
+	}
+	if r.locked == nil {
+		r.locked = make(map[string]bool)
+	}
+	if r.locked[sessionID] {
+		return
+	}
+	release, ok := r.busy.LockSession(ctx, sessionID)
+	if !ok || release == nil {
+		return
+	}
+	r.locked[sessionID] = true
+	r.release = append(r.release, release)
+}
+
+// releaseAll releases every lock acquired so far, in reverse order.
+func (r *sessionReservation) releaseAll() {
+	if r == nil {
+		return
+	}
+	for i := len(r.release) - 1; i >= 0; i-- {
+		r.release[i]()
+	}
+	r.release = nil
 }
 
 type service struct {
@@ -168,10 +224,28 @@ func (s *service) Preview(ctx context.Context, sessionID string) (Preview, error
 }
 
 func (s *service) Undo(ctx context.Context, sessionID, cutMessageID string) (Result, error) {
-	p, resolved, err := s.resolve(ctx, sessionID)
+	// Reserve the top-level session before doing anything else — even
+	// before the busy check — and every subagent session plan()
+	// discovers along the way (see walkMessages), holding all of them
+	// until this call returns. checkBusy only observes one instant;
+	// without a reservation held across the whole operation, a turn
+	// that starts on this session right after the check would run
+	// concurrently with the file, session and message mutations below.
+	// Reserving first, then checking busy, closes that window: nothing
+	// in this process can transition a reserved session to a new
+	// active turn until release below runs.
+	reservation := &sessionReservation{busy: s.busy}
+	defer reservation.releaseAll()
+	reservation.acquire(ctx, sessionID)
+
+	if err := s.checkBusy(sessionID); err != nil {
+		return Result{}, err
+	}
+	p, err := s.plan(ctx, sessionID, reservation)
 	if err != nil {
 		return Result{}, err
 	}
+	resolved := s.resolveFiles(ctx, p.files)
 	if p.cutMessageID != cutMessageID {
 		return Result{}, ErrStale
 	}
@@ -248,13 +322,18 @@ func (s *service) clearDanglingSummary(ctx context.Context, sessionID string, p 
 }
 
 // resolve computes the turn plan for sessionID and checks every file
-// it touched against the current state of disk. Preview and Undo
-// share it so the two can never disagree about what a turn would do.
+// it touched against the current state of disk. It is Preview's
+// read-only path: no reservation is held, since nothing here mutates
+// anything and holding a lock across it would only cost concurrency
+// for no correctness benefit. Undo computes the same plan itself,
+// through plan, so the two can never disagree about what a turn would
+// do — but Undo holds a reservation across its own call, which resolve
+// does not need.
 func (s *service) resolve(ctx context.Context, sessionID string) (turnPlan, []resolvedFile, error) {
 	if err := s.checkBusy(sessionID); err != nil {
 		return turnPlan{}, nil, err
 	}
-	p, err := s.plan(ctx, sessionID)
+	p, err := s.plan(ctx, sessionID, nil)
 	if err != nil {
 		return turnPlan{}, nil, err
 	}
@@ -276,7 +355,11 @@ type turnPlan struct {
 
 // plan locates sessionID's last turn and walks it for file actions.
 // It returns ErrNothingToUndo if the session holds no user message.
-func (s *service) plan(ctx context.Context, sessionID string) (turnPlan, error) {
+// reserve is nil for Preview's read-only path; Undo passes its
+// reservation so every subagent session found while walking is locked
+// against a concurrent turn start the moment it is discovered, and
+// stays locked until Undo itself releases it.
+func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionReservation) (turnPlan, error) {
 	msgs, err := s.messages.List(ctx, sessionID)
 	if err != nil {
 		return turnPlan{}, err
@@ -298,7 +381,7 @@ func (s *service) plan(ctx context.Context, sessionID string) (turnPlan, error) 
 	}
 
 	walk := &walkState{actions: make(map[string]fileAction)}
-	if err := s.walkMessages(ctx, sessionID, toDelete, walk); err != nil {
+	if err := s.walkMessages(ctx, sessionID, toDelete, reserve, walk); err != nil {
 		return turnPlan{}, err
 	}
 
@@ -362,7 +445,13 @@ type walkState struct {
 // too: the whole subagent call completes atomically from its parent's
 // point of view, so nothing else in the parent can be interleaved
 // with it.
-func (s *service) walkMessages(ctx context.Context, ownerSessionID string, msgs []message.Message, out *walkState) error {
+//
+// reserve is nil for Preview's read-only path. When Undo passes its
+// reservation, every subagent session found here is locked against a
+// concurrent turn start before its busy check runs, immediately on
+// discovery, and stays locked until Undo releases the whole
+// reservation — the same guarantee Undo gives the top-level session.
+func (s *service) walkMessages(ctx context.Context, ownerSessionID string, msgs []message.Message, reserve *sessionReservation, out *walkState) error {
 	toolCalls := make(map[string]message.ToolCall)
 	for _, msg := range msgs {
 		for _, tc := range msg.ToolCalls() {
@@ -396,6 +485,7 @@ func (s *service) walkMessages(ctx context.Context, ownerSessionID string, msgs 
 				// unavailable before a session could be created.
 				continue
 			}
+			reserve.acquire(ctx, child.ID)
 			if err := s.checkBusy(child.ID); err != nil {
 				return err
 			}
@@ -404,7 +494,7 @@ func (s *service) walkMessages(ctx context.Context, ownerSessionID string, msgs 
 				return fmt.Errorf("listing subagent session %s: %w", child.ID, err)
 			}
 			out.childSessions = append(out.childSessions, child.ID)
-			if err := s.walkMessages(ctx, child.ID, childMsgs, out); err != nil {
+			if err := s.walkMessages(ctx, child.ID, childMsgs, reserve, out); err != nil {
 				return err
 			}
 		}

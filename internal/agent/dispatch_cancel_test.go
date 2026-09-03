@@ -202,6 +202,54 @@ func TestRun_NormalCompletionClearsStalePendingCancel(t *testing.T) {
 	assert.Equal(t, message.FinishReasonEndTurn, msgs[1].FinishReason())
 }
 
+// TestLockSession_BlocksConcurrentRunDispatch verifies the primitive
+// undo relies on to make its own busy check atomic against a
+// concurrent turn start (see undo.sessionReservation in
+// internal/undo): LockSession takes the very per-session mutex Run
+// itself holds across its own busy-check-and-register step, so a Run
+// dispatched while LockSession is held must wait for release before it
+// can observe busy state or become active, instead of racing ahead of
+// it.
+func TestLockSession_BlocksConcurrentRunDispatch(t *testing.T) {
+	t.Parallel()
+	sa, env, resolved := newStreamTestAgent(t)
+
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	unlock := sa.LockSession(sess.ID)
+
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		_, err := sa.Run(t.Context(), SessionAgentCall{
+			Agent:     resolved,
+			SessionID: sess.ID,
+			Prompt:    "hello",
+		})
+		assert.NoError(t, err)
+	}()
+
+	// Give the dispatched Run every opportunity to race ahead; it must
+	// not, because LockSession is still held.
+	time.Sleep(100 * time.Millisecond)
+	require.False(t, sa.IsSessionBusy(sess.ID),
+		"Run must not register active while LockSession is held")
+	select {
+	case <-runDone:
+		t.Fatal("Run must not complete while LockSession is held")
+	default:
+	}
+
+	unlock()
+
+	select {
+	case <-runDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not proceed after LockSession was released")
+	}
+}
+
 // newCancelTestAgentWithRunComplete builds a DB-backed sessionAgent wired
 // to a RunComplete broker so tests can observe the terminal event a
 // RunID-bearing caller (e.g. `angela run`) blocks on.

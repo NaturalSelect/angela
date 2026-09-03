@@ -223,6 +223,21 @@ func (mr *MockCoordinatorMockRecorder) IsSessionBusy(sessionID any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSessionBusy", reflect.TypeOf((*MockCoordinator)(nil).IsSessionBusy), sessionID)
 }
 
+// LockSession mocks base method.
+func (m *MockCoordinator) LockSession(ctx context.Context, sessionID string) (func(), bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockSession", ctx, sessionID)
+	ret0, _ := ret[0].(func())
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// LockSession indicates an expected call of LockSession.
+func (mr *MockCoordinatorMockRecorder) LockSession(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockSession", reflect.TypeOf((*MockCoordinator)(nil).LockSession), ctx, sessionID)
+}
+
 // QueuedPrompts mocks base method.
 func (m *MockCoordinator) QueuedPrompts(sessionID string) int {
 	m.ctrl.T.Helper()

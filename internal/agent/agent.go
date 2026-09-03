@@ -158,6 +158,14 @@ type SessionAgentCall struct {
 type SessionAgent interface {
 	Run(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)
 	BeginAccepted(sessionID string) *AcceptedRun
+	// LockSession blocks until it can guarantee sessionID is not about
+	// to transition to a new active turn, then returns a release func
+	// the caller must call exactly once. It shares the same
+	// per-session dispatch mutex Run takes for its own
+	// busy-check-and-register step, so holding it across a multi-step
+	// operation (e.g. undo) makes that operation atomic against a
+	// concurrent Run on the same session.
+	LockSession(sessionID string) func()
 	Cancel(sessionID string)
 	CancelAll()
 	IsSessionBusy(sessionID string) bool

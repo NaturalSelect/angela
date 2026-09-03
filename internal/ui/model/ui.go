@@ -2286,14 +2286,22 @@ func substituteArgs(content string, args map[string]string) string {
 type modelPickTarget int
 
 const (
-	// modelPickGlobal edits the global default: there is no session, or
-	// the slot is one the session's agent does not run on (the chore
-	// model, say).
+	// modelPickGlobal edits the global default: there is an active
+	// session, but the slot is one its agent does not run on (the
+	// chore model, say). The pick has no session to live on, and one
+	// is already running on the config as it stands, so persisting is
+	// the only choice that means anything.
 	modelPickGlobal modelPickTarget = iota
 	// modelPickSession edits the session's own agent instance.
 	modelPickSession
+	// modelPickEphemeral applies the pick in memory for this process
+	// only: there is no session yet to scope it to (the landing
+	// screen), so persisting it would silently overwrite the saved
+	// default the moment the user was only previewing a model before
+	// starting a chat.
+	modelPickEphemeral
 	// modelPickUnknown means the session's agent has not been probed
-	// yet, so the other two cannot be told apart. Falling back to
+	// yet, so the other cases cannot be told apart. Falling back to
 	// global here would rewrite the default for every future session
 	// on the strength of a probe that simply had not landed.
 	modelPickUnknown
@@ -2304,7 +2312,7 @@ const (
 // session-scoped.
 func (m *UI) modelPickScope(slot config.ModelConfigName) modelPickTarget {
 	if m.currentSessionID() == "" {
-		return modelPickGlobal
+		return modelPickEphemeral
 	}
 	active := m.activeAgent()
 	if active == nil {
@@ -2532,9 +2540,11 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 
 	// Picking a model for the role the session's agent runs on edits
 	// that session's instance and leaves the global default alone.
-	// Picking one for any other slot (the chore model, say), or picking
-	// during onboarding when no session exists yet, is a global
-	// preference.
+	// Picking one for any other slot (the chore model, say) is a
+	// global preference. Picking one with no session yet is either
+	// onboarding's first-run default, which persists, or the landing
+	// screen previewing a model before the first message, which must
+	// not silently overwrite the saved default.
 	sessionID := m.currentSessionID()
 	scope := modelPickGlobal
 	if !isOnboarding {
@@ -2577,8 +2587,12 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 			editCmd,
 		)))
 	} else {
+		persistScope := config.ScopeGlobal
+		if scope == modelPickEphemeral {
+			persistScope = config.ScopeEphemeral
+		}
 		cmds = append(cmds, m.refreshActiveAgentCmd(
-			m.applyGlobalModelCmd(msg.ModelType, msg.Model, isOnboarding, modelChangedMsg),
+			m.applyGlobalModelCmd(msg.ModelType, msg.Model, persistScope, isOnboarding, modelChangedMsg),
 		))
 	}
 
@@ -2631,21 +2645,26 @@ func (m *UI) applyOnboardingModelCmd(msg dialog.ActionConfigureModel, done func(
 	}
 }
 
-// applyGlobalModelCmd persists a global model pick and brings the agent
-// in line with it. The steps live in one command because each depends on
-// the one before having succeeded: tea.Sequence would run them all even
-// after a failure, and tea.Batch would run them concurrently.
+// applyGlobalModelCmd applies a model pick made outside any session and
+// brings the agent in line with it. scope decides whether the pick
+// persists to disk (onboarding's first-run default) or lives only for
+// this process (the landing screen, which has no session to scope it
+// to and no reason to overwrite the saved default). The steps live in
+// one command because each depends on the one before having
+// succeeded: tea.Sequence would run them all even after a failure, and
+// tea.Batch would run them concurrently.
 //
 // During onboarding there is no coordinator yet, so starting one is what
 // applies the model; afterwards the existing one is reconciled instead.
 func (m *UI) applyGlobalModelCmd(
 	name config.ModelConfigName,
 	model config.SelectedModel,
+	scope config.Scope,
 	startAgent bool,
 	done func() tea.Msg,
 ) tea.Cmd {
 	return func() tea.Msg {
-		if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, name, model); err != nil {
+		if err := m.com.Workspace.UpdatePreferredModel(scope, name, model); err != nil {
 			return util.ReportError(err)()
 		}
 		if startAgent {

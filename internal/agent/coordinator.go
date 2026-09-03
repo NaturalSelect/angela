@@ -123,6 +123,15 @@ type Coordinator interface {
 	// also rebuilds the session's route, which costs one database read
 	// and one agent resolution, once per child session per process.
 	BeginAccepted(ctx context.Context, sessionID string) *AcceptedRun
+	// LockSession resolves sessionID's executor (rebuilding a child
+	// session's route from the database if this process has not
+	// dispatched on it itself yet, the same as BeginAccepted) and
+	// blocks until it can guarantee the session is not about to
+	// transition to a new active turn, returning a release func the
+	// caller must call exactly once. ok is false when the session has
+	// no resolvable executor, meaning nothing runs there and there is
+	// nothing to guard against.
+	LockSession(ctx context.Context, sessionID string) (release func(), ok bool)
 	// Cancel interrupts a running turn. On a parent suspended waiting on
 	// one or more branches it reaches through and interrupts those too,
 	// since the parent has nothing of its own running — but it never
@@ -1760,6 +1769,17 @@ func (c *coordinator) BeginAccepted(ctx context.Context, sessionID string) *Acce
 		return nil
 	}
 	return executor.BeginAccepted(sessionID)
+}
+
+// LockSession resolves sessionID the same way BeginAccepted does, then
+// blocks on its executor's per-session dispatch mutex. See the
+// Coordinator interface doc for what holding it guarantees.
+func (c *coordinator) LockSession(ctx context.Context, sessionID string) (func(), bool) {
+	executor, ok := c.acceptExecutorFor(ctx, sessionID)
+	if !ok {
+		return nil, false
+	}
+	return executor.LockSession(sessionID), true
 }
 
 // branchAbandonedMessage is what a parent's suspended tool call resolves to

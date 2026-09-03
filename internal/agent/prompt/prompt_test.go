@@ -59,6 +59,22 @@ func TestPrompt_AgentContextPathsOverrideGlobal(t *testing.T) {
 	require.Equal(t, "agent content", dataAgent.ContextFiles[0].Content)
 }
 
+// TestPrompt_ContextPathsIgnoresEmptyEntry guards against an empty
+// context path resolving to the working directory itself (Join drops
+// empty elements) and pulling every file in the project in as
+// "context" instead of being treated as absent.
+func TestPrompt_ContextPathsIgnoresEmptyEntry(t *testing.T) {
+	store := newContextTestStore(t, "remember the house style")
+	require.NoError(t, os.WriteFile(filepath.Join(store.WorkingDir(), "other.md"), []byte("unrelated file"), 0o644))
+
+	p, err := NewPrompt("x", "body", WithContextPaths([]string{""}))
+	require.NoError(t, err)
+
+	data, err := p.promptData(context.Background(), "", "", store)
+	require.NoError(t, err)
+	require.Empty(t, data.ContextFiles)
+}
+
 // TestPrompt_BuildRendersContextFiles asserts on the string Build
 // actually returns. Checking promptData alone is what let a subagent
 // template ship without ever rendering the context it had loaded: the

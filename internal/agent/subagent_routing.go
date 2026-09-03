@@ -106,6 +106,24 @@ func (c *coordinator) acceptExecutorFor(ctx context.Context, sessionID string) (
 	return route.executor, true
 }
 
+// summarizeExecutorFor resolves which executor a session's Summarize call
+// must run on. A child session's turns run on its own sub-agent executor,
+// which owns the busy-check and per-session bookkeeping Summarize relies
+// on; routing every session through currentAgent instead would let a
+// summarize pass currentAgent's busy check while the child's own executor
+// is mid-turn, and then both would write the same session's messages
+// concurrently.
+func (c *coordinator) summarizeExecutorFor(ctx context.Context, sessionID string) (SessionAgent, error) {
+	route, routed, err := c.routeFor(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if routed {
+		return route.executor, nil
+	}
+	return c.currentAgent, nil
+}
+
 // turnExecutorFor resolves the executor and agent identity for a new turn.
 //
 // A child session must land on the sub-agent's own executor: the default path

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -334,6 +336,72 @@ func waitForEvent(t *testing.T, ch <-chan pubsub.Event[Event]) (Event, bool) {
 	case <-time.After(time.Second):
 		return Event{}, false
 	}
+}
+
+func TestChannelGateIsOpen(t *testing.T) {
+	t.Parallel()
+
+	t.Run("undecided gate is not open", func(t *testing.T) {
+		t.Parallel()
+		gate := newChannelGate()
+		require.False(t, gate.isOpen())
+	})
+
+	t.Run("resolved open gate reports open", func(t *testing.T) {
+		t.Parallel()
+		gate := newChannelGate()
+		gate.resolve(true)
+		require.True(t, gate.isOpen())
+	})
+
+	t.Run("resolved closed gate reports not open", func(t *testing.T) {
+		t.Parallel()
+		gate := newChannelGate()
+		gate.resolve(false)
+		require.False(t, gate.isOpen())
+	})
+}
+
+// TestChannelTransportConnect pins channelTransport.Connect's two outcomes:
+// a successful inner Connect is wrapped in a channelConn carrying the same
+// name and gate, and an inner Connect failure is propagated unchanged
+// without wrapping.
+func TestChannelTransportConnect(t *testing.T) {
+	t.Parallel()
+
+	t.Run("wraps a successful connection", func(t *testing.T) {
+		t.Parallel()
+		ctrl := gomock.NewController(t)
+		inner := NewMockTransport(ctrl)
+		conn := NewMockConnection(ctrl)
+		inner.EXPECT().Connect(gomock.Any()).Return(conn, nil)
+
+		gate := newChannelGate()
+		transport := &channelTransport{inner: inner, name: "webhook", gate: gate}
+
+		got, err := transport.Connect(context.Background())
+		require.NoError(t, err)
+
+		wrapped, ok := got.(*channelConn)
+		require.True(t, ok, "Connect must wrap a successful connection in a channelConn")
+		require.Equal(t, "webhook", wrapped.name)
+		require.Same(t, gate, wrapped.gate)
+		require.Same(t, conn, wrapped.Connection)
+	})
+
+	t.Run("propagates a connection failure unchanged", func(t *testing.T) {
+		t.Parallel()
+		ctrl := gomock.NewController(t)
+		inner := NewMockTransport(ctrl)
+		wantErr := errors.New("dial failed")
+		inner.EXPECT().Connect(gomock.Any()).Return(nil, wantErr)
+
+		transport := &channelTransport{inner: inner, name: "webhook", gate: newChannelGate()}
+
+		got, err := transport.Connect(context.Background())
+		require.Nil(t, got)
+		require.ErrorIs(t, err, wantErr)
+	})
 }
 
 func TestChannelConnGateOpenInjects(t *testing.T) {

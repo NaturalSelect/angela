@@ -2,17 +2,30 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/env"
 	"github.com/NaturalSelect/angela/internal/oauth"
+	mcpoauth "github.com/NaturalSelect/angela/internal/oauth/mcp"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+	"go.uber.org/mock/gomock"
+	"golang.org/x/oauth2"
 )
 
 // shellResolverWithPath builds a shell resolver whose env carries PATH
@@ -768,6 +781,125 @@ func setDistinct(typ reflect.Type, field reflect.Value) {
 	}
 }
 
+// TestRemoveServer proves removeServer fully tears down a server: the live
+// session is closed and removed, and unlike DisableSingle both the state and
+// generation entries are deleted rather than left behind as StateDisabled.
+func TestRemoveServer(t *testing.T) {
+	t.Parallel()
+
+	const name = "test-remove-server"
+	t.Cleanup(func() {
+		states.Del(name)
+		gens.Del(name)
+		if s, ok := sessions.Take(name); ok {
+			_ = s.Close()
+		}
+	})
+
+	sess, sessCtx := liveSession(t, "send_message")
+	sessions.Set(name, sess)
+	states.Set(name, ClientInfo{Name: name, State: StateConnected})
+	gens.Set(name, 2)
+
+	removeServer(name)
+
+	require.ErrorIs(t, sessCtx.Err(), context.Canceled, "removeServer must close the live session")
+	_, ok := sessions.Get(name)
+	require.False(t, ok)
+	_, ok = states.Get(name)
+	require.False(t, ok, "removeServer must delete the state entry entirely")
+	_, ok = gens.Get(name)
+	require.False(t, ok, "removeServer must delete the generation entry entirely")
+}
+
+// TestReconcileOnce_RemovesServerGoneFromConfig exercises reconcileOnce's
+// reinitRemove branch: a server tracked in states but absent from the
+// current config must be fully torn down via removeServer.
+//
+// Not parallel: reconcileOnce reconciles the whole package-global states
+// map against cfg, so a concurrently-running test's own entry (absent from
+// this test's cfg) would be torn down as if it were removed from config.
+func TestReconcileOnce_RemovesServerGoneFromConfig(t *testing.T) {
+	const name = "test-reconcile-once-remove"
+	t.Cleanup(func() {
+		states.Del(name)
+		gens.Del(name)
+		if s, ok := sessions.Take(name); ok {
+			_ = s.Close()
+		}
+	})
+
+	sess, sessCtx := liveSession(t, "send_message")
+	sessions.Set(name, sess)
+	states.Set(name, ClientInfo{Name: name, State: StateConnected})
+
+	cfg := config.NewTestStore(&config.Config{}) // no MCP servers configured
+
+	reconcileOnce(context.Background(), cfg)
+
+	require.ErrorIs(t, sessCtx.Err(), context.Canceled)
+	_, ok := states.Get(name)
+	require.False(t, ok, "a server removed from config must have its state entry deleted")
+}
+
+// TestReconcileOnce_DisablesServerMarkedDisabledInConfig exercises
+// reconcileOnce's reinitDisable branch: a connected server whose config now
+// sets Disabled must transition to StateDisabled via DisableSingle.
+//
+// Not parallel: reconcileOnce reconciles the whole package-global states
+// map against cfg, so a concurrently-running test's own entry (absent from
+// this test's cfg) would be torn down as if it were removed from config.
+func TestReconcileOnce_DisablesServerMarkedDisabledInConfig(t *testing.T) {
+	const name = "test-reconcile-once-disable"
+	t.Cleanup(func() {
+		states.Del(name)
+		gens.Del(name)
+	})
+
+	sess, sessCtx := liveSession(t, "send_message")
+	sessions.Set(name, sess)
+	states.Set(name, ClientInfo{Name: name, State: StateConnected, Config: config.MCPConfig{Type: config.MCPStdio}})
+
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{
+		name: {Type: config.MCPStdio, Disabled: true},
+	}})
+
+	reconcileOnce(context.Background(), cfg)
+
+	require.ErrorIs(t, sessCtx.Err(), context.Canceled, "disabling must close the live session")
+	info, ok := states.Get(name)
+	require.True(t, ok, "a disabled server keeps its state entry, unlike a removed one")
+	require.Equal(t, StateDisabled, info.State)
+}
+
+// TestReinitialize_RemovesServerGoneFromConfig exercises the public entry
+// point for the deterministic (non-goroutine-spawning) remove path, proving
+// Reinitialize actually invokes reconcileOnce rather than only managing the
+// single-flight bookkeeping. Not parallel: Reinitialize coordinates through
+// process-global single-flight state shared by every caller.
+func TestReinitialize_RemovesServerGoneFromConfig(t *testing.T) {
+	const name = "test-reinitialize-remove"
+	t.Cleanup(func() {
+		states.Del(name)
+		gens.Del(name)
+		if s, ok := sessions.Take(name); ok {
+			_ = s.Close()
+		}
+	})
+
+	sess, sessCtx := liveSession(t, "send_message")
+	sessions.Set(name, sess)
+	states.Set(name, ClientInfo{Name: name, State: StateConnected})
+
+	cfg := config.NewTestStore(&config.Config{})
+
+	Reinitialize(context.Background(), cfg)
+
+	require.ErrorIs(t, sessCtx.Err(), context.Canceled)
+	_, ok := states.Get(name)
+	require.False(t, ok)
+}
+
 // TestBeginAuth_UnknownServer proves BeginAuth rejects a server that is not
 // present in the configuration.
 func TestBeginAuth_UnknownServer(t *testing.T) {
@@ -818,4 +950,621 @@ func TestBeginAuth_Concurrent(t *testing.T) {
 	_, cancel2, err := BeginAuth(cfg, name)
 	require.NoError(t, err)
 	cancel2()
+}
+
+func TestParseLevel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		level string
+		want  slog.Level
+	}{
+		{"info", slog.LevelInfo},
+		{"notice", slog.LevelInfo},
+		{"warning", slog.LevelWarn},
+		{"debug", slog.LevelDebug},
+		{"unknown-level", slog.LevelDebug},
+		{"", slog.LevelDebug},
+	}
+	for _, tt := range tests {
+		t.Run(tt.level, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, parseLevel(tt.level))
+		})
+	}
+}
+
+func TestState_String(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		state State
+		want  string
+	}{
+		{StateDisabled, "disabled"},
+		{StateStarting, "starting"},
+		{StateConnected, "connected"},
+		{StateError, "error"},
+		{StateNeedsAuth, "needs auth"},
+		{State(999), "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, tt.state.String())
+		})
+	}
+}
+
+func TestGetStates(t *testing.T) {
+	t.Parallel()
+
+	const name = "test-getstates"
+	t.Cleanup(func() { states.Del(name) })
+
+	updateState(name, StateConnected, nil, nil, Counts{Tools: 2})
+
+	all := GetStates()
+	info, ok := all[name]
+	require.True(t, ok)
+	require.Equal(t, StateConnected, info.State)
+	require.Equal(t, Counts{Tools: 2}, info.Counts)
+}
+
+// TestArmInitDisarmInit pins ArmInit/DisarmInit's effect on WaitForInit
+// directly, rather than only through the initStarted/initMu internals other
+// tests in this package poke at.
+func TestArmInitDisarmInit(t *testing.T) {
+	// Not parallel: mutates the package-global init gate.
+	origDone := initDone
+	initDone = make(chan struct{})
+	t.Cleanup(func() { initDone = origDone })
+
+	DisarmInit()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	require.NoError(t, WaitForInit(ctx), "disarmed WaitForInit must return immediately")
+
+	ArmInit()
+	t.Cleanup(DisarmInit)
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel2()
+	require.ErrorIs(t, WaitForInit(ctx2), context.DeadlineExceeded, "armed WaitForInit must block until initDone closes")
+
+	DisarmInit()
+	require.NoError(t, WaitForInit(context.Background()), "disarming again must unblock WaitForInit immediately")
+}
+
+func TestHasUsableToken(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, hasUsableToken(nil))
+	require.False(t, hasUsableToken(&oauth.Token{}))
+	require.True(t, hasUsableToken(&oauth.Token{AccessToken: "tok"}))
+}
+
+func TestIsOAuthInitErr(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"interactive auth required", mcpoauth.ErrInteractiveAuthRequired, true},
+		{"wrapped interactive auth required", fmt.Errorf("wrap: %w", mcpoauth.ErrInteractiveAuthRequired), true},
+		{"retrieve error invalid_grant", &oauth2.RetrieveError{ErrorCode: "invalid_grant"}, true},
+		{"retrieve error invalid_client", &oauth2.RetrieveError{ErrorCode: "invalid_client"}, true},
+		{"retrieve error other code", &oauth2.RetrieveError{ErrorCode: "server_error"}, false},
+		{"message contains invalid_grant", errors.New("token refresh failed: invalid_grant"), true},
+		{"message contains invalid_client", errors.New("register failed: invalid_client"), true},
+		{"message contains no token available", errors.New("no token available"), true},
+		{"unrelated error", errors.New("connection refused"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, isOAuthInitErr(tt.err))
+		})
+	}
+}
+
+func TestMcpTimeout(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, 10*time.Second, mcpTimeout(config.MCPConfig{}), "default with no OAuth is 10s")
+	require.Equal(t, 30*time.Second, mcpTimeout(config.MCPConfig{OAuth: true}), "default with OAuth is 30s")
+	require.Equal(t, 5*time.Second, mcpTimeout(config.MCPConfig{Timeout: 5}), "explicit timeout wins")
+	require.Equal(t, 5*time.Second, mcpTimeout(config.MCPConfig{Timeout: 5, OAuth: true}), "explicit timeout wins over OAuth default")
+}
+
+func TestHeaderRoundTripper(t *testing.T) {
+	t.Parallel()
+
+	var gotHeaders http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	rt := headerRoundTripper{headers: map[string]string{"X-Test": "value", "Authorization": "Bearer tok"}}
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+
+	resp, err := (&http.Client{Transport: rt}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, "value", gotHeaders.Get("X-Test"))
+	require.Equal(t, "Bearer tok", gotHeaders.Get("Authorization"))
+}
+
+// countingHandler returns 401 for the first n requests, then 200. It lets
+// oauthRoundTripper tests exercise the retry-after-Authorize path over a
+// real local HTTP server instead of a hand-rolled RoundTripper.
+func countingHandler(unauthorizedCount int) (http.HandlerFunc, *int) {
+	seen := 0
+	return func(w http.ResponseWriter, r *http.Request) {
+		seen++
+		if seen <= unauthorizedCount {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}, &seen
+}
+
+func TestOAuthRoundTripper(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid token attaches Authorization header", func(t *testing.T) {
+		t.Parallel()
+		var gotAuth string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotAuth = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(srv.Close)
+
+		ctrl := gomock.NewController(t)
+		h := NewMockOAuthHandler(ctrl)
+		h.EXPECT().TokenSource(gomock.Any()).Return(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "secret-tok"}), nil)
+
+		rt := newOAuthRoundTripper(h, http.DefaultTransport)
+		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		require.NoError(t, err)
+
+		resp, err := rt.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, "Bearer secret-tok", gotAuth)
+	})
+
+	t.Run("nil token source sends request without Authorization header", func(t *testing.T) {
+		t.Parallel()
+		var gotAuth string
+		var sawHeader bool
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotAuth, sawHeader = r.Header.Get("Authorization"), r.Header.Get("Authorization") != ""
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(srv.Close)
+
+		ctrl := gomock.NewController(t)
+		h := NewMockOAuthHandler(ctrl)
+		h.EXPECT().TokenSource(gomock.Any()).Return(nil, nil)
+
+		rt := newOAuthRoundTripper(h, http.DefaultTransport)
+		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		require.NoError(t, err)
+
+		resp, err := rt.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.False(t, sawHeader, "no Authorization header should be set, got %q", gotAuth)
+	})
+
+	t.Run("token source error aborts before the request is sent", func(t *testing.T) {
+		t.Parallel()
+		ctrl := gomock.NewController(t)
+		h := NewMockOAuthHandler(ctrl)
+		h.EXPECT().TokenSource(gomock.Any()).Return(nil, errors.New("token source boom"))
+
+		base := roundTripFunc(func(*http.Request) (*http.Response, error) {
+			t.Fatal("base transport must not be called when TokenSource errors")
+			return nil, nil
+		})
+		rt := newOAuthRoundTripper(h, base)
+		req, err := http.NewRequest(http.MethodGet, "http://example.invalid", nil)
+		require.NoError(t, err)
+
+		resp, err := rt.RoundTrip(req)
+		require.Error(t, err)
+		require.Nil(t, resp)
+		require.Contains(t, err.Error(), "oauth token source")
+	})
+
+	t.Run("401 then failed Authorize returns the original response", func(t *testing.T) {
+		t.Parallel()
+		handler, seen := countingHandler(100) // always 401
+		srv := httptest.NewServer(handler)
+		t.Cleanup(srv.Close)
+
+		ctrl := gomock.NewController(t)
+		h := NewMockOAuthHandler(ctrl)
+		h.EXPECT().TokenSource(gomock.Any()).Return(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "tok"}), nil).Times(1)
+		h.EXPECT().Authorize(gomock.Any(), gomock.Any(), gomock.Any()).Return(errors.New("authorize failed"))
+
+		rt := newOAuthRoundTripper(h, http.DefaultTransport)
+		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		require.NoError(t, err)
+
+		resp, err := rt.RoundTrip(req)
+		require.NoError(t, err, "a failed Authorize is swallowed; the original response is returned")
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		require.Equal(t, 1, *seen, "no retry should be attempted when Authorize fails")
+	})
+
+	t.Run("401 then successful Authorize retries and succeeds", func(t *testing.T) {
+		t.Parallel()
+		handler, seen := countingHandler(1) // first call 401, second 200
+		srv := httptest.NewServer(handler)
+		t.Cleanup(srv.Close)
+
+		ctrl := gomock.NewController(t)
+		h := NewMockOAuthHandler(ctrl)
+		h.EXPECT().TokenSource(gomock.Any()).Return(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "tok"}), nil).Times(2)
+		h.EXPECT().Authorize(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+		rt := newOAuthRoundTripper(h, http.DefaultTransport)
+		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		require.NoError(t, err)
+
+		resp, err := rt.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, 2, *seen, "the request must be retried exactly once after a successful Authorize")
+	})
+}
+
+// roundTripFunc adapts a function to http.RoundTripper, mirroring the
+// standard library's http.HandlerFunc pattern.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestCreateTransport_UnsupportedType(t *testing.T) {
+	t.Parallel()
+
+	tr, oh, err := createTransport(t.Context(), nil, "test", config.MCPConfig{Type: "bogus"}, config.IdentityResolver())
+	require.Error(t, err)
+	require.Nil(t, tr)
+	require.Nil(t, oh)
+	require.Contains(t, err.Error(), "unsupported mcp type")
+}
+
+// TestStdioCheck uses true/false rather than a command like `go version`:
+// stdioCheck re-execs via old.Path plus old.Args, and old.Args conventionally
+// includes argv[0] as its own first element, so the recheck always runs with
+// one duplicated leading argument. true/false ignore all arguments and exit
+// deterministically either way; a subcommand-sensitive binary would not.
+func TestStdioCheck(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("true"); err != nil {
+		t.Skip("true binary not found on PATH")
+	}
+
+	t.Run("success returns nil", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, stdioCheck(exec.Command("true")))
+	})
+
+	t.Run("failure returns error with captured output", func(t *testing.T) {
+		t.Parallel()
+		err := stdioCheck(exec.Command("false"))
+		require.Error(t, err)
+	})
+}
+
+func TestMaybeStdioErr(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-EOF error returned unchanged", func(t *testing.T) {
+		t.Parallel()
+		orig := errors.New("boom")
+		got := maybeStdioErr(orig, &mcp.CommandTransport{Command: exec.Command("true")})
+		require.Equal(t, orig, got)
+	})
+
+	t.Run("EOF with non-command transport returned unchanged", func(t *testing.T) {
+		t.Parallel()
+		got := maybeStdioErr(io.EOF, &mcp.StreamableClientTransport{Endpoint: "http://example.com"})
+		require.ErrorIs(t, got, io.EOF)
+		require.Equal(t, io.EOF, got)
+	})
+
+	if _, err := exec.LookPath("true"); err != nil {
+		t.Skip("true/false binaries not found on PATH")
+	}
+
+	t.Run("EOF with command transport that now succeeds stays plain EOF", func(t *testing.T) {
+		t.Parallel()
+		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.Command("true")})
+		require.Equal(t, io.EOF, got, "a successful recheck must not join extra output onto the error")
+	})
+
+	t.Run("EOF with command transport that still fails is joined with recheck output", func(t *testing.T) {
+		t.Parallel()
+		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.Command("false")})
+		require.ErrorIs(t, got, io.EOF)
+		require.NotEqual(t, io.EOF.Error(), got.Error(), "a failing recheck must join its output onto the error")
+	})
+}
+
+func TestMCPAuthURL_NoHandler(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "", MCPAuthURL("test-mcpauthurl-does-not-exist"))
+}
+
+// TestPendingAuthMCPs is not parallel: it asserts an exact slice length over
+// the whole package-global states map, which would be flaky if another test
+// concurrently registered a StateNeedsAuth entry of its own.
+func TestPendingAuthMCPs(t *testing.T) {
+	const nameA = "test-pending-a"
+	const nameB = "test-pending-b"
+	t.Cleanup(func() {
+		states.Del(nameA)
+		states.Del(nameB)
+	})
+
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{
+		nameA: {Type: config.MCPHttp, URL: "https://a.example.com/mcp"},
+		nameB: {Type: config.MCPHttp, URL: "https://b.example.com/mcp"},
+	}})
+	updateState(nameB, StateNeedsAuth, nil, nil, Counts{})
+	updateState(nameA, StateNeedsAuth, nil, nil, Counts{})
+
+	got := PendingAuthMCPs(cfg)
+	require.Equal(t, []PendingAuthServer{
+		{Name: nameA, URL: "https://a.example.com/mcp"},
+		{Name: nameB, URL: "https://b.example.com/mcp"},
+	}, got, "results must be sorted by name regardless of registration order")
+}
+
+func TestAuthenticateMCP_GuardClauses(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewTestStore(&config.Config{
+		MCP: config.MCPs{
+			"stdio": {Type: config.MCPStdio},
+			"plain": {Type: config.MCPHttp, URL: "https://example.com/mcp"},
+		},
+	})
+
+	err := AuthenticateMCP(context.Background(), cfg, "missing")
+	require.ErrorContains(t, err, "not found")
+
+	for _, name := range []string{"stdio", "plain"} {
+		err := AuthenticateMCP(context.Background(), cfg, name)
+		require.ErrorContains(t, err, "does not use OAuth", "name %q", name)
+	}
+}
+
+// TestClose_ClosesSessionsAndShutsDownBroker swaps the package-global broker
+// for a private one so shutting it down (a documented, one-way effect of
+// Close) does not break every other test in this package that subscribes to
+// the real broker.
+func TestClose_ClosesSessionsAndShutsDownBroker(t *testing.T) {
+	small := pubsub.NewBroker[Event]()
+	prevBroker := broker
+	broker = small
+	t.Cleanup(func() { broker = prevBroker })
+
+	const name = "test-close-session"
+	sess, sessCtx := liveSession(t, "do_thing")
+	sessions.Set(name, sess)
+	t.Cleanup(func() { sessions.Del(name) })
+
+	require.NoError(t, sessCtx.Err())
+	require.NoError(t, Close(context.Background()))
+	require.ErrorIs(t, sessCtx.Err(), context.Canceled, "Close must actually close registered sessions, not just drop them")
+}
+
+// TestMCPAuthURL_HandlerPresent covers the branch TestMCPAuthURL_NoHandler
+// does not: a server with a registered (but not yet resolved) auth handler
+// reports whatever AuthURL the handler currently holds, here empty since no
+// authorization flow has produced a URL yet.
+func TestMCPAuthURL_HandlerPresent(t *testing.T) {
+	t.Parallel()
+
+	const name = "test-mcpauthurl-handler-present"
+	handler, err := mcpoauth.NewHandler(name, "https://example.com/mcp", nil, nil, func(*oauth.Token) {}, false, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		handler.Close()
+		authURLs.Del(name)
+	})
+	authURLs.Set(name, handler)
+
+	require.Equal(t, "", MCPAuthURL(name))
+}
+
+// TestClearMCPData proves clearMCPData drops every registry entry for a
+// server, including closing and removing its pending OAuth handler, so a
+// torn-down server stops advertising capabilities it can no longer serve.
+func TestClearMCPData(t *testing.T) {
+	t.Parallel()
+
+	const name = "test-clear-mcp-data"
+	t.Cleanup(func() {
+		allTools.Del(name)
+		allPrompts.Del(name)
+		allResources.Del(name)
+		authURLs.Del(name)
+	})
+
+	allTools.Set(name, []*Tool{{Name: "t"}})
+	allPrompts.Set(name, []*Prompt{{Name: "p"}})
+	allResources.Set(name, []*Resource{{Name: "r", URI: "res://r"}})
+
+	handler, err := mcpoauth.NewHandler(name, "https://example.com/mcp", nil, nil, func(*oauth.Token) {}, false, 0)
+	require.NoError(t, err)
+	authURLs.Set(name, handler)
+
+	clearMCPData(name)
+
+	_, ok := allTools.Get(name)
+	require.False(t, ok, "tools must be cleared")
+	_, ok = allPrompts.Get(name)
+	require.False(t, ok, "prompts must be cleared")
+	_, ok = allResources.Get(name)
+	require.False(t, ok, "resources must be cleared")
+	_, ok = authURLs.Get(name)
+	require.False(t, ok, "the pending OAuth handler must be closed and removed")
+}
+
+// TestTeardown covers both of teardown's paths: closing and removing a live
+// session when one is registered, and being a no-op on the session map
+// (while still clearing registry data and bumping the generation) when none
+// is.
+func TestTeardown(t *testing.T) {
+	t.Parallel()
+
+	t.Run("closes session, clears data, bumps generation", func(t *testing.T) {
+		t.Parallel()
+
+		const name = "test-teardown-with-session"
+		t.Cleanup(func() {
+			gens.Del(name)
+			allTools.Del(name)
+		})
+
+		sess, sessCtx := liveSession(t, "send_message")
+		sessions.Set(name, sess)
+		allTools.Set(name, []*Tool{{Name: "send_message"}})
+		gens.Set(name, 5)
+
+		teardown(name)
+
+		_, ok := sessions.Get(name)
+		require.False(t, ok, "session must be removed")
+		require.ErrorIs(t, sessCtx.Err(), context.Canceled, "session must be closed")
+		_, ok = allTools.Get(name)
+		require.False(t, ok, "tools must be cleared")
+		gen, ok := gens.Get(name)
+		require.True(t, ok)
+		require.Equal(t, uint64(6), gen, "generation must be bumped")
+	})
+
+	t.Run("without a session still clears data and bumps generation", func(t *testing.T) {
+		t.Parallel()
+
+		const name = "test-teardown-no-session"
+		t.Cleanup(func() { gens.Del(name) })
+
+		allPrompts.Set(name, []*Prompt{{Name: "p"}})
+
+		teardown(name)
+
+		gen, ok := gens.Get(name)
+		require.True(t, ok)
+		require.Equal(t, uint64(1), gen)
+		_, ok = allPrompts.Get(name)
+		require.False(t, ok)
+	})
+}
+
+// TestDisableSingle proves DisableSingle both tears down the live session
+// (via teardown) and records the server as StateDisabled so a later
+// reconcile with an unchanged config still restarts it.
+func TestDisableSingle(t *testing.T) {
+	t.Parallel()
+
+	const name = "test-disable-single"
+	t.Cleanup(func() {
+		states.Del(name)
+		gens.Del(name)
+	})
+
+	sess, sessCtx := liveSession(t, "send_message")
+	sessions.Set(name, sess)
+	allTools.Set(name, []*Tool{{Name: "send_message"}})
+	states.Set(name, ClientInfo{Name: name, State: StateConnected})
+
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: {Type: config.MCPStdio}}})
+	require.NoError(t, DisableSingle(cfg, name))
+
+	require.ErrorIs(t, sessCtx.Err(), context.Canceled, "disabling must close the live session")
+	_, ok := sessions.Get(name)
+	require.False(t, ok)
+
+	info, ok := GetState(name)
+	require.True(t, ok)
+	require.Equal(t, StateDisabled, info.State)
+}
+
+// TestInitialize_DisabledServerSkipsConnectionAttempt exercises Initialize's
+// arm/dispatch/close bookkeeping without spawning a real connection: a
+// disabled server takes the updateState(StateDisabled) branch instead of
+// goInitClient, so the whole run completes synchronously. Not parallel: it
+// swaps the process-wide, one-shot initOnce/initDone pair that Initialize and
+// WaitForInit's tests also depend on.
+func TestInitialize_DisabledServerSkipsConnectionAttempt(t *testing.T) {
+	origDone := initDone
+	initDone = make(chan struct{})
+	// A fresh zero value, not a copy of the existing initOnce: Initialize's
+	// initOnce.Do must fire again for this test's swapped initDone rather
+	// than being a no-op left over from an earlier call.
+	initOnce = sync.Once{}
+	t.Cleanup(func() { initDone = origDone })
+	t.Cleanup(DisarmInit)
+
+	const name = "test-initialize-disabled"
+	t.Cleanup(func() { states.Del(name) })
+
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{
+		name: {Type: config.MCPStdio, Disabled: true},
+	}})
+
+	Initialize(context.Background(), cfg)
+
+	info, ok := GetState(name)
+	require.True(t, ok)
+	require.Equal(t, StateDisabled, info.State)
+
+	select {
+	case <-initDone:
+	default:
+		t.Fatal("Initialize must close initDone once every configured server has been dispatched")
+	}
+}
+
+// TestInitializeSingle covers InitializeSingle's two guard branches that
+// don't require a real connection: an unknown server errors, and a disabled
+// one records StateDisabled and returns without attempting to connect.
+func TestInitializeSingle(t *testing.T) {
+	t.Run("unknown server", func(t *testing.T) {
+		t.Parallel()
+		cfg := config.NewTestStore(&config.Config{})
+		err := InitializeSingle(context.Background(), "missing", cfg)
+		require.ErrorContains(t, err, "not found")
+	})
+
+	t.Run("disabled server records state without connecting", func(t *testing.T) {
+		t.Parallel()
+		const name = "test-init-single-disabled"
+		t.Cleanup(func() { states.Del(name) })
+		cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: {Type: config.MCPStdio, Disabled: true}}})
+
+		require.NoError(t, InitializeSingle(context.Background(), name, cfg))
+
+		info, ok := GetState(name)
+		require.True(t, ok)
+		require.Equal(t, StateDisabled, info.State)
+	})
 }

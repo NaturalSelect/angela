@@ -1,9 +1,14 @@
 package herdr
 
 import (
+	"encoding/json"
+	"net"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -139,4 +144,121 @@ func TestInitDisabledUnderTest(t *testing.T) {
 	t.Setenv("HERDR_SOCKET_PATH", "/tmp/does-not-matter.sock")
 	t.Setenv("HERDR_PANE_ID", "test:pane")
 	assert.Nil(t, newFromEnv())
+}
+
+func TestNewFromEnvMissingHerdrEnvReturnsNil(t *testing.T) {
+	t.Setenv("HERDR_ENV", "")
+	assert.Nil(t, newFromEnv())
+}
+
+// TestInitOutsideHerdrPaneReturnsNil exercises the process-wide Init
+// singleton. Since flag.Lookup("test.v") is always non-nil under `go
+// test`, newFromEnv is guaranteed to return nil regardless of ambient
+// HERDR_* env vars, so this is deterministic across environments.
+func TestInitOutsideHerdrPaneReturnsNil(t *testing.T) {
+	assert.Nil(t, Init())
+	// Second call must hit the cached (nil) singleton, not panic.
+	assert.Nil(t, Init())
+}
+
+func TestRegisterInitialNilSafe(t *testing.T) {
+	t.Parallel()
+	var c *Client
+	c.registerInitial()
+}
+
+// TestPermissionResolvedWithoutActiveRunReportsIdle exercises the
+// runActive=false branch of onPermissionResolved. The client starts
+// idle already, so reportLocked's dedup check swallows the send, but
+// the branch itself still runs.
+func TestPermissionResolvedWithoutActiveRunReportsIdle(t *testing.T) {
+	t.Parallel()
+	c, states := newTestClient(t)
+	c.HandleEvent(PermissionResolved{})
+	assert.Empty(t, *states)
+}
+
+func TestCloseNilSafe(t *testing.T) {
+	t.Parallel()
+	var c *Client
+	c.Close()
+}
+
+// TestCloseReleasesAgentAndClosesSender points releaseAgent at a
+// socket that does not exist. dialSend's error is logged and
+// swallowed, so Close must still complete and still close the
+// sender.
+func TestCloseReleasesAgentAndClosesSender(t *testing.T) {
+	t.Parallel()
+	m := NewMockSender(gomock.NewController(t))
+	m.EXPECT().close()
+	c := &Client{
+		socketPath: filepath.Join(t.TempDir(), "does-not-exist.sock"),
+		paneID:     "pane-1",
+		state:      stateIdle,
+		snd:        m,
+	}
+	c.Close()
+}
+
+func TestUnixSenderDeliversOverSocket(t *testing.T) {
+	t.Parallel()
+	sockPath := filepath.Join(t.TempDir(), "herdr.sock")
+	ln, err := net.Listen("unix", sockPath)
+	require.NoError(t, err)
+	defer ln.Close()
+
+	received := make(chan reportRequest, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		var req reportRequest
+		if err := json.NewDecoder(conn).Decode(&req); err == nil {
+			received <- req
+		}
+	}()
+
+	s := newUnixSender(sockPath)
+	defer s.close()
+
+	require.NoError(t, s.send(reportRequest{
+		ID:     "test-1",
+		Method: "pane.report_agent",
+		Params: reportParams{State: stateWorking},
+	}))
+
+	select {
+	case req := <-received:
+		assert.Equal(t, "test-1", req.ID)
+		assert.Equal(t, stateWorking, req.Params.State)
+	case <-time.After(2 * time.Second):
+		t.Fatal("herdr mock listener never received the report")
+	}
+}
+
+// TestUnixSenderSendDropsWhenBufferFull verifies that send never
+// blocks: state reports are best-effort, so a full buffer must drop
+// the newest request rather than stall the agent.
+func TestUnixSenderSendDropsWhenBufferFull(t *testing.T) {
+	t.Parallel()
+	s := &unixSender{ch: make(chan reportRequest, 1)}
+	require.NoError(t, s.send(reportRequest{ID: "1"}))
+	require.NoError(t, s.send(reportRequest{ID: "2"}))
+
+	got := <-s.ch
+	assert.Equal(t, "1", got.ID)
+	select {
+	case extra := <-s.ch:
+		t.Fatalf("expected buffer to contain only the first request, got %+v", extra)
+	default:
+	}
+}
+
+func TestDialSendConnectionRefused(t *testing.T) {
+	t.Parallel()
+	err := dialSend(filepath.Join(t.TempDir(), "does-not-exist.sock"), reportRequest{})
+	require.Error(t, err)
 }

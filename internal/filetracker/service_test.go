@@ -2,6 +2,8 @@ package filetracker
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -113,4 +115,31 @@ func TestService_RecordRead_DifferentPaths(t *testing.T) {
 
 	lastRead2 := env.svc.LastReadTime(env.ctx, sessionID, path2)
 	require.True(t, lastRead2.IsZero(), "path2 should not be recorded")
+}
+
+func TestService_ListReadFiles(t *testing.T) {
+	env := setupTest(t)
+
+	sessionID := "test-session-list"
+	env.createSession(t, sessionID)
+
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	path1 := filepath.Join(cwd, "a.go")
+	path2 := filepath.Join(cwd, "sub", "b.go")
+
+	env.svc.RecordRead(env.ctx, sessionID, path1)
+	env.svc.RecordRead(env.ctx, sessionID, path2)
+
+	files, err := env.svc.ListReadFiles(env.ctx, sessionID)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{path1, path2}, files)
+}
+
+func TestService_ListReadFiles_Empty(t *testing.T) {
+	env := setupTest(t)
+
+	files, err := env.svc.ListReadFiles(env.ctx, "no-such-session")
+	require.NoError(t, err)
+	require.Empty(t, files)
 }

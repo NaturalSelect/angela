@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/url"
 	"os"
@@ -9,6 +11,8 @@ import (
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -201,4 +205,156 @@ func swapStdinPipe(t *testing.T, content string) {
 	orig := os.Stdin
 	os.Stdin = r
 	t.Cleanup(func() { os.Stdin = orig })
+}
+
+// fakeSessionListWorkspace stubs workspace.Workspace with GetSession and
+// ListSessions overridden, mirroring fakeConfigWorkspace in login_test.go.
+type fakeSessionListWorkspace struct {
+	workspace.Workspace
+	sessions map[string]session.Session
+	listErr  error
+}
+
+func (f *fakeSessionListWorkspace) GetSession(_ context.Context, id string) (session.Session, error) {
+	if s, ok := f.sessions[id]; ok {
+		return s, nil
+	}
+	return session.Session{}, errors.New("not found")
+}
+
+func (f *fakeSessionListWorkspace) ListSessions(context.Context) ([]session.Session, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	out := make([]session.Session, 0, len(f.sessions))
+	for _, s := range f.sessions {
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+func TestResolveWorkspaceSessionID_DirectMatch(t *testing.T) {
+	t.Parallel()
+
+	want := session.Session{ID: "session-uuid-1", Title: "Direct"}
+	ws := &fakeSessionListWorkspace{sessions: map[string]session.Session{want.ID: want}}
+
+	got, err := resolveWorkspaceSessionID(t.Context(), ws, want.ID)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestResolveWorkspaceSessionID_HashPrefixMatch(t *testing.T) {
+	t.Parallel()
+
+	target := session.Session{ID: "session-uuid-3", Title: "Prefix match"}
+	ws := &fakeSessionListWorkspace{sessions: map[string]session.Session{target.ID: target}}
+
+	hash := session.HashID(target.ID)
+	got, err := resolveWorkspaceSessionID(t.Context(), ws, hash[:6])
+	require.NoError(t, err)
+	require.Equal(t, target, got)
+}
+
+func TestResolveWorkspaceSessionID_AmbiguousMatch(t *testing.T) {
+	t.Parallel()
+
+	sessions := map[string]session.Session{
+		"session-uuid-4": {ID: "session-uuid-4", Title: "First"},
+		"session-uuid-5": {ID: "session-uuid-5", Title: "Second"},
+	}
+	ws := &fakeSessionListWorkspace{sessions: sessions}
+
+	// Every hash has "" as a prefix, so an empty query matches all sessions
+	// and forces the ambiguous branch without needing a real hash collision.
+	_, err := resolveWorkspaceSessionID(t.Context(), ws, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "is ambiguous")
+}
+
+func TestResolveWorkspaceSessionID_NotFound(t *testing.T) {
+	t.Parallel()
+
+	ws := &fakeSessionListWorkspace{sessions: map[string]session.Session{}}
+
+	_, err := resolveWorkspaceSessionID(t.Context(), ws, "missing")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "session not found: missing")
+}
+
+func TestResolveWorkspaceSessionID_ListSessionsErrorPropagates(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("db exploded")
+	ws := &fakeSessionListWorkspace{listErr: wantErr}
+
+	_, err := resolveWorkspaceSessionID(t.Context(), ws, "missing")
+	require.ErrorIs(t, err, wantErr)
+}
+
+func TestCreateDotAngelaDir_CreatesDirAndGitignore(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), ".angela")
+	require.NoError(t, createDotAngelaDir(dir))
+
+	info, err := os.Stat(dir)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+
+	content, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	require.NoError(t, err)
+	require.Equal(t, defaultGitIgnore, string(content))
+}
+
+func TestCreateDotAngelaDir_UpgradesOldGitignore(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	gitIgnorePath := filepath.Join(dir, ".gitignore")
+	require.NoError(t, os.WriteFile(gitIgnorePath, []byte(oldGitIgnore), 0o644))
+
+	require.NoError(t, createDotAngelaDir(dir))
+
+	content, err := os.ReadFile(gitIgnorePath)
+	require.NoError(t, err)
+	require.Equal(t, defaultGitIgnore, string(content))
+}
+
+func TestCreateDotAngelaDir_PreservesCustomGitignore(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	gitIgnorePath := filepath.Join(dir, ".gitignore")
+	require.NoError(t, os.WriteFile(gitIgnorePath, []byte("custom\n"), 0o644))
+
+	require.NoError(t, createDotAngelaDir(dir))
+
+	content, err := os.ReadFile(gitIgnorePath)
+	require.NoError(t, err)
+	require.Equal(t, "custom\n", string(content))
+}
+
+func TestCreateDotAngelaDir_MkdirFailurePropagates(t *testing.T) {
+	t.Parallel()
+
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
+
+	err := createDotAngelaDir(filepath.Join(blocker, "sub"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create data directory")
+}
+
+// TestSupportsProgressBar_NotATerminalIsFalse pins the short-circuit: when
+// stderr isn't a terminal, env vars that would otherwise enable progress
+// bars (TERM_PROGRAM, WT_SESSION) must not matter.
+func TestSupportsProgressBar_NotATerminalIsFalse(t *testing.T) {
+	getOutput := swapStderrPipe(t)
+	t.Cleanup(func() { getOutput() })
+
+	t.Setenv("TERM_PROGRAM", "iterm2")
+	t.Setenv("WT_SESSION", "some-session")
+
+	require.False(t, supportsProgressBar())
 }

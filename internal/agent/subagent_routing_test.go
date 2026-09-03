@@ -212,6 +212,62 @@ func TestBeginAcceptedOnANormalSessionStaysOnTheMainAgent(t *testing.T) {
 	require.Equal(t, f.parentID, accept.SessionID())
 }
 
+// A compact triggered on a child session must reach the executor actually
+// running it, the same as Cancel. currentAgent never ran that session, so
+// summarizing there would race whatever turn the sub-agent's own executor
+// still has in flight on it.
+func TestSummarizeExecutorForRoutesToTheSubAgentExecutor(t *testing.T) {
+	t.Parallel()
+	f := newRoutingFixture(t)
+	f.register()
+
+	executor, err := f.coord.summarizeExecutorFor(t.Context(), f.childID)
+	require.NoError(t, err)
+	require.Same(t, f.child, executor)
+}
+
+func TestSummarizeExecutorForOnANormalSessionStaysOnTheMainAgent(t *testing.T) {
+	t.Parallel()
+	f := newRoutingFixture(t)
+	f.register()
+
+	executor, err := f.coord.summarizeExecutorFor(t.Context(), f.parentID)
+	require.NoError(t, err)
+	require.Same(t, f.main, executor)
+}
+
+// A child session whose route cannot be rebuilt has no executor to
+// summarize on. summarizeExecutorFor must report that rather than fall
+// through to currentAgent, which would then write the same transcript as
+// whatever sub-run is still using that session.
+func TestSummarizeExecutorForOnAnUnresumableChildSessionErrors(t *testing.T) {
+	t.Parallel()
+	coord := newGateTestCoordinator(t, false)
+	childID := persistedChildSession(t, coord, "an-agent-that-was-deleted")
+
+	executor, err := coord.summarizeExecutorFor(t.Context(), childID)
+	require.Error(t, err)
+	require.Nil(t, executor)
+}
+
+// summarizeExecutorFor must rebuild a persisted child session's route the
+// same way BeginAccepted does, not just fail to resolve one: a session
+// dispatched by an earlier process has nothing in the in-memory index yet.
+func TestSummarizeExecutorForRebuildsAPersistedChildRoute(t *testing.T) {
+	t.Parallel()
+	coord := newGateTestCoordinator(t, false)
+	childID := persistedChildSession(t, coord, config.AgentExplore)
+
+	executor, err := coord.summarizeExecutorFor(t.Context(), childID)
+	require.NoError(t, err)
+	require.NotSame(t, coord.currentAgent, executor,
+		"the child session fell through to the main agent")
+
+	route, routed := coord.subagentRoutes.Get(childID)
+	require.True(t, routed, "the route was resolved but never registered")
+	require.Equal(t, config.AgentExplore, route.agentID)
+}
+
 // Quitting has to stop sub-agents too, and each executor should be told once
 // however many of its sessions are routed to it.
 func TestCancelAllReachesEveryExecutorExactlyOnce(t *testing.T) {

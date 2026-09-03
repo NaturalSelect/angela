@@ -157,7 +157,7 @@ type Coordinator interface {
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
-	Summarize(context.Context, string) error
+	Summarize(ctx context.Context, sessionID string) error
 
 	// DefaultModel reports what a brand new session would run on.
 	// Callers asking what a specific session runs want ActiveAgent.
@@ -1930,6 +1930,17 @@ func (c *coordinator) QueuedPromptsList(sessionID string) []string {
 }
 
 func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
+	// A child session's turns run on its own sub-agent executor, which
+	// owns the busy-check and per-session bookkeeping Summarize relies
+	// on. Resolving currentAgent unconditionally here would let a
+	// summarize pass currentAgent's busy check while the child's own
+	// executor is mid-turn, then race that turn writing the same
+	// session's messages.
+	executor, err := c.summarizeExecutorFor(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
 	// The compact agent is resolved first because it decides which
 	// provider this call talks to. Taking the provider from the
 	// primary model instead would refresh credentials for one provider
@@ -1952,7 +1963,7 @@ func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 
 	// Auth failures during summarize flow through fantasy's OnAuthRefresh,
 	// the same path used by regular turns.
-	return c.currentAgent.Summarize(ctx, sessionID, compact.agent, compact.options, compact.onAuthRefresh)
+	return executor.Summarize(ctx, sessionID, compact.agent, compact.options, compact.onAuthRefresh)
 }
 
 // GenerateTitle names a session from a user prompt, using the title

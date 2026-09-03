@@ -30,12 +30,13 @@ import (
 // tests poke directly, the way the old hand-written mockSessionAgent worked.
 type mockSessionAgent struct {
 	*MockSessionAgent
-	agentID   string
-	busy      bool
-	queued    []string
-	cancelled []string
-	cleared   []string
-	cancelAll int
+	agentID    string
+	busy       bool
+	queued     []string
+	cancelled  []string
+	cleared    []string
+	summarized []string
+	cancelAll  int
 }
 
 // newMockSessionAgent wires a MockSessionAgent so every SessionAgent method
@@ -58,7 +59,11 @@ func newMockSessionAgent(t *testing.T, agentID string, runFunc func(context.Cont
 	a.EXPECT().QueuedPrompts(gomock.Any()).DoAndReturn(func(string) int { return len(a.queued) }).AnyTimes()
 	a.EXPECT().QueuedPromptsList(gomock.Any()).DoAndReturn(func(string) []string { return a.queued }).AnyTimes()
 	a.EXPECT().ClearQueue(gomock.Any()).Do(func(sessionID string) { a.cleared = append(a.cleared, sessionID) }).AnyTimes()
-	a.EXPECT().Summarize(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	a.EXPECT().Summarize(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, sessionID string, _ resolvedAgent, _ fantasy.ProviderOptions, _ func(context.Context, *fantasy.ProviderError) error) error {
+			a.summarized = append(a.summarized, sessionID)
+			return nil
+		}).AnyTimes()
 	return a
 }
 

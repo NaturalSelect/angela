@@ -69,7 +69,7 @@ const (
 	// text output is cut off by the output token limit, so the model
 	// resumes instead of leaving a truncated response as the final
 	// answer.
-	autoContinuePrompt = "Continue exactly where you left off in your previous response. Do not repeat any content already provided."
+	autoContinuePrompt = "Continue exactly where you left off in your previous response if you have next steps. Do not repeat any content already provided."
 )
 
 var userAgent = fmt.Sprintf("Angela/%s (https://github.com/NaturalSelect/angela)", version.Version)

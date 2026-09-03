@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
@@ -134,4 +135,85 @@ func TestRun_AutoContinuesMultipleTimes(t *testing.T) {
 
 	_, queued := sa.messageQueue.Get(sess.ID)
 	require.False(t, queued, "the queue must be drained once the turn ends cleanly")
+}
+
+// toolCallThenFinish streams a single pending tool call followed
+// immediately by a finish carrying usage, so a StopWhen condition
+// evaluated right after this step sees the reported usage while the
+// tool call itself is left unexecuted, the same way a turn that gets
+// cut off mid-tool-use by auto-compaction does.
+func toolCallThenFinish(usage fantasy.Usage) fantasy.StreamResponse {
+	return func(yield func(fantasy.StreamPart) bool) {
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeToolCall, ID: "call-1", ToolCallName: "some_tool", ToolCallInput: "{}"}) {
+			return
+		}
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonToolCalls, Usage: usage})
+	}
+}
+
+// TestRun_RepeatedAutoCompactionsDoNotNestTheResumePrompt is the
+// regression for a reported bug where a turn auto-compacted more than
+// once while the same tool call stayed pending kept wrapping the
+// "previous session was interrupted" preamble around the already
+// -wrapped prompt, nesting it deeper on every compaction.
+func TestRun_RepeatedAutoCompactionsDoNotNestTheResumePrompt(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	// A small context window with heavily-reported usage forces the
+	// StopWhen condition to fire on the first two turns, each of
+	// which leaves the tool call above pending (unexecuted).
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"summary"}, fantasy.FinishReasonStop), nil).
+		Times(2)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        config.AgentCoder,
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:   compact,
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "hello",
+	})
+	require.NoError(t, err)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+
+	var userPrompts []string
+	for _, m := range msgs {
+		if m.Role == message.User {
+			userPrompts = append(userPrompts, m.Content().Text)
+		}
+	}
+	require.Len(t, userPrompts, 3, "the original prompt plus one resumed prompt per compaction")
+	require.Equal(t, "hello", userPrompts[0])
+	require.Contains(t, userPrompts[1], "hello", "the resumed prompt must still carry the original request")
+	require.Equal(t, userPrompts[1], userPrompts[2],
+		"a second compaction of the same queued turn must not wrap the resume prompt again")
+	require.Equal(t, 1, strings.Count(userPrompts[2], "The previous session was interrupted"),
+		"the wrapper text must appear exactly once no matter how many compactions the turn goes through")
 }

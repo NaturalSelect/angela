@@ -431,11 +431,13 @@ func (s *ConfigStore) updateLocked(scope Scope, mutate func(*Config) map[string]
 // OverridePreferredModel sets the preferred model for the given type in
 // memory only, without persisting.
 //
-// Its one remaining use is the non-interactive --small-model flag. The
-// chore model serves the internal agents (titling, compaction), which
-// instantiate from config rather than from any session and so have no
-// ActiveAgent of their own to edit. Everything session-scoped goes
-// through Coordinator.EditActiveAgent instead: overriding ModelMain here
+// It backs the non-interactive --small-model flag and, through
+// UpdatePreferredModel's ScopeEphemeral, a model picked from the model
+// dialog before any session exists. The chore model also serves the
+// internal agents (titling, compaction), which instantiate from config
+// rather than from any session and so have no ActiveAgent of their own
+// to edit. Everything session-scoped goes through
+// Coordinator.EditActiveAgent instead: overriding ModelMain here
 // would change the model for every session in the process.
 func (s *ConfigStore) OverridePreferredModel(modelType ModelConfigName, model SelectedModel) {
 	s.mutateInMemory(func(c *Config) {
@@ -490,11 +492,21 @@ func (s *ConfigStore) RemoveConfigField(scope Scope, key string) error {
 // persists it to the config file at the given scope. The selected model and
 // the recent-models list are written together in a single config write.
 //
+// ScopeEphemeral skips the config file and applies in memory only, like
+// OverridePreferredModel: the model dialog uses it for a pick made
+// before any session exists, where there is nothing to scope the
+// choice to and writing it to disk would silently replace the saved
+// default the user never meant to change.
+//
 // The write skips the full disk reparse/reload (which would rebuild the
 // provider catalog and agents on every model switch and dominate selection
 // latency); agents are refreshed separately by the caller (see
 // UpdateAgentModel).
 func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType ModelConfigName, model SelectedModel) error {
+	if scope == ScopeEphemeral {
+		s.OverridePreferredModel(modelType, model)
+		return nil
+	}
 	return s.update(scope, func(c *Config) map[string]any {
 		return s.updatePreferredModelFields(c, modelType, model)
 	})

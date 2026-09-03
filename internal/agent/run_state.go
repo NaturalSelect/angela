@@ -120,6 +120,20 @@ func (s *runState) sessionMu(sessionID string) *sync.Mutex {
 	return mu
 }
 
+// LockSession blocks until it can guarantee sessionID is not about to
+// transition to a new active turn, then returns a release func the
+// caller must call exactly once. It hands back the very mutex Run
+// itself takes for its own busy-check-and-register step (see
+// sessionMu), so a caller holding it across a multi-step operation
+// makes that operation atomic against a concurrent Run on the same
+// session: Run cannot get past its own dispatch decision until the
+// caller releases it.
+func (s *runState) LockSession(sessionID string) func() {
+	mu := s.sessionMu(sessionID)
+	mu.Lock()
+	return mu.Unlock
+}
+
 // enqueueCall appends call to the session's message queue. The
 // OnComplete hook is stripped: the caller that supplied it (typically
 // coordinator.Run) has its own retry/coalesce scope that ends when it

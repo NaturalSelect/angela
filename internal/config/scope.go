@@ -10,6 +10,10 @@ const (
 	ScopeGlobal Scope = iota
 	// ScopeWorkspace targets the workspace config (.angela/angela.json).
 	ScopeWorkspace
+	// ScopeEphemeral applies the change in memory for the current
+	// process only. It never touches a config file, so it does not
+	// survive a config reload or a restart.
+	ScopeEphemeral
 )
 
 // String returns a human-readable label for the scope.
@@ -19,6 +23,8 @@ func (s Scope) String() string {
 		return "global"
 	case ScopeWorkspace:
 		return "workspace"
+	case ScopeEphemeral:
+		return "ephemeral"
 	default:
 		return fmt.Sprintf("Scope(%d)", int(s))
 	}

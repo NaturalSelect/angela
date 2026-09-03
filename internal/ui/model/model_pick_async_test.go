@@ -125,6 +125,35 @@ func TestAGlobalPickWritesNothingInsideUpdate(t *testing.T) {
 	require.Equal(t, 1, preferredModelCalls)
 }
 
+// TestALandingPickIsEphemeral pins the fix for a real bug: picking a
+// model before any session exists (the landing screen, reached
+// straight from "Switch Model" with nothing open yet) used to go
+// through the same persisted write as onboarding's first-run default,
+// silently overwriting the user's saved main model on disk. It must
+// instead apply only to this process.
+func TestALandingPickIsEphemeral(t *testing.T) {
+	pinTTLs(t)
+
+	ws := pickMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
+	m.session = nil
+	warmCaches(m, false)
+
+	cmd := m.handleSelectModel(pickAction(config.ModelMain))
+
+	var scope config.Scope
+	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(s config.Scope, _ config.ModelConfigName, _ config.SelectedModel) error {
+			scope = s
+			return nil
+		})
+	ws.EXPECT().UpdateAgentModel(gomock.Any()).Return(nil)
+
+	runCmds(m, cmd)
+	require.Equal(t, config.ScopeEphemeral, scope,
+		"a pick made with no session open must never persist to disk")
+}
+
 // TestOnboardingStartsTheAgentOffThread covers the third write on this
 // path: bringing the coder agent up is an HTTP round-trip too.
 func TestOnboardingStartsTheAgentOffThread(t *testing.T) {

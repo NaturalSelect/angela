@@ -105,6 +105,13 @@ func (c coordinatorBusyChecker) IsSessionBranch(sessionID string) bool {
 	return c.app.AgentCoordinator != nil && c.app.AgentCoordinator.IsSessionBranch(sessionID)
 }
 
+func (c coordinatorBusyChecker) LockSession(ctx context.Context, sessionID string) (func(), bool) {
+	if c.app.AgentCoordinator == nil {
+		return nil, false
+	}
+	return c.app.AgentCoordinator.LockSession(ctx, sessionID)
+}
+
 // New initializes a new application instance. skillsMgr carries the
 // per-workspace skill discovery results computed by the caller; the
 // caller is responsible for constructing it (typically via

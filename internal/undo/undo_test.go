@@ -1,10 +1,14 @@
 package undo
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/db"
@@ -31,14 +35,43 @@ type fixture struct {
 
 // fakeBusyChecker lets tests mark specific sessions as having live
 // agent activity, the same thing agent.Coordinator reports in
-// production.
+// production. LockSession hands back a real per-session mutex, the
+// same way agent.Coordinator's own dispatch mutex works, so tests can
+// verify undo actually holds a session reserved for the extent of an
+// operation rather than just calling the method.
 type fakeBusyChecker struct {
 	busy   map[string]bool
 	branch map[string]bool
+
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+	// locked, when set, is called synchronously every time LockSession
+	// acquires a session's lock, letting a test observe each
+	// acquisition as it happens.
+	locked func(sessionID string)
 }
 
 func (f *fakeBusyChecker) IsSessionBusy(sessionID string) bool   { return f.busy[sessionID] }
 func (f *fakeBusyChecker) IsSessionBranch(sessionID string) bool { return f.branch[sessionID] }
+
+func (f *fakeBusyChecker) LockSession(ctx context.Context, sessionID string) (func(), bool) {
+	f.mu.Lock()
+	if f.locks == nil {
+		f.locks = make(map[string]*sync.Mutex)
+	}
+	mu, ok := f.locks[sessionID]
+	if !ok {
+		mu = &sync.Mutex{}
+		f.locks[sessionID] = mu
+	}
+	f.mu.Unlock()
+
+	mu.Lock()
+	if f.locked != nil {
+		f.locked(sessionID)
+	}
+	return mu.Unlock, true
+}
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
@@ -382,4 +415,124 @@ func TestUndoRefusesWhenASubagentSessionIsAnActiveBranch(t *testing.T) {
 	require.Equal(t, "after\n", string(content))
 	_, err = f.sessions.Get(t.Context(), childID)
 	require.NoError(t, err, "a busy child session must survive a refused undo")
+}
+
+// TestUndoHoldsTheSessionReservedForTheWholeOperation is the
+// regression test for the race the fix closes: checkBusy alone only
+// observes one instant, so a turn that starts on the session right
+// after it passes could previously run concurrently with Undo's file
+// and message mutations. It verifies that once Undo has acquired its
+// reservation, a second LockSession attempt for the same session — the
+// same call a dispatched Run's own dispatch step makes — cannot
+// succeed until Undo has fully returned, not merely until its busy
+// check has passed.
+func TestUndoHoldsTheSessionReservedForTheWholeOperation(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	sessionID := f.newSession(t)
+
+	f.userMessage(t, sessionID, "first turn")
+	path := filepath.Join(f.workingDir, "a.txt")
+	f.editCall(t, sessionID, path, "", "first\n", true)
+	f.userMessage(t, sessionID, "second turn")
+	f.editCall(t, sessionID, path, "first\n", "second\n", false)
+
+	preview, err := f.svc.Preview(t.Context(), sessionID)
+	require.NoError(t, err)
+
+	// Fires the instant Undo's own top-level reservation is acquired —
+	// the same moment a competing turn's own dispatch lock attempt
+	// would start blocking in production.
+	acquired := make(chan struct{}, 1)
+	f.busy.locked = func(id string) {
+		if id == sessionID {
+			select {
+			case acquired <- struct{}{}:
+			default:
+			}
+		}
+	}
+
+	var undoReturned atomic.Bool
+	undoDone := make(chan struct{})
+	go func() {
+		defer close(undoDone)
+		_, err := f.svc.Undo(t.Context(), sessionID, preview.CutMessageID)
+		require.NoError(t, err)
+		undoReturned.Store(true)
+	}()
+
+	select {
+	case <-acquired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("undo never acquired the session's reservation")
+	}
+
+	// Simulate a concurrent turn start racing in right after undo's
+	// reservation was taken: the same LockSession call a dispatched Run
+	// would make for this session. It must not return until Undo has
+	// released its reservation at the very end of the operation.
+	raceObservedUndoDone := make(chan bool, 1)
+	go func() {
+		release, ok := f.busy.LockSession(t.Context(), sessionID)
+		raceObservedUndoDone <- ok && undoReturned.Load()
+		if ok {
+			release()
+		}
+	}()
+
+	select {
+	case observed := <-raceObservedUndoDone:
+		require.True(t, observed,
+			"a concurrent turn start must not acquire the session until undo has fully finished")
+	case <-time.After(2 * time.Second):
+		t.Fatal("the concurrent LockSession attempt never completed")
+	}
+	<-undoDone
+}
+
+// TestUndoAbortsAndReleasesIfTheSessionBecomesBusyAfterReservation
+// covers the narrower window a plain busy check cannot see: a turn
+// that has already been dispatched but has not yet registered as
+// active is invisible to IsSessionBusy alone. Undo must therefore
+// re-check busy state after it holds the reservation, not only before
+// acquiring it. This models a concurrent Run winning the race into its
+// own dispatch lock and becoming active in the instant right after
+// Undo's reservation is taken, and verifies Undo detects that, applies
+// no mutation, and still releases the reservation on its way out.
+func TestUndoAbortsAndReleasesIfTheSessionBecomesBusyAfterReservation(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	sessionID := f.newSession(t)
+	f.userMessage(t, sessionID, "hello")
+	path := filepath.Join(f.workingDir, "a.txt")
+	f.editCall(t, sessionID, path, "before\n", "after\n", false)
+
+	preview, err := f.svc.Preview(t.Context(), sessionID)
+	require.NoError(t, err)
+
+	// The instant Undo's reservation is acquired, mark the session
+	// busy — standing in for a concurrent Run that won the race into
+	// its own dispatch lock a moment earlier and is now active.
+	f.busy.locked = func(id string) {
+		if id == sessionID {
+			f.busy.busy[sessionID] = true
+		}
+	}
+
+	_, err = f.svc.Undo(t.Context(), sessionID, preview.CutMessageID)
+	require.ErrorIs(t, err, ErrSessionBusy)
+
+	// Nothing was touched: the file is still what the (simulated)
+	// active turn left it as, not reverted.
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "after\n", string(content))
+
+	// The reservation was released on the way out: a fresh attempt
+	// succeeds immediately rather than blocking on a leaked lock.
+	f.busy.locked = nil
+	release, ok := f.busy.LockSession(t.Context(), sessionID)
+	require.True(t, ok)
+	release()
 }

@@ -178,12 +178,12 @@ jobs:
                   )
                 }
               },
-              models: {
+              slots: {
                 main:  { provider: "docs", model: $main_model },
                 chore: { provider: "docs", model: $chore_model }
               },
               agents: {
-                explore: { model: "chore" },
+                explore: { slot: "chore" },
                 general: { disabled: true }
               },
               permissions: {

@@ -172,12 +172,12 @@ jobs:
                   )
                 }
               },
-              models: {
+              slots: {
                 main:  { provider: "review", model: $main_model },
                 chore: { provider: "review", model: $chore_model }
               },
               agents: {
-                explore: { model: "chore" },
+                explore: { slot: "chore" },
                 general: { disabled: true }
               },
               permissions: {

@@ -91,10 +91,16 @@ jobs:
     if: github.repository == 'NaturalSelect/angela'
     timeout-minutes: 360
     env:
-      BACKPORT_TMP: ${{ runner.temp }}/backport
       DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) || false }}
       PUSH_TOKEN: ${{ secrets.ANGELA_BACKPORT_PR_TOKEN || github.token }}
     steps:
+      - name: Set backport temp dir
+        # The runner context isn't available in a job-level env: block,
+        # only in step-level ones, so BACKPORT_TMP is computed here from
+        # the real $RUNNER_TEMP shell variable and published via
+        # GITHUB_ENV for every later step to read as env.BACKPORT_TMP.
+        run: echo "BACKPORT_TMP=${RUNNER_TEMP}/backport" >> "$GITHUB_ENV"
+
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -185,12 +191,12 @@ jobs:
                   )
                 }
               },
-              models: {
+              slots: {
                 main:  { provider: "backport", model: $main_model },
                 chore: { provider: "backport", model: $chore_model }
               },
               agents: {
-                explore: { model: "chore" },
+                explore: { slot: "chore" },
                 general: { disabled: true }
               },
               permissions: {

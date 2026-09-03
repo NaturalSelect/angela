@@ -4,10 +4,13 @@ package event
 // scenarios. These tests will not log anything.
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/posthog/posthog-go"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestSetNonInteractive(t *testing.T) {
@@ -64,6 +67,32 @@ func TestSetNonInteractive(t *testing.T) {
 	}
 }
 
+func TestSetContinueBySessionID(t *testing.T) {
+	original := baseProps[continueSessionByIDAttrName]
+	t.Cleanup(func() {
+		baseProps = baseProps.Set(continueSessionByIDAttrName, original)
+	})
+
+	SetContinueBySessionID(true)
+	require.Equal(t, true, baseProps[continueSessionByIDAttrName])
+
+	SetContinueBySessionID(false)
+	require.Equal(t, false, baseProps[continueSessionByIDAttrName])
+}
+
+func TestSetContinueLastSession(t *testing.T) {
+	original := baseProps[continueLastSessionAttrName]
+	t.Cleanup(func() {
+		baseProps = baseProps.Set(continueLastSessionAttrName, original)
+	})
+
+	SetContinueLastSession(true)
+	require.Equal(t, true, baseProps[continueLastSessionAttrName])
+
+	SetContinueLastSession(false)
+	require.Equal(t, false, baseProps[continueLastSessionAttrName])
+}
+
 func TestError(t *testing.T) {
 	t.Run("returns early when client is nil", func(t *testing.T) {
 		// This test verifies that when the PostHog client is not initialized
@@ -114,6 +143,48 @@ func TestError(t *testing.T) {
 			"severity", "high",
 			"source", "unit-test",
 		)
+	})
+
+	t.Run("enqueues an exception when client is set", func(t *testing.T) {
+		originalClient := client
+		originalDistinctId := distinctId
+		defer func() {
+			client = originalClient
+			distinctId = originalDistinctId
+		}()
+
+		mockClient := NewMockPosthogClient(gomock.NewController(t))
+		client = mockClient
+		distinctId = "test-distinct-id"
+
+		mockClient.EXPECT().Enqueue(gomock.Any()).DoAndReturn(func(msg posthog.Message) error {
+			exception, ok := msg.(posthog.Exception)
+			require.True(t, ok, "expected posthog.Exception, got %T", msg)
+			require.Equal(t, distinctId, exception.DistinctId)
+			require.Len(t, exception.ExceptionList, 1)
+			require.Equal(t, "test error", exception.ExceptionList[0].Value)
+			require.Equal(t, "bar", exception.Properties["foo"])
+			return nil
+		})
+
+		Error(errors.New("test error"), "foo", "bar")
+	})
+
+	t.Run("logs but does not panic when enqueue fails", func(t *testing.T) {
+		originalClient := client
+		originalDistinctId := distinctId
+		defer func() {
+			client = originalClient
+			distinctId = originalDistinctId
+		}()
+
+		mockClient := NewMockPosthogClient(gomock.NewController(t))
+		client = mockClient
+		distinctId = "test-distinct-id"
+
+		mockClient.EXPECT().Enqueue(gomock.Any()).Return(errors.New("enqueue failed"))
+
+		Error("boom")
 	})
 }
 

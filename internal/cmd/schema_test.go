@@ -5,10 +5,67 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/discover"
 	"github.com/invopop/jsonschema"
 	"github.com/stretchr/testify/require"
 )
+
+// TestSetProviderTypeEnum_PopulatesFromRegistry pins the schema generator's
+// live source of truth: the "type" enum must list exactly the catwalk
+// provider types plus any locally-registered discovery enrichers, in that
+// order, rather than a hand-maintained list that can drift.
+func TestSetProviderTypeEnum_PopulatesFromRegistry(t *testing.T) {
+	t.Parallel()
+
+	reflector := new(jsonschema.Reflector)
+	schema := reflector.Reflect(&config.Config{})
+	setProviderTypeEnum(schema)
+
+	def, ok := schema.Definitions["ProviderConfig"]
+	require.True(t, ok)
+	typeProp, ok := def.Properties.Get("type")
+	require.True(t, ok)
+
+	var want []string
+	for _, pt := range catwalk.KnownProviderTypes() {
+		want = append(want, string(pt))
+	}
+	want = append(want, discover.RegisteredProviderTypes()...)
+
+	got := make([]string, len(typeProp.Enum))
+	for i, v := range typeProp.Enum {
+		got[i] = v.(string)
+	}
+	require.Equal(t, want, got)
+}
+
+// TestSetProviderTypeEnum_MissingProviderConfigDefIsNoop covers a schema
+// that never reflected a ProviderConfig definition: the function must
+// return without touching anything rather than panic on a missing key.
+func TestSetProviderTypeEnum_MissingProviderConfigDefIsNoop(t *testing.T) {
+	t.Parallel()
+
+	schema := &jsonschema.Schema{Definitions: jsonschema.Definitions{}}
+	require.NotPanics(t, func() { setProviderTypeEnum(schema) })
+}
+
+// TestSetProviderTypeEnum_MissingTypePropertyIsNoop covers a
+// ProviderConfig definition that lacks a "type" property.
+func TestSetProviderTypeEnum_MissingTypePropertyIsNoop(t *testing.T) {
+	t.Parallel()
+
+	reflector := new(jsonschema.Reflector)
+	schema := reflector.Reflect(&config.Config{})
+	def, ok := schema.Definitions["ProviderConfig"]
+	require.True(t, ok)
+	def.Properties.Delete("type")
+
+	require.NotPanics(t, func() { setProviderTypeEnum(schema) })
+	_, stillMissing := def.Properties.Get("type")
+	require.False(t, stillMissing)
+}
 
 func TestSchemaNoBrokenRefs(t *testing.T) {
 	t.Parallel()

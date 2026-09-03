@@ -81,6 +81,28 @@ func liveSessionWithCapabilities(t *testing.T, toolName, promptName, resourceURI
 	return &ClientSession{ClientSession: clientSession, cancel: cancel}
 }
 
+// liveSessionWithHandler is like liveSession but lets the caller supply the
+// tool's handler directly, so tests can exercise RunTool's response-shaping
+// logic (text/image/audio content, multiple content parts, tool-call
+// errors) against a real session instead of the fixed "ok" text tool.
+func liveSessionWithHandler(t *testing.T, toolName string, handler mcp.ToolHandlerFor[struct{}, any]) (*ClientSession, context.Context) {
+	t.Helper()
+
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	server := mcp.NewServer(&mcp.Implementation{Name: "srv"}, nil)
+	mcp.AddTool(server, &mcp.Tool{Name: toolName, Description: "test tool"}, handler)
+	serverSession, err := server.Connect(context.Background(), serverTransport, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = serverSession.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := mcp.NewClient(&mcp.Implementation{Name: "angela-test"}, nil)
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err)
+
+	return &ClientSession{ClientSession: clientSession, cancel: cancel}, ctx
+}
+
 // TestUpdateState_ErrorClosesSessionAndClearsTools pins the primary fix: a
 // StateError transition must (1) remove the session from the map, (2) actually
 // close it so its child process/pipes are released, and (3) clear its tools

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -107,6 +108,27 @@ func TestShowLogs_TailsToRequestedLineCount(t *testing.T) {
 	stderrOut := stderrBuf()
 	require.Contains(t, stderrOut, "Showing last 3 lines")
 	require.Contains(t, stderrOut, logFile)
+}
+
+// TestFollowLogs_ReturnsOnContextCancellation proves the follow loop exits
+// through its ctx.Done() case rather than tailing forever. The context is
+// cancelled before the call so the exit is deterministic without sleeping:
+// the follow tail seeks to EOF and the file never grows, so ctx.Done() is
+// the only case ready in the select.
+func TestFollowLogs_ReturnsOnContextCancellation(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "angela.log")
+	require.NoError(t, os.WriteFile(logFile, []byte(`{"level":"INFO","msg":"line-1","time":"2024-01-02T15:04:05Z"}`+"\n"), 0o644))
+
+	var logBuf bytes.Buffer
+	swapDefaultLogger(t, &logBuf)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := followLogs(ctx, logFile, 10)
+	require.NoError(t, err)
+	require.Contains(t, logBuf.String(), "line-1")
 }
 
 func TestShowLogs_NoTruncationNoticeWhenUnderLimit(t *testing.T) {

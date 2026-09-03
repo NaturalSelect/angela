@@ -5,13 +5,18 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -268,4 +273,323 @@ func TestOutputSessionJSON(t *testing.T) {
 	require.Len(t, out.Messages[0].Parts, 1)
 	require.Equal(t, "text", out.Messages[0].Parts[0].Type)
 	require.Equal(t, "hi", out.Messages[0].Parts[0].Text)
+}
+
+func newSessionRunCmd(t *testing.T, dataDir string) *cobra.Command {
+	t.Helper()
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	cmd.Flags().String("data-dir", "", "")
+	require.NoError(t, cmd.Flags().Set("data-dir", dataDir))
+	return cmd
+}
+
+// isolateSessionEnv keeps sessionSetup's config.Init call from touching the
+// developer's real config or the network: it points config discovery at an
+// empty directory instead of this repo's own angela.json, and disables
+// telemetry and the Catwalk provider fetch (both on by default).
+func isolateSessionEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("ANGELA_DISABLE_METRICS", "true")
+	t.Setenv("ANGELA_DISABLE_PROVIDER_AUTO_UPDATE", "true")
+	t.Setenv("ANGELA_GLOBAL_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Chdir(t.TempDir())
+}
+
+// seedSession creates a session directly against dataDir's database,
+// bypassing the CLI, and releases its connection before returning so the
+// RunE call under test opens its own instead of sharing (and later
+// force-closing) this one.
+func seedSession(t *testing.T, dataDir, title string) session.Session {
+	t.Helper()
+	ctx := t.Context()
+	db.ResetPool()
+	t.Cleanup(db.ResetPool)
+	conn, err := db.Connect(ctx, dataDir)
+	require.NoError(t, err)
+	sess, err := session.NewService(db.New(conn), conn).Create(ctx, title)
+	require.NoError(t, err)
+	require.NoError(t, db.Release(dataDir))
+	return sess
+}
+
+// listSessionsDirect reopens dataDir's database to verify state left behind
+// by a session command. It resets angela's connection pool first because
+// sessionSetup's cleanup closes its pooled *sql.DB directly rather than
+// releasing it, which would otherwise hand back an already-closed
+// connection for the same data directory.
+func listSessionsDirect(t *testing.T, dataDir string) []session.Session {
+	t.Helper()
+	ctx := t.Context()
+	db.ResetPool()
+	t.Cleanup(db.ResetPool)
+	conn, err := db.Connect(ctx, dataDir)
+	require.NoError(t, err)
+	list, err := session.NewService(db.New(conn), conn).List(ctx)
+	require.NoError(t, err)
+	require.NoError(t, db.Release(dataDir))
+	return list
+}
+
+func TestSessionSetup_ConnectsAndCleansUp(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	cmd := newSessionRunCmd(t, dataDir)
+
+	ctx, svc, cleanup, err := sessionSetup(cmd)
+	require.NoError(t, err)
+	require.NotNil(t, svc)
+	require.NotNil(t, svc.sessions)
+	require.NotNil(t, svc.messages)
+
+	list, err := svc.sessions.List(ctx)
+	require.NoError(t, err)
+	require.Empty(t, list)
+
+	cleanup()
+}
+
+// TestSessionSetup_PropagatesDBConnectError puts a regular file where the
+// data directory should be, so db.Connect's os.MkdirAll fails and the
+// error-wrapping branch runs.
+func TestSessionSetup_PropagatesDBConnectError(t *testing.T) {
+	isolateSessionEnv(t)
+	parent := t.TempDir()
+	blocked := filepath.Join(parent, "blocked")
+	require.NoError(t, os.WriteFile(blocked, []byte("x"), 0o644))
+	cmd := newSessionRunCmd(t, filepath.Join(blocked, "data"))
+
+	_, _, _, err := sessionSetup(cmd)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to connect to database")
+}
+
+func TestRunSessionList_JSONEmpty(t *testing.T) {
+	isolateSessionEnv(t)
+	cmd := newSessionRunCmd(t, t.TempDir())
+	sessionListJSON = true
+	defer func() { sessionListJSON = false }()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, runSessionList(cmd, nil))
+
+	var out []sessionJSON
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	require.Empty(t, out)
+}
+
+func TestRunSessionList_JSONWithSessions(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	seedSession(t, dataDir, "First session")
+	seedSession(t, dataDir, "Second session")
+
+	cmd := newSessionRunCmd(t, dataDir)
+	sessionListJSON = true
+	defer func() { sessionListJSON = false }()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, runSessionList(cmd, nil))
+
+	var out []sessionJSON
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	require.Len(t, out, 2)
+}
+
+func TestRunSessionList_HumanOutput(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	seedSession(t, dataDir, "Human list session")
+	cmd := newSessionRunCmd(t, dataDir)
+	getOutput := swapStdoutPipe(t)
+
+	require.NoError(t, runSessionList(cmd, nil))
+
+	require.Contains(t, getOutput(), "Human list session")
+}
+
+func TestRunSessionShow_JSON(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	sess := seedSession(t, dataDir, "Show me")
+
+	cmd := newSessionRunCmd(t, dataDir)
+	sessionShowJSON = true
+	defer func() { sessionShowJSON = false }()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, runSessionShow(cmd, []string{sess.ID}))
+
+	var out sessionShowOutput
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	require.Equal(t, sess.ID, out.Meta.UUID)
+	require.Equal(t, "Show me", out.Meta.Title)
+}
+
+func TestRunSessionShow_Human(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	sess := seedSession(t, dataDir, "Show me human")
+
+	cmd := newSessionRunCmd(t, dataDir)
+	getOutput := swapStdoutPipe(t)
+
+	require.NoError(t, runSessionShow(cmd, []string{sess.ID}))
+
+	require.Contains(t, getOutput(), "Show me human")
+}
+
+func TestRunSessionShow_NotFound(t *testing.T) {
+	isolateSessionEnv(t)
+	cmd := newSessionRunCmd(t, t.TempDir())
+
+	err := runSessionShow(cmd, []string{"does-not-exist"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "session not found")
+}
+
+func TestRunSessionDelete_JSON(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	sess := seedSession(t, dataDir, "Delete me")
+
+	cmd := newSessionRunCmd(t, dataDir)
+	sessionDeleteJSON = true
+	defer func() { sessionDeleteJSON = false }()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, runSessionDelete(cmd, []string{sess.ID}))
+
+	var out sessionMutationResult
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	require.True(t, out.Deleted)
+	require.Equal(t, sess.ID, out.UUID)
+
+	require.Empty(t, listSessionsDirect(t, dataDir))
+}
+
+func TestRunSessionDelete_Human(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	sess := seedSession(t, dataDir, "Delete me human")
+
+	cmd := newSessionRunCmd(t, dataDir)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, runSessionDelete(cmd, []string{sess.ID}))
+	require.Contains(t, buf.String(), "Deleted session")
+
+	require.Empty(t, listSessionsDirect(t, dataDir))
+}
+
+func TestRunSessionRename_JSON(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	sess := seedSession(t, dataDir, "Old title")
+
+	cmd := newSessionRunCmd(t, dataDir)
+	sessionRenameJSON = true
+	defer func() { sessionRenameJSON = false }()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, runSessionRename(cmd, []string{sess.ID, "New", "title"}))
+
+	var out sessionMutationResult
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	require.True(t, out.Renamed)
+	require.Equal(t, "New title", out.Title)
+
+	list := listSessionsDirect(t, dataDir)
+	require.Len(t, list, 1)
+	require.Equal(t, "New title", list[0].Title)
+}
+
+func TestRunSessionRename_Human(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	sess := seedSession(t, dataDir, "Old title human")
+
+	cmd := newSessionRunCmd(t, dataDir)
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, runSessionRename(cmd, []string{sess.ID, "Renamed"}))
+	require.Contains(t, buf.String(), "Renamed session")
+
+	list := listSessionsDirect(t, dataDir)
+	require.Len(t, list, 1)
+	require.Equal(t, "Renamed", list[0].Title)
+}
+
+func TestRunSessionLast_JSON(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	sess := seedSession(t, dataDir, "Only session")
+
+	cmd := newSessionRunCmd(t, dataDir)
+	sessionLastJSON = true
+	defer func() { sessionLastJSON = false }()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+
+	require.NoError(t, runSessionLast(cmd, nil))
+
+	var out sessionShowOutput
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	require.Equal(t, sess.ID, out.Meta.UUID)
+}
+
+func TestRunSessionLast_NoSessions(t *testing.T) {
+	isolateSessionEnv(t)
+	cmd := newSessionRunCmd(t, t.TempDir())
+
+	err := runSessionLast(cmd, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no sessions found")
+}
+
+// TestOutputSessionHuman_WritesExpectedFields exercises outputSessionHuman
+// directly (not through a RunE), since it writes straight to os.Stdout via
+// sessionWriter rather than through cmd.OutOrStdout().
+func TestOutputSessionHuman_WritesExpectedFields(t *testing.T) {
+	getOutput := swapStdoutPipe(t)
+
+	sess := session.Session{ID: "session-uuid-human", Title: "Direct human output", CreatedAt: 1700000000}
+	msgs := []*message.Message{
+		{
+			ID: "m1", Role: message.User, CreatedAt: 1700000001,
+			Parts: []message.ContentPart{message.TextContent{Text: "hello there"}},
+		},
+	}
+
+	require.NoError(t, outputSessionHuman(t.Context(), sess, msgs))
+
+	out := getOutput()
+	require.Contains(t, out, "Direct human output")
+	require.Contains(t, out, session.HashID(sess.ID)[:12])
+	require.Contains(t, out, "hello there")
+}
+
+// TestSessionWriter_NonTerminalReturnsPlainWriter covers the common test
+// and CI path: stdout is not a terminal, so sessionWriter must hand back a
+// plain writer over the current os.Stdout rather than spawning a pager.
+func TestSessionWriter_NonTerminalReturnsPlainWriter(t *testing.T) {
+	getOutput := swapStdoutPipe(t)
+
+	w, cleanup, usingPager := sessionWriter(t.Context(), 5)
+	defer cleanup()
+
+	require.False(t, usingPager)
+	require.NotNil(t, w)
+
+	_, err := io.WriteString(w, "sessionWriter direct test")
+	require.NoError(t, err)
+	require.Contains(t, getOutput(), "sessionWriter direct test")
 }

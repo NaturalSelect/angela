@@ -5,8 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/projects"
+	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -192,4 +196,121 @@ func TestCrawlForStats_NoProjectsFound(t *testing.T) {
 	results, err := crawlForStats(t.Context(), t.TempDir())
 	require.NoError(t, err)
 	require.Empty(t, results)
+}
+
+func newStatsTestCmd(t *testing.T, dataDir, crawlDir string, all bool) *cobra.Command {
+	t.Helper()
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	cmd.Flags().String("data-dir", "", "")
+	cmd.Flags().String("crawl-dir", "", "")
+	cmd.Flags().Bool("all", false, "")
+	require.NoError(t, cmd.Flags().Set("data-dir", dataDir))
+	require.NoError(t, cmd.Flags().Set("crawl-dir", crawlDir))
+	if all {
+		require.NoError(t, cmd.Flags().Set("all", "true"))
+	}
+	return cmd
+}
+
+// TestRunStats_CrawlDirNoProjects covers the --crawl-dir branch when it
+// finds nothing: runStats must fail before ever touching config or a
+// database.
+func TestRunStats_CrawlDirNoProjects(t *testing.T) {
+	t.Parallel()
+
+	cmd := newStatsTestCmd(t, "", t.TempDir(), false)
+
+	err := runStats(cmd, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no data available: no projects found")
+}
+
+// TestRunStats_AllNoProjects covers the --all branch with an empty
+// projects.json.
+func TestRunStats_AllNoProjects(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	cmd := newStatsTestCmd(t, "", "", true)
+
+	err := runStats(cmd, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no data available: no projects found")
+}
+
+// TestRunStats_DefaultEmptyDB covers the default (no crawl, no --all)
+// branch: a freshly created, empty database connects successfully but has
+// no sessions, so runStats must fail before reaching HTML generation (and
+// so before ever trying to open a browser).
+func TestRunStats_DefaultEmptyDB(t *testing.T) {
+	isolateSessionEnv(t)
+	cmd := newStatsTestCmd(t, t.TempDir(), "", false)
+
+	err := runStats(cmd, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no data available: no sessions found in database")
+}
+
+// TestGatherStatsFromProjects_ReadsRegisteredProject seeds a project via
+// projects.Register with a real database containing one session, and
+// checks gatherStatsFromProjects finds and summarizes it.
+func TestGatherStatsFromProjects_ReadsRegisteredProject(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	projectDir := t.TempDir()
+	dataDir := filepath.Join(projectDir, ".angela")
+	require.NoError(t, projects.Register(projectDir, dataDir))
+
+	ctx := t.Context()
+	db.ResetPool()
+	t.Cleanup(db.ResetPool)
+	conn, err := db.Connect(ctx, dataDir)
+	require.NoError(t, err)
+	_, err = session.NewService(db.New(conn), conn).Create(ctx, "Project session")
+	require.NoError(t, err)
+	require.NoError(t, db.Release(dataDir))
+
+	results, err := gatherStatsFromProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, projectDir, results[0].ProjectPath)
+	require.Equal(t, int64(1), results[0].Stats.Total.TotalSessions)
+}
+
+func TestGatherStatsFromProjects_NoProjects(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	results, err := gatherStatsFromProjects(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, results)
+}
+
+// TestGenerateHTML_WritesFile covers the common path: the parent directory
+// does not exist yet and must be created, and the project/user names must
+// land in the rendered page.
+func TestGenerateHTML_WritesFile(t *testing.T) {
+	t.Parallel()
+
+	stats := &Stats{GeneratedAt: time.Now().UTC(), Total: TotalStats{TotalSessions: 3}}
+	htmlPath := filepath.Join(t.TempDir(), "nested", "index.html")
+
+	err := generateHTML(stats, []ProjectStats{{ProjectPath: "/p", Stats: stats}}, "my-project", "alice", htmlPath)
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(htmlPath)
+	require.NoError(t, err)
+	require.Contains(t, string(content), "my-project")
+	require.Contains(t, string(content), "alice")
+}
+
+// TestGenerateHTML_MkdirBlockedByFile covers the error path where a
+// regular file sits where a parent directory needs to be created.
+func TestGenerateHTML_MkdirBlockedByFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
+
+	err := generateHTML(&Stats{}, nil, "p", "u", filepath.Join(blocker, "sub", "index.html"))
+	require.Error(t, err)
 }

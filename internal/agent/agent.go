@@ -57,6 +57,13 @@ const (
 	DefaultSessionName = "Untitled Session"
 
 	// Constants for auto-summarization thresholds
+
+	// streamMaxRetries bounds retries for a single streaming step,
+	// covering rate limits, 5xx responses, and mid-stream transport
+	// drops (e.g. "unexpected EOF"). With the provider's default 5s
+	// initial delay and 2x backoff, this caps the worst-case wait at
+	// 5+10+20+40+80 = 155s before the error reaches the user.
+	streamMaxRetries = 5
 )
 
 var userAgent = fmt.Sprintf("Angela/%s (https://github.com/NaturalSelect/angela)", version.Version)
@@ -712,6 +719,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	if call.MaxOutputTokens > 0 {
 		maxOutputTokens = &call.MaxOutputTokens
 	}
+	maxRetries := streamMaxRetries
 	retryModel := &atomic.Pointer[fantasy.LanguageModel]{}
 	retryModel.Store(&runModel.Model)
 	result, err = agent.Stream(genCtx, fantasy.AgentStreamCall{
@@ -857,6 +865,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			// even if the request is canceled mid-stream
 			return a.messages.Update(ctx, *currentAssistant)
 		},
+		MaxRetries: &maxRetries,
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
 			slog.Warn("Provider request failed, retrying", providerRetryLogFields(err, delay)...)
 			// Reset streamed content so the retried response doesn't

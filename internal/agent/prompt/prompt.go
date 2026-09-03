@@ -206,6 +206,11 @@ func loadContextFiles(paths []string, store *config.ConfigStore) map[string][]Co
 	files := map[string][]ContextFile{}
 	for _, pth := range paths {
 		expanded := expandPath(pth, store)
+		// NOTE: an empty path joins to the working directory itself,
+		// which would walk and embed the whole project tree as context.
+		if strings.TrimSpace(expanded) == "" {
+			continue
+		}
 		pathKey := strings.ToLower(expanded)
 		if _, ok := files[pathKey]; ok {
 			continue

@@ -453,7 +453,7 @@ func oauthCopilotDlg(t *testing.T) (*dialog.OAuth, catwalk.Provider, config.Sele
 	m := newDialogUI(t, ws)
 	provider := catwalk.Provider{ID: "test-copilot", Name: "Test Copilot"}
 	model := config.SelectedModel{Model: "gpt-test"}
-	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, model, config.ModelMain)
+	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, model, config.SlotMain)
 	return oa, provider, model
 }
 
@@ -534,7 +534,7 @@ func TestOAuthDialog_CompleteOAuth_SaveCredentialSuccessReachesSuccessState(t *t
 	ws := NewMockWorkspace(ctrl)
 	m := newDialogUI(t, ws)
 	provider := catwalk.Provider{ID: "test-copilot", Name: "Test Copilot"}
-	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, config.SelectedModel{Model: "gpt-test"}, config.ModelMain)
+	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, config.SelectedModel{Model: "gpt-test"}, config.SlotMain)
 
 	tok := &oauth.Token{AccessToken: "tok-123"}
 	ws.EXPECT().SetProviderAPIKey(config.ScopeGlobal, "test-copilot", tok).Return(nil)
@@ -558,7 +558,7 @@ func TestOAuthDialog_CompleteOAuth_SaveCredentialErrorReachesErrorState(t *testi
 	ws := NewMockWorkspace(ctrl)
 	m := newDialogUI(t, ws)
 	provider := catwalk.Provider{ID: "test-copilot", Name: "Test Copilot"}
-	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, config.SelectedModel{Model: "gpt-test"}, config.ModelMain)
+	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, config.SelectedModel{Model: "gpt-test"}, config.SlotMain)
 
 	tok := &oauth.Token{AccessToken: "tok-123"}
 	boom := errors.New("disk full")
@@ -585,7 +585,7 @@ func TestOAuthDialog_SuccessState_SubmitConfirmsAndSelectsModel(t *testing.T) {
 	m := newDialogUI(t, ws)
 	provider := catwalk.Provider{ID: "test-copilot", Name: "Test Copilot"}
 	model := config.SelectedModel{Model: "gpt-test"}
-	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, model, config.ModelMain)
+	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, model, config.SlotMain)
 
 	tok := &oauth.Token{AccessToken: "tok-123"}
 	ws.EXPECT().SetProviderAPIKey(config.ScopeGlobal, "test-copilot", tok).Return(nil)
@@ -595,7 +595,7 @@ func TestOAuthDialog_SuccessState_SubmitConfirmsAndSelectsModel(t *testing.T) {
 	require.Equal(t, dialog.OAuthStateSuccess, oa.State)
 
 	action := oa.HandleMsg(keyMsg("enter"))
-	require.Equal(t, dialog.ActionSelectModel{Provider: provider, Model: model, ModelType: config.ModelMain}, action)
+	require.Equal(t, dialog.ActionSelectModel{Provider: provider, Model: model, ModelType: config.SlotMain}, action)
 }
 
 func TestOAuthDialog_SuccessState_CloseAlsoConfirmsAndSelectsModel(t *testing.T) {
@@ -610,7 +610,7 @@ func TestOAuthDialog_SuccessState_CloseAlsoConfirmsAndSelectsModel(t *testing.T)
 	m := newDialogUI(t, ws)
 	provider := catwalk.Provider{ID: "test-copilot", Name: "Test Copilot"}
 	model := config.SelectedModel{Model: "gpt-test"}
-	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, model, config.ModelMain)
+	oa, _ := dialog.NewOAuthCopilot(m.com, false, provider, model, config.SlotMain)
 
 	tok := &oauth.Token{AccessToken: "tok-123"}
 	ws.EXPECT().SetProviderAPIKey(config.ScopeGlobal, "test-copilot", tok).Return(nil)
@@ -619,7 +619,7 @@ func TestOAuthDialog_SuccessState_CloseAlsoConfirmsAndSelectsModel(t *testing.T)
 	oa.HandleMsg(batch[2]())
 
 	action := oa.HandleMsg(keyMsg("esc"))
-	require.Equal(t, dialog.ActionSelectModel{Provider: provider, Model: model, ModelType: config.ModelMain}, action)
+	require.Equal(t, dialog.ActionSelectModel{Provider: provider, Model: model, ModelType: config.SlotMain}, action)
 }
 
 func TestOAuthDialog_ErroredState_CloseClosesDialog(t *testing.T) {

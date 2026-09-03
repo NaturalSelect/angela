@@ -112,8 +112,5 @@ func maxTokensFor(agentCfg config.Agent, model Model) int64 {
 	if agentCfg.MaxTokens != nil && *agentCfg.MaxTokens > 0 {
 		return *agentCfg.MaxTokens
 	}
-	if model.ModelCfg.MaxTokens != 0 {
-		return model.ModelCfg.MaxTokens
-	}
 	return model.CatwalkCfg.DefaultMaxTokens
 }

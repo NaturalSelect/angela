@@ -43,8 +43,8 @@ func testStoreWithPath(cfg *Config, dir string) *ConfigStore {
 // the large type, for exercising the pure nextRecentModels helper.
 func configWithRecents(recents ...SelectedModel) *Config {
 	return &Config{
-		RecentModels: map[ModelConfigName][]SelectedModel{
-			ModelMain: recents,
+		RecentModels: map[SlotName][]SelectedModel{
+			SlotMain: recents,
 		},
 	}
 }
@@ -53,7 +53,7 @@ func TestNextRecentModels_AddsToFront(t *testing.T) {
 	t.Parallel()
 
 	cfg := configWithRecents()
-	updated, changed := nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "openai", Model: "gpt-4o"})
+	updated, changed := nextRecentModels(cfg, SlotMain, SelectedModel{Provider: "openai", Model: "gpt-4o"})
 	require.True(t, changed)
 	require.Equal(t, []SelectedModel{{Provider: "openai", Model: "gpt-4o"}}, updated)
 }
@@ -65,7 +65,7 @@ func TestNextRecentModels_DedupeAndMoveToFront(t *testing.T) {
 		SelectedModel{Provider: "anthropic", Model: "claude"},
 		SelectedModel{Provider: "openai", Model: "gpt-4o"},
 	)
-	updated, changed := nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "openai", Model: "gpt-4o"})
+	updated, changed := nextRecentModels(cfg, SlotMain, SelectedModel{Provider: "openai", Model: "gpt-4o"})
 	require.True(t, changed)
 	require.Equal(t, []SelectedModel{
 		{Provider: "openai", Model: "gpt-4o"},
@@ -82,7 +82,7 @@ func TestNextRecentModels_TrimsToMax(t *testing.T) {
 	}
 	cfg := configWithRecents(seed...)
 
-	updated, changed := nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "p", Model: "m6"})
+	updated, changed := nextRecentModels(cfg, SlotMain, SelectedModel{Provider: "p", Model: "m6"})
 	require.True(t, changed)
 	require.Len(t, updated, maxRecentModelsPerType)
 	require.Equal(t, SelectedModel{Provider: "p", Model: "m6"}, updated[0])
@@ -93,9 +93,9 @@ func TestNextRecentModels_SkipsEmptyValues(t *testing.T) {
 	t.Parallel()
 
 	cfg := configWithRecents()
-	_, changed := nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "", Model: "m"})
+	_, changed := nextRecentModels(cfg, SlotMain, SelectedModel{Provider: "", Model: "m"})
 	require.False(t, changed)
-	_, changed = nextRecentModels(cfg, ModelMain, SelectedModel{Provider: "p", Model: ""})
+	_, changed = nextRecentModels(cfg, SlotMain, SelectedModel{Provider: "p", Model: ""})
 	require.False(t, changed)
 }
 
@@ -104,7 +104,7 @@ func TestNextRecentModels_NoChangeWhenAlreadyFront(t *testing.T) {
 
 	entry := SelectedModel{Provider: "openai", Model: "gpt-4o"}
 	cfg := configWithRecents(entry)
-	_, changed := nextRecentModels(cfg, ModelMain, entry)
+	_, changed := nextRecentModels(cfg, SlotMain, entry)
 	require.False(t, changed)
 }
 
@@ -117,16 +117,16 @@ func TestUpdatePreferredModel_PersistsModelAndRecents(t *testing.T) {
 	store := testStoreWithPath(cfg, dir)
 
 	sel := SelectedModel{Provider: "openai", Model: "gpt-4o"}
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelMain, sel))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SlotMain, sel))
 
 	// in-memory state (read through the store; copy-on-write publishes a
 	// new Config, so the seed cfg pointer is intentionally unchanged).
-	require.Equal(t, sel, store.Config().Models[ModelMain])
-	require.Len(t, store.Config().RecentModels[ModelMain], 1)
+	require.Equal(t, sel, store.Config().Slots[SlotMain])
+	require.Len(t, store.Config().RecentModels[SlotMain], 1)
 
 	// persisted state
 	rm := readRecentModels(t, store.globalDataPath)
-	large, ok := rm[string(ModelMain)].([]any)
+	large, ok := rm[string(SlotMain)].([]any)
 	require.True(t, ok)
 	require.Len(t, large, 1)
 	item := large[0].(map[string]any)
@@ -143,29 +143,29 @@ func TestRecordRecentModel_LeavesTheSelectionAlone(t *testing.T) {
 	store := testStoreWithPath(cfg, dir)
 
 	configured := SelectedModel{Provider: "anthropic", Model: "claude"}
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelMain, configured))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SlotMain, configured))
 
 	// A session picking its own model records the pick without moving
 	// the global default off the configured one.
 	sessionPick := SelectedModel{Provider: "openai", Model: "gpt-4o"}
-	require.NoError(t, store.RecordRecentModel(ScopeGlobal, ModelMain, sessionPick))
+	require.NoError(t, store.RecordRecentModel(ScopeGlobal, SlotMain, sessionPick))
 
-	require.Equal(t, configured, store.Config().Models[ModelMain],
+	require.Equal(t, configured, store.Config().Slots[SlotMain],
 		"recording a recent model must not change the selected model")
-	require.Equal(t, sessionPick, store.Config().RecentModels[ModelMain][0],
+	require.Equal(t, sessionPick, store.Config().RecentModels[SlotMain][0],
 		"the pick must be at the front of the recents list")
-	require.Len(t, store.Config().RecentModels[ModelMain], 2)
+	require.Len(t, store.Config().RecentModels[SlotMain], 2)
 
 	rm := readRecentModels(t, store.globalDataPath)
-	persisted, ok := rm[string(ModelMain)].([]any)
+	persisted, ok := rm[string(SlotMain)].([]any)
 	require.True(t, ok)
 	require.Len(t, persisted, 2)
 	require.Equal(t, "gpt-4o", persisted[0].(map[string]any)["model"])
 
 	// The selection on disk is still the configured one.
-	models, ok := readConfigJSON(t, store.globalDataPath)["models"].(map[string]any)
+	slots, ok := readConfigJSON(t, store.globalDataPath)["slots"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "claude", models[string(ModelMain)].(map[string]any)["model"])
+	require.Equal(t, "claude", slots[string(SlotMain)].(map[string]any)["model"])
 }
 
 func TestRecordRecentModel_IsANoOpWhenAlreadyFront(t *testing.T) {
@@ -177,10 +177,10 @@ func TestRecordRecentModel_IsANoOpWhenAlreadyFront(t *testing.T) {
 	store := testStoreWithPath(cfg, dir)
 
 	sel := SelectedModel{Provider: "openai", Model: "gpt-4o"}
-	require.NoError(t, store.RecordRecentModel(ScopeGlobal, ModelMain, sel))
-	require.NoError(t, store.RecordRecentModel(ScopeGlobal, ModelMain, sel))
+	require.NoError(t, store.RecordRecentModel(ScopeGlobal, SlotMain, sel))
+	require.NoError(t, store.RecordRecentModel(ScopeGlobal, SlotMain, sel))
 
-	require.Len(t, store.Config().RecentModels[ModelMain], 1,
+	require.Len(t, store.Config().RecentModels[SlotMain], 1,
 		"re-picking the same model must not duplicate it")
 }
 
@@ -194,17 +194,17 @@ func TestUpdatePreferredModel_TypeIsolation(t *testing.T) {
 
 	largeModel := SelectedModel{Provider: "openai", Model: "gpt-4o"}
 	smallModel := SelectedModel{Provider: "anthropic", Model: "claude"}
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelMain, largeModel))
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelChore, smallModel))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SlotMain, largeModel))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SlotChore, smallModel))
 
 	// Adding to large leaves small untouched.
 	anotherLarge := SelectedModel{Provider: "google", Model: "gemini"}
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelMain, anotherLarge))
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SlotMain, anotherLarge))
 
-	require.Len(t, store.Config().RecentModels[ModelMain], 2)
-	require.Equal(t, anotherLarge, store.Config().RecentModels[ModelMain][0])
-	require.Len(t, store.Config().RecentModels[ModelChore], 1)
-	require.Equal(t, smallModel, store.Config().RecentModels[ModelChore][0])
+	require.Len(t, store.Config().RecentModels[SlotMain], 2)
+	require.Equal(t, anotherLarge, store.Config().RecentModels[SlotMain][0])
+	require.Len(t, store.Config().RecentModels[SlotChore], 1)
+	require.Equal(t, smallModel, store.Config().RecentModels[SlotChore][0])
 }
 
 // TestPruneRecentModels_KeepsAPickMadeAfterTheDecision is B6. The model
@@ -222,21 +222,21 @@ func TestPruneRecentModels_KeepsAPickMadeAfterTheDecision(t *testing.T) {
 
 	dead := SelectedModel{Provider: "gone", Model: "vanished"}
 	survivor := SelectedModel{Provider: "openai", Model: "gpt-4o"}
-	require.NoError(t, store.RecordRecentModel(ScopeGlobal, ModelMain, survivor))
-	require.NoError(t, store.RecordRecentModel(ScopeGlobal, ModelMain, dead))
+	require.NoError(t, store.RecordRecentModel(ScopeGlobal, SlotMain, survivor))
+	require.NoError(t, store.RecordRecentModel(ScopeGlobal, SlotMain, dead))
 
 	// The dialog decided `dead` is stale. Before that lands, the user
 	// picks a model the dialog never saw.
 	latePick := SelectedModel{Provider: "anthropic", Model: "claude"}
-	require.NoError(t, store.RecordRecentModel(ScopeGlobal, ModelMain, latePick))
+	require.NoError(t, store.RecordRecentModel(ScopeGlobal, SlotMain, latePick))
 
-	require.NoError(t, store.PruneRecentModels(ScopeGlobal, ModelMain, []SelectedModel{dead}))
+	require.NoError(t, store.PruneRecentModels(ScopeGlobal, SlotMain, []SelectedModel{dead}))
 
-	require.Equal(t, []SelectedModel{latePick, survivor}, store.Config().RecentModels[ModelMain],
+	require.Equal(t, []SelectedModel{latePick, survivor}, store.Config().RecentModels[SlotMain],
 		"the late pick must survive a prune decided before it existed")
 
 	rm := readRecentModels(t, store.globalDataPath)
-	persisted, ok := rm[string(ModelMain)].([]any)
+	persisted, ok := rm[string(SlotMain)].([]any)
 	require.True(t, ok)
 	require.Len(t, persisted, 2)
 	require.Equal(t, "claude", persisted[0].(map[string]any)["model"])
@@ -251,10 +251,10 @@ func TestPruneRecentModels_IsANoOpWhenNothingMatches(t *testing.T) {
 	store := testStoreWithPath(cfg, dir)
 
 	sel := SelectedModel{Provider: "openai", Model: "gpt-4o"}
-	require.NoError(t, store.RecordRecentModel(ScopeGlobal, ModelMain, sel))
+	require.NoError(t, store.RecordRecentModel(ScopeGlobal, SlotMain, sel))
 
-	require.NoError(t, store.PruneRecentModels(ScopeGlobal, ModelMain,
+	require.NoError(t, store.PruneRecentModels(ScopeGlobal, SlotMain,
 		[]SelectedModel{{Provider: "never", Model: "existed"}}))
 
-	require.Equal(t, []SelectedModel{sel}, store.Config().RecentModels[ModelMain])
+	require.Equal(t, []SelectedModel{sel}, store.Config().RecentModels[SlotMain])
 }

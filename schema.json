@@ -34,7 +34,7 @@
           ],
           "description": "Agent mode: primary or subagent or branch"
         },
-        "model": {
+        "slot": {
           "type": "string",
           "description": "Name of the model config to use",
           "default": "main"
@@ -197,7 +197,7 @@
         "$schema": {
           "type": "string"
         },
-        "models": {
+        "slots": {
           "additionalProperties": {
             "$ref": "#/$defs/SelectedModel"
           },
@@ -479,66 +479,6 @@
         "$ref": "#/$defs/MCPConfig"
       },
       "type": "object"
-    },
-    "Model": {
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "cost_per_1m_in": {
-          "type": "number"
-        },
-        "cost_per_1m_out": {
-          "type": "number"
-        },
-        "cost_per_1m_in_cached": {
-          "type": "number"
-        },
-        "cost_per_1m_out_cached": {
-          "type": "number"
-        },
-        "context_window": {
-          "type": "integer"
-        },
-        "default_max_tokens": {
-          "type": "integer"
-        },
-        "can_reason": {
-          "type": "boolean"
-        },
-        "reasoning_levels": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "default_reasoning_effort": {
-          "type": "string"
-        },
-        "supports_attachments": {
-          "type": "boolean"
-        },
-        "options": {
-          "$ref": "#/$defs/ModelOptions"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "id",
-        "name",
-        "cost_per_1m_in",
-        "cost_per_1m_out",
-        "cost_per_1m_in_cached",
-        "cost_per_1m_out_cached",
-        "context_window",
-        "default_max_tokens",
-        "can_reason",
-        "supports_attachments"
-      ]
     },
     "ModelOptions": {
       "properties": {
@@ -894,7 +834,7 @@
         },
         "models": {
           "items": {
-            "$ref": "#/$defs/Model"
+            "$ref": "#/$defs/ProviderModel"
           },
           "type": "array",
           "description": "List of models available from this provider"
@@ -902,6 +842,77 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "ProviderModel": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "cost_per_1m_in": {
+          "type": "number"
+        },
+        "cost_per_1m_out": {
+          "type": "number"
+        },
+        "cost_per_1m_in_cached": {
+          "type": "number"
+        },
+        "cost_per_1m_out_cached": {
+          "type": "number"
+        },
+        "context_window": {
+          "type": "integer"
+        },
+        "default_max_tokens": {
+          "type": "integer"
+        },
+        "can_reason": {
+          "type": "boolean"
+        },
+        "reasoning_levels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "default_reasoning_effort": {
+          "type": "string"
+        },
+        "supports_attachments": {
+          "type": "boolean"
+        },
+        "options": {
+          "$ref": "#/$defs/ModelOptions"
+        },
+        "think": {
+          "type": "boolean",
+          "description": "Default thinking mode for Anthropic models that support reasoning"
+        },
+        "variants": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SelectedModelOverride"
+          },
+          "type": "object",
+          "description": "Named parameter presets layered over this model's defaults"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "cost_per_1m_in",
+        "cost_per_1m_out",
+        "cost_per_1m_in_cached",
+        "cost_per_1m_out_cached",
+        "context_window",
+        "default_max_tokens",
+        "can_reason",
+        "supports_attachments"
+      ]
     },
     "Rule": {
       "properties": {
@@ -948,68 +959,6 @@
           "examples": [
             "openai"
           ]
-        },
-        "reasoning_effort": {
-          "type": "string",
-          "enum": [
-            "low",
-            "medium",
-            "high"
-          ],
-          "description": "Reasoning effort level for OpenAI models that support it"
-        },
-        "think": {
-          "type": "boolean",
-          "description": "Enable thinking mode for Anthropic models that support reasoning"
-        },
-        "max_tokens": {
-          "type": "integer",
-          "maximum": 200000,
-          "description": "Maximum number of tokens for model responses",
-          "examples": [
-            4096
-          ]
-        },
-        "temperature": {
-          "type": "number",
-          "maximum": 1,
-          "minimum": 0,
-          "description": "Sampling temperature",
-          "examples": [
-            0.7
-          ]
-        },
-        "top_p": {
-          "type": "number",
-          "maximum": 1,
-          "minimum": 0,
-          "description": "Top-p (nucleus) sampling parameter",
-          "examples": [
-            0.9
-          ]
-        },
-        "top_k": {
-          "type": "integer",
-          "description": "Top-k sampling parameter"
-        },
-        "frequency_penalty": {
-          "type": "number",
-          "description": "Frequency penalty to reduce repetition"
-        },
-        "presence_penalty": {
-          "type": "number",
-          "description": "Presence penalty to increase topic diversity"
-        },
-        "provider_options": {
-          "type": "object",
-          "description": "Additional provider-specific options for the model"
-        },
-        "variants": {
-          "additionalProperties": {
-            "$ref": "#/$defs/SelectedModelOverride"
-          },
-          "type": "object",
-          "description": "Named parameter presets layered over this model config"
         }
       },
       "additionalProperties": false,

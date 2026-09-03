@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/proto"
@@ -46,12 +45,12 @@ func (c *Client) RemoveConfigField(ctx context.Context, id string, scope config.
 }
 
 // UpdatePreferredModel updates the preferred model on the server.
-func (c *Client) UpdatePreferredModel(ctx context.Context, id string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (c *Client) UpdatePreferredModel(ctx context.Context, id string, scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/model", id), nil, jsonBody(struct {
-		Scope config.Scope           `json:"scope"`
-		Name  config.ModelConfigName `json:"model_name"`
-		Model config.SelectedModel   `json:"model"`
-	}{Scope: scope, Name: name, Model: model}), http.Header{"Content-Type": []string{"application/json"}})
+		Scope config.Scope         `json:"scope"`
+		Slot  config.SlotName      `json:"slot"`
+		Model config.SelectedModel `json:"model"`
+	}{Scope: scope, Slot: name, Model: model}), http.Header{"Content-Type": []string{"application/json"}})
 	if err != nil {
 		return fmt.Errorf("failed to update preferred model: %w", err)
 	}
@@ -63,12 +62,12 @@ func (c *Client) UpdatePreferredModel(ctx context.Context, id string, scope conf
 }
 
 // RecordRecentModel records a recently used model on the server.
-func (c *Client) RecordRecentModel(ctx context.Context, id string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (c *Client) RecordRecentModel(ctx context.Context, id string, scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/recent-model", id), nil, jsonBody(struct {
-		Scope config.Scope           `json:"scope"`
-		Name  config.ModelConfigName `json:"model_name"`
-		Model config.SelectedModel   `json:"model"`
-	}{Scope: scope, Name: name, Model: model}), http.Header{"Content-Type": []string{"application/json"}})
+		Scope config.Scope         `json:"scope"`
+		Slot  config.SlotName      `json:"slot"`
+		Model config.SelectedModel `json:"model"`
+	}{Scope: scope, Slot: name, Model: model}), http.Header{"Content-Type": []string{"application/json"}})
 	if err != nil {
 		return fmt.Errorf("failed to record recent model: %w", err)
 	}
@@ -80,12 +79,12 @@ func (c *Client) RecordRecentModel(ctx context.Context, id string, scope config.
 }
 
 // PruneRecentModels removes stale recent-model entries on the server.
-func (c *Client) PruneRecentModels(ctx context.Context, id string, scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+func (c *Client) PruneRecentModels(ctx context.Context, id string, scope config.Scope, name config.SlotName, stale []config.SelectedModel) error {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/prune-recent-models", id), nil, jsonBody(struct {
 		Scope config.Scope           `json:"scope"`
-		Name  config.ModelConfigName `json:"model_name"`
+		Slot  config.SlotName        `json:"slot"`
 		Stale []config.SelectedModel `json:"stale"`
-	}{Scope: scope, Name: name, Stale: stale}), http.Header{"Content-Type": []string{"application/json"}})
+	}{Scope: scope, Slot: name, Stale: stale}), http.Header{"Content-Type": []string{"application/json"}})
 	if err != nil {
 		return fmt.Errorf("failed to prune recent models: %w", err)
 	}
@@ -161,7 +160,7 @@ func (c *Client) SetProviderAPIKey(ctx context.Context, id string, scope config.
 
 // UpsertProviderModel records a model under a provider's model list on
 // the server.
-func (c *Client) UpsertProviderModel(ctx context.Context, id string, scope config.Scope, providerID string, model catwalk.Model) error {
+func (c *Client) UpsertProviderModel(ctx context.Context, id string, scope config.Scope, providerID string, model config.ProviderModel) error {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/provider-model", id), nil, jsonBody(proto.ConfigProviderModelRequest{
 		Scope:      scope,
 		ProviderID: providerID,

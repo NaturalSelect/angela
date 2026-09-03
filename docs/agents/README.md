@@ -259,7 +259,7 @@ Above, `my-reviewer` says nothing about tools and so gets exactly
 {
   "agents": {
     "explore": {
-      "model": "chore",
+      "slot": "chore",
       "description": "Custom description"
     },
     "my-reviewer": {
@@ -304,7 +304,7 @@ YAML frontmatter:
 ---
 description: Reviews Go code for concurrency bugs
 mode: subagent
-model: main
+slot: main
 temperature: 0.3
 ---
 
@@ -318,7 +318,7 @@ The body becomes the agent's system prompt. Frontmatter fields:
 | `name`          | string     | Display name                     |
 | `description`   | string     | What the agent does              |
 | `mode`          | string     | `primary`, `subagent`, or `branch` (see Agent Modes) |
-| `model`         | string     | `main` or `chore`                |
+| `slot`          | string     | `main` or `chore`                |
 | `temperature`   | float      | Sampling temperature (0-1)       |
 | `allowed_tools` | []string, `"all"`, or `"inherited"` | Tool whitelist (see Permission Inheritance) |
 | `disabled_tools`| []string   | Tools to remove                  |
@@ -370,7 +370,7 @@ is published atomically so a failed write cannot leave a partial agent behind.
 | `name`          | string          | ""           | Display name                                     |
 | `description`   | string          | ""           | What the agent does                               |
 | `mode`          | string          | `subagent`   | How the agent can be used                        |
-| `model`         | string          | `main`       | Model type (`main` or `chore`)                   |
+| `slot`          | string          | `main`       | Slot name (`main` or `chore`)                    |
 | `prompt`        | string          | ""           | Custom system prompt (Go template)               |
 | `temperature`   | *float64        | nil          | Sampling temperature override                    |
 | `allowed_tools` | array, `"all"`, or `"inherited"` | `"inherited"` | Tool whitelist. `"inherited"` takes the coder's resolved set; `"all"` grants every tool; `[]` denies all tools; an array grants exactly those names. `coder` itself cannot inherit. |

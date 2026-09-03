@@ -52,7 +52,7 @@ func newDialogUI(t *testing.T, ws *MockWorkspace) *UI {
 	m.agentActive = workspace.ActiveAgent{
 		AgentID:    "coder",
 		ModelCfg:   config.SelectedModel{Model: "test-model"},
-		CatwalkCfg: catwalk.Model{ReasoningLevels: []string{"low", "high"}},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ReasoningLevels: []string{"low", "high"}}},
 	}
 	// Several dialog constructors (Notifications, Agents, Commands,
 	// Models) read global config while building their item list;
@@ -255,7 +255,7 @@ func TestOpenVariantsDialog_RequiresAtLeastOneVariant(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	m := newDialogUI(t, ws)
-	m.agentActive.CatwalkCfg = catwalk.Model{} // no reasoning levels, no user variants
+	m.agentActive.CatwalkCfg = config.ProviderModel{} // no reasoning levels, no user variants
 
 	cmd := m.openVariantsDialog()
 	require.NotNil(t, cmd)

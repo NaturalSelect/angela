@@ -87,7 +87,7 @@ func newAPIKeyDialogIn(t *testing.T, ws *apiKeyWorkspace, onboarding bool) *APIK
 		onboarding,
 		provider,
 		config.SelectedModel{},
-		config.ModelMain,
+		config.SlotMain,
 	)
 	return d
 }

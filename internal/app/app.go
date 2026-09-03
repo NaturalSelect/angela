@@ -384,7 +384,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	// continued session without an override keeps the model it was
 	// already on.
 	if mainOverride != nil {
-		edit := config.ActiveAgentEdit{ModelName: config.ModelMain, Model: mainOverride}
+		edit := config.ActiveAgentEdit{Slot: config.SlotMain, Model: mainOverride}
 		if _, err := app.AgentCoordinator.EditActiveAgent(ctx, sess.ID, edit); err != nil {
 			return fmt.Errorf("failed to apply the model override: %w", err)
 		}
@@ -514,14 +514,14 @@ func (app *App) applyModelOverrides(largeModel, smallModel string) (*config.Sele
 	// model cannot leave the chore override already in place.
 	var small, large *modelMatch
 	if smallModel != "" {
-		found, err := validateMatches(smallMatches, smallModel, string(config.ModelChore))
+		found, err := validateMatches(smallMatches, smallModel, string(config.SlotChore))
 		if err != nil {
 			return nil, err
 		}
 		small = &found
 	}
 	if largeModel != "" {
-		found, err := validateMatches(largeMatches, largeModel, string(config.ModelMain))
+		found, err := validateMatches(largeMatches, largeModel, string(config.SlotMain))
 		if err != nil {
 			return nil, err
 		}
@@ -530,7 +530,7 @@ func (app *App) applyModelOverrides(largeModel, smallModel string) (*config.Sele
 
 	if small != nil {
 		slog.Info("Overriding small model for non-interactive run", "provider", small.provider, "model", small.modelID)
-		app.config.OverridePreferredModel(config.ModelChore, config.SelectedModel{
+		app.config.OverridePreferredModel(config.SlotChore, config.SelectedModel{
 			Provider: small.provider,
 			Model:    small.modelID,
 		})

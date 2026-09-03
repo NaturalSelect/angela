@@ -568,7 +568,7 @@ func (m *CustomProvider) save() tea.Msg {
 	}
 	if m.needsModel {
 		modelID := strings.TrimSpace(m.inputs[customProviderFieldModelID].Value())
-		pc.Models = []catwalk.Model{{ID: modelID, Name: modelID}}
+		pc.Models = []config.ProviderModel{{Model: catwalk.Model{ID: modelID, Name: modelID}}}
 	}
 
 	err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "providers."+id, pc)

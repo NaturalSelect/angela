@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,7 +17,7 @@ import (
 // or project directories.
 func newAgentTestConfig(t *testing.T, mdFiles map[string]string) *Config {
 	t.Helper()
-	cfg := &Config{Options: &Options{}}
+	cfg := &Config{Options: &Options{}, Providers: csync.NewMap[string, ProviderConfig]()}
 	if len(mdFiles) == 0 {
 		return cfg
 	}
@@ -33,14 +34,14 @@ func TestResolveAgents_ThreeLayerOverride(t *testing.T) {
 		"explore": "---\ndescription: Custom explore description\n---\n",
 	})
 	cfg.AgentConfigs = map[string]Agent{
-		AgentExplore: {Model: ModelChore},
+		AgentExplore: {Slot: SlotChore},
 	}
 
 	agents := cfg.ResolveAgents()
 	explore, ok := agents[AgentExplore]
 	require.True(t, ok)
 	require.Equal(t, "Custom explore description", explore.Description, "markdown layer should win for description")
-	require.Equal(t, ModelChore, explore.Model, "JSON layer should win for model")
+	require.Equal(t, SlotChore, explore.Slot, "JSON layer should win for model")
 	require.Equal(t, AgentModeSubagent, explore.Mode, "builtin default should survive when no layer overrides it")
 }
 
@@ -508,13 +509,13 @@ func TestResolveAgents_ArbitraryModelNameAccepted(t *testing.T) {
 
 	cfg := &Config{
 		Options:      &Options{},
-		AgentConfigs: map[string]Agent{"reviewer": {Description: "x", Model: ModelConfigName("medium")}},
+		AgentConfigs: map[string]Agent{"reviewer": {Description: "x", Slot: SlotName("medium")}},
 	}
 
 	agents := cfg.ResolveAgents()
 	got, ok := agents["reviewer"]
 	require.True(t, ok, "an unknown model config name must not disqualify the agent")
-	require.Equal(t, ModelConfigName("medium"), got.Model)
+	require.Equal(t, SlotName("medium"), got.Slot)
 }
 
 func TestResolveAgents_InvalidJSONAgentDoesNotDropBuiltins(t *testing.T) {

@@ -27,7 +27,7 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
   "providers": {"mock": {"id": "mock", "name": "Mock", "type": "openai",
     "base_url": "http://127.0.0.1:9/v1", "api_key": "test-key",
     "models": [{"id": "mock-model", "name": "Mock", "context_window": 8192, "default_max_tokens": 128}]}},
-  "models": {"main": {"provider": "mock", "model": "mock-model"},
+  "slots": {"main": {"provider": "mock", "model": "mock-model"},
              "chore": {"provider": "mock", "model": "mock-model"}}
 }`
 	require.NoError(t, os.WriteFile(filepath.Join(env.workingDir, "angela.json"), []byte(angelaJSON), 0o644))

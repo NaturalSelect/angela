@@ -69,9 +69,9 @@ func (m *ModelGroup) Render(width int) string {
 type ModelItem struct {
 	*list.Versioned
 
-	prov      catwalk.Provider
-	model     catwalk.Model
-	modelName config.ModelConfigName
+	prov  catwalk.Provider
+	model config.ProviderModel
+	slot  config.SlotName
 
 	cache        map[int]string
 	t            *styles.Styles
@@ -89,27 +89,25 @@ func (m *ModelItem) Finished() bool {
 // SelectedModel returns this model item as a [config.SelectedModel] instance.
 func (m *ModelItem) SelectedModel() config.SelectedModel {
 	return config.SelectedModel{
-		Model:           m.model.ID,
-		Provider:        string(m.prov.ID),
-		ReasoningEffort: m.model.DefaultReasoningEffort,
-		MaxTokens:       m.model.DefaultMaxTokens,
+		Model:    m.model.ID,
+		Provider: string(m.prov.ID),
 	}
 }
 
-// ModelConfigName returns the model config name this item writes to.
-func (m *ModelItem) ModelConfigName() config.ModelConfigName {
-	return m.modelName
+// Slot returns the slot this item writes to.
+func (m *ModelItem) Slot() config.SlotName {
+	return m.slot
 }
 
 var _ ListItem = &ModelItem{}
 
 // NewModelItem creates a new ModelItem.
-func NewModelItem(t *styles.Styles, prov catwalk.Provider, model catwalk.Model, name config.ModelConfigName, showProvider bool) *ModelItem {
+func NewModelItem(t *styles.Styles, prov catwalk.Provider, model config.ProviderModel, name config.SlotName, showProvider bool) *ModelItem {
 	return &ModelItem{
 		Versioned:    list.NewVersioned(),
 		prov:         prov,
 		model:        model,
-		modelName:    name,
+		slot:         name,
 		t:            t,
 		cache:        make(map[int]string),
 		showProvider: showProvider,

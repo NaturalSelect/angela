@@ -292,7 +292,7 @@ type UI struct {
 		// catwalkModel its catalog entry — zero for a hand-typed model
 		// the catalog has never listed.
 		model        config.SelectedModel
-		catwalkModel catwalk.Model
+		catwalkModel config.ProviderModel
 	}
 
 	// lspStates / lspDiagnostics memoize the workspace LSP state and
@@ -2310,7 +2310,7 @@ const (
 // modelPickScope reports where picking a model for this slot should
 // land. Only the slot the session's agent actually runs on is
 // session-scoped.
-func (m *UI) modelPickScope(slot config.ModelConfigName) modelPickTarget {
+func (m *UI) modelPickScope(slot config.SlotName) modelPickTarget {
 	if m.currentSessionID() == "" {
 		return modelPickEphemeral
 	}
@@ -2318,7 +2318,7 @@ func (m *UI) modelPickScope(slot config.ModelConfigName) modelPickTarget {
 	if active == nil {
 		return modelPickUnknown
 	}
-	if active.ModelName == slot {
+	if active.Slot == slot {
 		return modelPickSession
 	}
 	return modelPickGlobal
@@ -2367,7 +2367,7 @@ func (m *UI) toggleThinkingCmd() tea.Cmd {
 			return util.ReportError(err)()
 		}
 		status := "disabled"
-		if active.ModelCfg.Think {
+		if active.Think {
 			status = "enabled"
 		}
 		return util.NewInfoMsg("Thinking mode " + status)
@@ -2442,7 +2442,7 @@ func (m *UI) cycleVariant() tea.Cmd {
 	if active == nil {
 		return util.ReportWarn("The agent is still starting up.")
 	}
-	choices := append([]string{""}, active.ModelCfg.VariantNames(&active.CatwalkCfg)...)
+	choices := append([]string{""}, active.CatwalkCfg.VariantNames()...)
 	if len(choices) < 2 {
 		return util.ReportWarn("This model offers no variants.")
 	}
@@ -2468,7 +2468,7 @@ func (m *UI) openVariantsDialog() tea.Cmd {
 	if active == nil {
 		return util.ReportWarn("The agent is still starting up.")
 	}
-	variants := active.ModelCfg.VariantNames(&active.CatwalkCfg)
+	variants := active.CatwalkCfg.VariantNames()
 	if len(variants) == 0 {
 		return util.ReportWarn("This model offers no variants.")
 	}
@@ -2531,7 +2531,7 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	// here once it succeeds.
 	if isOnboarding && m.onboarding.step == onboardingStepModel {
 		m.onboarding.model = msg.Model
-		m.onboarding.catwalkModel = catwalk.Model{}
+		m.onboarding.catwalkModel = config.ProviderModel{}
 		if catwalkModel := cfg.GetModel(msg.Model.Provider, msg.Model.Model); catwalkModel != nil {
 			m.onboarding.catwalkModel = *catwalkModel
 		}
@@ -2576,7 +2576,7 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 
 	if scope == modelPickSession {
 		editCmd := func() tea.Msg {
-			edit := config.ActiveAgentEdit{ModelName: msg.ModelType, Model: &msg.Model}
+			edit := config.ActiveAgentEdit{Slot: msg.ModelType, Model: &msg.Model}
 			if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
 				return util.ReportError(err)()
 			}
@@ -2657,7 +2657,7 @@ func (m *UI) applyOnboardingModelCmd(msg dialog.ActionConfigureModel, done func(
 // During onboarding there is no coordinator yet, so starting one is what
 // applies the model; afterwards the existing one is reconciled instead.
 func (m *UI) applyGlobalModelCmd(
-	name config.ModelConfigName,
+	name config.SlotName,
 	model config.SelectedModel,
 	scope config.Scope,
 	startAgent bool,
@@ -2684,7 +2684,7 @@ func (m *UI) applyGlobalModelCmd(
 // list. The pick itself may be session-scoped, but recents feed the
 // dialog for every session: recording changes no session's resolution,
 // and omitting it would hide the model the user just picked.
-func (m *UI) recordRecentModelCmd(name config.ModelConfigName, model config.SelectedModel) tea.Cmd {
+func (m *UI) recordRecentModelCmd(name config.SlotName, model config.SelectedModel) tea.Cmd {
 	return func() tea.Msg {
 		if err := m.com.Workspace.RecordRecentModel(config.ScopeGlobal, name, model); err != nil {
 			return util.ReportError(err)()
@@ -2693,7 +2693,7 @@ func (m *UI) recordRecentModelCmd(name config.ModelConfigName, model config.Sele
 	}
 }
 
-func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.ModelConfigName) tea.Cmd {
+func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.SlotName) tea.Cmd {
 	var (
 		dlg dialog.Dialog
 		cmd tea.Cmd
@@ -4940,7 +4940,7 @@ func (m *UI) openReAuthDialog(providerCfg config.ProviderConfig) (tea.Cmd, bool)
 	if active == nil {
 		return nil, false
 	}
-	return m.openAuthenticationDialog(providerCfg.ToProvider(), active.ModelCfg, active.ModelName), true
+	return m.openAuthenticationDialog(providerCfg.ToProvider(), active.ModelCfg, active.Slot), true
 }
 
 // handleAWSSSOAuth opens the AWS SSO progress dialog (or updates the SSO URL

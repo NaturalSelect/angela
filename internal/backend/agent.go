@@ -142,6 +142,7 @@ func (b *Backend) GetAgentInfo(workspaceID string) (proto.AgentInfo, error) {
 		m := ws.AgentCoordinator.DefaultModel()
 		agentInfo = proto.AgentInfo{
 			Model:    m.CatwalkCfg,
+
 			ModelCfg: m.ModelCfg,
 			IsBusy:   ws.AgentCoordinator.IsBusy(),
 			IsReady:  true,
@@ -242,9 +243,10 @@ func (b *Backend) GetSessionActiveAgent(ctx context.Context, workspaceID, sessio
 	return proto.ActiveAgent{
 		AgentID:    active.Agent.ID,
 		AgentName:  active.Agent.Name,
-		ModelName:  active.ModelName,
+		Slot:       active.Slot,
 		ModelCfg:   model.ModelCfg,
 		CatwalkCfg: model.CatwalkCfg,
+		Think:      model.Think,
 		Variant:    active.Agent.Variant,
 	}, nil
 }

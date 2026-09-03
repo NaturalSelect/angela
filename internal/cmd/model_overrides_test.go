@@ -12,9 +12,9 @@ func overrideProviders() map[string]config.ProviderConfig {
 	return map[string]config.ProviderConfig{
 		"openai": {
 			ID: "openai",
-			Models: []catwalk.Model{
-				{ID: "gpt-4o"},
-				{ID: "gpt-4o-mini"},
+			Models: []config.ProviderModel{
+				{Model: catwalk.Model{ID: "gpt-4o"}},
+				{Model: catwalk.Model{ID: "gpt-4o-mini"}},
 			},
 		},
 	}

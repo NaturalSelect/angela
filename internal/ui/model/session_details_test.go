@@ -44,7 +44,7 @@ func detailsMockWorkspace(t *testing.T) (*MockWorkspace, *detailsSyncProbeCounts
 	providers := csync.NewMap[string, config.ProviderConfig]()
 	providers.Set("mock", config.ProviderConfig{ID: "mock", Name: "Mock", Type: catwalk.TypeOpenAI})
 	cfg := &config.Config{Providers: providers, Options: &config.Options{}}
-	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	active := workspace.ActiveAgent{Slot: config.SlotMain}
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)

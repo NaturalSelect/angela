@@ -25,7 +25,7 @@ type AgentFrontmatter struct {
 	Name          string          `yaml:"name,omitempty"`
 	Description   string          `yaml:"description,omitempty"`
 	Mode          string          `yaml:"mode,omitempty"`
-	Model         string          `yaml:"model,omitempty"`
+	Slot          string          `yaml:"slot,omitempty"`
 	Variant       string          `yaml:"variant,omitempty"`
 	Temperature   *float64        `yaml:"temperature,omitempty"`
 	AllowedTools  *AllowedToolSet `yaml:"allowed_tools,omitempty"`
@@ -248,7 +248,7 @@ func ParseAgentContent(content string) (Agent, error) {
 		agent.Name = fm.Name
 		agent.Description = fm.Description
 		agent.Mode = AgentMode(fm.Mode)
-		agent.Model = ModelConfigName(fm.Model)
+		agent.Slot = SlotName(fm.Slot)
 		agent.Variant = fm.Variant
 		agent.Temperature = fm.Temperature
 		agent.AllowedTools = fm.AllowedTools
@@ -311,9 +311,9 @@ func validateAgentFields(a Agent) error {
 	default:
 		return fmt.Errorf("invalid mode %q: must be one of %s, %s, %s", a.Mode, AgentModePrimary, AgentModeSubagent, AgentModeBranch)
 	}
-	// Agent.Model is an open value domain: any model config name is
+	// Agent.Slot is an open value domain: any model config name is
 	// accepted here, and an unknown one is warned about and falls back
-	// to ModelMain at resolution time.
+	// to SlotMain at resolution time.
 	if a.Temperature != nil {
 		t := *a.Temperature
 		// NaN fails both comparisons of a plain range check, so it

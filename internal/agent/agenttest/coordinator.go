@@ -52,17 +52,17 @@ func NewCoordinator(
 		Type:    openaicompat.Name,
 		BaseURL: "http://127.0.0.1:0/v1",
 		APIKey:  "test",
-		Models:  []catwalk.Model{{ID: modelID, DefaultMaxTokens: 4096}},
+		Models:  []config.ProviderModel{{Model: catwalk.Model{ID: modelID, DefaultMaxTokens: 4096}}},
 	})
 	selected := config.SelectedModel{Provider: providerID, Model: modelID}
 	// Filled directly rather than through OverridePreferredModel, which
 	// is now narrowed to the chore slot: this is test setup writing the
 	// starting config, the same way AllowedTools is set below.
-	if cfg.Config().Models == nil {
-		cfg.Config().Models = make(map[config.ModelConfigName]config.SelectedModel)
+	if cfg.Config().Slots == nil {
+		cfg.Config().Slots = make(map[config.SlotName]config.SelectedModel)
 	}
-	cfg.Config().Models[config.ModelMain] = selected
-	cfg.Config().Models[config.ModelChore] = selected
+	cfg.Config().Slots[config.SlotMain] = selected
+	cfg.Config().Slots[config.SlotChore] = selected
 	cfg.SetupAgents()
 
 	// Keep buildTools light: no sub-agent construction.

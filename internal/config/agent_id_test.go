@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,6 +13,7 @@ func TestConfig_AgentIDs(t *testing.T) {
 		Options: &Options{
 			DisabledTools: []string{},
 		},
+		Providers: csync.NewMap[string, ProviderConfig](),
 	}
 	cfg.SetupAgents()
 

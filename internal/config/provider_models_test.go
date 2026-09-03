@@ -49,7 +49,7 @@ func TestUpsertProviderModel_AddsAModelTheCatalogNeverListed(t *testing.T) {
 		ContextWindow:    1048576,
 		DefaultMaxTokens: 32768,
 	}
-	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "acme", model))
+	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "acme", ProviderModel{Model: model}))
 
 	models := readProviderModels(t, store.globalDataPath, "acme")
 	require.Equal(t, []catwalk.Model{model}, models)
@@ -60,11 +60,11 @@ func TestUpsertProviderModel_ReplacesTheEntryWithTheSameID(t *testing.T) {
 
 	store := newUpsertStore(t, "acme")
 	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "acme",
-		catwalk.Model{ID: "m1", ContextWindow: 1000}))
+		ProviderModel{Model: catwalk.Model{ID: "m1", ContextWindow: 1000}}))
 	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "acme",
-		catwalk.Model{ID: "m2", ContextWindow: 2000}))
+		ProviderModel{Model: catwalk.Model{ID: "m2", ContextWindow: 2000}}))
 	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "acme",
-		catwalk.Model{ID: "m1", ContextWindow: 9000}))
+		ProviderModel{Model: catwalk.Model{ID: "m1", ContextWindow: 9000}}))
 
 	models := readProviderModels(t, store.globalDataPath, "acme")
 	require.Len(t, models, 2, "re-registering a model must not append a duplicate")
@@ -87,13 +87,13 @@ func TestUpsertProviderModel_LeavesTheCatalogOutOfTheConfigFile(t *testing.T) {
 	cfg.Providers.Set("acme", ProviderConfig{
 		ID:      "acme",
 		BaseURL: "http://localhost",
-		Models: []catwalk.Model{
-			{ID: "catalog-a"}, {ID: "catalog-b"}, {ID: "catalog-c"},
+		Models: []ProviderModel{
+			{Model: catwalk.Model{ID: "catalog-a"}}, {Model: catwalk.Model{ID: "catalog-b"}}, {Model: catwalk.Model{ID: "catalog-c"}},
 		},
 	})
 
 	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "acme",
-		catwalk.Model{ID: "typed-model"}))
+		ProviderModel{Model: catwalk.Model{ID: "typed-model"}}))
 
 	models := readProviderModels(t, store.globalDataPath, "acme")
 	require.Equal(t, []catwalk.Model{{ID: "typed-model"}}, models,
@@ -104,8 +104,8 @@ func TestUpsertProviderModel_RejectsEmptyIdentifiers(t *testing.T) {
 	t.Parallel()
 
 	store := newUpsertStore(t, "acme")
-	require.Error(t, store.UpsertProviderModel(ScopeGlobal, "", catwalk.Model{ID: "m"}))
-	require.Error(t, store.UpsertProviderModel(ScopeGlobal, "acme", catwalk.Model{}))
+	require.Error(t, store.UpsertProviderModel(ScopeGlobal, "", ProviderModel{Model: catwalk.Model{ID: "m"}}))
+	require.Error(t, store.UpsertProviderModel(ScopeGlobal, "acme", ProviderModel{}))
 }
 
 // TestUpsertProviderModel_RejectsUnknownProvider verifies that writing a
@@ -115,7 +115,7 @@ func TestUpsertProviderModel_RejectsUnknownProvider(t *testing.T) {
 	t.Parallel()
 
 	store := newUpsertStore(t)
-	err := store.UpsertProviderModel(ScopeGlobal, "no-such-provider", catwalk.Model{ID: "m"})
+	err := store.UpsertProviderModel(ScopeGlobal, "no-such-provider", ProviderModel{Model: catwalk.Model{ID: "m"}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not configured or known")
 }
@@ -127,7 +127,7 @@ func TestUpsertProviderModel_EscapesTheProviderKey(t *testing.T) {
 
 	store := newUpsertStore(t, "my.provider")
 	require.NoError(t, store.UpsertProviderModel(ScopeGlobal, "my.provider",
-		catwalk.Model{ID: "m1"}))
+		ProviderModel{Model: catwalk.Model{ID: "m1"}}))
 
 	models := readProviderModels(t, store.globalDataPath, "my.provider")
 	require.Equal(t, []catwalk.Model{{ID: "m1"}}, models)

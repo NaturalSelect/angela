@@ -73,11 +73,11 @@ func streamReasoning(t *testing.T, server *httptest.Server, providerCfg config.P
 	published, ok := coord.cfg.Config().Providers.Get(providerCfg.ID)
 	require.True(t, ok)
 
-	model := config.SelectedModel{Provider: providerCfg.ID, Model: modelID}
-	provider, err := coord.buildProvider(published, model, false)
+	model := config.ProviderModel{Model: catwalk.Model{ID: modelID}}
+	provider, err := coord.buildProvider(published, model, false, false)
 	require.NoError(t, err)
 
-	lm, err := provider.LanguageModel(t.Context(), model.Model)
+	lm, err := provider.LanguageModel(t.Context(), model.ID)
 	require.NoError(t, err)
 
 	stream, err := lm.Stream(t.Context(), fantasy.Call{
@@ -146,15 +146,15 @@ func anthropicThinkingDisplay(t *testing.T, providerType, modelID string) *anthr
 	t.Helper()
 
 	model := Model{
-		CatwalkCfg: catwalk.Model{
-			ID:              modelID,
-			CanReason:       true,
-			ReasoningLevels: []string{"high", "max"},
-		},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+			ID:                     modelID,
+			CanReason:              true,
+			ReasoningLevels:        []string{"high", "max"},
+			DefaultReasoningEffort: "max",
+		}},
 		ModelCfg: config.SelectedModel{
-			Provider:        "gw",
-			Model:           modelID,
-			ReasoningEffort: "max",
+			Provider: "gw",
+			Model:    modelID,
 		},
 	}
 	providerCfg := config.ProviderConfig{

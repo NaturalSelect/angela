@@ -97,12 +97,12 @@ func writeConfigStaleness(b *strings.Builder, cfg *config.ConfigStore) {
 
 func writeModels(b *strings.Builder, cfg *config.ConfigStore) {
 	c := cfg.Config()
-	if len(c.Models) == 0 {
+	if len(c.Slots) == 0 {
 		return
 	}
 	b.WriteString("[model]\n")
-	for _, typ := range []config.ModelConfigName{config.ModelMain, config.ModelChore} {
-		m, ok := c.Models[typ]
+	for _, typ := range []config.SlotName{config.SlotMain, config.SlotChore} {
+		m, ok := c.Slots[typ]
 		if !ok {
 			continue
 		}

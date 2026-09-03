@@ -274,7 +274,7 @@ func runNonInteractive(
 	// alone, and a continued session without an override keeps the model
 	// it was already on.
 	if mainOverride != nil {
-		edit := config.ActiveAgentEdit{ModelName: config.ModelMain, Model: mainOverride}
+		edit := config.ActiveAgentEdit{Slot: config.SlotMain, Model: mainOverride}
 		if _, err := c.AgentEditSessionActive(ctx, ws.ID, sess.ID, edit); err != nil {
 			return fmt.Errorf("failed to apply the model override: %w", err)
 		}
@@ -535,7 +535,7 @@ func applyModelOverrides(
 
 	if small != nil {
 		slog.Info("Overriding small model", "provider", small.provider, "model", small.modelID)
-		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.ModelChore, config.SelectedModel{
+		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SlotChore, config.SelectedModel{
 			Provider: small.provider,
 			Model:    small.modelID,
 		}); err != nil {
@@ -567,14 +567,14 @@ func resolveModelOverrides(
 	largeMatches, smallMatches := findModelMatches(providers, largeModel, smallModel)
 
 	if smallModel != "" {
-		found, err := validateModelMatches(smallMatches, smallModel, string(config.ModelChore))
+		found, err := validateModelMatches(smallMatches, smallModel, string(config.SlotChore))
 		if err != nil {
 			return nil, nil, err
 		}
 		small = &found
 	}
 	if largeModel != "" {
-		found, err := validateModelMatches(largeMatches, largeModel, string(config.ModelMain))
+		found, err := validateModelMatches(largeMatches, largeModel, string(config.SlotMain))
 		if err != nil {
 			return nil, nil, err
 		}

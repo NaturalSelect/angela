@@ -60,7 +60,7 @@ func TestTurnKeepsItsModelWhenConfigChangesMidRun(t *testing.T) {
 	// reload would.
 	<-gated.entered
 	mainCfg := coord.cfg.Config().Agents[config.AgentCoder]
-	mainCfg.Model = config.ModelMain
+	mainCfg.Slot = config.SlotMain
 	coord.cfg.Config().Agents[config.AgentCoder] = mainCfg
 	require.NoError(t, coord.UpdateModels(context.Background()))
 
@@ -93,8 +93,8 @@ func TestConcurrentResolutionIsRacefree(t *testing.T) {
 
 	choreActive := instantiate(t, coord, config.AgentCoder)
 	mainActive := choreActive
-	mainActive.ModelName = config.ModelMain
-	mainActive.Model = coord.cfg.Config().Models[config.ModelMain]
+	mainActive.Slot = config.SlotMain
+	mainActive.Model = coord.cfg.Config().Slots[config.SlotMain]
 
 	var wg sync.WaitGroup
 	models := make([]string, 2)

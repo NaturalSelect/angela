@@ -9,8 +9,8 @@ import (
 // owned by the session: editing it never writes back, so two sessions
 // running the same agent can diverge freely.
 //
-// The model is materialized rather than named. Agent.Model is a
-// ModelConfigName pointing into the shared Config.Models table, so a
+// The model is materialized rather than named. Agent.Slot is a
+// SlotName pointing into the shared Config.Slots table, so a
 // session that only held the name could not change its own model
 // without mutating that shared table.
 type ActiveAgent struct {
@@ -18,14 +18,25 @@ type ActiveAgent struct {
 	// Its Variant field is the session's parameter preset.
 	Agent Agent
 
-	// ModelName records which global model slot Model was
-	// instantiated from. It is a label for display and for the model
-	// dialog, not a live reference.
-	ModelName ModelConfigName
+	// Slot records which global model slot Model was instantiated
+	// from. It is a label for display and for the model dialog, not a
+	// live reference.
+	Slot SlotName
 
 	// Model is the materialized model configuration this session
 	// runs.
 	Model SelectedModel
+
+	// Think is the current thinking-mode state, resolved from the
+	// model's catalog default and the active variant until ThinkPick
+	// says otherwise.
+	Think bool
+
+	// ThinkPick is the thinking-mode value the user chose for this
+	// session, or nil when they never touched it and Think keeps
+	// following the model's catalog default and the active variant.
+	// Mirrors VariantPick's reasoning.
+	ThinkPick *bool
 
 	// VariantPick is the preset the user chose for this session, or
 	// nil when they never chose one and Agent.Variant is still
@@ -41,9 +52,9 @@ type ActiveAgent struct {
 // prompts, tools and permissions are re-read from the config files on
 // every load so a session never runs a stale copy of them.
 type ActiveAgentState struct {
-	Agent     string          `json:"agent,omitempty"`
-	ModelName ModelConfigName `json:"model_name,omitempty"`
-	Model     SelectedModel   `json:"model,omitzero"`
+	Agent string        `json:"agent,omitempty"`
+	Slot  SlotName      `json:"slot,omitempty"`
+	Model SelectedModel `json:"model,omitzero"`
 
 	// Variant is the preset the user picked, and is absent when they
 	// never picked one. The distinction matters: Agent.Variant also
@@ -52,6 +63,12 @@ type ActiveAgentState struct {
 	// would then never reach this session again. A pointer to the
 	// empty string is a real pick, namely backing out of a preset.
 	Variant *string `json:"variant,omitempty"`
+
+	// Think is the thinking-mode value the user picked, and is absent
+	// when they never touched it, for the same reason Variant is: a
+	// model's catalog default must keep reaching a session that never
+	// overrode it.
+	Think *bool `json:"think,omitempty"`
 }
 
 // IsZero reports whether the state names no agent, meaning the session
@@ -63,9 +80,9 @@ func (s ActiveAgentState) IsZero() bool {
 // InstantiateAgent builds a session's own copy of an agent from the
 // global config. It reports false when no such agent is resolved.
 //
-// An unknown or unset model name warns and falls back to ModelMain,
+// An unknown or unset model name warns and falls back to SlotMain,
 // matching warnUnknownTools' tolerant philosophy — a typo must not
-// brick a turn. A missing ModelMain is left to the caller: it is the
+// brick a turn. A missing SlotMain is left to the caller: it is the
 // difference between a misconfigured agent and an unconfigured app.
 func (c *Config) InstantiateAgent(agentID string) (ActiveAgent, bool) {
 	agent, ok := c.Agents[agentID]
@@ -73,19 +90,33 @@ func (c *Config) InstantiateAgent(agentID string) (ActiveAgent, bool) {
 		return ActiveAgent{}, false
 	}
 
-	name := agent.Model
-	model, ok := c.ModelForName(name)
+	name := agent.Slot
+	model, ok := c.ModelForSlot(name)
 	if !ok {
 		if name != "" {
 			slog.Warn("Unknown model config name; falling back to main",
-				"agent", agentID, "model", name, "fallback", ModelMain)
+				"agent", agentID, "model", name, "fallback", SlotMain)
 		}
-		name = ModelMain
-		model = c.Models[name]
+		name = SlotMain
+		model = c.Slots[name]
 	}
 
-	active := ActiveAgent{Agent: agent, ModelName: name, Model: model}
+	active := ActiveAgent{Agent: agent, Slot: name, Model: model, Think: c.EffectiveThink(model, agent.Variant)}
 	return active.Clone(), true
+}
+
+// EffectiveThink resolves the thinking-mode default for model, as
+// adjusted by the named variant, falling back to false when the
+// model is not in the catalog. It is how a session's Think starts,
+// and how it re-derives after the model or variant changes, until
+// the user picks a value of their own.
+func (c *Config) EffectiveThink(model SelectedModel, variant string) bool {
+	catalog := c.GetModel(model.Provider, model.Model)
+	if catalog == nil {
+		return false
+	}
+	effective, _ := catalog.WithVariant(variant)
+	return effective.Think
 }
 
 // ActiveAgentEdit describes a change to a session's own agent
@@ -98,9 +129,9 @@ type ActiveAgentEdit struct {
 	Agent string `json:"agent,omitempty"`
 
 	// Model, when non-nil, replaces the session's model outright, and
-	// ModelName labels which global slot it was taken from.
-	ModelName ModelConfigName `json:"model_name,omitempty"`
-	Model     *SelectedModel  `json:"model,omitempty"`
+	// Slot labels which global slot it was taken from.
+	Slot  SlotName       `json:"slot,omitempty"`
+	Model *SelectedModel `json:"model,omitempty"`
 
 	// Variant, when non-nil, sets the parameter preset. The empty
 	// string selects the model's baseline, which is how a user backs
@@ -131,12 +162,12 @@ func (e ActiveAgentEdit) IsZero() bool {
 // titling, agent generation) inherit the session's model choice.
 //
 // A session's instance is an override of one model role: it says "for
-// this session, ModelMain is really this model". An internal agent on
+// this session, SlotMain is really this model". An internal agent on
 // that same role inherits it, so a session switched to a big model
 // compacts with the big model. An internal agent on a different role
 // resolves that role from config, because the session never chose
-// anything for it — which is what keeps titling cheap on ModelChore
-// while the session itself runs on ModelMain.
+// anything for it — which is what keeps titling cheap on SlotChore
+// while the session itself runs on SlotMain.
 //
 // A zero host applies no override, so callers outside any session get
 // plain config resolution.
@@ -145,10 +176,11 @@ func (c *Config) InstantiateFor(agentID string, host ActiveAgent) (ActiveAgent, 
 	if !ok {
 		return ActiveAgent{}, false
 	}
-	if active.ModelName != host.ModelName {
+	if active.Slot != host.Slot {
 		return active, true
 	}
 	active.Model = host.Model
+	active.Think = host.Think
 	return active.Clone(), true
 }
 
@@ -161,6 +193,7 @@ func (c *Config) InstantiateFor(agentID string, host ActiveAgent) (ActiveAgent, 
 func (a ActiveAgent) Clone() ActiveAgent {
 	a.Agent = a.Agent.clone()
 	a.Model = a.Model.clone()
+	a.ThinkPick = clonePtr(a.ThinkPick)
 	a.VariantPick = clonePtr(a.VariantPick)
 	return a
 }
@@ -169,10 +202,11 @@ func (a ActiveAgent) Clone() ActiveAgent {
 // user chose, never what the config supplied.
 func (a ActiveAgent) State() ActiveAgentState {
 	return ActiveAgentState{
-		Agent:     a.Agent.ID,
-		ModelName: a.ModelName,
-		Model:     a.Model,
-		Variant:   a.VariantPick,
+		Agent:   a.Agent.ID,
+		Slot:    a.Slot,
+		Model:   a.Model,
+		Variant: a.VariantPick,
+		Think:   a.ThinkPick,
 	}
 }
 
@@ -195,10 +229,18 @@ func (c *Config) Restore(state ActiveAgentState) (ActiveAgent, bool) {
 		active.Agent.Variant = pick
 		active.VariantPick = &pick
 	}
+	if state.Think != nil {
+		pick := *state.Think
+		active.Think = pick
+		active.ThinkPick = &pick
+	}
 	if state.Model.Model == "" || state.Model.Provider == "" {
 		return active, true
 	}
-	active.ModelName = state.ModelName
+	active.Slot = state.Slot
 	active.Model = state.Model
+	if active.ThinkPick == nil {
+		active.Think = c.EffectiveThink(active.Model, active.Agent.Variant)
+	}
 	return active.Clone(), true
 }

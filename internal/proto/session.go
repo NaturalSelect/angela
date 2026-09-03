@@ -1,8 +1,6 @@
 package proto
 
 import (
-	"charm.land/catwalk/pkg/catwalk"
-
 	"github.com/NaturalSelect/angela/internal/config"
 )
 
@@ -42,12 +40,13 @@ type Session struct {
 // preset already folded in. The preset is applied server-side so a
 // client never has to re-derive it and disagree.
 type ActiveAgent struct {
-	AgentID    string                 `json:"agent_id"`
-	AgentName  string                 `json:"agent_name"`
-	ModelName  config.ModelConfigName `json:"model_name,omitempty"`
-	ModelCfg   config.SelectedModel   `json:"model_cfg,omitzero"`
-	CatwalkCfg catwalk.Model          `json:"catwalk_cfg,omitzero"`
-	Variant    string                 `json:"variant,omitempty"`
+	AgentID    string               `json:"agent_id"`
+	AgentName  string               `json:"agent_name"`
+	Slot       config.SlotName      `json:"slot,omitempty"`
+	ModelCfg   config.SelectedModel `json:"model_cfg,omitzero"`
+	CatwalkCfg config.ProviderModel `json:"catwalk_cfg,omitzero"`
+	Think      bool                 `json:"think,omitempty"`
+	Variant    string               `json:"variant,omitempty"`
 }
 
 // Todo represents a single todo entry on a session in the proto layer.

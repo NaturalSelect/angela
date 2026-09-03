@@ -342,7 +342,7 @@ func (a *AssistantInfoItem) renderContent(width int) string {
 	icon := a.sty.Messages.AssistantInfoIcon.Render(styles.ModelIcon)
 	model := a.cfg.GetModel(a.message.Provider, a.message.Model)
 	if model == nil {
-		model = &catwalk.Model{Name: "Unknown Model"}
+		model = &config.ProviderModel{Model: catwalk.Model{Name: "Unknown Model"}}
 	}
 	modelFormatted := a.sty.Messages.AssistantInfoModel.Render(model.Name)
 	providerName := a.message.Provider

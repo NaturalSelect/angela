@@ -150,20 +150,20 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure selected models: %w", err)
 	}
-	cfg.Models[ModelMain] = resolved.Main
-	cfg.Models[ModelChore] = resolved.Chore
+	cfg.Slots[SlotMain] = resolved.Main
+	cfg.Slots[SlotChore] = resolved.Chore
 
 	// Persist any fallback corrections while we still hold writeMu.
 	if resolved.MainFallback {
 		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-			return store.updatePreferredModelFields(c, ModelMain, resolved.Main)
+			return store.updatePreferredModelFields(c, SlotMain, resolved.Main)
 		}); err != nil {
 			return nil, fmt.Errorf("failed to update preferred main model: %w", err)
 		}
 	}
 	if resolved.ChoreFallback {
 		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-			return store.updatePreferredModelFields(c, ModelChore, resolved.Chore)
+			return store.updatePreferredModelFields(c, SlotChore, resolved.Chore)
 		}); err != nil {
 			return nil, fmt.Errorf("failed to update preferred chore model: %w", err)
 		}
@@ -210,7 +210,7 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 				p.APIKey = config.APIKey
 			}
 			if len(config.Models) > 0 {
-				models := []catwalk.Model{}
+				models := make([]ProviderModel, 0, len(config.Models)+len(p.Models))
 				seen := make(map[string]bool)
 
 				for _, model := range config.Models {
@@ -231,10 +231,10 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 					if model.Name == "" {
 						model.Name = model.ID
 					}
-					models = append(models, model)
+					models = append(models, ProviderModel{Model: model})
 				}
 
-				p.Models = models
+				config.Models = models
 			}
 		}
 
@@ -271,7 +271,9 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 		prepared.APIKey = p.APIKey
 		prepared.APIKeyTemplate = p.APIKey // Store original template for re-resolution
 		prepared.Type = p.Type
-		prepared.Models = p.Models
+		if len(prepared.Models) == 0 {
+			prepared.Models = wrapCatwalkModels(p.Models, nil)
+		}
 		prepared.ExtraHeaders = headers
 		if prepared.ExtraParams == nil {
 			prepared.ExtraParams = make(map[string]string)
@@ -371,7 +373,7 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 			BaseURL:        pc.BaseURL,
 			APIKey:         pc.APIKey,
 			ExtraHeaders:   pc.ExtraHeaders,
-			ExistingModels: pc.Models,
+			ExistingModels: providerModelsToCatwalk(pc.Models),
 		}
 		providerType := cmp.Or(pc.Type, catwalk.TypeOpenAICompat)
 		wg.Go(func() {
@@ -431,7 +433,7 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 					continue
 				}
 			} else if len(result.models) > 0 {
-				providerConfig.Models = result.models
+				providerConfig.Models = wrapCatwalkModels(result.models, providerConfig.Models)
 				slog.Info("Discovered models for provider", "provider", id, "count", len(result.models))
 			}
 		}
@@ -526,11 +528,11 @@ func (c *Config) setDefaults(workingDir, dataDir string) {
 	if c.Providers == nil {
 		c.Providers = csync.NewMap[string, ProviderConfig]()
 	}
-	if c.Models == nil {
-		c.Models = make(map[ModelConfigName]SelectedModel)
+	if c.Slots == nil {
+		c.Slots = make(map[SlotName]SelectedModel)
 	}
 	if c.RecentModels == nil {
-		c.RecentModels = make(map[ModelConfigName][]SelectedModel)
+		c.RecentModels = make(map[SlotName][]SelectedModel)
 	}
 	if c.MCP == nil {
 		c.MCP = make(map[string]MCPConfig)
@@ -717,10 +719,8 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 			defaultLargeModel = &providerConfig.Models[0]
 		}
 		largeModel = SelectedModel{
-			Provider:        string(p.ID),
-			Model:           defaultLargeModel.ID,
-			MaxTokens:       defaultLargeModel.DefaultMaxTokens,
-			ReasoningEffort: defaultLargeModel.DefaultReasoningEffort,
+			Provider: string(p.ID),
+			Model:    defaultLargeModel.ID,
 		}
 
 		defaultSmallModel := c.GetModel(string(p.ID), p.DefaultSmallModelID)
@@ -732,10 +732,8 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 			defaultSmallModel = &providerConfig.Models[0]
 		}
 		smallModel = SelectedModel{
-			Provider:        string(p.ID),
-			Model:           defaultSmallModel.ID,
-			MaxTokens:       defaultSmallModel.DefaultMaxTokens,
-			ReasoningEffort: defaultSmallModel.DefaultReasoningEffort,
+			Provider: string(p.ID),
+			Model:    defaultSmallModel.ID,
 		}
 		return largeModel, smallModel, err
 	}
@@ -757,15 +755,13 @@ func (c *Config) defaultModelSelection(knownProviders []catwalk.Provider) (large
 	}
 	defaultLargeModel := c.GetModel(providerConfig.ID, providerConfig.Models[0].ID)
 	largeModel = SelectedModel{
-		Provider:  providerConfig.ID,
-		Model:     defaultLargeModel.ID,
-		MaxTokens: defaultLargeModel.DefaultMaxTokens,
+		Provider: providerConfig.ID,
+		Model:    defaultLargeModel.ID,
 	}
 	defaultSmallModel := c.GetModel(providerConfig.ID, providerConfig.Models[0].ID)
 	smallModel = SelectedModel{
-		Provider:  providerConfig.ID,
-		Model:     defaultSmallModel.ID,
-		MaxTokens: defaultSmallModel.DefaultMaxTokens,
+		Provider: providerConfig.ID,
+		Model:    defaultSmallModel.ID,
 	}
 	return largeModel, smallModel, err
 }
@@ -792,43 +788,10 @@ func applyModelOverride(cfg *Config, fallback, override SelectedModel) (resolved
 		resolved.Provider = override.Provider
 	}
 
-	model := cfg.GetModel(resolved.Provider, resolved.Model)
-	if model == nil {
+	if cfg.GetModel(resolved.Provider, resolved.Model) == nil {
 		return fallback, true
 	}
 
-	if override.MaxTokens > 0 {
-		resolved.MaxTokens = override.MaxTokens
-	} else {
-		resolved.MaxTokens = model.DefaultMaxTokens
-	}
-	if override.ReasoningEffort != "" {
-		resolved.ReasoningEffort = override.ReasoningEffort
-	} else {
-		resolved.ReasoningEffort = model.DefaultReasoningEffort
-	}
-	resolved.Think = override.Think
-	if override.Temperature != nil {
-		resolved.Temperature = override.Temperature
-	}
-	if override.TopP != nil {
-		resolved.TopP = override.TopP
-	}
-	if override.TopK != nil {
-		resolved.TopK = override.TopK
-	}
-	if override.FrequencyPenalty != nil {
-		resolved.FrequencyPenalty = override.FrequencyPenalty
-	}
-	if override.PresencePenalty != nil {
-		resolved.PresencePenalty = override.PresencePenalty
-	}
-	if override.ProviderOptions != nil {
-		resolved.ProviderOptions = maps.Clone(override.ProviderOptions)
-	}
-	if override.Variants != nil {
-		resolved.Variants = maps.Clone(override.Variants)
-	}
 	return resolved, false
 }
 
@@ -845,10 +808,10 @@ func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (reso
 	}
 	main, chore := defaultMain, defaultChore
 
-	if override, configured := cfg.Models[ModelMain]; configured {
+	if override, configured := cfg.Slots[SlotMain]; configured {
 		main, result.MainFallback = applyModelOverride(cfg, defaultMain, override)
 	}
-	override, choreConfigured := cfg.Models[ModelChore]
+	override, choreConfigured := cfg.Slots[SlotChore]
 	if choreConfigured {
 		chore, result.ChoreFallback = applyModelOverride(cfg, defaultChore, override)
 	}

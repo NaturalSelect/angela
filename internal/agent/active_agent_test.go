@@ -35,7 +35,7 @@ func TestActiveAgentEditsDoNotLeakAcrossSessions(t *testing.T) {
 
 	require.Equal(t, config.AgentCoder, coord.cfg.Config().Agents[config.AgentCoder].ID,
 		"the shared config must be untouched by a session-scoped edit")
-	require.Equal(t, config.ModelChore, coord.cfg.Config().Agents[config.AgentCoder].Model,
+	require.Equal(t, config.SlotChore, coord.cfg.Config().Agents[config.AgentCoder].Slot,
 		"the coder's configured model must survive another session's switch")
 }
 

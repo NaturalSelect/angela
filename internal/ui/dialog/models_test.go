@@ -33,7 +33,7 @@ func (w *configWorkspace) SetConfigField(config.Scope, string, any) error {
 	return nil
 }
 
-func (w *configWorkspace) PruneRecentModels(_ config.Scope, _ config.ModelConfigName, stale []config.SelectedModel) error {
+func (w *configWorkspace) PruneRecentModels(_ config.Scope, _ config.SlotName, stale []config.SelectedModel) error {
 	w.pruned = stale
 	return nil
 }
@@ -53,21 +53,21 @@ func modelsConfig(t *testing.T, recents ...config.SelectedModel) *config.Config 
 	providers.Set(testProviderID, config.ProviderConfig{
 		ID:   testProviderID,
 		Name: "Acme",
-		Models: []catwalk.Model{
-			{ID: globalModelID, Name: "Global Model"},
-			{ID: sessionModelID, Name: "Session Model"},
+		Models: []config.ProviderModel{
+			{Model: catwalk.Model{ID: globalModelID, Name: "Global Model"}},
+			{Model: catwalk.Model{ID: sessionModelID, Name: "Session Model"}},
 		},
 	})
 
 	cfg := &config.Config{
 		Providers: providers,
-		Models: map[config.ModelConfigName]config.SelectedModel{
-			config.ModelMain: {Provider: testProviderID, Model: globalModelID},
+		Slots: map[config.SlotName]config.SelectedModel{
+			config.SlotMain: {Provider: testProviderID, Model: globalModelID},
 		},
 	}
 	if len(recents) > 0 {
-		cfg.RecentModels = map[config.ModelConfigName][]config.SelectedModel{
-			config.ModelMain: recents,
+		cfg.RecentModels = map[config.SlotName][]config.SelectedModel{
+			config.SlotMain: recents,
 		}
 	}
 	return cfg
@@ -130,8 +130,8 @@ func TestTheListOpensOnTheSessionsModel(t *testing.T) {
 
 	ws := &configWorkspace{cfg: modelsConfig(t)}
 	active := &workspace.ActiveAgent{
-		ModelName: config.ModelMain,
-		ModelCfg:  config.SelectedModel{Provider: testProviderID, Model: sessionModelID},
+		Slot:     config.SlotMain,
+		ModelCfg: config.SelectedModel{Provider: testProviderID, Model: sessionModelID},
 	}
 	m := newModelsDialog(t, ws, active)
 	m.SetProviders(catalogFor())
@@ -156,8 +156,8 @@ func TestTheListFallsBackToTheGlobalModel(t *testing.T) {
 		{
 			name: "the session owns a different slot",
 			active: &workspace.ActiveAgent{
-				ModelName: config.ModelChore,
-				ModelCfg:  config.SelectedModel{Provider: testProviderID, Model: sessionModelID},
+				Slot:     config.SlotChore,
+				ModelCfg: config.SelectedModel{Provider: testProviderID, Model: sessionModelID},
 			},
 		},
 	}
@@ -182,8 +182,8 @@ func TestTheRecentEntryIsHighlightedForTheSession(t *testing.T) {
 	recent := config.SelectedModel{Provider: testProviderID, Model: sessionModelID}
 	ws := &configWorkspace{cfg: modelsConfig(t, recent)}
 	active := &workspace.ActiveAgent{
-		ModelName: config.ModelMain,
-		ModelCfg:  config.SelectedModel{Provider: testProviderID, Model: sessionModelID},
+		Slot:     config.SlotMain,
+		ModelCfg: config.SelectedModel{Provider: testProviderID, Model: sessionModelID},
 	}
 	m := newModelsDialog(t, ws, active)
 	m.SetProviders(catalogFor())

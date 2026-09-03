@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,10 +57,11 @@ func TestUnreadModelConfigsAreReported(t *testing.T) {
 
 		cfg := &Config{
 			Options: &Options{},
-			Models: map[ModelConfigName]SelectedModel{
-				ModelMain: {Provider: "mock", Model: "big"},
-				"large":   {Provider: "mock", Model: "leftover"},
+			Slots: map[SlotName]SelectedModel{
+				SlotMain: {Provider: "mock", Model: "big"},
+				"large":  {Provider: "mock", Model: "leftover"},
 			},
+			Providers: csync.NewMap[string, ProviderConfig](),
 		}
 		cfg.SetupAgents()
 
@@ -72,10 +74,11 @@ func TestUnreadModelConfigsAreReported(t *testing.T) {
 
 		cfg := &Config{
 			Options: &Options{},
-			Models: map[ModelConfigName]SelectedModel{
-				ModelMain:  {Provider: "mock", Model: "big"},
-				ModelChore: {Provider: "mock", Model: "small"},
+			Slots: map[SlotName]SelectedModel{
+				SlotMain:  {Provider: "mock", Model: "big"},
+				SlotChore: {Provider: "mock", Model: "small"},
 			},
+			Providers: csync.NewMap[string, ProviderConfig](),
 		}
 		cfg.SetupAgents()
 
@@ -87,13 +90,14 @@ func TestUnreadModelConfigsAreReported(t *testing.T) {
 
 		cfg := &Config{
 			Options: &Options{},
-			Models: map[ModelConfigName]SelectedModel{
-				ModelMain: {Provider: "mock", Model: "big"},
-				"fast":    {Provider: "mock", Model: "quick"},
+			Slots: map[SlotName]SelectedModel{
+				SlotMain: {Provider: "mock", Model: "big"},
+				"fast":   {Provider: "mock", Model: "quick"},
 			},
 			AgentConfigs: map[string]Agent{
-				"researcher": {ID: "researcher", Model: "fast"},
+				"researcher": {ID: "researcher", Slot: "fast"},
 			},
+			Providers: csync.NewMap[string, ProviderConfig](),
 		}
 		cfg.SetupAgents()
 

@@ -40,7 +40,7 @@ type ActionSelectSession struct {
 type ActionSelectModel struct {
 	Provider       catwalk.Provider
 	Model          config.SelectedModel
-	ModelType      config.ModelConfigName
+	ModelType      config.SlotName
 	ReAuthenticate bool
 }
 
@@ -51,8 +51,8 @@ type ActionSelectModel struct {
 type ActionConfigureModel struct {
 	Provider  catwalk.Provider
 	Model     config.SelectedModel
-	Catwalk   catwalk.Model
-	ModelType config.ModelConfigName
+	Catwalk   config.ProviderModel
+	ModelType config.SlotName
 }
 
 // ActionSelectProvider is emitted when the user picks a provider, which

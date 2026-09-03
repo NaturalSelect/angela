@@ -99,9 +99,11 @@ func testEnv(t *testing.T) fakeEnv {
 func testSessionAgent(env fakeEnv, large, small fantasy.LanguageModel, systemPrompt string, tools ...fantasy.AgentTool) (SessionAgent, resolvedAgent) {
 	largeModel := Model{
 		Model: large,
-		CatwalkCfg: catwalk.Model{
-			ContextWindow:    200000,
-			DefaultMaxTokens: 10000,
+		CatwalkCfg: config.ProviderModel{
+			Model: catwalk.Model{
+				ContextWindow:    200000,
+				DefaultMaxTokens: 10000,
+			},
 		},
 	}
 	// Title generation lives on the coordinator. These tests are about

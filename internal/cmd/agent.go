@@ -65,9 +65,9 @@ angela agent list`,
 			if mode == "" {
 				mode = string(config.AgentModeSubagent)
 			}
-			model := string(a.Model)
+			model := string(a.Slot)
 			if model == "" {
-				model = string(config.ModelMain)
+				model = string(config.SlotMain)
 			}
 			fmt.Printf("%-15s %-12s %-8s %s\n", id, mode, model, truncateDescription(a.Description))
 		}

@@ -20,7 +20,7 @@ func addReviewerAgent(t *testing.T, coord *coordinator) {
 		Name:         "Reviewer",
 		Description:  "reviews code",
 		Mode:         config.AgentModePrimary,
-		Model:        config.ModelMain,
+		Slot:         config.SlotMain,
 		Prompt:       "you review",
 		AllowedTools: coder.AllowedTools,
 		AllowedMCP:   coder.AllowedMCP,

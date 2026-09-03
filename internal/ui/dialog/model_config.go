@@ -50,8 +50,8 @@ type ModelConfig struct {
 
 	provider  catwalk.Provider
 	model     config.SelectedModel
-	base      catwalk.Model
-	modelType config.ModelConfigName
+	base      config.ProviderModel
+	modelType config.SlotName
 
 	frame   *Frame
 	metrics FrameMetrics
@@ -78,8 +78,8 @@ func NewModelConfig(
 	isOnboarding bool,
 	provider catwalk.Provider,
 	model config.SelectedModel,
-	base catwalk.Model,
-	modelType config.ModelConfigName,
+	base config.ProviderModel,
+	modelType config.SlotName,
 ) *ModelConfig {
 	t := com.Styles
 
@@ -102,10 +102,10 @@ func NewModelConfig(
 	}
 
 	m.inputs[modelCfgFieldEffort].Placeholder = effortPlaceholder(base)
-	m.inputs[modelCfgFieldEffort].SetValue(cmp.Or(model.ReasoningEffort, base.DefaultReasoningEffort))
+	m.inputs[modelCfgFieldEffort].SetValue(base.DefaultReasoningEffort)
 	m.inputs[modelCfgFieldMaxTokens].Placeholder = strconv.FormatInt(defaultModelMaxTokens, 10)
 	m.inputs[modelCfgFieldMaxTokens].SetValue(strconv.FormatInt(
-		cmp.Or(model.MaxTokens, base.DefaultMaxTokens, defaultModelMaxTokens), 10))
+		cmp.Or(base.DefaultMaxTokens, defaultModelMaxTokens), 10))
 	m.inputs[modelCfgFieldContextWindow].Placeholder = strconv.FormatInt(defaultModelContextWindow, 10)
 	m.inputs[modelCfgFieldContextWindow].SetValue(strconv.FormatInt(
 		cmp.Or(base.ContextWindow, defaultModelContextWindow), 10))
@@ -133,7 +133,7 @@ func NewModelConfig(
 
 // effortPlaceholder names the levels the model advertises, falling back
 // to the usual three when it advertises none.
-func effortPlaceholder(base catwalk.Model) string {
+func effortPlaceholder(base config.ProviderModel) string {
 	if len(base.ReasoningLevels) > 0 {
 		return strings.Join(base.ReasoningLevels, " / ") + " — blank for none"
 	}
@@ -219,10 +219,6 @@ func (m *ModelConfig) submit() Action {
 
 	effort := strings.TrimSpace(m.inputs[modelCfgFieldEffort].Value())
 
-	selected := m.model
-	selected.ReasoningEffort = effort
-	selected.MaxTokens = maxTokens
-
 	entry := m.base
 	entry.ID = m.model.Model
 	entry.Name = cmp.Or(entry.Name, m.model.Model)
@@ -241,7 +237,7 @@ func (m *ModelConfig) submit() Action {
 
 	return ActionConfigureModel{
 		Provider:  m.provider,
-		Model:     selected,
+		Model:     m.model,
 		Catwalk:   entry,
 		ModelType: m.modelType,
 	}

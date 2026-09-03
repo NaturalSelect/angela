@@ -3,6 +3,8 @@ package config
 import (
 	"testing"
 
+	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/require"
 )
 
@@ -10,22 +12,41 @@ func activeTestConfig() *Config {
 	temp := 0.5
 	return &Config{
 		Options: &Options{},
-		Models: map[ModelConfigName]SelectedModel{
-			ModelMain: {
-				Provider:        "anthropic",
-				Model:           "claude",
-				ProviderOptions: map[string]any{"beta": true},
-				Variants: map[string]SelectedModelOverride{
-					"careful": {Temperature: &temp},
+		Slots: map[SlotName]SelectedModel{
+			SlotMain:  {Provider: "anthropic", Model: "claude"},
+			SlotChore: {Provider: "openai", Model: "gpt-mini"},
+			"fast":    {Provider: "groq", Model: "llama"},
+		},
+		// The preset that used to live on SlotMain's SelectedModel now
+		// lives on the provider's catalog entry.
+		Providers: csync.NewMapFrom(map[string]ProviderConfig{
+			"anthropic": {
+				ID: "anthropic",
+				Models: []ProviderModel{
+					{
+						Model: catwalk.Model{
+							ID:      "claude",
+							Options: catwalk.ModelOptions{ProviderOptions: map[string]any{"beta": true}},
+						},
+						Variants: map[string]SelectedModelOverride{
+							"careful": {Temperature: &temp},
+						},
+					},
 				},
 			},
-			ModelChore: {Provider: "openai", Model: "gpt-mini"},
-			"fast":     {Provider: "groq", Model: "llama"},
-		},
+			"openai": {
+				ID:     "openai",
+				Models: []ProviderModel{{Model: catwalk.Model{ID: "gpt-mini"}}},
+			},
+			"groq": {
+				ID:     "groq",
+				Models: []ProviderModel{{Model: catwalk.Model{ID: "llama"}}},
+			},
+		}),
 		Agents: map[string]Agent{
-			"coder":   {ID: "coder", Model: ModelMain, DisabledTools: []string{"bash"}},
-			"scout":   {ID: "scout", Model: "fast", ContextPaths: []string{"NOTES.md"}},
-			"typo":    {ID: "typo", Model: "mian"},
+			"coder":   {ID: "coder", Slot: SlotMain, DisabledTools: []string{"bash"}},
+			"scout":   {ID: "scout", Slot: "fast", ContextPaths: []string{"NOTES.md"}},
+			"typo":    {ID: "typo", Slot: "mian"},
 			"unnamed": {ID: "unnamed"},
 		},
 	}
@@ -39,7 +60,7 @@ func TestInstantiateAgentCopiesFromGlobalConfig(t *testing.T) {
 	active, ok := cfg.InstantiateAgent("scout")
 	require.True(t, ok)
 	require.Equal(t, "scout", active.Agent.ID)
-	require.Equal(t, ModelConfigName("fast"), active.ModelName)
+	require.Equal(t, SlotName("fast"), active.Slot)
 	require.Equal(t, "groq", active.Model.Provider)
 	require.Equal(t, "llama", active.Model.Model)
 }
@@ -61,13 +82,13 @@ func TestInstantiateAgentFallsBackToMainOnBadModelName(t *testing.T) {
 	// A typo in the model name must not brick the agent.
 	active, ok := cfg.InstantiateAgent("typo")
 	require.True(t, ok)
-	require.Equal(t, ModelMain, active.ModelName)
+	require.Equal(t, SlotMain, active.Slot)
 	require.Equal(t, "claude", active.Model.Model)
 
 	// An agent that names no model at all resolves to main too.
 	active, ok = cfg.InstantiateAgent("unnamed")
 	require.True(t, ok)
-	require.Equal(t, ModelMain, active.ModelName)
+	require.Equal(t, SlotMain, active.Slot)
 	require.Equal(t, "claude", active.Model.Model)
 }
 
@@ -83,15 +104,9 @@ func TestInstantiatedAgentsDoNotShareMutableState(t *testing.T) {
 
 	// Editing one session's instance must not reach the other, nor
 	// the published config every other reader still holds.
-	a.Model.ProviderOptions["beta"] = false
-	a.Model.Variants["careful"] = SelectedModelOverride{}
 	a.Agent.DisabledTools[0] = "view"
 
-	require.Equal(t, true, b.Model.ProviderOptions["beta"])
-	require.NotNil(t, b.Model.Variants["careful"].Temperature)
 	require.Equal(t, "bash", b.Agent.DisabledTools[0])
-
-	require.Equal(t, true, cfg.Models[ModelMain].ProviderOptions["beta"])
 	require.Equal(t, "bash", cfg.Agents["coder"].DisabledTools[0])
 }
 
@@ -104,12 +119,12 @@ func TestActiveAgentStateRoundTripKeepsModelAndRefreshesDefinition(t *testing.T)
 	require.True(t, ok)
 
 	// The session picks a model the config never named for it.
-	active.ModelName = "fast"
+	active.Slot = "fast"
 	active.Model = SelectedModel{Provider: "groq", Model: "llama"}
 	state := active.State()
 
 	require.Equal(t, "coder", state.Agent)
-	require.Equal(t, ModelConfigName("fast"), state.ModelName)
+	require.Equal(t, SlotName("fast"), state.Slot)
 
 	// Meanwhile the config file changed the agent's prompt.
 	agent := cfg.Agents["coder"]
@@ -135,7 +150,7 @@ func TestRestoreFallsBackWhenStateCarriesNoModel(t *testing.T) {
 	// blank out the agent's configured model.
 	restored, ok := cfg.Restore(ActiveAgentState{Agent: "scout"})
 	require.True(t, ok)
-	require.Equal(t, ModelConfigName("fast"), restored.ModelName)
+	require.Equal(t, SlotName("fast"), restored.Slot)
 	require.Equal(t, "llama", restored.Model.Model)
 }
 
@@ -157,12 +172,12 @@ func TestActiveAgentStateIsZero(t *testing.T) {
 
 // TestInternalAgentInheritsTheHostsModelOnAMatchingRole is the point of
 // the host override: a session switched to a big model must compact
-// with that model, not with whatever the global ModelMain slot says.
+// with that model, not with whatever the global SlotMain slot says.
 func TestInternalAgentInheritsTheHostsModelOnAMatchingRole(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
-	cfg.Agents["compact"] = Agent{ID: "compact", Model: ModelMain}
+	cfg.Agents["compact"] = Agent{ID: "compact", Slot: SlotMain}
 
 	host, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
@@ -172,7 +187,7 @@ func TestInternalAgentInheritsTheHostsModelOnAMatchingRole(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "claude-opus", compact.Model.Model,
 		"compaction must follow the model the session actually picked")
-	require.Equal(t, ModelMain, compact.ModelName)
+	require.Equal(t, SlotMain, compact.Slot)
 }
 
 // TestInternalAgentOnAnotherRoleIgnoresTheHost pins the other half:
@@ -182,7 +197,7 @@ func TestInternalAgentOnAnotherRoleIgnoresTheHost(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
-	cfg.Agents["title"] = Agent{ID: "title", Model: ModelChore}
+	cfg.Agents["title"] = Agent{ID: "title", Slot: SlotChore}
 
 	host, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
@@ -200,7 +215,7 @@ func TestInternalAgentWithoutAHostFallsBackToConfig(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
-	cfg.Agents["generate"] = Agent{ID: "generate", Model: ModelMain}
+	cfg.Agents["generate"] = Agent{ID: "generate", Slot: SlotMain}
 
 	generate, ok := cfg.InstantiateFor("generate", ActiveAgent{})
 	require.True(t, ok)
@@ -208,27 +223,27 @@ func TestInternalAgentWithoutAHostFallsBackToConfig(t *testing.T) {
 }
 
 // TestInternalAgentDoesNotShareMutableStateWithItsHost pins that an
-// inherited model is copied, not aliased. Without it, retuning the
-// compact instance would reach into the session's own model.
+// inherited model is copied by value, not aliased: retuning the
+// host's model after the internal agent was instantiated must not
+// reach back into the instance that already copied it.
 func TestInternalAgentDoesNotShareMutableStateWithItsHost(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
-	cfg.Agents["compact"] = Agent{ID: "compact", Model: ModelMain}
+	cfg.Agents["compact"] = Agent{ID: "compact", Slot: SlotMain}
 
 	host, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
 
 	compact, ok := cfg.InstantiateFor("compact", host)
 	require.True(t, ok)
-	require.NotNil(t, compact.Model.Variants["careful"])
+	require.Equal(t, host.Model, compact.Model)
 
-	compact.Model.Variants["careful"] = SelectedModelOverride{}
-	compact.Model.ProviderOptions["beta"] = false
+	host.Model = SelectedModel{Provider: "changed", Model: "changed"}
 
-	require.NotEqual(t, SelectedModelOverride{}, host.Model.Variants["careful"],
-		"editing the internal agent must not reach into the session's model")
-	require.Equal(t, true, host.Model.ProviderOptions["beta"])
+	require.Equal(t, "anthropic", compact.Model.Provider,
+		"the inherited model must be copied, not aliased to the host's")
+	require.Equal(t, "claude", compact.Model.Model)
 }
 
 // TestUnknownInternalAgentIsReported keeps a missing agent a caller

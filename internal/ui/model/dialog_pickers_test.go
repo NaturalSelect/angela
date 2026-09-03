@@ -38,7 +38,7 @@ func pickerDlgWithConfig(t *testing.T, ws *MockWorkspace, cfg *config.Config) *U
 	m.agentActive = workspace.ActiveAgent{
 		AgentID:    "coder",
 		ModelCfg:   config.SelectedModel{Model: "test-model"},
-		CatwalkCfg: catwalk.Model{ReasoningLevels: []string{"low", "high"}},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ReasoningLevels: []string{"low", "high"}}},
 	}
 	return m
 }
@@ -323,7 +323,7 @@ func TestVariantsDialog_OpenWithZeroVariantsWarns(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	m := newDialogUI(t, ws)
-	m.agentActive.CatwalkCfg = catwalk.Model{} // no reasoning levels
+	m.agentActive.CatwalkCfg = config.ProviderModel{} // no reasoning levels
 	m.agentActive.ModelCfg = config.SelectedModel{}
 
 	cmd := m.openVariantsDialog()

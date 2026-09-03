@@ -172,7 +172,7 @@ func TestAFreshSessionKeepsFollowingTheConfiguredModel(t *testing.T) {
 	require.Equal(t, "small-model", before.Model.Model)
 
 	cfg := coord.cfg.Config()
-	cfg.Models[config.ModelChore] = config.SelectedModel{Provider: "mock", Model: "large-model"}
+	cfg.Slots[config.SlotChore] = config.SelectedModel{Provider: "mock", Model: "large-model"}
 
 	after, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
@@ -190,12 +190,12 @@ func TestEditingAModelStopsFollowingTheConfig(t *testing.T) {
 
 	picked := config.SelectedModel{Provider: "mock", Model: "large-model"}
 	require.NoError(t, editActive(t, coord, sess.ID, config.ActiveAgentEdit{
-		ModelName: config.ModelChore,
-		Model:     &picked,
+		Slot:  config.SlotChore,
+		Model: &picked,
 	}))
 
 	cfg := coord.cfg.Config()
-	cfg.Models[config.ModelChore] = config.SelectedModel{Provider: "mock", Model: "small-model"}
+	cfg.Slots[config.SlotChore] = config.SelectedModel{Provider: "mock", Model: "small-model"}
 
 	active, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
@@ -225,7 +225,7 @@ func TestEditKeepsTheAgentsSlotWhenTheCallerOmitsIt(t *testing.T) {
 	active, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
 	require.Equal(t, "large-model", active.Model.Model)
-	require.Equal(t, before.ModelName, active.ModelName,
+	require.Equal(t, before.Slot, active.Slot,
 		"an omitted slot must keep the one the agent runs on")
 }
 
@@ -240,13 +240,13 @@ func TestEditRejectsASlotTheAgentDoesNotRunOn(t *testing.T) {
 
 	before, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Equal(t, config.ModelChore, before.ModelName,
+	require.Equal(t, config.SlotChore, before.Slot,
 		"this coordinator's agent is expected to run on the chore slot")
 
 	picked := config.SelectedModel{Provider: "mock", Model: "large-model"}
 	err = editActive(t, coord, sess.ID, config.ActiveAgentEdit{
-		ModelName: config.ModelMain,
-		Model:     &picked,
+		Slot:  config.SlotMain,
+		Model: &picked,
 	})
 	require.ErrorIs(t, err, ErrModelSlotMismatch)
 
@@ -254,7 +254,7 @@ func TestEditRejectsASlotTheAgentDoesNotRunOn(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, before.Model.Model, active.Model.Model,
 		"a rejected edit must leave the instance alone")
-	require.Equal(t, config.ModelChore, active.ModelName)
+	require.Equal(t, config.SlotChore, active.Slot)
 }
 
 // TestEditActiveAgentMovesEverythingAtOnce covers the combined edit the
@@ -275,9 +275,9 @@ func TestEditActiveAgentMovesEverythingAtOnce(t *testing.T) {
 	active, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
 	require.Equal(t, testReviewerAgent, active.Agent.ID)
-	require.True(t, active.Model.Think)
+	require.True(t, active.Think)
 
-	require.False(t, coord.cfg.Config().Models[config.ModelMain].Think,
+	require.False(t, coord.cfg.Config().GetModelForSlot(config.SlotMain).Think,
 		"the thinking flag must land on the session, never on the global config")
 }
 
@@ -302,9 +302,9 @@ func TestEditActiveAgentRejectsSubagents(t *testing.T) {
 
 	cfg := coord.cfg.Config()
 	cfg.Agents["helper"] = config.Agent{
-		ID:    "helper",
-		Mode:  config.AgentModeSubagent,
-		Model: config.ModelChore,
+		ID:   "helper",
+		Mode: config.AgentModeSubagent,
+		Slot: config.SlotChore,
 	}
 
 	sess, err := coord.sessions.Create(t.Context(), "session")

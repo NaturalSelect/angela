@@ -17,7 +17,7 @@ import (
 
 const cfgProviderID = "acme"
 
-func newModelConfigDialog(t *testing.T, base catwalk.Model) *ModelConfig {
+func newModelConfigDialog(t *testing.T, base config.ProviderModel) *ModelConfig {
 	t.Helper()
 	s := styles.CharmtonePantera()
 	return NewModelConfig(
@@ -26,7 +26,7 @@ func newModelConfigDialog(t *testing.T, base catwalk.Model) *ModelConfig {
 		catwalk.Provider{ID: cfgProviderID, Name: "Acme"},
 		config.SelectedModel{Provider: cfgProviderID, Model: "typed-model"},
 		base,
-		config.ModelMain,
+		config.SlotMain,
 	)
 }
 
@@ -48,7 +48,7 @@ func submit(m *ModelConfig) Action {
 func TestAnUnknownModelGetsTheDefaults(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 
 	require.Equal(t, []string{"", "32768", "1048576"}, fieldValues(m))
 }
@@ -58,13 +58,13 @@ func TestAnUnknownModelGetsTheDefaults(t *testing.T) {
 func TestAKnownModelPrefillsFromItsCatalogEntry(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{
+	m := newModelConfigDialog(t, config.ProviderModel{Model: catwalk.Model{
 		ID:                     "typed-model",
 		Name:                   "Typed",
 		ContextWindow:          200000,
 		DefaultMaxTokens:       8192,
 		DefaultReasoningEffort: "medium",
-	})
+	}})
 
 	require.Equal(t, []string{"medium", "8192", "200000"}, fieldValues(m))
 }
@@ -72,19 +72,19 @@ func TestAKnownModelPrefillsFromItsCatalogEntry(t *testing.T) {
 func TestSubmittingEmitsTheConfiguredModel(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	m.inputs[modelCfgFieldMaxTokens].SetValue("4096")
 	m.inputs[modelCfgFieldContextWindow].SetValue("65536")
 
 	action, ok := submit(m).(ActionConfigureModel)
 	require.True(t, ok)
 
-	require.Equal(t, int64(4096), action.Model.MaxTokens)
+	require.Equal(t, int64(4096), action.Catwalk.DefaultMaxTokens)
 	require.Equal(t, "typed-model", action.Catwalk.ID)
 	require.Equal(t, "typed-model", action.Catwalk.Name)
 	require.Equal(t, int64(65536), action.Catwalk.ContextWindow)
 	require.Equal(t, int64(4096), action.Catwalk.DefaultMaxTokens)
-	require.Equal(t, config.ModelMain, action.ModelType)
+	require.Equal(t, config.SlotMain, action.ModelType)
 }
 
 // TestBlankNumbersFallBackToTheDefaults treats an emptied field as "I
@@ -92,13 +92,13 @@ func TestSubmittingEmitsTheConfiguredModel(t *testing.T) {
 func TestBlankNumbersFallBackToTheDefaults(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	m.inputs[modelCfgFieldMaxTokens].SetValue("")
 	m.inputs[modelCfgFieldContextWindow].SetValue("  ")
 
 	action, ok := submit(m).(ActionConfigureModel)
 	require.True(t, ok)
-	require.Equal(t, defaultModelMaxTokens, action.Model.MaxTokens)
+	require.Equal(t, defaultModelMaxTokens, action.Catwalk.DefaultMaxTokens)
 	require.Equal(t, defaultModelContextWindow, action.Catwalk.ContextWindow)
 }
 
@@ -118,7 +118,7 @@ func TestInvalidNumbersBlockTheSubmission(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			m := newModelConfigDialog(t, catwalk.Model{})
+			m := newModelConfigDialog(t, config.ProviderModel{})
 			m.inputs[tc.field].SetValue(tc.value)
 
 			require.Nil(t, submit(m), "an unusable value must not be accepted")
@@ -134,13 +134,13 @@ func TestInvalidNumbersBlockTheSubmission(t *testing.T) {
 func TestAnEffortIsDeclaredSupported(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	m.inputs[modelCfgFieldEffort].SetValue("xhigh")
 
 	action, ok := submit(m).(ActionConfigureModel)
 	require.True(t, ok)
 
-	require.Equal(t, "xhigh", action.Model.ReasoningEffort)
+	require.Equal(t, "xhigh", action.Catwalk.DefaultReasoningEffort)
 	require.True(t, action.Catwalk.CanReason)
 	require.Contains(t, action.Catwalk.ReasoningLevels, "xhigh")
 	require.Equal(t, "xhigh", action.Catwalk.DefaultReasoningEffort)
@@ -151,10 +151,10 @@ func TestAnEffortIsDeclaredSupported(t *testing.T) {
 func TestAnEffortIsNotDuplicatedInTheLevels(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{
+	m := newModelConfigDialog(t, config.ProviderModel{Model: catwalk.Model{
 		CanReason:       true,
 		ReasoningLevels: []string{"low", "high"},
-	})
+	}})
 	m.inputs[modelCfgFieldEffort].SetValue("high")
 
 	action := submit(m).(ActionConfigureModel)
@@ -166,11 +166,11 @@ func TestAnEffortIsNotDuplicatedInTheLevels(t *testing.T) {
 func TestABlankEffortLeavesReasoningAlone(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	m.inputs[modelCfgFieldEffort].SetValue("")
 
 	action := submit(m).(ActionConfigureModel)
-	require.Empty(t, action.Model.ReasoningEffort)
+	require.Empty(t, action.Catwalk.DefaultReasoningEffort)
 	require.False(t, action.Catwalk.CanReason)
 	require.Empty(t, action.Catwalk.ReasoningLevels)
 }
@@ -178,7 +178,7 @@ func TestABlankEffortLeavesReasoningAlone(t *testing.T) {
 func TestFocusWrapsAcrossTheFields(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	next := tea.KeyPressMsg{Code: tea.KeyTab}
 
 	require.Equal(t, modelCfgFieldEffort, m.focused)
@@ -196,7 +196,7 @@ func TestFocusWrapsAcrossTheFields(t *testing.T) {
 func TestEscapeClosesTheDialog(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	require.IsType(t, ActionClose{}, m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEscape}))
 }
 
@@ -235,11 +235,11 @@ func TestTheCursorLandsInTheFocusedInput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			m := newModelConfigDialog(t, catwalk.Model{
+			m := newModelConfigDialog(t, config.ProviderModel{Model: catwalk.Model{
 				ContextWindow:          200000,
 				DefaultMaxTokens:       8192,
 				DefaultReasoningEffort: "medium",
-			})
+			}})
 			m.focusInput(tc.field)
 
 			rows, cur := drawModelConfig(t, m)
@@ -265,7 +265,7 @@ func TestTheCursorLandsInTheFocusedInput(t *testing.T) {
 func TestLabelsAlignWithTheirInputs(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	rows, _ := drawModelConfig(t, m)
 
 	for _, label := range modelCfgFieldLabels {
@@ -298,7 +298,7 @@ func TestLabelsAlignWithTheirInputs(t *testing.T) {
 func TestTheValidationErrorIsRendered(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	m.inputs[modelCfgFieldMaxTokens].SetValue("many")
 	require.Nil(t, submit(m))
 
@@ -309,7 +309,7 @@ func TestTheValidationErrorIsRendered(t *testing.T) {
 func TestTheHelpAdvertisesTheFormKeys(t *testing.T) {
 	t.Parallel()
 
-	m := newModelConfigDialog(t, catwalk.Model{})
+	m := newModelConfigDialog(t, config.ProviderModel{})
 	keys := helpKeys(m.ShortHelp())
 	require.Contains(t, keys, "enter")
 	require.Contains(t, keys, "esc")

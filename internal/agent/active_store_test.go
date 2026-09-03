@@ -46,9 +46,9 @@ func (f *fakeActiveIO) materialize(_ string, state config.ActiveAgentState) (con
 		agentID = config.AgentCoder
 	}
 	return config.ActiveAgent{
-		Agent:     config.Agent{ID: agentID},
-		ModelName: state.ModelName,
-		Model:     state.Model,
+		Agent: config.Agent{ID: agentID},
+		Slot:  state.Slot,
+		Model: state.Model,
 	}, nil
 }
 

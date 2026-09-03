@@ -50,7 +50,7 @@ func largeModelProviderID(ws workspace.Workspace) string {
 	if cfg == nil {
 		return ""
 	}
-	return cfg.Models[config.ModelMain].Provider
+	return cfg.Slots[config.SlotMain].Provider
 }
 
 // CenterRect returns a new [Rectangle] centered within the given area with the

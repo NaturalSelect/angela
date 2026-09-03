@@ -483,9 +483,6 @@ func responsesAPIEnabled(providerCfg config.ProviderConfig, modelID string) bool
 // models or gateway aliases. Otherwise it takes the model default when valid, and
 // finally falls back to the first configured reasoning level.
 func effectiveReasoningEffort(model Model) string {
-	if effort := model.ModelCfg.ReasoningEffort; effort != "" {
-		return effort
-	}
 	if !model.CatwalkCfg.CanReason {
 		return ""
 	}
@@ -541,16 +538,8 @@ func (c *coordinator) compactFor(ctx context.Context, sessionID string, host con
 func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCacheKey string) fantasy.ProviderOptions {
 	options := fantasy.ProviderOptions{}
 
-	cfgOpts := []byte("{}")
 	providerCfgOpts := []byte("{}")
 	catwalkOpts := []byte("{}")
-
-	if model.ModelCfg.ProviderOptions != nil {
-		data, err := json.Marshal(model.ModelCfg.ProviderOptions)
-		if err == nil {
-			cfgOpts = data
-		}
-	}
 
 	if providerCfg.ProviderOptions != nil {
 		data, err := json.Marshal(providerCfg.ProviderOptions)
@@ -569,7 +558,6 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 	readers := []io.Reader{
 		bytes.NewReader(catwalkOpts),
 		bytes.NewReader(providerCfgOpts),
-		bytes.NewReader(cfgOpts),
 	}
 
 	got, err := jsons.Merge(readers)
@@ -629,7 +617,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 			case !hasEffort && shouldSetEffort:
 				extraBody["reasoning_effort"] = reasoningEffort
 			case !hasThink && model.CatwalkCfg.CanReason:
-				if model.ModelCfg.Think {
+				if model.Think {
 					extraBody["thinking"] = map[string]any{"type": "enabled"}
 				} else {
 					extraBody["thinking"] = map[string]any{"type": "disabled"}
@@ -641,7 +629,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 			switch {
 			case !hasEffort && shouldSetEffort:
 				mergedOptions["effort"] = reasoningEffort
-			case !hasThink && model.ModelCfg.Think:
+			case !hasThink && model.Think:
 				mergedOptions["thinking"] = map[string]any{"budget_tokens": 2000}
 			}
 
@@ -737,7 +725,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 		switch providerCfg.ID {
 		case string(catwalk.InferenceProviderIoNet):
 			if _, ok := extraBody["reasoning"]; !ok && model.CatwalkCfg.CanReason {
-				if model.ModelCfg.Think {
+				if model.Think {
 					extraBody["reasoning"] = map[string]string{"effort": "medium"}
 				} else {
 					extraBody["reasoning"] = map[string]string{"effort": "none"}
@@ -745,7 +733,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 			}
 
 		case string(catwalk.InferenceProviderZAI), string(catwalk.InferenceProviderDeepSeek):
-			if model.ModelCfg.Think || reasoningEffort != "" {
+			if model.Think || reasoningEffort != "" {
 				extraBody["thinking"] = map[string]any{"type": "enabled"}
 			} else {
 				extraBody["thinking"] = map[string]any{"type": "disabled"}
@@ -754,7 +742,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 		case string(catwalk.InferenceProviderFireworks):
 			// NOTE: Fireworks break if we set both `reasoning_effort` and `thinking`.
 			if reasoningEffort == "" {
-				if model.ModelCfg.Think {
+				if model.Think {
 					extraBody["thinking"] = map[string]any{"type": "enabled"}
 				} else {
 					extraBody["thinking"] = map[string]any{"type": "disabled"}
@@ -763,7 +751,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 
 		case string(catwalk.InferenceProviderBaseten):
 			extraBody["chat_template_args"] = map[string]any{
-				"enable_thinking": model.ModelCfg.Think || reasoningEffort != "" && reasoningEffort != "none",
+				"enable_thinking": model.Think || reasoningEffort != "" && reasoningEffort != "none",
 			}
 
 		case string(catwalk.InferenceProviderOpenCodeGo), string(catwalk.InferenceProviderOpenCodeZen):
@@ -771,7 +759,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 			// "reasoning_split" must be true so thinking content is returned
 			// in the "reasoning_content" field instead of inline in "content".
 			if strings.HasPrefix(strings.ToLower(model.CatwalkCfg.ID), "minimax") {
-				if model.CatwalkCfg.CanReason && (model.ModelCfg.Think || reasoningEffort != "") {
+				if model.CatwalkCfg.CanReason && (model.Think || reasoningEffort != "") {
 					extraBody["thinking"] = map[string]any{"type": "adaptive"}
 					extraBody["reasoning_split"] = true
 				} else {
@@ -781,7 +769,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 
 		case string(catwalk.InferenceProviderAlibabaSingapore), string(catwalk.InferenceProviderAlibabaUS):
 			if model.CatwalkCfg.CanReason {
-				extraBody["enable_thinking"] = model.ModelCfg.Think || reasoningEffort != ""
+				extraBody["enable_thinking"] = model.Think || reasoningEffort != ""
 			}
 		}
 
@@ -874,11 +862,11 @@ func withAnthropicUserID(extraBody map[string]any, promptCacheKey string) map[st
 
 func mergeCallOptions(model Model, cfg config.ProviderConfig, promptCacheKey string) (fantasy.ProviderOptions, *float64, *float64, *int64, *float64, *float64) {
 	modelOptions := getProviderOptions(model, cfg, promptCacheKey)
-	temp := cmp.Or(model.ModelCfg.Temperature, model.CatwalkCfg.Options.Temperature)
-	topP := cmp.Or(model.ModelCfg.TopP, model.CatwalkCfg.Options.TopP)
-	topK := cmp.Or(model.ModelCfg.TopK, model.CatwalkCfg.Options.TopK)
-	freqPenalty := cmp.Or(model.ModelCfg.FrequencyPenalty, model.CatwalkCfg.Options.FrequencyPenalty)
-	presPenalty := cmp.Or(model.ModelCfg.PresencePenalty, model.CatwalkCfg.Options.PresencePenalty)
+	temp := model.CatwalkCfg.Options.Temperature
+	topP := model.CatwalkCfg.Options.TopP
+	topK := model.CatwalkCfg.Options.TopK
+	freqPenalty := model.CatwalkCfg.Options.FrequencyPenalty
+	presPenalty := model.CatwalkCfg.Options.PresencePenalty
 	return modelOptions, temp, topP, topK, freqPenalty, presPenalty
 }
 
@@ -1179,7 +1167,7 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 		// An unknown preset is an error here, where the user is
 		// watching and can pick again; per-turn resolution stays
 		// lenient about the same name for the opposite reason.
-		if v := next.Agent.Variant; v != "" && !slices.Contains(model.ModelCfg.VariantNames(&model.CatwalkCfg), v) {
+		if v := next.Agent.Variant; v != "" && !slices.Contains(model.CatwalkCfg.VariantNames(), v) {
 			return current, false, fmt.Errorf("%w: %q on %q", ErrVariantNotAvailable, v, model.ModelCfg.Model)
 		}
 		change, switched, agentID, result = moved, model, next.Agent.ID, next
@@ -1298,9 +1286,9 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 		// inherits this model. An omitted name keeps the agent's own; a
 		// name that disagrees would silently break that inheritance, so
 		// it is reported rather than taken.
-		if edit.ModelName != "" && edit.ModelName != next.ModelName {
+		if edit.Slot != "" && edit.Slot != next.Slot {
 			return current, change, fmt.Errorf("%w: %q runs on %q, not %q",
-				ErrModelSlotMismatch, next.Agent.ID, next.ModelName, edit.ModelName)
+				ErrModelSlotMismatch, next.Agent.ID, next.Slot, edit.Slot)
 		}
 		next.Model = *edit.Model
 		change.modelMoved = true
@@ -1318,8 +1306,10 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 		next.VariantPick = &pick
 	}
 
-	if think, ok := thinkAfter(edit, next.Model.Think); ok {
-		next.Model.Think = think
+	if think, ok := thinkAfter(edit, next.Think); ok {
+		next.Think = think
+		pick := think
+		next.ThinkPick = &pick
 		change.thinkMoved = true
 	}
 
@@ -1383,7 +1373,7 @@ func variantSwitchedText(from, to, modelName string) string {
 
 // buildModel resolves the single model an ActiveAgent runs on. The
 // model is already materialized on the instance, so this no longer
-// consults the shared Config.Models table — that lookup, and its
+// consults the shared Config.Slots table — that lookup, and its
 // fallback for a bad name, moved into config.InstantiateAgent.
 func (c *coordinator) buildModel(ctx context.Context, active config.ActiveAgent, isSubAgent bool) (Model, error) {
 	agent := active.Agent
@@ -1397,7 +1387,7 @@ func (c *coordinator) buildModel(ctx context.Context, active config.ActiveAgent,
 		return Model{}, errModelProviderNotConfigured
 	}
 
-	var catwalkModel *catwalk.Model
+	var catwalkModel *config.ProviderModel
 	for _, m := range providerCfg.Models {
 		if m.ID == modelCfg.Model {
 			catwalkModel = &m
@@ -1409,13 +1399,15 @@ func (c *coordinator) buildModel(ctx context.Context, active config.ActiveAgent,
 
 	// The variant overlay lands before the provider is built so that
 	// provider options a variant sets reach buildProvider too.
-	modelCfg, variantApplied := modelCfg.WithVariant(agent.Variant, catwalkModel)
+	resolvedCatwalk, variantApplied := catwalkModel.WithVariant(agent.Variant)
 	if agent.Variant != "" && !variantApplied {
 		slog.Warn("Unknown model variant; falling back to the model baseline",
-			"agent", agent.ID, "model", active.ModelName, "variant", agent.Variant)
+			"agent", agent.ID, "model", active.Slot, "variant", agent.Variant)
 	}
 
-	provider, err := c.buildProvider(providerCfg, modelCfg, isSubAgent)
+	think := active.Think
+
+	provider, err := c.buildProvider(providerCfg, resolvedCatwalk, think, isSubAgent)
 	if err != nil {
 		return Model{}, err
 	}
@@ -1432,19 +1424,21 @@ func (c *coordinator) buildModel(ctx context.Context, active config.ActiveAgent,
 
 	resolved := Model{
 		Model:      languageModel,
-		CatwalkCfg: *catwalkModel,
+		CatwalkCfg: resolvedCatwalk,
 		ModelCfg:   modelCfg,
 		FlatRate:   providerCfg.FlatRate,
+		Think:      think,
 	}
 	if variantApplied {
 		resolved.Variant = agent.Variant
 	}
 
-	// Baking the agent's temperature into the model's config lets every
-	// downstream reader of Model().ModelCfg.Temperature (mergeCallOptions,
-	// runSubAgent) pick it up without knowing about the agent at all.
+	// Baking the agent's temperature into the model's catalog options lets
+	// every downstream reader of Model().CatwalkCfg.Options.Temperature
+	// (mergeCallOptions, runSubAgent) pick it up without knowing about the
+	// agent at all.
 	if agent.Temperature != nil {
-		resolved.ModelCfg.Temperature = agent.Temperature
+		resolved.CatwalkCfg.Options.Temperature = agent.Temperature
 	}
 
 	return resolved, nil
@@ -1669,22 +1663,22 @@ func (c *coordinator) buildGoogleVertexProvider(headers map[string]string, optio
 	return google.New(opts...)
 }
 
-func (c *coordinator) isAnthropicThinking(model config.SelectedModel) bool {
-	if model.Think {
+func (c *coordinator) isAnthropicThinking(model config.ProviderModel, think bool) bool {
+	if think {
 		return true
 	}
-	opts, err := anthropic.ParseOptions(model.ProviderOptions)
+	opts, err := anthropic.ParseOptions(model.Options.ProviderOptions)
 	return err == nil && opts.Thinking != nil
 }
 
-func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model config.SelectedModel, isSubAgent bool) (fantasy.Provider, error) {
+func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model config.ProviderModel, think bool, isSubAgent bool) (fantasy.Provider, error) {
 	headers := maps.Clone(providerCfg.ExtraHeaders)
 	if headers == nil {
 		headers = make(map[string]string)
 	}
 
 	// handle special headers for anthropic
-	if providerCfg.Type == anthropic.Name && c.isAnthropicThinking(model) {
+	if providerCfg.Type == anthropic.Name && c.isAnthropicThinking(model, think) {
 		if v, ok := headers["anthropic-beta"]; ok {
 			headers["anthropic-beta"] = v + ",interleaved-thinking-2025-05-14"
 		} else {
@@ -1697,7 +1691,7 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 
 	switch providerCfg.ID {
 	case string(catwalk.InferenceProviderOpenCodeGo), string(catwalk.InferenceProviderOpenCodeZen):
-		if opencodeMessagesModels[model.Model] {
+		if opencodeMessagesModels[model.ID] {
 			return c.buildAnthropicProvider(baseURL, apiKey, headers, providerCfg.ID)
 		}
 	}
@@ -2172,11 +2166,11 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 			SummarizeProviderOptions: compact.options,
 			Compact:                  compact.agent,
 			SummarizeOnAuthRefresh:   compact.onAuthRefresh,
-			Temperature:              model.ModelCfg.Temperature,
-			TopP:                     model.ModelCfg.TopP,
-			TopK:                     model.ModelCfg.TopK,
-			FrequencyPenalty:         model.ModelCfg.FrequencyPenalty,
-			PresencePenalty:          model.ModelCfg.PresencePenalty,
+			Temperature:              model.CatwalkCfg.Options.Temperature,
+			TopP:                     model.CatwalkCfg.Options.TopP,
+			TopK:                     model.CatwalkCfg.Options.TopK,
+			FrequencyPenalty:         model.CatwalkCfg.Options.FrequencyPenalty,
+			PresencePenalty:          model.CatwalkCfg.Options.PresencePenalty,
 			NonInteractive:           true,
 			OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
 		})
@@ -2328,11 +2322,11 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 		SummarizeProviderOptions: compact.options,
 		Compact:                  compact.agent,
 		SummarizeOnAuthRefresh:   compact.onAuthRefresh,
-		Temperature:              model.ModelCfg.Temperature,
-		TopP:                     model.ModelCfg.TopP,
-		TopK:                     model.ModelCfg.TopK,
-		FrequencyPenalty:         model.ModelCfg.FrequencyPenalty,
-		PresencePenalty:          model.ModelCfg.PresencePenalty,
+		Temperature:              model.CatwalkCfg.Options.Temperature,
+		TopP:                     model.CatwalkCfg.Options.TopP,
+		TopK:                     model.CatwalkCfg.Options.TopK,
+		FrequencyPenalty:         model.CatwalkCfg.Options.FrequencyPenalty,
+		PresencePenalty:          model.CatwalkCfg.Options.PresencePenalty,
 		OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
 	})
 	return err

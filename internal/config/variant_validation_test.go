@@ -4,6 +4,8 @@ import (
 	"math"
 	"testing"
 
+	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,23 +42,30 @@ func TestInvalidVariantsAreDroppedBeforeUse(t *testing.T) {
 
 			cfg := &Config{
 				Options: &Options{},
-				Models: map[ModelConfigName]SelectedModel{
-					ModelMain: {
-						Provider: "anthropic",
-						Model:    "claude",
-						Variants: map[string]SelectedModelOverride{"custom": tt.override},
+				Providers: csync.NewMapFrom(map[string]ProviderConfig{
+					"anthropic": {
+						ID: "anthropic",
+						Models: []ProviderModel{
+							{
+								Model:    catwalk.Model{ID: "claude"},
+								Variants: map[string]SelectedModelOverride{"custom": tt.override},
+							},
+						},
 					},
-				},
+				}),
 			}
 
 			dropInvalidVariants(cfg)
 
-			_, present := cfg.Models[ModelMain].Variants["custom"]
+			model := cfg.GetModel("anthropic", "claude")
+			require.NotNil(t, model)
+
+			_, present := model.Variants["custom"]
 			require.Equal(t, tt.keep, present)
 
 			// A dropped variant must not be offered anywhere, or the
 			// UI lets a user select a name that cannot be applied.
-			names := cfg.Models[ModelMain].VariantNames(nil)
+			names := model.VariantNames()
 			require.Equal(t, tt.keep, len(names) == 1)
 		})
 	}
@@ -70,29 +79,35 @@ func TestValidVariantsSurviveConfigPreparation(t *testing.T) {
 
 	cfg := &Config{
 		Options: &Options{},
-		Models: map[ModelConfigName]SelectedModel{
-			ModelMain: {
-				Provider: "anthropic",
-				Model:    "claude",
-				Variants: map[string]SelectedModelOverride{
-					"careful": {Temperature: &good},
-					"broken":  {Temperature: &bad},
+		Providers: csync.NewMapFrom(map[string]ProviderConfig{
+			"anthropic": {
+				ID: "anthropic",
+				Models: []ProviderModel{
+					{
+						Model: catwalk.Model{ID: "claude"},
+						Variants: map[string]SelectedModelOverride{
+							"careful": {Temperature: &good},
+							"broken":  {Temperature: &bad},
+						},
+					},
 				},
 			},
-		},
+		}),
 	}
 
 	prepareResolvedConfig(cfg)
 
-	require.Equal(t, []string{"careful"}, cfg.Models[ModelMain].VariantNames(nil))
+	model := cfg.GetModel("anthropic", "claude")
+	require.NotNil(t, model)
+	require.Equal(t, []string{"careful"}, model.VariantNames())
 
 	// The surviving variant still applies its parameters.
-	applied, ok := cfg.Models[ModelMain].WithVariant("careful", nil)
+	applied, ok := model.WithVariant("careful")
 	require.True(t, ok)
-	require.InDelta(t, 0.4, *applied.Temperature, 0.0001)
+	require.InDelta(t, 0.4, *applied.Options.Temperature, 0.0001)
 
 	// The dropped one degrades to the baseline instead of poisoning it.
-	baseline, ok := cfg.Models[ModelMain].WithVariant("broken", nil)
+	baseline, ok := model.WithVariant("broken")
 	require.False(t, ok)
-	require.Nil(t, baseline.Temperature)
+	require.Nil(t, baseline.Options.Temperature)
 }

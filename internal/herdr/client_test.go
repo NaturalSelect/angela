@@ -3,6 +3,7 @@ package herdr
 import (
 	"encoding/json"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,6 +12,18 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+// shortSocketDir returns a fresh temp directory suitable as the base
+// for a Unix socket path. Unlike t.TempDir(), it does not embed the
+// test name, so paths built under it stay well below the 104-byte
+// macOS sun_path limit regardless of how long the test name is.
+func shortSocketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "herdr-sock")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
 
 // newTestClient creates a Client backed by a MockSender that records
 // state transitions, in call order, without connecting to a real Unix
@@ -203,8 +216,8 @@ func TestCloseReleasesAgentAndClosesSender(t *testing.T) {
 
 func TestUnixSenderDeliversOverSocket(t *testing.T) {
 	t.Parallel()
-	sockPath := filepath.Join(t.TempDir(), "herdr.sock")
-	ln, err := net.Listen("unix", sockPath)
+	sockPath := filepath.Join(shortSocketDir(t), "s.sock")
+	ln, err := net.Listen("unix", sockPath) //nolint:noctx
 	require.NoError(t, err)
 	defer ln.Close()
 

@@ -89,6 +89,7 @@ func TestGetPromptMessages_NoSession(t *testing.T) {
 }
 
 func TestRefreshPrompts(t *testing.T) {
+	t.Parallel()
 	t.Run("no session logs and returns without touching state", func(t *testing.T) {
 		t.Parallel()
 

@@ -3613,53 +3613,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "catwalk.Model": {
-            "type": "object",
-            "properties": {
-                "can_reason": {
-                    "type": "boolean"
-                },
-                "context_window": {
-                    "type": "integer"
-                },
-                "cost_per_1m_in": {
-                    "type": "number"
-                },
-                "cost_per_1m_in_cached": {
-                    "type": "number"
-                },
-                "cost_per_1m_out": {
-                    "type": "number"
-                },
-                "cost_per_1m_out_cached": {
-                    "type": "number"
-                },
-                "default_max_tokens": {
-                    "type": "integer"
-                },
-                "default_reasoning_effort": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "options": {
-                    "$ref": "#/definitions/catwalk.ModelOptions"
-                },
-                "reasoning_levels": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "supports_attachments": {
-                    "type": "boolean"
-                }
-            }
-        },
         "catwalk.ModelOptions": {
             "type": "object",
             "properties": {
@@ -3693,8 +3646,12 @@ const docTemplate = `{
                 "model": {
                     "$ref": "#/definitions/config.SelectedModel"
                 },
-                "model_name": {
-                    "$ref": "#/definitions/config.ModelConfigName"
+                "slot": {
+                    "$ref": "#/definitions/config.SlotName"
+                },
+                "think": {
+                    "description": "Think is the thinking-mode value the user picked, and is absent\nwhen they never touched it, for the same reason Variant is: a\nmodel's catalog default must keep reaching a session that never\noverrode it.",
+                    "type": "boolean"
                 },
                 "variant": {
                     "description": "Variant is the preset the user picked, and is absent when they\nnever picked one. The distinction matters: Agent.Variant also\nholds config-derived defaults, and persisting one of those\nwould freeze it — changing the default in the config file\nwould then never reach this session again. A pointer to the\nempty string is a real pick, namely backing out of a preset.",
@@ -3761,15 +3718,15 @@ const docTemplate = `{
                         }
                     ]
                 },
-                "model": {
-                    "$ref": "#/definitions/config.ModelConfigName"
-                },
                 "name": {
                     "type": "string"
                 },
                 "prompt": {
                     "description": "Prompt is the system prompt text. When set it replaces the\nbuilt-in template for this agent. The text is parsed as a Go\ntemplate with the same data as built-in templates.",
                     "type": "string"
+                },
+                "slot": {
+                    "$ref": "#/definitions/config.SlotName"
                 },
                 "temperature": {
                     "description": "Temperature overrides the model's default sampling temperature.",
@@ -4034,17 +3991,6 @@ const docTemplate = `{
                 "$ref": "#/definitions/config.MCPConfig"
             }
         },
-        "config.ModelConfigName": {
-            "type": "string",
-            "enum": [
-                "main",
-                "chore"
-            ],
-            "x-enum-varnames": [
-                "ModelMain",
-                "ModelChore"
-            ]
-        },
         "config.Permissions": {
             "type": "object",
             "properties": {
@@ -4065,55 +4011,74 @@ const docTemplate = `{
                 }
             }
         },
-        "config.SelectedModel": {
+        "config.ProviderModel": {
             "type": "object",
             "properties": {
-                "frequency_penalty": {
-                    "type": "number"
-                },
-                "max_tokens": {
-                    "description": "Overrides the default model configuration.",
-                    "type": "integer"
-                },
-                "model": {
-                    "description": "The model id as used by the provider API.\nRequired.",
-                    "type": "string"
-                },
-                "presence_penalty": {
-                    "type": "number"
-                },
-                "provider": {
-                    "description": "The model provider, same as the key/id used in the providers config.\nRequired.",
-                    "type": "string"
-                },
-                "provider_options": {
-                    "description": "Override provider specific options.",
-                    "type": "object",
-                    "additionalProperties": {}
-                },
-                "reasoning_effort": {
-                    "description": "Only used by models that use the openai provider and need this set.",
-                    "type": "string"
-                },
-                "temperature": {
-                    "type": "number"
-                },
-                "think": {
-                    "description": "Used by anthropic models that can reason to indicate if the model should think.",
+                "can_reason": {
                     "type": "boolean"
                 },
-                "top_k": {
+                "context_window": {
                     "type": "integer"
                 },
-                "top_p": {
+                "cost_per_1m_in": {
                     "type": "number"
                 },
+                "cost_per_1m_in_cached": {
+                    "type": "number"
+                },
+                "cost_per_1m_out": {
+                    "type": "number"
+                },
+                "cost_per_1m_out_cached": {
+                    "type": "number"
+                },
+                "default_max_tokens": {
+                    "type": "integer"
+                },
+                "default_reasoning_effort": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "options": {
+                    "$ref": "#/definitions/catwalk.ModelOptions"
+                },
+                "reasoning_levels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supports_attachments": {
+                    "type": "boolean"
+                },
+                "think": {
+                    "description": "Think sets the default thinking mode for Anthropic-family\nmodels that support it. A session can still flip this with\n/think; Think only decides where a fresh session starts.",
+                    "type": "boolean"
+                },
                 "variants": {
-                    "description": "Variants are named parameter presets over the fields above. They\nkeep the model identity and override only the keys they name, so\nN models by M presets stays N+M configs instead of N*M.",
+                    "description": "Variants are named parameter presets over this model. They\noverride only the keys they name, so N models by M presets\nstays N+M configs instead of N*M. Selecting one is how a\nsession overrides this model's defaults for a turn.",
                     "type": "object",
                     "additionalProperties": {
                         "$ref": "#/definitions/config.SelectedModelOverride"
                     }
+                }
+            }
+        },
+        "config.SelectedModel": {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "description": "The model id as used by the provider API.\nRequired.",
+                    "type": "string"
+                },
+                "provider": {
+                    "description": "The model provider, same as the key/id used in the providers config.\nRequired.",
+                    "type": "string"
                 }
             }
         },
@@ -4150,6 +4115,17 @@ const docTemplate = `{
                     "type": "number"
                 }
             }
+        },
+        "config.SlotName": {
+            "type": "string",
+            "enum": [
+                "main",
+                "chore"
+            ],
+            "x-enum-varnames": [
+                "SlotMain",
+                "SlotChore"
+            ]
         },
         "config.TUIOptions": {
             "type": "object",
@@ -4277,13 +4253,6 @@ const docTemplate = `{
                 "mcp": {
                     "$ref": "#/definitions/config.MCPs"
                 },
-                "models": {
-                    "description": "Named model configurations. \"main\" and \"chore\" ship as seeds;\nany other name may be defined and referenced by an agent.",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/config.SelectedModel"
-                    }
-                },
                 "options": {
                     "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Options"
                 },
@@ -4306,6 +4275,13 @@ const docTemplate = `{
                         "items": {
                             "$ref": "#/definitions/config.SelectedModel"
                         }
+                    }
+                },
+                "slots": {
+                    "description": "Named model configurations. \"main\" and \"chore\" ship as seeds;\nany other name may be defined and referenced by an agent.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.SelectedModel"
                     }
                 },
                 "tools": {
@@ -4407,11 +4383,13 @@ const docTemplate = `{
             "type": "integer",
             "enum": [
                 0,
-                1
+                1,
+                2
             ],
             "x-enum-varnames": [
                 "ScopeGlobal",
-                "ScopeWorkspace"
+                "ScopeWorkspace",
+                "ScopeEphemeral"
             ]
         },
         "github_com_NaturalSelect_angela_internal_proto.Message": {
@@ -4586,13 +4564,16 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "catwalk_cfg": {
-                    "$ref": "#/definitions/catwalk.Model"
+                    "$ref": "#/definitions/config.ProviderModel"
                 },
                 "model_cfg": {
                     "$ref": "#/definitions/config.SelectedModel"
                 },
-                "model_name": {
-                    "$ref": "#/definitions/config.ModelConfigName"
+                "slot": {
+                    "$ref": "#/definitions/config.SlotName"
+                },
+                "think": {
+                    "type": "boolean"
                 },
                 "variant": {
                     "type": "string"
@@ -4609,11 +4590,11 @@ const docTemplate = `{
                 "model": {
                     "$ref": "#/definitions/config.SelectedModel"
                 },
-                "model_name": {
-                    "description": "Model, when non-nil, replaces the session's model outright, and\nModelName labels which global slot it was taken from.",
+                "slot": {
+                    "description": "Model, when non-nil, replaces the session's model outright, and\nSlot labels which global slot it was taken from.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/config.ModelConfigName"
+                            "$ref": "#/definitions/config.SlotName"
                         }
                     ]
                 },
@@ -4641,7 +4622,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "model": {
-                    "$ref": "#/definitions/catwalk.Model"
+                    "$ref": "#/definitions/config.ProviderModel"
                 },
                 "model_cfg": {
                     "$ref": "#/definitions/config.SelectedModel"
@@ -4762,11 +4743,11 @@ const docTemplate = `{
                 "model": {
                     "$ref": "#/definitions/config.SelectedModel"
                 },
-                "model_name": {
-                    "$ref": "#/definitions/config.ModelConfigName"
-                },
                 "scope": {
                     "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Scope"
+                },
+                "slot": {
+                    "$ref": "#/definitions/config.SlotName"
                 }
             }
         },
@@ -4794,7 +4775,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "model": {
-                    "$ref": "#/definitions/catwalk.Model"
+                    "$ref": "#/definitions/config.ProviderModel"
                 },
                 "provider_id": {
                     "type": "string"
@@ -4807,11 +4788,11 @@ const docTemplate = `{
         "proto.ConfigPruneRecentModelsRequest": {
             "type": "object",
             "properties": {
-                "model_name": {
-                    "$ref": "#/definitions/config.ModelConfigName"
-                },
                 "scope": {
                     "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Scope"
+                },
+                "slot": {
+                    "$ref": "#/definitions/config.SlotName"
                 },
                 "stale": {
                     "type": "array",

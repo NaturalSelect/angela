@@ -61,22 +61,22 @@ var defaultContextPaths = []string{
 	"Agents.md",
 }
 
-// ModelConfigName names a model configuration slot. The two seeds below
+// SlotName names a model configuration slot. The two seeds below
 // ship with Angela; users may define any other name and point an agent
 // at it via the agent's Model field.
-type ModelConfigName string
+type SlotName string
 
-// String returns the string representation of the [ModelConfigName].
-func (s ModelConfigName) String() string {
+// String returns the string representation of the [SlotName].
+func (s SlotName) String() string {
 	return string(s)
 }
 
 const (
-	// ModelMain is the workhorse model configuration.
-	ModelMain ModelConfigName = "main"
-	// ModelChore is the cheap model configuration used for auxiliary
+	// SlotMain is the workhorse model configuration.
+	SlotMain SlotName = "main"
+	// SlotChore is the cheap model configuration used for auxiliary
 	// work such as titles and summaries.
-	ModelChore ModelConfigName = "chore"
+	SlotChore SlotName = "chore"
 )
 
 const (
@@ -117,6 +117,12 @@ const (
 	AgentModeBranch AgentMode = "branch"
 )
 
+// SelectedModel is a slot's model reference: which model, from which
+// provider. Every preset that shapes how the model is called —
+// reasoning effort, thinking, sampling parameters, token limits,
+// named variants — lives on the provider's catalog entry
+// ([ProviderModel]) instead, so a slot never duplicates config that
+// belongs to the model itself.
 type SelectedModel struct {
 	// The model id as used by the provider API.
 	// Required.
@@ -124,28 +130,6 @@ type SelectedModel struct {
 	// The model provider, same as the key/id used in the providers config.
 	// Required.
 	Provider string `json:"provider" jsonschema:"required,description=The model provider ID that matches a key in the providers config,example=openai"`
-
-	// Only used by models that use the openai provider and need this set.
-	ReasoningEffort string `json:"reasoning_effort,omitempty" jsonschema:"description=Reasoning effort level for OpenAI models that support it,enum=low,enum=medium,enum=high"`
-
-	// Used by anthropic models that can reason to indicate if the model should think.
-	Think bool `json:"think,omitempty" jsonschema:"description=Enable thinking mode for Anthropic models that support reasoning"`
-
-	// Overrides the default model configuration.
-	MaxTokens        int64    `json:"max_tokens,omitempty" jsonschema:"description=Maximum number of tokens for model responses,maximum=200000,example=4096"`
-	Temperature      *float64 `json:"temperature,omitempty" jsonschema:"description=Sampling temperature,minimum=0,maximum=1,example=0.7"`
-	TopP             *float64 `json:"top_p,omitempty" jsonschema:"description=Top-p (nucleus) sampling parameter,minimum=0,maximum=1,example=0.9"`
-	TopK             *int64   `json:"top_k,omitempty" jsonschema:"description=Top-k sampling parameter"`
-	FrequencyPenalty *float64 `json:"frequency_penalty,omitempty" jsonschema:"description=Frequency penalty to reduce repetition"`
-	PresencePenalty  *float64 `json:"presence_penalty,omitempty" jsonschema:"description=Presence penalty to increase topic diversity"`
-
-	// Override provider specific options.
-	ProviderOptions map[string]any `json:"provider_options,omitempty" jsonschema:"description=Additional provider-specific options for the model"`
-
-	// Variants are named parameter presets over the fields above. They
-	// keep the model identity and override only the keys they name, so
-	// N models by M presets stays N+M configs instead of N*M.
-	Variants map[string]SelectedModelOverride `json:"variants,omitempty" jsonschema:"description=Named parameter presets layered over this model config"`
 }
 
 type ProviderConfig struct {
@@ -211,7 +195,59 @@ type ProviderConfig struct {
 	AutoDiscoverModels *bool `json:"discover_models,omitempty" jsonschema:"description=Auto-discover models from /v1/models endpoint. When true with existing models they are merged (yours win),default=true"`
 
 	// The provider models
-	Models []catwalk.Model `json:"models,omitempty" jsonschema:"description=List of models available from this provider"`
+	Models []ProviderModel `json:"models,omitempty" jsonschema:"description=List of models available from this provider"`
+}
+
+// ProviderModel is one of a provider's models. It extends catwalk's
+// own catalog metadata (cost, context window, reasoning capability,
+// sampling defaults) with the presets Angela layers on top: catwalk
+// is an external module with no room for either, and both belong
+// next to the model they apply to rather than on every slot that
+// happens to point at it.
+type ProviderModel struct {
+	catwalk.Model
+
+	// Think sets the default thinking mode for Anthropic-family
+	// models that support it. A session can still flip this with
+	// /think; Think only decides where a fresh session starts.
+	Think bool `json:"think,omitempty" jsonschema:"description=Default thinking mode for Anthropic models that support reasoning"`
+
+	// Variants are named parameter presets over this model. They
+	// override only the keys they name, so N models by M presets
+	// stays N+M configs instead of N*M. Selecting one is how a
+	// session overrides this model's defaults for a turn.
+	Variants map[string]SelectedModelOverride `json:"variants,omitempty" jsonschema:"description=Named parameter presets layered over this model's defaults"`
+}
+
+// providerModelsToCatwalk strips Angela's own presets and returns the
+// plain catalog entries, which is the shape the known-provider
+// registry and model discovery both speak.
+func providerModelsToCatwalk(models []ProviderModel) []catwalk.Model {
+	out := make([]catwalk.Model, len(models))
+	for i, m := range models {
+		out[i] = m.Model
+	}
+	return out
+}
+
+// wrapCatwalkModels re-attaches Angela's own presets to freshly
+// discovered or registry catalog entries, carrying Think and Variants
+// over from any existing entry with the same ID so a rediscovery
+// never wipes out presets the user configured.
+func wrapCatwalkModels(models []catwalk.Model, existing []ProviderModel) []ProviderModel {
+	byID := make(map[string]ProviderModel, len(existing))
+	for _, m := range existing {
+		byID[m.ID] = m
+	}
+	out := make([]ProviderModel, len(models))
+	for i, m := range models {
+		out[i] = ProviderModel{Model: m}
+		if prev, ok := byID[m.ID]; ok {
+			out[i].Think = prev.Think
+			out[i].Variants = prev.Variants
+		}
+	}
+	return out
 }
 
 // ToProvider converts the [ProviderConfig] to a [catwalk.Provider].
@@ -238,6 +274,7 @@ func (c *ProviderConfig) ToProvider() catwalk.Provider {
 			ReasoningLevels:        model.ReasoningLevels,
 			DefaultReasoningEffort: model.DefaultReasoningEffort,
 			SupportsImages:         model.SupportsImages,
+			Options:                model.Options,
 		}
 	}
 
@@ -718,7 +755,7 @@ type Agent struct {
 	// hands the conversation to the user.
 	Mode AgentMode `json:"mode,omitempty" jsonschema:"description=Agent mode: primary or subagent or branch,enum=primary,enum=subagent,enum=branch"`
 
-	Model ModelConfigName `json:"model,omitempty" jsonschema:"description=Name of the model config to use,default=main"`
+	Slot SlotName `json:"slot,omitempty" jsonschema:"description=Name of the model config to use,default=main"`
 
 	// Variant names a parameter preset on the model config above.
 	// Unknown names degrade to the model's baseline parameters.
@@ -837,10 +874,10 @@ type Config struct {
 
 	// Named model configurations. "main" and "chore" ship as seeds;
 	// any other name may be defined and referenced by an agent.
-	Models map[ModelConfigName]SelectedModel `json:"models,omitempty" jsonschema:"description=Named model configurations,example={\"main\":{\"model\":\"gpt-4o\",\"provider\":\"openai\"}}"`
+	Slots map[SlotName]SelectedModel `json:"slots,omitempty" jsonschema:"description=Named model configurations,example={\"main\":{\"model\":\"gpt-4o\",\"provider\":\"openai\"}}"`
 
 	// Recently used models stored in the data directory config.
-	RecentModels map[ModelConfigName][]SelectedModel `json:"recent_models,omitempty" jsonschema:"-"`
+	RecentModels map[SlotName][]SelectedModel `json:"recent_models,omitempty" jsonschema:"-"`
 
 	// The providers that are configured
 	Providers *csync.Map[string, ProviderConfig] `json:"providers,omitempty" jsonschema:"description=AI provider configurations"`
@@ -885,12 +922,12 @@ func (c *Config) cloneForWrite() *Config {
 	// Deep: prepareResolvedConfig edits each model's Variants map in
 	// place (dropInvalidVariants deletes from it), so a shallow clone
 	// would write straight through into the published snapshot.
-	if c.Models != nil {
-		models := make(map[ModelConfigName]SelectedModel, len(c.Models))
-		for name, model := range c.Models {
+	if c.Slots != nil {
+		models := make(map[SlotName]SelectedModel, len(c.Slots))
+		for name, model := range c.Slots {
 			models[name] = model.clone()
 		}
-		nc.Models = models
+		nc.Slots = models
 	}
 	nc.RecentModels = maps.Clone(c.RecentModels)
 	nc.MCP = maps.Clone(c.MCP)
@@ -932,7 +969,7 @@ func (c *Config) IsConfigured() bool {
 	return len(c.EnabledProviders()) > 0
 }
 
-func (c *Config) GetModel(provider, model string) *catwalk.Model {
+func (c *Config) GetModel(provider, model string) *ProviderModel {
 	if providerConfig, ok := c.Providers.Get(provider); ok {
 		for _, m := range providerConfig.Models {
 			if m.ID == model {
@@ -958,14 +995,14 @@ func (c *Config) IsModelAvailable(provider, model string) bool {
 	return false
 }
 
-// ModelForName returns the model configuration registered under name.
-func (c *Config) ModelForName(name ModelConfigName) (SelectedModel, bool) {
-	model, ok := c.Models[name]
+// ModelForSlot returns the model configuration registered under slot.
+func (c *Config) ModelForSlot(slot SlotName) (SelectedModel, bool) {
+	model, ok := c.Slots[slot]
 	return model, ok
 }
 
-func (c *Config) GetProviderForModelName(name ModelConfigName) *ProviderConfig {
-	model, ok := c.Models[name]
+func (c *Config) GetProviderForSlot(slot SlotName) *ProviderConfig {
+	model, ok := c.Slots[slot]
 	if !ok {
 		return nil
 	}
@@ -975,8 +1012,8 @@ func (c *Config) GetProviderForModelName(name ModelConfigName) *ProviderConfig {
 	return nil
 }
 
-func (c *Config) GetModelByName(name ModelConfigName) *catwalk.Model {
-	model, ok := c.Models[name]
+func (c *Config) GetModelForSlot(slot SlotName) *ProviderModel {
+	model, ok := c.Slots[slot]
 	if !ok {
 		return nil
 	}
@@ -1110,7 +1147,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// be explicit rather than inherited.
 			Description:  "Angela's default agent — writes and edits code, runs commands, and delegates the rest.",
 			Mode:         AgentModePrimary,
-			Model:        ModelMain,
+			Slot:         SlotMain,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetAll},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetAll},
@@ -1124,7 +1161,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:         "Explore",
 			Description:  "Fast read-only codebase scout — it locates and reports code, never reviews or judges it. Use it proactively, without waiting to be asked, whenever answering would mean searching or reading across several files: finding files by pattern, locating a symbol, definition or its callers, tracing a flow across modules, or mapping the conventions a package follows. Delegating keeps the conclusion in your context instead of the file dumps. Not for a single-fact lookup in a file you can already name, and not for judgment calls — what to build belongs to plan, a root cause that resists investigation to deep_research. It reads excerpts rather than whole files, so state the breadth you need: \"quick\" for one targeted lookup, \"medium\" for moderate exploration, \"very thorough\" for multiple locations and naming conventions.",
 			Mode:         AgentModeSubagent,
-			Model:        ModelMain,
+			Slot:         SlotMain,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, exploreToolNames(), true)},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
@@ -1134,7 +1171,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:         "General",
 			Description:  "General-purpose agent that carries a whole task through and reports back — it inherits the coder's tools, so it can search, analyze, run commands, and edit. Use it for work that is genuinely independent and big enough to be worth a fresh context: a wide multi-file investigation, or several unrelated tracks dispatched as parallel calls. Prefer explore when you only need to locate and read code, and do the work yourself when it fits in a handful of tool calls. Brief it completely — it starts with no memory of this conversation and cannot come back to ask what you meant.",
 			Mode:         AgentModeSubagent,
-			Model:        ModelMain,
+			Slot:         SlotMain,
 			ContextPaths: contextPaths,
 			// General mirrors whatever the coder may use, so tightening
 			// the coder tightens it too.
@@ -1147,7 +1184,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:        "DeepResearch",
 			Description: "Forks this conversation into a branch for a problem that resists ordinary investigation, and hands back a reasoned conclusion. Use it proactively, without waiting to be asked, for a bug whose symptoms contradict the code you read, a fix that failed for reasons you cannot explain, an intermittent or timing-dependent failure, or an architectural choice that is hard to reverse and that you cannot decide with confidence. It reads, runs commands, and argues the question through with the user, but never edits — the finding is the product. Prefer plan when the question is what to build rather than what is true.",
 			Mode:        AgentModeBranch,
-			Model:       ModelMain,
+			Slot:        SlotMain,
 			// A root cause is only credible against the conventions the
 			// code was written under, so it reads the same context files
 			// the coder does.
@@ -1160,7 +1197,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:        "Plan",
 			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it proactively, without waiting to be asked, before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first — getting sign-off before code changes prevents wasted effort. It is read-only — it reads, searches, and asks, but never edits.",
 			Mode:        AgentModeBranch,
-			Model:       ModelMain,
+			Slot:        SlotMain,
 			// The proposal is only worth as much as the conventions it
 			// respects, so plan reads the project's context files the
 			// same way the coder that executes it does.
@@ -1173,7 +1210,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:         "WebFetch",
 			Description:  "Fetches and reads web pages, or searches the web, then answers a question about what it found — the pages never enter your context, only its report. Put the full URL(s) in the prompt together with the question itself: a summary is a task, so ask it for the summary rather than for the page to summarize yourself. Use it instead of the fetch tool whenever the answer needs extraction, summarization, or following links across several pages. It WILL FAIL on authenticated or private URLs (Google Docs, Confluence, Jira, private repositories) — use `gh` or an authenticated MCP tool for those.",
 			Mode:         AgentModeSubagent,
-			Model:        ModelChore,
+			Slot:         SlotChore,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, webFetchToolNames(), true)},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
@@ -1187,7 +1224,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Description:  "Names a session from its first user prompt.",
 			Mode:         AgentModeSubagent,
 			Hidden:       ptr(true),
-			Model:        ModelChore,
+			Slot:         SlotChore,
 			MaxTokens:    ptr(int64(40)),
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
@@ -1202,7 +1239,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// Compaction borrows the workhorse model on purpose:
 			// summarizing on the cheap model silently degrades the only
 			// context a resumed session gets.
-			Model:        ModelMain,
+			Slot:         SlotMain,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
@@ -1213,7 +1250,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Description:  "Writes a new agent definition from a description.",
 			Mode:         AgentModeSubagent,
 			Hidden:       ptr(true),
-			Model:        ModelMain,
+			Slot:         SlotMain,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
@@ -1243,7 +1280,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 // deny-filtered list.
 func newCustomAgent(contextPaths []string) Agent {
 	return Agent{
-		Model:        ModelMain,
+		Slot:         SlotMain,
 		Mode:         AgentModeSubagent,
 		ContextPaths: contextPaths,
 		AllowedTools: &AllowedToolSet{Kind: ToolSetInherited},
@@ -1266,8 +1303,8 @@ func mergeAgent(base, override Agent) Agent {
 	if override.Mode != "" {
 		base.Mode = override.Mode
 	}
-	if override.Model != "" {
-		base.Model = override.Model
+	if override.Slot != "" {
+		base.Slot = override.Slot
 	}
 	if override.Variant != "" {
 		base.Variant = override.Variant
@@ -1425,17 +1462,17 @@ func prepareResolvedConfig(cfg *Config) {
 
 // warnUnreadModelConfigs reports model configs nothing will ever read.
 // Only main and chore are resolved implicitly; any other key has to be
-// named by an agent's model field. A typo, or a name left behind by a
+// named by an agent's slot field. A typo, or a name left behind by a
 // rename, otherwise parses cleanly and is silently ignored.
 func warnUnreadModelConfigs(cfg *Config) {
-	referenced := make(map[ModelConfigName]bool, len(cfg.Agents))
+	referenced := make(map[SlotName]bool, len(cfg.Agents))
 	for _, agent := range cfg.Agents {
-		if agent.Model != "" {
-			referenced[agent.Model] = true
+		if agent.Slot != "" {
+			referenced[agent.Slot] = true
 		}
 	}
-	for name := range cfg.Models {
-		if name == ModelMain || name == ModelChore || referenced[name] {
+	for name := range cfg.Slots {
+		if name == SlotMain || name == SlotChore || referenced[name] {
 			continue
 		}
 		slog.Warn("Model config is never used; no agent names it",

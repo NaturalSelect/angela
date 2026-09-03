@@ -17,12 +17,12 @@ func TestUnavailableCompactAgentIsReportedNotPanicked(t *testing.T) {
 	// Point the compact agent at a provider that is not configured,
 	// the way removing a provider from the config would.
 	cfg := coord.cfg.Config()
-	broken := cfg.Models[config.ModelChore]
+	broken := cfg.Slots[config.SlotChore]
 	broken.Provider = "provider-that-was-removed"
-	cfg.Models[config.ModelChore] = broken
+	cfg.Slots[config.SlotChore] = broken
 
 	compactCfg := cfg.Agents[config.AgentCompact]
-	compactCfg.Model = config.ModelChore
+	compactCfg.Slot = config.SlotChore
 	cfg.Agents[config.AgentCompact] = compactCfg
 
 	compact := coord.buildCompactAgent(t.Context(), config.ActiveAgent{})

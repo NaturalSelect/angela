@@ -32,7 +32,7 @@ func TestCurrentModelSupportsImages(t *testing.T) {
 		ui.agentReady = true
 		ui.agentActiveKnown = true
 		ui.agentActive = workspace.ActiveAgent{
-			CatwalkCfg: catwalk.Model{ID: "test-model", SupportsImages: false},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "test-model", SupportsImages: false}},
 		}
 		require.False(t, ui.currentModelSupportsImages())
 	})
@@ -44,7 +44,7 @@ func TestCurrentModelSupportsImages(t *testing.T) {
 		ui.agentReady = true
 		ui.agentActiveKnown = true
 		ui.agentActive = workspace.ActiveAgent{
-			CatwalkCfg: catwalk.Model{ID: "test-model", SupportsImages: true},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "test-model", SupportsImages: true}},
 		}
 		require.True(t, ui.currentModelSupportsImages())
 	})
@@ -56,7 +56,7 @@ func TestCurrentModelSupportsImages(t *testing.T) {
 		ui.agentReady = true
 		ui.agentActiveKnown = true
 		ui.agentActive = workspace.ActiveAgent{
-			CatwalkCfg: catwalk.Model{ID: "test-model", SupportsImages: true},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "test-model", SupportsImages: true}},
 		}
 		ui.agentActiveSession = "some-other-session"
 		require.False(t, ui.currentModelSupportsImages())
@@ -68,7 +68,7 @@ func TestCurrentModelSupportsImages(t *testing.T) {
 		ui := newTestUIWithConfig(t, nil)
 		ui.agentReady = true
 		ui.agentActive = workspace.ActiveAgent{
-			CatwalkCfg: catwalk.Model{ID: "test-model", SupportsImages: true},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "test-model", SupportsImages: true}},
 		}
 		require.False(t, ui.currentModelSupportsImages(),
 			"a value the probe never confirmed must not be rendered")

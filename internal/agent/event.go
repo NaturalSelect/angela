@@ -44,8 +44,8 @@ func (a *sessionAgent) eventCommon(sessionID string, model Model) []any {
 		"session id", sessionID,
 		"provider", m.Provider,
 		"model", m.Model,
-		"reasoning effort", m.ReasoningEffort,
-		"thinking mode", m.Think,
+		"reasoning effort", model.CatwalkCfg.DefaultReasoningEffort,
+		"thinking mode", model.Think,
 		"yolo mode", a.isYolo,
 	}
 }

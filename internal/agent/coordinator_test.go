@@ -90,9 +90,9 @@ func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCf
 func newMockAgent(t *testing.T, providerID string, maxTokens int64, runFunc func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)) (*mockSessionAgent, resolvedAgent) {
 	t.Helper()
 	model := Model{
-		CatwalkCfg: catwalk.Model{
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
 			DefaultMaxTokens: maxTokens,
-		},
+		}},
 		ModelCfg: config.SelectedModel{
 			Provider: providerID,
 		},
@@ -240,7 +240,7 @@ func TestRunSubAgent(t *testing.T) {
 		assert.Equal(t, "Sub-agent completed but produced no text output.", resp.Content)
 	})
 
-	t.Run("ModelCfg.MaxTokens overrides default", func(t *testing.T) {
+	t.Run("agent MaxTokens overrides the catalog default", func(t *testing.T) {
 		env := testEnv(t)
 		coord := newTestCoordinator(t, env, providerID, providerCfg)
 
@@ -248,19 +248,19 @@ func TestRunSubAgent(t *testing.T) {
 		require.NoError(t, err)
 
 		model := Model{
-			CatwalkCfg: catwalk.Model{
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
 				DefaultMaxTokens: 4096,
-			},
+			}},
 			ModelCfg: config.SelectedModel{
-				Provider:  providerID,
-				MaxTokens: 8192,
+				Provider: providerID,
 			},
 		}
+		agentCfg := config.Agent{MaxTokens: ptrTo(int64(8192))}
 		agent := newMockSessionAgent(t, "", func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 			assert.Equal(t, int64(8192), call.MaxOutputTokens)
 			return agentResultWithText("ok"), nil
 		})
-		resolved := resolvedAgent{Model: model, MaxTokens: maxTokensFor(config.Agent{}, model)}
+		resolved := resolvedAgent{Model: model, MaxTokens: maxTokensFor(agentCfg, model)}
 
 		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
@@ -557,14 +557,14 @@ func TestGetProviderOptionsReasoningEffort(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			model := Model{
-				CatwalkCfg: catwalk.Model{
-					ID:              "claude-opus-4-7",
-					CanReason:       true,
-					ReasoningLevels: []string{"max"},
-				},
+				CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+					ID:                     "claude-opus-4-7",
+					CanReason:              true,
+					ReasoningLevels:        []string{"max"},
+					DefaultReasoningEffort: "max",
+				}},
 				ModelCfg: config.SelectedModel{
-					Provider:        "test",
-					ReasoningEffort: "max",
+					Provider: "test",
 				},
 			}
 			providerCfg := config.ProviderConfig{ID: "test", Type: tc.providerType}
@@ -583,7 +583,7 @@ func TestGetProviderOptionsReasoningEffort(t *testing.T) {
 
 func TestGetProviderOptionsAnthropicUserID(t *testing.T) {
 	model := Model{
-		CatwalkCfg: catwalk.Model{ID: "claude-opus-4-7"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "claude-opus-4-7"}},
 		ModelCfg:   config.SelectedModel{Provider: "test"},
 	}
 
@@ -641,14 +641,18 @@ func TestGetProviderOptionsAnthropicUserID(t *testing.T) {
 
 	t.Run("does not override a user-configured metadata.user_id", func(t *testing.T) {
 		modelWithOverride := Model{
-			CatwalkCfg: catwalk.Model{ID: "claude-opus-4-7"},
-			ModelCfg: config.SelectedModel{
-				Provider: "test",
-				ProviderOptions: map[string]any{
-					"extra_body": map[string]any{
-						"metadata": map[string]any{"user_id": "user-configured-id"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+				ID: "claude-opus-4-7",
+				Options: catwalk.ModelOptions{
+					ProviderOptions: map[string]any{
+						"extra_body": map[string]any{
+							"metadata": map[string]any{"user_id": "user-configured-id"},
+						},
 					},
 				},
+			}},
+			ModelCfg: config.SelectedModel{
+				Provider: "test",
 			},
 		}
 		providerCfg := config.ProviderConfig{ID: "test", Type: catwalk.Type(anthropic.Name)}
@@ -691,11 +695,11 @@ func TestIsUnauthorized(t *testing.T) {
 
 func TestGetProviderOptionsReasoningEffortFallback(t *testing.T) {
 	model := Model{
-		CatwalkCfg: catwalk.Model{
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
 			ID:              "glm-5.2",
 			CanReason:       true,
 			ReasoningLevels: []string{"high", "max"},
-		},
+		}},
 		ModelCfg: config.SelectedModel{
 			Provider: "zai",
 		},
@@ -722,7 +726,7 @@ func TestGetProviderOptionsReasoningEffortFallback(t *testing.T) {
 func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 	t.Run("openai chat completions model sets prompt_cache_key", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "not-a-responses-model"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "not-a-responses-model"}},
 			ModelCfg:   config.SelectedModel{Provider: "openai"},
 		}
 		providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}
@@ -739,7 +743,7 @@ func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 
 	t.Run("openai responses model sets prompt_cache_key under the same options key", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "gpt-5.2"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "gpt-5.2"}},
 			ModelCfg:   config.SelectedModel{Provider: "openai"},
 		}
 		providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}
@@ -756,7 +760,7 @@ func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 
 	t.Run("azure shares the openai code path", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "not-a-responses-model"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "not-a-responses-model"}},
 			ModelCfg:   config.SelectedModel{Provider: "azure"},
 		}
 		providerCfg := config.ProviderConfig{ID: "azure", Type: azure.Name}
@@ -773,10 +777,14 @@ func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 
 	t.Run("openai does not override a user-configured prompt_cache_key", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "not-a-responses-model"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+				ID: "not-a-responses-model",
+				Options: catwalk.ModelOptions{
+					ProviderOptions: map[string]any{"prompt_cache_key": "user-key"},
+				},
+			}},
 			ModelCfg: config.SelectedModel{
-				Provider:        "openai",
-				ProviderOptions: map[string]any{"prompt_cache_key": "user-key"},
+				Provider: "openai",
 			},
 		}
 		providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}
@@ -790,7 +798,7 @@ func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 
 	t.Run("openaicompat sets prompt_cache_key via extra_body and does not mirror for non-Copilot providers", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "some-model"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "some-model"}},
 			ModelCfg:   config.SelectedModel{Provider: "custom"},
 		}
 		providerCfg := config.ProviderConfig{ID: "custom", Type: openaicompat.Name}
@@ -808,12 +816,16 @@ func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 
 	t.Run("openaicompat does not override a user-configured extra_body prompt_cache_key", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "some-model"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+				ID: "some-model",
+				Options: catwalk.ModelOptions{
+					ProviderOptions: map[string]any{
+						"extra_body": map[string]any{"prompt_cache_key": "user-key", "other_field": "keep-me"},
+					},
+				},
+			}},
 			ModelCfg: config.SelectedModel{
 				Provider: "custom",
-				ProviderOptions: map[string]any{
-					"extra_body": map[string]any{"prompt_cache_key": "user-key", "other_field": "keep-me"},
-				},
 			},
 		}
 		providerCfg := config.ProviderConfig{ID: "custom", Type: openaicompat.Name}
@@ -827,7 +839,7 @@ func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 
 	t.Run("copilot responses model mirrors prompt_cache_key under openai.Name", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "gpt-5.2"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "gpt-5.2"}},
 			ModelCfg:   config.SelectedModel{Provider: string(catwalk.InferenceProviderCopilot)},
 		}
 		providerCfg := config.ProviderConfig{ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name}
@@ -849,15 +861,19 @@ func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 
 	t.Run("copilot responses model mirrors other extra_body fields too, not just prompt_cache_key", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "gpt-5.2"},
-			ModelCfg: config.SelectedModel{
-				Provider: string(catwalk.InferenceProviderCopilot),
-				ProviderOptions: map[string]any{
-					"extra_body": map[string]any{
-						"metadata":     map[string]any{"tenant": "acme"},
-						"service_tier": "priority",
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+				ID: "gpt-5.2",
+				Options: catwalk.ModelOptions{
+					ProviderOptions: map[string]any{
+						"extra_body": map[string]any{
+							"metadata":     map[string]any{"tenant": "acme"},
+							"service_tier": "priority",
+						},
 					},
 				},
+			}},
+			ModelCfg: config.SelectedModel{
+				Provider: string(catwalk.InferenceProviderCopilot),
 			},
 		}
 		providerCfg := config.ProviderConfig{ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name}
@@ -876,7 +892,7 @@ func TestGetProviderOptionsPromptCacheKey(t *testing.T) {
 
 	t.Run("copilot non-responses model does not get an openai.Name mirror", func(t *testing.T) {
 		model := Model{
-			CatwalkCfg: catwalk.Model{ID: "gpt-4o"}, // not in copilotResponsesModels
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "gpt-4o"}}, // not in copilotResponsesModels
 			ModelCfg:   config.SelectedModel{Provider: string(catwalk.InferenceProviderCopilot)},
 		}
 		providerCfg := config.ProviderConfig{ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name}

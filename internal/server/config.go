@@ -87,7 +87,7 @@ func (c *controllerV1) handlePostWorkspaceConfigModel(w http.ResponseWriter, r *
 		return
 	}
 
-	if err := c.backend.UpdatePreferredModel(id, req.Scope, req.Name, req.Model); err != nil {
+	if err := c.backend.UpdatePreferredModel(id, req.Scope, req.Slot, req.Model); err != nil {
 		c.handleError(w, r, err)
 		return
 	}
@@ -116,7 +116,7 @@ func (c *controllerV1) handlePostWorkspaceConfigRecentModel(w http.ResponseWrite
 		return
 	}
 
-	if err := c.backend.RecordRecentModel(id, req.Scope, req.Name, req.Model); err != nil {
+	if err := c.backend.RecordRecentModel(id, req.Scope, req.Slot, req.Model); err != nil {
 		c.handleError(w, r, err)
 		return
 	}
@@ -145,7 +145,7 @@ func (c *controllerV1) handlePostWorkspaceConfigPruneRecentModels(w http.Respons
 		return
 	}
 
-	if err := c.backend.PruneRecentModels(id, req.Scope, req.Name, req.Stale); err != nil {
+	if err := c.backend.PruneRecentModels(id, req.Scope, req.Slot, req.Stale); err != nil {
 		c.handleError(w, r, err)
 		return
 	}

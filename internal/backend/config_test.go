@@ -81,7 +81,7 @@ func TestRemoveConfigField_PublishesConfigChanged(t *testing.T) {
 
 func TestUpdatePreferredModel_PublishesConfigChanged(t *testing.T) {
 	if raceEnabled {
-		// UpdatePreferredModel writes config.Models concurrently
+		// UpdatePreferredModel writes config.Slots concurrently
 		// with the agent coordinator's async sub-agent builder
 		// that reads it via buildAgentModels. That race is
 		// pre-existing in the codebase and unrelated to this
@@ -94,7 +94,7 @@ func TestUpdatePreferredModel_PublishesConfigChanged(t *testing.T) {
 	b, ws, evc := newPublishingWorkspace(t)
 
 	model := config.SelectedModel{Provider: "openai", Model: "gpt-4"}
-	require.NoError(t, b.UpdatePreferredModel(ws.ID, config.ScopeGlobal, config.ModelMain, model))
+	require.NoError(t, b.UpdatePreferredModel(ws.ID, config.ScopeGlobal, config.SlotMain, model))
 	awaitConfigChanged(t, evc, ws.ID)
 }
 

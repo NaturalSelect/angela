@@ -47,7 +47,7 @@ type Models struct {
 	// modelName is the model config the dialog writes to. Model config
 	// names are an open set; this dialog edits main and leaves the rest
 	// to agent-level config.
-	modelName config.ModelConfigName
+	modelName config.SlotName
 	providers []catwalk.Provider
 
 	// restrictTo narrows the list to a single provider. Onboarding sets
@@ -102,7 +102,7 @@ func NewModels(com *common.Common, isOnboarding bool, active *workspace.ActiveAg
 	m := &Models{}
 	m.com = com
 	m.isOnboarding = isOnboarding
-	m.modelName = config.ModelMain
+	m.modelName = config.SlotMain
 	m.active = active
 
 	m.frame = NewFrame(t, FrameSpec{
@@ -248,7 +248,7 @@ func (m *Models) HandleMsg(msg tea.Msg) Action {
 			return ActionSelectModel{
 				Provider:       modelItem.prov,
 				Model:          modelItem.SelectedModel(),
-				ModelType:      modelItem.ModelConfigName(),
+				ModelType:      modelItem.Slot(),
 				ReAuthenticate: isEdit,
 			}
 		default:
@@ -375,8 +375,8 @@ func (m *Models) setProviderItems() {
 	// The list opens on what the session runs, not on the global
 	// default: highlighting the global model makes confirming it look
 	// like a no-op while it silently moves the session off its own.
-	currentModel := cfg.Models[m.modelName]
-	if m.active != nil && m.active.ModelName == m.modelName {
+	currentModel := cfg.Slots[m.modelName]
+	if m.active != nil && m.active.Slot == m.modelName {
 		currentModel = m.active.ModelCfg
 	}
 	recentItems := cfg.RecentModels[m.modelName]
@@ -441,10 +441,14 @@ func (m *Models) setProviderItems() {
 		}
 
 		displayProvider := provider
+		models := make([]config.ProviderModel, len(provider.Models))
+		for i, cm := range provider.Models {
+			models[i] = config.ProviderModel{Model: cm}
+		}
 		if providerConfigured {
 			displayProvider.Name = cmp.Or(providerConfig.Name, displayProvider.Name)
-			modelIndex := make(map[string]int, len(displayProvider.Models))
-			for i, model := range displayProvider.Models {
+			modelIndex := make(map[string]int, len(models))
+			for i, model := range models {
 				modelIndex[model.ID] = i
 			}
 			for _, model := range providerConfig.Models {
@@ -453,20 +457,20 @@ func (m *Models) setProviderItems() {
 				}
 				if idx, ok := modelIndex[model.ID]; ok {
 					if model.Name != "" {
-						displayProvider.Models[idx].Name = model.Name
+						models[idx].Name = model.Name
 					}
 					continue
 				}
 				model.Name = cmp.Or(model.Name, model.ID)
-				displayProvider.Models = append(displayProvider.Models, model)
-				modelIndex[model.ID] = len(displayProvider.Models) - 1
+				models = append(models, model)
+				modelIndex[model.ID] = len(models) - 1
 			}
 		}
 
 		name := cmp.Or(displayProvider.Name, providerID)
 
 		group := NewModelGroup(t, name, providerConfigured)
-		for _, model := range displayProvider.Models {
+		for _, model := range models {
 			item := NewModelItem(t, provider, model, m.modelName, false)
 			group.AppendItems(item)
 			itemsMap[item.ID()] = item
@@ -575,6 +579,6 @@ func (m *Models) syncCustomItem(query string) {
 	if prov.ID == "" {
 		prov = catwalk.Provider{ID: m.restrictTo}
 	}
-	model := catwalk.Model{ID: id, Name: id}
+	model := config.ProviderModel{Model: catwalk.Model{ID: id, Name: id}}
 	m.list.SetCustom(NewModelItem(m.com.Styles, prov, model, m.modelName, false))
 }

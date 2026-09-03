@@ -166,12 +166,12 @@ func TestAppWorkspace_AgentActive(t *testing.T) {
 		t.Parallel()
 		fx := newAWFixture(t)
 		active := config.ActiveAgent{
-			Agent:     config.Agent{ID: "coder", Name: "Coder", Variant: "default"},
-			ModelName: "main",
+			Agent: config.Agent{ID: "coder", Name: "Coder", Variant: "default"},
+			Slot:  "main",
 		}
 		model := agent.Model{
 			ModelCfg:   config.SelectedModel{Provider: "anthropic", Model: "claude"},
-			CatwalkCfg: catwalk.Model{ID: "claude"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "claude"}},
 		}
 		fx.coord.EXPECT().ActiveAgent(gomock.Any(), "sess-1").Return(active, model, nil)
 
@@ -180,7 +180,7 @@ func TestAppWorkspace_AgentActive(t *testing.T) {
 		require.Equal(t, ActiveAgent{
 			AgentID:    "coder",
 			AgentName:  "Coder",
-			ModelName:  "main",
+			Slot:       "main",
 			ModelCfg:   model.ModelCfg,
 			CatwalkCfg: model.CatwalkCfg,
 			Variant:    "default",
@@ -211,12 +211,12 @@ func TestAppWorkspace_AgentEditActive(t *testing.T) {
 		fx := newAWFixture(t)
 		edit := config.ActiveAgentEdit{Agent: "task"}
 		active := config.ActiveAgent{
-			Agent:     config.Agent{ID: "task", Name: "Task", Variant: "v1"},
-			ModelName: "main",
+			Agent: config.Agent{ID: "task", Name: "Task", Variant: "v1"},
+			Slot:  "main",
 		}
 		model := agent.Model{
 			ModelCfg:   config.SelectedModel{Provider: "anthropic", Model: "claude"},
-			CatwalkCfg: catwalk.Model{ID: "claude"},
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "claude"}},
 		}
 		fx.coord.EXPECT().EditActiveAgent(gomock.Any(), "sess-1", edit).Return(config.ActiveAgent{}, nil)
 		fx.coord.EXPECT().ActiveAgent(gomock.Any(), "sess-1").Return(active, model, nil)
@@ -226,7 +226,7 @@ func TestAppWorkspace_AgentEditActive(t *testing.T) {
 		require.Equal(t, ActiveAgent{
 			AgentID:    "task",
 			AgentName:  "Task",
-			ModelName:  "main",
+			Slot:       "main",
 			ModelCfg:   model.ModelCfg,
 			CatwalkCfg: model.CatwalkCfg,
 			Variant:    "v1",

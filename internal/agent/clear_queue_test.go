@@ -30,7 +30,7 @@ func TestClearQueueNotifiesEveryDroppedPrompt(t *testing.T) {
 	blocked := &gatedStreamModel{text: "done", gate: make(chan struct{}), entered: make(chan struct{})}
 	resolvedModel := Model{
 		Model:      blocked,
-		CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}},
 	}
 	titles := &coordinator{sessions: env.sessions, cfg: config.NewTestStore(&config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/catwalk/pkg/catwalk"
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -111,9 +110,10 @@ type LSPEvent struct {
 type ActiveAgent struct {
 	AgentID    string
 	AgentName  string
-	ModelName  config.ModelConfigName
-	CatwalkCfg catwalk.Model
+	Slot       config.SlotName
+	CatwalkCfg config.ProviderModel
 	ModelCfg   config.SelectedModel
+	Think      bool
 	Variant    string
 }
 
@@ -245,20 +245,20 @@ type Workspace interface {
 	Resolver() config.VariableResolver
 
 	// Config mutations (proxied to server in client mode)
-	UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error
+	UpdatePreferredModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error
 	// RecordRecentModel adds a model to the recent-models list without
 	// changing which model is selected. Picking a model for a session
 	// still belongs in that session's "recently used" list.
-	RecordRecentModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error
+	RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error
 	// PruneRecentModels drops recent-model entries that no longer
 	// resolve. It names the entries to remove rather than the list to
 	// keep, so a pick recorded while the caller was deciding survives.
-	PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error
+	PruneRecentModels(scope config.Scope, name config.SlotName, stale []config.SelectedModel) error
 	// UpsertProviderModel records a model under a provider's model
 	// list, replacing an entry with the same ID. A model absent from
 	// that list does not survive a config reload, so a hand-typed one
 	// has to be registered before it can be selected.
-	UpsertProviderModel(scope config.Scope, providerID string, model catwalk.Model) error
+	UpsertProviderModel(scope config.Scope, providerID string, model config.ProviderModel) error
 	SetCompactMode(scope config.Scope, enabled bool) error
 	SetProviderAPIKey(scope config.Scope, providerID string, apiKey any) error
 	SetConfigField(scope config.Scope, key string, value any) error

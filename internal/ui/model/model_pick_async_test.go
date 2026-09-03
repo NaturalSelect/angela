@@ -25,13 +25,13 @@ func pickConfig() *config.Config {
 	providers.Set(pickProviderID, config.ProviderConfig{ID: pickProviderID, Name: "Acme"})
 	return &config.Config{
 		Providers: providers,
-		Models: map[config.ModelConfigName]config.SelectedModel{
-			config.ModelMain: {Provider: pickProviderID, Model: "global-model"},
+		Slots: map[config.SlotName]config.SelectedModel{
+			config.SlotMain: {Provider: pickProviderID, Model: "global-model"},
 		},
 	}
 }
 
-func pickAction(slot config.ModelConfigName) dialog.ActionSelectModel {
+func pickAction(slot config.SlotName) dialog.ActionSelectModel {
 	return dialog.ActionSelectModel{
 		Provider:  catwalk.Provider{ID: pickProviderID},
 		Model:     config.SelectedModel{Provider: pickProviderID, Model: "picked-model"},
@@ -65,7 +65,7 @@ func TestASessionPickWritesNothingInsideUpdate(t *testing.T) {
 	pinTTLs(t)
 
 	ws := pickMockWorkspace(t)
-	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	active := workspace.ActiveAgent{Slot: config.SlotMain}
 	m := newBusyUIWithWorkspace(ws)
 	warmCaches(m, false)
 	m.agentActive = active
@@ -74,12 +74,12 @@ func TestASessionPickWritesNothingInsideUpdate(t *testing.T) {
 	// reaching RecordRecentModel, AgentEditActive, or any syncProbes
 	// method here would fail the test immediately, which is the proof
 	// the write does not happen on the Update goroutine.
-	cmd := m.handleSelectModel(pickAction(config.ModelMain))
+	cmd := m.handleSelectModel(pickAction(config.SlotMain))
 
 	var recentModelCalls, editCalls int
 	var editSessionID string
 	ws.EXPECT().RecordRecentModel(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(config.Scope, config.ModelConfigName, config.SelectedModel) error {
+		DoAndReturn(func(config.Scope, config.SlotName, config.SelectedModel) error {
 			recentModelCalls++
 			return nil
 		})
@@ -102,7 +102,7 @@ func TestAGlobalPickWritesNothingInsideUpdate(t *testing.T) {
 	pinTTLs(t)
 
 	ws := pickMockWorkspace(t)
-	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	active := workspace.ActiveAgent{Slot: config.SlotMain}
 	m := newBusyUIWithWorkspace(ws)
 	warmCaches(m, false)
 	m.agentActive = active
@@ -111,11 +111,11 @@ func TestAGlobalPickWritesNothingInsideUpdate(t *testing.T) {
 	// Nothing beyond Config/WorkingDir is stubbed yet: reaching
 	// UpdatePreferredModel, AgentEditActive, or any syncProbes method
 	// here would fail the test immediately.
-	cmd := m.handleSelectModel(pickAction(config.ModelChore))
+	cmd := m.handleSelectModel(pickAction(config.SlotChore))
 
 	var preferredModelCalls int
 	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(config.Scope, config.ModelConfigName, config.SelectedModel) error {
+		DoAndReturn(func(config.Scope, config.SlotName, config.SelectedModel) error {
 			preferredModelCalls++
 			return nil
 		})
@@ -139,11 +139,11 @@ func TestALandingPickIsEphemeral(t *testing.T) {
 	m.session = nil
 	warmCaches(m, false)
 
-	cmd := m.handleSelectModel(pickAction(config.ModelMain))
+	cmd := m.handleSelectModel(pickAction(config.SlotMain))
 
 	var scope config.Scope
 	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(s config.Scope, _ config.ModelConfigName, _ config.SelectedModel) error {
+		DoAndReturn(func(s config.Scope, _ config.SlotName, _ config.SelectedModel) error {
 			scope = s
 			return nil
 		})
@@ -166,7 +166,7 @@ func TestOnboardingStartsTheAgentOffThread(t *testing.T) {
 
 	// InitCoderAgent is deliberately left unstubbed until after this
 	// call: starting the agent must not block Update.
-	cmd := m.handleSelectModel(pickAction(config.ModelMain))
+	cmd := m.handleSelectModel(pickAction(config.SlotMain))
 
 	var initAgentCalls int
 	ws.EXPECT().InitCoderAgent(gomock.Any()).DoAndReturn(func(context.Context) error {
@@ -195,7 +195,7 @@ func TestOnboardingPersistsTheModelBeforeStartingTheAgent(t *testing.T) {
 	init := ws.EXPECT().InitCoderAgent(gomock.Any()).Return(nil)
 	gomock.InOrder(persist, init)
 
-	runCmds(m, m.handleSelectModel(pickAction(config.ModelMain)))
+	runCmds(m, m.handleSelectModel(pickAction(config.SlotMain)))
 }
 
 // TestAFailedGlobalPersistStopsThere is B2. These ran as a tea.Sequence,
@@ -205,14 +205,14 @@ func TestAFailedGlobalPersistStopsThere(t *testing.T) {
 	pinTTLs(t)
 
 	ws := pickMockWorkspace(t)
-	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	active := workspace.ActiveAgent{Slot: config.SlotMain}
 	m := newBusyUIWithWorkspace(ws)
 	warmCaches(m, false)
 	m.agentActive = active
 
 	var preferredModelCalls int
 	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(config.Scope, config.ModelConfigName, config.SelectedModel) error {
+		DoAndReturn(func(config.Scope, config.SlotName, config.SelectedModel) error {
 			preferredModelCalls++
 			return errors.New("disk is full")
 		})
@@ -220,7 +220,7 @@ func TestAFailedGlobalPersistStopsThere(t *testing.T) {
 	// unstubbed: a model that was never persisted must not be applied
 	// to the agent or start it.
 
-	msgs := runCmds(m, m.handleSelectModel(pickAction(config.ModelChore)))
+	msgs := runCmds(m, m.handleSelectModel(pickAction(config.SlotChore)))
 
 	require.Equal(t, 1, preferredModelCalls)
 

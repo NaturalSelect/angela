@@ -58,7 +58,7 @@ func (m *UI) openOnboardingStep(step onboardingStep) tea.Cmd {
 	case onboardingStepProvider:
 		return m.openProvidersDialog()
 	case onboardingStepAuth:
-		return m.openAuthenticationDialog(m.onboarding.provider, config.SelectedModel{}, config.ModelMain)
+		return m.openAuthenticationDialog(m.onboarding.provider, config.SelectedModel{}, config.SlotMain)
 	case onboardingStepModel:
 		return m.openModelsDialogFor(m.onboarding.provider.ID)
 	case onboardingStepModelConfig:
@@ -95,7 +95,7 @@ func (m *UI) openModelConfigDialog() tea.Cmd {
 		m.onboarding.provider,
 		m.onboarding.model,
 		m.onboarding.catwalkModel,
-		config.ModelMain,
+		config.SlotMain,
 	))
 	return nil
 }

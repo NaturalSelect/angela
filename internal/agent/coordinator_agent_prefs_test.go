@@ -27,7 +27,7 @@ func newModelPrefTestCoordinator(t *testing.T, temperature *float64) *coordinato
     "base_url": "http://127.0.0.1:9/v1", "api_key": "test-key",
     "models": [{"id": "large-model", "name": "Large", "context_window": 8192, "default_max_tokens": 128},
                {"id": "small-model", "name": "Small", "context_window": 8192, "default_max_tokens": 128}]}},
-  "models": {"main": {"provider": "mock", "model": "large-model"},
+  "slots": {"main": {"provider": "mock", "model": "large-model"},
              "chore": {"provider": "mock", "model": "small-model"}}
 }`
 	require.NoError(t, os.WriteFile(filepath.Join(env.workingDir, "angela.json"), []byte(angelaJSON), 0o644))
@@ -37,7 +37,7 @@ func newModelPrefTestCoordinator(t *testing.T, temperature *float64) *coordinato
 	cfg.SetupAgents()
 
 	agentCfg := cfg.Config().Agents[config.AgentCoder]
-	agentCfg.Model = config.ModelChore
+	agentCfg.Slot = config.SlotChore
 	agentCfg.Temperature = temperature
 	cfg.Config().Agents[config.AgentCoder] = agentCfg
 
@@ -132,13 +132,13 @@ func TestBuildAgentAppliesTemperature(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, &want)
 
 	first := resolveCoder(t, coord)
-	require.NotNil(t, first.Model.ModelCfg.Temperature)
-	require.Equal(t, want, *first.Model.ModelCfg.Temperature)
+	require.NotNil(t, first.Model.CatwalkCfg.Options.Temperature)
+	require.Equal(t, want, *first.Model.CatwalkCfg.Options.Temperature)
 
 	require.NoError(t, coord.UpdateModels(context.Background()))
 
 	later := resolveCoder(t, coord)
-	require.NotNil(t, later.Model.ModelCfg.Temperature)
-	require.Equal(t, want, *later.Model.ModelCfg.Temperature,
+	require.NotNil(t, later.Model.CatwalkCfg.Options.Temperature)
+	require.Equal(t, want, *later.Model.CatwalkCfg.Options.Temperature,
 		"every turn must keep applying the agent's Temperature override")
 }

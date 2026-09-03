@@ -32,7 +32,7 @@ func newSplitProviderCoordinator(t *testing.T) *coordinator {
     "other": {"id": "other", "name": "Other", "type": "openai",
       "base_url": "http://127.0.0.1:10/v1", "api_key": "other-key",
       "models": [{"id": "tiny-model", "name": "Tiny", "context_window": 8192, "default_max_tokens": 128}]}},
-  "models": {"main": {"provider": "mock", "model": "large-model"},
+  "slots": {"main": {"provider": "mock", "model": "large-model"},
              "chore": {"provider": "other", "model": "tiny-model"}}
 }`
 	require.NoError(t, os.WriteFile(filepath.Join(env.workingDir, "angela.json"), []byte(angelaJSON), 0o644))
@@ -44,11 +44,11 @@ func newSplitProviderCoordinator(t *testing.T) *coordinator {
 	// The coder runs on main, compaction on chore, so the two resolve
 	// to different providers.
 	coderCfg := cfg.Config().Agents[config.AgentCoder]
-	coderCfg.Model = config.ModelMain
+	coderCfg.Slot = config.SlotMain
 	cfg.Config().Agents[config.AgentCoder] = coderCfg
 
 	compactCfg := cfg.Config().Agents[config.AgentCompact]
-	compactCfg.Model = config.ModelChore
+	compactCfg.Slot = config.SlotChore
 	cfg.Config().Agents[config.AgentCompact] = compactCfg
 
 	// A key stored as a template is what gives a provider something to

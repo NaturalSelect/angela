@@ -37,9 +37,9 @@ func stubAgentEditActive(ws *MockWorkspace, active *workspace.ActiveAgent, edits
 			*edits = append(*edits, recordedEdit{sessionID: sessionID, edit: edit})
 			switch {
 			case edit.ToggleThink:
-				active.ModelCfg.Think = !active.ModelCfg.Think
+				active.Think = !active.Think
 			case edit.Think != nil:
-				active.ModelCfg.Think = *edit.Think
+				active.Think = *edit.Think
 			}
 			return *active, nil
 		}).AnyTimes()
@@ -112,7 +112,7 @@ func TestRuntimeEditsGoToTheSessionNotTheConfig(t *testing.T) {
 		},
 		{
 			name:   "thinking mode",
-			active: workspace.ActiveAgent{ModelCfg: config.SelectedModel{Think: false}},
+			active: workspace.ActiveAgent{Think: false},
 			act:    func(m *UI) { runCmds(m, m.toggleThinkingCmd()) },
 			want: func(t *testing.T, edit config.ActiveAgentEdit) {
 				require.True(t, edit.ToggleThink, "a flip is sent as an intent, not a value")
@@ -162,9 +162,9 @@ func TestThinkingStatusReportsTheServersValue(t *testing.T) {
 	m, ws := newMockBusyUI(t)
 	// Another client already turned thinking on; this UI's cache still
 	// says off.
-	active := workspace.ActiveAgent{ModelCfg: config.SelectedModel{Think: true}}
+	active := workspace.ActiveAgent{Think: true}
 	warmCaches(m, false)
-	m.agentActive = workspace.ActiveAgent{ModelCfg: config.SelectedModel{Think: false}}
+	m.agentActive = workspace.ActiveAgent{Think: false}
 
 	var edits []recordedEdit
 	stubAgentEditActive(ws, &active, &edits)
@@ -195,15 +195,15 @@ func TestSelectingTheChoreModelStaysGlobal(t *testing.T) {
 	pinTTLs(t)
 
 	m, _ := newMockBusyUI(t)
-	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	active := workspace.ActiveAgent{Slot: config.SlotMain}
 	warmCaches(m, false)
 	m.agentActive = active
 
 	// handleSelectModel reaches global config for the provider lookup, so
 	// this only exercises the routing decision, not the whole handler.
-	require.Equal(t, modelPickGlobal, m.modelPickScope(config.ModelChore),
+	require.Equal(t, modelPickGlobal, m.modelPickScope(config.SlotChore),
 		"a chore-model pick must not edit the session's agent")
-	require.Equal(t, modelPickSession, m.modelPickScope(config.ModelMain),
+	require.Equal(t, modelPickSession, m.modelPickScope(config.SlotMain),
 		"picking for the slot the session runs on must edit the session")
 }
 
@@ -215,7 +215,7 @@ func TestAnUnprobedAgentIsNotAGlobalPick(t *testing.T) {
 	pinTTLs(t)
 
 	m, ws := newMockBusyUI(t)
-	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	active := workspace.ActiveAgent{Slot: config.SlotMain}
 	warmCaches(m, false)
 	m.agentActive = active
 	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
@@ -232,7 +232,7 @@ func TestAnUnprobedAgentIsNotAGlobalPick(t *testing.T) {
 
 	// The user opens another session; its probe has not landed yet.
 	m.session = &session.Session{ID: "s2"}
-	require.Equal(t, modelPickUnknown, m.modelPickScope(config.ModelMain),
+	require.Equal(t, modelPickUnknown, m.modelPickScope(config.SlotMain),
 		"a pick made before the probe lands must not be routed anywhere yet")
 
 	// A probe that reaches the workspace but fails is the same answer:
@@ -241,7 +241,7 @@ func TestAnUnprobedAgentIsNotAGlobalPick(t *testing.T) {
 	runCmds(m, m.dispatchBusyRefresh())
 	require.Nil(t, m.activeAgent(),
 		"a failed probe must not read as an agent running no model")
-	require.Equal(t, modelPickUnknown, m.modelPickScope(config.ModelMain))
+	require.Equal(t, modelPickUnknown, m.modelPickScope(config.SlotMain))
 }
 
 // TestNoSessionMeansNoSessionScopedEdit pins that the landing screen,
@@ -254,7 +254,7 @@ func TestNoSessionMeansNoSessionScopedEdit(t *testing.T) {
 	m.session = nil
 	warmCaches(m, false)
 
-	require.Equal(t, modelPickEphemeral, m.modelPickScope(config.ModelMain))
+	require.Equal(t, modelPickEphemeral, m.modelPickScope(config.SlotMain))
 	// AgentEditActive deliberately left unstubbed: no session means no
 	// edit, so a call here would fail the test.
 	require.NotNil(t, m.toggleThinkingCmd()(), "thinking must warn, not edit")
@@ -275,7 +275,7 @@ func TestReAuthArrivingBeforeTheProbeIsNotDropped(t *testing.T) {
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().Config().Return(&config.Config{Providers: providers}).AnyTimes()
 	ws.EXPECT().WorkingDir().Return("").AnyTimes()
-	active := workspace.ActiveAgent{ModelName: config.ModelMain}
+	active := workspace.ActiveAgent{Slot: config.SlotMain}
 	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
 
 	m := newBusyUIWithWorkspace(ws)

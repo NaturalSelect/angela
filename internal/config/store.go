@@ -65,11 +65,11 @@ type RuntimeOverrides struct {
 	// pushes channel events when it also appears here. Entries may be written
 	// as "server:<name>" or as a bare "<name>".
 	EnabledChannels []string
-	// Models records the model choices made in this instance, whether
+	// Slots records the model choices made in this instance, whether
 	// persisted or not. They are reapplied after a config reload so that a
 	// selection made here always outranks whatever the shared config file
 	// happens to hold — see pinPreferredModelLocked.
-	Models map[ModelConfigName]SelectedModel
+	Slots map[SlotName]SelectedModel
 }
 
 // ConfigStore is the single entry point for all config access. It owns the
@@ -408,14 +408,14 @@ func (s *ConfigStore) updateLocked(scope Scope, mutate func(*Config) map[string]
 	// pin and the new snapshot must stay invisible until the write
 	// lands, or a failed write leaves the process running on a
 	// configuration that is not on disk and that a later reload undoes.
-	pinned := maps.Clone(s.overrides.Models)
+	pinned := maps.Clone(s.overrides.Slots)
 	fields := mutate(nc)
 	if len(fields) == 0 {
 		s.setConfig(nc)
 		return nil
 	}
 	if err := s.writeConfigFields(scope, fields); err != nil {
-		s.overrides.Models = pinned
+		s.overrides.Slots = pinned
 		return err
 	}
 	s.setConfig(nc)
@@ -437,14 +437,14 @@ func (s *ConfigStore) updateLocked(scope Scope, mutate func(*Config) map[string]
 // internal agents (titling, compaction), which instantiate from config
 // rather than from any session and so have no ActiveAgent of their own
 // to edit. Everything session-scoped goes through
-// Coordinator.EditActiveAgent instead: overriding ModelMain here
+// Coordinator.EditActiveAgent instead: overriding SlotMain here
 // would change the model for every session in the process.
-func (s *ConfigStore) OverridePreferredModel(modelType ModelConfigName, model SelectedModel) {
+func (s *ConfigStore) OverridePreferredModel(modelType SlotName, model SelectedModel) {
 	s.mutateInMemory(func(c *Config) {
-		if c.Models == nil {
-			c.Models = make(map[ModelConfigName]SelectedModel)
+		if c.Slots == nil {
+			c.Slots = make(map[SlotName]SelectedModel)
 		}
-		c.Models[modelType] = model
+		c.Slots[modelType] = model
 		s.pinPreferredModelLocked(modelType, model)
 	})
 }
@@ -457,11 +457,11 @@ func (s *ConfigStore) OverridePreferredModel(modelType ModelConfigName, model Se
 // switch models out from under the user mid-session.
 //
 // Caller must hold writeMu.
-func (s *ConfigStore) pinPreferredModelLocked(modelType ModelConfigName, model SelectedModel) {
-	if s.overrides.Models == nil {
-		s.overrides.Models = make(map[ModelConfigName]SelectedModel)
+func (s *ConfigStore) pinPreferredModelLocked(modelType SlotName, model SelectedModel) {
+	if s.overrides.Slots == nil {
+		s.overrides.Slots = make(map[SlotName]SelectedModel)
 	}
-	s.overrides.Models[modelType] = model
+	s.overrides.Slots[modelType] = model
 }
 
 // RemoveConfigField removes a key from the config file for the given scope.
@@ -502,7 +502,7 @@ func (s *ConfigStore) RemoveConfigField(scope Scope, key string) error {
 // provider catalog and agents on every model switch and dominate selection
 // latency); agents are refreshed separately by the caller (see
 // UpdateAgentModel).
-func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType ModelConfigName, model SelectedModel) error {
+func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType SlotName, model SelectedModel) error {
 	if scope == ScopeEphemeral {
 		s.OverridePreferredModel(modelType, model)
 		return nil
@@ -519,7 +519,7 @@ func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType ModelConfigNam
 // questions: "what do I run" is owned by the session's ActiveAgent, while
 // "what have I picked lately" is a global list feeding the model dialog.
 // Recording a recent model never changes what any session resolves to.
-func (s *ConfigStore) RecordRecentModel(scope Scope, modelType ModelConfigName, model SelectedModel) error {
+func (s *ConfigStore) RecordRecentModel(scope Scope, modelType SlotName, model SelectedModel) error {
 	return s.update(scope, func(c *Config) map[string]any {
 		return recentModelFields(c, modelType, model)
 	})
@@ -533,7 +533,7 @@ func (s *ConfigStore) RecordRecentModel(scope Scope, modelType ModelConfigName, 
 // this write another client may have recorded a fresh pick; filtering
 // the live list under writeMu preserves it, while writing back a
 // precomputed list would silently erase it.
-func (s *ConfigStore) PruneRecentModels(scope Scope, modelType ModelConfigName, stale []SelectedModel) error {
+func (s *ConfigStore) PruneRecentModels(scope Scope, modelType SlotName, stale []SelectedModel) error {
 	if len(stale) == 0 {
 		return nil
 	}
@@ -566,7 +566,7 @@ func (s *ConfigStore) PruneRecentModels(scope Scope, modelType ModelConfigName, 
 // known provider catalog. Writing a model for an unknown provider would
 // leave an unusable fragment in the config file because
 // configureProviders removes providers that lack an endpoint.
-func (s *ConfigStore) UpsertProviderModel(scope Scope, providerID string, model catwalk.Model) error {
+func (s *ConfigStore) UpsertProviderModel(scope Scope, providerID string, model ProviderModel) error {
 	if providerID == "" || model.ID == "" {
 		return fmt.Errorf("provider id and model id are required")
 	}
@@ -577,14 +577,14 @@ func (s *ConfigStore) UpsertProviderModel(scope Scope, providerID string, model 
 
 	key := fmt.Sprintf("providers.%s.models", escapePathKey(providerID))
 	err := s.atomicWrite(scope, func(data []byte) ([]byte, error) {
-		var models []catwalk.Model
+		var models []ProviderModel
 		if raw := gjson.Get(string(data), key); raw.Exists() {
 			if uErr := json.Unmarshal([]byte(raw.Raw), &models); uErr != nil {
 				return nil, fmt.Errorf("failed to read models for provider %s: %w", providerID, uErr)
 			}
 		}
 
-		if i := slices.IndexFunc(models, func(m catwalk.Model) bool { return m.ID == model.ID }); i >= 0 {
+		if i := slices.IndexFunc(models, func(m ProviderModel) bool { return m.ID == model.ID }); i >= 0 {
 			models[i] = model
 		} else {
 			models = append(models, model)
@@ -638,15 +638,15 @@ func (s *ConfigStore) isKnownProvider(providerID string) bool {
 // updatePreferredModelFields builds the fields map for persisting a preferred
 // model change. Shared between UpdatePreferredModel and direct updateLocked
 // callers (e.g. Load). Caller must hold writeMu.
-func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType ModelConfigName, model SelectedModel) map[string]any {
-	if c.Models == nil {
-		c.Models = make(map[ModelConfigName]SelectedModel)
+func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType SlotName, model SelectedModel) map[string]any {
+	if c.Slots == nil {
+		c.Slots = make(map[SlotName]SelectedModel)
 	}
-	c.Models[modelType] = model
+	c.Slots[modelType] = model
 	s.pinPreferredModelLocked(modelType, model)
 
 	fields := map[string]any{
-		fmt.Sprintf("models.%s", modelType): model,
+		fmt.Sprintf("slots.%s", modelType): model,
 	}
 	maps.Copy(fields, recentModelFields(c, modelType, model))
 	return fields
@@ -655,13 +655,13 @@ func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType ModelConfi
 // recentModelFields folds a model into the recent-models list and returns
 // the fields to persist, or nothing when the list already had it at the
 // front. Caller must hold writeMu.
-func recentModelFields(c *Config, modelType ModelConfigName, model SelectedModel) map[string]any {
+func recentModelFields(c *Config, modelType SlotName, model SelectedModel) map[string]any {
 	updated, changed := nextRecentModels(c, modelType, model)
 	if !changed {
 		return nil
 	}
 	if c.RecentModels == nil {
-		c.RecentModels = make(map[ModelConfigName][]SelectedModel)
+		c.RecentModels = make(map[SlotName][]SelectedModel)
 	}
 	c.RecentModels[modelType] = updated
 	return map[string]any{fmt.Sprintf("recent_models.%s", modelType): updated}
@@ -733,7 +733,7 @@ func (s *ConfigStore) SetProviderAPIKey(scope Scope, providerID string, apiKey a
 				Disable:      false,
 				ExtraHeaders: make(map[string]string),
 				ExtraParams:  make(map[string]string),
-				Models:       foundProvider.Models,
+				Models:       wrapCatwalkModels(foundProvider.Models, nil),
 			}
 			setKeyOrToken()
 		} else {
@@ -1070,7 +1070,7 @@ func (s *ConfigStore) loadTokenFromDisk(scope Scope, providerID string) (*oauth.
 // provided config without persisting anything. It returns the new slice
 // and whether it differs from cfg's current list. Callers fold the result
 // into a clone they are about to publish.
-func nextRecentModels(cfg *Config, modelType ModelConfigName, model SelectedModel) ([]SelectedModel, bool) {
+func nextRecentModels(cfg *Config, modelType SlotName, model SelectedModel) ([]SelectedModel, bool) {
 	if model.Provider == "" || model.Model == "" {
 		return nil, false
 	}
@@ -1339,7 +1339,7 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	// reload triggered by an unrelated write must not swap the user's model
 	// mid-session. An external edit to the config still takes effect for any
 	// model type this instance never chose.
-	maps.Copy(cfg.Models, overrides.Models)
+	maps.Copy(cfg.Slots, overrides.Slots)
 
 	// Reconfigure providers
 	env := env.New()
@@ -1374,8 +1374,8 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 		if resolveErr != nil {
 			return fmt.Errorf("failed to configure selected models during reload: %w", resolveErr)
 		}
-		cfg.Models[ModelMain] = resolved.Main
-		cfg.Models[ModelChore] = resolved.Chore
+		cfg.Slots[SlotMain] = resolved.Main
+		cfg.Slots[SlotChore] = resolved.Chore
 	}
 
 	// Agent resolution reads only Options and AgentConfigs, so it runs

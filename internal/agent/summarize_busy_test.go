@@ -23,7 +23,7 @@ func summarizeTestAgent(t *testing.T, model *gatedStreamModel) (*sessionAgent, f
 
 	resolvedModel := Model{
 		Model:      model,
-		CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}},
 	}
 	titles := &coordinator{sessions: env.sessions, cfg: config.NewTestStore(&config.Config{
 		Providers: csync.NewMap[string, config.ProviderConfig](),

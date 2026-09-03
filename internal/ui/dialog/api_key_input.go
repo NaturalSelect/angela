@@ -51,7 +51,7 @@ type APIKeyInput struct {
 
 	provider  catwalk.Provider
 	model     config.SelectedModel
-	modelType config.ModelConfigName
+	modelType config.SlotName
 
 	frame   *Frame
 	metrics FrameMetrics
@@ -78,7 +78,7 @@ func NewAPIKeyInput(
 	isOnboarding bool,
 	provider catwalk.Provider,
 	model config.SelectedModel,
-	modelType config.ModelConfigName,
+	modelType config.SlotName,
 ) (*APIKeyInput, tea.Cmd) {
 	t := com.Styles
 

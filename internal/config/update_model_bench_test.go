@@ -21,7 +21,7 @@ func BenchmarkUpdatePreferredModel(b *testing.B) {
 	b.Cleanup(resetProviderState)
 
 	cfg := `{
-		"models": {
+		"slots": {
 			"main": {"provider": "openai", "model": "gpt-4"},
 			"chore": {"provider": "openai", "model": "gpt-4o-mini"}
 		},
@@ -64,7 +64,7 @@ func BenchmarkUpdatePreferredModel(b *testing.B) {
 	i := 0
 	for b.Loop() {
 		m := models[i%len(models)]
-		if err := store.UpdatePreferredModel(ScopeGlobal, ModelMain, m); err != nil {
+		if err := store.UpdatePreferredModel(ScopeGlobal, SlotMain, m); err != nil {
 			b.Fatal(err)
 		}
 		i++
@@ -83,7 +83,7 @@ func BenchmarkReloadFromDisk(b *testing.B) {
 	b.Cleanup(resetProviderState)
 
 	cfg := `{
-		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
+		"slots": {"main": {"provider": "openai", "model": "gpt-4"}},
 		"providers": {
 			"openai": {"api_key": "test-key", "models": [{"id": "gpt-4", "name": "GPT-4"}]}
 		}

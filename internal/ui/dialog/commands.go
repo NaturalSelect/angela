@@ -496,7 +496,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		// and no presets to seed, so it keeps its own toggle.
 		if c.active.CatwalkCfg.CanReason && len(c.active.CatwalkCfg.ReasoningLevels) == 0 {
 			status := "Enable"
-			if c.active.ModelCfg.Think {
+			if c.active.Think {
 				status = "Disable"
 			}
 			commands = append(commands, NewCommandItem(c.com.Styles, "toggle_thinking", status+" Thinking Mode", "", ActionToggleThinking{}))
@@ -504,7 +504,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 
 		// Everything else picks a preset, reasoning levels included:
 		// they seed variants of the same name.
-		if len(c.active.ModelCfg.VariantNames(&c.active.CatwalkCfg)) > 0 {
+		if len(c.active.CatwalkCfg.VariantNames()) > 0 {
 			commands = append(commands, NewCommandItem(c.com.Styles, "select_variant", "Select Variant", "ctrl+e", ActionOpenDialog{
 				DialogID: VariantsID,
 			}))

@@ -45,7 +45,7 @@ func newKeyRoutingUI(t *testing.T) (*UI, *MockWorkspace) {
 	m.agentActive = workspace.ActiveAgent{
 		AgentID:    "coder",
 		ModelCfg:   config.SelectedModel{Model: "test-model"},
-		CatwalkCfg: catwalk.Model{ReasoningLevels: []string{"low", "high"}},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ReasoningLevels: []string{"low", "high"}}},
 	}
 	return m, ws
 }
@@ -380,7 +380,7 @@ func TestHandleKeyPressMsg_AddImage(t *testing.T) {
 		m.agentReady = true
 		m.agentActiveKnown = true
 		m.agentActiveSession = "s1"
-		m.agentActive = workspace.ActiveAgent{CatwalkCfg: catwalk.Model{SupportsImages: false}}
+		m.agentActive = workspace.ActiveAgent{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{SupportsImages: false}}}
 
 		m.handleKeyPressMsg(ctrlKey('f'))
 
@@ -393,7 +393,7 @@ func TestHandleKeyPressMsg_AddImage(t *testing.T) {
 		m.agentReady = true
 		m.agentActiveKnown = true
 		m.agentActiveSession = "s1"
-		m.agentActive = workspace.ActiveAgent{CatwalkCfg: catwalk.Model{SupportsImages: true}}
+		m.agentActive = workspace.ActiveAgent{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{SupportsImages: true}}}
 
 		m.handleKeyPressMsg(ctrlKey('f'))
 
@@ -410,7 +410,7 @@ func TestHandleKeyPressMsg_PasteImage(t *testing.T) {
 		m.agentReady = true
 		m.agentActiveKnown = true
 		m.agentActiveSession = "s1"
-		m.agentActive = workspace.ActiveAgent{CatwalkCfg: catwalk.Model{SupportsImages: false}}
+		m.agentActive = workspace.ActiveAgent{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{SupportsImages: false}}}
 
 		require.NotPanics(t, func() {
 			m.handleKeyPressMsg(ctrlKey('v'))
@@ -423,7 +423,7 @@ func TestHandleKeyPressMsg_PasteImage(t *testing.T) {
 		m.agentReady = true
 		m.agentActiveKnown = true
 		m.agentActiveSession = "s1"
-		m.agentActive = workspace.ActiveAgent{CatwalkCfg: catwalk.Model{SupportsImages: true}}
+		m.agentActive = workspace.ActiveAgent{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{SupportsImages: true}}}
 
 		require.NotPanics(t, func() {
 			m.handleKeyPressMsg(ctrlKey('v'))

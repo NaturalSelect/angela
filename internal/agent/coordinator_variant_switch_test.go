@@ -73,7 +73,7 @@ func TestSwitchVariantDrivesLaterTurns(t *testing.T) {
 
 	model, err := coord.buildModel(context.Background(), agentCfg, false)
 	require.NoError(t, err)
-	require.Equal(t, int64(32000), model.ModelCfg.MaxTokens,
+	require.Equal(t, int64(32000), model.CatwalkCfg.DefaultMaxTokens,
 		"the preset actually reached the resolved model")
 }
 
@@ -83,7 +83,7 @@ func TestSwitchVariantBackToBaseline(t *testing.T) {
 	coord := newVariantTestCoordinator(t)
 	sessionID := newVariantSession(t, coord)
 
-	baseline := coord.cfg.Config().Models[config.ModelChore].MaxTokens
+	baseline := coord.cfg.Config().GetModelForSlot(config.SlotChore).DefaultMaxTokens
 
 	require.NoError(t, coord.SwitchVariant(t.Context(), sessionID, "deep"))
 	require.NoError(t, coord.SwitchVariant(t.Context(), sessionID, ""))
@@ -96,9 +96,9 @@ func TestSwitchVariantBackToBaseline(t *testing.T) {
 	require.NoError(t, err)
 	model, err := coord.buildModel(context.Background(), agentCfg, false)
 	require.NoError(t, err)
-	require.Equal(t, baseline, model.ModelCfg.MaxTokens,
+	require.Equal(t, baseline, model.CatwalkCfg.DefaultMaxTokens,
 		"the preset is gone, not merely overwritten by another preset")
-	require.NotEqual(t, int64(32000), model.ModelCfg.MaxTokens)
+	require.NotEqual(t, int64(32000), model.CatwalkCfg.DefaultMaxTokens)
 }
 
 // TestSwitchVariantRejectsUnknownNames pins the strict half of the
@@ -144,7 +144,7 @@ func TestSwitchVariantAcceptsSeededReasoningLevels(t *testing.T) {
 	require.NoError(t, err)
 	model, err := coord.buildModel(context.Background(), agentCfg, false)
 	require.NoError(t, err)
-	require.Equal(t, "high", model.ModelCfg.ReasoningEffort)
+	require.Equal(t, "high", model.CatwalkCfg.DefaultReasoningEffort)
 }
 
 // TestSwitchVariantToTheSameOneIsANoOp pins that re-selecting the

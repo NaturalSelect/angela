@@ -8,7 +8,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/agent"
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/app"
@@ -31,16 +30,18 @@ import (
 // directly to an in-process [app.App] instance. This is the default
 // mode when the client/server architecture is not enabled.
 type AppWorkspace struct {
-	app   *app.App
-	store *config.ConfigStore
+	app      *app.App
+	store    *config.ConfigStore
+	inDocker bool
 }
 
 // NewAppWorkspace creates a new AppWorkspace wrapping the given app
 // and config store.
 func NewAppWorkspace(a *app.App, store *config.ConfigStore) *AppWorkspace {
 	return &AppWorkspace{
-		app:   a,
-		store: store,
+		app:      a,
+		store:    store,
+		inDocker: detectInDocker(),
 	}
 }
 
@@ -234,9 +235,10 @@ func (w *AppWorkspace) AgentActive(ctx context.Context, sessionID string) (Activ
 	return ActiveAgent{
 		AgentID:    active.Agent.ID,
 		AgentName:  active.Agent.Name,
-		ModelName:  active.ModelName,
+		Slot:       active.Slot,
 		ModelCfg:   model.ModelCfg,
 		CatwalkCfg: model.CatwalkCfg,
+		Think:      model.Think,
 		Variant:    active.Agent.Variant,
 	}, nil
 }
@@ -381,21 +383,27 @@ func (w *AppWorkspace) Resolver() config.VariableResolver {
 	return w.store.Resolver()
 }
 
+// IsInDocker reports whether the current process is running inside a
+// Docker (or other OCI) container, as detected at workspace creation.
+func (w *AppWorkspace) IsInDocker() bool {
+	return w.inDocker
+}
+
 // -- Config mutations --
 
-func (w *AppWorkspace) UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (w *AppWorkspace) UpdatePreferredModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.store.UpdatePreferredModel(scope, name, model)
 }
 
-func (w *AppWorkspace) RecordRecentModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (w *AppWorkspace) RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.store.RecordRecentModel(scope, name, model)
 }
 
-func (w *AppWorkspace) PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+func (w *AppWorkspace) PruneRecentModels(scope config.Scope, name config.SlotName, stale []config.SelectedModel) error {
 	return w.store.PruneRecentModels(scope, name, stale)
 }
 
-func (w *AppWorkspace) UpsertProviderModel(scope config.Scope, providerID string, model catwalk.Model) error {
+func (w *AppWorkspace) UpsertProviderModel(scope config.Scope, providerID string, model config.ProviderModel) error {
 	return w.store.UpsertProviderModel(scope, providerID, model)
 }
 

@@ -67,11 +67,10 @@ their provider. Reference models with `provider` (the key from Step 1) and
 
 ```json
 {
-  "models": {
+  "slots": {
     "main": {
       "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514",
-      "max_tokens": 16384
+      "model": "claude-sonnet-4-20250514"
     },
     "chore": {
       "provider": "anthropic",
@@ -84,18 +83,35 @@ their provider. Reference models with `provider` (the key from Step 1) and
 ### Optional: Variants
 
 If the user wants different parameter presets for the same model (e.g. a
-"deep thinking" mode), set up variants:
+"deep thinking" mode), set up variants under that model's catalog entry in
+`providers`, not under `slots` — a slot is only ever a `provider` + `model`
+reference. Overriding a known provider's model by `id` replaces its whole
+catalog entry, so copy the model's other fields (context window, costs,
+capabilities — see the angela-config skill) along with the variants, or the
+resolved model loses that data:
 
 ```json
 {
-  "models": {
-    "main": {
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514",
-      "variants": {
-        "deep": { "think": true, "max_tokens": 32768 },
-        "fast": { "think": false, "temperature": 0 }
-      }
+  "providers": {
+    "anthropic": {
+      "models": [
+        {
+          "id": "claude-sonnet-4-20250514",
+          "name": "Claude Sonnet 4",
+          "context_window": 200000,
+          "default_max_tokens": 16384,
+          "cost_per_1m_in": 3,
+          "cost_per_1m_out": 15,
+          "cost_per_1m_in_cached": 0.3,
+          "cost_per_1m_out_cached": 0.3,
+          "can_reason": true,
+          "supports_attachments": true,
+          "variants": {
+            "deep": { "think": true, "max_tokens": 32768 },
+            "fast": { "think": false, "temperature": 0 }
+          }
+        }
+      ]
     }
   }
 }
@@ -209,9 +225,9 @@ Ask if the user wants to customize built-in agents. Common adjustments:
 ```json
 {
   "agents": {
-    "explore": { "model": "chore" },
-    "title": { "model": "chore" },
-    "compact": { "model": "chore" }
+    "explore": { "slot": "chore" },
+    "title": { "slot": "chore" },
+    "compact": { "slot": "chore" }
   }
 }
 ```

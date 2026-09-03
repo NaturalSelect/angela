@@ -114,7 +114,9 @@ All configuration is done through `angela.json`. For the complete schema, see
           "price_cache_create": 0.0,
           "price_cache_hit": 0.0,
           "reasoning_effort": "",     // low, medium, or high
-          "reasoning_levels": []      // supported effort levels
+          "reasoning_levels": [],     // supported effort levels
+          "think": false,             // default thinking mode for this model
+          "variants": {}              // named parameter presets, see below
         }
       ]
     }
@@ -131,23 +133,26 @@ so `base_url` must include it.
 Headers whose value resolves to the empty string are dropped from the
 outgoing request.
 
-### Models
+A model's `variants` are named parameter presets layered over its own
+defaults: each one overrides only the keys it names (`think`,
+`reasoning_effort`, `max_tokens`, `temperature`, `top_p`, `top_k`,
+`frequency_penalty`, `presence_penalty`, `provider_options`), and an agent
+selects one via its `variant` field. A model's own `reasoning_levels` are
+seeded as variants automatically; a user-defined variant that reuses one of
+those names replaces its behavior instead of adding a duplicate.
+
+### Slots
+
+Slots are pure `provider` + `model` references. Thinking mode, sampling
+parameters, and variants all live on the model's catalog entry under
+`providers` (see above), not on the slot itself.
 
 ```jsonc
 {
-  "models": {
+  "slots": {
     "main": {
       "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514",
-      "think": false,                 // enable thinking mode
-      "reasoning_effort": "",         // low, medium, or high
-      "max_tokens": 0,                // maximum output tokens
-      "temperature": 0.0,            // sampling temperature
-      "top_p": 0.0,                  // top-p sampling (0–1)
-      "top_k": 0,                    // top-k sampling
-      "frequency_penalty": 0.0,
-      "presence_penalty": 0.0,
-      "provider_options": {}          // provider-specific options
+      "model": "claude-sonnet-4-20250514"
     },
     "chore": {
       "provider": "anthropic",
@@ -327,7 +332,7 @@ Layers are deep-merged, with the one closest to the project winning.
   "providers": {
     "anthropic": { "api_key": "$ANTHROPIC_API_KEY" },
   },
-  "models": {
+  "slots": {
     "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
   },
   "permissions": { "allowed_tools": ["View", "LS", "Grep"] },

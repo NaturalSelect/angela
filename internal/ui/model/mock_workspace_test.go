@@ -15,7 +15,6 @@ import (
 	time "time"
 
 	tea "charm.land/bubbletea/v2"
-	catwalk "charm.land/catwalk/pkg/catwalk"
 	mcp "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	commands "github.com/NaturalSelect/angela/internal/commands"
 	config "github.com/NaturalSelect/angela/internal/config"
@@ -849,7 +848,7 @@ func (mr *MockWorkspaceMockRecorder) ProjectNeedsInitialization() *gomock.Call {
 }
 
 // PruneRecentModels mocks base method.
-func (m *MockWorkspace) PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+func (m *MockWorkspace) PruneRecentModels(scope config.Scope, name config.SlotName, stale []config.SelectedModel) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PruneRecentModels", scope, name, stale)
 	ret0, _ := ret[0].(error)
@@ -922,7 +921,7 @@ func (mr *MockWorkspaceMockRecorder) ReadSkill(ctx, skillID any) *gomock.Call {
 }
 
 // RecordRecentModel mocks base method.
-func (m *MockWorkspace) RecordRecentModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (m *MockWorkspace) RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RecordRecentModel", scope, name, model)
 	ret0, _ := ret[0].(error)
@@ -1114,7 +1113,7 @@ func (mr *MockWorkspaceMockRecorder) UpdateAgentModel(ctx any) *gomock.Call {
 }
 
 // UpdatePreferredModel mocks base method.
-func (m *MockWorkspace) UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (m *MockWorkspace) UpdatePreferredModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdatePreferredModel", scope, name, model)
 	ret0, _ := ret[0].(error)
@@ -1128,7 +1127,7 @@ func (mr *MockWorkspaceMockRecorder) UpdatePreferredModel(scope, name, model any
 }
 
 // UpsertProviderModel mocks base method.
-func (m *MockWorkspace) UpsertProviderModel(scope config.Scope, providerID string, model catwalk.Model) error {
+func (m *MockWorkspace) UpsertProviderModel(scope config.Scope, providerID string, model config.ProviderModel) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpsertProviderModel", scope, providerID, model)
 	ret0, _ := ret[0].(error)

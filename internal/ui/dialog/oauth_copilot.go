@@ -17,7 +17,7 @@ func NewOAuthCopilot(
 	isOnboarding bool,
 	provider catwalk.Provider,
 	model config.SelectedModel,
-	modelType config.ModelConfigName,
+	modelType config.SlotName,
 ) (*OAuth, tea.Cmd) {
 	return newOAuth(com, isOnboarding, provider, model, modelType, &OAuthCopilot{})
 }

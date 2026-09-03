@@ -75,8 +75,8 @@ the request rather than sent as `Header:`. A literal `$` in a URL (e.g. OData
 
 ## providers
 
-`providers` maps a provider ID to its configuration. The ID is what a model
-config's `provider` field references.
+`providers` maps a provider ID to its configuration. The ID is what a
+slot's `provider` field references.
 
 | Field                  | Type              | Notes                                                          |
 | ---------------------- | ----------------- | -------------------------------------------------------------- |
@@ -144,10 +144,53 @@ config's `provider` field references.
 | `reasoning_levels`                                | array  | Effort levels the model accepts. A `reasoning_effort` outside this list is not sent |
 | `default_reasoning_effort`                        | string | Default effort for this model               |
 | `options`                                         | object | `temperature`, `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options` |
+| `think`                                           | bool   | Default thinking mode for Anthropic reasoners |
+| `variants`                                        | object | Named parameter presets, see below           |
 
-## models
+### variants
 
-`models` maps a **slot name** to the model that fills it. Two slots ship with
+A variant is a named preset layered over a model's own parameters. It carries
+no provider or model ID — it is a different way to call the *same* model, so N
+models with M presets stays N+M configs instead of N×M. Every field is
+optional and overrides only the keys it names; `provider_options` merges key by
+key. An agent selects one via its `variant` field; an unknown name silently
+degrades to the baseline. A model's own `reasoning_levels` are seeded as
+variants automatically, named after each level; a user-defined variant that
+reuses one of those names replaces its behavior instead of adding a duplicate.
+
+Variant fields: `think`, `reasoning_effort`, `max_tokens`, `temperature`,
+`top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options`.
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "models": [
+        {
+          "id": "claude-sonnet-4-20250514",
+          "name": "Claude Sonnet 4",
+          "context_window": 200000,
+          "default_max_tokens": 16384,
+          "cost_per_1m_in": 3,
+          "cost_per_1m_out": 15,
+          "cost_per_1m_in_cached": 0.3,
+          "cost_per_1m_out_cached": 0.3,
+          "can_reason": true,
+          "supports_attachments": true,
+          "variants": {
+            "deep": { "think": true, "max_tokens": 32768 },
+            "fast": { "think": false, "temperature": 0 }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+## slots
+
+`slots` maps a **slot name** to the model that fills it. Two slots ship with
 Angela:
 
 - **`main`** — the workhorse, used by `coder` and most agents.
@@ -155,49 +198,20 @@ Angela:
   summaries.
 
 Any other slot name may be defined; it takes effect only when an agent's
-`model` field names it.
+`slot` field names it. A slot is a pure reference — thinking mode, sampling
+parameters, and variants all live on the model's catalog entry under
+`providers.<id>.models[]` (see above), not on the slot itself.
 
-| Field                                                    | Type   | Notes                                     |
-| -------------------------------------------------------- | ------ | ----------------------------------------- |
-| `provider`                                               | string | **Required**; a key in `providers`        |
-| `model`                                                  | string | **Required**; the provider's model ID     |
-| `think`                                                  | bool   | Thinking mode for Anthropic reasoners     |
-| `reasoning_effort`                                       | string | `low`, `medium`, `high`                   |
-| `max_tokens`                                             | int    | Max 200000                                |
-| `temperature`, `top_p`                                   | number | 0–1                                       |
-| `top_k`                                                  | int    |                                           |
-| `frequency_penalty`, `presence_penalty`                  | number |                                           |
-| `provider_options`                                       | object | Provider-specific overrides               |
-| `variants`                                               | object | Named parameter presets, see below        |
-
-### variants
-
-A variant is a named preset layered over the slot's own parameters. It carries
-no provider or model ID — it is a different way to call the *same* model, so N
-models with M presets stays N+M configs instead of N×M. Every field is
-optional and overrides only the keys it names; `provider_options` merges key by
-key. An agent selects one via its `variant` field; an unknown name silently
-degrades to the baseline.
-
-Variant fields: `think`, `reasoning_effort`, `max_tokens`, `temperature`,
-`top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options`.
+| Field      | Type   | Notes                                  |
+| ---------- | ------ | --------------------------------------- |
+| `provider` | string | **Required**; a key in `providers`      |
+| `model`    | string | **Required**; the provider's model ID   |
 
 ```json
 {
-  "models": {
-    "main": {
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514",
-      "max_tokens": 16384,
-      "variants": {
-        "deep": { "think": true, "max_tokens": 32768 },
-        "fast": { "think": false, "temperature": 0 }
-      }
-    },
-    "chore": {
-      "provider": "anthropic",
-      "model": "claude-haiku-4-20250514"
-    }
+  "slots": {
+    "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
+    "chore": { "provider": "anthropic", "model": "claude-haiku-4-20250514" }
   }
 }
 ```
@@ -214,7 +228,7 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 | `name`           | string | Display name                                                        |
 | `description`    | string | What the agent does; shown to the dispatching model                 |
 | `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user) |
-| `model`          | string | A slot name from `models`. Default `main` — this is how a subagent is pointed at a cheaper model |
+| `slot`           | string | A slot name from `slots`. Default `main` — this is how a subagent is pointed at a cheaper model |
 | `variant`        | string | A variant name on that model slot                                   |
 | `max_tokens`     | int    | Output-token cap; omit for the model default                        |
 | `prompt`         | string | Replaces the built-in system prompt. Parsed as a Go template        |
@@ -233,13 +247,13 @@ layer turned off.
 ```json
 {
   "agents": {
-    "explore": { "model": "chore" },
+    "explore": { "slot": "chore" },
     "general": { "disabled": true },
     "reviewer": {
       "name": "Reviewer",
       "description": "Reviews a diff for correctness and safety.",
       "mode": "subagent",
-      "model": "main",
+      "slot": "main",
       "variant": "deep",
       "allowed_tools": ["View", "Grep", "Glob", "LS"],
       "allowed_mcp": { "github": ["create_issue"] }

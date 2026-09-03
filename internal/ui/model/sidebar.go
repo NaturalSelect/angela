@@ -1,7 +1,6 @@
 package model
 
 import (
-	"cmp"
 	"fmt"
 
 	"github.com/NaturalSelect/angela/internal/ui/common"
@@ -24,14 +23,13 @@ func (m *UI) modelInfo(width int) string {
 			// what is rendered here is what the turn actually runs on.
 			if active.CatwalkCfg.CanReason {
 				if len(active.CatwalkCfg.ReasoningLevels) == 0 {
-					if active.ModelCfg.Think {
+					if active.Think {
 						reasoningInfo = "Thinking On"
 					} else {
 						reasoningInfo = "Thinking Off"
 					}
 				} else {
-					reasoningEffort := cmp.Or(active.ModelCfg.ReasoningEffort, active.CatwalkCfg.DefaultReasoningEffort)
-					reasoningInfo = fmt.Sprintf("Reasoning %s", common.FormatReasoningEffort(reasoningEffort))
+					reasoningInfo = fmt.Sprintf("Reasoning %s", common.FormatReasoningEffort(active.CatwalkCfg.DefaultReasoningEffort))
 				}
 			}
 		}

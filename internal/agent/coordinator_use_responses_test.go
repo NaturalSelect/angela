@@ -16,7 +16,7 @@ func TestUseResponsesForcesTheResponsesShape(t *testing.T) {
 	t.Parallel()
 
 	model := Model{
-		CatwalkCfg: catwalk.Model{ID: "gpt-codex-sol"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "gpt-codex-sol"}},
 		ModelCfg:   config.SelectedModel{Provider: "openai"},
 	}
 	providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name, UseResponses: boolPtr(true)}
@@ -36,7 +36,7 @@ func TestUseResponsesFalseKeepsChatCompletions(t *testing.T) {
 	t.Parallel()
 
 	model := Model{
-		CatwalkCfg: catwalk.Model{ID: "gpt-5.2"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "gpt-5.2"}},
 		ModelCfg:   config.SelectedModel{Provider: "openai"},
 	}
 	providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name, UseResponses: boolPtr(false)}
@@ -65,7 +65,7 @@ func TestUseResponsesUnsetLeavesTheModelIDInCharge(t *testing.T) {
 			t.Parallel()
 
 			model := Model{
-				CatwalkCfg: catwalk.Model{ID: tc.modelID},
+				CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: tc.modelID}},
 				ModelCfg:   config.SelectedModel{Provider: "openai"},
 			}
 			providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}
@@ -81,12 +81,22 @@ func TestUseResponsesUnsetLeavesTheModelIDInCharge(t *testing.T) {
 // TestAConfiguredEffortReachesTheRequest pins the reasoning fix: a model
 // typed in by hand has no catalog entry, so CanReason is false and the
 // effort used to be dropped before it ever reached the provider.
+// TestAConfiguredEffortReachesTheRequest pins the reasoning fix: a
+// provider's catalog entry for a model can declare reasoning support
+// and an effort itself (e.g. a user-added entry for a gateway alias
+// with no built-in registry match), and that effort must reach the
+// request rather than being dropped.
 func TestAConfiguredEffortReachesTheRequest(t *testing.T) {
 	t.Parallel()
 
 	model := Model{
-		CatwalkCfg: catwalk.Model{ID: "gpt-codex-sol"},
-		ModelCfg:   config.SelectedModel{Provider: "openai", ReasoningEffort: "max"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+			ID:                     "gpt-codex-sol",
+			CanReason:              true,
+			ReasoningLevels:        []string{"max"},
+			DefaultReasoningEffort: "max",
+		}},
+		ModelCfg: config.SelectedModel{Provider: "openai"},
 	}
 	providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}
 
@@ -104,7 +114,7 @@ func TestAnAbsentEffortStaysAbsent(t *testing.T) {
 	t.Parallel()
 
 	model := Model{
-		CatwalkCfg: catwalk.Model{ID: "gpt-codex-sol"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "gpt-codex-sol"}},
 		ModelCfg:   config.SelectedModel{Provider: "openai"},
 	}
 	providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name}

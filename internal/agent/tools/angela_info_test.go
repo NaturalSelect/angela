@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
@@ -51,9 +50,9 @@ func TestAngelaInfo_Models(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.NewTestStore(&config.Config{
-		Models: map[config.ModelConfigName]config.SelectedModel{
-			config.ModelMain:  {Model: "claude-sonnet-4-20250514", Provider: "anthropic"},
-			config.ModelChore: {Model: "claude-haiku-3-20250307", Provider: "anthropic"},
+		Slots: map[config.SlotName]config.SelectedModel{
+			config.SlotMain:  {Model: "claude-sonnet-4-20250514", Provider: "anthropic"},
+			config.SlotChore: {Model: "claude-haiku-3-20250307", Provider: "anthropic"},
 		},
 		Providers: csync.NewMap[string, config.ProviderConfig](),
 	})
@@ -67,8 +66,8 @@ func TestAngelaInfo_Providers(t *testing.T) {
 	t.Parallel()
 
 	providers := csync.NewMap[string, config.ProviderConfig]()
-	providers.Set("openai", config.ProviderConfig{Models: make([]catwalk.Model, 8)})
-	providers.Set("anthropic", config.ProviderConfig{Models: make([]catwalk.Model, 12)})
+	providers.Set("openai", config.ProviderConfig{Models: make([]config.ProviderModel, 8)})
+	providers.Set("anthropic", config.ProviderConfig{Models: make([]config.ProviderModel, 12)})
 
 	cfg := config.NewTestStore(&config.Config{Providers: providers})
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
@@ -86,8 +85,8 @@ func TestAngelaInfo_DisabledProvidersOmitted(t *testing.T) {
 	t.Parallel()
 
 	providers := csync.NewMap[string, config.ProviderConfig]()
-	providers.Set("openai", config.ProviderConfig{Disable: true, Models: make([]catwalk.Model, 8)})
-	providers.Set("anthropic", config.ProviderConfig{Models: make([]catwalk.Model, 12)})
+	providers.Set("openai", config.ProviderConfig{Disable: true, Models: make([]config.ProviderModel, 8)})
+	providers.Set("anthropic", config.ProviderConfig{Models: make([]config.ProviderModel, 12)})
 
 	cfg := config.NewTestStore(&config.Config{Providers: providers})
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
@@ -255,7 +254,7 @@ func TestAngelaInfo_NoSecrets(t *testing.T) {
 	providers := csync.NewMap[string, config.ProviderConfig]()
 	providers.Set("openai", config.ProviderConfig{
 		APIKey: "sk-super-secret-key-12345",
-		Models: make([]catwalk.Model, 8),
+		Models: make([]config.ProviderModel, 8),
 	})
 
 	cfg := config.NewTestStore(&config.Config{Providers: providers})
@@ -269,9 +268,9 @@ func TestAngelaInfo_DeterministicOrdering(t *testing.T) {
 	t.Parallel()
 
 	providers := csync.NewMap[string, config.ProviderConfig]()
-	providers.Set("zebra", config.ProviderConfig{Models: make([]catwalk.Model, 1)})
-	providers.Set("alpha", config.ProviderConfig{Models: make([]catwalk.Model, 2)})
-	providers.Set("middle", config.ProviderConfig{Models: make([]catwalk.Model, 3)})
+	providers.Set("zebra", config.ProviderConfig{Models: make([]config.ProviderModel, 1)})
+	providers.Set("alpha", config.ProviderConfig{Models: make([]config.ProviderModel, 2)})
+	providers.Set("middle", config.ProviderConfig{Models: make([]config.ProviderModel, 3)})
 
 	states := map[string]mcp.ClientInfo{
 		"z-mcp": {Name: "z-mcp", State: mcp.StateConnected, Counts: mcp.Counts{Tools: 1}},

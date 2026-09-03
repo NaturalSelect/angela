@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/workspace"
@@ -69,7 +70,7 @@ func TestEditorCaptionDegradesWithWidth(t *testing.T) {
 	m.agentActive = workspace.ActiveAgent{
 		AgentID:    "coder",
 		AgentName:  "coder",
-		CatwalkCfg: catwalk.Model{Name: "claude-sonnet-4-5"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{Name: "claude-sonnet-4-5"}},
 	}
 	require.NotNil(t, m.activeAgent(), "the caption needs a resolved agent")
 
@@ -162,7 +163,7 @@ func TestPromptBoxDrawsBorderAndLabel(t *testing.T) {
 	m.agentActive = workspace.ActiveAgent{
 		AgentID:    "coder",
 		AgentName:  "coder",
-		CatwalkCfg: catwalk.Model{Name: "claude-sonnet-4-5"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{Name: "claude-sonnet-4-5"}},
 	}
 	m.width = 60
 	m.textarea.SetWidth(60 - editorBoxBorders)
@@ -210,7 +211,7 @@ func TestPromptBoxPaintsNoBackground(t *testing.T) {
 	m.agentActive = workspace.ActiveAgent{
 		AgentID:    "coder",
 		AgentName:  "coder",
-		CatwalkCfg: catwalk.Model{Name: "claude-sonnet-4-5"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{Name: "claude-sonnet-4-5"}},
 	}
 	m.width = 60
 	m.textarea.SetWidth(60 - editorBoxBorders)

@@ -17,7 +17,7 @@ import (
 // fires, isolating the max-tokens auto-continue path from
 // auto-summarization.
 func autoContinueAgent(model fantasy.LanguageModel) resolvedAgent {
-	catwalkCfg := catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}
 	return resolvedAgent{
 		ID:        config.AgentCoder,
 		Model:     Model{Model: model, CatwalkCfg: catwalkCfg},

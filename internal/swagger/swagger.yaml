@@ -1,36 +1,5 @@
 basePath: /v1
 definitions:
-  catwalk.Model:
-    properties:
-      can_reason:
-        type: boolean
-      context_window:
-        type: integer
-      cost_per_1m_in:
-        type: number
-      cost_per_1m_in_cached:
-        type: number
-      cost_per_1m_out:
-        type: number
-      cost_per_1m_out_cached:
-        type: number
-      default_max_tokens:
-        type: integer
-      default_reasoning_effort:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      options:
-        $ref: '#/definitions/catwalk.ModelOptions'
-      reasoning_levels:
-        items:
-          type: string
-        type: array
-      supports_attachments:
-        type: boolean
-    type: object
   catwalk.ModelOptions:
     properties:
       frequency_penalty:
@@ -53,8 +22,15 @@ definitions:
         type: string
       model:
         $ref: '#/definitions/config.SelectedModel'
-      model_name:
-        $ref: '#/definitions/config.ModelConfigName'
+      slot:
+        $ref: '#/definitions/config.SlotName'
+      think:
+        description: |-
+          Think is the thinking-mode value the user picked, and is absent
+          when they never touched it, for the same reason Variant is: a
+          model's catalog default must keep reaching a session that never
+          overrode it.
+        type: boolean
       variant:
         description: |-
           Variant is the preset the user picked, and is absent when they
@@ -130,8 +106,6 @@ definitions:
           top-level; subagents are launched via the agent tool; a branch is
           dispatched like a subagent but forks the caller's transcript and
           hands the conversation to the user.
-      model:
-        $ref: '#/definitions/config.ModelConfigName'
       name:
         type: string
       prompt:
@@ -140,6 +114,8 @@ definitions:
           built-in template for this agent. The text is parsed as a Go
           template with the same data as built-in templates.
         type: string
+      slot:
+        $ref: '#/definitions/config.SlotName'
       temperature:
         description: Temperature overrides the model's default sampling temperature.
         type: number
@@ -346,14 +322,6 @@ definitions:
     additionalProperties:
       $ref: '#/definitions/config.MCPConfig'
     type: object
-  config.ModelConfigName:
-    enum:
-    - main
-    - chore
-    type: string
-    x-enum-varnames:
-    - ModelMain
-    - ModelChore
   config.Permissions:
     properties:
       allowed_tools:
@@ -367,51 +335,64 @@ definitions:
           $ref: '#/definitions/permission.Rule'
         type: array
     type: object
+  config.ProviderModel:
+    properties:
+      can_reason:
+        type: boolean
+      context_window:
+        type: integer
+      cost_per_1m_in:
+        type: number
+      cost_per_1m_in_cached:
+        type: number
+      cost_per_1m_out:
+        type: number
+      cost_per_1m_out_cached:
+        type: number
+      default_max_tokens:
+        type: integer
+      default_reasoning_effort:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      options:
+        $ref: '#/definitions/catwalk.ModelOptions'
+      reasoning_levels:
+        items:
+          type: string
+        type: array
+      supports_attachments:
+        type: boolean
+      think:
+        description: |-
+          Think sets the default thinking mode for Anthropic-family
+          models that support it. A session can still flip this with
+          /think; Think only decides where a fresh session starts.
+        type: boolean
+      variants:
+        additionalProperties:
+          $ref: '#/definitions/config.SelectedModelOverride'
+        description: |-
+          Variants are named parameter presets over this model. They
+          override only the keys they name, so N models by M presets
+          stays N+M configs instead of N*M. Selecting one is how a
+          session overrides this model's defaults for a turn.
+        type: object
+    type: object
   config.SelectedModel:
     properties:
-      frequency_penalty:
-        type: number
-      max_tokens:
-        description: Overrides the default model configuration.
-        type: integer
       model:
         description: |-
           The model id as used by the provider API.
           Required.
         type: string
-      presence_penalty:
-        type: number
       provider:
         description: |-
           The model provider, same as the key/id used in the providers config.
           Required.
         type: string
-      provider_options:
-        additionalProperties: {}
-        description: Override provider specific options.
-        type: object
-      reasoning_effort:
-        description: Only used by models that use the openai provider and need this
-          set.
-        type: string
-      temperature:
-        type: number
-      think:
-        description: Used by anthropic models that can reason to indicate if the model
-          should think.
-        type: boolean
-      top_k:
-        type: integer
-      top_p:
-        type: number
-      variants:
-        additionalProperties:
-          $ref: '#/definitions/config.SelectedModelOverride'
-        description: |-
-          Variants are named parameter presets over the fields above. They
-          keep the model identity and override only the keys they name, so
-          N models by M presets stays N+M configs instead of N*M.
-        type: object
     type: object
   config.SelectedModelOverride:
     properties:
@@ -438,6 +419,14 @@ definitions:
       top_p:
         type: number
     type: object
+  config.SlotName:
+    enum:
+    - main
+    - chore
+    type: string
+    x-enum-varnames:
+    - SlotMain
+    - SlotChore
   config.TUIOptions:
     properties:
       compact_mode:
@@ -526,13 +515,6 @@ definitions:
         $ref: '#/definitions/config.LSPs'
       mcp:
         $ref: '#/definitions/config.MCPs'
-      models:
-        additionalProperties:
-          $ref: '#/definitions/config.SelectedModel'
-        description: |-
-          Named model configurations. "main" and "chore" ship as seeds;
-          any other name may be defined and referenced by an agent.
-        type: object
       options:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Options'
       permissions:
@@ -547,6 +529,13 @@ definitions:
             $ref: '#/definitions/config.SelectedModel'
           type: array
         description: Recently used models stored in the data directory config.
+        type: object
+      slots:
+        additionalProperties:
+          $ref: '#/definitions/config.SelectedModel'
+        description: |-
+          Named model configurations. "main" and "chore" ship as seeds;
+          any other name may be defined and referenced by an agent.
         type: object
       tools:
         $ref: '#/definitions/config.Tools'
@@ -619,10 +608,12 @@ definitions:
     enum:
     - 0
     - 1
+    - 2
     type: integer
     x-enum-varnames:
     - ScopeGlobal
     - ScopeWorkspace
+    - ScopeEphemeral
   github_com_NaturalSelect_angela_internal_proto.Message:
     properties:
       created_at:
@@ -746,11 +737,13 @@ definitions:
       agent_name:
         type: string
       catwalk_cfg:
-        $ref: '#/definitions/catwalk.Model'
+        $ref: '#/definitions/config.ProviderModel'
       model_cfg:
         $ref: '#/definitions/config.SelectedModel'
-      model_name:
-        $ref: '#/definitions/config.ModelConfigName'
+      slot:
+        $ref: '#/definitions/config.SlotName'
+      think:
+        type: boolean
       variant:
         type: string
     type: object
@@ -763,12 +756,12 @@ definitions:
         type: string
       model:
         $ref: '#/definitions/config.SelectedModel'
-      model_name:
+      slot:
         allOf:
-        - $ref: '#/definitions/config.ModelConfigName'
+        - $ref: '#/definitions/config.SlotName'
         description: |-
           Model, when non-nil, replaces the session's model outright, and
-          ModelName labels which global slot it was taken from.
+          Slot labels which global slot it was taken from.
       think:
         description: |-
           Think, when non-nil, sets the thinking flag to an absolute
@@ -797,7 +790,7 @@ definitions:
       is_ready:
         type: boolean
       model:
-        $ref: '#/definitions/catwalk.Model'
+        $ref: '#/definitions/config.ProviderModel'
       model_cfg:
         $ref: '#/definitions/config.SelectedModel'
     type: object
@@ -878,10 +871,10 @@ definitions:
     properties:
       model:
         $ref: '#/definitions/config.SelectedModel'
-      model_name:
-        $ref: '#/definitions/config.ModelConfigName'
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
+      slot:
+        $ref: '#/definitions/config.SlotName'
     type: object
   proto.ConfigProviderKeyRequest:
     properties:
@@ -899,7 +892,7 @@ definitions:
   proto.ConfigProviderModelRequest:
     properties:
       model:
-        $ref: '#/definitions/catwalk.Model'
+        $ref: '#/definitions/config.ProviderModel'
       provider_id:
         type: string
       scope:
@@ -907,10 +900,10 @@ definitions:
     type: object
   proto.ConfigPruneRecentModelsRequest:
     properties:
-      model_name:
-        $ref: '#/definitions/config.ModelConfigName'
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
+      slot:
+        $ref: '#/definitions/config.SlotName'
       stale:
         items:
           $ref: '#/definitions/config.SelectedModel'

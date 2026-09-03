@@ -11,7 +11,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/app"
@@ -350,9 +349,10 @@ func activeAgentFromProto(active proto.ActiveAgent) ActiveAgent {
 	return ActiveAgent{
 		AgentID:    active.AgentID,
 		AgentName:  active.AgentName,
-		ModelName:  active.ModelName,
+		Slot:       active.Slot,
 		ModelCfg:   active.ModelCfg,
 		CatwalkCfg: active.CatwalkCfg,
+		Think:      active.Think,
 		Variant:    active.Variant,
 	}
 }
@@ -586,19 +586,19 @@ func (w *ClientWorkspace) Resolver() config.VariableResolver {
 
 // -- Config mutations --
 
-func (w *ClientWorkspace) UpdatePreferredModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (w *ClientWorkspace) UpdatePreferredModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.refreshAfter(w.client.UpdatePreferredModel(context.Background(), w.workspaceID(), scope, name, model))
 }
 
-func (w *ClientWorkspace) RecordRecentModel(scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (w *ClientWorkspace) RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.refreshAfter(w.client.RecordRecentModel(context.Background(), w.workspaceID(), scope, name, model))
 }
 
-func (w *ClientWorkspace) PruneRecentModels(scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+func (w *ClientWorkspace) PruneRecentModels(scope config.Scope, name config.SlotName, stale []config.SelectedModel) error {
 	return w.refreshAfter(w.client.PruneRecentModels(context.Background(), w.workspaceID(), scope, name, stale))
 }
 
-func (w *ClientWorkspace) UpsertProviderModel(scope config.Scope, providerID string, model catwalk.Model) error {
+func (w *ClientWorkspace) UpsertProviderModel(scope config.Scope, providerID string, model config.ProviderModel) error {
 	return w.refreshAfter(w.client.UpsertProviderModel(context.Background(), w.workspaceID(), scope, providerID, model))
 }
 

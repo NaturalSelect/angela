@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/charmbracelet/x/ansi"
@@ -92,7 +93,7 @@ func TestTurnStatusShowsTokensAndContextTogether(t *testing.T) {
 	m.agentActiveKnown = true
 	m.agentActiveSession = m.currentSessionID()
 	m.agentActive = workspace.ActiveAgent{
-		CatwalkCfg: catwalk.Model{ContextWindow: 10_000},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 10_000}},
 	}
 
 	busy := ansi.Strip(m.renderTurnStatus(200))

@@ -6,6 +6,7 @@ import (
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -205,7 +206,7 @@ func TestUpdateSessionUsageSkipsEstimatedCost(t *testing.T) {
 
 	agent := &sessionAgent{}
 	currentSession := &session.Session{ID: "session-id", Cost: 1.25}
-	model := Model{CatwalkCfg: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}
+	model := Model{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}}
 	usage := fantasy.Usage{InputTokens: 1000, OutputTokens: 2000}
 
 	agent.updateSessionUsage(model, currentSession, usage, nil, true)
@@ -226,7 +227,7 @@ func TestUpdateSessionUsageKeepsCountersForZeroUsage(t *testing.T) {
 		CompletionTokens: 456,
 		Cost:             1.25,
 	}
-	model := Model{CatwalkCfg: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}
+	model := Model{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}}
 
 	agent.updateSessionUsage(model, currentSession, fantasy.Usage{}, nil, false)
 
@@ -244,7 +245,7 @@ func TestUpdateSessionUsagePreservesOmittedCountersForPartialUsage(t *testing.T)
 		PromptTokens:     123,
 		CompletionTokens: 456,
 	}
-	model := Model{CatwalkCfg: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}
+	model := Model{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}}
 	usage := fantasy.Usage{InputTokens: 789}
 
 	agent.updateSessionUsage(model, currentSession, usage, nil, false)
@@ -262,7 +263,7 @@ func TestUpdateSessionUsagePreservesCountersForTotalOnlyUsage(t *testing.T) {
 		PromptTokens:     123,
 		CompletionTokens: 456,
 	}
-	model := Model{CatwalkCfg: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}
+	model := Model{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}}
 	usage := fantasy.Usage{TotalTokens: 100}
 
 	agent.updateSessionUsage(model, currentSession, usage, nil, false)
@@ -280,7 +281,7 @@ func TestUpdateSessionUsagePreservesPromptForOutputOnlyUsage(t *testing.T) {
 		PromptTokens:     123,
 		CompletionTokens: 456,
 	}
-	model := Model{CatwalkCfg: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}
+	model := Model{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}}
 	usage := fantasy.Usage{OutputTokens: 50}
 
 	agent.updateSessionUsage(model, currentSession, usage, nil, false)
@@ -299,7 +300,7 @@ func TestUpdateSessionUsageKeepsCountersForEstimatedZeroUsage(t *testing.T) {
 		CompletionTokens: 456,
 		Cost:             1.25,
 	}
-	model := Model{CatwalkCfg: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}
+	model := Model{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}}
 
 	agent.updateSessionUsage(model, currentSession, fantasy.Usage{}, nil, true)
 
@@ -328,7 +329,7 @@ func TestUpdateSessionUsageAddsProviderCost(t *testing.T) {
 
 	agent := &sessionAgent{}
 	currentSession := &session.Session{ID: "session-id", Cost: 1.25}
-	model := Model{CatwalkCfg: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}
+	model := Model{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}}
 	usage := fantasy.Usage{InputTokens: 1000, OutputTokens: 2000}
 
 	agent.updateSessionUsage(model, currentSession, usage, nil, false)

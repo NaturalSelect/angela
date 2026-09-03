@@ -32,7 +32,7 @@ func generateWithCapturedPath(t *testing.T, coord *coordinator, providerCfg conf
 	published, ok := coord.cfg.Config().Providers.Get(providerCfg.ID)
 	require.True(t, ok)
 
-	provider, err := coord.buildProvider(published, model, false)
+	provider, err := coord.buildProvider(published, config.ProviderModel{Model: catwalk.Model{ID: model.Model}}, false, false)
 	require.NoError(t, err)
 
 	lm, err := provider.LanguageModel(t.Context(), model.Model)

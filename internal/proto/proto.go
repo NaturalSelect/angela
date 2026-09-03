@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/lsp"
 )
@@ -120,7 +119,7 @@ type SkillReadResult struct {
 type AgentInfo struct {
 	IsBusy   bool                 `json:"is_busy"`
 	IsReady  bool                 `json:"is_ready"`
-	Model    catwalk.Model        `json:"model"`
+	Model    config.ProviderModel `json:"model"`
 	ModelCfg config.SelectedModel `json:"model_cfg"`
 }
 

@@ -200,7 +200,7 @@ func (m *Providers) setProviderItems() {
 // selectCurrentProvider opens the list on the provider serving the main
 // model, so confirming is a no-op rather than a silent switch.
 func (m *Providers) selectCurrentProvider() {
-	current := m.com.Config().Models[config.ModelMain].Provider
+	current := m.com.Config().Slots[config.SlotMain].Provider
 	if current != "" {
 		for i, item := range m.items {
 			if item.ID() == current {

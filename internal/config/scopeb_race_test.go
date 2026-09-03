@@ -26,7 +26,7 @@ func TestScopeB_InPlaceMutationRace(t *testing.T) {
 	t.Cleanup(resetProviderState)
 
 	cfg := `{
-		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
+		"slots": {"main": {"provider": "openai", "model": "gpt-4"}},
 		"providers": {"openai": {"api_key": "k", "models": [{"id": "gpt-4", "name": "GPT-4"}]}},
 		"options": {"tui": {"compact_mode": false}}
 	}`

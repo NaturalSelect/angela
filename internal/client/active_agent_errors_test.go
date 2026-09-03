@@ -36,7 +36,7 @@ func TestRecordRecentModelSurfacesTheServersReason(t *testing.T) {
 	c := captureClient(t, srv)
 
 	err := c.RecordRecentModel(context.Background(), "ws1", config.ScopeGlobal,
-		config.ModelMain, config.SelectedModel{Provider: "mock", Model: "m"})
+		config.SlotMain, config.SelectedModel{Provider: "mock", Model: "m"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown model slot",
 		"the server said why; the caller must be told")
@@ -53,7 +53,7 @@ func TestRecordRecentModelReportsAMissingWorkspace(t *testing.T) {
 	c := captureClient(t, srv)
 
 	err := c.RecordRecentModel(context.Background(), "ws1", config.ScopeGlobal,
-		config.ModelMain, config.SelectedModel{Provider: "mock", Model: "m"})
+		config.SlotMain, config.SelectedModel{Provider: "mock", Model: "m"})
 	require.ErrorIs(t, err, ErrNotFound)
 }
 

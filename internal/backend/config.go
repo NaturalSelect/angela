@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/agent"
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/commands"
@@ -77,7 +76,7 @@ func (b *Backend) RemoveConfigField(workspaceID string, scope config.Scope, key 
 
 // UpdatePreferredModel updates the preferred model for the given type
 // and persists it to the config file at the given scope.
-func (b *Backend) UpdatePreferredModel(workspaceID string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (b *Backend) UpdatePreferredModel(workspaceID string, scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return err
@@ -91,7 +90,7 @@ func (b *Backend) UpdatePreferredModel(workspaceID string, scope config.Scope, n
 
 // RecordRecentModel adds a model to the recent-models list for the given
 // type without changing which model is selected.
-func (b *Backend) RecordRecentModel(workspaceID string, scope config.Scope, name config.ModelConfigName, model config.SelectedModel) error {
+func (b *Backend) RecordRecentModel(workspaceID string, scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return err
@@ -104,7 +103,7 @@ func (b *Backend) RecordRecentModel(workspaceID string, scope config.Scope, name
 }
 
 // PruneRecentModels drops recent-model entries that no longer resolve.
-func (b *Backend) PruneRecentModels(workspaceID string, scope config.Scope, name config.ModelConfigName, stale []config.SelectedModel) error {
+func (b *Backend) PruneRecentModels(workspaceID string, scope config.Scope, name config.SlotName, stale []config.SelectedModel) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return err
@@ -144,7 +143,7 @@ func (b *Backend) SetProviderAPIKey(workspaceID string, scope config.Scope, prov
 
 // UpsertProviderModel records a model under a provider's model list,
 // replacing an entry with the same ID.
-func (b *Backend) UpsertProviderModel(workspaceID string, scope config.Scope, providerID string, model catwalk.Model) error {
+func (b *Backend) UpsertProviderModel(workspaceID string, scope config.Scope, providerID string, model config.ProviderModel) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return err

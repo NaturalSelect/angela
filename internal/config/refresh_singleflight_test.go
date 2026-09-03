@@ -68,7 +68,7 @@ func newRefreshTestStore(t *testing.T, configPath string, exchange func(ctx cont
 		ID:         "acme",
 		Name:       "Acme",
 		BaseURL:    acmeBaseURL,
-		Models:     []catwalk.Model{{ID: "acme-model", Name: "Acme Model"}},
+		Models:     []ProviderModel{{Model: catwalk.Model{ID: "acme-model", Name: "Acme Model"}}},
 		APIKey:     expired.AccessToken,
 		OAuthToken: expired,
 	})

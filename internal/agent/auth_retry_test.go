@@ -107,7 +107,7 @@ func TestAuthRefreshRetriesOnTheRebuiltModel(t *testing.T) {
 		Prompt:    "hi",
 		Agent: resolvedAgent{
 			ID:        config.AgentCoder,
-			Model:     Model{Model: stale, CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}},
+			Model:     Model{Model: stale, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
 			MaxTokens: 10000,
 			RebuildModel: func(context.Context) (fantasy.LanguageModel, error) {
 				return fresh, nil

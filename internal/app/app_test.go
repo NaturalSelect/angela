@@ -440,11 +440,11 @@ func TestApp_ApplyModelOverrides(t *testing.T) {
 	providers := map[string]config.ProviderConfig{
 		"openai": {
 			ID:     "openai",
-			Models: []catwalk.Model{{ID: "gpt-4o"}},
+			Models: []config.ProviderModel{{Model: catwalk.Model{ID: "gpt-4o"}}},
 		},
 		"anthropic": {
 			ID:     "anthropic",
-			Models: []catwalk.Model{{ID: "claude-3-opus"}},
+			Models: []config.ProviderModel{{Model: catwalk.Model{ID: "claude-3-opus"}}},
 		},
 	}
 
@@ -504,7 +504,7 @@ func TestApp_ApplyModelOverrides(t *testing.T) {
 			}
 			require.Equal(t, tt.wantOverride, got)
 
-			chore, ok := store.Config().ModelForName(config.ModelChore)
+			chore, ok := store.Config().ModelForSlot(config.SlotChore)
 			require.Equal(t, tt.wantChoreSet, ok)
 			if tt.wantChoreSet {
 				require.Equal(t, tt.wantChore, chore)

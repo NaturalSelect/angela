@@ -110,7 +110,7 @@ func TestTheCredentialStepAdvancesInsteadOfStartingTheAgent(t *testing.T) {
 	// unstubbed: no model has been picked yet, so a blank model must
 	// never be persisted or started. The returned command only fetches
 	// the catalog for the model list.
-	require.NotNil(t, m.handleSelectModel(pickAction(config.ModelMain)))
+	require.NotNil(t, m.handleSelectModel(pickAction(config.SlotMain)))
 
 	require.Equal(t, onboardingStepModel, m.onboarding.step)
 	require.True(t, m.dialog.ContainsDialog(dialog.ModelsID))
@@ -129,7 +129,7 @@ func TestTheModelStepDefersToTheConfigurationStep(t *testing.T) {
 	// UpsertProviderModel, UpdatePreferredModel, and InitCoderAgent are
 	// deliberately left unstubbed: nothing may be written before the
 	// parameters are settled.
-	runCmds(m, m.handleSelectModel(pickAction(config.ModelMain)))
+	runCmds(m, m.handleSelectModel(pickAction(config.SlotMain)))
 
 	require.Equal(t, onboardingStepModelConfig, m.onboarding.step)
 	require.True(t, m.dialog.ContainsDialog(dialog.ModelConfigID))
@@ -149,7 +149,7 @@ func TestTheConfigurationStepRegistersBeforePersisting(t *testing.T) {
 
 	var upsertedContextWindow int64
 	register := ws.EXPECT().UpsertProviderModel(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ config.Scope, _ string, model catwalk.Model) error {
+		DoAndReturn(func(_ config.Scope, _ string, model config.ProviderModel) error {
 			upsertedContextWindow = model.ContextWindow
 			return nil
 		})
@@ -159,9 +159,9 @@ func TestTheConfigurationStepRegistersBeforePersisting(t *testing.T) {
 
 	runCmds(m, m.handleConfigureModel(dialog.ActionConfigureModel{
 		Provider:  catwalk.Provider{ID: pickProviderID},
-		Model:     config.SelectedModel{Provider: pickProviderID, Model: "typed-model", MaxTokens: 32768},
-		Catwalk:   catwalk.Model{ID: "typed-model", ContextWindow: 1048576, DefaultMaxTokens: 32768},
-		ModelType: config.ModelMain,
+		Model:     config.SelectedModel{Provider: pickProviderID, Model: "typed-model"},
+		Catwalk:   config.ProviderModel{Model: catwalk.Model{ID: "typed-model", ContextWindow: 1048576, DefaultMaxTokens: 32768}},
+		ModelType: config.SlotMain,
 	}))
 
 	require.Equal(t, int64(1048576), upsertedContextWindow)

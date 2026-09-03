@@ -22,21 +22,21 @@ func TestTwoTogglesCancelOut(t *testing.T) {
 
 	before, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.False(t, before.Model.Think, "precondition: thinking starts off")
+	require.False(t, before.Think, "precondition: thinking starts off")
 
 	first, err := coord.EditActiveAgent(t.Context(), sess.ID, config.ActiveAgentEdit{ToggleThink: true})
 	require.NoError(t, err)
-	require.True(t, first.Model.Think, "the first toggle turns thinking on")
+	require.True(t, first.Think, "the first toggle turns thinking on")
 
 	// The second client still holds the value it read before the first
 	// toggle: off. A toggle carries no value, so it cannot replay it.
 	second, err := coord.EditActiveAgent(t.Context(), sess.ID, config.ActiveAgentEdit{ToggleThink: true})
 	require.NoError(t, err)
-	require.False(t, second.Model.Think, "two toggles must cancel out")
+	require.False(t, second.Think, "two toggles must cancel out")
 
 	after, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.False(t, after.Model.Think, "the persisted instance must agree")
+	require.False(t, after.Think, "the persisted instance must agree")
 }
 
 // TestConcurrentTogglesEachLand pins the atomicity the lock buys: N
@@ -65,7 +65,7 @@ func TestConcurrentTogglesEachLand(t *testing.T) {
 
 	after, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.True(t, after.Model.Think,
+	require.True(t, after.Think,
 		"an odd number of flips must leave thinking on: none may be lost")
 }
 
@@ -83,7 +83,7 @@ func TestToggleOutranksAnAbsoluteThink(t *testing.T) {
 		Think:       ptrTo(false),
 	})
 	require.NoError(t, err)
-	require.True(t, after.Model.Think)
+	require.True(t, after.Think)
 }
 
 // TestAToggleIsNotAZeroEdit keeps the early return from swallowing it:

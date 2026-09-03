@@ -70,6 +70,13 @@ const (
 	// resumes instead of leaving a truncated response as the final
 	// answer.
 	autoContinuePrompt = "Continue exactly where you left off in your previous response if you have next steps. Do not repeat any content already provided."
+
+	// interruptedPromptPrefix opens the wrapper applied by
+	// wrapInterruptedPrompt below. Recognizing it on a prompt that
+	// already carries it is what keeps repeated interruptions of the
+	// same queued turn from nesting the wrapper deeper each time.
+	interruptedPromptPrefix = "The previous session was interrupted because it got too long, the initial user request was: `"
+	interruptedPromptSuffix = "`"
 )
 
 var userAgent = fmt.Sprintf("Angela/%s (https://github.com/NaturalSelect/angela)", version.Version)
@@ -185,12 +192,16 @@ type SessionAgent interface {
 
 type Model struct {
 	Model      fantasy.LanguageModel
-	CatwalkCfg catwalk.Model
+	CatwalkCfg config.ProviderModel
 	ModelCfg   config.SelectedModel
 	FlatRate   bool
 
+	// Think is the resolved thinking state for this run: the catalog/
+	// variant default, overridden by any explicit session pick.
+	Think bool
+
 	// Variant is the name of the parameter preset already folded into
-	// ModelCfg, kept so the session record can name what ran. It is
+	// CatwalkCfg, kept so the session record can name what ran. It is
 	// empty when the model ran on its baseline parameters.
 	Variant string
 }
@@ -1162,7 +1173,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			if !ok {
 				existing = []SessionAgentCall{}
 			}
-			call.Prompt = fmt.Sprintf("The previous session was interrupted because it got too long, the initial user request was: `%s`", call.Prompt)
+			call.Prompt = wrapInterruptedPrompt(call.Prompt)
 			existing = append(existing, call)
 			a.messageQueue.Set(call.SessionID, existing)
 			hitMaxTokens = false
@@ -1293,6 +1304,20 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		a.publishRunComplete(ctx, call, complete)
 	}
 	return a.Run(ctx, reresolve(ctx, firstQueuedMessage))
+}
+
+// wrapInterruptedPrompt marks prompt as belonging to a turn that got
+// cut short by auto-summarization while tool calls were still
+// pending, so the resumed turn still knows what the user actually
+// asked for. It is idempotent: a prompt that already carries the
+// wrapper (a turn interrupted this way more than once) is returned
+// unchanged rather than nesting another layer of wrapper text around
+// it.
+func wrapInterruptedPrompt(prompt string) string {
+	if strings.HasPrefix(prompt, interruptedPromptPrefix) {
+		return prompt
+	}
+	return interruptedPromptPrefix + prompt + interruptedPromptSuffix
 }
 
 // enqueueAutoContinue re-queues call with a fixed follow-up prompt so a

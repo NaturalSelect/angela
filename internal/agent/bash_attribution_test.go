@@ -37,10 +37,10 @@ func TestBashAttributionNamesTheModelThatRanTheTurn(t *testing.T) {
 	// The coder sits on the chore slot, so moving the session to the
 	// large model makes the two disagree.
 	require.NoError(t, editActive(t, coord, sess.ID, config.ActiveAgentEdit{
-		ModelName: config.ModelChore,
-		Model:     &config.SelectedModel{Provider: "mock", Model: "large-model"},
+		Slot:  config.SlotChore,
+		Model: &config.SelectedModel{Provider: "mock", Model: "large-model"},
 	}))
-	require.Equal(t, "small-model", coord.cfg.Config().Models[config.ModelChore].Model,
+	require.Equal(t, "small-model", coord.cfg.Config().Slots[config.SlotChore].Model,
 		"precondition: the global slot still names the other model")
 
 	active, err := coord.activeAgentFor(t.Context(), sess.ID)

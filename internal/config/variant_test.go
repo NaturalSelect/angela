@@ -15,15 +15,18 @@ import (
 func TestVariantOverridesOnlyTheKeysItNames(t *testing.T) {
 	t.Parallel()
 
-	base := SelectedModel{
-		Provider:        "anthropic",
-		Model:           "claude-opus-4",
-		ReasoningEffort: "medium",
-		Think:           true,
-		MaxTokens:       8000,
-		Temperature:     ptr(0.7),
-		TopP:            ptr(0.9),
-		ProviderOptions: map[string]any{"beta": "on", "cache": "yes"},
+	base := ProviderModel{
+		Model: catwalk.Model{
+			ID:                     "claude-opus-4",
+			DefaultReasoningEffort: "medium",
+			DefaultMaxTokens:       8000,
+			Options: catwalk.ModelOptions{
+				Temperature:     ptr(0.7),
+				TopP:            ptr(0.9),
+				ProviderOptions: map[string]any{"beta": "on", "cache": "yes"},
+			},
+		},
+		Think: true,
 		Variants: map[string]SelectedModelOverride{
 			"deep": {
 				ReasoningEffort: ptr("high"),
@@ -33,29 +36,28 @@ func TestVariantOverridesOnlyTheKeysItNames(t *testing.T) {
 		},
 	}
 
-	got, ok := base.WithVariant("deep", nil)
+	got, ok := base.WithVariant("deep")
 	require.True(t, ok)
 
 	// Named keys are overridden.
-	require.Equal(t, "high", got.ReasoningEffort)
-	require.Equal(t, int64(32000), got.MaxTokens)
-	require.Equal(t, "off", got.ProviderOptions["beta"])
+	require.Equal(t, "high", got.DefaultReasoningEffort)
+	require.Equal(t, int64(32000), got.DefaultMaxTokens)
+	require.Equal(t, "off", got.Options.ProviderOptions["beta"])
 
 	// Unnamed keys survive from the baseline.
 	require.True(t, got.Think, "think was not named by the variant")
-	require.Equal(t, ptr(0.7), got.Temperature)
-	require.Equal(t, ptr(0.9), got.TopP)
-	require.Equal(t, "yes", got.ProviderOptions["cache"],
+	require.Equal(t, ptr(0.7), got.Options.Temperature)
+	require.Equal(t, ptr(0.9), got.Options.TopP)
+	require.Equal(t, "yes", got.Options.ProviderOptions["cache"],
 		"provider options merge per key, they do not replace the map")
 
 	// The identity is not a variant's to change.
-	require.Equal(t, "anthropic", got.Provider)
-	require.Equal(t, "claude-opus-4", got.Model)
+	require.Equal(t, "claude-opus-4", got.ID)
 
 	// The baseline itself is untouched, so the next turn resolves clean.
-	require.Equal(t, "medium", base.ReasoningEffort)
-	require.Equal(t, int64(8000), base.MaxTokens)
-	require.Equal(t, "on", base.ProviderOptions["beta"])
+	require.Equal(t, "medium", base.DefaultReasoningEffort)
+	require.Equal(t, int64(8000), base.DefaultMaxTokens)
+	require.Equal(t, "on", base.Options.ProviderOptions["beta"])
 }
 
 // TestVariantCanTurnOffWhatTheBaselineTurnedOn pins why the override
@@ -64,18 +66,18 @@ func TestVariantOverridesOnlyTheKeysItNames(t *testing.T) {
 func TestVariantCanTurnOffWhatTheBaselineTurnedOn(t *testing.T) {
 	t.Parallel()
 
-	base := SelectedModel{
-		Think:     true,
-		MaxTokens: 8000,
+	base := ProviderModel{
+		Model: catwalk.Model{DefaultMaxTokens: 8000},
+		Think: true,
 		Variants: map[string]SelectedModelOverride{
 			"quick": {Think: ptr(false)},
 		},
 	}
 
-	got, ok := base.WithVariant("quick", nil)
+	got, ok := base.WithVariant("quick")
 	require.True(t, ok)
 	require.False(t, got.Think)
-	require.Equal(t, int64(8000), got.MaxTokens, "max tokens was not named")
+	require.Equal(t, int64(8000), got.DefaultMaxTokens, "max tokens was not named")
 }
 
 // TestUnknownVariantDegradesToTheBaseline pins the loose half of
@@ -84,10 +86,10 @@ func TestVariantCanTurnOffWhatTheBaselineTurnedOn(t *testing.T) {
 func TestUnknownVariantDegradesToTheBaseline(t *testing.T) {
 	t.Parallel()
 
-	base := SelectedModel{ReasoningEffort: "medium"}
+	base := ProviderModel{Model: catwalk.Model{DefaultReasoningEffort: "medium"}}
 
 	for _, name := range []string{"", "nonexistent"} {
-		got, ok := base.WithVariant(name, nil)
+		got, ok := base.WithVariant(name)
 		require.False(t, ok, "no overlay applies for %q", name)
 		require.Equal(t, base, got)
 	}
@@ -98,21 +100,22 @@ func TestUnknownVariantDegradesToTheBaseline(t *testing.T) {
 func TestReasoningLevelsSeedVariants(t *testing.T) {
 	t.Parallel()
 
-	cw := &catwalk.Model{
-		ID:              "claude-opus-4",
-		CanReason:       true,
-		ReasoningLevels: []string{"low", "medium", "high"},
+	base := ProviderModel{
+		Model: catwalk.Model{
+			ID:                     "claude-opus-4",
+			CanReason:              true,
+			ReasoningLevels:        []string{"low", "medium", "high"},
+			DefaultReasoningEffort: "medium",
+		},
+		Think: true,
 	}
-	base := SelectedModel{ReasoningEffort: "medium", Think: true}
 
-	got, ok := base.WithVariant("high", cw)
+	got, ok := base.WithVariant("high")
 	require.True(t, ok)
-	require.Equal(t, "high", got.ReasoningEffort)
+	require.Equal(t, "high", got.DefaultReasoningEffort)
 	require.True(t, got.Think, "seeding touches reasoning effort only")
 
-	require.Equal(t, []string{"low", "medium", "high"}, base.VariantNames(cw))
-	require.Empty(t, base.VariantNames(nil),
-		"without a catalog there is nothing to seed from")
+	require.Equal(t, []string{"low", "medium", "high"}, base.VariantNames())
 }
 
 // TestUserVariantShadowsASeededLevel pins precedence. A user who names
@@ -121,19 +124,19 @@ func TestReasoningLevelsSeedVariants(t *testing.T) {
 func TestUserVariantShadowsASeededLevel(t *testing.T) {
 	t.Parallel()
 
-	cw := &catwalk.Model{ReasoningLevels: []string{"low", "high"}}
-	base := SelectedModel{
+	base := ProviderModel{
+		Model: catwalk.Model{ReasoningLevels: []string{"low", "high"}},
 		Variants: map[string]SelectedModelOverride{
 			"high":  {ReasoningEffort: ptr("high"), MaxTokens: ptr(int64(64000))},
 			"cheap": {MaxTokens: ptr(int64(1000))},
 		},
 	}
 
-	got, ok := base.WithVariant("high", cw)
+	got, ok := base.WithVariant("high")
 	require.True(t, ok)
-	require.Equal(t, int64(64000), got.MaxTokens,
+	require.Equal(t, int64(64000), got.DefaultMaxTokens,
 		"the user definition won, not the seeded one")
 
-	require.Equal(t, []string{"low", "high", "cheap"}, base.VariantNames(cw),
+	require.Equal(t, []string{"low", "high", "cheap"}, base.VariantNames(),
 		"a shadowed level keeps its catalog position and is listed once")
 }

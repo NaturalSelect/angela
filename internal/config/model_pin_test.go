@@ -13,7 +13,7 @@ import (
 // provider/model, with both providers available so either choice resolves.
 func twoProviderConfig(provider, model string) string {
 	return `{
-		"models": {
+		"slots": {
 			"main": {"provider": "` + provider + `", "model": "` + model + `"}
 		},
 		"providers": {
@@ -51,7 +51,7 @@ func TestModelSelectionSurvivesPeerWrite(t *testing.T) {
 	store.CaptureStalenessSnapshot([]string{configPath})
 
 	// The user picks Claude in this instance.
-	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, ModelMain, SelectedModel{
+	require.NoError(t, store.UpdatePreferredModel(ScopeGlobal, SlotMain, SelectedModel{
 		Provider: "anthropic",
 		Model:    "claude-3",
 	}))
@@ -63,7 +63,7 @@ func TestModelSelectionSurvivesPeerWrite(t *testing.T) {
 	// write such as an OAuth token refresh) must leave our choice alone.
 	require.NoError(t, store.ReloadFromDisk(context.Background()))
 
-	large := store.Config().Models[ModelMain]
+	large := store.Config().Slots[SlotMain]
 	require.Equal(t, "anthropic", large.Provider)
 	require.Equal(t, "claude-3", large.Model)
 }
@@ -90,7 +90,7 @@ func TestModelSelectionYieldsToDiskWhenUnchosen(t *testing.T) {
 	require.NoError(t, os.WriteFile(configPath, []byte(twoProviderConfig("anthropic", "claude-3")), 0o600))
 	require.NoError(t, store.ReloadFromDisk(context.Background()))
 
-	large := store.Config().Models[ModelMain]
+	large := store.Config().Slots[SlotMain]
 	require.Equal(t, "anthropic", large.Provider)
 	require.Equal(t, "claude-3", large.Model)
 }

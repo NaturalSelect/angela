@@ -84,7 +84,7 @@ func seedSession(t *testing.T, sa *sessionAgent, env fakeEnv) string {
 	seedModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
 		Return(streamOf([]string{"hello"}, fantasy.FinishReasonStop), nil)
 
-	catwalkCfg := catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}
 	_, err = sa.Run(t.Context(), SessionAgentCall{
 		Agent: resolvedAgent{
 			ID:        config.AgentCoder,
@@ -140,7 +140,7 @@ func TestSummarizePreservesFullContentOnCleanFinish(t *testing.T) {
 		Return(streamOf(chunks, fantasy.FinishReasonStop), nil)
 
 	compact := resolvedAgent{
-		Model:        Model{Model: compactModel, CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}},
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
 		SystemPrompt: "summarize",
 	}
 	require.NoError(t, sa.Summarize(t.Context(), sessID, compact, nil, nil))
@@ -183,7 +183,7 @@ func TestSummarizeRejectsOutputThatHitTheTokenLimit(t *testing.T) {
 		Return(streamOf(truncated, fantasy.FinishReasonLength), nil)
 
 	compact := resolvedAgent{
-		Model:        Model{Model: compactModel, CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 4096}},
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 4096}}},
 		SystemPrompt: "summarize",
 		MaxTokens:    4096,
 	}
@@ -216,7 +216,7 @@ func TestSummarizeSendsAnExplicitOutputCap(t *testing.T) {
 		})
 
 	compact := resolvedAgent{
-		Model:        Model{Model: compactModel, CatwalkCfg: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 9000}},
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 9000}}},
 		SystemPrompt: "summarize",
 		MaxTokens:    9000,
 	}

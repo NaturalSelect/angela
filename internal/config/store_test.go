@@ -176,7 +176,7 @@ func TestReloadFromDisk_PublishesAgentsExactlyOnce(t *testing.T) {
 	t.Cleanup(resetProviderState)
 
 	initial := `{
-		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
+		"slots": {"main": {"provider": "openai", "model": "gpt-4"}},
 		"providers": {"openai": {"api_key": "test-key", "models": [{"id": "gpt-4", "name": "GPT-4"}]}}
 	}`
 	require.NoError(t, os.WriteFile(configPath, []byte(initial), 0o600))
@@ -211,7 +211,7 @@ func TestReloadFromDisk_PublishesAgentsExactlyOnce(t *testing.T) {
 	}()
 
 	updated := `{
-		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
+		"slots": {"main": {"provider": "openai", "model": "gpt-4"}},
 		"providers": {"openai": {"api_key": "test-key", "models": [{"id": "gpt-4", "name": "GPT-4"}]}},
 		"agents": {"reviewer": {"description": "Reviews code"}}
 	}`
@@ -447,7 +447,7 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 
 	// Create initial config with one model preference
 	initialConfig := `{
-		"models": {
+		"slots": {
 			"main": {"provider": "openai", "model": "gpt-4"}
 		},
 		"providers": {
@@ -468,12 +468,12 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	store.CaptureStalenessSnapshot([]string{configPath})
 
 	// Verify initial model
-	require.Equal(t, "openai", store.config.Models[ModelMain].Provider)
-	require.Equal(t, "gpt-4", store.config.Models[ModelMain].Model)
+	require.Equal(t, "openai", store.config.Slots[SlotMain].Provider)
+	require.Equal(t, "gpt-4", store.config.Slots[SlotMain].Model)
 
 	// Modify config on disk to change model
 	updatedConfig := `{
-		"models": {
+		"slots": {
 			"main": {"provider": "anthropic", "model": "claude-3"}
 		},
 		"providers": {
@@ -496,8 +496,8 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the NEW config values are now in effect (regression check)
-	require.Equal(t, "anthropic", store.config.Models[ModelMain].Provider)
-	require.Equal(t, "claude-3", store.config.Models[ModelMain].Model)
+	require.Equal(t, "anthropic", store.config.Slots[SlotMain].Provider)
+	require.Equal(t, "claude-3", store.config.Slots[SlotMain].Model)
 }
 
 // TestSetConfigField_AutoReloads verifies that SetConfigField automatically
@@ -873,7 +873,7 @@ func TestConfigStore_SetConfigFields_concurrentInProcess(t *testing.T) {
 	store := &ConfigStore{
 		config: &Config{
 			Providers: csync.NewMap[string, ProviderConfig](),
-			Models:    make(map[ModelConfigName]SelectedModel),
+			Slots:     make(map[SlotName]SelectedModel),
 		},
 		globalDataPath: configPath,
 		workingDir:     dir,
@@ -985,7 +985,7 @@ func TestReloadFromDisk_InvalidJSONKeepsOldConfig(t *testing.T) {
 	t.Cleanup(resetProviderState)
 
 	valid := `{
-		"models": {"main": {"provider": "openai", "model": "gpt-4"}},
+		"slots": {"main": {"provider": "openai", "model": "gpt-4"}},
 		"providers": {
 			"openai": {
 				"api_key": "test-key",
@@ -1007,5 +1007,5 @@ func TestReloadFromDisk_InvalidJSONKeepsOldConfig(t *testing.T) {
 		"an unparseable config must surface a reload error")
 	require.Equal(t, "bell", store.Config().Options.Notifications,
 		"in-memory config must survive a failed reload")
-	require.NotNil(t, store.Config().Models, "the failed reload must not blank out model selection")
+	require.NotNil(t, store.Config().Slots, "the failed reload must not blank out model selection")
 }

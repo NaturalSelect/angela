@@ -8,14 +8,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setChoreVariants declares variants on the chore model config, which
-// newModelPrefTestCoordinator points the coder agent at.
+// setChoreVariants declares variants on the chore slot's catalog model
+// entry, which newModelPrefTestCoordinator points the coder agent at.
 func setChoreVariants(t *testing.T, coord *coordinator, variants map[string]config.SelectedModelOverride) {
 	t.Helper()
 	cfg := coord.cfg.Config()
-	modelCfg := cfg.Models[config.ModelChore]
-	modelCfg.Variants = variants
-	cfg.Models[config.ModelChore] = modelCfg
+	slot := cfg.Slots[config.SlotChore]
+	providerCfg, ok := cfg.Providers.Get(slot.Provider)
+	require.True(t, ok)
+	for i, m := range providerCfg.Models {
+		if m.ID == slot.Model {
+			providerCfg.Models[i].Variants = variants
+		}
+	}
+	cfg.Providers.Set(slot.Provider, providerCfg)
 }
 
 // setCoderVariant points the coder agent at a variant.
@@ -44,8 +50,8 @@ func TestAgentVariantReachesTheResolvedModel(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "deep", model.Variant)
-	require.Equal(t, int64(32000), model.ModelCfg.MaxTokens)
-	require.Equal(t, "high", model.ModelCfg.ReasoningEffort)
+	require.Equal(t, int64(32000), model.CatwalkCfg.DefaultMaxTokens)
+	require.Equal(t, "high", model.CatwalkCfg.DefaultReasoningEffort)
 	require.Equal(t, "small-model", model.ModelCfg.Model,
 		"a variant keeps the model identity")
 }

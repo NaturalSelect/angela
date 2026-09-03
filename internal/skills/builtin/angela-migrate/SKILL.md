@@ -123,10 +123,10 @@ user has custom API keys configured, extract them and create providers.
 
 | Source | Angela |
 | --- | --- |
-| Claude Code `model` | `models.main` |
-| OpenCode `model` | `models.main` |
-| OpenCode `small_model` | `models.chore` |
-| Cursor default model | `models.main` |
+| Claude Code `model` | `slots.main` |
+| OpenCode `model` | `slots.main` |
+| OpenCode `small_model` | `slots.chore` |
+| Cursor default model | `slots.main` |
 
 OpenCode and Claude Code use `<provider>/<model>` combined format. Split on
 `/` to get `provider` and `model` separately.
@@ -311,7 +311,7 @@ approaches using Angela's hooks, MCP servers, or builtin skills.
 After reading the source config, generate a complete `angela.json` that:
 
 1. Preserves any existing Angela config (read first, then merge).
-2. Contains all mapped providers, models, MCP servers, permissions, hooks,
+2. Contains all mapped providers, slots, MCP servers, permissions, hooks,
    and options.
 3. Uses environment variable references (never raw secrets).
 4. Includes `$schema` for IDE autocomplete.

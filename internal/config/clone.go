@@ -57,14 +57,22 @@ func (o SelectedModelOverride) clone() SelectedModelOverride {
 	return o
 }
 
-// clone returns a model config that shares nothing with m.
+// clone returns a model config that shares nothing with m. SelectedModel
+// is a plain identity (model, provider), so there is nothing mutable to
+// copy; the method exists so callers do not need to special-case it.
 func (m SelectedModel) clone() SelectedModel {
-	m.Temperature = clonePtr(m.Temperature)
-	m.TopP = clonePtr(m.TopP)
-	m.TopK = clonePtr(m.TopK)
-	m.FrequencyPenalty = clonePtr(m.FrequencyPenalty)
-	m.PresencePenalty = clonePtr(m.PresencePenalty)
-	m.ProviderOptions = cloneJSONMap(m.ProviderOptions)
+	return m
+}
+
+// clone returns a catalog model entry that shares nothing with m.
+func (m ProviderModel) clone() ProviderModel {
+	m.Options.Temperature = clonePtr(m.Options.Temperature)
+	m.Options.TopP = clonePtr(m.Options.TopP)
+	m.Options.TopK = clonePtr(m.Options.TopK)
+	m.Options.FrequencyPenalty = clonePtr(m.Options.FrequencyPenalty)
+	m.Options.PresencePenalty = clonePtr(m.Options.PresencePenalty)
+	m.Options.ProviderOptions = cloneJSONMap(m.Options.ProviderOptions)
+	m.ReasoningLevels = cloneSlice(m.ReasoningLevels)
 	if m.Variants != nil {
 		variants := make(map[string]SelectedModelOverride, len(m.Variants))
 		for name, override := range m.Variants {

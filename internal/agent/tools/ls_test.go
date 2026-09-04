@@ -19,13 +19,14 @@ func TestCreateFileTree(t *testing.T) {
 
 	t.Run("files and directories at multiple depths", func(t *testing.T) {
 		t.Parallel()
-		root := "/proj"
+		sep := string(filepath.Separator)
+		root := sep + "proj"
 		paths := []string{
-			"/proj/a/",
-			"/proj/a/one.go",
-			"/proj/a/b/",
-			"/proj/a/b/two.go",
-			"/proj/top.txt",
+			root + sep + "a" + sep,
+			root + sep + "a" + sep + "one.go",
+			root + sep + "a" + sep + "b" + sep,
+			root + sep + "a" + sep + "b" + sep + "two.go",
+			root + sep + "top.txt",
 		}
 
 		tree := createFileTree(paths, root)
@@ -79,13 +80,15 @@ func TestCreateFileTree(t *testing.T) {
 func TestPrintTree(t *testing.T) {
 	t.Parallel()
 
+	sep := string(filepath.Separator)
+	root := sep + "proj"
 	tree := createFileTree([]string{
-		"/proj/a/",
-		"/proj/a/one.go",
-		"/proj/top.txt",
-	}, "/proj")
+		root + sep + "a" + sep,
+		root + sep + "a" + sep + "one.go",
+		root + sep + "top.txt",
+	}, root)
 
-	got := printTree(tree, "/proj")
+	got := printTree(tree, root)
 	want := "- /proj/\n" +
 		"  - a/\n" +
 		"    - one.go\n" +

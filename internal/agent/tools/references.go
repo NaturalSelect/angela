@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -81,6 +82,11 @@ func groupByFilename(locations []protocol.Location) map[string][]protocol.Locati
 			slog.Error("Failed to convert location URI to path", "uri", loc.URI, "error", err)
 			continue
 		}
+		// Normalize to forward slashes: URI.Path() returns a
+		// native-separator path, but references are grouped and
+		// displayed by filename elsewhere using forward slashes
+		// (matching grep/glob/ls tool output), regardless of OS.
+		path = filepath.ToSlash(path)
 		files[path] = append(files[path], loc)
 	}
 	return files

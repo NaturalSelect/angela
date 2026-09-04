@@ -510,11 +510,16 @@ func TestE2E_PermissionFlowCrossClient(t *testing.T) {
 
 	// Wait for the PermissionRequest to arrive on client A's SSE
 	// stream. We need its ID to drive the grant.
-	// 10s instead of the 3s used elsewhere because this context
-	// bounds three sequential waits, not one.
-	pickCtx, pickCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer pickCancel()
-	reqEv, ok := drainUntil(pickCtx, evcA, func(e pubsub.Event[proto.PermissionRequest]) bool {
+	//
+	// Each of the three sequential waits below gets its own 10s
+	// budget rather than sharing one deadline: a single shared
+	// deadline lets a slow first step starve the later ones of their
+	// fair share, which previously surfaced as flakes on loaded CI
+	// runners (notably macOS) even after the per-wait budget was
+	// widened from 3s to 10s.
+	reqCtx, reqCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer reqCancel()
+	reqEv, ok := drainUntil(reqCtx, evcA, func(e pubsub.Event[proto.PermissionRequest]) bool {
 		return e.Payload.ToolCallID == toolCallID
 	})
 	require.True(t, ok, "client A must receive the PermissionRequest")
@@ -527,11 +532,13 @@ func TestE2E_PermissionFlowCrossClient(t *testing.T) {
 	require.True(t, resolvedA, "client A's grant must resolve the pending request")
 
 	// The blocked Request call must now return granted=true.
+	grantCtx, grantCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer grantCancel()
 	select {
 	case r := <-done:
 		require.NoError(t, r.err)
 		require.True(t, r.granted)
-	case <-pickCtx.Done():
+	case <-grantCtx.Done():
 		t.Fatal("permission Request did not return after grant")
 	}
 
@@ -539,7 +546,9 @@ func TestE2E_PermissionFlowCrossClient(t *testing.T) {
 	// Granted=true for the same ToolCallID. The initial neither-
 	// granted-nor-denied notification published at the start of
 	// Request also lands on B's stream — match on the granted one.
-	notif, ok := drainUntil(pickCtx, evcB, func(e pubsub.Event[proto.PermissionNotification]) bool {
+	notifCtx, notifCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer notifCancel()
+	notif, ok := drainUntil(notifCtx, evcB, func(e pubsub.Event[proto.PermissionNotification]) bool {
 		return e.Payload.ToolCallID == toolCallID && e.Payload.Granted
 	})
 	require.True(t, ok, "client B must receive a granting PermissionNotification")

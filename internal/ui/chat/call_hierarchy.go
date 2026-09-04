@@ -42,7 +42,7 @@ func (r *CallHierarchyToolRenderContext) RenderTool(sty *styles.Styles, width in
 	if params.Direction == "outgoing" {
 		direction = "outgoing"
 	}
-	header := toolHeader(sty, opts.Status, "Call Hierarchy", cappedWidth, opts, params.Symbol, direction)
+	header := toolHeader(sty, opts.Status, "Call Hierarchy", cappedWidth, opts, params.Symbol, "direction", direction)
 	if opts.Compact {
 		return header
 	}

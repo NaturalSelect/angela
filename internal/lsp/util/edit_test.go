@@ -1,6 +1,8 @@
 package util
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	powernap "github.com/charmbracelet/x/powernap/pkg/lsp"
@@ -373,4 +375,522 @@ func TestRangesOverlap(t *testing.T) {
 			require.Equal(t, tt.want, got2, "rangesOverlap(r2, r1) symmetry")
 		})
 	}
+}
+
+func TestApplyTextEdit_UTF32(t *testing.T) {
+	t.Parallel()
+
+	lines := []string{"\u4f60\u597dworld"}
+	edit := protocol.TextEdit{
+		Range: protocol.Range{
+			// UTF-32: codepoints, so "\u4f60\u597d" (2 codepoints) then "world" (5) = 7 total.
+			Start: protocol.Position{Line: 0, Character: 2},
+			End:   protocol.Position{Line: 0, Character: 7},
+		},
+		NewText: "universe",
+	}
+
+	result, err := applyTextEdit(lines, edit, powernap.UTF32)
+	require.NoError(t, err)
+	require.Equal(t, []string{"\u4f60\u597duniverse"}, result)
+}
+
+func TestUtf32ToByteOffset(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		lineText string
+		offset   uint32
+		want     int
+	}{
+		{"ASCII", "hello", 3, 3},
+		{"offset zero", "hello", 0, 0},
+		{"offset beyond end clamps to length", "hi", 100, 2},
+		{"empty string", "", 0, 0},
+		{"multi-byte codepoint counted as one", "h\u00e9llo", 2, 3},
+		{"CJK codepoints", "\u4f60\u597dworld", 2, 6},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, utf32ToByteOffset(tt.lineText, tt.offset))
+		})
+	}
+}
+
+func TestApplyTextEdits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single edit", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "a.txt")
+		require.NoError(t, os.WriteFile(file, []byte("hello world\n"), 0o644))
+		uri := protocol.URIFromPath(file)
+
+		err := applyTextEdits(uri, []protocol.TextEdit{
+			{
+				Range:   protocol.Range{Start: protocol.Position{Line: 0, Character: 6}, End: protocol.Position{Line: 0, Character: 11}},
+				NewText: "there",
+			},
+		}, powernap.UTF16)
+		require.NoError(t, err)
+
+		got, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Equal(t, "hello there\n", string(got))
+	})
+
+	t.Run("multiple edits apply without shifting offsets", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "a.txt")
+		require.NoError(t, os.WriteFile(file, []byte("line one\nline two\nline three\n"), 0o644))
+		uri := protocol.URIFromPath(file)
+
+		err := applyTextEdits(uri, []protocol.TextEdit{
+			{
+				Range:   protocol.Range{Start: protocol.Position{Line: 0, Character: 5}, End: protocol.Position{Line: 0, Character: 8}},
+				NewText: "1",
+			},
+			{
+				Range:   protocol.Range{Start: protocol.Position{Line: 2, Character: 5}, End: protocol.Position{Line: 2, Character: 10}},
+				NewText: "3",
+			},
+		}, powernap.UTF16)
+		require.NoError(t, err)
+
+		got, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Equal(t, "line 1\nline two\nline 3\n", string(got))
+	})
+
+	t.Run("overlapping edits are rejected", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "a.txt")
+		require.NoError(t, os.WriteFile(file, []byte("hello world\n"), 0o644))
+		uri := protocol.URIFromPath(file)
+
+		err := applyTextEdits(uri, []protocol.TextEdit{
+			{Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 0}, End: protocol.Position{Line: 0, Character: 8}}, NewText: "a"},
+			{Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 5}, End: protocol.Position{Line: 0, Character: 11}}, NewText: "b"},
+		}, powernap.UTF16)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "overlapping edits")
+	})
+
+	t.Run("preserves CRLF line endings", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "a.txt")
+		require.NoError(t, os.WriteFile(file, []byte("hello\r\nworld\r\n"), 0o644))
+		uri := protocol.URIFromPath(file)
+
+		err := applyTextEdits(uri, []protocol.TextEdit{
+			{Range: protocol.Range{Start: protocol.Position{Line: 1, Character: 0}, End: protocol.Position{Line: 1, Character: 5}}, NewText: "there"},
+		}, powernap.UTF16)
+		require.NoError(t, err)
+
+		got, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Equal(t, "hello\r\nthere\r\n", string(got))
+	})
+
+	t.Run("missing trailing newline is preserved", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "a.txt")
+		require.NoError(t, os.WriteFile(file, []byte("hello world"), 0o644))
+		uri := protocol.URIFromPath(file)
+
+		err := applyTextEdits(uri, []protocol.TextEdit{
+			{Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 6}, End: protocol.Position{Line: 0, Character: 11}}, NewText: "there"},
+		}, powernap.UTF16)
+		require.NoError(t, err)
+
+		got, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Equal(t, "hello there", string(got))
+	})
+
+	t.Run("deletion removes text", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "a.txt")
+		require.NoError(t, os.WriteFile(file, []byte("hello world\n"), 0o644))
+		uri := protocol.URIFromPath(file)
+
+		err := applyTextEdits(uri, []protocol.TextEdit{
+			{Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 5}, End: protocol.Position{Line: 0, Character: 11}}, NewText: ""},
+		}, powernap.UTF16)
+		require.NoError(t, err)
+
+		got, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", string(got))
+	})
+
+	t.Run("missing file returns an error", func(t *testing.T) {
+		t.Parallel()
+		uri := protocol.URIFromPath(filepath.Join(t.TempDir(), "missing.txt"))
+		err := applyTextEdits(uri, []protocol.TextEdit{
+			{Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 0}, End: protocol.Position{Line: 0, Character: 0}}, NewText: "x"},
+		}, powernap.UTF16)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid uri returns an error", func(t *testing.T) {
+		t.Parallel()
+		err := applyTextEdits(protocol.DocumentURI("file://%zz"), []protocol.TextEdit{}, powernap.UTF16)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid URI")
+	})
+}
+
+func TestApplyDocumentChange_CreateFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates a new empty file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "new.txt")
+		change := protocol.DocumentChange{
+			CreateFile: &protocol.CreateFile{
+				Kind: "create",
+				URI:  protocol.URIFromPath(file),
+			},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+		_, err := os.Stat(file)
+		require.NoError(t, err)
+	})
+
+	t.Run("ignoreIfExists skips an existing file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "existing.txt")
+		require.NoError(t, os.WriteFile(file, []byte("keep me"), 0o644))
+
+		change := protocol.DocumentChange{
+			CreateFile: &protocol.CreateFile{
+				Kind:    "create",
+				URI:     protocol.URIFromPath(file),
+				Options: &protocol.CreateFileOptions{IgnoreIfExists: true},
+			},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+
+		content, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Equal(t, "keep me", string(content))
+	})
+
+	t.Run("overwrite truncates an existing file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "existing.txt")
+		require.NoError(t, os.WriteFile(file, []byte("keep me"), 0o644))
+
+		change := protocol.DocumentChange{
+			CreateFile: &protocol.CreateFile{
+				Kind:    "create",
+				URI:     protocol.URIFromPath(file),
+				Options: &protocol.CreateFileOptions{Overwrite: true},
+			},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+
+		content, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Empty(t, string(content))
+	})
+}
+
+func TestApplyDocumentChange_DeleteFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("deletes a single file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "gone.txt")
+		require.NoError(t, os.WriteFile(file, []byte("bye"), 0o644))
+
+		change := protocol.DocumentChange{
+			DeleteFile: &protocol.DeleteFile{Kind: "delete", URI: protocol.URIFromPath(file)},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+
+		_, err := os.Stat(file)
+		require.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("recursive deletes a directory tree", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		sub := filepath.Join(dir, "sub")
+		require.NoError(t, os.Mkdir(sub, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(sub, "child.txt"), []byte("x"), 0o644))
+
+		change := protocol.DocumentChange{
+			DeleteFile: &protocol.DeleteFile{
+				Kind:    "delete",
+				URI:     protocol.URIFromPath(sub),
+				Options: &protocol.DeleteFileOptions{Recursive: true},
+			},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+
+		_, err := os.Stat(sub)
+		require.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("non-recursive delete of a non-empty directory fails", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		sub := filepath.Join(dir, "sub")
+		require.NoError(t, os.Mkdir(sub, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(sub, "child.txt"), []byte("x"), 0o644))
+
+		change := protocol.DocumentChange{
+			DeleteFile: &protocol.DeleteFile{Kind: "delete", URI: protocol.URIFromPath(sub)},
+		}
+		err := applyDocumentChange(change, powernap.UTF16)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to delete file")
+	})
+}
+
+func TestApplyDocumentChange_RenameFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("renames a file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		oldPath := filepath.Join(dir, "old.txt")
+		newPath := filepath.Join(dir, "new.txt")
+		require.NoError(t, os.WriteFile(oldPath, []byte("content"), 0o644))
+
+		change := protocol.DocumentChange{
+			RenameFile: &protocol.RenameFile{
+				Kind:   "rename",
+				OldURI: protocol.URIFromPath(oldPath),
+				NewURI: protocol.URIFromPath(newPath),
+			},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+
+		_, err := os.Stat(oldPath)
+		require.True(t, os.IsNotExist(err))
+		content, err := os.ReadFile(newPath)
+		require.NoError(t, err)
+		require.Equal(t, "content", string(content))
+	})
+
+	t.Run("refuses to overwrite when Overwrite is explicitly false", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		oldPath := filepath.Join(dir, "old.txt")
+		newPath := filepath.Join(dir, "new.txt")
+		require.NoError(t, os.WriteFile(oldPath, []byte("old"), 0o644))
+		require.NoError(t, os.WriteFile(newPath, []byte("new"), 0o644))
+
+		change := protocol.DocumentChange{
+			RenameFile: &protocol.RenameFile{
+				Kind:    "rename",
+				OldURI:  protocol.URIFromPath(oldPath),
+				NewURI:  protocol.URIFromPath(newPath),
+				Options: &protocol.RenameFileOptions{Overwrite: false},
+			},
+		}
+		err := applyDocumentChange(change, powernap.UTF16)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "already exists")
+
+		content, err := os.ReadFile(newPath)
+		require.NoError(t, err)
+		require.Equal(t, "new", string(content), "target must be untouched")
+	})
+
+	// A nil Options is not the same as Overwrite:false: the "already
+	// exists" guard only runs when Options is set, so an omitted Options
+	// silently allows os.Rename to overwrite the target.
+	t.Run("nil options silently allows overwrite", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		oldPath := filepath.Join(dir, "old.txt")
+		newPath := filepath.Join(dir, "new.txt")
+		require.NoError(t, os.WriteFile(oldPath, []byte("old"), 0o644))
+		require.NoError(t, os.WriteFile(newPath, []byte("new"), 0o644))
+
+		change := protocol.DocumentChange{
+			RenameFile: &protocol.RenameFile{
+				Kind:   "rename",
+				OldURI: protocol.URIFromPath(oldPath),
+				NewURI: protocol.URIFromPath(newPath),
+			},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+
+		content, err := os.ReadFile(newPath)
+		require.NoError(t, err)
+		require.Equal(t, "old", string(content))
+	})
+
+	t.Run("overwrite replaces an existing target", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		oldPath := filepath.Join(dir, "old.txt")
+		newPath := filepath.Join(dir, "new.txt")
+		require.NoError(t, os.WriteFile(oldPath, []byte("old"), 0o644))
+		require.NoError(t, os.WriteFile(newPath, []byte("new"), 0o644))
+
+		change := protocol.DocumentChange{
+			RenameFile: &protocol.RenameFile{
+				Kind:    "rename",
+				OldURI:  protocol.URIFromPath(oldPath),
+				NewURI:  protocol.URIFromPath(newPath),
+				Options: &protocol.RenameFileOptions{Overwrite: true},
+			},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+
+		content, err := os.ReadFile(newPath)
+		require.NoError(t, err)
+		require.Equal(t, "old", string(content))
+	})
+}
+
+func TestApplyDocumentChange_TextDocumentEdit(t *testing.T) {
+	t.Parallel()
+
+	t.Run("delegates to applyTextEdits", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "a.txt")
+		require.NoError(t, os.WriteFile(file, []byte("hello world\n"), 0o644))
+
+		change := protocol.DocumentChange{
+			TextDocumentEdit: &protocol.TextDocumentEdit{
+				TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
+					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: protocol.URIFromPath(file)},
+				},
+				Edits: []protocol.Or_TextDocumentEdit_edits_Elem{
+					{Value: protocol.TextEdit{
+						Range:   protocol.Range{Start: protocol.Position{Line: 0, Character: 6}, End: protocol.Position{Line: 0, Character: 11}},
+						NewText: "there",
+					}},
+				},
+			},
+		}
+		require.NoError(t, applyDocumentChange(change, powernap.UTF16))
+
+		content, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Equal(t, "hello there\n", string(content))
+	})
+
+	t.Run("an unsupported edit element type is an error", func(t *testing.T) {
+		t.Parallel()
+		change := protocol.DocumentChange{
+			TextDocumentEdit: &protocol.TextDocumentEdit{
+				TextDocument: protocol.OptionalVersionedTextDocumentIdentifier{
+					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: protocol.URIFromPath(filepath.Join(t.TempDir(), "a.txt"))},
+				},
+				Edits: []protocol.Or_TextDocumentEdit_edits_Elem{
+					{Value: "not-a-text-edit"},
+				},
+			},
+		}
+		err := applyDocumentChange(change, powernap.UTF16)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid edit type")
+	})
+}
+
+func TestApplyDocumentChange_InvalidURI(t *testing.T) {
+	t.Parallel()
+
+	change := protocol.DocumentChange{
+		CreateFile: &protocol.CreateFile{Kind: "create", URI: protocol.DocumentURI("file://%zz")},
+	}
+	err := applyDocumentChange(change, powernap.UTF16)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid URI")
+}
+
+func TestApplyWorkspaceEdit(t *testing.T) {
+	t.Parallel()
+
+	t.Run("applies changes map", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "a.txt")
+		require.NoError(t, os.WriteFile(file, []byte("hello world\n"), 0o644))
+
+		edit := protocol.WorkspaceEdit{
+			Changes: map[protocol.DocumentURI][]protocol.TextEdit{
+				protocol.URIFromPath(file): {
+					{
+						Range:   protocol.Range{Start: protocol.Position{Line: 0, Character: 6}, End: protocol.Position{Line: 0, Character: 11}},
+						NewText: "there",
+					},
+				},
+			},
+		}
+		require.NoError(t, ApplyWorkspaceEdit(edit, powernap.UTF16))
+
+		content, err := os.ReadFile(file)
+		require.NoError(t, err)
+		require.Equal(t, "hello there\n", string(content))
+	})
+
+	t.Run("applies document changes", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		file := filepath.Join(dir, "new.txt")
+
+		edit := protocol.WorkspaceEdit{
+			DocumentChanges: []protocol.DocumentChange{
+				{CreateFile: &protocol.CreateFile{Kind: "create", URI: protocol.URIFromPath(file)}},
+			},
+		}
+		require.NoError(t, ApplyWorkspaceEdit(edit, powernap.UTF16))
+
+		_, err := os.Stat(file)
+		require.NoError(t, err)
+	})
+
+	t.Run("propagates a Changes failure wrapped with context", func(t *testing.T) {
+		t.Parallel()
+		edit := protocol.WorkspaceEdit{
+			Changes: map[protocol.DocumentURI][]protocol.TextEdit{
+				protocol.URIFromPath(filepath.Join(t.TempDir(), "missing.txt")): {
+					{Range: protocol.Range{Start: protocol.Position{Line: 0, Character: 0}, End: protocol.Position{Line: 0, Character: 0}}, NewText: "x"},
+				},
+			},
+		}
+		err := ApplyWorkspaceEdit(edit, powernap.UTF16)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to apply text edits")
+	})
+
+	t.Run("propagates a DocumentChanges failure wrapped with context", func(t *testing.T) {
+		t.Parallel()
+		edit := protocol.WorkspaceEdit{
+			DocumentChanges: []protocol.DocumentChange{
+				{DeleteFile: &protocol.DeleteFile{Kind: "delete", URI: protocol.URIFromPath(filepath.Join(t.TempDir(), "missing.txt"))}},
+			},
+		}
+		err := ApplyWorkspaceEdit(edit, powernap.UTF16)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to apply document change")
+	})
+
+	t.Run("empty edit is a no-op", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, ApplyWorkspaceEdit(protocol.WorkspaceEdit{}, powernap.UTF16))
+	})
 }

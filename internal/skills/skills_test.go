@@ -1,10 +1,12 @@
 package skills
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -542,5 +544,57 @@ func TestFilter(t *testing.T) {
 			result := Filter(all, tt.disabled)
 			require.Len(t, result, tt.wantLen)
 		})
+	}
+}
+
+func TestDiscover_Wrapper(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "wrap-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(skillDir, SkillFileName),
+		[]byte("---\nname: wrap-skill\ndescription: Wrapper test.\n---\nBody.\n"),
+		0o644,
+	))
+
+	discovered := Discover([]string{tmpDir})
+	require.Len(t, discovered, 1)
+	require.Equal(t, "wrap-skill", discovered[0].Name)
+}
+
+func TestSkill_FormatInvocation(t *testing.T) {
+	t.Parallel()
+
+	s := &Skill{
+		Name:          "my-skill",
+		Description:   "A & <skill>",
+		SkillFilePath: "/skills/my-skill/SKILL.md",
+		Instructions:  "Do the thing.",
+	}
+	out := s.FormatInvocation()
+	require.Contains(t, out, "<loaded_skill>")
+	require.Contains(t, out, "<name>my-skill</name>")
+	require.Contains(t, out, "&amp;")
+	require.Contains(t, out, "<location>/skills/my-skill/SKILL.md</location>")
+	require.Contains(t, out, "<instructions>\nDo the thing.\n  </instructions>")
+	require.Contains(t, out, "</loaded_skill>")
+}
+
+func TestSubscribeEvents_PackageLevel(t *testing.T) {
+	// Not parallel - shares the package-level broker with other tests.
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	ch := SubscribeEvents(ctx)
+	want := []*SkillState{{Name: "pkg-level", State: StateNormal}}
+	go PublishStates(want)
+
+	select {
+	case ev := <-ch:
+		require.Equal(t, "pkg-level", ev.Payload.States[0].Name)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for package-level event")
 	}
 }

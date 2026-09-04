@@ -208,3 +208,25 @@ func TestFindModels(t *testing.T) {
 		})
 	}
 }
+
+// TestFindModels_SkipsDisabledProviders verifies that a model offered only
+// by a disabled provider is not returned as a match, while the same model
+// offered by an enabled provider still is.
+func TestFindModels_SkipsDisabledProviders(t *testing.T) {
+	providers := map[string]config.ProviderConfig{
+		"disabled-provider": {
+			ID:      "disabled-provider",
+			Disable: true,
+			Models:  []config.ProviderModel{{Model: catwalk.Model{ID: "shared-model"}}},
+		},
+		"enabled-provider": {
+			ID:     "enabled-provider",
+			Models: []config.ProviderModel{{Model: catwalk.Model{ID: "shared-model"}}},
+		},
+	}
+
+	largeMatches, _, err := findModels(providers, "shared-model", "")
+	require.NoError(t, err)
+	require.Len(t, largeMatches, 1, "the disabled provider's model must be skipped")
+	require.Equal(t, "enabled-provider", largeMatches[0].provider)
+}

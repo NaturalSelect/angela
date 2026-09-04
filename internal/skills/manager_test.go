@@ -130,6 +130,35 @@ func TestManager_ConcurrentWorkspacesAreIsolated(t *testing.T) {
 	}
 }
 
+func TestManager_AccessorsAndOptions(t *testing.T) {
+	t.Parallel()
+
+	all := []*Skill{{Name: "all-1"}}
+	active := []*Skill{{Name: "active-1"}}
+	mgr := NewManager(all, active, nil,
+		WithResolvedPaths([]string{"/a", "/b"}),
+		WithWorkingDir("/work"),
+	)
+	t.Cleanup(mgr.Shutdown)
+
+	require.Equal(t, all, mgr.AllSkills())
+	require.Equal(t, active, mgr.ActiveSkills())
+	require.Equal(t, []string{"/a", "/b"}, mgr.ResolvedPaths())
+	require.Equal(t, "/work", mgr.WorkingDir())
+}
+
+func TestManager_DefaultOptionsAreZeroValues(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager(nil, nil, nil)
+	t.Cleanup(mgr.Shutdown)
+
+	require.Nil(t, mgr.ResolvedPaths())
+	require.Empty(t, mgr.WorkingDir())
+	require.Nil(t, mgr.AllSkills())
+	require.Nil(t, mgr.ActiveSkills())
+}
+
 func TestDiscoverFromConfig(t *testing.T) {
 	t.Parallel()
 

@@ -2,11 +2,15 @@ package shell
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Benchmark to measure CPU efficiency
@@ -96,6 +100,112 @@ func TestRunContinuity(t *testing.T) {
 	if out != expect {
 		t.Fatalf("expected output %q, got %q", expect, out)
 	}
+}
+
+func TestShell_GetSetWorkingDir(t *testing.T) {
+	t.Parallel()
+
+	dir1 := t.TempDir()
+	shell := NewShell(&Options{WorkingDir: dir1})
+
+	if got := shell.GetWorkingDir(); got != dir1 {
+		t.Fatalf("GetWorkingDir() = %q, want %q", got, dir1)
+	}
+
+	dir2 := t.TempDir()
+	if err := shell.SetWorkingDir(dir2); err != nil {
+		t.Fatalf("SetWorkingDir returned error: %v", err)
+	}
+	if got := shell.GetWorkingDir(); got != dir2 {
+		t.Fatalf("GetWorkingDir() after SetWorkingDir = %q, want %q", got, dir2)
+	}
+}
+
+func TestShell_SetWorkingDir_NonExistentDirErrors(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	shell := NewShell(&Options{WorkingDir: dir})
+
+	missing := filepath.Join(dir, "does-not-exist")
+	if err := shell.SetWorkingDir(missing); err == nil {
+		t.Fatal("expected error setting non-existent working dir")
+	}
+	if got := shell.GetWorkingDir(); got != dir {
+		t.Fatalf("GetWorkingDir() after failed SetWorkingDir = %q, want unchanged %q", got, dir)
+	}
+}
+
+func TestShell_GetSetEnv(t *testing.T) {
+	t.Parallel()
+
+	shell := NewShell(&Options{WorkingDir: t.TempDir(), Env: []string{"FOO=bar"}})
+
+	env := shell.GetEnv()
+	if !slices.Contains(env, "FOO=bar") {
+		t.Fatalf("GetEnv() = %v, want to contain FOO=bar", env)
+	}
+
+	shell.SetEnv("FOO", "baz")
+	env = shell.GetEnv()
+	if !slices.Contains(env, "FOO=baz") {
+		t.Fatalf("GetEnv() after update = %v, want to contain FOO=baz", env)
+	}
+	if slices.Contains(env, "FOO=bar") {
+		t.Fatalf("GetEnv() after update = %v, should not contain stale FOO=bar", env)
+	}
+
+	shell.SetEnv("NEWVAR", "val")
+	env = shell.GetEnv()
+	if !slices.Contains(env, "NEWVAR=val") {
+		t.Fatalf("GetEnv() after add = %v, want to contain NEWVAR=val", env)
+	}
+}
+
+func TestShell_GetEnv_ReturnsIndependentCopy(t *testing.T) {
+	t.Parallel()
+
+	shell := NewShell(&Options{WorkingDir: t.TempDir(), Env: []string{"FOO=bar"}})
+
+	env := shell.GetEnv()
+	env[0] = "MUTATED=true"
+
+	again := shell.GetEnv()
+	if slices.Contains(again, "MUTATED=true") {
+		t.Fatal("GetEnv() result shares backing array with shell's internal state")
+	}
+}
+
+func TestShell_SetBlockFuncs(t *testing.T) {
+	t.Parallel()
+
+	shell := NewShell(&Options{WorkingDir: t.TempDir()})
+
+	// Unblocked before SetBlockFuncs.
+	if _, _, err := shell.Exec(t.Context(), "echo hi"); err != nil {
+		t.Fatalf("unexpected error before blocking: %v", err)
+	}
+
+	shell.SetBlockFuncs([]BlockFunc{CommandsBlocker([]string{"forbidden"})})
+
+	_, _, err := shell.Exec(t.Context(), "forbidden")
+	if err == nil {
+		t.Fatal("expected error after SetBlockFuncs, got nil")
+	}
+	if !strings.Contains(err.Error(), "not allowed for security reasons") {
+		t.Fatalf("expected security error, got: %v", err)
+	}
+}
+
+func TestNewShell_NilOptionsUsesProcessDefaults(t *testing.T) {
+	t.Parallel()
+
+	shell := NewShell(nil)
+
+	wantCwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.Equal(t, wantCwd, shell.GetWorkingDir())
+	require.NotEmpty(t, shell.GetEnv())
 }
 
 func TestCrossPlatformExecution(t *testing.T) {

@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/client"
@@ -185,6 +187,45 @@ func TestRestartIfStale_MatchingServerUntouched(t *testing.T) {
 	require.Empty(t, log.all())
 }
 
+// TestShutdownLegacyStaleServer_ListWorkspacesErrorReusesServer covers
+// the defensive branch where the idleness check itself fails (e.g. the
+// server is flaking): the function must refuse to guess and report the
+// server as not replaceable rather than risking an unconditional
+// shutdown against a possibly-busy server.
+func TestShutdownLegacyStaleServer_ListWorkspacesErrorReusesServer(t *testing.T) {
+	t.Parallel()
+
+	c := newRunTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/workspaces", r.URL.Path)
+		http.Error(w, "boom", http.StatusInternalServerError)
+	})
+
+	ok := shutdownLegacyStaleServer(t.Context(), c, nil)
+	require.False(t, ok, "a failed idleness check must not be treated as an accepted shutdown")
+}
+
+// TestShutdownLegacyStaleServer_ShutdownCommandRejectedReusesServer
+// covers an idle server whose final unconditional shutdown command is
+// nonetheless refused (e.g. it raced a new workspace into existence):
+// the caller must be told the server was not replaced.
+func TestShutdownLegacyStaleServer_ShutdownCommandRejectedReusesServer(t *testing.T) {
+	t.Parallel()
+
+	c := newRunTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/workspaces":
+			require.NoError(t, json.NewEncoder(w).Encode([]proto.Workspace{}))
+		case "/v1/control":
+			http.Error(w, "server is hosting live workspaces", http.StatusConflict)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+
+	ok := shutdownLegacyStaleServer(t.Context(), c, nil)
+	require.False(t, ok, "a refused unconditional shutdown must not be treated as accepted")
+}
+
 // TestCreateWorkspaceOnLiveServer_RetriesPastExitingServer covers the
 // startup race left over from making the shutdown decision final: a client
 // can reach a server in the instant between its committing to an idle
@@ -255,4 +296,31 @@ func TestCreateWorkspaceOnLiveServer_GivesUpOnOtherFailures(t *testing.T) {
 			return nil
 		})
 	require.Error(t, err)
+}
+
+// TestCreateWorkspaceOnLiveServer_ReplaceFuncErrorPropagates covers the
+// case where the server-shutdown retry is warranted but spawning the
+// replacement itself fails: that error must surface directly rather
+// than being retried or swallowed.
+func TestCreateWorkspaceOnLiveServer_ReplaceFuncErrorPropagates(t *testing.T) {
+	t.Parallel()
+
+	var creates int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&creates, 1)
+		http.Error(w, "server is shutting down", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	c, err := client.NewClient(t.TempDir(), "tcp", u.Host)
+	require.NoError(t, err)
+
+	replaceErr := errors.New("no port available for replacement server")
+	_, err = createWorkspaceOnLiveServer(t.Context(), c, proto.Workspace{Path: t.TempDir()},
+		func() error { return replaceErr })
+	require.ErrorIs(t, err, replaceErr)
+	require.EqualValues(t, 1, atomic.LoadInt32(&creates),
+		"a failed replacement must stop the retry loop instead of trying again")
 }

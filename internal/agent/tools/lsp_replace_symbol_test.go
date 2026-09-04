@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/fantasy"
+	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
 	"github.com/stretchr/testify/require"
 )
 
@@ -148,4 +150,83 @@ func TestReplaceSymbolPlans(t *testing.T) {
 	t.Parallel()
 
 	require.Implements(t, (*Planner)(nil), NewReplaceSymbolTool(nil, nil, nil))
+}
+
+// TestReplaceSymbolToolRun_PropagatesPlanResponse pins that run()
+// returns whatever plan() settled on directly, without invoking
+// Apply.
+func TestReplaceSymbolToolRun_PropagatesPlanResponse(t *testing.T) {
+	t.Parallel()
+
+	tool := NewReplaceSymbolTool(nil, nil, nil).(*replaceSymbolTool)
+
+	resp, err := tool.run(t.Context(), ReplaceSymbolParams{FilePath: "a.go"}, fantasy.ToolCall{})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "symbol is required")
+}
+
+// TestReplaceSymbolToolPlanCapitalized pins that the exported Plan
+// method decodes the call's JSON input before delegating to plan(),
+// and reports malformed input instead of panicking on it.
+func TestReplaceSymbolToolPlanCapitalized(t *testing.T) {
+	t.Parallel()
+
+	tool := NewReplaceSymbolTool(nil, nil, nil).(*replaceSymbolTool)
+
+	t.Run("decodes valid input", func(t *testing.T) {
+		t.Parallel()
+		input, err := json.Marshal(ReplaceSymbolParams{Symbol: "Foo"})
+		require.NoError(t, err)
+
+		plan, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: string(input)})
+		require.NoError(t, err)
+		require.NotNil(t, plan.Response)
+		require.True(t, plan.Response.IsError)
+		require.Contains(t, plan.Response.Content, "file_path is required")
+	})
+
+	t.Run("rejects malformed input", func(t *testing.T) {
+		t.Parallel()
+		_, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: `{not valid json`})
+		require.Error(t, err)
+	})
+}
+
+// TestFindSymbolByName pins the recursive search through a document
+// symbol tree: a top-level match is returned directly, a nested match
+// is found by descending into children, and a name present nowhere in
+// the tree reports nil rather than panicking.
+func TestFindSymbolByName(t *testing.T) {
+	t.Parallel()
+
+	tree := []protocol.DocumentSymbolResult{
+		&protocol.DocumentSymbol{
+			Name: "Outer",
+			Children: []protocol.DocumentSymbol{
+				{Name: "Inner", Range: protocol.Range{Start: protocol.Position{Line: 3}}},
+			},
+		},
+		&protocol.SymbolInformation{Name: "TopLevel"},
+	}
+
+	t.Run("finds a top-level match", func(t *testing.T) {
+		t.Parallel()
+		got := findSymbolByName(tree, "TopLevel")
+		require.NotNil(t, got)
+		require.Equal(t, "TopLevel", got.GetName())
+	})
+
+	t.Run("descends into children", func(t *testing.T) {
+		t.Parallel()
+		got := findSymbolByName(tree, "Inner")
+		require.NotNil(t, got)
+		require.Equal(t, "Inner", got.GetName())
+		require.Equal(t, uint32(3), got.GetRange().Start.Line)
+	})
+
+	t.Run("missing name returns nil", func(t *testing.T) {
+		t.Parallel()
+		require.Nil(t, findSymbolByName(tree, "NoSuchSymbol"))
+	})
 }

@@ -3,6 +3,7 @@ package chat
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
@@ -139,4 +140,208 @@ func TestAssistantMessageItemHandleMouseClick(t *testing.T) {
 	// Non-left button is ignored.
 	require.False(t, item.HandleMouseClick(ansi.MouseRight, 0, 2))
 	require.Equal(t, thinkingCollapsed, item.thinkingViewMode)
+}
+
+func TestCountLines(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		s    string
+		want int
+	}{
+		{name: "empty", s: "", want: 1},
+		{name: "single line", s: "abc", want: 1},
+		{name: "two lines", s: "a\nb", want: 2},
+		{name: "three lines", s: "a\nb\nc", want: 3},
+		{name: "trailing newline", s: "a\n", want: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, countLines(tt.s))
+		})
+	}
+}
+
+func TestTailLines(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		s          string
+		n          int
+		totalLines int
+		wantTail   string
+		wantHidden int
+	}{
+		{name: "n<=0 returns nothing", s: "a\nb\nc", n: 0, totalLines: 3, wantTail: "", wantHidden: 3},
+		{name: "negative n returns nothing", s: "a\nb\nc", n: -1, totalLines: 3, wantTail: "", wantHidden: 3},
+		{name: "fits entirely under cap", s: "a\nb\nc", n: 5, totalLines: 3, wantTail: "a\nb\nc", wantHidden: 0},
+		{name: "exact cap keeps everything", s: "a\nb\nc", n: 3, totalLines: 3, wantTail: "a\nb\nc", wantHidden: 0},
+		{name: "cuts to the last n lines", s: "a\nb\nc\nd", n: 2, totalLines: 4, wantTail: "c\nd", wantHidden: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tail, hidden := tailLines(tt.s, tt.n, tt.totalLines)
+			require.Equal(t, tt.wantTail, tail)
+			require.Equal(t, tt.wantHidden, hidden)
+		})
+	}
+}
+
+// A brand-new assistant message (no Finish, no content, no tool calls) is
+// the canonical spinning state: the turn has not produced anything yet.
+func TestAssistantMessageItemStartAnimationReturnsCmdWhenSpinning(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	item := NewAssistantMessageItem(&sty, &message.Message{ID: "a1", Role: message.Assistant}).(*AssistantMessageItem)
+
+	require.NotNil(t, item.StartAnimation(),
+		"a freshly started assistant turn must start its spinner")
+}
+
+func TestAssistantMessageItemStartAnimationReturnsNilWhenNotSpinning(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	msg := &message.Message{
+		ID:   "a1",
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "already answered"},
+		},
+	}
+	item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)
+
+	require.Nil(t, item.StartAnimation())
+}
+
+func TestAssistantMessageItemHandleKeyEventCopiesContentOnCOrY(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []string{"c", "y"} {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			sty := styles.CharmtonePantera()
+			msg := &message.Message{
+				ID:   "a1",
+				Role: message.Assistant,
+				Parts: []message.ContentPart{
+					message.TextContent{Text: "copy me"},
+				},
+			}
+			item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)
+
+			handled, cmd := item.HandleKeyEvent(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
+			require.True(t, handled)
+			require.NotNil(t, cmd)
+		})
+	}
+}
+
+func TestAssistantMessageItemHandleKeyEventIgnoresOtherKeys(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	msg := &message.Message{
+		ID:   "a1",
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "leave me alone"},
+		},
+	}
+	item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)
+
+	handled, cmd := item.HandleKeyEvent(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	require.False(t, handled)
+	require.Nil(t, cmd)
+}
+
+// SetMessage must restart the spinner exactly on the transition into a
+// spinning state, not on every call while it is already spinning.
+func TestAssistantMessageItemSetMessageStartsAnimationOnlyWhenBecomingSpinning(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	finished := &message.Message{
+		ID:   "a1",
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "done"},
+		},
+	}
+	item := NewAssistantMessageItem(&sty, finished).(*AssistantMessageItem)
+
+	stillThinking := &message.Message{
+		ID:   "a1",
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.ReasoningContent{Thinking: "working on it", StartedAt: testStartedAt},
+		},
+	}
+	require.NotNil(t, item.SetMessage(stillThinking),
+		"transitioning from idle to spinning must start the animation")
+
+	stillThinkingMore := &message.Message{
+		ID:   "a1",
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.ReasoningContent{Thinking: "working on it still", StartedAt: testStartedAt},
+		},
+	}
+	require.Nil(t, item.SetMessage(stillThinkingMore),
+		"an already-spinning item must not restart its animation on every update")
+}
+
+func TestErrorKeyZeroWhenMessageNotFinished(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	msg := &message.Message{
+		ID:   "a1",
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "still streaming"},
+		},
+	}
+	item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)
+
+	srcHash, extra := item.errorKey()
+	require.Zero(t, srcHash)
+	require.Zero(t, extra)
+}
+
+func TestErrorKeyZeroWhenFinishedWithoutError(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	msg := &message.Message{
+		ID:   "a1",
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "all good"},
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: testFinishTime},
+		},
+	}
+	item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)
+
+	srcHash, extra := item.errorKey()
+	require.Zero(t, srcHash)
+	require.Zero(t, extra)
+}
+
+// IsSummaryMessage flips the spinner's label from the default to
+// "Summarizing" so a compaction turn reads differently from a normal one.
+func TestAssistantMessageItemRenderSpinningLabelsSummaryMessages(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	msg := &message.Message{
+		ID:               "a1",
+		Role:             message.Assistant,
+		IsSummaryMessage: true,
+	}
+	item := NewAssistantMessageItem(&sty, msg).(*AssistantMessageItem)
+
+	out := ansi.Strip(item.renderSpinning())
+	require.Contains(t, out, "Summarizing")
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -13,8 +14,12 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
+	"github.com/NaturalSelect/angela/internal/update"
+	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -80,6 +85,72 @@ func TestSetupSubscriber_ContextCancellation(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("setupSubscriber goroutine did not exit after context cancellation")
+	}
+}
+
+// TestSetupSubscriberMustDeliver_NormalFlow verifies that events
+// published to the source broker are forwarded to the output broker
+// via the bounded-blocking PublishMustDeliver path.
+func TestSetupSubscriberMustDeliver_NormalFlow(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	src := pubsub.NewBroker[string]()
+	defer src.Shutdown()
+	out := pubsub.NewBroker[tea.Msg]()
+	defer out.Shutdown()
+
+	ch := out.Subscribe(ctx)
+
+	var wg sync.WaitGroup
+	setupSubscriberMustDeliver(ctx, &wg, "test", src.Subscribe, out)
+
+	// Yield so the subscriber goroutine can call src.Subscribe before we publish.
+	time.Sleep(10 * time.Millisecond)
+
+	src.Publish(pubsub.CreatedEvent, "hello")
+	src.Publish(pubsub.CreatedEvent, "world")
+
+	for range 2 {
+		select {
+		case <-ch:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for forwarded event")
+		}
+	}
+
+	cancel()
+	wg.Wait()
+}
+
+// TestSetupSubscriberMustDeliver_ContextCancellation verifies the
+// goroutine exits cleanly when the context is cancelled before any
+// event is published, so PublishMustDeliver is never invoked without a
+// ready subscriber.
+func TestSetupSubscriberMustDeliver_ContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	src := pubsub.NewBroker[string]()
+	defer src.Shutdown()
+	out := pubsub.NewBroker[tea.Msg]()
+	defer out.Shutdown()
+
+	var wg sync.WaitGroup
+	setupSubscriberMustDeliver(ctx, &wg, "test", src.Subscribe, out)
+
+	cancel()
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("setupSubscriberMustDeliver goroutine did not exit after context cancellation")
 	}
 }
 
@@ -420,6 +491,42 @@ func TestApp_Shutdown_CancelsCoordinatorAndRunsCleanup(t *testing.T) {
 	require.True(t, cleaned, "registered cleanup function should have run")
 }
 
+// TestApp_Shutdown_NilCoordinatorFlushesMessagesAndLogsCleanupErrors
+// verifies Shutdown tolerates a nil AgentCoordinator, flushes a real
+// Messages service when one is set, and still runs every cleanup
+// function (logging, not failing, when one returns an error).
+func TestApp_Shutdown_NilCoordinatorFlushesMessagesAndLogsCleanupErrors(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	conn := mustConnectTestDB(t, dataDir)
+	q := db.New(conn)
+
+	store := config.NewTestStore(&config.Config{})
+	app := &App{
+		config:     store,
+		Messages:   message.NewService(q),
+		LSPManager: lsp.NewManager(store),
+	}
+
+	var cleanedOK, cleanedErr bool
+	app.cleanupFuncs = []func(context.Context) error{
+		func(context.Context) error {
+			cleanedOK = true
+			return nil
+		},
+		func(context.Context) error {
+			cleanedErr = true
+			return errors.New("cleanup failed")
+		},
+	}
+
+	app.Shutdown()
+
+	require.True(t, cleanedOK, "first cleanup function should have run")
+	require.True(t, cleanedErr, "second cleanup function should have run despite returning an error")
+}
+
 func newProviderConfigStore(providers map[string]config.ProviderConfig) *config.ConfigStore {
 	m := csync.NewMap[string, config.ProviderConfig]()
 	for name, p := range providers {
@@ -511,4 +618,194 @@ func TestApp_ApplyModelOverrides(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCoordinatorBusyChecker verifies that coordinatorBusyChecker defers to
+// app.AgentCoordinator at call time: it tolerates a nil coordinator (the
+// window between New constructing Undo and InitCoderAgent assigning
+// AgentCoordinator) and delegates to a real coordinator once one is set.
+func TestCoordinatorBusyChecker(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil coordinator", func(t *testing.T) {
+		t.Parallel()
+
+		c := coordinatorBusyChecker{app: &App{}}
+
+		require.False(t, c.IsSessionBusy("sess-1"))
+		require.False(t, c.IsSessionBranch("sess-1"))
+
+		unlock, ok := c.LockSession(t.Context(), "sess-1")
+		require.False(t, ok)
+		require.Nil(t, unlock)
+	})
+
+	t.Run("delegates to coordinator", func(t *testing.T) {
+		t.Parallel()
+
+		coord := NewMockCoordinator(gomock.NewController(t))
+		coord.EXPECT().IsSessionBusy("sess-1").Return(true)
+		coord.EXPECT().IsSessionBranch("sess-1").Return(true)
+		unlockFn := func() {}
+		coord.EXPECT().LockSession(gomock.Any(), "sess-1").Return(unlockFn, true)
+
+		c := coordinatorBusyChecker{app: &App{AgentCoordinator: coord}}
+
+		require.True(t, c.IsSessionBusy("sess-1"))
+		require.True(t, c.IsSessionBranch("sess-1"))
+
+		unlock, ok := c.LockSession(t.Context(), "sess-1")
+		require.True(t, ok)
+		require.NotNil(t, unlock)
+	})
+}
+
+// TestApp_RunNonInteractive_MissingCoderConfig verifies that
+// RunNonInteractive surfaces the coder-agent reinitialization error before
+// touching any of its other dependencies (permissions, spinner, session
+// resolution).
+func TestApp_RunNonInteractive_MissingCoderConfig(t *testing.T) {
+	t.Parallel()
+
+	app := &App{config: config.NewTestStore(&config.Config{})}
+	err := app.RunNonInteractive(t.Context(), io.Discard, "prompt", "", "", true, "", false)
+	require.ErrorContains(t, err, "failed to reinitialize agent for non-interactive mode")
+}
+
+// fakeUpdateClient is a test double for update.Client that returns a
+// canned release or error without making a real network call.
+type fakeUpdateClient struct {
+	release *update.Release
+	err     error
+}
+
+func (f fakeUpdateClient) Latest(context.Context) (*update.Release, error) {
+	return f.release, f.err
+}
+
+// TestApp_CheckForUpdates covers checkForUpdates' three outcomes: a failed
+// fetch, a fetch reporting no new version, and a fetch reporting one. It
+// substitutes update.Default so no real GitHub call is made, so neither the
+// outer test nor its subtests run in parallel: they share and restore a
+// package-level variable.
+func TestApp_CheckForUpdates(t *testing.T) {
+	tests := []struct {
+		name      string
+		client    update.Client
+		wantEvent bool
+	}{
+		{
+			name:   "fetch error publishes nothing",
+			client: fakeUpdateClient{err: errors.New("network unreachable")},
+		},
+		{
+			name:   "no update available publishes nothing",
+			client: fakeUpdateClient{release: &update.Release{TagName: "v" + version.Version}},
+		},
+		{
+			name:      "update available publishes UpdateAvailableMsg",
+			client:    fakeUpdateClient{release: &update.Release{TagName: "v9999.0.0", HTMLURL: "https://example.com/release"}},
+			wantEvent: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := update.Default
+			update.Default = tt.client
+			defer func() { update.Default = original }()
+
+			app := NewForTest(t.Context())
+			defer app.ShutdownForTest()
+
+			ch := app.Events(t.Context())
+			app.checkForUpdates(t.Context())
+
+			select {
+			case ev := <-ch:
+				require.True(t, tt.wantEvent, "unexpected event published: %#v", ev.Payload)
+				msg, ok := ev.Payload.(UpdateAvailableMsg)
+				require.True(t, ok, "payload should be UpdateAvailableMsg, got %T", ev.Payload)
+				require.Equal(t, "9999.0.0", msg.LatestVersion)
+			case <-time.After(300 * time.Millisecond):
+				require.False(t, tt.wantEvent, "expected an UpdateAvailableMsg event but none arrived")
+			}
+		})
+	}
+}
+
+// subscribeTestModel is a minimal headless tea.Model that records every
+// message it receives, so TestApp_Subscribe_ForwardsEventsToProgram can
+// assert Subscribe actually delivers app events to a running program.
+type subscribeTestModel struct {
+	received chan tea.Msg
+}
+
+func (m subscribeTestModel) Init() tea.Cmd { return nil }
+
+func (m subscribeTestModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	select {
+	case m.received <- msg:
+	default:
+	}
+	return m, nil
+}
+
+func (m subscribeTestModel) View() tea.View { return tea.View{} }
+
+// TestApp_Subscribe_ForwardsEventsToProgram drives a real, headless
+// tea.Program through app.Subscribe and verifies that an event published
+// via SendEvent reaches the program's Update loop.
+func TestApp_Subscribe_ForwardsEventsToProgram(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	app := NewForTest(ctx)
+
+	received := make(chan tea.Msg, 16)
+	program := tea.NewProgram(subscribeTestModel{received: received},
+		tea.WithoutRenderer(),
+		tea.WithInput(nil),
+		tea.WithOutput(io.Discard),
+		tea.WithoutSignals(),
+	)
+
+	runDone := make(chan error, 1)
+	go func() {
+		_, err := program.Run()
+		runDone <- err
+	}()
+
+	go app.Subscribe(program)
+
+	// Yield so Subscribe's goroutine subscribes to app.events before we publish.
+	time.Sleep(20 * time.Millisecond)
+
+	app.SendEvent(tea.Msg("hello-subscribe"))
+
+	// Drain framework-internal startup messages (e.g. ColorProfileMsg)
+	// until the message Subscribe forwarded from SendEvent arrives.
+	found := false
+	deadline := time.After(5 * time.Second)
+	for !found {
+		select {
+		case msg := <-received:
+			if msg == tea.Msg("hello-subscribe") {
+				found = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for Subscribe to forward an event to the program")
+		}
+	}
+
+	program.Quit()
+	select {
+	case err := <-runDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for program.Run to return")
+	}
+
+	cancel()
+	app.ShutdownForTest()
 }

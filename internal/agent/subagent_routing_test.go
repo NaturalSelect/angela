@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -653,4 +654,109 @@ func TestResumedGrandchildRespectsDepthBudget(t *testing.T) {
 
 	require.NotContains(t, agentToolNames(grandchildID), toolnames.Agent,
 		"a grandchild at depth 2 regained the agent tool despite subagent_max_depth=2")
+}
+
+// rollingUpCost wraps a turn so cost accrued during it reaches the
+// session's parent. This pins the happy path: the turn adds cost to
+// its own session, and that delta must land one level up.
+func TestRollingUpCostAddsTheTurnsDeltaToTheParent(t *testing.T) {
+	t.Parallel()
+
+	const providerID = "test-provider"
+	env := testEnv(t)
+	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+
+	childID := env.sessions.CreateAgentToolSessionID("msg-1", "call-1")
+	_, err = env.sessions.CreateTaskSession(t.Context(), childID, parent.ID, "child")
+	require.NoError(t, err)
+
+	turn := coord.rollingUpCost(t.Context(), childID, func() (*fantasy.AgentResult, error) {
+		require.NoError(t, env.sessions.AddCost(t.Context(), childID, 0.75))
+		return agentResultWithText("done"), nil
+	})
+
+	result, err := turn()
+	require.NoError(t, err)
+	require.Equal(t, "done", result.Response.Content.Text())
+
+	updatedParent, err := env.sessions.Get(t.Context(), parent.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 0.75, updatedParent.Cost, 1e-9, "the turn's cost never reached the parent")
+}
+
+// A turn that adds no cost must not touch the parent at all.
+func TestRollingUpCostSkipsAncestorsWhenNoCostAccrued(t *testing.T) {
+	t.Parallel()
+
+	const providerID = "test-provider"
+	env := testEnv(t)
+	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+
+	childID := env.sessions.CreateAgentToolSessionID("msg-1", "call-1")
+	_, err = env.sessions.CreateTaskSession(t.Context(), childID, parent.ID, "child")
+	require.NoError(t, err)
+
+	turn := coord.rollingUpCost(t.Context(), childID, func() (*fantasy.AgentResult, error) {
+		return agentResultWithText("done"), nil
+	})
+	_, err = turn()
+	require.NoError(t, err)
+
+	updatedParent, err := env.sessions.Get(t.Context(), parent.ID)
+	require.NoError(t, err)
+	require.Zero(t, updatedParent.Cost)
+}
+
+// A session that cannot be read (e.g. it was deleted concurrently)
+// must not abort the turn: rollingUpCost logs a warning and still
+// returns whatever the turn produced.
+func TestRollingUpCostToleratesAnUnreadableSession(t *testing.T) {
+	t.Parallel()
+
+	const providerID = "test-provider"
+	env := testEnv(t)
+	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
+
+	var ran bool
+	turn := coord.rollingUpCost(t.Context(), "session-that-does-not-exist", func() (*fantasy.AgentResult, error) {
+		ran = true
+		return agentResultWithText("done"), nil
+	})
+
+	result, err := turn()
+	require.NoError(t, err)
+	require.True(t, ran, "the turn must still run even though its session cannot be read")
+	require.Equal(t, "done", result.Response.Content.Text())
+}
+
+// The turn's own error and result must still surface even when its
+// session cannot be re-read afterward to compute the cost delta.
+func TestRollingUpCostPropagatesTheTurnsError(t *testing.T) {
+	t.Parallel()
+
+	const providerID = "test-provider"
+	env := testEnv(t)
+	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+
+	childID := env.sessions.CreateAgentToolSessionID("msg-1", "call-1")
+	_, err = env.sessions.CreateTaskSession(t.Context(), childID, parent.ID, "child")
+	require.NoError(t, err)
+
+	wantErr := errors.New("turn failed")
+	turn := coord.rollingUpCost(t.Context(), childID, func() (*fantasy.AgentResult, error) {
+		return nil, wantErr
+	})
+
+	result, err := turn()
+	require.ErrorIs(t, err, wantErr)
+	require.Nil(t, result)
 }

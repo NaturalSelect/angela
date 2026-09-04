@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -365,6 +366,24 @@ func TestSessionSetup_PropagatesDBConnectError(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to connect to database")
 }
 
+// TestSessionSetup_PropagatesConfigInitError covers config.Init's own
+// error branch: a malformed global angela.json must fail sessionSetup
+// before it ever tries to connect to a database. sessionSetup calls
+// config.Init with an empty working directory, so only the global
+// config path (not a project-local angela.json) is ever consulted.
+func TestSessionSetup_PropagatesConfigInitError(t *testing.T) {
+	isolateSessionEnv(t)
+	globalPath := config.GlobalConfig()
+	require.NoError(t, os.MkdirAll(filepath.Dir(globalPath), 0o755))
+	require.NoError(t, os.WriteFile(globalPath, []byte("{not valid json"), 0o644))
+
+	cmd := newSessionRunCmd(t, t.TempDir())
+
+	_, _, _, err := sessionSetup(cmd)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to initialize config")
+}
+
 func TestRunSessionList_JSONEmpty(t *testing.T) {
 	isolateSessionEnv(t)
 	cmd := newSessionRunCmd(t, t.TempDir())
@@ -575,6 +594,44 @@ func TestOutputSessionHuman_WritesExpectedFields(t *testing.T) {
 	require.Contains(t, out, "Direct human output")
 	require.Contains(t, out, session.HashID(sess.ID)[:12])
 	require.Contains(t, out, "hello there")
+}
+
+// TestOutputSessionHuman_RendersSkillsAndMultipleItems covers the
+// skills-summary line (only rendered when the transcript loaded at least
+// one skill) and the blank-line separator emitted between the second and
+// later rendered items.
+func TestOutputSessionHuman_RendersSkillsAndMultipleItems(t *testing.T) {
+	getOutput := swapStdoutPipe(t)
+
+	skillMeta, err := json.Marshal(tools.ViewResponseMetadata{
+		ResourceType:        tools.ViewResourceSkill,
+		ResourceName:        "alpha",
+		ResourceDescription: "Alpha skill",
+	})
+	require.NoError(t, err)
+
+	sess := session.Session{ID: "session-uuid-skills", Title: "With skills", CreatedAt: 1700000000}
+	msgs := []*message.Message{
+		{
+			ID: "m1", Role: message.User, CreatedAt: 1700000001,
+			Parts: []message.ContentPart{message.TextContent{Text: "first message"}},
+		},
+		{
+			ID: "m2", Role: message.Tool, CreatedAt: 1700000002,
+			Parts: []message.ContentPart{message.ToolResult{Metadata: string(skillMeta)}},
+		},
+		{
+			ID: "m3", Role: message.User, CreatedAt: 1700000003,
+			Parts: []message.ContentPart{message.TextContent{Text: "second message"}},
+		},
+	}
+
+	require.NoError(t, outputSessionHuman(t.Context(), sess, msgs))
+
+	out := getOutput()
+	require.Contains(t, out, "alpha")
+	require.Contains(t, out, "first message")
+	require.Contains(t, out, "second message")
 }
 
 // TestSessionWriter_NonTerminalReturnsPlainWriter covers the common test

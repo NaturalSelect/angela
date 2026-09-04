@@ -2,11 +2,13 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"charm.land/fantasy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -115,4 +117,61 @@ func TestRenameToolPlans(t *testing.T) {
 	t.Parallel()
 
 	require.Implements(t, (*Planner)(nil), NewRenameTool(nil, nil, nil))
+}
+
+// TestRenamePlanSymbolNotFound pins the error path reached when the
+// symbol cannot be resolved to any LSP-backed position — no live
+// language server is needed to reach it.
+func TestRenamePlanSymbolNotFound(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	tool := NewRenameTool(newLSPManagerWithNoClients(t), nil, nil).(*renameTool)
+
+	plan, err := tool.plan(t.Context(), RenameParams{Symbol: "NoSuchSymbolXYZ", NewName: "After", Path: dir})
+	require.NoError(t, err)
+	require.NotNil(t, plan.Response)
+	require.True(t, plan.Response.IsError)
+	require.Contains(t, plan.Response.Content, "not found")
+	require.Nil(t, plan.Apply)
+}
+
+// TestRenameToolRun_PropagatesPlanResponse pins that run() returns
+// whatever plan() settled on directly, without invoking Apply.
+func TestRenameToolRun_PropagatesPlanResponse(t *testing.T) {
+	t.Parallel()
+
+	tool := NewRenameTool(nil, nil, nil).(*renameTool)
+
+	resp, err := tool.run(t.Context(), RenameParams{NewName: "After"}, fantasy.ToolCall{})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "symbol is required")
+}
+
+// TestRenameToolPlanCapitalized pins that the exported Plan method
+// decodes the call's JSON input before delegating to plan(), and
+// reports malformed input instead of panicking on it.
+func TestRenameToolPlanCapitalized(t *testing.T) {
+	t.Parallel()
+
+	tool := NewRenameTool(nil, nil, nil).(*renameTool)
+
+	t.Run("decodes valid input", func(t *testing.T) {
+		t.Parallel()
+		input, err := json.Marshal(RenameParams{Symbol: "Before"})
+		require.NoError(t, err)
+
+		plan, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: string(input)})
+		require.NoError(t, err)
+		require.NotNil(t, plan.Response)
+		require.True(t, plan.Response.IsError)
+		require.Contains(t, plan.Response.Content, "new_name is required")
+	})
+
+	t.Run("rejects malformed input", func(t *testing.T) {
+		t.Parallel()
+		_, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: `{not valid json`})
+		require.Error(t, err)
+	})
 }

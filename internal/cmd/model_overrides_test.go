@@ -99,3 +99,87 @@ func TestBothModelsResolveTogether(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateModelMatches covers all three branches directly: no
+// match, exactly one match, and an ambiguous match across multiple
+// providers that must name every candidate provider in the error.
+func TestValidateModelMatches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		matches           []modelMatch
+		wantMatch         modelMatch
+		wantErrorContains []string
+	}{
+		{
+			name:              "no matches",
+			matches:           nil,
+			wantErrorContains: []string{"main", `"gpt-4o"`, "not found"},
+		},
+		{
+			name:      "exactly one match",
+			matches:   []modelMatch{{provider: "openai", modelID: "gpt-4o"}},
+			wantMatch: modelMatch{provider: "openai", modelID: "gpt-4o"},
+		},
+		{
+			name: "ambiguous match names every provider",
+			matches: []modelMatch{
+				{provider: "openai", modelID: "gpt-4o"},
+				{provider: "azure", modelID: "gpt-4o"},
+			},
+			wantErrorContains: []string{
+				"main", `"gpt-4o"`, "multiple providers",
+				"openai, azure", "provider/model",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := validateModelMatches(tt.matches, "gpt-4o", "main")
+
+			if len(tt.wantErrorContains) > 0 {
+				require.Error(t, err)
+				for _, want := range tt.wantErrorContains {
+					require.Contains(t, err.Error(), want)
+				}
+				require.Equal(t, modelMatch{}, got)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantMatch, got)
+		})
+	}
+}
+
+// TestMatchesModel covers every branch directly: an empty target ID
+// never matches, a provider-qualified filter rejects a same-named model
+// from a different provider, an unqualified filter matches under any
+// provider, and matching is case-insensitive.
+func TestMatchesModel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                  string
+		wantID, wantProvider  string
+		modelID, providerName string
+		want                  bool
+	}{
+		{name: "empty wanted id never matches", wantID: "", modelID: "gpt-4o", providerName: "openai", want: false},
+		{name: "unqualified filter matches any provider", wantID: "gpt-4o", modelID: "gpt-4o", providerName: "azure", want: true},
+		{name: "qualified filter matches its own provider", wantID: "gpt-4o", wantProvider: "openai", modelID: "gpt-4o", providerName: "openai", want: true},
+		{name: "qualified filter rejects a different provider", wantID: "gpt-4o", wantProvider: "openai", modelID: "gpt-4o", providerName: "azure", want: false},
+		{name: "match is case-insensitive", wantID: "GPT-4O", modelID: "gpt-4o", providerName: "openai", want: true},
+		{name: "model id mismatch", wantID: "gpt-4o", modelID: "gpt-4o-mini", providerName: "openai", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := matchesModel(tt.wantID, tt.wantProvider, tt.modelID, tt.providerName)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

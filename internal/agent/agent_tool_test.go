@@ -8,9 +8,76 @@ import (
 	"charm.land/fantasy"
 	"github.com/stretchr/testify/require"
 
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
+
+// TestAgentToolRejectsAnEmptyPrompt pins that a blank prompt is
+// rejected before any session/message context or subagent_type lookup
+// happens — the cheapest possible validation failure.
+func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
+	coord := newGateTestCoordinator(t, false)
+
+	tool, err := coord.agentTool(0)
+	require.NoError(t, err)
+
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
+		ID:    "call-1",
+		Name:  toolnames.Agent,
+		Input: `{"prompt":""}`,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Equal(t, "prompt is required", resp.Content)
+}
+
+// TestAgentToolRequiresAgentMessageID pins the second context check: a
+// session id alone is not enough to dispatch, since the report banner
+// and reply routing both need the originating message id too.
+func TestAgentToolRequiresAgentMessageID(t *testing.T) {
+	coord := newGateTestCoordinator(t, false)
+
+	tool, err := coord.agentTool(0)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
+	resp, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-1",
+		Name:  toolnames.Agent,
+		Input: `{"prompt":"hello"}`,
+	})
+	require.Error(t, err)
+	require.Equal(t, "agent message id missing from context", err.Error())
+	require.Empty(t, resp)
+}
+
+// TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves pins that
+// a subagent_type which resolves in the dispatch table but no longer
+// exists in config (a stale entry, e.g. mid-reload) comes back as a
+// tool error naming the type, rather than a coordinator-level panic
+// or an opaque failure.
+func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
+	coord := newGateTestCoordinator(t, false)
+	coord.subagents.Reconcile(map[string]config.Agent{
+		"ghost": {ID: "ghost", Mode: config.AgentModeSubagent, Description: "no longer configured"},
+	}, nil)
+
+	tool, err := coord.agentTool(0)
+	require.NoError(t, err)
+
+	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
+	ctx = context.WithValue(ctx, tools.MessageIDContextKey, "msg-1")
+	resp, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-1",
+		Name:  toolnames.Agent,
+		Input: `{"prompt":"hello","subagent_type":"ghost"}`,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "ghost")
+	require.Contains(t, resp.Content, "unavailable")
+}
 
 // TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted pins the backward
 // compatible fallback: an agent call with no subagent_type must resolve

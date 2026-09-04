@@ -226,3 +226,49 @@ func TestWriteGeneratedAgent_RejectsSymlinkedAgentDir(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, entries, "nothing may be written through the symlink")
 }
+
+// TestWriteAndSyncReturnsErrorForAClosedFile pins that a failed write
+// is reported with context rather than silently ignored, and that the
+// function does not panic when it tries to close an already-closed
+// file on the way out.
+func TestWriteAndSyncReturnsErrorForAClosedFile(t *testing.T) {
+	t.Parallel()
+
+	f, err := os.CreateTemp(t.TempDir(), "write-and-sync-*")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	err = writeAndSync(f, []byte("hello"))
+	require.ErrorContains(t, err, "write agent file")
+}
+
+// TestRequireInsideWorkspaceFailsWhenDirDoesNotExist pins that an
+// agent directory which cannot be resolved (rather than merely being
+// outside the workspace) is reported clearly.
+func TestRequireInsideWorkspaceFailsWhenDirDoesNotExist(t *testing.T) {
+	t.Parallel()
+
+	err := requireInsideWorkspace(filepath.Join(t.TempDir(), "does-not-exist"), t.TempDir())
+	require.ErrorContains(t, err, "resolve agent directory")
+}
+
+// TestRequireInsideWorkspaceFailsWhenWorkingDirDoesNotExist mirrors
+// the above for the working directory side of the comparison.
+func TestRequireInsideWorkspaceFailsWhenWorkingDirDoesNotExist(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	err := requireInsideWorkspace(dir, filepath.Join(dir, "does-not-exist"))
+	require.ErrorContains(t, err, "resolve working directory")
+}
+
+// TestWriteNewFileAtomicFailsWhenDirectoryDoesNotExist pins that a
+// missing destination directory is reported as a create failure
+// rather than panicking or leaving a dangling temp file elsewhere.
+func TestWriteNewFileAtomicFailsWhenDirectoryDoesNotExist(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "missing-dir", "file.md")
+	err := writeNewFileAtomic(path, []byte("content"))
+	require.ErrorContains(t, err, "create temp agent file")
+}

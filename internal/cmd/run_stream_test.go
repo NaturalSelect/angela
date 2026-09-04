@@ -415,3 +415,98 @@ func TestRunStream_NoRunIDFallsBackToSessionID(t *testing.T) {
 	require.True(t, done)
 	require.Equal(t, "DONE", buf.String())
 }
+
+// TestRunStream_MessageIgnoredCases covers the guard clause that
+// filters out messages that are not our session's finished
+// assistant text: a message for another session, a non-assistant
+// role, and an assistant message with no parts must all be ignored
+// without writing to stdout.
+func TestRunStream_MessageIgnoredCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		msg  proto.Message
+	}{
+		{
+			name: "other session",
+			msg: proto.Message{
+				ID: "m1", SessionID: "OTHER", Role: proto.Assistant,
+				Parts: []proto.ContentPart{proto.TextContent{Text: "hi"}},
+			},
+		},
+		{
+			name: "non-assistant role",
+			msg: proto.Message{
+				ID: "m1", SessionID: "S", Role: proto.User,
+				Parts: []proto.ContentPart{proto.TextContent{Text: "hi"}},
+			},
+		},
+		{
+			name: "no parts",
+			msg: proto.Message{
+				ID: "m1", SessionID: "S", Role: proto.Assistant,
+				Parts: nil,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			buf := &bytes.Buffer{}
+			s := &runStream{sessionID: "S", out: buf, read: map[string]int{}}
+			done, err := s.handle(pubsub.Event[proto.Message]{Payload: tt.msg}, nil)
+			require.NoError(t, err)
+			require.False(t, done)
+			require.Empty(t, buf.String())
+		})
+	}
+}
+
+// TestRunStream_MessageContentShorterThanReadBytesErrors covers the
+// defensive check against content that regressed in length from what
+// was already read — this should never happen, but if the server
+// ever reports a shorter message than what the stream already
+// printed, handle must fail loudly instead of panicking on a
+// negative slice.
+func TestRunStream_MessageContentShorterThanReadBytesErrors(t *testing.T) {
+	t.Parallel()
+
+	s := &runStream{sessionID: "S", out: &bytes.Buffer{}, read: map[string]int{"m1": 100}}
+	done, err := s.handle(pubsub.Event[proto.Message]{Payload: proto.Message{
+		ID: "m1", SessionID: "S", Role: proto.Assistant,
+		Parts: []proto.ContentPart{proto.TextContent{Text: "short"}},
+	}}, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "shorter than read bytes")
+	require.False(t, done)
+}
+
+// TestRunStream_AgentEventNilErrorIgnored verifies that non-error
+// agent events (progress, titling, etc.) are ignored by the run
+// stream, which only cares about terminal failures.
+func TestRunStream_AgentEventNilErrorIgnored(t *testing.T) {
+	t.Parallel()
+
+	s := &runStream{sessionID: "S", out: &bytes.Buffer{}, read: map[string]int{}}
+	done, err := s.handle(pubsub.Event[proto.AgentEvent]{Payload: proto.AgentEvent{
+		Type:      proto.AgentEventTypeResponse,
+		SessionID: "S",
+	}}, nil)
+	require.NoError(t, err)
+	require.False(t, done)
+}
+
+// TestRunStream_UnknownEventTypeIgnored verifies that event types
+// the stream does not recognize fall through to the default no-op
+// rather than panicking on an unhandled type switch case.
+func TestRunStream_UnknownEventTypeIgnored(t *testing.T) {
+	t.Parallel()
+
+	s := &runStream{sessionID: "S", out: &bytes.Buffer{}, read: map[string]int{}}
+	done, err := s.handle("not an event we recognize", nil)
+	require.NoError(t, err)
+	require.False(t, done)
+}

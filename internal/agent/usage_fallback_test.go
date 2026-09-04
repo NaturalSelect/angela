@@ -339,3 +339,169 @@ func TestUpdateSessionUsageAddsProviderCost(t *testing.T) {
 	require.Equal(t, int64(2000), currentSession.CompletionTokens)
 	require.False(t, currentSession.EstimatedUsage)
 }
+
+func TestEstimateFilePartTokens(t *testing.T) {
+	t.Parallel()
+
+	// With data present, tokens are estimated from a summary string
+	// rather than the raw payload size.
+	withData := estimateFilePartTokens(fantasy.FilePart{MediaType: "image/png", Filename: "shot.png", Data: []byte("abc123")})
+	require.Equal(t, estimateMediaTokens("image/png", "shot.png", len("abc123")), withData)
+	require.Positive(t, withData)
+
+	// With no data, tokens fall back to the media type and filename text.
+	noData := estimateFilePartTokens(fantasy.FilePart{MediaType: "image/png", Filename: "shot.png"})
+	require.Equal(t, approxTokenCount("image/png")+approxTokenCount("shot.png"), noData)
+}
+
+func TestEstimateGeneratedFileTokens(t *testing.T) {
+	t.Parallel()
+
+	withData := estimateGeneratedFileTokens(fantasy.FileContent{MediaType: "text/plain", Data: []byte("generated content")})
+	require.Equal(t, estimateMediaTokens("text/plain", "", len("generated content")), withData)
+	require.Positive(t, withData)
+
+	noData := estimateGeneratedFileTokens(fantasy.FileContent{MediaType: "text/plain"})
+	require.Equal(t, approxTokenCount("text/plain"), noData)
+	require.Zero(t, estimateGeneratedFileTokens(fantasy.FileContent{}))
+}
+
+// TestEstimateStepCompletionTokensSumsEachContentType pins that every
+// step content type (and its pointer variant) contributes its own
+// estimate, computed by composing the same per-type estimators the
+// production switch dispatches to, and that a client-executed tool
+// result (ProviderExecuted false) contributes nothing.
+func TestEstimateStepCompletionTokensSumsEachContentType(t *testing.T) {
+	t.Parallel()
+
+	text := fantasy.TextContent{Text: "hello"}
+	textPtr := &fantasy.TextContent{Text: "hello ptr"}
+	reasoning := fantasy.ReasoningContent{Text: "reasoning"}
+	reasoningPtr := &fantasy.ReasoningContent{Text: "reasoning ptr"}
+	file := fantasy.FileContent{MediaType: "text/plain", Data: []byte("data")}
+	filePtr := &fantasy.FileContent{MediaType: "text/plain", Data: []byte("data ptr")}
+	source := fantasy.SourceContent{SourceType: fantasy.SourceTypeURL, URL: "https://example.com"}
+	sourcePtr := &fantasy.SourceContent{SourceType: fantasy.SourceTypeURL, URL: "https://example.com/ptr"}
+	toolCall := fantasy.ToolCallContent{ToolName: "bash", Input: `{"a":1}`}
+	toolCallPtr := &fantasy.ToolCallContent{ToolName: "bash", Input: `{"a":2}`}
+	toolResult := fantasy.ToolResultContent{
+		ToolCallID: "1", ToolName: "bash", ProviderExecuted: true,
+		Result: fantasy.ToolResultOutputContentText{Text: "value"},
+	}
+	toolResultPtr := &fantasy.ToolResultContent{
+		ToolCallID: "2", ToolName: "bash", ProviderExecuted: true,
+		Result: fantasy.ToolResultOutputContentText{Text: "value ptr"},
+	}
+	clientToolResult := fantasy.ToolResultContent{
+		ToolCallID: "3", Result: fantasy.ToolResultOutputContentText{Text: "ignored, not provider-executed"},
+	}
+
+	step := fantasy.StepResult{
+		Response: fantasy.Response{
+			Content: fantasy.ResponseContent{
+				text, textPtr, reasoning, reasoningPtr,
+				file, filePtr, source, sourcePtr,
+				toolCall, toolCallPtr, toolResult, toolResultPtr,
+				clientToolResult,
+			},
+		},
+	}
+
+	want := approxTokenCount(text.Text) + approxTokenCount(textPtr.Text) +
+		approxTokenCount(reasoning.Text) + approxTokenCount(reasoningPtr.Text) +
+		estimateGeneratedFileTokens(file) + estimateGeneratedFileTokens(*filePtr) +
+		estimateSourceTokens(source) + estimateSourceTokens(*sourcePtr) +
+		estimateToolCallTokens(toolCall.ToolName, toolCall.Input) + estimateToolCallTokens(toolCallPtr.ToolName, toolCallPtr.Input) +
+		estimateToolResultContentTokens(toolResult.ToolCallID, toolResult.ToolName, toolResult.ClientMetadata, toolResult.Result) +
+		estimateToolResultContentTokens(toolResultPtr.ToolCallID, toolResultPtr.ToolName, toolResultPtr.ClientMetadata, toolResultPtr.Result)
+
+	require.Equal(t, want, estimateStepCompletionTokens(step))
+}
+
+// unknownMessagePart implements fantasy.MessagePart without matching any
+// of the types estimateMessagePartTokens knows how to size, exercising
+// its defensive default branch.
+type unknownMessagePart struct{}
+
+func (unknownMessagePart) GetType() fantasy.ContentType     { return "unknown" }
+func (unknownMessagePart) Options() fantasy.ProviderOptions { return nil }
+
+// TestEstimateMessagePartTokensCoversAllPartTypes pins that every
+// message part type (and its pointer variant) delegates to the same
+// per-type estimator exposed for direct use elsewhere.
+func TestEstimateMessagePartTokensCoversAllPartTypes(t *testing.T) {
+	t.Parallel()
+
+	textPart := fantasy.TextPart{Text: "hello"}
+	require.Equal(t, approxTokenCount(textPart.Text), estimateMessagePartTokens(textPart))
+	require.Equal(t, approxTokenCount(textPart.Text), estimateMessagePartTokens(&textPart))
+
+	reasoningPart := fantasy.ReasoningPart{Text: "reasoning"}
+	require.Equal(t, approxTokenCount(reasoningPart.Text), estimateMessagePartTokens(reasoningPart))
+	require.Equal(t, approxTokenCount(reasoningPart.Text), estimateMessagePartTokens(&reasoningPart))
+
+	filePart := fantasy.FilePart{MediaType: "image/png", Filename: "shot.png", Data: []byte("data")}
+	require.Equal(t, estimateFilePartTokens(filePart), estimateMessagePartTokens(filePart))
+	require.Equal(t, estimateFilePartTokens(filePart), estimateMessagePartTokens(&filePart))
+
+	toolCallPart := fantasy.ToolCallPart{ToolName: "bash", Input: `{"a":1}`}
+	require.Equal(t, estimateToolCallTokens(toolCallPart.ToolName, toolCallPart.Input), estimateMessagePartTokens(toolCallPart))
+	require.Equal(t, estimateToolCallTokens(toolCallPart.ToolName, toolCallPart.Input), estimateMessagePartTokens(&toolCallPart))
+
+	toolResultPart := fantasy.ToolResultPart{ToolCallID: "1", Output: fantasy.ToolResultOutputContentText{Text: "value"}}
+	require.Equal(t, estimateToolResultContentTokens(toolResultPart.ToolCallID, "", "", toolResultPart.Output),
+		estimateMessagePartTokens(toolResultPart))
+	require.Equal(t, estimateToolResultContentTokens(toolResultPart.ToolCallID, "", "", toolResultPart.Output),
+		estimateMessagePartTokens(&toolResultPart))
+
+	require.Zero(t, estimateMessagePartTokens(unknownMessagePart{}), "an unrecognized part type must not panic or guess")
+}
+
+// TestEstimateToolResultContentTokensCoversAllOutputTypes pins the
+// three output kinds (text, error, media), their pointer variants, and
+// the nil-error edge case that must not panic while calling Error().
+func TestEstimateToolResultContentTokensCoversAllOutputTypes(t *testing.T) {
+	t.Parallel()
+
+	base := approxTokenCount("id") + approxTokenCount("name") + approxTokenCount("meta")
+
+	textOut := fantasy.ToolResultOutputContentText{Text: "value"}
+	wantText := base + approxTokenCount("value")
+	require.Equal(t, wantText, estimateToolResultContentTokens("id", "name", "meta", textOut))
+	require.Equal(t, wantText, estimateToolResultContentTokens("id", "name", "meta", &textOut))
+
+	errOut := fantasy.ToolResultOutputContentError{Error: errors.New("boom")}
+	wantErr := base + approxTokenCount("boom")
+	require.Equal(t, wantErr, estimateToolResultContentTokens("id", "name", "meta", errOut))
+	require.Equal(t, wantErr, estimateToolResultContentTokens("id", "name", "meta", &errOut))
+
+	nilErrOut := fantasy.ToolResultOutputContentError{}
+	require.Equal(t, base, estimateToolResultContentTokens("id", "name", "meta", nilErrOut),
+		"a nil error must not be dereferenced")
+
+	mediaOut := fantasy.ToolResultOutputContentMedia{MediaType: "image/png", Text: "shot", Data: "bytes"}
+	wantMedia := base + estimateMediaTokens("image/png", "shot", len("bytes"))
+	require.Equal(t, wantMedia, estimateToolResultContentTokens("id", "name", "meta", mediaOut))
+	require.Equal(t, wantMedia, estimateToolResultContentTokens("id", "name", "meta", &mediaOut))
+}
+
+func TestEstimateSourceTokens(t *testing.T) {
+	t.Parallel()
+
+	source := fantasy.SourceContent{
+		SourceType: fantasy.SourceTypeURL,
+		ID:         "src-1",
+		URL:        "https://example.com",
+		Title:      "Example",
+		MediaType:  "text/html",
+		Filename:   "index.html",
+	}
+	want := approxTokenCount(string(fantasy.SourceTypeURL)) +
+		approxTokenCount("src-1") +
+		approxTokenCount("https://example.com") +
+		approxTokenCount("Example") +
+		approxTokenCount("text/html") +
+		approxTokenCount("index.html")
+	require.Equal(t, want, estimateSourceTokens(source))
+	require.Zero(t, estimateSourceTokens(fantasy.SourceContent{}))
+}

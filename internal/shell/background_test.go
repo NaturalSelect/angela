@@ -407,3 +407,104 @@ func TestBackgroundShellsBelongToTheirSession(t *testing.T) {
 		require.Empty(t, manager.List(""))
 	})
 }
+
+func TestGetBackgroundShellManager_ReturnsSingleton(t *testing.T) {
+	m1 := GetBackgroundShellManager()
+	m2 := GetBackgroundShellManager()
+	require.Same(t, m1, m2)
+}
+
+func TestBackgroundShellManager_Cleanup_RemovesExpiredCompletedJobs(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+	bgShell, err := manager.Start(t.Context(), testSession, t.TempDir(), nil, "true", "")
+	require.NoError(t, err)
+	bgShell.Wait()
+
+	// Backdate completion past the retention window.
+	old := time.Now().Add(-(CompletedJobRetentionMinutes + 10) * time.Minute).Unix()
+	bgShell.completedAt.Store(old)
+
+	require.Equal(t, 1, manager.Cleanup())
+
+	_, ok := manager.Get(bgShell.ID, testSession)
+	require.False(t, ok, "expected expired job to be removed after Cleanup")
+}
+
+func TestBackgroundShellManager_Cleanup_KeepsRecentAndRunningJobs(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+
+	recent, err := manager.Start(t.Context(), testSession, t.TempDir(), nil, "true", "")
+	require.NoError(t, err)
+	recent.Wait()
+
+	running, err := manager.Start(t.Context(), testSession, t.TempDir(), nil, "sleep 10", "")
+	require.NoError(t, err)
+	t.Cleanup(func() { manager.Kill(running.ID, testSession) })
+
+	require.Zero(t, manager.Cleanup())
+
+	_, ok := manager.Get(recent.ID, testSession)
+	require.True(t, ok, "recent completed job should survive Cleanup")
+	_, ok = manager.Get(running.ID, testSession)
+	require.True(t, ok, "still-running job should survive Cleanup")
+}
+
+func TestSyncBuffer_WriteAndString(t *testing.T) {
+	t.Parallel()
+
+	var sb syncBuffer
+	n, err := sb.Write([]byte("hello "))
+	require.NoError(t, err)
+	require.Equal(t, len("hello "), n)
+
+	n, err = sb.WriteString("world")
+	require.NoError(t, err)
+	require.Equal(t, len("world"), n)
+
+	require.Equal(t, "hello world", sb.String())
+}
+
+func TestBackgroundShellManager_Remove(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+	bgShell, err := manager.Start(t.Context(), testSession, t.TempDir(), nil, "true", "")
+	require.NoError(t, err)
+	bgShell.Wait()
+
+	require.NoError(t, manager.Remove(bgShell.ID, testSession))
+
+	_, ok := manager.Get(bgShell.ID, testSession)
+	require.False(t, ok, "removed shell should no longer be tracked")
+}
+
+func TestBackgroundShell_GetOutput_NotDone(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+	bgShell, err := manager.Start(t.Context(), testSession, t.TempDir(), nil, "sleep 10", "")
+	require.NoError(t, err)
+	t.Cleanup(func() { manager.Kill(bgShell.ID, testSession) })
+
+	_, _, done, err := bgShell.GetOutput()
+	require.False(t, done, "expected shell to still be running")
+	require.NoError(t, err)
+}
+
+func TestBackgroundShellManager_Start_JobLimitReached(t *testing.T) {
+	t.Parallel()
+
+	manager := newBackgroundShellManager()
+	dir := t.TempDir()
+	for range MaxBackgroundJobs {
+		_, err := manager.Start(t.Context(), testSession, dir, nil, "true", "")
+		require.NoError(t, err)
+	}
+
+	_, err := manager.Start(t.Context(), testSession, dir, nil, "true", "")
+	require.ErrorContains(t, err, "maximum number of background jobs")
+}

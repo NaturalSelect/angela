@@ -155,6 +155,15 @@ func TestResolveCwd_ChangesDirectoryWhenFlagSet(t *testing.T) {
 // mutates the process-wide working directory, like
 // TestResolveCwd_ChangesDirectoryWhenFlagSet above.
 func TestResolveCwd_GetwdErrorPropagates(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		// On macOS, os.Getwd (and the underlying getcwd(3)) can keep
+		// resolving "." successfully for a short while after its
+		// directory has been rmdir'd out from under the process,
+		// unlike Linux. The removed-cwd trick below isn't reliable
+		// there.
+		t.Skip("os.Getwd does not reliably error after its cwd is removed on macOS")
+	}
+
 	removed := t.TempDir()
 	t.Chdir(removed)
 	require.NoError(t, os.Remove(removed))

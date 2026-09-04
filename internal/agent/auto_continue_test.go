@@ -75,10 +75,6 @@ func TestRun_AutoContinuesOnMaxTokens(t *testing.T) {
 	require.False(t, queued, "the queue must be drained once the turn ends cleanly")
 }
 
-// TestRun_AutoContinueStopsAtCap verifies that a model which keeps
-// hitting the output token limit is only auto-continued
-// maxAutoContinuations times, so a pathological model cannot loop the
-// turn forever.
 // TestRun_AutoContinuesMultipleTimes verifies the auto-continue
 // mechanism keeps resuming across more than one truncation in a row,
 // since there is no cap on how many times a turn can be resumed.

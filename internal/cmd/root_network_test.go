@@ -207,7 +207,15 @@ func TestAwaitSocketGone_ContextCancelledPropagatesError(t *testing.T) {
 func TestProbeHealth_UnixSocketUsesDummyHost(t *testing.T) {
 	t.Parallel()
 
-	sockPath := filepath.Join(t.TempDir(), "server.sock")
+	// t.TempDir() embeds the (long) test name in the path, which can
+	// push a real unix socket past the macOS 104-byte sun_path limit.
+	// A short fixed prefix keeps the path well under that limit
+	// regardless of the test name.
+	dir, err := os.MkdirTemp("", "angela-sock")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	sockPath := filepath.Join(dir, "server.sock")
 	var lc net.ListenConfig
 	ln, err := lc.Listen(context.Background(), "unix", sockPath)
 	require.NoError(t, err)

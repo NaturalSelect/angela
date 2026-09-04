@@ -228,6 +228,17 @@ func TestBackend_GetSessionActiveAgent(t *testing.T) {
 // freshly created, unconfigured workspace. Coordinator construction
 // does not validate provider connectivity, so both succeed and leave a
 // real, non-nil coordinator installed.
+//
+// Not parallel: newPublishingWorkspace isolates HOME/XDG_* via
+// t.Setenv, which panics if the test tree uses t.Parallel().
+// TestBackend_InitAgent drives the real agent.NewCoordinator
+// construction path (both interactive and non-interactive) against a
+// freshly created, unconfigured workspace. Coordinator construction
+// does not validate provider connectivity, so both succeed and leave a
+// real, non-nil coordinator installed.
+//
+// Not parallel: newPublishingWorkspace isolates HOME/XDG_* via
+// t.Setenv, which panics if the test tree uses t.Parallel().
 func TestBackend_InitAgent(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -245,14 +256,22 @@ func TestBackend_InitAgent(t *testing.T) {
 			require.NotNil(t, ws.AgentCoordinator, "InitAgent must install a real coordinator")
 		})
 	}
-
-	t.Run("workspace not found", func(t *testing.T) {
-		t.Parallel()
-		b, _ := newTestBackend(t)
-		require.ErrorIs(t, b.InitAgent(t.Context(), "nope", true), ErrWorkspaceNotFound)
-	})
 }
 
+// TestBackend_InitAgent_WorkspaceNotFound is split out from
+// TestBackend_InitAgent so it can run in parallel: the sibling
+// subtests there use newPublishingWorkspace, which isolates HOME/XDG_*
+// via t.Setenv and panics under t.Parallel().
+func TestBackend_InitAgent_WorkspaceNotFound(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	require.ErrorIs(t, b.InitAgent(t.Context(), "nope", true), ErrWorkspaceNotFound)
+}
+
+// Not parallel: newPublishingWorkspace isolates HOME/XDG_* via
+// t.Setenv, which panics if the test tree uses t.Parallel().
+// Not parallel: newPublishingWorkspace isolates HOME/XDG_* via
+// t.Setenv, which panics if the test tree uses t.Parallel().
 func TestBackend_UpdateAgent(t *testing.T) {
 	t.Run("no coordinator yet", func(t *testing.T) {
 		b, ws, _ := newPublishingWorkspace(t)
@@ -264,12 +283,16 @@ func TestBackend_UpdateAgent(t *testing.T) {
 		require.NoError(t, b.InitAgent(t.Context(), ws.ID, false))
 		require.NoError(t, b.UpdateAgent(t.Context(), ws.ID))
 	})
+}
 
-	t.Run("workspace not found", func(t *testing.T) {
-		t.Parallel()
-		b, _ := newTestBackend(t)
-		require.ErrorIs(t, b.UpdateAgent(t.Context(), "nope"), ErrWorkspaceNotFound)
-	})
+// TestBackend_UpdateAgent_WorkspaceNotFound is split out from
+// TestBackend_UpdateAgent so it can run in parallel: the sibling
+// subtests there use newPublishingWorkspace, which isolates HOME/XDG_*
+// via t.Setenv and panics under t.Parallel().
+func TestBackend_UpdateAgent_WorkspaceNotFound(t *testing.T) {
+	t.Parallel()
+	b, _ := newTestBackend(t)
+	require.ErrorIs(t, b.UpdateAgent(t.Context(), "nope"), ErrWorkspaceNotFound)
 }
 
 func TestBackend_EditSessionActiveAgent(t *testing.T) {

@@ -26,13 +26,19 @@ hard error.
 1. `/etc/angela/angela.json` — system-wide (Unix only; not read on Windows).
 2. **Global user config** — `$ANGELA_GLOBAL_CONFIG/angela.json` when that
    variable is set, otherwise `~/.config/angela/angela.json`
-   (`%USERPROFILE%\.config\angela\angela.json` on Windows). Angela also
-   writes to this file itself — the selected model, recent models, and
-   OAuth tokens — so it is both hand-editable and machine-updated.
+   (`%USERPROFILE%\.config\angela\angela.json` on Windows).
 3. **Project configs** — Angela walks up from the working directory looking
    for `.angela.json` and `angela.json` in each directory.
+4. **Workspace config** — `<data_directory>/angela.json` (default
+   `.angela/angela.json`; see `options.data_directory`). Loaded last, so it
+   outranks every layer above, including the closest project config.
 
-The upward walk stops at the **git working tree root** when one can be
+Angela writes to the global and workspace files itself — model selection,
+recent models, OAuth tokens — so both are hand-editable and machine-updated.
+If a setting seems to override your project config for no visible reason,
+check `.angela/angela.json` first.
+
+The upward walk in step 3 stops at the **git working tree root** when one can be
 detected, otherwise at the working directory itself. An unrelated
 `angela.json` sitting above the project is therefore never picked up.
 
@@ -68,6 +74,12 @@ Supported constructs: `$VAR`, `${VAR}`, `${VAR:-default}`, `${VAR:+alt}`,
 the request rather than sent as `Header:`. A literal `$` in a URL (e.g. OData
 `$filter`) must be escaped as `\$`.
 
+An `ANGELA_`-prefixed variable shadows its bare name in every expansion here
+— set `ANGELA_OPENAI_API_KEY` to override `$OPENAI_API_KEY` for Angela alone,
+leaving the plain variable untouched for your shell and other programs. A
+`$(command)` has a 5-minute timeout; a slower command fails config loading
+instead of hanging.
+
 > [!WARNING]
 > `angela.json` is trusted code: any `$(...)` in it runs at load time with your
 > shell privileges, before the UI appears. Don't launch Angela in a directory
@@ -82,7 +94,8 @@ slot's `provider` field references.
 | ---------------------- | ----------------- | -------------------------------------------------------------- |
 | `id`                   | string            | Provider identifier                                             |
 | `name`                 | string            | Display name                                                    |
-| `type`                 | string            | API format: `openai`, `openai-compat`, `anthropic`, `openrouter`, `google`, `bedrock`, `vercel`, or a local type such as `ollama`. Defaults to `openai` |
+| `type`                 | string            | API format: `openai`, `openai-compat`, `openrouter`, `vercel`, `anthropic`, `google`, `azure`, `bedrock`, `google-vertex`, `litellm`, `llamacpp`, `lmstudio`, `ollama`, `omlx`. Defaults to `openai` |
+| `use_responses`        | bool              | Force the OpenAI Responses API on or off for this provider; unset picks per model from its ID |
 | `base_url`             | string            | API base URL                                                    |
 | `api_key`              | string            | Shell-expanded                                                  |
 | `disable`              | bool              | Default `false`                                                 |
@@ -93,6 +106,7 @@ slot's `provider` field references.
 | `extra_body`           | object            | Merged verbatim into OpenAI-compatible request bodies; **not** shell-expanded |
 | `provider_options`     | object            | Provider-specific options                                       |
 | `aws_auth_refresh`     | string            | Shell command run when Bedrock credentials expire               |
+| `oauth`                | object            | OAuth2 token Angela persists after an interactive login (e.g. Copilot); not meant to be hand-written |
 | `models`               | array             | Model catalog, see below                                        |
 
 ```json
@@ -160,6 +174,10 @@ reuses one of those names replaces its behavior instead of adding a duplicate.
 
 Variant fields: `think`, `reasoning_effort`, `max_tokens`, `temperature`,
 `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options`.
+Values are validated at load time — `temperature`/`top_p` must be finite and
+in `0`–`1`, `max_tokens` must be `0`–`200000`, and the penalties must be
+finite — and a variant that fails is dropped with a warning rather than
+failing the whole config load.
 
 ```json
 {
@@ -207,6 +225,9 @@ parameters, and variants all live on the model's catalog entry under
 | `provider` | string | **Required**; a key in `providers`      |
 | `model`    | string | **Required**; the provider's model ID   |
 
+A slot that no agent's `slot` field ever names still loads fine, but logs a
+startup warning since it has no effect.
+
 ```json
 {
   "slots": {
@@ -228,7 +249,7 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 | `name`           | string | Display name                                                        |
 | `description`    | string | What the agent does; shown to the dispatching model                 |
 | `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user) |
-| `slot`           | string | A slot name from `slots`. Default `main` — this is how a subagent is pointed at a cheaper model |
+| `slot`           | string | A slot name from `slots`. Default `main` for most agents — `title` and `web-fetch` default to `chore` instead, which is how a subagent is pointed at a cheaper model |
 | `variant`        | string | A variant name on that model slot                                   |
 | `max_tokens`     | int    | Output-token cap; omit for the model default                        |
 | `prompt`         | string | Replaces the built-in system prompt. Parsed as a Go template        |
@@ -243,6 +264,17 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 `disabled` and `hidden` are tri-state: omitting them inherits the lower layer,
 and an explicit `false` can re-enable or un-hide something a lower-priority
 layer turned off.
+
+> [!IMPORTANT]
+> An unrecognized field inside one `agents.<id>` entry drops that entire
+> override at load time, with a warning, rather than silently keeping the
+> built-in default or ignoring just the bad field — this catches a typo like
+> `allowed_tool` before it grants full tool access by accident. `coder` is
+> also special: it can never be `disabled`, and `allowed_tools: "inherited"`
+> or `allowed_mcp: "inherited"` on it degrades to `"all"` with a warning,
+> since it's the root of the inheritance tree and has nothing to inherit
+> from. A global `options.disabled_tools` always wins over a per-agent
+> `allowed_tools` — an agent can't re-enable a tool removed at the top level.
 
 ```json
 {
@@ -283,6 +315,11 @@ layer turned off.
 | `oauth_client_secret`  | string | Secret paired with `oauth_client_id`                       |
 | `oauth_callback_port`  | int    | Pin the localhost redirect port when the provider enforces exact-match redirect URIs |
 
+The token from an `oauth` login is persisted to `oauth_token` by Angela
+itself — it isn't meant to be hand-written. The server name `docker` is
+reserved: enabling Docker MCP support configures it automatically as
+`docker mcp gateway run`.
+
 ```json
 {
   "mcp": {
@@ -306,6 +343,11 @@ layer turned off.
 `lsp` maps a language-server name to its config. With `options.auto_lsp` on
 (the default), Angela also discovers servers from root markers, so most
 projects need no `lsp` block at all.
+
+For a name Angela recognizes (e.g. `gopls`, `typescript-language-server`), it
+fills in any of `command`, `args`, `env`, `filetypes`, `root_markers`,
+`options`, and `init_options` you leave unset from its built-in defaults, so
+`{"lsp": {"gopls": {}}}` alone is often enough to turn one on explicitly.
 
 | Field          | Type   | Notes                                                |
 | -------------- | ------ | ---------------------------------------------------- |
@@ -416,12 +458,16 @@ wants top-level calls filters on `depth` or `agent_id`.
 ```
 
 - `decision`: `allow` to explicitly allow, `deny` to block, `none` (or omit).
-- `reason`: explanation, used when denying.
+- `reason`: explanation, used when denying or halting.
 - `context`: extra context appended to the tool result.
 - `updated_input`: a **shallow-merge patch** against the tool input, not a
   replacement. Keys you include overwrite; keys you omit are preserved.
+- `halt`: `true` stops the whole agent turn, not just this tool call, and
+  hands control back to the user; `reason` becomes the halt message.
 
 **Exit code 2** — the tool call is blocked; stderr is the deny reason.
+
+**Exit code 49** — shorthand for `{"halt": true}`: stderr is the reason.
 
 **Any other exit code** — non-blocking error; the tool call proceeds.
 
@@ -461,9 +507,22 @@ A rule matches on what a call actually touches, not just on the tool name:
 | Field     | Type   | Notes                                                                    |
 | --------- | ------ | ------------------------------------------------------------------------ |
 | `action`  | string | **Required**: `allow`, `ask`, or `deny`                                   |
-| `tool`    | string | An access category (`read`, `edit`, `execute`, `network`, `mcp`, `list`) or a single tool name (`bash`, `view`). Empty matches everything |
+| `tool`    | string | An access category (`read`, `edit`, `execute`, `network`, `mcp`, `list`, `merge`) or a single tool name (`Bash`, `View`, case-sensitive). Empty matches everything |
 | `pattern` | string | Narrows the match. Empty or `*` matches everything                        |
 | `mode`    | string | How `pattern` is compared: `auto` (picks by action), `path`, `free`, `domain` |
+
+`merge` is the access category for the `Merge` tool a `branch` agent uses to
+return its result to the conversation that forked it. That tool, plus the
+`ProposalWrite`/`ProposalEdit`/`ProposalRead` tools a branch drafts with, is
+appended to a branch agent's toolset *after* `allowed_tools`/`disabled_tools`
+filtering runs — neither field can take it away, since a branch that could
+draft a result but never return it would strand the conversation. `auto`
+resolves to `path` for `read`/`list`/`edit` and to `free` for everything
+else; `domain` applies only to `network` and matches subdomains too (a rule
+for `example.com` also covers `sub.example.com`). A shell command is judged
+segment by segment, so each command in a pipeline is checked on its own, and
+a network access that also writes to disk — a download — is checked as both
+`network` and `edit`.
 
 Rules are evaluated **deny > ask > allow** regardless of the order they are
 written in, so a deny always wins. `prompt` only decides the fallback when
@@ -494,18 +553,19 @@ governs whether a call is approved.
 | Field                          | Type   | Default            | Notes                                                          |
 | ------------------------------ | ------ | ------------------ | -------------------------------------------------------------- |
 | `context_paths`                | array  | —                  | Extra project context files                                     |
+| `reminders`                    | array  | —                  | Short notices re-injected as a system reminder at the end of every turn, unlike context files which are sent once and fade as the conversation grows |
 | `global_context_paths`         | array  | `~/.config/angela/ANGELA.md`, `~/.config/AGENTS.md` | Global context files      |
 | `skills_paths`                 | array  | —                  | Extra Agent Skills directories                                  |
 | `agent_paths`                  | array  | —                  | Directories holding agent markdown files                        |
 | `disabled_skills`              | array  | —                  | Skill names to hide from the agent                              |
 | `disabled_tools`               | array  | —                  | Built-in tools to disable and hide from the agent               |
-| `data_directory`               | string | `.angela`          | Per-project state. Relative paths resolve against the working directory |
+| `data_directory`               | string | `.angela`          | Per-project state, including the workspace config layer (`<data_directory>/angela.json`). Relative paths resolve against the working directory |
 | `initialize_as`                | string | `AGENTS.md`        | Context file created/updated by project initialization          |
 | `debug`                        | bool   | `false`            | Debug logging                                                   |
 | `debug_lsp`                    | bool   | `false`            | Debug logging for LSP servers                                   |
 | `auto_lsp`                     | bool   | `true`             | Auto-configure LSPs from root markers                           |
 | `progress`                     | bool   | `true`             | Indeterminate progress updates during long operations           |
-| `notifications`                | string | `auto`             | `auto`, `native`, `osc`, `bell`, `disabled`                     |
+| `notifications`                | string | `auto`             | `auto` (native locally, an OSC escape sequence over SSH), `native`, `osc`, `bell`, `disabled` |
 | `subagent_depth`               | int    | `1`                | Levels of subagent nesting via the Agent tool. `0` disables delegation; must be non-negative. Raising it multiplies token and time cost per dispatch chain |
 | `disable_metrics`              | bool   | `false`            | Stop sending metrics                                            |
 | `disable_provider_auto_update` | bool   | `false`            | Stop auto-updating the provider catalog                         |
@@ -594,6 +654,10 @@ rather than aborting the load.
 The two timeouts are Go durations serialized as **integer nanoseconds** in
 JSON: `10000000000` is 10 seconds.
 
+Outside a git repository, unset `ls.max_depth`/`ls.max_items` (and the TUI's
+completion limits) default to `2`/`100` instead of unlimited, to avoid an
+unbounded walk of a non-project directory.
+
 ```json
 {
   "tools": {
@@ -617,14 +681,18 @@ user-invocable: true
 ```
 
 - Global skills appear as `user:skill-name`; project skills as
-  `project:skill-name`.
+  `project:skill-name`; builtin skills (like this one) as `system:skill-name`.
 - Add `disable-model-invocation: true` to keep a skill user-only — hidden from
   the model's available-skills list, but still manually invocable.
 
 ## Environment variables
 
-| Variable                | Effect                                              |
-| ----------------------- | --------------------------------------------------- |
-| `ANGELA_GLOBAL_CONFIG`  | Directory holding the global `angela.json`           |
-| `ANGELA_CACHE_DIR`      | Override the cache directory                         |
-| `ANGELA_SKILLS_DIR`     | Replace the default global skills directories        |
+| Variable                               | Effect                                               |
+| --------------------------------------- | ----------------------------------------------------- |
+| `ANGELA_GLOBAL_CONFIG`                | Directory holding the global `angela.json`            |
+| `ANGELA_CACHE_DIR`                    | Override the cache directory                          |
+| `ANGELA_SKILLS_DIR`                   | Replace the default global skills directories         |
+| `ANGELA_AGENTS_DIR`                   | Replace the default global agent-markdown directory   |
+| `ANGELA_DISABLE_METRICS`              | Same as `options.disable_metrics`                      |
+| `ANGELA_DISABLE_PROVIDER_AUTO_UPDATE` | Same as `options.disable_provider_auto_update`         |
+| `ANGELA_DISABLE_DEFAULT_PROVIDERS`    | Same as `options.disable_default_providers`            |

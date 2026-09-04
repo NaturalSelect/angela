@@ -188,9 +188,9 @@ OpenCode MCP format is similar to Angela's. Copy with minor adjustments.
   "permissions": {
     "allowed_tools": ["View", "Edit", "Bash"],
     "rules": [
-      { "action": "allow", "tool": "bash", "pattern": "git status*" },
-      { "action": "allow", "tool": "bash", "pattern": "git diff*" },
-      { "action": "allow", "tool": "bash", "pattern": "npm test*" }
+      { "action": "allow", "tool": "Bash", "pattern": "git status*" },
+      { "action": "allow", "tool": "Bash", "pattern": "git diff*" },
+      { "action": "allow", "tool": "Bash", "pattern": "npm test*" }
     ]
   }
 }
@@ -218,8 +218,8 @@ OpenCode uses a nested permission tree:
   "permissions": {
     "allowed_tools": ["Edit"],
     "rules": [
-      { "action": "deny", "tool": "bash", "pattern": "find /" },
-      { "action": "allow", "tool": "bash", "pattern": "git status*" }
+      { "action": "deny", "tool": "Bash", "pattern": "find /" },
+      { "action": "allow", "tool": "Bash", "pattern": "git status*" }
     ],
     "prompt": "ask"
   }
@@ -280,15 +280,16 @@ Angela's `agents` section using the same field mapping as above.
 
 Angela automatically loads these context files without configuration:
 
-- `AGENTS.md`, `AGENTS.local.md`
-- `ANGELA.md`, `ANGELA.local.md`
+- `.github/copilot-instructions.md`
+- `.cursorrules`, `.cursor/rules/`
 - `CLAUDE.md`, `CLAUDE.local.md`
-- `GEMINI.md`, `GEMINI.local.md`
-- `.cursorrules`, `.cursor/rules/*.md`
+- `GEMINI.md`
+- `ANGELA.md`, `ANGELA.local.md`
+- `AGENTS.md` (no `.local.md` variant, unlike the others)
 
-So existing `CLAUDE.md` and `.cursorrules` files work as-is. For
-`OPENCODE.md`, either rename it to `ANGELA.md` or add it to
-`options.context_paths`.
+So existing `CLAUDE.md`, `.cursorrules`, and even a GitHub Copilot
+`.github/copilot-instructions.md` file all work as-is. For `OPENCODE.md`,
+either rename it to `ANGELA.md` or add it to `options.context_paths`.
 
 ### Options Mapping
 

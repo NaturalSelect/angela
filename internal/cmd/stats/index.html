@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Angela Usage Statistics</title>
-    <link rel="icon" type="image/svg+xml" href='{{.Favicon}}' />
+    <link rel="icon" type="image/png" href='{{.Favicon}}' />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,10 +20,10 @@
   <body>
     <div class="container">
       <div class="header-wrapper">
-        <a href="https://charm.land/angela" class="header-link">
+        <a href="https://github.com/NaturalSelect/angela" class="header-link">
           <div class="header-content">
-            <div class="header-svg">{{.Header}}</div>
-            <div class="heartbit-svg">{{.Heartbit}}</div>
+            <img class="header-icon" src="{{.Favicon}}" alt="" />
+            <div class="header-title">ANGELA</div>
           </div>
         </a>
       </div>
@@ -123,10 +123,6 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="footer-container">
-      <div class="footer">{{.Footer}}</div>
     </div>
 
     <script>

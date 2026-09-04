@@ -87,6 +87,14 @@ func (s *service) ListReadFiles(ctx context.Context, sessionID string) ([]string
 
 	paths := make([]string, 0, len(readFiles))
 	for _, rf := range readFiles {
+		if filepath.IsAbs(rf.Path) {
+			// relpath fell back to storing an absolute path (e.g. no
+			// relative path exists between it and basepath, such as
+			// across Windows volumes), so joining with basepath would
+			// corrupt it.
+			paths = append(paths, rf.Path)
+			continue
+		}
 		paths = append(paths, filepath.Join(basepath, rf.Path))
 	}
 	return paths, nil

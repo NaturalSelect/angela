@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -44,18 +45,22 @@ func TestBackendFileTracker_RecordAndList(t *testing.T) {
 	sess, err := b.CreateSession(t.Context(), ws.ID, "s")
 	require.NoError(t, err)
 
-	before, err := b.FileTrackerLastReadTime(t.Context(), ws.ID, sess.ID, "/tmp/a.go")
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.go")
+	pathB := filepath.Join(dir, "b.go")
+
+	before, err := b.FileTrackerLastReadTime(t.Context(), ws.ID, sess.ID, pathA)
 	require.NoError(t, err)
 	require.True(t, before.IsZero(), "no read recorded yet")
 
-	require.NoError(t, b.FileTrackerRecordRead(t.Context(), ws.ID, sess.ID, "/tmp/a.go"))
-	require.NoError(t, b.FileTrackerRecordRead(t.Context(), ws.ID, sess.ID, "/tmp/b.go"))
+	require.NoError(t, b.FileTrackerRecordRead(t.Context(), ws.ID, sess.ID, pathA))
+	require.NoError(t, b.FileTrackerRecordRead(t.Context(), ws.ID, sess.ID, pathB))
 
-	after, err := b.FileTrackerLastReadTime(t.Context(), ws.ID, sess.ID, "/tmp/a.go")
+	after, err := b.FileTrackerLastReadTime(t.Context(), ws.ID, sess.ID, pathA)
 	require.NoError(t, err)
 	require.False(t, after.IsZero())
 
 	files, err := b.FileTrackerListReadFiles(t.Context(), ws.ID, sess.ID)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"/tmp/a.go", "/tmp/b.go"}, files)
+	require.ElementsMatch(t, []string{pathA, pathB}, files)
 }

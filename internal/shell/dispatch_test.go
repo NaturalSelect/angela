@@ -75,6 +75,31 @@ func TestIsPathPrefixed(t *testing.T) {
 	}
 }
 
+// TestIsDriveLetter covers the ASCII-letter check used to recognize
+// Windows drive-letter path prefixes (e.g. "C:\"). It is platform
+// independent, so it runs and is exercised on every OS even though its
+// only caller is gated behind runtime.GOOS == "windows".
+func TestIsDriveLetter(t *testing.T) {
+	cases := []struct {
+		in   byte
+		want bool
+	}{
+		{'C', true},
+		{'z', true},
+		{'A', true},
+		{'Z', true},
+		{'a', true},
+		{'1', false},
+		{':', false},
+		{' ', false},
+	}
+	for _, c := range cases {
+		if got := isDriveLetter(c.in); got != c.want {
+			t.Errorf("isDriveLetter(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
 // TestParseShebang covers the shebang grammar: literal paths, env,
 // env -S, kernel single-arg semantics, CRLF tolerance, and every
 // enumerated error case.

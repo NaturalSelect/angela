@@ -300,3 +300,137 @@ func TestAppWorkspace_Resolver(t *testing.T) {
 	fx, _ := newAWFixtureWithStore(t)
 	require.NotNil(t, fx.ws.Resolver())
 }
+
+func TestAppWorkspace_UpdatePreferredModel(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, store := newAWFixtureWithStore(t)
+	sel := config.SelectedModel{Provider: "acme", Model: "m1"}
+
+	require.NoError(t, fx.ws.UpdatePreferredModel(config.ScopeGlobal, config.SlotMain, sel))
+	require.Equal(t, sel, store.Config().Slots[config.SlotMain])
+}
+
+func TestAppWorkspace_RecordRecentModel(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, store := newAWFixtureWithStore(t)
+	sel := config.SelectedModel{Provider: "acme", Model: "m1"}
+
+	require.NoError(t, fx.ws.RecordRecentModel(config.ScopeGlobal, config.SlotMain, sel))
+	require.Equal(t, sel, store.Config().RecentModels[config.SlotMain][0])
+}
+
+func TestAppWorkspace_PruneRecentModels(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, store := newAWFixtureWithStore(t)
+	sel := config.SelectedModel{Provider: "acme", Model: "m1"}
+	require.NoError(t, fx.ws.RecordRecentModel(config.ScopeGlobal, config.SlotMain, sel))
+	require.Len(t, store.Config().RecentModels[config.SlotMain], 1)
+
+	require.NoError(t, fx.ws.PruneRecentModels(config.ScopeGlobal, config.SlotMain, []config.SelectedModel{sel}))
+	require.Empty(t, store.Config().RecentModels[config.SlotMain])
+}
+
+func TestAppWorkspace_UpsertProviderModel_MissingID(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, _ := newAWFixtureWithStore(t)
+
+	err := fx.ws.UpsertProviderModel(config.ScopeGlobal, "acme", config.ProviderModel{})
+	require.ErrorContains(t, err, "required")
+}
+
+func TestAppWorkspace_SetCompactMode(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, store := newAWFixtureWithStore(t)
+
+	require.NoError(t, fx.ws.SetCompactMode(config.ScopeGlobal, true))
+	require.True(t, store.Config().Options.TUI.CompactMode)
+}
+
+// TestAppWorkspace_SetProviderAPIKey seeds a fully-specified custom
+// provider (disable_default_providers skips the network fetch to the
+// real Catwalk catalog): SetProviderAPIKey only updates a provider that
+// survives configureProviders, which drops any custom entry lacking a
+// base URL.
+func TestAppWorkspace_SetProviderAPIKey(t *testing.T) {
+	// Not parallel: config.Load isolates HOME/XDG via t.Setenv.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"), []byte(`{
+		"options": {"disable_default_providers": true},
+		"providers": {"acme": {"base_url": "http://127.0.0.1:0/v1",
+			"models": [{"id": "m1", "name": "M1"}]}}
+	}`), 0o644))
+	store := newTestConfigStoreInDir(t, dir)
+	fx := newAWFixture(t)
+	fx.ws = NewAppWorkspace(fx.app, store)
+
+	require.NoError(t, fx.ws.SetProviderAPIKey(config.ScopeGlobal, "acme", "sk-secret"))
+	pc, ok := store.Config().Providers.Get("acme")
+	require.True(t, ok)
+	require.Equal(t, "sk-secret", pc.APIKey)
+}
+
+func TestAppWorkspace_SetConfigField(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, store := newAWFixtureWithStore(t)
+
+	require.NoError(t, fx.ws.SetConfigField(config.ScopeGlobal, "options.debug", true))
+	require.True(t, store.Config().Options.Debug)
+}
+
+func TestAppWorkspace_RemoveConfigField(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, store := newAWFixtureWithStore(t)
+	require.NoError(t, fx.ws.SetConfigField(config.ScopeGlobal, "options.debug", true))
+
+	require.NoError(t, fx.ws.RemoveConfigField(config.ScopeGlobal, "options.debug"))
+	require.False(t, store.Config().Options.Debug)
+}
+
+func TestAppWorkspace_ImportCopilot_NothingOnDisk(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, _ := newAWFixtureWithStore(t)
+
+	tok, imported := fx.ws.ImportCopilot()
+	require.False(t, imported)
+	require.Nil(t, tok)
+}
+
+func TestAppWorkspace_RefreshOAuthToken_UnknownProvider(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, _ := newAWFixtureWithStore(t)
+
+	err := fx.ws.RefreshOAuthToken(t.Context(), config.ScopeGlobal, "nonexistent-provider-xyz")
+	require.ErrorContains(t, err, "not found")
+}
+
+// TestAppWorkspace_ProjectLifecycle exercises ProjectNeedsInitialization
+// and MarkProjectInitialized together: the first only reports true for a
+// non-empty, uninitialized directory, and the second is what flips it
+// back to false, so testing them apart would leave one side a tautology.
+func TestAppWorkspace_ProjectLifecycle(t *testing.T) {
+	// Not parallel: newTestConfigStoreInDir calls t.Setenv.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0o644))
+	store := newTestConfigStoreInDir(t, dir)
+	fx := newAWFixture(t)
+	fx.ws = NewAppWorkspace(fx.app, store)
+
+	needs, err := fx.ws.ProjectNeedsInitialization()
+	require.NoError(t, err)
+	require.True(t, needs)
+
+	require.NoError(t, fx.ws.MarkProjectInitialized())
+
+	needs, err = fx.ws.ProjectNeedsInitialization()
+	require.NoError(t, err)
+	require.False(t, needs)
+}
+
+func TestAppWorkspace_InitializePrompt(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, _ := newAWFixtureWithStore(t)
+
+	out, err := fx.ws.InitializePrompt()
+	require.NoError(t, err)
+	require.NotEmpty(t, out)
+}

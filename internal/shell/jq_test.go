@@ -5,9 +5,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestJQ_CtxCancel verifies that handleJQ polls ctx during iteration and
@@ -209,4 +213,278 @@ func TestJQ_Success(t *testing.T) {
 	if got := stdout.String(); got != "1\n" {
 		t.Fatalf("stdout = %q, want %q", got, "1\n")
 	}
+}
+
+// TestHandleJQ_Flags exercises the flag-parsing and formatting branches of
+// handleJQ that TestJQ_CtxCancel_* and TestJQ_Success don't reach: output
+// modifiers, slurp/null/raw input modes, --arg/--argjson, and the error
+// paths for malformed flags, parse failures, and runtime filter errors.
+func TestHandleJQ_Flags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		args       []string
+		stdin      string
+		wantStdout string
+		wantErr    bool
+		wantExit   int
+		stderrHas  string
+	}{
+		{
+			name:       "help flag prints usage",
+			args:       []string{"jq", "-h"},
+			wantStdout: jqUsage,
+		},
+		{
+			name:       "long help flag prints usage",
+			args:       []string{"jq", "--help"},
+			wantStdout: jqUsage,
+		},
+		{
+			name:       "raw output strips quotes",
+			args:       []string{"jq", "-r", ".name"},
+			stdin:      `{"name":"alice"}`,
+			wantStdout: "alice\n",
+		},
+		{
+			name:       "raw output on non-string value falls back to JSON encoding",
+			args:       []string{"jq", "-r", "-c", ".n"},
+			stdin:      `{"n":42}`,
+			wantStdout: "42\n",
+		},
+		{
+			name:       "join output has no trailing newline",
+			args:       []string{"jq", "-j", ".name"},
+			stdin:      `{"name":"alice"}` + "\n" + `{"name":"bob"}`,
+			wantStdout: "alicebob",
+		},
+		{
+			name:       "compact output",
+			args:       []string{"jq", "-c", ".a"},
+			stdin:      `{"a":1,"b":2}`,
+			wantStdout: "1\n",
+		},
+		{
+			name:       "default output is pretty-printed",
+			args:       []string{"jq", ".a"},
+			stdin:      `{"a":[1,2,3]}`,
+			wantStdout: "[\n  1,\n  2,\n  3\n]\n",
+		},
+		{
+			name:       "slurp reads all inputs into array",
+			args:       []string{"jq", "-c", "-s", "."},
+			stdin:      "1\n2\n3",
+			wantStdout: "[1,2,3]\n",
+		},
+		{
+			name:       "null input ignores stdin",
+			args:       []string{"jq", "-n", "-c", "1+1"},
+			stdin:      "should be ignored",
+			wantStdout: "2\n",
+		},
+		{
+			name:       "raw input treats each line as a string",
+			args:       []string{"jq", "-R", "-c", "."},
+			stdin:      "a\nb",
+			wantStdout: "\"a\"\n\"b\"\n",
+		},
+		{
+			name:       "arg injects a string variable",
+			args:       []string{"jq", "-c", "--arg", "name", "world", `"hello " + $name`},
+			stdin:      "null",
+			wantStdout: `"hello world"` + "\n",
+		},
+		{
+			name:       "argjson injects a JSON variable",
+			args:       []string{"jq", "-c", "--argjson", "n", "21", "$n * 2"},
+			stdin:      "null",
+			wantStdout: "42\n",
+		},
+		{
+			name:      "arg missing value returns exit status 2",
+			args:      []string{"jq", "--arg", "name"},
+			stdin:     "null",
+			wantErr:   true,
+			wantExit:  2,
+			stderrHas: "--arg requires name and value",
+		},
+		{
+			name:      "argjson missing value returns exit status 2",
+			args:      []string{"jq", "--argjson", "n"},
+			stdin:     "null",
+			wantErr:   true,
+			wantExit:  2,
+			stderrHas: "--argjson requires name and value",
+		},
+		{
+			name:      "argjson invalid json returns exit status 2",
+			args:      []string{"jq", "--argjson", "n", "not-json", "."},
+			stdin:     "null",
+			wantErr:   true,
+			wantExit:  2,
+			stderrHas: "invalid JSON for --argjson",
+		},
+		{
+			name:      "unknown option after filter returns exit status 2",
+			args:      []string{"jq", ".", "-x"},
+			stdin:     "null",
+			wantErr:   true,
+			wantExit:  2,
+			stderrHas: "unknown option",
+		},
+		{
+			name:     "parse error returns exit status 3",
+			args:     []string{"jq", "{"},
+			stdin:    "null",
+			wantErr:  true,
+			wantExit: 3,
+		},
+		{
+			name:     "compile error returns exit status 3",
+			args:     []string{"jq", "undefinedfunc123"},
+			stdin:    "null",
+			wantErr:  true,
+			wantExit: 3,
+		},
+		{
+			name:      "runtime error during iteration returns exit status 5",
+			args:      []string{"jq", "1/0"},
+			stdin:     "null",
+			wantErr:   true,
+			wantExit:  5,
+			stderrHas: "jq:",
+		},
+		{
+			name:       "exit-status flag leaves exit 0 for truthy result",
+			args:       []string{"jq", "-e", "-c", "."},
+			stdin:      `true`,
+			wantStdout: "true\n",
+		},
+		{
+			name:       "exit-status flag sets exit 1 for falsy result",
+			args:       []string{"jq", "-e", ".missing"},
+			stdin:      `{}`,
+			wantStdout: "null\n",
+			wantErr:    true,
+			wantExit:   1,
+		},
+		{
+			name:     "missing input file returns exit status 2",
+			args:     []string{"jq", ".", "/nonexistent/path/does-not-exist.json"},
+			stdin:    "null",
+			wantErr:  true,
+			wantExit: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout, stderr bytes.Buffer
+			err := handleJQ(t.Context(), tt.args, strings.NewReader(tt.stdin), &stdout, &stderr)
+
+			if got := stdout.String(); got != tt.wantStdout {
+				t.Errorf("stdout = %q, want %q", got, tt.wantStdout)
+			}
+
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v (stderr=%q)", err, stderr.String())
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected error, got nil (stdout=%q stderr=%q)", stdout.String(), stderr.String())
+			}
+			if code := ExitCode(err); code != tt.wantExit {
+				t.Errorf("ExitCode = %d, want %d (err=%v)", code, tt.wantExit, err)
+			}
+			if tt.stderrHas != "" && !strings.Contains(stderr.String(), tt.stderrHas) {
+				t.Errorf("stderr = %q, want substring %q", stderr.String(), tt.stderrHas)
+			}
+		})
+	}
+}
+
+// TestHandleJQ_DoubleDashFileArgs verifies that arguments following `--`
+// are treated as input files instead of stdin, exercising the file-reading
+// branch of readInputs (as opposed to the stdin branch every other test
+// in this file uses).
+func TestHandleJQ_DoubleDashFileArgs(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "input.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"x":9}`), 0o644))
+
+	var stdout bytes.Buffer
+	err := handleJQ(t.Context(), []string{"jq", "-c", ".x", "--", path}, strings.NewReader("ignored"), &stdout, io.Discard)
+	require.NoError(t, err)
+	require.Equal(t, "9\n", stdout.String())
+}
+
+// TestReadInputs_Files verifies that readInputs opens and decodes each
+// named file in order, rather than reading from stdin, and that a stream
+// of multiple JSON values within one file is fully decoded.
+func TestReadInputs_Files(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	f1 := filepath.Join(dir, "a.json")
+	f2 := filepath.Join(dir, "b.json")
+	require.NoError(t, os.WriteFile(f1, []byte("1 2"), 0o644))
+	require.NoError(t, os.WriteFile(f2, []byte("3"), 0o644))
+
+	vals, err := readInputs(t.Context(), strings.NewReader(""), []string{f1, f2}, false, false, false)
+	require.NoError(t, err)
+	require.Equal(t, []any{1.0, 2.0, 3.0}, vals)
+}
+
+func TestReadInputs_FileNotFound(t *testing.T) {
+	t.Parallel()
+
+	_, err := readInputs(t.Context(), strings.NewReader(""), []string{filepath.Join(t.TempDir(), "missing.json")}, false, false, false)
+	require.Error(t, err)
+}
+
+func TestReadInputs_MalformedJSONReturnsParseError(t *testing.T) {
+	t.Parallel()
+
+	_, err := readInputs(t.Context(), strings.NewReader("{not json"), nil, false, false, false)
+	require.ErrorContains(t, err, "parse error")
+}
+
+func TestReadInputs_EmptyStdinReturnsNull(t *testing.T) {
+	t.Parallel()
+
+	vals, err := readInputs(t.Context(), strings.NewReader(""), nil, false, false, false)
+	require.NoError(t, err)
+	require.Equal(t, []any{nil}, vals)
+}
+
+func TestReadInputs_NullInputIgnoresStdin(t *testing.T) {
+	t.Parallel()
+
+	vals, err := readInputs(t.Context(), strings.NewReader("garbage"), nil, true, false, false)
+	require.NoError(t, err)
+	require.Equal(t, []any{nil}, vals)
+}
+
+func TestReadInputs_RawInputSlurpJoinsLines(t *testing.T) {
+	t.Parallel()
+
+	vals, err := readInputs(t.Context(), strings.NewReader("a\nb\nc"), nil, false, true, true)
+	require.NoError(t, err)
+	require.Equal(t, []any{"a\nb\nc"}, vals)
+}
+
+func TestReadInputs_RawInputNoSlurpSplitsLines(t *testing.T) {
+	t.Parallel()
+
+	vals, err := readInputs(t.Context(), strings.NewReader("a\nb"), nil, false, true, false)
+	require.NoError(t, err)
+	require.Equal(t, []any{"a", "b"}, vals)
 }

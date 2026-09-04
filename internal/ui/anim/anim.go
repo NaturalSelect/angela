@@ -382,8 +382,8 @@ func (a *Anim) renderLabel(label string) {
 func (a *Anim) Width() (w int) {
 	w = a.width
 	if a.labelWidth > 0 {
-		w += labelGapWidth + a.labelWidth
-
+		// a.width already accounts for the label and its gap (see New and
+		// SetLabel); only the trailing ellipsis still needs to be added.
 		var widestEllipsisFrame int
 		for _, f := range ellipsisFrames {
 			fw := lipgloss.Width(f)

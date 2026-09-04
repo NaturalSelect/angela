@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -146,6 +147,24 @@ func TestResolveCwd_ChangesDirectoryWhenFlagSet(t *testing.T) {
 	resolvedAfter, err := filepath.EvalSymlinks(afterCwd)
 	require.NoError(t, err)
 	require.Equal(t, resolvedTarget, resolvedAfter, "the process cwd must actually change to the requested dir")
+}
+
+// TestResolveCwd_GetwdErrorPropagates covers the os.Getwd error branch
+// taken when no --cwd flag is set and the process's actual working
+// directory has been removed out from under it. Not parallel: it
+// mutates the process-wide working directory, like
+// TestResolveCwd_ChangesDirectoryWhenFlagSet above.
+func TestResolveCwd_GetwdErrorPropagates(t *testing.T) {
+	removed := t.TempDir()
+	t.Chdir(removed)
+	require.NoError(t, os.Remove(removed))
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("cwd", "", "")
+
+	_, err := ResolveCwd(cmd)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to get current working directory")
 }
 
 // TestRandomExitMessage pins the two invariants callers rely on: every
@@ -346,6 +365,30 @@ func TestCreateDotAngelaDir_MkdirFailurePropagates(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to create data directory")
 }
 
+// TestCreateDotAngelaDir_WriteGitignoreFailurePropagates covers the
+// error branch when the directory already exists but is not writable,
+// so writing a fresh .gitignore into it fails. POSIX-only: Windows
+// doesn't enforce the same directory-mode write check and root bypasses
+// file mode permission checks entirely.
+func TestCreateDotAngelaDir_WriteGitignoreFailurePropagates(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission model")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file mode permission checks")
+	}
+
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	err := createDotAngelaDir(dir)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create .gitignore file")
+}
+
 // TestSupportsProgressBar_NotATerminalIsFalse pins the short-circuit: when
 // stderr isn't a terminal, env vars that would otherwise enable progress
 // bars (TERM_PROGRAM, WT_SESSION) must not matter.
@@ -357,4 +400,109 @@ func TestSupportsProgressBar_NotATerminalIsFalse(t *testing.T) {
 	t.Setenv("WT_SESSION", "some-session")
 
 	require.False(t, supportsProgressBar())
+}
+
+// TestResolveCwd_ChdirErrorPropagates covers the failure path: a
+// --cwd pointing at a directory that doesn't exist must fail instead
+// of silently falling back to the current directory. os.Chdir never
+// succeeds here, so the process's real working directory is never
+// touched and this is safe to run in parallel with other tests.
+func TestResolveCwd_ChdirErrorPropagates(t *testing.T) {
+	t.Parallel()
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("cwd", filepath.Join(t.TempDir(), "does-not-exist"), "")
+
+	_, err := ResolveCwd(cmd)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to change directory")
+}
+
+// TestMaybePrependStdin_NonPipeNonRegularStdinLeavesPromptUnchanged
+// covers stdin that is neither a named pipe nor a regular file (e.g. a
+// character device like os.DevNull): the prompt must pass through
+// untouched rather than trying to read from it.
+func TestMaybePrependStdin_NonPipeNonRegularStdinLeavesPromptUnchanged(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+	defer f.Close()
+
+	orig := os.Stdin
+	os.Stdin = f
+	defer func() { os.Stdin = orig }()
+
+	got, err := MaybePrependStdin("the prompt")
+	require.NoError(t, err)
+	require.Equal(t, "the prompt", got)
+}
+
+// TestMaybePrependStdin_ReadErrorPropagates covers the io.ReadAll error
+// branch: stdin reports as a regular file (so MaybePrependStdin commits
+// to reading it) but the underlying descriptor is write-only, so the
+// read itself fails and the error must propagate rather than being
+// swallowed.
+func TestMaybePrependStdin_ReadErrorPropagates(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stdin.txt")
+	require.NoError(t, os.WriteFile(path, []byte("unreadable"), 0o644))
+
+	f, err := os.OpenFile(path, os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+	defer f.Close()
+
+	orig := os.Stdin
+	os.Stdin = f
+	defer func() { os.Stdin = orig }()
+
+	got, err := MaybePrependStdin("the prompt")
+	require.Error(t, err)
+	require.Equal(t, "the prompt", got, "the original prompt must be returned unchanged alongside the error")
+}
+
+// TestLocalSkillsDiscoveryConfig_PropagatesOptionsAndResolver pins the
+// field-by-field mapping from the loaded config to skills.DiscoveryConfig:
+// each field must come from the actual store rather than a zero value.
+func TestLocalSkillsDiscoveryConfig_PropagatesOptionsAndResolver(t *testing.T) {
+	isolateSessionEnv(t)
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(cwd, "angela.json"), []byte(`{
+		"options": {"skills_paths": ["./my-skills"], "disabled_skills": ["foo"]}
+	}`), 0o644))
+
+	store, err := config.Init(cwd, t.TempDir(), false)
+	require.NoError(t, err)
+
+	dc := localSkillsDiscoveryConfig(store)
+	require.Contains(t, dc.SkillsPaths, "./my-skills", "the configured path must survive alongside any default discovery paths")
+	require.Equal(t, []string{"foo"}, dc.DisabledSkills)
+	require.Equal(t, store.WorkingDir(), dc.WorkingDir)
+}
+
+func TestPerHostServerDir_CreatesDirectory(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("ANGELA_CACHE_DIR", cacheDir)
+
+	u := &url.URL{Scheme: "tcp", Host: "127.0.0.1:1234"}
+	dir, err := perHostServerDir(u)
+	require.NoError(t, err)
+
+	info, statErr := os.Stat(dir)
+	require.NoError(t, statErr)
+	require.True(t, info.IsDir())
+	require.Equal(t, filepath.Join(cacheDir, "server-"+safeHostName(u)), dir)
+}
+
+// TestPerHostServerDir_MkdirFailurePropagates covers a cache directory
+// blocked by a regular file where the per-host directory needs to go.
+func TestPerHostServerDir_MkdirFailurePropagates(t *testing.T) {
+	cacheDir := t.TempDir()
+	u := &url.URL{Scheme: "tcp", Host: "blocked:1"}
+	blocker := filepath.Join(cacheDir, "server-"+safeHostName(u))
+	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
+	t.Setenv("ANGELA_CACHE_DIR", cacheDir)
+
+	_, err := perHostServerDir(u)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to create server working directory")
 }

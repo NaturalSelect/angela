@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"charm.land/fantasy/providers/anthropic"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/hooks"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -123,6 +124,22 @@ func TestHookedTool_DenySkipsInnerTool(t *testing.T) {
 	require.False(t, rec.called, "denied call must not reach the inner tool")
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "blocked")
+}
+
+// TestHookedTool_ProviderOptionsPassThrough pins that ProviderOptions
+// and SetProviderOptions delegate straight to the inner tool rather
+// than being swallowed by the decorator.
+func TestHookedTool_ProviderOptionsPassThrough(t *testing.T) {
+	t.Parallel()
+
+	inner := NewMockAgentTool(gomock.NewController(t))
+	want := fantasy.ProviderOptions{anthropic.Name: &anthropic.ProviderOptions{}}
+	inner.EXPECT().ProviderOptions().Return(want)
+	inner.EXPECT().SetProviderOptions(want)
+
+	tool := newHookedTool(inner, nil)
+	require.Equal(t, want, tool.ProviderOptions())
+	tool.SetProviderOptions(want)
 }
 
 func TestWrapToolsWithHooks(t *testing.T) {

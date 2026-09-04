@@ -20,13 +20,21 @@ import (
 // it calls t.Setenv.
 func newTestConfigStore(t *testing.T) *config.ConfigStore {
 	t.Helper()
+	return newTestConfigStoreInDir(t, t.TempDir())
+}
+
+// newTestConfigStoreInDir is newTestConfigStore for a caller that needs
+// control over the working directory the store resolves paths against
+// (e.g. project-initialization checks that read directory contents).
+func newTestConfigStoreInDir(t *testing.T, workingDir string) *config.ConfigStore {
+	t.Helper()
 	isolated := t.TempDir()
 	t.Setenv("HOME", isolated)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(isolated, ".config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(isolated, ".local", "share"))
 	t.Setenv("ANGELA_GLOBAL_CONFIG", filepath.Join(isolated, ".config", "angela"))
 
-	store, err := config.Load(t.TempDir(), t.TempDir(), false)
+	store, err := config.Load(workingDir, t.TempDir(), false)
 	require.NoError(t, err)
 	return store
 }

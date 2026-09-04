@@ -1,11 +1,17 @@
 package tools
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
 
+	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -455,4 +461,117 @@ func TestColumnMatch(t *testing.T) {
 			require.Equal(t, "testdata/grep.txt", filepath.ToSlash(filepath.Clean(match.path)))
 		})
 	}
+}
+
+func TestEscapeRegexPattern(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ in, want string }{
+		{"a.b", `a\.b`},
+		{"a+b", `a\+b`},
+		{"(a|b)", `\(a\|b\)`},
+		{"[abc]", `\[abc\]`},
+		{"no-specials", "no-specials"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, escapeRegexPattern(tt.in))
+		})
+	}
+}
+
+func TestGlobToRegexBraceExpansion(t *testing.T) {
+	t.Parallel()
+
+	re := regexp.MustCompile(globToRegex("*.{go,ts}"))
+	require.True(t, re.MatchString("main.go"))
+	require.True(t, re.MatchString("main.ts"))
+	require.False(t, re.MatchString("main.py"))
+}
+
+func TestSearchFilesTruncatesToLimit(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	for i := range 5 {
+		name := fmt.Sprintf("f%d.txt", i)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("needle\n"), 0o644))
+	}
+
+	matches, truncated, err := searchFiles(context.Background(), "needle", dir, "", 3)
+	require.NoError(t, err)
+	require.Len(t, matches, 3, "must cap results at the requested limit")
+	require.True(t, truncated)
+}
+
+func TestNewGrepToolRequiresPattern(t *testing.T) {
+	t.Parallel()
+
+	tool := NewGrepTool(t.TempDir(), config.ToolGrep{})
+	input, err := json.Marshal(GrepParams{})
+	require.NoError(t, err)
+
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "1", Name: toolnames.Grep, Input: string(input)})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "pattern is required")
+}
+
+func TestNewGrepToolFormatsMatchesGroupedByFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello world\nsecond hello\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("hello there\n"), 0o644))
+
+	tool := NewGrepTool(dir, config.ToolGrep{})
+	input, err := json.Marshal(GrepParams{Pattern: "hello"})
+	require.NoError(t, err)
+
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "1", Name: toolnames.Grep, Input: string(input)})
+	require.NoError(t, err)
+	require.False(t, resp.IsError, resp.Content)
+	require.Contains(t, resp.Content, "Found 3 matches")
+	require.Contains(t, resp.Content, "a.txt:")
+	require.Contains(t, resp.Content, "b.txt:")
+
+	var meta GrepResponseMetadata
+	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
+	require.Equal(t, 3, meta.NumberOfMatches)
+	require.False(t, meta.Truncated)
+}
+
+func TestNewGrepToolReportsNoMatches(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	tool := NewGrepTool(dir, config.ToolGrep{})
+	input, err := json.Marshal(GrepParams{Pattern: "nonexistent-xyz"})
+	require.NoError(t, err)
+
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "1", Name: toolnames.Grep, Input: string(input)})
+	require.NoError(t, err)
+	require.False(t, resp.IsError)
+	require.Contains(t, resp.Content, "No files found")
+}
+
+// TestNewGrepToolLiteralTextEscapesRegex pins that literal_text lets a
+// caller search for a string containing regex metacharacters (e.g. a
+// version string like "a.b+c") without them being interpreted as regex
+// syntax.
+func TestNewGrepToolLiteralTextEscapesRegex(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a.b+c\n"), 0o644))
+
+	tool := NewGrepTool(dir, config.ToolGrep{})
+	input, err := json.Marshal(GrepParams{Pattern: "a.b+c", LiteralText: true})
+	require.NoError(t, err)
+
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "1", Name: toolnames.Grep, Input: string(input)})
+	require.NoError(t, err)
+	require.False(t, resp.IsError, resp.Content)
+	require.Contains(t, resp.Content, "Found 1 matches")
 }

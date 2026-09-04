@@ -362,3 +362,179 @@ func TestRun_DiscardsNilWriters(t *testing.T) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 }
+
+func TestRunAndCapture_Success(t *testing.T) {
+	t.Parallel()
+
+	result, err := RunAndCapture(t.Context(), RunOptions{
+		Command: "echo hello",
+		Cwd:     t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("RunAndCapture returned error: %v", err)
+	}
+	if result.Output != "hello\n" {
+		t.Fatalf("Output = %q, want %q", result.Output, "hello\n")
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d, want 0", result.ExitCode)
+	}
+}
+
+func TestRunAndCapture_CombinesStdoutAndStderr(t *testing.T) {
+	t.Parallel()
+
+	result, err := RunAndCapture(t.Context(), RunOptions{
+		Command: "echo out; echo err >&2",
+		Cwd:     t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("RunAndCapture returned error: %v", err)
+	}
+	if result.Output != "out\n\nerr\n" {
+		t.Fatalf("Output = %q, want %q", result.Output, "out\n\nerr\n")
+	}
+}
+
+func TestRunAndCapture_ExitCode(t *testing.T) {
+	t.Parallel()
+
+	result, err := RunAndCapture(t.Context(), RunOptions{
+		Command: "exit 3",
+		Cwd:     t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("RunAndCapture returned error: %v", err)
+	}
+	if result.ExitCode != 3 {
+		t.Fatalf("ExitCode = %d, want 3", result.ExitCode)
+	}
+}
+
+func TestRunAndCapture_DefaultsEnvFromProcess(t *testing.T) {
+	t.Setenv("ANGELA_RUNANDCAPTURE_TEST", "present")
+
+	result, err := RunAndCapture(t.Context(), RunOptions{
+		Command: "echo $ANGELA_RUNANDCAPTURE_TEST",
+		Cwd:     t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("RunAndCapture returned error: %v", err)
+	}
+	if result.Output != "present\n" {
+		t.Fatalf("Output = %q, want %q", result.Output, "present\n")
+	}
+}
+
+func TestRunAndCapturePTY_ForcesColorEnv(t *testing.T) {
+	t.Parallel()
+
+	result, err := RunAndCapturePTY(t.Context(), RunOptions{
+		Command: "echo $FORCE_COLOR:$CLICOLOR_FORCE:$COLORTERM",
+		Cwd:     t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("RunAndCapturePTY returned error: %v", err)
+	}
+	if result.Output != "1:1:truecolor\n" {
+		t.Fatalf("Output = %q, want %q", result.Output, "1:1:truecolor\n")
+	}
+}
+
+func TestRunAndPersist_CallsPersistWithResult(t *testing.T) {
+	t.Parallel()
+
+	var gotCommand, gotOutput string
+	var gotExit int
+	persist := func(command, output string, exitCode int) error {
+		gotCommand, gotOutput, gotExit = command, output, exitCode
+		return nil
+	}
+
+	result, err := RunAndPersist(t.Context(), RunOptions{
+		Command: "echo hi",
+		Cwd:     t.TempDir(),
+	}, persist)
+	if err != nil {
+		t.Fatalf("RunAndPersist returned error: %v", err)
+	}
+	if gotCommand != "echo hi" {
+		t.Fatalf("persist command = %q, want %q", gotCommand, "echo hi")
+	}
+	if gotOutput != result.Output {
+		t.Fatalf("persist output = %q, want %q", gotOutput, result.Output)
+	}
+	if gotExit != 0 {
+		t.Fatalf("persist exitCode = %d, want 0", gotExit)
+	}
+}
+
+func TestRunAndPersist_PersistErrorDoesNotFailCall(t *testing.T) {
+	t.Parallel()
+
+	persist := func(command, output string, exitCode int) error {
+		return errors.New("boom")
+	}
+
+	_, err := RunAndPersist(t.Context(), RunOptions{
+		Command: "echo hi",
+		Cwd:     t.TempDir(),
+	}, persist)
+	if err != nil {
+		t.Fatalf("RunAndPersist should swallow persist errors, got: %v", err)
+	}
+}
+
+func TestRunAndPersist_NilPersistFunc(t *testing.T) {
+	t.Parallel()
+
+	result, err := RunAndPersist(t.Context(), RunOptions{
+		Command: "echo hi",
+		Cwd:     t.TempDir(),
+	}, nil)
+	if err != nil {
+		t.Fatalf("RunAndPersist returned error: %v", err)
+	}
+	if result.Output != "hi\n" {
+		t.Fatalf("Output = %q, want %q", result.Output, "hi\n")
+	}
+}
+
+func TestRunAndCaptureStream_StreamsProgress(t *testing.T) {
+	t.Parallel()
+
+	var chunks []string
+	result, err := RunAndCaptureStream(t.Context(), RunOptions{
+		Command: "echo hi",
+		Cwd:     t.TempDir(),
+	}, func(s string) {
+		chunks = append(chunks, s)
+	})
+	if err != nil {
+		t.Fatalf("RunAndCaptureStream returned error: %v", err)
+	}
+	if result.Output != "hi\n" {
+		t.Fatalf("Output = %q, want %q", result.Output, "hi\n")
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected onProgress to be called at least once")
+	}
+	if got := strings.Join(chunks, ""); got != "hi\n" {
+		t.Fatalf("joined chunks = %q, want %q", got, "hi\n")
+	}
+}
+
+func TestRunAndCaptureStream_ExitCode(t *testing.T) {
+	t.Parallel()
+
+	result, err := RunAndCaptureStream(t.Context(), RunOptions{
+		Command: "exit 5",
+		Cwd:     t.TempDir(),
+	}, nil)
+	if err != nil {
+		t.Fatalf("RunAndCaptureStream returned error: %v", err)
+	}
+	if result.ExitCode != 5 {
+		t.Fatalf("ExitCode = %d, want 5", result.ExitCode)
+	}
+}

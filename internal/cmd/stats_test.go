@@ -151,6 +151,87 @@ func TestMergeStats(t *testing.T) {
 	require.InDelta(t, 666.6667, merged.AvgResponseTimeMs, 0.001)
 }
 
+// TestMergeStats_AggregatesAllUsageDimensions exercises the aggregation
+// loops TestMergeStats doesn't touch (model, hourly, day-of-week, recent
+// activity, and heatmap usage), plus the descending sort applied to
+// UsageByModel and ToolUsage once more than one entry survives merging.
+func TestMergeStats_AggregatesAllUsageDimensions(t *testing.T) {
+	t.Parallel()
+
+	projectStats := []ProjectStats{
+		{
+			Stats: &Stats{
+				UsageByModel: []ModelUsage{
+					{Model: "gpt-4", Provider: "openai", MessageCount: 3},
+				},
+				UsageByHour: []HourlyUsage{
+					{Hour: 9, SessionCount: 2},
+				},
+				UsageByDayOfWeek: []DayOfWeekUsage{
+					{DayOfWeek: 1, DayName: "Monday", SessionCount: 2, PromptTokens: 10, CompletionTokens: 5},
+				},
+				RecentActivity: []DailyActivity{
+					{Day: "2024-01-01", SessionCount: 1, TotalTokens: 100, Cost: 0.1},
+				},
+				HourDayHeatmap: []HourDayHeatmapPt{
+					{DayOfWeek: 1, Hour: 9, SessionCount: 2},
+				},
+			},
+		},
+		{
+			Stats: &Stats{
+				UsageByModel: []ModelUsage{
+					{Model: "gpt-4", Provider: "openai", MessageCount: 1},
+					{Model: "claude", Provider: "anthropic", MessageCount: 10},
+				},
+				UsageByHour: []HourlyUsage{
+					{Hour: 9, SessionCount: 1},
+					{Hour: 14, SessionCount: 5},
+				},
+				UsageByDayOfWeek: []DayOfWeekUsage{
+					{DayOfWeek: 1, DayName: "Monday", SessionCount: 1, PromptTokens: 20, CompletionTokens: 10},
+				},
+				RecentActivity: []DailyActivity{
+					{Day: "2024-01-01", SessionCount: 2, TotalTokens: 50, Cost: 0.2},
+				},
+				HourDayHeatmap: []HourDayHeatmapPt{
+					{DayOfWeek: 1, Hour: 9, SessionCount: 3},
+				},
+			},
+		},
+	}
+
+	merged := mergeStats(projectStats)
+
+	require.Len(t, merged.UsageByModel, 2, "same model+provider from different projects must merge into one entry")
+	require.Equal(t, "claude", merged.UsageByModel[0].Model, "UsageByModel must sort descending by message count")
+	require.Equal(t, int64(10), merged.UsageByModel[0].MessageCount)
+	require.Equal(t, "gpt-4", merged.UsageByModel[1].Model)
+	require.Equal(t, int64(4), merged.UsageByModel[1].MessageCount)
+
+	require.Len(t, merged.UsageByHour, 2)
+	byHour := map[int]int64{}
+	for _, h := range merged.UsageByHour {
+		byHour[h.Hour] = h.SessionCount
+	}
+	require.Equal(t, int64(3), byHour[9], "same-hour usage from different projects must merge")
+	require.Equal(t, int64(5), byHour[14])
+
+	require.Len(t, merged.UsageByDayOfWeek, 1, "same day-of-week usage from different projects must merge")
+	require.Equal(t, "Monday", merged.UsageByDayOfWeek[0].DayName)
+	require.Equal(t, int64(3), merged.UsageByDayOfWeek[0].SessionCount)
+	require.Equal(t, int64(30), merged.UsageByDayOfWeek[0].PromptTokens)
+	require.Equal(t, int64(15), merged.UsageByDayOfWeek[0].CompletionTokens)
+
+	require.Len(t, merged.RecentActivity, 1, "same-day recent activity from different projects must merge")
+	require.Equal(t, int64(3), merged.RecentActivity[0].SessionCount)
+	require.Equal(t, int64(150), merged.RecentActivity[0].TotalTokens)
+	require.InDelta(t, 0.3, merged.RecentActivity[0].Cost, 0.0001)
+
+	require.Len(t, merged.HourDayHeatmap, 1, "same day/hour heatmap points from different projects must merge")
+	require.Equal(t, int64(5), merged.HourDayHeatmap[0].SessionCount)
+}
+
 func TestMergeStats_Empty(t *testing.T) {
 	t.Parallel()
 
@@ -196,6 +277,25 @@ func TestCrawlForStats_NoProjectsFound(t *testing.T) {
 	results, err := crawlForStats(t.Context(), t.TempDir())
 	require.NoError(t, err)
 	require.Empty(t, results)
+}
+
+// TestRunStats_DefaultGeneratesHTMLWhenSessionsExist covers the success
+// path of the default (no crawl, no --all) branch through to HTML
+// generation: a database with one real session must produce a stats page
+// on disk, without erroring even if opening a browser in a headless test
+// environment fails (that error is only ever printed, never returned).
+func TestRunStats_DefaultGeneratesHTMLWhenSessionsExist(t *testing.T) {
+	isolateSessionEnv(t)
+	dataDir := t.TempDir()
+	seedSession(t, dataDir, "hello")
+
+	cmd := newStatsTestCmd(t, dataDir, "", false)
+	require.NoError(t, runStats(cmd, nil))
+
+	htmlPath := filepath.Join(dataDir, "stats", "index.html")
+	content, err := os.ReadFile(htmlPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, content)
 }
 
 func newStatsTestCmd(t *testing.T, dataDir, crawlDir string, all bool) *cobra.Command {

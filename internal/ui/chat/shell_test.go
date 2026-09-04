@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
@@ -128,6 +130,143 @@ func TestShellOutputWindows(t *testing.T) {
 	require.Equal(t, output, lastLines(output, 10))
 	require.Empty(t, firstLines(output, 0))
 	require.Empty(t, lastLines(output, 0))
+}
+
+// TestNewShellItemBuildsAFinishedItem exercises the plain (non-pending)
+// constructor used for shell commands whose result is already known,
+// as opposed to NewPendingShellItem used for streaming output.
+func TestNewShellItemBuildsAFinishedItem(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	item := NewShellItem(&sty, "echo hi", "hi\n", 0).(*ShellItem)
+
+	require.True(t, item.Finished())
+	require.Equal(t, "echo hi", item.FilterValue())
+	require.Contains(t, item.ID(), "shell-")
+	require.Contains(t, ansi.Strip(item.Render(80)), "hi")
+}
+
+// A pending item is not Finished until Complete is called.
+func TestShellItem_FinishedTracksPendingState(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	item := NewPendingShellItem(&sty, "sleep 1")
+
+	require.False(t, item.Finished())
+	item.Complete("done\n", 0)
+	require.True(t, item.Finished())
+}
+
+func TestShellItem_StartAnimation(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+
+	pending := NewPendingShellItem(&sty, "sleep 1")
+	require.NotNil(t, pending.StartAnimation(), "a pending item must start its spinner")
+
+	finished := NewShellItem(&sty, "echo hi", "hi\n", 0).(*ShellItem)
+	require.Nil(t, finished.StartAnimation(), "a finished item has nothing to animate")
+}
+
+func TestShellItem_Animate(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+
+	pending := NewPendingShellItem(&sty, "sleep 1")
+	versionBefore := pending.Version()
+	require.NotNil(t, pending.Animate(anim.StepMsg{ID: pending.ID()}))
+	require.Greater(t, pending.Version(), versionBefore, "animating a pending item must bump its version")
+
+	finished := NewShellItem(&sty, "echo hi", "hi\n", 0).(*ShellItem)
+	require.Nil(t, finished.Animate(anim.StepMsg{ID: finished.ID()}))
+}
+
+func TestShellItem_HandleMouseClick(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	item := NewShellItem(&sty, "echo hi", "hi\n", 0).(*ShellItem)
+
+	require.True(t, item.HandleMouseClick(ansi.MouseLeft, 0, 0))
+	require.False(t, item.HandleMouseClick(ansi.MouseRight, 0, 0))
+}
+
+func TestShellItem_HandleKeyEventCopiesOutput(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	item := NewShellItem(&sty, "echo hi", "hi\n", 0).(*ShellItem)
+
+	for _, k := range []string{"c", "y"} {
+		handled, cmd := item.HandleKeyEvent(tea.KeyPressMsg{Code: rune(k[0]), Text: k})
+		require.True(t, handled)
+		require.NotNil(t, cmd)
+	}
+
+	handled, cmd := item.HandleKeyEvent(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.False(t, handled)
+	require.Nil(t, cmd)
+}
+
+// Horizontal scroll keys only report "handled" when they actually move
+// the viewport: scrolling left at the origin is a no-op that other key
+// handlers up the chain should still get a chance to see.
+func TestShellItem_HandleKeyEventScrollsHorizontally(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	item := NewShellItem(&sty, "echo hi", strings.Repeat("x", 400)+"\n", 0).(*ShellItem)
+	// Populate maxLineWidth via a render pass before scrolling.
+	item.RawRender(80)
+
+	handled, cmd := item.HandleKeyEvent(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
+	require.False(t, handled, "scrolling left at the origin is a no-op")
+	require.Nil(t, cmd)
+	require.Equal(t, 0, item.xOffset)
+
+	handled, cmd = item.HandleKeyEvent(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModShift})
+	require.True(t, handled)
+	require.Nil(t, cmd)
+	require.Positive(t, item.xOffset)
+
+	offsetAfterRight := item.xOffset
+	handled, cmd = item.HandleKeyEvent(tea.KeyPressMsg{Code: 'H', Text: "H"})
+	require.True(t, handled, "H is the ASCII fallback for shift+left")
+	require.Nil(t, cmd)
+	require.Less(t, item.xOffset, offsetAfterRight)
+
+	handled, _ = item.HandleKeyEvent(tea.KeyPressMsg{Code: 'L', Text: "L"})
+	require.True(t, handled, "L is the ASCII fallback for shift+right")
+}
+
+func TestShellItem_ScrollHorizontalClampsToBounds(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	item := NewShellItem(&sty, "echo hi", strings.Repeat("x", 400)+"\n", 0).(*ShellItem)
+	item.RawRender(80) // populate maxLineWidth
+
+	item.ScrollHorizontal(-100)
+	require.Equal(t, 0, item.xOffset, "scrolling past the start clamps to zero")
+
+	item.ScrollHorizontal(item.maxLineWidth + 1000)
+	require.Equal(t, item.maxLineWidth, item.xOffset, "scrolling past the end clamps to the widest line")
+}
+
+func TestShellItem_ToggleExpanded(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+	item := NewShellItem(&sty, "echo hi", "hi\n", 0).(*ShellItem)
+
+	require.False(t, item.expandedContent)
+	require.True(t, item.ToggleExpanded())
+	require.True(t, item.expandedContent)
+	require.False(t, item.ToggleExpanded())
 }
 
 func BenchmarkShellItemAppendOutput(b *testing.B) {

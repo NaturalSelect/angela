@@ -111,8 +111,8 @@ func TestBackendSession_GetAgentSession(t *testing.T) {
 
 	agentSess, err := b.GetAgentSession(t.Context(), ws.ID, sess.ID)
 	require.NoError(t, err)
-	require.Equal(t, sess.ID, agentSess.Session.ID)
-	require.Equal(t, "s", agentSess.Session.Title)
+	require.Equal(t, sess.ID, agentSess.ID)
+	require.Equal(t, "s", agentSess.Title)
 	require.False(t, agentSess.IsBusy, "fresh unconfigured workspace has no coordinator")
 	require.False(t, agentSess.IsBranch)
 

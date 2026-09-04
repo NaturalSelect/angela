@@ -285,6 +285,10 @@ func TestCrawlForStats_NoProjectsFound(t *testing.T) {
 // on disk, without erroring even if opening a browser in a headless test
 // environment fails (that error is only ever printed, never returned).
 func TestRunStats_DefaultGeneratesHTMLWhenSessionsExist(t *testing.T) {
+	// NOTE: runStats opens the generated HTML in the system browser on any
+	// machine that has one, launching a real Chrome window during `go test`.
+	t.Skip("opens a real browser window; re-enable once runStats can take a stubbed opener")
+
 	isolateSessionEnv(t)
 	dataDir := t.TempDir()
 	seedSession(t, dataDir, "hello")

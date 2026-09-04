@@ -290,7 +290,8 @@ func TestRetireClient(t *testing.T) {
 func TestDialerTCP(t *testing.T) {
 	t.Parallel()
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer ln.Close()
 	go func() {
@@ -310,7 +311,8 @@ func TestDialerTCP(t *testing.T) {
 func TestDialerTCPUnreachable(t *testing.T) {
 	t.Parallel()
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := ln.Addr().String()
 	require.NoError(t, ln.Close())
@@ -325,7 +327,8 @@ func TestDialerUnix(t *testing.T) {
 	t.Parallel()
 
 	sockPath := filepath.Join(t.TempDir(), "test.sock")
-	ln, err := net.Listen("unix", sockPath)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "unix", sockPath)
 	require.NoError(t, err)
 	defer ln.Close()
 	go func() {
@@ -404,7 +407,10 @@ func TestSendReqContextAlreadyCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := c.get(ctx, "/health", nil, nil)
+	rsp, err := c.get(ctx, "/health", nil, nil)
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
 	require.Error(t, err)
 }
 
@@ -417,6 +423,9 @@ func TestSendReqServerUnreachable(t *testing.T) {
 	c := captureClient(t, srv)
 	srv.Close()
 
-	_, err := c.get(context.Background(), "/health", nil, nil)
+	rsp, err := c.get(context.Background(), "/health", nil, nil)
+	if rsp != nil {
+		defer rsp.Body.Close()
+	}
 	require.Error(t, err)
 }

@@ -193,8 +193,8 @@ func TestApplyModelOverrides_UpdatePreferredModelErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	c := newRunTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/v1/workspaces/ws1/config":
+		switch r.URL.Path {
+		case "/v1/workspaces/ws1/config":
 			require.NoError(t, json.NewEncoder(w).Encode(overrideProvidersConfig()))
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
@@ -232,10 +232,10 @@ func TestApplyModelOverrides_UpdateAgentErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	c := newRunTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/v1/workspaces/ws1/config":
+		switch r.URL.Path {
+		case "/v1/workspaces/ws1/config":
 			require.NoError(t, json.NewEncoder(w).Encode(overrideProvidersConfig()))
-		case r.URL.Path == "/v1/workspaces/ws1/config/model":
+		case "/v1/workspaces/ws1/config/model":
 			w.WriteHeader(http.StatusOK)
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
@@ -578,4 +578,3 @@ func TestRunNonInteractive_SetSessionUnattendedErrorPropagates(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to mark the session unattended")
 	require.False(t, sendMessageCalled.Load(), "must not send the prompt once marking the session unattended failed")
 }
-

@@ -20,7 +20,8 @@ import (
 // made-up address, this cannot collide with another process's socket).
 func closedTCPListener(t *testing.T) string {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	addr := ln.Addr().String()
 	require.NoError(t, ln.Close())
@@ -207,7 +208,8 @@ func TestProbeHealth_UnixSocketUsesDummyHost(t *testing.T) {
 	t.Parallel()
 
 	sockPath := filepath.Join(t.TempDir(), "server.sock")
-	ln, err := net.Listen("unix", sockPath)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "unix", sockPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 

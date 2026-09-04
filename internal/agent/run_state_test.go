@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -47,4 +48,43 @@ func TestRunStateQueuedPromptsList(t *testing.T) {
 
 	require.Equal(t, []string{"first", "second"}, s.QueuedPromptsList("session-1"))
 	require.Equal(t, []string{"other session"}, s.QueuedPromptsList("session-2"))
+}
+
+// TestRunStateEnqueueAutoContinueRaceWithEnqueueCall is the regression
+// for a bug where enqueueAutoContinue read, appended to, and wrote back
+// the message queue without holding the per-session dispatch mutex.
+// enqueueCall itself does not lock either: its only production caller
+// (the busy-check branch of Run) already holds sessionMu across the
+// call, so this test reproduces that same convention by locking around
+// enqueueCall the way Run does. Before the fix, enqueueAutoContinue's
+// unlocked Get-append-Set could interleave with that locked section: it
+// could read the queue before the locked Set lands and then overwrite
+// it, silently dropping the concurrently-queued user prompt. Run with
+// -race to also catch the underlying data race on the queue slice.
+func TestRunStateEnqueueAutoContinueRaceWithEnqueueCall(t *testing.T) {
+	t.Parallel()
+
+	const sessionID = "session-race"
+	const iterations = 200
+
+	for i := range iterations {
+		s := newRunState()
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			mu := s.sessionMu(sessionID)
+			mu.Lock()
+			defer mu.Unlock()
+			s.enqueueCall(SessionAgentCall{SessionID: sessionID, Prompt: "user-prompt"})
+		}()
+		go func() {
+			defer wg.Done()
+			s.enqueueAutoContinue(SessionAgentCall{SessionID: sessionID})
+		}()
+		wg.Wait()
+
+		queued, _ := s.messageQueue.Get(sessionID)
+		require.Lenf(t, queued, 2, "iteration %d: both concurrent enqueues must survive, got %d queued", i, len(queued))
+	}
 }

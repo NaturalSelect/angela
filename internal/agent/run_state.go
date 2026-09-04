@@ -159,6 +159,35 @@ func (s *runState) enqueueCall(call SessionAgentCall) {
 	s.messageQueue.Set(call.SessionID, existing)
 }
 
+// enqueueAutoContinue re-queues call with a fixed follow-up prompt so a
+// turn whose text output was cut off by the model's own output token
+// limit resumes automatically instead of leaving a truncated response
+// as the final answer. It reuses call as-is (same RunID, same Agent)
+// so the continuation is treated as part of the same turn rather than
+// a new queued prompt, the same way the tool-calls-pending
+// continuation does.
+//
+// Unlike enqueueCall, whose only caller already holds the per-session
+// dispatch mutex for its own busy-check, the caller here runs after
+// that mutex has long been released, once streaming for the turn has
+// finished. It takes the lock itself so the Get-append-Set stays
+// atomic against a concurrent enqueueCall or dispatch handoff for the
+// same session; without it, a prompt submitted while this continuation
+// is being queued can read the queue before this Set lands and then
+// overwrite it, silently dropping one of the two.
+func (s *runState) enqueueAutoContinue(call SessionAgentCall) {
+	mu := s.sessionMu(call.SessionID)
+	mu.Lock()
+	defer mu.Unlock()
+	existing, ok := s.messageQueue.Get(call.SessionID)
+	if !ok {
+		existing = []SessionAgentCall{}
+	}
+	call.Prompt = autoContinuePrompt
+	existing = append(existing, call)
+	s.messageQueue.Set(call.SessionID, existing)
+}
+
 // drainQueueForStep partitions the session's queued calls for the current
 // streaming step under the per-session dispatch mutex so the filtering is
 // atomic against a concurrent Cancel: canceledBySeq requires the caller to

@@ -1320,23 +1320,6 @@ func wrapInterruptedPrompt(prompt string) string {
 	return interruptedPromptPrefix + prompt + interruptedPromptSuffix
 }
 
-// enqueueAutoContinue re-queues call with a fixed follow-up prompt so a
-// turn whose text output was cut off by the model's own output token
-// limit resumes automatically instead of leaving a truncated response
-// as the final answer. It reuses call as-is (same RunID, same Agent)
-// so the continuation is treated as part of the same turn rather than
-// a new queued prompt, the same way the tool-calls-pending
-// continuation above does.
-func (a *sessionAgent) enqueueAutoContinue(call SessionAgentCall) {
-	existing, ok := a.messageQueue.Get(call.SessionID)
-	if !ok {
-		existing = []SessionAgentCall{}
-	}
-	call.Prompt = autoContinuePrompt
-	existing = append(existing, call)
-	a.messageQueue.Set(call.SessionID, existing)
-}
-
 // reresolve refreshes a dequeued call's agent against the session as it
 // stands now. A prompt can sit in the queue across a model or agent
 // switch, and the new turn it starts must honour that switch. Failure

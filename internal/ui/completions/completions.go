@@ -455,7 +455,7 @@ func loadFiles(depth, limit int) []FileCompletionValue {
 	result := make([]FileCompletionValue, 0, len(files))
 	for _, file := range files {
 		result = append(result, FileCompletionValue{
-			Path: strings.TrimPrefix(file, "./"),
+			Path: strings.TrimPrefix(file, "."+string(filepath.Separator)),
 		})
 	}
 	return result

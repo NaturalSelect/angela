@@ -23,10 +23,22 @@ import (
 // init time, so reassigning os.Stdout alone never reaches it; this also
 // repoints lipgloss.Writer at the same pipe so output from either style
 // of printing is captured.
+//
+// The pipe is drained by a background goroutine as soon as it's created:
+// OS pipe buffers are small (notably on Windows), and commands under test
+// can write more than that buffer holds before anyone calls the returned
+// function, which would otherwise deadlock the writer.
 func swapStdoutPipe(t *testing.T) func() string {
 	t.Helper()
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = io.Copy(&buf, r)
+	}()
 
 	origStdout := os.Stdout
 	origLipglossWriter := lipgloss.Writer
@@ -36,6 +48,7 @@ func swapStdoutPipe(t *testing.T) func() string {
 	t.Cleanup(func() {
 		if !closed {
 			w.Close()
+			<-done
 		}
 		os.Stdout = origStdout
 		lipgloss.Writer = origLipglossWriter
@@ -44,8 +57,7 @@ func swapStdoutPipe(t *testing.T) func() string {
 	return func() string {
 		w.Close()
 		closed = true
-		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
+		<-done
 		return buf.String()
 	}
 }

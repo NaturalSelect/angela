@@ -157,9 +157,9 @@ func TestEscapesParent(t *testing.T) {
 	t.Parallel()
 
 	require.True(t, escapesParent(".."))
-	require.True(t, escapesParent("../sibling"))
+	require.True(t, escapesParent(filepath.Join("..", "sibling")))
 	require.False(t, escapesParent("."))
-	require.False(t, escapesParent("sub/dir"))
+	require.False(t, escapesParent(filepath.Join("sub", "dir")))
 }
 
 func TestIsProjectSkillPath(t *testing.T) {

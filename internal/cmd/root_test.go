@@ -155,13 +155,21 @@ func TestResolveCwd_ChangesDirectoryWhenFlagSet(t *testing.T) {
 // mutates the process-wide working directory, like
 // TestResolveCwd_ChangesDirectoryWhenFlagSet above.
 func TestResolveCwd_GetwdErrorPropagates(t *testing.T) {
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		// On macOS, os.Getwd (and the underlying getcwd(3)) can keep
 		// resolving "." successfully for a short while after its
 		// directory has been rmdir'd out from under the process,
 		// unlike Linux. The removed-cwd trick below isn't reliable
 		// there.
 		t.Skip("os.Getwd does not reliably error after its cwd is removed on macOS")
+	case "windows":
+		// On Windows, making a directory the process's current
+		// directory holds a handle on it without FILE_SHARE_DELETE,
+		// so os.Remove below fails outright with a sharing violation
+		// instead of succeeding and later making Getwd fail. The
+		// removed-cwd trick can't even get started there.
+		t.Skip("a process's own current directory cannot be removed on Windows")
 	}
 
 	removed := t.TempDir()

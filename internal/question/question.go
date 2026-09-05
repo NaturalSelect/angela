@@ -244,17 +244,29 @@ func (s *questionService) Ask(ctx context.Context, req Request) ([]Answer, error
 		return nil, err
 	}
 
+	// pendingCh/cancelCh are local so the select below always blocks
+	// on the channel this call created, never on a shared field that
+	// Answer/Cancel may concurrently clear to nil.
+	pendingCh := make(chan []Answer, 1)
+	cancelCh := make(chan struct{})
+
 	s.mu.Lock()
-	s.pending = make(chan []Answer, 1)
-	s.cancelled = make(chan struct{})
+	s.pending = pendingCh
+	s.cancelled = cancelCh
 	s.pendingID = req.ID
 	s.mu.Unlock()
 
+	// Only clears the shared state if it still points at this call's
+	// channels, i.e. Answer/Cancel haven't already claimed and cleared
+	// it. Acts as the safety net for the ctx.Done() path, where nobody
+	// else resolves the request.
 	defer func() {
 		s.mu.Lock()
-		s.pending = nil
-		s.cancelled = nil
-		s.pendingID = ""
+		if s.pending == pendingCh {
+			s.pending = nil
+			s.cancelled = nil
+			s.pendingID = ""
+		}
 		s.mu.Unlock()
 	}()
 
@@ -263,9 +275,9 @@ func (s *questionService) Ask(ctx context.Context, req Request) ([]Answer, error
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-s.cancelled:
+	case <-cancelCh:
 		return nil, ErrCancelled
-	case answers := <-s.pending:
+	case answers := <-pendingCh:
 		return answers, nil
 	}
 }
@@ -274,13 +286,17 @@ func (s *questionService) Ask(ctx context.Context, req Request) ([]Answer, error
 // question is pending (already answered or cancelled).
 func (s *questionService) Answer(answers []Answer) bool {
 	s.mu.Lock()
-	batchID := s.pendingID
 	ch := s.pending
-	s.mu.Unlock()
-
 	if ch == nil {
+		s.mu.Unlock()
 		return false
 	}
+	batchID := s.pendingID
+	s.pending, s.cancelled, s.pendingID = nil, nil, ""
+	s.mu.Unlock()
+
+	// ch is buffered (cap 1) and was claimed above under the lock, so
+	// at most one caller ever reaches this send; it never blocks.
 	ch <- answers
 
 	// Publish a notification so non-answering clients can dismiss
@@ -297,13 +313,17 @@ func (s *questionService) Answer(answers []Answer) bool {
 // question is pending.
 func (s *questionService) Cancel() bool {
 	s.mu.Lock()
-	batchID := s.pendingID
 	cancelCh := s.cancelled
-	s.mu.Unlock()
-
 	if cancelCh == nil {
+		s.mu.Unlock()
 		return false
 	}
+	batchID := s.pendingID
+	s.pending, s.cancelled, s.pendingID = nil, nil, ""
+	s.mu.Unlock()
+
+	// cancelCh was claimed above under the lock, so at most one
+	// caller ever reaches this close; it never double-closes.
 	close(cancelCh)
 
 	// Publish a notification so non-answering clients can dismiss

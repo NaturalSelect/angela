@@ -1010,6 +1010,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 					}
 				}
 			}
+			if finishReason == message.FinishReasonMaxTokens {
+				if err := a.finalizeTruncatedToolCalls(ctx, currentAssistant); err != nil {
+					return err
+				}
+			}
 			currentAssistant.AddFinish(finishReason, "", "")
 			sessionLock.Lock()
 			defer sessionLock.Unlock()
@@ -1348,6 +1353,40 @@ func wrapInterruptedPrompt(prompt string) string {
 		return prompt
 	}
 	return interruptedPromptPrefix + prompt + interruptedPromptSuffix
+}
+
+// finalizeTruncatedToolCalls closes out any tool call whose input was
+// still streaming when the step hit the output token limit. The
+// provider only reports a tool call once it closes that call's
+// content block, so one truncated mid-argument never fires OnToolCall
+// and would otherwise stay unfinished forever, leaving its card
+// pending in the UI and a tool_use with no tool_result in the next
+// request.
+func (a *sessionAgent) finalizeTruncatedToolCalls(ctx context.Context, currentAssistant *message.Message) error {
+	for _, tc := range currentAssistant.ToolCalls() {
+		if tc.Finished {
+			continue
+		}
+		tc.Finished = true
+		tc.Input = "{}"
+		currentAssistant.AddToolCall(tc)
+		if err := a.messages.Update(ctx, *currentAssistant); err != nil {
+			return err
+		}
+		toolResult := message.ToolResult{
+			ToolCallID: tc.ID,
+			Name:       tc.Name,
+			Content:    "The response hit the output token limit before this tool call finished streaming, so it was never executed.",
+			IsError:    true,
+		}
+		if _, err := a.messages.Create(ctx, currentAssistant.SessionID, message.CreateMessageParams{
+			Role:  message.Tool,
+			Parts: []message.ContentPart{toolResult},
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // reresolve refreshes a dequeued call's agent against the session as it

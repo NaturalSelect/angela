@@ -9,11 +9,32 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
+
+// fakeSandbox is a minimal sandbox.Sandbox double for the delegator
+// tests below. It must never be a real sandbox.New(): on a Linux
+// runner EnterSandbox on a real Landlock sandbox is irreversible and
+// process-wide, which would restrict this entire test binary rather
+// than just the fixture under test.
+type fakeSandbox struct {
+	inSandbox bool
+	enterErr  error
+	entered   bool
+	enterCfg  sandbox.Config
+}
+
+func (f *fakeSandbox) IsInSandbox() bool { return f.inSandbox }
+
+func (f *fakeSandbox) EnterSandbox(cfg sandbox.Config) error {
+	f.entered = true
+	f.enterCfg = cfg
+	return f.enterErr
+}
 
 // newAWFixtureWithStore extends newAWFixture with a real config store
 // for methods that read AppWorkspace.store directly (MCP passthroughs
@@ -326,6 +347,34 @@ func TestAppWorkspace_UpdatePreferredModel(t *testing.T) {
 
 	require.NoError(t, fx.ws.UpdatePreferredModel(config.ScopeGlobal, config.SlotMain, sel))
 	require.Equal(t, sel, store.Config().Slots[config.SlotMain])
+}
+
+func TestAppWorkspace_OverrideAgentVariant(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, store := newAWFixtureWithStore(t)
+
+	require.NoError(t, fx.ws.OverrideAgentVariant(config.AgentCoder, "fast"))
+	require.Equal(t, "fast", store.Config().Agents[config.AgentCoder].Variant)
+}
+
+func TestAppWorkspace_IsInSandbox(t *testing.T) {
+	t.Parallel()
+	fx := newAWFixture(t)
+	fx.app.Sandbox = &fakeSandbox{inSandbox: true}
+
+	require.True(t, fx.ws.IsInSandbox())
+}
+
+func TestAppWorkspace_EnterSandbox(t *testing.T) {
+	t.Parallel()
+	fx := newAWFixture(t)
+	fake := &fakeSandbox{}
+	fx.app.Sandbox = fake
+	cfg := sandbox.Config{ReadWrite: []string{"/tmp"}}
+
+	require.NoError(t, fx.ws.EnterSandbox(t.Context(), cfg))
+	require.True(t, fake.entered)
+	require.Equal(t, cfg, fake.enterCfg)
 }
 
 func TestAppWorkspace_RecordRecentModel(t *testing.T) {

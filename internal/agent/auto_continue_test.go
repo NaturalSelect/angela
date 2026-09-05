@@ -75,6 +75,49 @@ func TestRun_AutoContinuesOnMaxTokens(t *testing.T) {
 	require.False(t, queued, "the queue must be drained once the turn ends cleanly")
 }
 
+// TestRun_AutoContinueDoesNotResendAttachments is the regression for a
+// bug where the synthetic continuation reused the original call's
+// Attachments verbatim, so every auto-continue round re-sent the same
+// files/images the user attached to their original prompt.
+func TestRun_AutoContinueDoesNotResendAttachments(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	truncated := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"partial answer, got cut off"}, fantasy.FinishReasonLength), nil)
+	finished := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"...and the rest of the answer."}, fantasy.FinishReasonStop), nil)
+	gomock.InOrder(truncated, finished)
+
+	res, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     autoContinueAgent(model),
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "hello",
+		Attachments: []message.Attachment{
+			{FileName: "photo.png", FilePath: "photo.png", MimeType: "image/png", Content: []byte("fake-png")},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 4, "user prompt, truncated reply, synthetic continue prompt, final reply")
+
+	require.Equal(t, message.User, msgs[0].Role)
+	require.Len(t, msgs[0].BinaryContent(), 1, "the original turn keeps its attachment")
+
+	require.Equal(t, message.User, msgs[2].Role)
+	require.Equal(t, autoContinuePrompt, msgs[2].Content().Text)
+	require.Empty(t, msgs[2].BinaryContent(),
+		"the synthetic continuation must not resend the original turn's attachments")
+}
+
 // TestRun_AutoContinuesMultipleTimes verifies the auto-continue
 // mechanism keeps resuming across more than one truncation in a row,
 // since there is no cap on how many times a turn can be resumed.
@@ -212,4 +255,84 @@ func TestRun_RepeatedAutoCompactionsDoNotNestTheResumePrompt(t *testing.T) {
 		"a second compaction of the same queued turn must not wrap the resume prompt again")
 	require.Equal(t, 1, strings.Count(userPrompts[2], "The previous session was interrupted"),
 		"the wrapper text must appear exactly once no matter how many compactions the turn goes through")
+}
+
+// pendingToolCallThenMaxTokens streams a tool call whose input starts
+// but never receives its closing event before the step hits the
+// output token limit, the same way Anthropic ends a stream when
+// max_tokens is reached while a tool_use block is still being
+// generated.
+func pendingToolCallThenMaxTokens() fantasy.StreamResponse {
+	return func(yield func(fantasy.StreamPart) bool) {
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeToolInputStart, ID: "call-truncated", ToolCallName: "some_tool"}) {
+			return
+		}
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeToolInputDelta, ID: "call-truncated", Delta: `{"arg": "partial`}) {
+			return
+		}
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonLength})
+	}
+}
+
+// TestRun_FinalizesToolCallTruncatedByMaxTokens is the regression for a
+// bug where a tool call whose arguments were still streaming when the
+// model hit its output token limit never fired the provider's
+// tool-call-finished event. The call stayed unfinished forever: its
+// card was stuck pending in the UI, and the auto-continue follow-up
+// would have carried a tool_use with no matching tool_result.
+func TestRun_FinalizesToolCallTruncatedByMaxTokens(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	truncated := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(pendingToolCallThenMaxTokens(), nil)
+	finished := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil)
+	gomock.InOrder(truncated, finished)
+
+	res, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     autoContinueAgent(model),
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "hello",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 5, "user prompt, truncated reply, synthetic error result, synthetic continue prompt, final reply")
+
+	require.Equal(t, message.User, msgs[0].Role)
+
+	require.Equal(t, message.Assistant, msgs[1].Role)
+	require.Equal(t, message.FinishReasonMaxTokens, msgs[1].FinishReason())
+	toolCalls := msgs[1].ToolCalls()
+	require.Len(t, toolCalls, 1)
+	require.True(t, toolCalls[0].Finished, "the truncated tool call must be finalized instead of staying pending forever")
+
+	require.Equal(t, message.Tool, msgs[2].Role)
+	var foundResult, resultIsError bool
+	for _, tr := range msgs[2].ToolResults() {
+		if tr.ToolCallID == toolCalls[0].ID {
+			foundResult = true
+			resultIsError = tr.IsError
+		}
+	}
+	require.True(t, foundResult, "a synthetic tool_result must exist so the next turn isn't sent with a dangling tool_use")
+	require.True(t, resultIsError)
+
+	require.Equal(t, message.User, msgs[3].Role)
+	require.Equal(t, autoContinuePrompt, msgs[3].Content().Text)
+
+	require.Equal(t, message.Assistant, msgs[4].Role)
+	require.Equal(t, message.FinishReasonEndTurn, msgs[4].FinishReason())
+	require.Contains(t, msgs[4].Content().Text, "done")
+
+	_, queued := sa.messageQueue.Get(sess.ID)
+	require.False(t, queued, "the queue must be drained once the turn ends cleanly")
 }

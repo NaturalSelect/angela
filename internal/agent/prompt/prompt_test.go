@@ -132,6 +132,35 @@ func TestPrompt_ContextPathsDedupesSymlinkAlias(t *testing.T) {
 	require.Len(t, data.ContextFiles, 1, "symlink alias of an already-loaded file must be skipped")
 }
 
+// TestProcessFile_NonexistentPathReturnsNil pins that a context path
+// which cannot be stat'd (missing, permission error, etc.) is treated
+// as simply absent rather than surfacing an error.
+func TestProcessFile_NonexistentPathReturnsNil(t *testing.T) {
+	var seen []os.FileInfo
+	result := processFile(filepath.Join(t.TempDir(), "does-not-exist.md"), &seen)
+	require.Nil(t, result)
+}
+
+// TestPrompt_ContextPathsWalksDirectory covers processContextPath's
+// directory branch: a context path pointing at a directory must walk
+// its tree and pick up regular files nested inside it, not just a
+// single named file.
+func TestPrompt_ContextPathsWalksDirectory(t *testing.T) {
+	store := newContextTestStore(t, "")
+	require.NoError(t, os.MkdirAll(filepath.Join(store.WorkingDir(), "docs"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(store.WorkingDir(), "docs", "notes.md"),
+		[]byte("remember the house style"), 0o644))
+
+	p, err := NewPrompt("x", "body", WithContextPaths([]string{"docs"}))
+	require.NoError(t, err)
+
+	data, err := p.promptData(context.Background(), "", "", store)
+	require.NoError(t, err)
+	require.Len(t, data.ContextFiles, 1)
+	require.Equal(t, "remember the house style", data.ContextFiles[0].Content)
+}
+
 // newContextTestStore builds a hermetic ConfigStore whose working dir
 // holds an AGENTS.md with the given content.
 func newContextTestStore(t *testing.T, agentsMD string) *config.ConfigStore {

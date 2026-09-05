@@ -1,13 +1,16 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
@@ -188,6 +191,55 @@ func TestHandleDialogMsg_ActionNewSession_WithoutSessionIsNoOpButClosesPalette(t
 
 	m.handleDialogMsg(dialog.ActionNewSession{})
 	require.False(t, m.dialog.HasDialogs(), "the palette must close even when there was no session to clear")
+}
+
+// TestHandleDialogMsg_ActionToggleMCPServer pins that toggling leaves
+// the command palette open (see the comment on the production switch
+// case) so several servers can be flipped in one visit, while still
+// dispatching the toggle itself through to the workspace.
+func TestHandleDialogMsg_ActionToggleMCPServer(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().MCPEnable(gomock.Any(), "docs").Return(nil)
+	ws.EXPECT().MCPGetStates().Return(map[string]mcp.ClientInfo{})
+	m := newHandleDialogUI(t, ws)
+	m.mcpStates = map[string]mcp.ClientInfo{"docs": {Name: "docs", State: mcp.StateDisabled}}
+
+	cmd := m.handleDialogMsg(dialog.ActionToggleMCPServer{Name: "docs"})
+	require.NotNil(t, cmd)
+	require.True(t, m.dialog.ContainsDialog(dialog.CommandsID),
+		"toggling a server must not close the palette so several can be flipped in one visit")
+	result := cmd()
+	_, ok := result.(mcpStateChangedMsg)
+	require.True(t, ok, "expected mcpStateChangedMsg, got %T", result)
+}
+
+// TestHandleDialogMsg_ActionEnterSandbox pins that confirming the
+// sandbox dialog closes it and applies the chosen configuration through
+// enterSandbox.
+func TestHandleDialogMsg_ActionEnterSandbox(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	var gotCfg sandbox.Config
+	ws.EXPECT().EnterSandbox(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, cfg sandbox.Config) error {
+			gotCfg = cfg
+			return nil
+		})
+	ws.EXPECT().PermissionSetMode(permission.ModeYolo)
+	m := newHandleDialogUI(t, ws)
+	m.dialog = dialog.NewOverlay(idOnlyDialog{id: dialog.SandboxID})
+
+	wantCfg := sandbox.Config{ReadWrite: []string{"/tmp"}}
+	cmd := m.handleDialogMsg(dialog.ActionEnterSandbox{Config: wantCfg})
+	require.False(t, m.dialog.ContainsDialog(dialog.SandboxID), "applying the sandbox config must close its dialog")
+	require.NotNil(t, cmd)
+	require.Equal(t, sandboxEnteredMsg{}, cmd())
+	require.Equal(t, wantCfg, gotCfg)
 }
 
 func TestHandleDialogMsg_ActionAbortBranch(t *testing.T) {

@@ -95,6 +95,9 @@ var wsHandlerCases = []wsHandlerCase{
 	{name: "PostWorkspaceMCPAuth", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceMCPAuth},
 	{name: "GetWorkspaceSandbox", invoke: (*controllerV1).handleGetWorkspaceSandbox},
 	{name: "PostWorkspaceSandboxEnter", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceSandboxEnter},
+	{name: "PostWorkspaceConfigAgentVariant", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceConfigAgentVariant},
+	{name: "PostWorkspaceMCPEnable", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceMCPEnable},
+	{name: "PostWorkspaceMCPDisable", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceMCPDisable},
 }
 
 func newRequestForWSCase(t *testing.T, id, sid, body string) *http.Request {

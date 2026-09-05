@@ -323,6 +323,32 @@ func TestArguments_Draw(t *testing.T) {
 	require.Contains(t, view, "who to greet")
 }
 
+// TestArguments_CursorAccountsForWideRunes verifies that the focused
+// field's screen cursor lands past double-width runes (CJK text) by
+// their real display width, not by rune count.
+func TestArguments_CursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	const w, h = 80, 24
+
+	aASCII := newTestArguments(t, testArgumentList(commands.Argument{ID: "a", Title: "A"}), nil)
+	for _, r := range "abc" {
+		aASCII.HandleMsg(keyMsg(r))
+	}
+	scrASCII := uv.NewScreenBuffer(w, h)
+	curASCII := aASCII.Draw(scrASCII, image.Rect(0, 0, w, h))
+	require.NotNil(t, curASCII)
+
+	aCJK := newTestArguments(t, testArgumentList(commands.Argument{ID: "a", Title: "A"}), nil)
+	aCJK.HandleMsg(tea.PasteMsg{Content: "不好呀"})
+	scrCJK := uv.NewScreenBuffer(w, h)
+	curCJK := aCJK.Draw(scrCJK, image.Rect(0, 0, w, h))
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+
 func TestArguments_ShortAndFullHelp(t *testing.T) {
 	t.Parallel()
 

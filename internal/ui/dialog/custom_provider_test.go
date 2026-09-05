@@ -2,6 +2,7 @@ package dialog
 
 import (
 	"errors"
+	"image"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/workspace"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
 )
 
@@ -255,4 +257,30 @@ func TestCustomProviderSaveErrorIsReported(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, cmdAction.Cmd)
 	require.Equal(t, CustomProviderStateVerified, d.state)
+}
+
+// TestCustomProviderCursorAccountsForWideRunes verifies that the
+// focused field's screen cursor lands past double-width runes (CJK
+// text) by their real display width, not by rune count.
+func TestCustomProviderCursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	const w, h = 80, 24
+
+	dASCII := newCustomProviderDialog(t, &customProviderWorkspace{}, nil)
+	for _, r := range "abc" {
+		dASCII.HandleMsg(keyMsg(r))
+	}
+	scrASCII := uv.NewScreenBuffer(w, h)
+	curASCII := dASCII.Draw(scrASCII, image.Rect(0, 0, w, h))
+	require.NotNil(t, curASCII)
+
+	dCJK := newCustomProviderDialog(t, &customProviderWorkspace{}, nil)
+	dCJK.HandleMsg(tea.PasteMsg{Content: "不好呀"})
+	scrCJK := uv.NewScreenBuffer(w, h)
+	curCJK := dCJK.Draw(scrCJK, image.Rect(0, 0, w, h))
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
 }

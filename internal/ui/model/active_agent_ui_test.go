@@ -291,6 +291,27 @@ func TestVariantPickBeforeSessionAppliesEphemeralOverride(t *testing.T) {
 	require.Contains(t, text, "fast")
 }
 
+// TestVariantPickBeforeSessionReportsOverrideError covers the error path
+// TestVariantPickBeforeSessionAppliesEphemeralOverride does not reach:
+// when OverrideAgentVariant itself fails, the failure must be reported
+// to the user rather than silently swallowed.
+func TestVariantPickBeforeSessionReportsOverrideError(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	m.session = nil
+	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
+	warmCaches(m, false)
+
+	wantErr := errors.New("override boom")
+	ws.EXPECT().OverrideAgentVariant(gomock.Any(), gomock.Any()).Return(wantErr)
+
+	msg := m.handleSelectVariant("fast")()
+	text := infoText(t, msg)
+
+	require.Contains(t, text, wantErr.Error())
+}
+
 // TestCycleVariantWorksBeforeSession pins that ctrl+e, which used to
 // warn "Start a session" unconditionally, now cycles the coder
 // default's preset the same as the dialog does.

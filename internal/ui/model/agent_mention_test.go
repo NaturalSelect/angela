@@ -174,3 +174,75 @@ func TestMentionKeyBindings(t *testing.T) {
 	require.Equal(t, []string{"@"}, km.Editor.MentionAgent.Keys())
 	require.Equal(t, []string{"#"}, km.Editor.MentionFile.Keys())
 }
+
+// TestApplyCompletionSelection_RoutesEachValueType pins every branch of
+// the switch: each known SelectionMsg type must reach its own insert*
+// helper (not fall through to a neighbor's), report the KeepOpen the
+// selection carried, and mark handled so the caller closes the popup
+// or not accordingly. A message the switch does not recognize must
+// report handled=false so callers leave it alone instead of treating
+// it as a no-op selection.
+func TestApplyCompletionSelection_RoutesEachValueType(t *testing.T) {
+	t.Parallel()
+
+	t.Run("file", func(t *testing.T) {
+		t.Parallel()
+		m := newMentionUI(t, mentionConfig())
+		cmd, keepOpen, handled := m.applyCompletionSelection(completions.SelectionMsg[completions.FileCompletionValue]{
+			Value:    completions.FileCompletionValue{Path: "main.go"},
+			KeepOpen: false,
+		})
+		require.True(t, handled)
+		require.False(t, keepOpen)
+		require.NotNil(t, cmd, "a file selection always carries an attachment command")
+		require.Equal(t, "main.go ", m.textarea.Value())
+	})
+
+	t.Run("resource", func(t *testing.T) {
+		t.Parallel()
+		m := newMentionUI(t, mentionConfig())
+		cmd, keepOpen, handled := m.applyCompletionSelection(completions.SelectionMsg[completions.ResourceCompletionValue]{
+			Value:    completions.ResourceCompletionValue{MCPName: "srv", URI: "file:///a", Title: "A"},
+			KeepOpen: true,
+		})
+		require.True(t, handled)
+		require.True(t, keepOpen)
+		require.NotNil(t, cmd, "a resource selection always carries a fetch command")
+		require.Equal(t, "A ", m.textarea.Value())
+	})
+
+	t.Run("agent", func(t *testing.T) {
+		t.Parallel()
+		m := newMentionUI(t, mentionConfig())
+		cmd, keepOpen, handled := m.applyCompletionSelection(completions.SelectionMsg[completions.AgentCompletionValue]{
+			Value:    completions.AgentCompletionValue{ID: "explore"},
+			KeepOpen: false,
+		})
+		require.True(t, handled)
+		require.False(t, keepOpen)
+		require.Nil(t, cmd, "an agent mention has no height change to report from an empty textarea")
+		require.Equal(t, "@explore ", m.textarea.Value())
+	})
+
+	t.Run("skill", func(t *testing.T) {
+		t.Parallel()
+		m := newMentionUI(t, mentionConfig())
+		cmd, keepOpen, handled := m.applyCompletionSelection(completions.SelectionMsg[completions.SkillCompletionValue]{
+			Value:    completions.SkillCompletionValue{Name: "jq"},
+			KeepOpen: false,
+		})
+		require.True(t, handled)
+		require.False(t, keepOpen)
+		require.Nil(t, cmd, "a skill mention has no height change to report from an empty textarea")
+		require.Equal(t, "[skill:jq] ", m.textarea.Value())
+	})
+
+	t.Run("unrecognized message", func(t *testing.T) {
+		t.Parallel()
+		m := newMentionUI(t, mentionConfig())
+		cmd, keepOpen, handled := m.applyCompletionSelection(completions.ClosedMsg{})
+		require.False(t, handled, "an unrecognized message must not be treated as a selection")
+		require.False(t, keepOpen)
+		require.Nil(t, cmd)
+	})
+}

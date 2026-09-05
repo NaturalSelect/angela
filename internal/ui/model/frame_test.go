@@ -1,10 +1,12 @@
 package model
 
 import (
+	"image"
 	"strings"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/ui/completions"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -111,4 +113,28 @@ func TestFramesNeverExceedTerminalWidth(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestDraw_CompletionsPopupRectIsClampedToScreenWidth pins the popup's
+// on-screen rect math: completionsRect is what later mouse-click
+// resolution reads back (see key_routing_test.go's mouse-click
+// tests), so a popup that would run off the right edge of a narrow
+// terminal must be clamped inside it instead of drawn (and clicked)
+// out of bounds.
+func TestDraw_CompletionsPopupRectIsClampedToScreenWidth(t *testing.T) {
+	pinTTLs(t)
+
+	m := drawableUI(t, 40, 20)
+	m.state = uiChat
+	m.completions.SetItems([]completions.FileCompletionValue{{Path: "main.go"}}, nil)
+	m.completionsOpen = true
+	m.completionsPositionStart = image.Pt(35, 10)
+	m.updateLayoutAndSize()
+
+	scr := uv.NewScreenBuffer(m.width, m.height)
+	m.Draw(scr, scr.Bounds())
+
+	require.NotZero(t, m.completionsRect, "an open popup with items must get a stored rect")
+	require.LessOrEqual(t, m.completionsRect.Max.X, m.width, "the popup must be clamped inside the screen width")
+	require.GreaterOrEqual(t, m.completionsRect.Min.X, 0)
 }

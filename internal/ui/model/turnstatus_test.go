@@ -306,3 +306,55 @@ func TestTurnStatusNeverFlagsAgentToolAsSlow(t *testing.T) {
 	require.Contains(t, status, toolnames.Agent)
 	require.NotRegexp(t, `\(\d+s\)`, status)
 }
+
+// The activity label appends what the tool is acting on — the command for
+// Bash, the file for Edit — so a one-line status says more than just the
+// tool's name.
+func TestTurnStatusAppendsToolTarget(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(&testToolMessageItem{
+		testMessageItem: testMessageItem{id: "t1", text: "t1"},
+		tc:              message.ToolCall{ID: "t1", Name: "Bash", Input: `{"command":"ls -la"}`},
+		status:          chat.ToolStatusRunning,
+	})
+
+	require.Equal(t, "Bash ls -la", m.currentActivity())
+}
+
+// A tool call whose input names no recognizable target (ToolCallTarget
+// returns "") must fall back to the bare tool name, with no trailing space.
+func TestTurnStatusOmitsTargetWhenToolCallNamesNone(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(&testToolMessageItem{
+		testMessageItem: testMessageItem{id: "t1", text: "t1"},
+		tc:              message.ToolCall{ID: "t1", Name: "Bash", Input: `{}`},
+		status:          chat.ToolStatusRunning,
+	})
+
+	require.Equal(t, "Bash", m.currentActivity())
+}
+
+// toolSlowness must not report a running time when there is no active-tool
+// timing entry at all, or when the one on record belongs to a different
+// tool call than the one being asked about — otherwise a stale or unrelated
+// timer could be misattributed to the wrong tool call.
+func TestToolSlowness_NoMatchingActiveToolReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	tc := message.ToolCall{ID: "t1", Name: "Bash"}
+
+	t.Run("nil activeTool", func(t *testing.T) {
+		m.activeTool = nil
+		require.Empty(t, m.toolSlowness(tc))
+	})
+
+	t.Run("activeTool tracks a different tool call", func(t *testing.T) {
+		m.activeTool = &toolTiming{id: "other", since: time.Now().Add(-time.Hour)}
+		require.Empty(t, m.toolSlowness(tc))
+	})
+}

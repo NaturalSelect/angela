@@ -259,6 +259,28 @@ func TestTheCursorLandsInTheFocusedInput(t *testing.T) {
 	}
 }
 
+// TestTheCursorAccountsForWideRunes verifies that the focused field's
+// screen cursor lands past double-width runes (CJK text) by their
+// real display width, not by rune count.
+func TestTheCursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	mASCII := newModelConfigDialog(t, config.ProviderModel{})
+	for _, r := range "abc" {
+		mASCII.HandleMsg(keyMsg(r))
+	}
+	_, curASCII := drawModelConfig(t, mASCII)
+	require.NotNil(t, curASCII)
+
+	mCJK := newModelConfigDialog(t, config.ProviderModel{})
+	mCJK.HandleMsg(tea.PasteMsg{Content: "不好呀"})
+	_, curCJK := drawModelConfig(t, mCJK)
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+
 // Every block in the form is inset by one column. The labels carry no
 // inset of their own — the input's comes from a margin, which does not
 // reach them — so a label rendered flush left makes the form ragged.

@@ -197,6 +197,35 @@ func TestPermissions_DenyWithReasonPasteInsertsText(t *testing.T) {
 	require.Equal(t, "不需要执行这个操作", resp.Permission.DenyReason)
 }
 
+// TestPermissions_DenyReasonCursorAccountsForWideRunes verifies that
+// the reason box's screen cursor lands past double-width runes (CJK
+// text) by their real display width, not by rune count. textinput's
+// own Cursor() offsets by rune count, which would park the cursor in
+// the middle of the text for any non-ASCII reason.
+func TestPermissions_DenyReasonCursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	const w, h = 100, 30
+	scr := uv.NewScreenBuffer(w, h)
+
+	pASCII := newTestPermissions(t)
+	pASCII.enterDenyReasonMode()
+	for _, r := range "abc" {
+		pASCII.HandleMsg(keyMsg(r))
+	}
+	curASCII := pASCII.Draw(scr, image.Rect(0, 0, w, h))
+	require.NotNil(t, curASCII)
+
+	pCJK := newTestPermissions(t)
+	pCJK.enterDenyReasonMode()
+	pCJK.HandleMsg(tea.PasteMsg{Content: "不好呀"})
+	curCJK := pCJK.Draw(scr, image.Rect(0, 0, w, h))
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+
 // TestPermissions_RenameShowsSymbolChange pins that approving a rename
 // tells the user which symbol becomes which. A rename spans files the
 // dialog never shows, so the two names are the whole basis for the
@@ -402,4 +431,115 @@ func TestPermissions_MouseHoverTracksButton(t *testing.T) {
 	x, y := buttonScreenPos(t, p, 0, w, h) // Allow
 	p.HandleMsg(tea.MouseMotionMsg{X: x, Y: y})
 	require.Equal(t, 0, common.HitButtonIndex(p.buttonHit, p.hoverX, p.hoverY))
+}
+
+// TestPermissions_MergeWithOldContentRendersAsDiff verifies that a merge
+// proposal carrying prior content (unlike the fresh-document case) has
+// something to diff against and renders through the diff path.
+func TestPermissions_MergeWithOldContentRendersAsDiff(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{Styles: &s}
+	p := NewPermissions(com, permission.PermissionRequest{
+		ID:         "perm-test",
+		ToolCallID: "tool-call-test",
+		ToolName:   toolnames.Merge,
+		Params: tools.MergePermissionsParams{
+			Name:       tools.ProposalDocumentName,
+			OldContent: "# Plan\n\nOld version.\n",
+			NewContent: "# Plan\n\nNew version.\n",
+		},
+	})
+	p.viewportDirty = true
+
+	require.True(t, p.hasDiffView(), "a merge with prior content has something to diff against")
+
+	content := ansi.Strip(p.renderContent(80))
+	require.Contains(t, content, "New version.")
+}
+
+// TestPermissions_RenderDiffSplitMode verifies that split mode computes
+// and caches the split-formatted diff rather than the unified one.
+func TestPermissions_RenderDiffSplitMode(t *testing.T) {
+	t.Parallel()
+
+	p := newWritePermissions("main.go", "package old\n", "package main\n")
+	split := true
+	p.diffSplitMode = &split
+	p.viewportDirty = true
+
+	content := p.renderDiff("main.go", "package old\n", "package main\n", 120)
+	require.NotEmpty(t, content)
+	require.Equal(t, content, p.splitDiffContent)
+	require.Empty(t, p.unifiedDiffContent, "split mode must not populate the unified cache")
+}
+
+// TestPermissions_RenderDiffUsesCachedContentWhenNotDirty verifies that
+// renderDiff skips recomputation and returns the cached content matching
+// the current split mode once the viewport is no longer dirty.
+func TestPermissions_RenderDiffUsesCachedContentWhenNotDirty(t *testing.T) {
+	t.Parallel()
+
+	p := newWritePermissions("main.go", "package old\n", "package main\n")
+	p.renderContent(80) // populate the caches through a real render pass.
+	p.viewportDirty = false
+	p.unifiedDiffContent = "cached-unified"
+	p.splitDiffContent = "cached-split"
+
+	require.Equal(t, "cached-unified", p.renderDiff("main.go", "package old\n", "package main\n", 80))
+
+	split := true
+	p.diffSplitMode = &split
+	require.Equal(t, "cached-split", p.renderDiff("main.go", "package old\n", "package main\n", 80))
+}
+
+// TestPermissions_DrawInDenyReasonModeRendersInputAndCursor verifies that
+// Draw replaces the button row with the reason text box, disables
+// button hit-testing, and hands the cursor to the reason input while
+// the dialog is in deny-with-reason mode.
+func TestPermissions_DrawInDenyReasonModeRendersInputAndCursor(t *testing.T) {
+	t.Parallel()
+
+	const w, h = 100, 30
+	p := newTestPermissions(t)
+	p.enterDenyReasonMode()
+
+	scr := uv.NewScreenBuffer(w, h)
+	cur := p.Draw(scr, image.Rect(0, 0, w, h))
+
+	require.Nil(t, p.buttonHit, "the reason box replaces the button row, so there is nothing to hit-test")
+	require.NotNil(t, cur, "the reason input should own the cursor while open")
+}
+
+// TestPermissions_CanScrollFalseWhenDiffFreeAndNothingToScroll verifies
+// that a small, non-diff prompt with nothing to scroll omits the Scroll
+// hint from the help line.
+func TestPermissions_CanScrollFalseWhenDiffFreeAndNothingToScroll(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t) // bash tool: no diff view, empty viewport.
+	require.False(t, p.canScroll())
+
+	var keys []string
+	for _, b := range p.ShortHelp() {
+		keys = append(keys, b.Help().Key)
+	}
+	require.NotContains(t, keys, p.keyMap.Scroll.Help().Key)
+}
+
+// TestPermissions_CanScrollTrueForDiffView verifies that a diff view can
+// always scroll and therefore always offers the Scroll hint, regardless
+// of whether the content currently overflows the viewport.
+func TestPermissions_CanScrollTrueForDiffView(t *testing.T) {
+	t.Parallel()
+
+	p := newWritePermissions("main.go", "package old\n", "package main\n")
+	require.True(t, p.canScroll())
+
+	var keys []string
+	for _, b := range p.ShortHelp() {
+		keys = append(keys, b.Help().Key)
+	}
+	require.Contains(t, keys, p.keyMap.Scroll.Help().Key)
 }

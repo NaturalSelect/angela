@@ -165,7 +165,9 @@ func (s *runState) enqueueCall(call SessionAgentCall) {
 // as the final answer. It reuses call as-is (same RunID, same Agent)
 // so the continuation is treated as part of the same turn rather than
 // a new queued prompt, the same way the tool-calls-pending
-// continuation does.
+// continuation does. Attachments are dropped: they were already
+// delivered to the model on the turn being resumed, so carrying them
+// over would resend the same files on every synthetic continuation.
 //
 // Unlike enqueueCall, whose only caller already holds the per-session
 // dispatch mutex for its own busy-check, the caller here runs after
@@ -184,6 +186,7 @@ func (s *runState) enqueueAutoContinue(call SessionAgentCall) {
 		existing = []SessionAgentCall{}
 	}
 	call.Prompt = autoContinuePrompt
+	call.Attachments = nil
 	existing = append(existing, call)
 	s.messageQueue.Set(call.SessionID, existing)
 }

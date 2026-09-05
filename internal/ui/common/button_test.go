@@ -34,6 +34,37 @@ func TestButton_RendersLabelInEveryState(t *testing.T) {
 	}
 }
 
+func TestButton_NegativeStyle(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+
+	t.Run("negative and selected uses the Negative style, not Focused", func(t *testing.T) {
+		t.Parallel()
+		negative := Button(&sty, ButtonOpts{Text: "OK", UnderlineIndex: -1, Negative: true, Selected: true})
+		focused := Button(&sty, ButtonOpts{Text: "OK", UnderlineIndex: -1, Selected: true})
+		require.Contains(t, ansi.Strip(negative), "OK")
+		require.NotEqual(t, focused, negative, "negative+selected must render differently from plain focused")
+		require.Equal(t, sty.Button.Negative.Padding(0, 2).Render("OK"), negative)
+	})
+
+	t.Run("negative and hovered uses the Negative style, not Hovered", func(t *testing.T) {
+		t.Parallel()
+		negative := Button(&sty, ButtonOpts{Text: "OK", UnderlineIndex: -1, Negative: true, Hovered: true})
+		hovered := Button(&sty, ButtonOpts{Text: "OK", UnderlineIndex: -1, Hovered: true})
+		require.Contains(t, ansi.Strip(negative), "OK")
+		require.NotEqual(t, hovered, negative, "negative+hovered must render differently from plain hovered")
+		require.Equal(t, sty.Button.Negative.Padding(0, 2).Render("OK"), negative)
+	})
+
+	t.Run("negative without selected or hovered falls back to blurred", func(t *testing.T) {
+		t.Parallel()
+		negative := Button(&sty, ButtonOpts{Text: "OK", UnderlineIndex: -1, Negative: true})
+		blurred := Button(&sty, ButtonOpts{Text: "OK", UnderlineIndex: -1})
+		require.Equal(t, blurred, negative, "negative alone (not selected/hovered) must not trigger the Negative style")
+	})
+}
+
 func TestButton_UnderlineIndex(t *testing.T) {
 	t.Parallel()
 

@@ -127,6 +127,38 @@ func TestClientWorkspace_RecordRecentModel(t *testing.T) {
 	}
 }
 
+func TestClientWorkspace_OverrideAgentVariant(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		status  int
+		wantErr bool
+	}{
+		{name: "success", status: http.StatusOK},
+		{name: "server error", status: http.StatusInternalServerError, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotBody proto.ConfigAgentVariantRequest
+			ws := configRefreshServer(t, "/v1/workspaces/ws-1/config/agent-variant", tc.status, func(r *http.Request) {
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+			})
+			err := ws.OverrideAgentVariant("coder", "fast")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "coder", gotBody.AgentID)
+			require.Equal(t, "fast", gotBody.Variant)
+		})
+	}
+}
+
 func TestClientWorkspace_PruneRecentModels(t *testing.T) {
 	t.Parallel()
 

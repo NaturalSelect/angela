@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/azure"
 	"charm.land/fantasy/providers/bedrock"
 	"charm.land/fantasy/providers/google"
+	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openrouter"
 	"charm.land/fantasy/providers/vercel"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -92,6 +94,78 @@ func TestBuildProviderRejectsUnsupportedType(t *testing.T) {
 		config.ProviderModel{Model: catwalk.Model{ID: "m"}}, false, false,
 	)
 	require.ErrorContains(t, err, "provider type not supported")
+}
+
+// TestBuildProviderConstructsEveryKnownTypeWithDebug mirrors
+// TestBuildProviderConstructsEveryKnownType with Options.Debug
+// enabled. Every buildXProvider constructor swaps in the
+// debug-logging HTTP client when Debug is on instead of the quiet
+// idle-timeout client it uses the rest of the time; this pins that
+// the switch does not silently break construction for any provider
+// type.
+func TestBuildProviderConstructsEveryKnownTypeWithDebug(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		providerCfg config.ProviderConfig
+	}{
+		{
+			name:        "anthropic",
+			providerCfg: config.ProviderConfig{ID: "anthropic", Type: anthropic.Name, APIKey: "test-key"},
+		},
+		{
+			name:        "openai",
+			providerCfg: config.ProviderConfig{ID: "openai", Type: openai.Name, APIKey: "test-key"},
+		},
+		{
+			name:        "openrouter",
+			providerCfg: config.ProviderConfig{ID: "openrouter", Type: openrouter.Name, APIKey: "test-key"},
+		},
+		{
+			name:        "vercel",
+			providerCfg: config.ProviderConfig{ID: "vercel", Type: vercel.Name, APIKey: "test-key"},
+		},
+		{
+			name:        "known custom provider falls back to openai-compat",
+			providerCfg: config.ProviderConfig{ID: "ollama", Type: "ollama", BaseURL: "http://127.0.0.1:9/v1"},
+		},
+		{
+			name: "azure",
+			providerCfg: config.ProviderConfig{
+				ID: "azure", Type: azure.Name, APIKey: "test-key",
+				BaseURL: "https://example.openai.azure.com",
+			},
+		},
+		{
+			name:        "bedrock",
+			providerCfg: config.ProviderConfig{ID: "bedrock", Type: bedrock.Name, APIKey: "test-key"},
+		},
+		{
+			name:        "google",
+			providerCfg: config.ProviderConfig{ID: "google", Type: google.Name, APIKey: "test-key"},
+		},
+		{
+			name: "google-vertex",
+			providerCfg: config.ProviderConfig{
+				ID: "google-vertex", Type: "google-vertex",
+				ExtraParams: map[string]string{"project": "my-project", "location": "us-central1"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			coord := newModelPrefTestCoordinator(t, nil)
+			coord.cfg.Config().Options.Debug = true
+
+			provider, err := coord.buildProvider(tt.providerCfg, config.ProviderModel{Model: catwalk.Model{ID: "m"}}, false, false)
+			require.NoError(t, err)
+			require.NotNil(t, provider)
+		})
+	}
 }
 
 // TestBuildBedrockProviderUsesConfiguredRegion pins that a Bedrock

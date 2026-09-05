@@ -49,6 +49,54 @@ func TestHTTPRoundTripLogger(t *testing.T) {
 	}
 }
 
+func TestNewIdleTimeoutClient(t *testing.T) {
+	t.Parallel()
+
+	client := NewIdleTimeoutClient()
+	require.NotNil(t, client)
+	require.IsType(t, &http.Transport{}, client.Transport)
+}
+
+// stubRoundTripper is a minimal http.RoundTripper used only to swap out
+// http.DefaultTransport for a type that isn't *http.Transport; its
+// RoundTrip is never actually invoked in the test below.
+type stubRoundTripper struct{}
+
+func (stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, nil
+}
+
+// TestNewIdleTimeoutTransport_FallsBackWhenDefaultTransportIsNotHTTPTransport
+// covers the !ok branch: when http.DefaultTransport isn't a
+// *http.Transport, NewIdleTimeoutTransport must return it unchanged
+// rather than panicking on the failed type assertion. Not parallel:
+// it temporarily swaps the process-wide http.DefaultTransport, and
+// restores it before returning so no other test observes the swap.
+func TestNewIdleTimeoutTransport_FallsBackWhenDefaultTransportIsNotHTTPTransport(t *testing.T) {
+	orig := http.DefaultTransport
+	fake := stubRoundTripper{}
+	http.DefaultTransport = fake
+	got := NewIdleTimeoutTransport()
+	http.DefaultTransport = orig
+
+	require.Equal(t, fake, got, "the !ok fallback must return http.DefaultTransport unchanged")
+}
+
+// TestIdleTimeoutConn_ReadPropagatesSetReadDeadlineError covers Read's
+// SetReadDeadline error path: an already-closed underlying connection
+// makes SetReadDeadline fail, and that error must propagate from Read
+// rather than falling through to Conn.Read.
+func TestIdleTimeoutConn_ReadPropagatesSetReadDeadlineError(t *testing.T) {
+	t.Parallel()
+	clientConn, serverConn := net.Pipe()
+	require.NoError(t, clientConn.Close())
+	t.Cleanup(func() { serverConn.Close() })
+
+	conn := &idleTimeoutConn{Conn: clientConn, timeout: time.Second}
+	_, err := conn.Read(make([]byte, 16))
+	require.Error(t, err)
+}
+
 func TestIdleTimeoutConn_TimesOutWhenNoBytesArrive(t *testing.T) {
 	t.Parallel()
 	clientConn, serverConn := net.Pipe()

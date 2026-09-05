@@ -464,6 +464,30 @@ func TestConfigMethodsSuccessPaths(t *testing.T) {
 				require.NoError(t, c.EnterSandbox(context.Background(), "ws1", sandbox.Config{ReadWrite: []string{"/tmp"}}))
 			},
 		},
+		{
+			name:       "OverrideAgentVariant",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/config/agent-variant",
+			call: func(t *testing.T, c *Client) {
+				require.NoError(t, c.OverrideAgentVariant(context.Background(), "ws1", "coder", "fast"))
+			},
+		},
+		{
+			name:       "MCPEnable",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/mcp/enable",
+			call: func(t *testing.T, c *Client) {
+				require.NoError(t, c.MCPEnable(context.Background(), "ws1", "srv1"))
+			},
+		},
+		{
+			name:       "MCPDisable",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/mcp/disable",
+			call: func(t *testing.T, c *Client) {
+				require.NoError(t, c.MCPDisable(context.Background(), "ws1", "srv1"))
+			},
+		},
 	})
 }
 
@@ -488,5 +512,45 @@ func TestConfigMethodsErrorPaths(t *testing.T) {
 			name: "ListSkills server error", status: http.StatusInternalServerError,
 			call: func(c *Client) error { _, err := c.ListSkills(context.Background(), "ws1"); return err },
 		},
+		{
+			name: "IsInSandbox server error", status: http.StatusInternalServerError,
+			call: func(c *Client) error { _, err := c.IsInSandbox(context.Background(), "ws1"); return err },
+		},
+		{
+			name: "EnterSandbox server error", status: http.StatusInternalServerError,
+			call: func(c *Client) error { return c.EnterSandbox(context.Background(), "ws1", sandbox.Config{}) },
+		},
+		{
+			name: "OverrideAgentVariant server error", status: http.StatusInternalServerError,
+			call: func(c *Client) error { return c.OverrideAgentVariant(context.Background(), "ws1", "coder", "fast") },
+		},
+		{
+			name: "MCPEnable server error", status: http.StatusInternalServerError,
+			call: func(c *Client) error { return c.MCPEnable(context.Background(), "ws1", "srv1") },
+		},
+		{
+			name: "MCPDisable server error", status: http.StatusInternalServerError,
+			call: func(c *Client) error { return c.MCPDisable(context.Background(), "ws1", "srv1") },
+		},
 	})
+}
+
+// TestSandboxMethodsTransportError pins the transport-error branch of
+// the sandbox methods (a failure from the underlying HTTP round trip
+// itself, before any status code is available), which the status-code
+// table above cannot reach since it always gets a response.
+func TestSandboxMethodsTransportError(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	srv.Close() // Closed before use: any request now fails at the transport level.
+	c := captureClient(t, srv)
+
+	_, err := c.IsInSandbox(context.Background(), "ws1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to get sandbox status")
+
+	err = c.EnterSandbox(context.Background(), "ws1", sandbox.Config{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to enter sandbox")
 }

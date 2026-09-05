@@ -145,3 +145,39 @@ func TestMouseClickOutsideCompletionsPopupIsIgnored(t *testing.T) {
 	require.Empty(t, m.textarea.Value())
 	require.True(t, m.completionsOpen, "a miss must not close the popup")
 }
+
+// TestMouseClickOnFileCompletionQueuesNonNilCommand pins that a mouse
+// selection queues the command applyCompletionSelection returns, the
+// same as the keyboard path: a file selection always carries a
+// non-nil attachment-loading command, so it must never be dropped
+// just because it arrived via SelectAt instead of completions.Update.
+func TestMouseClickOnFileCompletionQueuesNonNilCommand(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+	m.completions.SetItems([]completions.FileCompletionValue{{Path: "main.go"}}, nil)
+	m.completionsOpen = true
+	m.completionsRect = image.Rectangle{Min: image.Pt(0, 0), Max: image.Pt(20, 1)}
+
+	_, cmd := m.Update(tea.MouseClickMsg{X: 0, Y: 0, Button: uv.MouseLeft})
+
+	require.NotNil(t, cmd, "a file selection's attachment command must not be dropped")
+	require.False(t, m.completionsOpen, "selecting without KeepOpen must close the popup")
+}
+
+// TestInsertSkillCompletion_FailedInsertReturnsNil pins the guard
+// clause: if completionsStartIndex no longer matches the live
+// textarea value (e.g. the buffer changed out from under the popup),
+// insertSkillCompletion must bail out instead of inserting at a stale
+// offset.
+func TestInsertSkillCompletion_FailedInsertReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	m := newTestUI()
+	m.textarea.SetValue("hi")
+	m.completionsStartIndex = 100
+
+	cmd := m.insertSkillCompletion("jq")
+
+	require.Nil(t, cmd)
+}

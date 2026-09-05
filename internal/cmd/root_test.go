@@ -184,6 +184,71 @@ func TestResolveCwd_GetwdErrorPropagates(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to get current working directory")
 }
 
+// newSetupWorkspaceTestCmd builds a standalone command carrying the
+// flags setupLocalWorkspace reads, reusing newSandboxTestCmd (see
+// sandbox_test.go) for the --sandbox-* flags.
+func newSetupWorkspaceTestCmd(t *testing.T, dataDir string) *cobra.Command {
+	t.Helper()
+	cmd := newSandboxTestCmd(t)
+	cmd.Flags().Bool("debug", false, "")
+	cmd.Flags().Bool("yolo", false, "")
+	cmd.Flags().StringSlice("channels", nil, "")
+	cmd.Flags().String("data-dir", dataDir, "")
+	cmd.Flags().String("cwd", "", "")
+	return cmd
+}
+
+// TestSetupLocalWorkspace_SandboxFlagErrorPropagates covers the early
+// return when sandboxConfigFromFlags itself fails (a --sandbox-*
+// refinement flag set without --sandbox): setupLocalWorkspace must
+// propagate that error before ever calling
+// sandbox.New().EnterSandbox.
+func TestSetupLocalWorkspace_SandboxFlagErrorPropagates(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cmd := newSetupWorkspaceTestCmd(t, t.TempDir())
+	require.NoError(t, cmd.Flags().Set("sandbox-ro", "/extra"))
+
+	ws, cleanup, err := setupLocalWorkspace(cmd)
+	require.Nil(t, ws)
+	require.Nil(t, cleanup)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--sandbox-ro")
+}
+
+// TestSetupLocalWorkspace_SandboxEnabled_EntersWithoutError exercises
+// the --sandbox branch of setupLocalWorkspace for real:
+// sandbox.New() resolves to a real LandlockSandbox on this platform,
+// so EnterSandbox actually runs. The extra --sandbox-rw "/" flag
+// makes the resulting rule fully permissive (verified in isolation:
+// granting read-write on "/" leaves the process able to read, write,
+// and dial out normally afterward), so this cannot regress any other
+// test in this shared binary the way the feature's narrower default
+// sandbox config could. A bounded context keeps the call from
+// hanging if it reaches further setup (DB, LSP/MCP discovery) below
+// the sandbox block.
+func TestSetupLocalWorkspace_SandboxEnabled_EntersWithoutError(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("sandbox enforcement is Linux-only")
+	}
+
+	t.Chdir(t.TempDir())
+	cmd := newSetupWorkspaceTestCmd(t, t.TempDir())
+	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
+	require.NoError(t, cmd.Flags().Set("sandbox-rw", "/"))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	cmd.SetContext(ctx)
+
+	_, cleanup, err := setupLocalWorkspace(cmd)
+	if cleanup != nil {
+		cleanup()
+	}
+	if err != nil {
+		require.NotContains(t, err.Error(), "failed to enter sandbox")
+	}
+}
+
 // TestRandomExitMessage pins the two invariants callers rely on: every
 // message is short enough for a single status line, and the choice is
 // actually randomized rather than a hardcoded string.

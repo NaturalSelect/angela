@@ -47,6 +47,12 @@ func TestBackendEvents_WorkspaceNotFound(t *testing.T) {
 		{"MCPAuthenticate", func(t *testing.T) error {
 			return b.MCPAuthenticate(t.Context(), "nope", "srv")
 		}},
+		{"MCPEnable", func(t *testing.T) error {
+			return b.MCPEnable(t.Context(), "nope", "srv")
+		}},
+		{"MCPDisable", func(t *testing.T) error {
+			return b.MCPDisable("nope", "srv")
+		}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -103,4 +109,12 @@ func TestBackendEvents_MCPPassthroughs(t *testing.T) {
 
 	err = b.MCPAuthenticate(t.Context(), ws.ID, "no-such-server")
 	require.Error(t, err, "authenticating against an unconfigured MCP server must fail fast")
+
+	err = b.MCPEnable(t.Context(), ws.ID, "no-such-server")
+	require.Error(t, err, "enabling an unconfigured MCP server must fail fast")
+
+	// DisableSingle only tears down local runtime state and never
+	// checks the config, so disabling a server that was never
+	// started succeeds as a no-op rather than erroring.
+	require.NoError(t, b.MCPDisable(ws.ID, "no-such-server"))
 }

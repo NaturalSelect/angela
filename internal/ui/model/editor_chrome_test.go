@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -53,6 +54,102 @@ func TestEditorPromptCarriesMode(t *testing.T) {
 	for _, line := range lines[1:] {
 		require.False(t, strings.HasPrefix(line, editorPromptGlyph),
 			"the marker belongs on the first line only, got %q", line)
+	}
+}
+
+// TestEditorPromptFunc_YoloSandboxUsesDedicatedRailStyle pins that a
+// sandboxed yolo session gets its own gutter color: the sandbox already
+// enforces the boundaries yolo mode skips past, so the color should read
+// as less dangerous than plain yolo rather than reusing its rail as-is.
+func TestEditorPromptFunc_YoloSandboxUsesDedicatedRailStyle(t *testing.T) {
+	pinTTLs(t)
+
+	render := func(sandboxActive bool) string {
+		m, ws := newMockBusyUI(t)
+		ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+		m.textarea.Focus()
+		m.textarea.SetWidth(40)
+		m.sandboxActive = sandboxActive
+		m.permissionModeCache.set(permission.ModeYolo)
+		m.setEditorPrompt(permission.ModeYolo)
+		return m.textarea.View()
+	}
+
+	plain := render(false)
+	sandboxed := render(true)
+	require.NotEqual(t, plain, sandboxed, "the sandboxed yolo rail must use its own color")
+	require.Equal(t, ansi.Strip(plain), ansi.Strip(sandboxed), "the glyph must stay identical; only the color differs")
+}
+
+// TestEditorBorderStyle pins the box-border color to the same input-mode
+// precedence as the prompt gutter (bang > yolo > auto-accept-edits >
+// focus), including the sandbox override on the yolo branch.
+func TestEditorBorderStyle(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+	sty := m.com.Styles
+
+	for _, tc := range []struct {
+		name  string
+		setup func()
+		want  lipgloss.Style
+	}{
+		{
+			name: "bang mode wins over everything else",
+			setup: func() {
+				m.bangMode = true
+				m.permissionModeCache.set(permission.ModeYolo)
+				m.sandboxActive = true
+			},
+			want: sty.Editor.RailBang,
+		},
+		{
+			name: "yolo mode without sandbox",
+			setup: func() {
+				m.bangMode = false
+				m.sandboxActive = false
+				m.permissionModeCache.set(permission.ModeYolo)
+			},
+			want: sty.Editor.RailYolo,
+		},
+		{
+			name: "yolo mode with sandbox uses the dedicated rail",
+			setup: func() {
+				m.sandboxActive = true
+				m.permissionModeCache.set(permission.ModeYolo)
+			},
+			want: sty.Editor.RailYoloSandbox,
+		},
+		{
+			name: "auto-accept-edits mode",
+			setup: func() {
+				m.sandboxActive = false
+				m.permissionModeCache.set(permission.ModeAutoAcceptEdits)
+			},
+			want: sty.Editor.RailAutoAcceptEdits,
+		},
+		{
+			name: "manual mode with the editor focused",
+			setup: func() {
+				m.permissionModeCache.set(permission.ModeManual)
+				m.focus = uiFocusEditor
+			},
+			want: sty.Editor.BorderFocused,
+		},
+		{
+			name: "manual mode without focus falls back to the plain border",
+			setup: func() {
+				m.permissionModeCache.set(permission.ModeManual)
+				m.focus = uiFocusMain
+			},
+			want: sty.Editor.Border,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.setup()
+			require.Equal(t, tc.want, m.editorBorderStyle())
+		})
 	}
 }
 

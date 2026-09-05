@@ -205,6 +205,28 @@ func TestAPIKeyInputBaseURLFallsBackToCatalog(t *testing.T) {
 	}
 }
 
+// TestAPIKeyInputCursorAccountsForWideRunes verifies that the focused
+// field's screen cursor lands past double-width runes (CJK text) by
+// their real display width, not by rune count.
+func TestAPIKeyInputCursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	dASCII := newAPIKeyDialogIn(t, &apiKeyWorkspace{}, true)
+	for _, r := range "abc" {
+		dASCII.HandleMsg(keyMsg(r))
+	}
+	_, curASCII := drawAPIKeyOnboarding(t, dASCII)
+	require.NotNil(t, curASCII)
+
+	dCJK := newAPIKeyDialogIn(t, &apiKeyWorkspace{}, true)
+	dCJK.HandleMsg(tea.PasteMsg{Content: "不好呀"})
+	_, curCJK := drawAPIKeyOnboarding(t, dCJK)
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+
 func TestAPIKeyInputPrefillsOnlyCustomBaseURL(t *testing.T) {
 	t.Parallel()
 

@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -337,7 +338,15 @@ func (m *CustomProvider) handleSaved(msg customProviderSavedMsg) Action {
 
 // Cursor returns the cursor position relative to the dialog.
 func (m *CustomProvider) Cursor() *tea.Cursor {
-	cur := InputCursor(m.com.Styles, m.inputs[m.focused].Cursor())
+	cur := m.inputs[m.focused].Cursor()
+	if cur != nil {
+		// textinput.Cursor() offsets X by rune count, not display width;
+		// correct for double-width runes (CJK).
+		value := []rune(m.inputs[m.focused].Value())
+		n := m.inputs[m.focused].Position()
+		cur.X += lipgloss.Width(string(value[:n])) - n
+	}
+	cur = InputCursor(m.com.Styles, cur)
 	if cur == nil {
 		return nil
 	}

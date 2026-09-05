@@ -113,6 +113,7 @@ func AngelaTeal() Styles {
 	return s
 }
 
+// NOTE: only for testing purposes
 // CharmtonePantera returns the Charmtone dark theme inherited from Crush.
 func CharmtonePantera() Styles {
 	s := quickStyle(quickStyleOpts{

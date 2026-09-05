@@ -17,6 +17,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -28,6 +29,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -1336,4 +1338,128 @@ func TestUpdate_DefaultCase_RoutesUnknownMsgToDialog(t *testing.T) {
 	require.NotPanics(t, func() {
 		m.Update(unknownMsg{})
 	})
+}
+
+// TestUpdate_SandboxEnteredMsg_UpdatesStateAndCaches pins the side
+// effects of confirming the sandbox dialog: the yolo mode it applies
+// must be reflected everywhere the cache is read from (not just
+// PermissionSetMode on the workspace), and in-flight busy probes
+// started before the transition must be invalidated so a late result
+// cannot clobber it.
+func TestUpdate_SandboxEnteredMsg_UpdatesStateAndCaches(t *testing.T) {
+	pinTTLs(t)
+
+	m, _ := newMockBusyUI(t)
+	warmCaches(m, false)
+	gen := m.busyFetchGen
+
+	_, cmd := m.Update(sandboxEnteredMsg{})
+
+	require.True(t, m.sandboxActive)
+	require.Equal(t, permission.ModeYolo, m.permissionModeCached())
+	require.Greater(t, m.busyFetchGen, gen, "entering the sandbox must invalidate in-flight busy probes")
+
+	found := false
+	for _, msg := range runCmds(m, cmd) {
+		if info, ok := msg.(util.InfoMsg); ok && info.Msg == "Entered sandbox — permissions switched to yolo mode" {
+			found = true
+		}
+	}
+	require.True(t, found, "expected an info message announcing the sandbox entry")
+}
+
+// TestUpdate_MCPStateChangedMsg_RefreshesOpenDialog pins the branch
+// TestUpdate_MCPStateChangedMsg_NoPendingAuthIsNoOp does not reach: with
+// a real MCPServers dialog open, a fresh state snapshot must be pushed
+// into it via SetStates, not just stored on the UI.
+func TestUpdate_MCPStateChangedMsg_RefreshesOpenDialog(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return((*config.Config)(nil)).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+	ws.EXPECT().MCPPendingAuth().Return(nil)
+	ws.EXPECT().MCPGetStates().Return(map[string]mcp.ClientInfo{
+		"alpha": {Name: "alpha", State: mcp.StateConnected},
+	})
+	m := newBusyUIWithWorkspace(ws)
+	m.dialog.OpenDialog(dialog.NewMCPServers(m.com))
+
+	newStates := map[string]mcp.ClientInfo{
+		"beta": {Name: "beta", State: mcp.StateConnected},
+	}
+	m.Update(mcpStateChangedMsg{states: newStates})
+
+	require.Equal(t, newStates, m.mcpStates)
+
+	buf := uv.NewScreenBuffer(100, 40)
+	m.dialog.Draw(&buf, buf.Bounds())
+	rendered := ansi.Strip(buf.Render())
+	require.Contains(t, rendered, "beta", "the open dialog must be rebuilt from the fresh state snapshot")
+	require.NotContains(t, rendered, "alpha", "the stale server must be gone once SetStates rebuilds the list")
+}
+
+// TestEnterSandbox_Success pins that a successful EnterSandbox call
+// both switches permissions to yolo on the workspace and reports
+// sandboxEnteredMsg, the message Update relies on to keep its own
+// caches in sync (see TestUpdate_SandboxEnteredMsg_UpdatesStateAndCaches).
+func TestEnterSandbox_Success(t *testing.T) {
+	t.Parallel()
+
+	m, ws := newMockBusyUI(t)
+	cfg := sandbox.Config{ReadWrite: []string{"/work"}}
+	ws.EXPECT().EnterSandbox(gomock.Any(), cfg).Return(nil)
+	ws.EXPECT().PermissionSetMode(permission.ModeYolo)
+
+	msg := m.enterSandbox(cfg)
+
+	require.Equal(t, sandboxEnteredMsg{}, msg)
+}
+
+// TestEnterSandbox_Error pins that a failed EnterSandbox call reports
+// the error instead of silently switching to yolo mode — a sandbox
+// that never actually engaged must not also drop every approval
+// prompt.
+func TestEnterSandbox_Error(t *testing.T) {
+	t.Parallel()
+
+	m, ws := newMockBusyUI(t)
+	cfg := sandbox.Config{ReadWrite: []string{"/work"}}
+	wantErr := errors.New("enter sandbox boom")
+	ws.EXPECT().EnterSandbox(gomock.Any(), cfg).Return(wantErr)
+
+	msg := m.enterSandbox(cfg)
+
+	require.Contains(t, infoText(t, msg), wantErr.Error())
+}
+
+// TestLoadCustomCommands_ReturnsSkillDerivedCommands pins that the
+// async load command reports both the user-invocable skill catalog
+// (as Skills) and its command-palette form folded into Commands —
+// not just loaded and then dropped on the floor.
+func TestLoadCustomCommands_ReturnsSkillDerivedCommands(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return(&config.Config{Options: &config.Options{}}).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+	entries := []skills.CatalogEntry{{Name: "jq", UserInvocable: true, Label: "user:jq"}}
+	ws.EXPECT().ListSkills(gomock.Any()).Return(entries, nil)
+	m := newBusyUIWithWorkspace(ws)
+
+	msg := m.loadCustomCommands()()
+
+	loaded, ok := msg.(userCommandsLoadedMsg)
+	require.True(t, ok, "loadCustomCommands must report userCommandsLoadedMsg")
+	require.Equal(t, entries, loaded.Skills)
+
+	found := false
+	for _, c := range loaded.Commands {
+		if c.ID == "user:jq" {
+			found = true
+		}
+	}
+	require.True(t, found, "skill-derived commands must be appended to the loaded set")
 }

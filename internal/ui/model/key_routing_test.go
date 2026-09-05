@@ -11,6 +11,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/ui/completions"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/stretchr/testify/require"
@@ -710,6 +711,41 @@ func TestHandleKeyPressMsg_MentionSkillTriggerOpensCompletions(t *testing.T) {
 	m.handleKeyPressMsg(keyMsg("&"))
 
 	require.True(t, m.completionsOpen)
+}
+
+// TestHandleKeyPressMsg_EnterOnFileCompletionQueuesCommand pins that
+// selecting a file completion by keyboard queues the command
+// applyCompletionSelection returns instead of dropping it: a file
+// selection always carries a non-nil attachment-loading command
+// alongside any layout command, so it must never be silently lost.
+func TestHandleKeyPressMsg_EnterOnFileCompletionQueuesCommand(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+	m.completions.SetItems([]completions.FileCompletionValue{{Path: "main.go"}}, nil)
+	m.completionsOpen = true
+
+	cmd := m.handleKeyPressMsg(keyMsg("enter"))
+
+	require.NotNil(t, cmd, "a file selection's attachment command must not be dropped")
+	require.False(t, m.completionsOpen, "selecting without KeepOpen must close the popup")
+}
+
+// TestHandleKeyPressMsg_EscapeClosesCompletionsPopup pins the other
+// branch of the same switch: Cancel reports completions.ClosedMsg,
+// which must close the popup directly without routing through
+// applyCompletionSelection.
+func TestHandleKeyPressMsg_EscapeClosesCompletionsPopup(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+	m.completions.SetItems([]completions.FileCompletionValue{{Path: "main.go"}}, nil)
+	m.completionsOpen = true
+
+	cmd := m.handleKeyPressMsg(keyMsg("esc"))
+
+	require.Nil(t, cmd)
+	require.False(t, m.completionsOpen)
 }
 
 func TestHandleKeyPressMsg_MainFocusTabReturnsToEditor(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -92,6 +93,7 @@ func TestOpenDialog_RoutesEveryKnownID(t *testing.T) {
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().ListSessions(gomock.Any()).Return([]session.Session{{ID: "s1"}}, nil).AnyTimes()
 	ws.EXPECT().WorkingDir().Return("/tmp/work").AnyTimes()
+	ws.EXPECT().MCPGetStates().Return(map[string]mcp.ClientInfo{}).AnyTimes()
 	m := newDialogUI(t, ws)
 
 	for _, id := range []string{
@@ -103,10 +105,39 @@ func TestOpenDialog_RoutesEveryKnownID(t *testing.T) {
 		dialog.NotificationsID,
 		dialog.SessionsID,
 		dialog.FilePickerID,
+		dialog.SandboxID,
+		dialog.MCPServersID,
 	} {
 		m.openDialog(id)
 		require.True(t, m.dialog.ContainsDialog(id), "openDialog must route %q to its own dialog", id)
 	}
+}
+
+func TestOpenSandboxDialog_BringsExistingToFront(t *testing.T) {
+	t.Parallel()
+
+	m := newTestUI()
+	m.dialog = dialog.NewOverlay(idOnlyDialog{id: dialog.SandboxID}, idOnlyDialog{id: dialog.QuitID})
+
+	cmd := m.openSandboxDialog()
+	require.Nil(t, cmd)
+	require.Equal(t, dialog.SandboxID, m.dialog.DialogLast().ID(),
+		"reopening an already-open sandbox dialog must bring it to front, not stack a duplicate")
+}
+
+func TestOpenSandboxDialog_OpensNewDialogWhenNotPresent(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().WorkingDir().Return("/tmp/work").AnyTimes()
+	m := newDialogUI(t, ws)
+
+	cmd := m.openSandboxDialog()
+	require.Nil(t, cmd)
+	require.True(t, m.dialog.ContainsDialog(dialog.SandboxID))
+	require.IsType(t, &dialog.Sandbox{}, m.dialog.DialogLast(),
+		"a fresh open must construct the real Sandbox dialog")
 }
 
 func TestOpenPermissionsDialog(t *testing.T) {

@@ -99,6 +99,9 @@ func TestBackendConfig_WorkspaceNotFound(t *testing.T) {
 			_, err := b.GetWorkingDir("nope")
 			return err
 		}},
+		{"OverrideAgentVariant", func(t *testing.T) error {
+			return b.OverrideAgentVariant("nope", config.AgentCoder, "fast")
+		}},
 	}
 
 	for _, tc := range tests {
@@ -154,6 +157,17 @@ func TestBackendConfig_InitializePrompt(t *testing.T) {
 	prompt, err := b.InitializePrompt(ws.ID)
 	require.NoError(t, err)
 	require.NotEmpty(t, prompt)
+}
+
+// TestBackendConfig_OverrideAgentVariant exercises the success path
+// against the always-present coder agent, and confirms the variant
+// pick is visible on the workspace's resolved config.
+func TestBackendConfig_OverrideAgentVariant(t *testing.T) {
+	b, ws, evc := newPublishingWorkspace(t)
+
+	require.NoError(t, b.OverrideAgentVariant(ws.ID, config.AgentCoder, "fast"))
+	awaitConfigChanged(t, evc, ws.ID)
+	require.Equal(t, "fast", ws.Cfg.Config().Agents[config.AgentCoder].Variant)
 }
 
 func TestBackendConfig_GetWorkingDir(t *testing.T) {

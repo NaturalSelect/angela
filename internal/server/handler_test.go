@@ -11,6 +11,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/backend"
 	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -364,6 +365,7 @@ func TestHandleError_MapsSentinelsToStatus(t *testing.T) {
 		{name: "server not idle", err: backend.ErrServerNotIdle, want: http.StatusConflict},
 		{name: "client retired", err: backend.ErrClientRetired, want: http.StatusConflict},
 		{name: "server shutting down", err: backend.ErrServerShuttingDown, want: http.StatusServiceUnavailable},
+		{name: "sandbox not supported", err: sandbox.ErrNotSupported, want: http.StatusNotImplemented},
 		{name: "unrecognized error stays a 500", err: errors.New("disk I/O error"), want: http.StatusInternalServerError},
 	}
 

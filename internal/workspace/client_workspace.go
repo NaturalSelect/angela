@@ -27,6 +27,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/undo"
@@ -771,6 +772,20 @@ func (w *ClientWorkspace) EnableDockerMCP(ctx context.Context) error {
 
 func (w *ClientWorkspace) DisableDockerMCP() error {
 	return w.client.DisableDockerMCP(context.Background(), w.workspaceID())
+}
+
+// -- Sandbox --
+
+func (w *ClientWorkspace) IsInSandbox() bool {
+	v, err := w.client.IsInSandbox(context.Background(), w.workspaceID())
+	if err != nil {
+		return false
+	}
+	return v
+}
+
+func (w *ClientWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) error {
+	return w.client.EnterSandbox(ctx, w.workspaceID(), cfg)
 }
 
 func (w *ClientWorkspace) MCPAuthenticate(ctx context.Context, name string) error {

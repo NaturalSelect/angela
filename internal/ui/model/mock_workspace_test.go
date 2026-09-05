@@ -25,6 +25,7 @@ import (
 	permission "github.com/NaturalSelect/angela/internal/permission"
 	proto "github.com/NaturalSelect/angela/internal/proto"
 	question "github.com/NaturalSelect/angela/internal/question"
+	sandbox "github.com/NaturalSelect/angela/internal/sandbox"
 	session "github.com/NaturalSelect/angela/internal/session"
 	skills "github.com/NaturalSelect/angela/internal/skills"
 	undo "github.com/NaturalSelect/angela/internal/undo"
@@ -353,6 +354,20 @@ func (mr *MockWorkspaceMockRecorder) EnableDockerMCP(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnableDockerMCP", reflect.TypeOf((*MockWorkspace)(nil).EnableDockerMCP), ctx)
 }
 
+// EnterSandbox mocks base method.
+func (m *MockWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnterSandbox", ctx, cfg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnterSandbox indicates an expected call of EnterSandbox.
+func (mr *MockWorkspaceMockRecorder) EnterSandbox(ctx, cfg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnterSandbox", reflect.TypeOf((*MockWorkspace)(nil).EnterSandbox), ctx, cfg)
+}
+
 // FileTrackerLastReadTime mocks base method.
 func (m *MockWorkspace) FileTrackerLastReadTime(ctx context.Context, sessionID, path string) time.Time {
 	m.ctrl.T.Helper()
@@ -480,6 +495,20 @@ func (m *MockWorkspace) InitializePrompt() (string, error) {
 func (mr *MockWorkspaceMockRecorder) InitializePrompt() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitializePrompt", reflect.TypeOf((*MockWorkspace)(nil).InitializePrompt))
+}
+
+// IsInSandbox mocks base method.
+func (m *MockWorkspace) IsInSandbox() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsInSandbox")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsInSandbox indicates an expected call of IsInSandbox.
+func (mr *MockWorkspaceMockRecorder) IsInSandbox() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsInSandbox", reflect.TypeOf((*MockWorkspace)(nil).IsInSandbox))
 }
 
 // LSPGetDiagnosticCounts mocks base method.

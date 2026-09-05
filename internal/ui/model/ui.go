@@ -43,6 +43,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/stringext"
@@ -351,6 +352,12 @@ type UI struct {
 	agentBusyCache      ttlCache[bool]
 	permissionModeCache ttlCache[permission.PermissionMode]
 	busyFetchInFlight   bool
+	// sandboxActive reports whether the workspace process is currently
+	// confined by a sandbox. Landlock restriction is irreversible for the
+	// life of the process and a Docker sandbox starts (and stays) active,
+	// so this only ever flips false->true; it is seeded once at
+	// construction and updated write-through by enterSandbox.
+	sandboxActive bool
 	// agentReady / agentActive memoize the coordinator readiness and the
 	// agent the session runs on (AgentIsReady/AgentActive are
 	// synchronous HTTP GETs in client/server mode, and modelInfo renders
@@ -473,6 +480,10 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	// Update and View never probe the workspace synchronously.
 	mode := com.Workspace.PermissionMode()
 	ui.permissionModeCache.set(mode)
+
+	// Seed the sandbox indicator the same way; see the sandboxActive
+	// field doc for why no refresh loop is needed afterwards.
+	ui.sandboxActive = com.Workspace.IsInSandbox()
 
 	// Seed the memoized agent ready/active state the same way so the
 	// first frame renders the model info; the busy probe keeps it fresh
@@ -725,6 +736,12 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case busyStateMsg:
 		cmds = append(cmds, m.applyBusyState(msg)...)
+	case sandboxEnteredMsg:
+		m.sandboxActive = true
+		m.permissionModeCache.set(permission.ModeYolo)
+		m.busyFetchGen++
+		m.setEditorPrompt(permission.ModeYolo)
+		cmds = append(cmds, util.CmdHandler(util.NewInfoMsg("Entered sandbox — permissions switched to yolo mode")))
 	case branchStatusMsg:
 		m.applyBranchStatus(msg)
 	case promptQueueMsg:
@@ -2169,6 +2186,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionDisableDockerMCP:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		cmds = append(cmds, m.disableDockerMCP)
+	case dialog.ActionEnterSandbox:
+		m.dialog.CloseDialog(dialog.SandboxID)
+		cfg := msg.Config
+		cmds = append(cmds, func() tea.Msg { return m.enterSandbox(cfg) })
 	case dialog.ActionInitializeProject:
 		if m.isAgentBusy() {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before summarizing session..."))
@@ -3862,6 +3883,9 @@ func (m *UI) editorPromptFunc(mode permission.PermissionMode) func(textarea.Prom
 		railStyle = t.Editor.RailBang
 	case mode == permission.ModeYolo:
 		railStyle = t.Editor.RailYolo
+		if m.sandboxActive {
+			railStyle = t.Editor.RailYoloSandbox
+		}
 	case mode == permission.ModeAutoAcceptEdits:
 		railStyle = t.Editor.RailAutoAcceptEdits
 	}
@@ -4184,6 +4208,9 @@ func (m *UI) editorBorderStyle() lipgloss.Style {
 	case m.bangMode:
 		return t.Editor.RailBang
 	case m.permissionModeCached() == permission.ModeYolo:
+		if m.sandboxActive {
+			return t.Editor.RailYoloSandbox
+		}
 		return t.Editor.RailYolo
 	case m.permissionModeCached() == permission.ModeAutoAcceptEdits:
 		return t.Editor.RailAutoAcceptEdits
@@ -4578,6 +4605,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openQuitDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.SandboxID:
+		if cmd := m.openSandboxDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	default:
 		// Unknown dialog
 		break
@@ -4595,6 +4626,18 @@ func (m *UI) openQuitDialog() tea.Cmd {
 
 	quitDialog := dialog.NewQuit(m.com)
 	m.dialog.OpenDialog(quitDialog)
+	return nil
+}
+
+// openSandboxDialog opens the sandbox configuration dialog.
+func (m *UI) openSandboxDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.SandboxID) {
+		// Bring to front
+		m.dialog.BringToFront(dialog.SandboxID)
+		return nil
+	}
+
+	m.dialog.OpenDialog(dialog.NewSandbox(m.com))
 	return nil
 }
 
@@ -5406,6 +5449,26 @@ func (m *UI) disableDockerMCP() tea.Msg {
 	}
 
 	return util.NewInfoMsg("Docker MCP disabled successfully")
+}
+
+// sandboxEnteredMsg reports that EnterSandbox succeeded and permissions
+// were switched to yolo mode. A dedicated message (rather than reusing
+// util.InfoMsg) is needed because, unlike a plain toast, this must also
+// write through the sandbox/permission-mode caches on the main Update
+// loop.
+type sandboxEnteredMsg struct{}
+
+// enterSandbox applies cfg's kernel-level restrictions to the workspace
+// process, then switches permissions to yolo: the sandbox already
+// enforces the boundaries yolo mode would otherwise skip past, so
+// approval prompts stop adding friction without adding safety.
+func (m *UI) enterSandbox(cfg sandbox.Config) tea.Msg {
+	ctx := context.Background()
+	if err := m.com.Workspace.EnterSandbox(ctx, cfg); err != nil {
+		return util.ReportError(err)()
+	}
+	m.com.Workspace.PermissionSetMode(permission.ModeYolo)
+	return sandboxEnteredMsg{}
 }
 
 // renderLogo renders the Angela letterform wall at the given width.

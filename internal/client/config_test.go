@@ -12,6 +12,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/stretchr/testify/require"
 )
 
@@ -442,6 +443,25 @@ func TestConfigMethodsSuccessPaths(t *testing.T) {
 			wantPath:   "/v1/workspaces/ws1/mcp/refresh-tools",
 			call: func(t *testing.T, c *Client) {
 				require.NoError(t, c.RefreshMCPTools(context.Background(), "ws1", "srv1"))
+			},
+		},
+		{
+			name:       "IsInSandbox",
+			wantMethod: http.MethodGet,
+			wantPath:   "/v1/workspaces/ws1/sandbox",
+			body:       mustJSON(t, proto.SandboxStatusResponse{InSandbox: true}),
+			call: func(t *testing.T, c *Client) {
+				got, err := c.IsInSandbox(context.Background(), "ws1")
+				require.NoError(t, err)
+				require.True(t, got)
+			},
+		},
+		{
+			name:       "EnterSandbox",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/sandbox/enter",
+			call: func(t *testing.T, c *Client) {
+				require.NoError(t, c.EnterSandbox(context.Background(), "ws1", sandbox.Config{ReadWrite: []string{"/tmp"}}))
 			},
 		},
 	})

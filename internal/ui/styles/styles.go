@@ -146,6 +146,7 @@ type Styles struct {
 		Rail                lipgloss.Style
 		RailBang            lipgloss.Style
 		RailYolo            lipgloss.Style
+		RailYoloSandbox     lipgloss.Style // Yolo rail while a sandbox is active: reads as less dangerous.
 		RailAutoAcceptEdits lipgloss.Style
 
 		// Border is the box drawn around the textarea.

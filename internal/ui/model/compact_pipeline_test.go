@@ -32,6 +32,7 @@ func newCompactPaletteUI(t *testing.T, ws *MockWorkspace) *UI {
 	// nothing to do with the compact path; stub it so those unrelated
 	// reads do not themselves become unexpected calls.
 	ws.EXPECT().Config().Return(&config.Config{}).AnyTimes()
+	ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
 
 	sess := session.Session{ID: "current"}
 	sty := styles.CharmtonePantera()

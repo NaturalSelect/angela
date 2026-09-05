@@ -542,6 +542,12 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "disable_docker_mcp", "Disable Docker MCP Catalog", "", ActionDisableDockerMCP{}))
 	}
 
+	// Sandbox restriction is irreversible for the life of the process, so
+	// once it is active there is nothing left for the command to do.
+	if !c.com.Workspace.IsInSandbox() {
+		commands = append(commands, NewCommandItem(c.com.Styles, "sandbox", "Enter Sandbox", "", ActionOpenDialog{DialogID: SandboxID}))
+	}
+
 	// Add a command for selecting notification style via picker dialog.
 	notificationLabel := "Notification Style"
 	commands = append(commands, NewCommandItem(c.com.Styles, "select_notifications", notificationLabel, "", ActionOpenDialog{DialogID: NotificationsID}))

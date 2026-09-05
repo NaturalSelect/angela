@@ -176,6 +176,27 @@ func TestPermissions_DenyWithReasonEmptySubmit(t *testing.T) {
 	require.Empty(t, resp.Permission.DenyReason)
 }
 
+// TestPermissions_DenyWithReasonPasteInsertsText verifies that a
+// terminal paste (bracketed-paste, as opposed to individual key
+// presses) lands in the reason box instead of being silently dropped.
+// This is the path a clipboard paste takes, including IME-composed
+// CJK text some terminals deliver as one paste burst rather than a
+// run of key presses.
+func TestPermissions_DenyWithReasonPasteInsertsText(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	p.enterDenyReasonMode()
+
+	p.HandleMsg(tea.PasteMsg{Content: "不需要执行这个操作"})
+
+	action := p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionPermissionResponse)
+	require.True(t, ok, "enter should submit and resolve the request")
+	require.Equal(t, PermissionDeny, resp.Action)
+	require.Equal(t, "不需要执行这个操作", resp.Permission.DenyReason)
+}
+
 // TestPermissions_RenameShowsSymbolChange pins that approving a rename
 // tells the user which symbol becomes which. A rename spans files the
 // dialog never shows, so the two names are the whole basis for the

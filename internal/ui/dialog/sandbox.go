@@ -456,6 +456,12 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	if focusArea, row, col := m.focusTarget(m.focused); focusArea == sandboxFocusRow && col == sandboxColInput {
 		cur = m.rows[row].input.Cursor()
 		if cur != nil {
+			// textinput.Cursor() offsets X by rune count, not display width;
+			// correct for double-width runes (CJK).
+			value := []rune(m.rows[row].input.Value())
+			n := m.rows[row].input.Position()
+			cur.X += lipgloss.Width(string(value[:n])) - n
+
 			cur.X += rowLeftPad + dialogStyle.GetBorderLeftSize() + dialogStyle.GetPaddingLeft() + dialogStyle.GetMarginLeft()
 			cur.Y += dialogStyle.GetBorderTopSize() + dialogStyle.GetPaddingTop() + dialogStyle.GetMarginTop()
 			cur.Y += linesBeforeRows + row

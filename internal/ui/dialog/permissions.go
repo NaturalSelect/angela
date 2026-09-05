@@ -380,23 +380,31 @@ func (p *Permissions) enterDenyReasonMode() {
 // handleDenyReasonMsg handles input while the reason text box is open.
 // Escape backs out to the normal button row without resolving the
 // request; Enter submits the (possibly empty) reason as a denial.
+// tea.PasteMsg needs its own case alongside tea.KeyPressMsg: a type
+// switch on tea.KeyPressMsg alone would silently drop clipboard pastes
+// (bracketed paste arrives as a distinct message type), same as every
+// other textinput-backed dialog in this package handles it.
 func (p *Permissions) handleDenyReasonMsg(msg tea.Msg) Action {
-	keyMsg, ok := msg.(tea.KeyPressMsg)
-	if !ok {
-		return nil
-	}
-	switch {
-	case key.Matches(keyMsg, p.keyMap.Close):
-		p.denyReasonMode = false
-		return nil
-	case key.Matches(keyMsg, p.keyMap.Select):
-		reason := strings.TrimSpace(p.denyReasonInput.Value())
-		return p.respondWithReason(reason)
-	default:
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch {
+		case key.Matches(msg, p.keyMap.Close):
+			p.denyReasonMode = false
+			return nil
+		case key.Matches(msg, p.keyMap.Select):
+			reason := strings.TrimSpace(p.denyReasonInput.Value())
+			return p.respondWithReason(reason)
+		default:
+			var cmd tea.Cmd
+			p.denyReasonInput, cmd = p.denyReasonInput.Update(msg)
+			return ActionCmd{cmd}
+		}
+	case tea.PasteMsg:
 		var cmd tea.Cmd
-		p.denyReasonInput, cmd = p.denyReasonInput.Update(keyMsg)
+		p.denyReasonInput, cmd = p.denyReasonInput.Update(msg)
 		return ActionCmd{cmd}
 	}
+	return nil
 }
 
 // permissionOption pairs a displayed button with the action it sends.
@@ -666,6 +674,16 @@ func (p *Permissions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	if p.denyReasonMode {
 		cur = p.denyReasonInput.Cursor()
 		if cur != nil {
+			// textinput.Model.Cursor() offsets X by rune count
+			// (Position()), not display width, so it drifts left of
+			// the real column whenever the value contains
+			// double-width runes such as CJK text — unlike textarea
+			// (used for the main editor), which gets this right via
+			// uniseg. Correct the delta ourselves.
+			value := []rune(p.denyReasonInput.Value())
+			n := p.denyReasonInput.Position()
+			cur.X += lipgloss.Width(string(value[:n])) - n
+
 			inputStyle := t.Dialog.InputPrompt
 			cur.X += dialogStyle.GetBorderLeftSize() + dialogStyle.GetPaddingLeft() + dialogStyle.GetMarginLeft() +
 				inputStyle.GetBorderLeftSize() + inputStyle.GetPaddingLeft() + inputStyle.GetMarginLeft()

@@ -247,7 +247,15 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 // Cursor returns the cursor position relative to the dialog.
 // we pass the description height to offset the cursor correctly.
 func (a *Arguments) Cursor(descriptionHeight int) *tea.Cursor {
-	cursor := InputCursor(a.com.Styles, a.inputs[a.focused].Cursor())
+	cursor := a.inputs[a.focused].Cursor()
+	if cursor != nil {
+		// textinput.Cursor() offsets X by rune count, not display width;
+		// correct for double-width runes (CJK).
+		value := []rune(a.inputs[a.focused].Value())
+		n := a.inputs[a.focused].Position()
+		cursor.X += lipgloss.Width(string(value[:n])) - n
+	}
+	cursor = InputCursor(a.com.Styles, cursor)
 	if cursor == nil {
 		return nil
 	}

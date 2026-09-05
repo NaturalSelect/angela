@@ -92,12 +92,12 @@ func TestEditorBorderStyle(t *testing.T) {
 
 	for _, tc := range []struct {
 		name  string
-		setup func()
+		setup func(m *UI)
 		want  lipgloss.Style
 	}{
 		{
 			name: "bang mode wins over everything else",
-			setup: func() {
+			setup: func(m *UI) {
 				m.bangMode = true
 				m.permissionModeCache.set(permission.ModeYolo)
 				m.sandboxActive = true
@@ -106,7 +106,7 @@ func TestEditorBorderStyle(t *testing.T) {
 		},
 		{
 			name: "yolo mode without sandbox",
-			setup: func() {
+			setup: func(m *UI) {
 				m.bangMode = false
 				m.sandboxActive = false
 				m.permissionModeCache.set(permission.ModeYolo)
@@ -115,7 +115,7 @@ func TestEditorBorderStyle(t *testing.T) {
 		},
 		{
 			name: "yolo mode with sandbox uses the dedicated rail",
-			setup: func() {
+			setup: func(m *UI) {
 				m.sandboxActive = true
 				m.permissionModeCache.set(permission.ModeYolo)
 			},
@@ -123,7 +123,7 @@ func TestEditorBorderStyle(t *testing.T) {
 		},
 		{
 			name: "auto-accept-edits mode",
-			setup: func() {
+			setup: func(m *UI) {
 				m.sandboxActive = false
 				m.permissionModeCache.set(permission.ModeAutoAcceptEdits)
 			},
@@ -131,7 +131,7 @@ func TestEditorBorderStyle(t *testing.T) {
 		},
 		{
 			name: "manual mode with the editor focused",
-			setup: func() {
+			setup: func(m *UI) {
 				m.permissionModeCache.set(permission.ModeManual)
 				m.focus = uiFocusEditor
 			},
@@ -139,7 +139,7 @@ func TestEditorBorderStyle(t *testing.T) {
 		},
 		{
 			name: "manual mode without focus falls back to the plain border",
-			setup: func() {
+			setup: func(m *UI) {
 				m.permissionModeCache.set(permission.ModeManual)
 				m.focus = uiFocusMain
 			},
@@ -147,8 +147,10 @@ func TestEditorBorderStyle(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.setup()
-			require.Equal(t, tc.want, m.editorBorderStyle())
+			t.Parallel()
+			tm, _ := newMockBusyUI(t)
+			tc.setup(tm)
+			require.Equal(t, tc.want, tm.editorBorderStyle())
 		})
 	}
 }

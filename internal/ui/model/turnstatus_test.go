@@ -345,15 +345,18 @@ func TestTurnStatusOmitsTargetWhenToolCallNamesNone(t *testing.T) {
 func TestToolSlowness_NoMatchingActiveToolReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
-	m := busyStatusUI(t)
 	tc := message.ToolCall{ID: "t1", Name: "Bash"}
 
 	t.Run("nil activeTool", func(t *testing.T) {
+		t.Parallel()
+		m := busyStatusUI(t)
 		m.activeTool = nil
 		require.Empty(t, m.toolSlowness(tc))
 	})
 
 	t.Run("activeTool tracks a different tool call", func(t *testing.T) {
+		t.Parallel()
+		m := busyStatusUI(t)
 		m.activeTool = &toolTiming{id: "other", since: time.Now().Add(-time.Hour)}
 		require.Empty(t, m.toolSlowness(tc))
 	})

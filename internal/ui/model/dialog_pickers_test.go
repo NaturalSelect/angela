@@ -284,21 +284,21 @@ func TestAgentsDialog_CloseKeyAlwaysCloses(t *testing.T) {
 // Variants dialog
 // ---------------------------------------------------------------------
 
-func TestVariantsDialog_OpenRequiresSession(t *testing.T) {
+// TestVariantsDialog_OpensBeforeSession is a regression test: a preset
+// picked on the landing screen, before any session exists, previews
+// against the coder default instead of refusing.
+func TestVariantsDialog_OpensBeforeSession(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	m := newDialogUI(t, ws)
 	m.session = nil
+	m.agentActiveSession = "" // matches currentSessionID() with no session
 
 	cmd := m.openVariantsDialog()
-	require.NotNil(t, cmd)
-	info, ok := cmd().(util.InfoMsg)
-	require.True(t, ok)
-	require.Equal(t, util.InfoTypeWarn, info.Type)
-	require.Contains(t, info.Msg, "Start a session")
-	require.False(t, m.dialog.ContainsDialog(dialog.VariantsID))
+	require.Nil(t, cmd)
+	require.True(t, m.dialog.ContainsDialog(dialog.VariantsID))
 }
 
 func TestVariantsDialog_OpenRequiresActiveAgent(t *testing.T) {

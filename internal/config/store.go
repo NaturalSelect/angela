@@ -70,6 +70,11 @@ type RuntimeOverrides struct {
 	// selection made here always outranks whatever the shared config file
 	// happens to hold — see pinPreferredModelLocked.
 	Slots map[SlotName]SelectedModel
+	// AgentVariants records the parameter-preset choices made in this
+	// instance for an agent with no session to scope them to, keyed by
+	// agent ID. They are reapplied after a config reload for the same
+	// reason Slots is — see pinAgentVariantLocked.
+	AgentVariants map[string]string
 }
 
 // ConfigStore is the single entry point for all config access. It owns the
@@ -447,6 +452,51 @@ func (s *ConfigStore) OverridePreferredModel(modelType SlotName, model SelectedM
 		c.Slots[modelType] = model
 		s.pinPreferredModelLocked(modelType, model)
 	})
+}
+
+// OverrideAgentVariant sets an agent's configured parameter preset in
+// memory only, without persisting. It backs a preset picked from the
+// variants dialog before any session exists: with no session there is
+// nothing for EditActiveAgent to edit, so the pick lands on the agent's
+// own config-level default instead, the same way a pre-session model
+// pick lands on the slot's default rather than on a session.
+//
+// It returns an error when agentID names no configured agent, which
+// the UI cannot hit in practice — it only ever offers a preset for
+// the agent it already resolved as active.
+func (s *ConfigStore) OverrideAgentVariant(agentID, variant string) error {
+	var err error
+	s.mutateInMemory(func(c *Config) {
+		agent, exists := c.Agents[agentID]
+		if !exists {
+			err = fmt.Errorf("unknown agent %q", agentID)
+			return
+		}
+		// c.Agents was only ever swapped wholesale by agent
+		// resolution before now, never mutated in place, so
+		// cloneForWrite leaves it shared with the published config.
+		// Cloning the map here, rather than agent's already-copied
+		// fields, is what keeps this edit from writing through.
+		agents := maps.Clone(c.Agents)
+		agent.Variant = variant
+		agents[agentID] = agent
+		c.Agents = agents
+		s.pinAgentVariantLocked(agentID, variant)
+	})
+	return err
+}
+
+// pinAgentVariantLocked records a variant choice made in this instance so
+// that a later config reload cannot replace it with whatever the shared
+// config file says, mirroring pinPreferredModelLocked for the same
+// reason.
+//
+// Caller must hold writeMu.
+func (s *ConfigStore) pinAgentVariantLocked(agentID, variant string) {
+	if s.overrides.AgentVariants == nil {
+		s.overrides.AgentVariants = make(map[string]string)
+	}
+	s.overrides.AgentVariants[agentID] = variant
 }
 
 // pinPreferredModelLocked records a model choice made in this instance so
@@ -1381,6 +1431,16 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	// Agent resolution reads only Options and AgentConfigs, so it runs
 	// regardless of whether any provider is configured.
 	prepareResolvedConfig(cfg)
+
+	// Reapply variant picks made in this instance, for the same reason
+	// as the Slots reapplication above — after Agents so there is
+	// something in cfg.Agents to apply them to.
+	for agentID, variant := range overrides.AgentVariants {
+		if agent, ok := cfg.Agents[agentID]; ok {
+			agent.Variant = variant
+			cfg.Agents[agentID] = agent
+		}
+	}
 
 	s.setConfig(cfg)
 	s.loadedPaths = loadedPaths

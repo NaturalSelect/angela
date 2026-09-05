@@ -2463,17 +2463,32 @@ func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
 	})
 }
 
-// handleSelectVariant points the session's model at a preset. The
-// variant lives on the session's agent instance, so it takes effect from
-// the next turn and leaves the global config untouched.
+// handleSelectVariant points the session's model at a preset. With a
+// session, the variant lives on its agent instance, so it takes effect
+// from the next turn and leaves the global config untouched. With no
+// session yet — the landing screen, previewing a preset before the
+// first message — there is no instance to edit, so the pick lands on
+// the agent's own config-level default instead, the same way a
+// pre-session model pick lands on the slot's default.
 func (m *UI) handleSelectVariant(variant string) tea.Cmd {
 	m.dialog.CloseDialog(dialog.VariantsID)
-	sessionID := m.currentSessionID()
-	if sessionID == "" {
-		return util.ReportWarn("Start a session before switching variants.")
-	}
 	if active := m.activeAgent(); active != nil && active.Variant == variant {
 		return nil
+	}
+
+	sessionID := m.currentSessionID()
+	if sessionID == "" {
+		active := m.activeAgent()
+		if active == nil {
+			return util.ReportWarn("The agent is still starting up.")
+		}
+		agentID := active.AgentID
+		return m.refreshActiveAgentCmd(func() tea.Msg {
+			if err := m.com.Workspace.OverrideAgentVariant(agentID, variant); err != nil {
+				return util.ReportError(err)()
+			}
+			return util.NewInfoMsg(variantSetMessage(variant))
+		})
 	}
 
 	return m.refreshActiveAgentCmd(func() tea.Msg {
@@ -2498,9 +2513,6 @@ func variantSetMessage(variant string) string {
 // through the baseline. Cycling is what makes a variant cheap to reach
 // mid-task, so it deliberately skips the dialog.
 func (m *UI) cycleVariant() tea.Cmd {
-	if m.session == nil {
-		return util.ReportWarn("Start a session before switching variants.")
-	}
 	active := m.activeAgent()
 	if active == nil {
 		return util.ReportWarn("The agent is still starting up.")
@@ -2516,16 +2528,13 @@ func (m *UI) cycleVariant() tea.Cmd {
 	return m.handleSelectVariant(choices[(current+1)%len(choices)])
 }
 
-// openVariantsDialog opens the preset picker for the session's model.
-// There is nothing to switch without a session: the variant is recorded
-// on the session, not globally.
+// openVariantsDialog opens the preset picker for the session's model,
+// or for the coder default when there is no session yet — the same
+// pre-session preview handleSelectVariant applies the pick through.
 func (m *UI) openVariantsDialog() tea.Cmd {
 	if m.dialog.ContainsDialog(dialog.VariantsID) {
 		m.dialog.BringToFront(dialog.VariantsID)
 		return nil
-	}
-	if m.session == nil {
-		return util.ReportWarn("Start a session before switching variants.")
 	}
 	active := m.activeAgent()
 	if active == nil {

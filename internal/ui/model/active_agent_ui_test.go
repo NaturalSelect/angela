@@ -260,6 +260,66 @@ func TestNoSessionMeansNoSessionScopedEdit(t *testing.T) {
 	require.NotNil(t, m.toggleThinkingCmd()(), "thinking must warn, not edit")
 }
 
+// TestVariantPickBeforeSessionAppliesEphemeralOverride is the variant
+// counterpart of modelPickEphemeral: with a resolved preview agent but
+// no session yet, a preset pick has no session instance to land on, so
+// it must go through OverrideAgentVariant instead of refusing outright.
+// AgentEditActive is deliberately left unstubbed on this mock, so a
+// call that still reached for it would fail the test.
+func TestVariantPickBeforeSessionAppliesEphemeralOverride(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	m.session = nil
+	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
+	warmCaches(m, false)
+
+	var gotAgentID, gotVariant string
+	ws.EXPECT().OverrideAgentVariant(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(agentID, variant string) error {
+			gotAgentID, gotVariant = agentID, variant
+			return nil
+		})
+
+	msg := m.handleSelectVariant("fast")()
+	// The edit is sequenced ahead of the cache re-probe (see infoText),
+	// so the side effect only happens once the first element runs.
+	text := infoText(t, msg)
+
+	require.Equal(t, "coder", gotAgentID)
+	require.Equal(t, "fast", gotVariant)
+	require.Contains(t, text, "fast")
+}
+
+// TestCycleVariantWorksBeforeSession pins that ctrl+e, which used to
+// warn "Start a session" unconditionally, now cycles the coder
+// default's preset the same as the dialog does.
+func TestCycleVariantWorksBeforeSession(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	m.session = nil
+	m.agentActive = workspace.ActiveAgent{
+		AgentID:    "coder",
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ReasoningLevels: []string{"low", "high"}}},
+	}
+	warmCaches(m, false)
+
+	var gotVariant string
+	ws.EXPECT().OverrideAgentVariant(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_, variant string) error {
+			gotVariant = variant
+			return nil
+		})
+
+	cmd := m.cycleVariant()
+	require.NotNil(t, cmd)
+	// The edit is sequenced ahead of the cache re-probe (see infoText),
+	// so the side effect only happens once the first element runs.
+	infoText(t, cmd())
+	require.Equal(t, "low", gotVariant, "cycling from the baseline lands on the first preset")
+}
+
 // TestReAuthArrivingBeforeTheProbeIsNotDropped pins B3: a provider
 // publishes "re-authenticate" exactly once, and the agent probe that
 // seeds the dialog runs off-thread. A notification landing inside that

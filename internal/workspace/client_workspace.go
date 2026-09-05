@@ -591,6 +591,10 @@ func (w *ClientWorkspace) UpdatePreferredModel(scope config.Scope, name config.S
 	return w.refreshAfter(w.client.UpdatePreferredModel(context.Background(), w.workspaceID(), scope, name, model))
 }
 
+func (w *ClientWorkspace) OverrideAgentVariant(agentID, variant string) error {
+	return w.refreshAfter(w.client.OverrideAgentVariant(context.Background(), w.workspaceID(), agentID, variant))
+}
+
 func (w *ClientWorkspace) RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.refreshAfter(w.client.RecordRecentModel(context.Background(), w.workspaceID(), scope, name, model))
 }

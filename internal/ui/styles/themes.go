@@ -54,7 +54,7 @@ func AngelaTeal() Styles {
 		error:             c("#f44747"),
 		warning:           c("#cca700"),
 		warningSubtle:     c("#d7ba7d"),
-		attention:         c("#cca700"),
+		attention:         c("#ff985a"),
 		busy:              c("#cca700"),
 		info:              c("#3794ff"),
 		infoMoreSubtle:    c("#9cdcfe"),

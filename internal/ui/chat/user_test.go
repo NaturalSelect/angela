@@ -65,6 +65,30 @@ func TestUserMessageItem_RawRender(t *testing.T) {
 	require.Contains(t, ansi.Strip(item.RawRender(80)), "hello raw render")
 }
 
+// A message typed across several lines (e.g. via shift+enter) has no blank
+// lines between them, so Markdown would normally treat it as a single
+// paragraph and join the lines with spaces. The user's own line breaks must
+// survive instead of being reflowed into one line.
+func TestUserMessageItem_PreservesManualLineBreaks(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	msg := &message.Message{
+		ID:   "u-lines",
+		Role: message.User,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "first line\nsecond line\nthird line"},
+		},
+	}
+	item := NewUserMessageItem(&sty, msg, nil)
+	out := ansi.Strip(item.RawRender(80))
+
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+	}
+	require.Equal(t, []string{"first line", "second line", "third line"}, lines)
+}
+
 func TestUserMessageItem_ID(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()

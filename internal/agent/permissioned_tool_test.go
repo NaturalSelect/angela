@@ -159,6 +159,46 @@ func TestPermissionedTool_DenyOutcomesDiffer(t *testing.T) {
 	require.True(t, byUser.StopTurn, "a user refusal ends the turn")
 }
 
+// TestPermissionedTool_DenyReasonReachesToolResponse pins the full
+// path a typed denial reason travels: from the value the UI would set
+// on PermissionRequest.DenyReason before calling Deny, through the
+// permission service's Decision, to the text the model actually sees
+// in the tool's error response.
+func TestPermissionedTool_DenyReasonReachesToolResponse(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
+
+	inner, _ := newFakeTool(t, toolnames.Bash, fantasy.NewTextResponse("ran"))
+	gated := newPermissionedTool(inner, svc, dir)
+
+	events := svc.Subscribe(t.Context())
+	done := make(chan fantasy.ToolResponse, 1)
+	go func() {
+		resp, err := gated.Run(sessionCtx(t.Context()), bashCall(t, "touch out.txt"))
+		require.NoError(t, err)
+		done <- resp
+	}()
+
+	var resp fantasy.ToolResponse
+loop:
+	for {
+		select {
+		case ev := <-events:
+			perm := ev.Payload
+			perm.DenyReason = "not needed for this task"
+			svc.Deny(perm)
+		case resp = <-done:
+			break loop
+		}
+	}
+
+	require.True(t, resp.IsError)
+	require.True(t, resp.StopTurn, "a user refusal ends the turn")
+	require.Contains(t, resp.Content, "not needed for this task")
+}
+
 // TestPermissionedTool_PolicyDenyBeatsSkip pins the priority the user
 // chose: turning off prompts must not turn off a deny rule.
 func TestPermissionedTool_PolicyDenyBeatsSkip(t *testing.T) {

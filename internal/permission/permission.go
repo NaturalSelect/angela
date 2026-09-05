@@ -176,6 +176,10 @@ type PermissionRequest struct {
 	Action      string `json:"action"`
 	Params      any    `json:"params"`
 	Path        string `json:"path"`
+	// DenyReason is an optional explanation the user attaches when
+	// denying this request. It rides along on the same request value
+	// passed back to Deny, and is empty for every other action.
+	DenyReason string `json:"deny_reason,omitempty"`
 }
 
 type Service interface {
@@ -220,6 +224,14 @@ type Service interface {
 	SubscribeNotifications(ctx context.Context) <-chan pubsub.Event[PermissionNotification]
 }
 
+// resolution is what a pending prompt receives once Grant,
+// GrantPersistent, or Deny settles it. reason carries the user's
+// explanation for a denial and is empty otherwise.
+type resolution struct {
+	granted bool
+	reason  string
+}
+
 type permissionService struct {
 	*pubsub.Broker[PermissionRequest]
 
@@ -231,7 +243,7 @@ type permissionService struct {
 	readRoots          []string
 	policy             *Policy
 	sessionPermissions *csync.Map[GrantKey, bool]
-	pendingRequests    *csync.Map[string, chan bool]
+	pendingRequests    *csync.Map[string, chan resolution]
 	pendingGrants      *csync.Map[string, Ticket]
 	sessionPrompts     *csync.Map[string, PromptPolicy]
 	// sessionUnattended marks sessions with no one to answer a prompt.
@@ -263,7 +275,7 @@ func NewPermissionService(workingDir string, initialMode PermissionMode, policy 
 		readRoots:          roots,
 		policy:             policy,
 		sessionPermissions: csync.NewMap[GrantKey, bool](),
-		pendingRequests:    csync.NewMap[string, chan bool](),
+		pendingRequests:    csync.NewMap[string, chan resolution](),
 		pendingGrants:      csync.NewMap[string, Ticket](),
 		sessionPrompts:     csync.NewMap[string, PromptPolicy](),
 		sessionUnattended:  csync.NewMap[string, bool](),
@@ -399,7 +411,7 @@ func (s *permissionService) prompt(ctx context.Context, ticket *Ticket, preview 
 		Params:      preview.Params,
 	}
 
-	respCh := make(chan bool, 1)
+	respCh := make(chan resolution, 1)
 	s.pendingRequests.Set(request.ID, respCh)
 	defer s.pendingRequests.Del(request.ID)
 	s.pendingGrants.Set(request.ID, *ticket)
@@ -410,11 +422,11 @@ func (s *permissionService) prompt(ctx context.Context, ticket *Ticket, preview 
 	select {
 	case <-ctx.Done():
 		return Decision{Outcome: OutcomeCancelled, Reason: "cancelled while waiting for approval"}
-	case granted := <-respCh:
-		if granted {
+	case res := <-respCh:
+		if res.granted {
 			return Decision{Outcome: OutcomeAllow, Reason: "approved by the user"}
 		}
-		return Decision{Outcome: OutcomeUserDeny, Reason: "denied by the user"}
+		return Decision{Outcome: OutcomeUserDeny, Reason: res.reason}
 	}
 }
 
@@ -600,7 +612,7 @@ func (s *permissionService) resolve(permission PermissionRequest, granted, denie
 	// respCh is buffered (cap 1) and only ever has at most one sender
 	// per request because Take removes the entry under the map lock,
 	// so this send never blocks.
-	respCh <- granted
+	respCh <- resolution{granted: granted, reason: permission.DenyReason}
 	return true
 }
 

@@ -64,12 +64,24 @@ func GetModelNameFromContext(ctx context.Context) string {
 
 // NewPermissionDeniedResponse returns a tool response indicating the user
 // denied permission, with StopTurn set so the agent loop does not retry.
-func NewPermissionDeniedResponse() fantasy.ToolResponse {
-	resp := fantasy.NewTextErrorResponse("User denied permission")
+// NewPermissionDeniedResponse returns a tool response indicating the user
+// denied permission, with StopTurn set so the agent loop does not retry.
+// When reason is non-empty it is appended so the model learns why.
+func NewPermissionDeniedResponse(reason string) fantasy.ToolResponse {
+	text := "User denied permission"
+	if reason != "" {
+		text += ": " + reason
+	}
+	resp := fantasy.NewTextErrorResponse(text)
 	resp.StopTurn = true
 	return resp
 }
 
+// DecisionResponse turns a refusal into what the model sees. The two
+// refusals mean different things and must not be collapsed: the user
+// saying no ends the turn, while the configuration saying no is an
+// obstacle the model should route around, so it carries the reason back
+// and lets the turn continue.
 // DecisionResponse turns a refusal into what the model sees. The two
 // refusals mean different things and must not be collapsed: the user
 // saying no ends the turn, while the configuration saying no is an
@@ -84,8 +96,10 @@ func DecisionResponse(decision permission.Decision) fantasy.ToolResponse {
 		resp := fantasy.NewTextErrorResponse("Permission request cancelled: " + decision.Reason)
 		resp.StopTurn = true
 		return resp
+	case permission.OutcomeUserDeny:
+		return NewPermissionDeniedResponse(decision.Reason)
 	default:
-		return NewPermissionDeniedResponse()
+		return NewPermissionDeniedResponse("")
 	}
 }
 

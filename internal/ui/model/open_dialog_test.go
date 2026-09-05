@@ -224,17 +224,26 @@ func TestOpenVariantsDialog_AlreadyOpenBringsToFront(t *testing.T) {
 	require.Equal(t, dialog.VariantsID, m.dialog.DialogLast().ID())
 }
 
-func TestOpenVariantsDialog_RequiresSession(t *testing.T) {
+// TestOpenVariantsDialog_OpensBeforeSession is a regression test: a
+// preset picked on the landing screen, before any session exists,
+// previews against the coder default instead of refusing — mirroring
+// how the model dialog already behaves there.
+func TestOpenVariantsDialog_OpensBeforeSession(t *testing.T) {
 	t.Parallel()
 
 	m := newTestUI()
 	m.dialog = dialog.NewOverlay()
+	m.agentReady = true
+	m.agentActiveKnown = true
+	m.agentActiveSession = "" // no session yet, matching currentSessionID()
+	m.agentActive = workspace.ActiveAgent{
+		AgentID:    "coder",
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ReasoningLevels: []string{"low", "high"}}},
+	}
 
 	cmd := m.openVariantsDialog()
-	require.NotNil(t, cmd)
-	msg := cmd().(util.InfoMsg)
-	require.Equal(t, util.InfoTypeWarn, msg.Type)
-	require.Contains(t, msg.Msg, "Start a session")
+	require.Nil(t, cmd)
+	require.True(t, m.dialog.ContainsDialog(dialog.VariantsID))
 }
 
 func TestOpenVariantsDialog_RequiresResolvedActiveAgent(t *testing.T) {

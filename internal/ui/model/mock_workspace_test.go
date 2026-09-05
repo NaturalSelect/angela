@@ -790,6 +790,20 @@ func (mr *MockWorkspaceMockRecorder) MarkProjectInitialized() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkProjectInitialized", reflect.TypeOf((*MockWorkspace)(nil).MarkProjectInitialized))
 }
 
+// OverrideAgentVariant mocks base method.
+func (m *MockWorkspace) OverrideAgentVariant(agentID, variant string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OverrideAgentVariant", agentID, variant)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// OverrideAgentVariant indicates an expected call of OverrideAgentVariant.
+func (mr *MockWorkspaceMockRecorder) OverrideAgentVariant(agentID, variant any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OverrideAgentVariant", reflect.TypeOf((*MockWorkspace)(nil).OverrideAgentVariant), agentID, variant)
+}
+
 // ParseAgentToolSessionID mocks base method.
 func (m *MockWorkspace) ParseAgentToolSessionID(sessionID string) (string, string, bool) {
 	m.ctrl.T.Helper()

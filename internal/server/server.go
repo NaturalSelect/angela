@@ -210,6 +210,7 @@ func (s *Server) installHandler() {
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/set", c.handlePostWorkspaceConfigSet)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/remove", c.handlePostWorkspaceConfigRemove)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/model", c.handlePostWorkspaceConfigModel)
+	mux.HandleFunc("POST /v1/workspaces/{id}/config/agent-variant", c.handlePostWorkspaceConfigAgentVariant)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/recent-model", c.handlePostWorkspaceConfigRecentModel)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/prune-recent-models", c.handlePostWorkspaceConfigPruneRecentModels)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/compact", c.handlePostWorkspaceConfigCompact)

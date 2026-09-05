@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -30,6 +31,11 @@ const (
 	PermissionAllow           PermissionAction = "allow"
 	PermissionAllowForSession PermissionAction = "allow_session"
 	PermissionDeny            PermissionAction = "deny"
+	// PermissionDenyWithReason is a dialog-local action: selecting it
+	// switches the dialog into text-entry mode instead of resolving the
+	// request. The response it eventually sends still carries
+	// PermissionDeny, with the typed text riding on DenyReason.
+	PermissionDenyWithReason PermissionAction = "deny_with_reason"
 )
 
 // Permissions dialog sizing constants.
@@ -83,6 +89,11 @@ type Permissions struct {
 
 	help   help.Model
 	keyMap permissionsKeyMap
+
+	// Deny-with-reason state. Selecting that option switches the
+	// buttons row into a text input instead of resolving immediately.
+	denyReasonMode  bool
+	denyReasonInput textinput.Model
 }
 
 type permissionsKeyMap struct {
@@ -93,6 +104,7 @@ type permissionsKeyMap struct {
 	Allow            key.Binding
 	AllowSession     key.Binding
 	Deny             key.Binding
+	DenyWithReason   key.Binding
 	Close            key.Binding
 	ToggleDiffMode   key.Binding
 	ToggleFullscreen key.Binding
@@ -133,6 +145,10 @@ func defaultPermissionsKeyMap() permissionsKeyMap {
 		Deny: key.NewBinding(
 			key.WithKeys("d", "D"),
 			key.WithHelp("d", "deny"),
+		),
+		DenyWithReason: key.NewBinding(
+			key.WithKeys("r", "R"),
+			key.WithHelp("r", "deny with reason"),
 		),
 		Close: CloseKey,
 		ToggleDiffMode: key.NewBinding(
@@ -203,15 +219,22 @@ func NewPermissions(com *common.Common, perm permission.PermissionRequest, opts 
 		HalfPageDown: key.NewBinding(key.WithDisabled()),
 	}
 
+	reasonInput := textinput.New()
+	reasonInput.SetVirtualCursor(false)
+	reasonInput.Prompt = "Reason: "
+	reasonInput.Placeholder = "optional, press enter to submit"
+	reasonInput.SetStyles(com.Styles.TextInput)
+
 	p := &Permissions{
-		com:            com,
-		permission:     perm,
-		selectedOption: 0,
-		viewport:       vp,
-		hoverX:         -1,
-		hoverY:         -1,
-		help:           h,
-		keyMap:         km,
+		com:             com,
+		permission:      perm,
+		selectedOption:  0,
+		viewport:        vp,
+		hoverX:          -1,
+		hoverY:          -1,
+		help:            h,
+		keyMap:          km,
+		denyReasonInput: reasonInput,
 	}
 	// Diff-producing tools (Edit, Merge, etc.) default to fullscreen so the
 	// user can review the whole change without an extra keypress.
@@ -244,6 +267,9 @@ func (p *Permissions) ToolCallID() string {
 
 // HandleMsg implements [Dialog].
 func (p *Permissions) HandleMsg(msg tea.Msg) Action {
+	if p.denyReasonMode {
+		return p.handleDenyReasonMsg(msg)
+	}
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch {
@@ -267,6 +293,8 @@ func (p *Permissions) HandleMsg(msg tea.Msg) Action {
 			}
 		case key.Matches(msg, p.keyMap.Deny):
 			return p.respond(PermissionDeny)
+		case key.Matches(msg, p.keyMap.DenyWithReason):
+			p.enterDenyReasonMode()
 		case key.Matches(msg, p.keyMap.ToggleDiffMode):
 			if p.hasDiffView() {
 				newMode := !p.isSplitMode()
@@ -298,7 +326,7 @@ func (p *Permissions) HandleMsg(msg tea.Msg) Action {
 		if msg.Button == uv.MouseLeft {
 			if idx := common.HitButtonIndex(p.buttonHit, msg.X, msg.Y); idx >= 0 {
 				p.selectedOption = idx
-				return p.respond(p.options()[idx].action)
+				return p.selectOption(p.options()[idx].action)
 			}
 		}
 	case tea.MouseMotionMsg:
@@ -327,7 +355,48 @@ func (p *Permissions) HandleMsg(msg tea.Msg) Action {
 }
 
 func (p *Permissions) selectCurrentOption() tea.Msg {
-	return p.respond(p.options()[p.selectedOption].action)
+	return p.selectOption(p.options()[p.selectedOption].action)
+}
+
+// selectOption resolves the request for every action except
+// PermissionDenyWithReason, which instead switches the dialog into
+// text-entry mode so the user can explain the denial before it sends.
+func (p *Permissions) selectOption(action PermissionAction) tea.Msg {
+	if action == PermissionDenyWithReason {
+		p.enterDenyReasonMode()
+		return nil
+	}
+	return p.respond(action)
+}
+
+// enterDenyReasonMode switches the buttons row into a single-line text
+// input so the user can explain why they're denying the request.
+func (p *Permissions) enterDenyReasonMode() {
+	p.denyReasonMode = true
+	p.denyReasonInput.Reset()
+	p.denyReasonInput.Focus()
+}
+
+// handleDenyReasonMsg handles input while the reason text box is open.
+// Escape backs out to the normal button row without resolving the
+// request; Enter submits the (possibly empty) reason as a denial.
+func (p *Permissions) handleDenyReasonMsg(msg tea.Msg) Action {
+	keyMsg, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return nil
+	}
+	switch {
+	case key.Matches(keyMsg, p.keyMap.Close):
+		p.denyReasonMode = false
+		return nil
+	case key.Matches(keyMsg, p.keyMap.Select):
+		reason := strings.TrimSpace(p.denyReasonInput.Value())
+		return p.respondWithReason(reason)
+	default:
+		var cmd tea.Cmd
+		p.denyReasonInput, cmd = p.denyReasonInput.Update(keyMsg)
+		return ActionCmd{cmd}
+	}
 }
 
 // permissionOption pairs a displayed button with the action it sends.
@@ -353,7 +422,13 @@ func (p *Permissions) options() []permissionOption {
 	if p.allowForSessionOffered() {
 		opts = append(opts, permissionOption{PermissionAllowForSession, "Allow for Session", 10})
 	}
-	return append(opts, permissionOption{PermissionDeny, "Deny", 0})
+	opts = append(opts, permissionOption{PermissionDeny, "Deny", 0})
+	// "Reason" rather than a fuller label: the button row must still
+	// fit on one line alongside Allow/Allow for Session/Deny in the
+	// default dialog width, or mouse hit-testing falls back to a
+	// stacked layout it doesn't support. The key hint below spells
+	// out "deny with reason" in full.
+	return append(opts, permissionOption{PermissionDenyWithReason, "Reason", 0})
 }
 
 // buttonOpts renders options() into button widgets, marking the
@@ -375,6 +450,19 @@ func (p *Permissions) respond(action PermissionAction) tea.Msg {
 	return ActionPermissionResponse{
 		Permission: p.permission,
 		Action:     action,
+	}
+}
+
+// respondWithReason denies the request carrying the user's explanation
+// on PermissionRequest.DenyReason, so it rides through the workspace
+// and permission service unchanged and reaches the model as part of
+// the tool's error response.
+func (p *Permissions) respondWithReason(reason string) tea.Msg {
+	perm := p.permission
+	perm.DenyReason = reason
+	return ActionPermissionResponse{
+		Permission: perm,
+		Action:     PermissionDeny,
 	}
 }
 
@@ -470,7 +558,18 @@ func (p *Permissions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	contentWidth := p.calculateContentWidth(width)
 	header := p.renderHeader(contentWidth)
 	buttonOpts := p.buttonOpts()
-	buttons, buttonsOffsetX, buttonsStacked := p.renderButtons(buttonOpts, contentWidth, fullscreen)
+	var buttons string
+	var buttonsOffsetX int
+	var buttonsStacked bool
+	if p.denyReasonMode {
+		// The reason input replaces the button row outright rather than
+		// sitting beside it, so mouse hit-testing for buttons is skipped
+		// (buttonsStacked forces p.buttonHit to nil below).
+		buttons = p.renderDenyReasonInput(contentWidth)
+		buttonsStacked = true
+	} else {
+		buttons, buttonsOffsetX, buttonsStacked = p.renderButtons(buttonOpts, contentWidth, fullscreen)
+	}
 	// Pack the hints to the content width so they truncate cleanly instead
 	// of overflowing. The dialog frame supplies the padding, so this renders
 	// the hint line without the extra help view inset that renderDialogHelp
@@ -557,8 +656,34 @@ func (p *Permissions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		view = buildView(hoveredButtons)
 	}
 
-	DrawCenterCursor(scr, area, view, nil)
-	return nil
+	// The reason input's cursor is computed in view-local coordinates,
+	// the same way buttonsRow locates the buttons row above: it starts
+	// at that row, then adds the InputPrompt style's own frame to reach
+	// the text baseline inside it. DrawCenterCursor translates this to
+	// an absolute screen position using the same center rect it uses
+	// to place view, so the two never drift apart.
+	var cur *tea.Cursor
+	if p.denyReasonMode {
+		cur = p.denyReasonInput.Cursor()
+		if cur != nil {
+			inputStyle := t.Dialog.InputPrompt
+			cur.X += dialogStyle.GetBorderLeftSize() + dialogStyle.GetPaddingLeft() + dialogStyle.GetMarginLeft() +
+				inputStyle.GetBorderLeftSize() + inputStyle.GetPaddingLeft() + inputStyle.GetMarginLeft()
+			cur.Y += buttonsRow + dialogStyle.GetBorderTopSize() + dialogStyle.GetPaddingTop() + dialogStyle.GetMarginTop() +
+				inputStyle.GetBorderTopSize() + inputStyle.GetPaddingTop() + inputStyle.GetMarginTop()
+		}
+	}
+
+	DrawCenterCursor(scr, area, view, cur)
+	return cur
+}
+
+// renderDenyReasonInput renders the text box that replaces the button
+// row while the user is explaining a denial.
+func (p *Permissions) renderDenyReasonInput(contentWidth int) string {
+	t := p.com.Styles
+	p.denyReasonInput.SetWidth(dialogInputTextWidth(t, p.denyReasonInput, contentWidth))
+	return t.Dialog.InputPrompt.Render(p.denyReasonInput.View())
 }
 
 func (p *Permissions) renderHeader(contentWidth int) string {
@@ -979,6 +1104,10 @@ func (p *Permissions) canScroll() bool {
 
 // ShortHelp implements [help.KeyMap].
 func (p *Permissions) ShortHelp() []key.Binding {
+	if p.denyReasonMode {
+		return []key.Binding{p.keyMap.Select, p.keyMap.Close}
+	}
+
 	bindings := []key.Binding{
 		p.keyMap.Choose,
 		p.keyMap.Select,

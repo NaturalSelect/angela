@@ -421,6 +421,7 @@ func (w *ClientWorkspace) PermissionDeny(perm permission.PermissionRequest) bool
 			Action:      perm.Action,
 			Path:        perm.Path,
 			Params:      perm.Params,
+			DenyReason:  perm.DenyReason,
 		},
 		Action: proto.PermissionDeny,
 	})
@@ -1188,6 +1189,7 @@ func (w *ClientWorkspace) translateEvent(ev any) tea.Msg {
 				Action:      e.Payload.Action,
 				Path:        e.Payload.Path,
 				Params:      e.Payload.Params,
+				DenyReason:  e.Payload.DenyReason,
 			},
 		}
 	case pubsub.Event[proto.PermissionNotification]:

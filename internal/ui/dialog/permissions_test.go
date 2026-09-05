@@ -54,7 +54,7 @@ func TestPermissions_ActionKeysResolve(t *testing.T) {
 }
 
 // TestPermissions_NavigationCyclesOptions verifies that tab and arrow keys
-// cycle through the three permission options.
+// cycle through the four permission options.
 func TestPermissions_NavigationCyclesOptions(t *testing.T) {
 	t.Parallel()
 
@@ -68,13 +68,16 @@ func TestPermissions_NavigationCyclesOptions(t *testing.T) {
 	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, 2, p.selectedOption)
 
+	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, 3, p.selectedOption)
+
 	// Wrap around.
 	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, 0, p.selectedOption)
 
 	// Left cycles backward.
 	p.HandleMsg(keyMsg('h'))
-	require.Equal(t, 2, p.selectedOption)
+	require.Equal(t, 3, p.selectedOption)
 }
 
 // TestPermissions_EnterConfirmsSelection verifies that enter confirms the
@@ -100,6 +103,77 @@ func TestPermissions_EscapeDenies(t *testing.T) {
 	resp, ok := action.(ActionPermissionResponse)
 	require.True(t, ok)
 	require.Equal(t, PermissionDeny, resp.Action)
+}
+
+// TestPermissions_DenyWithReasonEntersTextMode verifies that choosing
+// the "Reason" option, whether by its key shortcut or by selecting it
+// and pressing enter, opens the text box instead of resolving the
+// request right away.
+func TestPermissions_DenyWithReasonEntersTextMode(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	action := p.HandleMsg(keyMsg('r'))
+	require.Nil(t, action, "the shortcut should switch modes, not resolve the request")
+	require.True(t, p.denyReasonMode)
+	require.True(t, p.denyReasonInput.Focused())
+
+	p2 := newTestPermissions(t)
+	p2.selectedOption = len(p2.options()) - 1 // "Reason" is always last.
+	action = p2.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Nil(t, action)
+	require.True(t, p2.denyReasonMode)
+}
+
+// TestPermissions_DenyWithReasonSubmitsTypedText verifies that text
+// typed into the reason box travels through to the response on
+// PermissionRequest.DenyReason, which is how it eventually reaches the
+// model's tool response.
+func TestPermissions_DenyWithReasonSubmitsTypedText(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	p.enterDenyReasonMode()
+
+	for _, r := range "not now" {
+		p.HandleMsg(keyMsg(r))
+	}
+
+	action := p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionPermissionResponse)
+	require.True(t, ok, "enter should submit and resolve the request")
+	require.Equal(t, PermissionDeny, resp.Action)
+	require.Equal(t, "not now", resp.Permission.DenyReason)
+}
+
+// TestPermissions_DenyWithReasonEscapeCancels verifies that escape
+// inside the reason box backs out to the button row instead of
+// resolving or closing the dialog, so a user who opened it by mistake
+// isn't forced to submit a denial.
+func TestPermissions_DenyWithReasonEscapeCancels(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	p.enterDenyReasonMode()
+
+	action := p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEscape})
+	require.Nil(t, action)
+	require.False(t, p.denyReasonMode)
+}
+
+// TestPermissions_DenyWithReasonEmptySubmit verifies that submitting
+// with no typed text still denies, just without a reason attached.
+func TestPermissions_DenyWithReasonEmptySubmit(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	p.enterDenyReasonMode()
+
+	action := p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionPermissionResponse)
+	require.True(t, ok)
+	require.Equal(t, PermissionDeny, resp.Action)
+	require.Empty(t, resp.Permission.DenyReason)
 }
 
 // TestPermissions_RenameShowsSymbolChange pins that approving a rename
@@ -239,15 +313,17 @@ func TestPermissions_MergeOffersNoAllowForSession(t *testing.T) {
 	for _, o := range p.options() {
 		actions = append(actions, o.action)
 	}
-	require.Equal(t, []PermissionAction{PermissionAllow, PermissionDeny}, actions)
+	require.Equal(t, []PermissionAction{PermissionAllow, PermissionDeny, PermissionDenyWithReason}, actions)
 
 	rendered, _, _ := p.renderButtons(p.buttonOpts(), 80, false)
 	require.NotContains(t, ansi.Strip(rendered), "Allow for Session")
 
-	// Tab must cycle between exactly the two remaining options.
+	// Tab must cycle between exactly the three remaining options.
 	require.Equal(t, 0, p.selectedOption)
 	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, 1, p.selectedOption)
+	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, 2, p.selectedOption)
 	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, 0, p.selectedOption)
 

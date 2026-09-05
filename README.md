@@ -166,4 +166,8 @@ Enable debug logging with `--debug` or `"options": { "debug": true }`.
 
 ## License
 
-[FSL-1.1-MIT](https://github.com/NaturalSelect/angela/raw/main/LICENSE.md)
+Code inherited from [charmbracelet/crush](https://github.com/charmbracelet/crush)
+is [FSL-1.1-MIT](https://github.com/NaturalSelect/angela/raw/main/LICENSE.md);
+original work added since is MIT. See
+[LICENSE.md](https://github.com/NaturalSelect/angela/raw/main/LICENSE.md)
+for the exact split.

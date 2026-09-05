@@ -3,7 +3,6 @@ package dialog
 import (
 	"fmt"
 	"image"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -111,21 +110,19 @@ type Sandbox struct {
 
 var _ Dialog = (*Sandbox)(nil)
 
-// NewSandbox creates a new sandbox configuration dialog, pre-filled
-// with defaults aligned with grok-build's "workspace" profile: the
-// working directory and Angela's own state directories stay writable,
-// the rest of the disk stays readable, and outbound network is
-// allowed.
 func NewSandbox(com *common.Common) *Sandbox {
 	t := com.Styles
+	cfg := sandboxDefaultConfig(com)
 
-	m := &Sandbox{com: com, allowNetwork: true}
+	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64})
 
-	for _, p := range defaultSandboxReadWrite(com) {
+	for _, p := range cfg.ReadWrite {
 		m.rows = append(m.rows, newSandboxRow(t, p, false))
 	}
-	m.rows = append(m.rows, newSandboxRow(t, "/", true))
+	for _, p := range cfg.ReadOnly {
+		m.rows = append(m.rows, newSandboxRow(t, p, true))
+	}
 	m.rows[0].input.Focus()
 
 	m.help = help.New()
@@ -152,32 +149,14 @@ func newSandboxRow(t *styles.Styles, path string, readOnly bool) sandboxPathRow 
 	return sandboxPathRow{input: input, readOnly: readOnly}
 }
 
-// defaultSandboxReadWrite returns the paths grok-build's "workspace"
-// profile would leave writable: the project directory, Angela's data
-// and global config directories, and the system temp directory.
-func defaultSandboxReadWrite(com *common.Common) []string {
-	paths := []string{com.Workspace.WorkingDir()}
-	if cfg := com.Config(); cfg != nil && cfg.Options != nil && cfg.Options.DataDirectory != "" {
-		paths = append(paths, cfg.Options.DataDirectory)
+// sandboxDefaultConfig builds the sandbox.Config NewSandbox pre-fills
+// the form with, sourced from the current workspace and config.
+func sandboxDefaultConfig(com *common.Common) sandbox.Config {
+	var dataDir string
+	if cfg := com.Config(); cfg != nil && cfg.Options != nil {
+		dataDir = cfg.Options.DataDirectory
 	}
-	paths = append(paths, filepath.Dir(config.GlobalConfig()), os.TempDir())
-	return dedupeSandboxPaths(paths)
-}
-
-// dedupeSandboxPaths drops empty and repeated entries while preserving
-// order, so the pre-filled rows don't repeat themselves when e.g. the
-// data directory already lives under the working directory.
-func dedupeSandboxPaths(paths []string) []string {
-	seen := make(map[string]bool, len(paths))
-	out := make([]string, 0, len(paths))
-	for _, p := range paths {
-		if p == "" || seen[p] {
-			continue
-		}
-		seen[p] = true
-		out = append(out, p)
-	}
-	return out
+	return sandbox.DefaultConfig(com.Workspace.WorkingDir(), dataDir, filepath.Dir(config.GlobalConfig()))
 }
 
 // ID implements [Dialog].

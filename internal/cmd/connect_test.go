@@ -27,6 +27,7 @@ func newConnectToServerTestCmd(t *testing.T, cwd, dataDir string) *cobra.Command
 	cmd.Flags().Bool("debug", false, "")
 	cmd.Flags().Bool("yolo", false, "")
 	cmd.Flags().StringSlice("channels", nil, "")
+	cmd.Flags().Bool("sandbox", false, "")
 	return cmd
 }
 
@@ -87,6 +88,22 @@ func TestConnectToServer_CreatesWorkspaceAndCleansUp(t *testing.T) {
 	cleanup()
 	require.EqualValues(t, 1, atomic.LoadInt32(&retireCalls),
 		"cleanup must retire the client rather than leaving it dangling")
+}
+
+// TestConnectToServer_RejectsSandbox covers the client-server guard:
+// --sandbox must fail immediately, before any server contact, since a
+// daemon can host multiple workspaces and EnterSandbox is an
+// irreversible, process-wide restriction.
+func TestConnectToServer_RejectsSandbox(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cmd := newConnectToServerTestCmd(t, "", t.TempDir())
+	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
+
+	_, _, _, err := connectToServer(cmd)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--sandbox")
+	require.Contains(t, err.Error(), "client-server")
 }
 
 // TestConnectToServer_InvalidHostErrorPropagates covers the

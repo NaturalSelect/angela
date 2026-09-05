@@ -378,11 +378,22 @@ func (p *Permissions) respond(action PermissionAction) tea.Msg {
 	}
 }
 
+// hasDiffView reports whether this request has an old side to compare
+// the new content against. Write and Merge can carry no old content at
+// all — a write that creates rather than overwrites a file, or a merge
+// proposal, which is always a fresh document — and rendering that as a
+// diff would mark every line as an addition for no reason, so those
+// fall back to a plain, syntax-highlighted content view instead.
 func (p *Permissions) hasDiffView() bool {
 	switch p.permission.ToolName {
-	case toolnames.Edit, toolnames.Write, toolnames.MultiEdit,
-		toolnames.LSPReplaceSymbol, toolnames.Merge:
+	case toolnames.Edit, toolnames.MultiEdit, toolnames.LSPReplaceSymbol:
 		return true
+	case toolnames.Write:
+		params, ok := p.permission.Params.(tools.WritePermissionsParams)
+		return ok && params.OldContent != ""
+	case toolnames.Merge:
+		params, ok := p.permission.Params.(tools.MergePermissionsParams)
+		return ok && params.OldContent != ""
 	}
 	return false
 }
@@ -713,6 +724,9 @@ func (p *Permissions) renderWriteContent(contentWidth int) string {
 	if !ok {
 		return ""
 	}
+	if params.OldContent == "" {
+		return p.renderCodeContent(params.FilePath, params.NewContent, contentWidth)
+	}
 	return p.renderDiff(params.FilePath, params.OldContent, params.NewContent, contentWidth)
 }
 
@@ -736,6 +750,9 @@ func (p *Permissions) renderMergeContent(contentWidth int) string {
 	params, ok := p.permission.Params.(tools.MergePermissionsParams)
 	if !ok {
 		return ""
+	}
+	if params.OldContent == "" {
+		return p.renderCodeContent(params.Name, params.NewContent, contentWidth)
 	}
 	return p.renderDiff(params.Name, params.OldContent, params.NewContent, contentWidth)
 }
@@ -767,6 +784,17 @@ func (p *Permissions) renderDiff(filePath, oldContent, newContent string, conten
 	}
 
 	return result
+}
+
+// renderCodeContent renders content with no old side to compare
+// against as syntax-highlighted code instead of a diff, since every
+// line would otherwise show as an addition.
+func (p *Permissions) renderCodeContent(fileName, content string, width int) string {
+	highlighted, err := common.SyntaxHighlight(p.com.Styles, content, fileName, p.com.Styles.Dialog.Permissions.ParamsBg)
+	if err != nil {
+		highlighted = content
+	}
+	return p.renderContentPanel(highlighted, width)
 }
 
 func (p *Permissions) renderDownloadContent(width int) string {

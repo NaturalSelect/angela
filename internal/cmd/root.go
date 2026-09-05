@@ -34,6 +34,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/projects"
 	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/server"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
@@ -66,6 +67,7 @@ func init() {
 	rootCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
 	rootCmd.Flags().BoolP("continue", "C", false, "Continue the most recent session")
 	rootCmd.MarkFlagsMutuallyExclusive("session", "continue")
+	addSandboxFlags(rootCmd)
 
 	rootCmd.AddCommand(
 		runCmd,
@@ -100,6 +102,9 @@ angela --debug --cwd /path/to/project
 
 # Run in yolo mode (auto-accept all permissions; use with care)
 angela --yolo
+
+# Run inside an OS-level sandbox instead of relying on prompts
+angela --sandbox
 
 # Run with custom data directory
 angela --data-dir /path/to/custom/.angela
@@ -355,6 +360,22 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 		return nil, nil, fmt.Errorf("failed to create data directory: %q %w", cfg.Options.DataDirectory, err)
 	}
 
+	// Entered before the database connection and any other child
+	// process (LSP, MCP, bash tool) starts, so the restriction covers
+	// all of them. It must come after MkdirAll above: Landlock's
+	// IgnoreIfMissing mode silently drops rules for paths that don't
+	// exist yet, so entering any earlier would leave the still-missing
+	// data directory unprotected.
+	sandboxCfg, sandboxEnabled, err := sandboxConfigFromFlags(cmd, cwd, cfg.Options.DataDirectory)
+	if err != nil {
+		return nil, nil, err
+	}
+	if sandboxEnabled {
+		if err := sandbox.New().EnterSandbox(sandboxCfg); err != nil {
+			return nil, nil, fmt.Errorf("failed to enter sandbox: %w", err)
+		}
+	}
+
 	gitIgnorePath := filepath.Join(cfg.Options.DataDirectory, ".gitignore")
 	if _, err := os.Stat(gitIgnorePath); os.IsNotExist(err) {
 		if err := os.WriteFile(gitIgnorePath, []byte("*\n"), 0o644); err != nil {
@@ -449,6 +470,15 @@ func setupClientServerWorkspace(cmd *cobra.Command) (workspace.Workspace, func()
 // connectToServer ensures the server is running, creates a client and
 // workspace, and returns a cleanup function that deletes the workspace.
 func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func(), error) {
+	// A daemon hosts multiple workspaces in one process (see
+	// internal/backend), and EnterSandbox is an irreversible,
+	// process-wide restriction: entering it here would confine every
+	// workspace the daemon serves, not just this one. Reject up front
+	// rather than silently restricting shared state.
+	if sandboxRequested, _ := cmd.Flags().GetBool("sandbox"); sandboxRequested {
+		return nil, nil, nil, fmt.Errorf("--sandbox is not supported in client-server mode (it would restrict every workspace the shared daemon serves); run without ANGELA_CLIENT_SERVER instead")
+	}
+
 	hostURL, err := server.ParseHostURL(clientHost)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid host URL: %v", err)

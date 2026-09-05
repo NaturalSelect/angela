@@ -42,3 +42,15 @@ func TestBackendSandbox_IsInSandbox(t *testing.T) {
 	_, err := b.IsInSandbox(ws.ID)
 	require.NoError(t, err)
 }
+
+// TestBackendSandbox_EnterSandboxNotSupported confirms EnterSandbox
+// refuses to restrict an existing workspace: a Backend hosts multiple
+// workspaces in one OS process, and Landlock confinement is
+// irreversible and process-wide, so entering it for one workspace
+// would also restrict every other workspace the daemon serves.
+func TestBackendSandbox_EnterSandboxNotSupported(t *testing.T) {
+	b, ws, _ := newPublishingWorkspace(t)
+
+	err := b.EnterSandbox(t.Context(), ws.ID, sandbox.Config{ReadWrite: []string{"/tmp"}})
+	require.ErrorIs(t, err, sandbox.ErrNotSupported)
+}

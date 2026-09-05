@@ -89,9 +89,6 @@ func compositorButtonPos(t *testing.T, hit *lipgloss.Compositor, idx, maxW, maxH
 	return 0, 0
 }
 
-// TestSandbox_DefaultRows verifies the pre-filled rows match
-// grok-build's "workspace" profile: the working directory writable,
-// and "/" read-only, with outbound network allowed.
 func TestSandbox_DefaultRows(t *testing.T) {
 	t.Parallel()
 

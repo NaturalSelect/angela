@@ -38,6 +38,7 @@ const (
 	sandboxFocusRow sandboxFocusArea = iota
 	sandboxFocusAdd
 	sandboxFocusNetwork
+	sandboxFocusContinue
 )
 
 // sandboxCol is which column of a focused row is active: the path
@@ -98,7 +99,6 @@ type Sandbox struct {
 	help    help.Model
 
 	keyMap struct {
-		Submit     key.Binding
 		Next       key.Binding
 		Previous   key.Binding
 		Toggle     key.Binding
@@ -128,10 +128,9 @@ func NewSandbox(com *common.Common) *Sandbox {
 	m.help = help.New()
 	m.help.Styles = t.DialogHelpStyles()
 
-	m.keyMap.Submit = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue"))
 	m.keyMap.Next = key.NewBinding(key.WithKeys("down", "tab"), key.WithHelp("↓/tab", "next"))
 	m.keyMap.Previous = key.NewBinding(key.WithKeys("up", "shift+tab"), key.WithHelp("↑/shift+tab", "previous"))
-	m.keyMap.Toggle = key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle/remove/add"))
+	m.keyMap.Toggle = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "toggle/remove/add/continue"))
 	m.keyMap.LeftRight = key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←/→", "switch options"))
 	m.keyMap.EnterSpace = key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "confirm"))
 	m.keyMap.Close = CloseKey
@@ -166,22 +165,28 @@ func (m *Sandbox) ID() string {
 
 // focusTarget maps a flat focus index to the logical control it
 // refers to. Each row contributes sandboxColCount stops (input,
-// toggle, remove); the add button and the network toggle are one stop
-// each at the end. col is only meaningful when area == sandboxFocusRow:
-// for the other two areas it is always 0, which happens to equal
-// sandboxColInput, so callers must check area before comparing col.
+// toggle, remove); the add button, the network toggle, and the
+// continue button are one stop each at the end. col is only
+// meaningful when area == sandboxFocusRow: for the other areas it is
+// always 0, which happens to equal sandboxColInput, so callers must
+// check area before comparing col.
 func (m *Sandbox) focusTarget(i int) (area sandboxFocusArea, row int, col sandboxCol) {
-	if n := len(m.rows) * sandboxColCount; i < n {
+	n := len(m.rows) * sandboxColCount
+	switch {
+	case i < n:
 		return sandboxFocusRow, i / sandboxColCount, sandboxCol(i % sandboxColCount)
-	} else if i == len(m.rows)*sandboxColCount {
+	case i == n:
 		return sandboxFocusAdd, -1, 0
+	case i == n+1:
+		return sandboxFocusNetwork, -1, 0
+	default:
+		return sandboxFocusContinue, -1, 0
 	}
-	return sandboxFocusNetwork, -1, 0
 }
 
 // stopCount is the number of focus stops the form currently has.
 func (m *Sandbox) stopCount() int {
-	return len(m.rows)*sandboxColCount + 2
+	return len(m.rows)*sandboxColCount + 3
 }
 
 // isFocused reports whether the given control currently has focus.
@@ -230,7 +235,8 @@ func (m *Sandbox) removeRow(idx int) {
 
 // activateFocused performs whatever action the currently focused
 // control represents: flipping a row's read-only/read-write state,
-// removing a row, adding one, or flipping the network toggle.
+// removing a row, adding one, flipping the network toggle, or
+// submitting the form.
 func (m *Sandbox) activateFocused() {
 	area, row, col := m.focusTarget(m.focused)
 	switch area {
@@ -245,7 +251,16 @@ func (m *Sandbox) activateFocused() {
 		m.addRow()
 	case sandboxFocusNetwork:
 		m.allowNetwork = !m.allowNetwork
+	case sandboxFocusContinue:
+		m.submit()
 	}
+}
+
+// submit advances the form to the confirmation stage, resetting any
+// stale "Cancel" selection left over from a previous visit there.
+func (m *Sandbox) submit() {
+	m.stage = sandboxStageConfirm
+	m.selectedNo = false
 }
 
 // hitTest returns the index into m.hitTargets whose rect contains
@@ -284,6 +299,8 @@ func (m *Sandbox) handleFormClick(x, y int) {
 	case sandboxFocusNetwork:
 		m.allowNetwork = !m.allowNetwork
 		m.setFocus(len(m.rows)*sandboxColCount + 1)
+	case sandboxFocusContinue:
+		m.submit()
 	}
 }
 
@@ -323,9 +340,6 @@ func (m *Sandbox) handleFormMsg(msg tea.Msg) Action {
 		switch {
 		case key.Matches(msg, m.keyMap.Close):
 			return ActionClose{}
-		case key.Matches(msg, m.keyMap.Submit):
-			m.stage = sandboxStageConfirm
-			m.selectedNo = false
 		case key.Matches(msg, m.keyMap.Next):
 			m.setFocus(m.focused + 1)
 		case key.Matches(msg, m.keyMap.Previous):
@@ -422,18 +436,20 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	sectionLabel := t.Dialog.Arguments.InputLabelBlurred.PaddingLeft(rowLeftPad).Render("FileSystem Access")
 	networkBlock, networkTarget := m.networkView(rowLeftPad)
 
-	assemble := func(rowsBlock string) string {
-		return strings.Join([]string{preamble, sectionLabel, rowsBlock, networkBlock, helpView}, "\n")
+	assemble := func(rowsBlock, continueBlock string) string {
+		return strings.Join([]string{preamble, sectionLabel, rowsBlock, networkBlock, "", continueBlock, helpView}, "\n")
 	}
 
 	rowsBlock, rowTargets := m.rowsView(rowLeftPad, -1)
-	view := dialogStyle.Render(assemble(rowsBlock))
+	continueBlock, continueTarget := m.continueView(rowLeftPad, false)
+	view := dialogStyle.Render(assemble(rowsBlock, continueBlock))
 	vw, vh := lipgloss.Size(view)
 	center := common.CenterRect(area, min(vw, area.Dx()), min(vh, area.Dy()))
 	originX := center.Min.X + dialogStyle.GetBorderLeftSize() + dialogStyle.GetPaddingLeft() + dialogStyle.GetMarginLeft()
 	originY := center.Min.Y + dialogStyle.GetBorderTopSize() + dialogStyle.GetPaddingTop() + dialogStyle.GetMarginTop()
 	linesBeforeRows := lipgloss.Height(preamble) + lipgloss.Height(sectionLabel)
 	linesBeforeNetwork := linesBeforeRows + lipgloss.Height(rowsBlock)
+	linesBeforeContinue := linesBeforeNetwork + lipgloss.Height(networkBlock) + 1 // +1 for the blank separator line
 
 	m.hitTargets = m.hitTargets[:0]
 	for _, tgt := range rowTargets {
@@ -442,14 +458,21 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 	networkTarget.rect = networkTarget.rect.Add(image.Pt(originX, originY+linesBeforeNetwork))
 	m.hitTargets = append(m.hitTargets, networkTarget)
+	continueTarget.rect = continueTarget.rect.Add(image.Pt(originX, originY+linesBeforeContinue))
+	m.hitTargets = append(m.hitTargets, continueTarget)
 
-	// Re-render with hover styling if the mouse sits over a row or the
-	// add button. Hover never changes a target's size, so the geometry
-	// above still holds after this second pass. The network toggle has
-	// no hover style (see networkView), so hovering it needs no redraw.
-	if hovered := m.hitTest(m.hoverX, m.hoverY); hovered >= 0 && hovered < len(rowTargets) {
+	// Re-render with hover styling if the mouse sits over a row, the
+	// add button, or the continue button. Hover never changes a
+	// target's size, so the geometry above still holds after this
+	// second pass. The network toggle has no hover style (see
+	// networkView), so hovering it needs no redraw.
+	switch hovered := m.hitTest(m.hoverX, m.hoverY); {
+	case hovered >= 0 && hovered < len(rowTargets):
 		hoveredRows, _ := m.rowsView(rowLeftPad, hovered)
-		view = dialogStyle.Render(assemble(hoveredRows))
+		view = dialogStyle.Render(assemble(hoveredRows, continueBlock))
+	case hovered == len(m.hitTargets)-1:
+		hoveredContinue, _ := m.continueView(rowLeftPad, true)
+		view = dialogStyle.Render(assemble(rowsBlock, hoveredContinue))
 	}
 
 	var cur *tea.Cursor
@@ -576,6 +599,25 @@ func (m *Sandbox) networkView(rowLeftPad int) (string, sandboxHitTarget) {
 	return labelStyle.Render("Network") + "\n" + line, target
 }
 
+// continueView renders the button that submits the form and advances
+// to the confirmation stage, mirroring rowsView's add-path button so
+// submitting carries the same visual weight as any other form action.
+func (m *Sandbox) continueView(rowLeftPad int, hovered bool) (string, sandboxHitTarget) {
+	t := m.com.Styles
+	btn := common.Button(t, common.ButtonOpts{
+		Text:           "Continue",
+		UnderlineIndex: -1,
+		Selected:       m.isFocused(sandboxFocusContinue, -1, 0),
+		Hovered:        hovered,
+	})
+	line := strings.Repeat(" ", rowLeftPad) + btn
+	target := sandboxHitTarget{
+		rect: image.Rect(rowLeftPad, 0, rowLeftPad+lipgloss.Width(btn), 1),
+		area: sandboxFocusContinue,
+	}
+	return line, target
+}
+
 func (m *Sandbox) headerView() string {
 	var (
 		t           = m.com.Styles
@@ -658,7 +700,7 @@ func (m *Sandbox) ShortHelp() []key.Binding {
 	if m.stage == sandboxStageConfirm {
 		return []key.Binding{m.keyMap.LeftRight, m.keyMap.EnterSpace, m.keyMap.Close}
 	}
-	return []key.Binding{m.keyMap.Next, m.keyMap.Toggle, m.keyMap.Submit, m.keyMap.Close}
+	return []key.Binding{m.keyMap.Next, m.keyMap.Toggle, m.keyMap.Close}
 }
 
 // FullHelp implements [help.KeyMap].

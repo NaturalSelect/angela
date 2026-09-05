@@ -20,6 +20,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/undo"
@@ -246,6 +247,9 @@ type Workspace interface {
 
 	// Config mutations (proxied to server in client mode)
 	UpdatePreferredModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error
+	// OverrideAgentVariant sets an agent's parameter preset in memory
+	// only, for a pick made before any session exists to scope it to.
+	OverrideAgentVariant(agentID, variant string) error
 	// RecordRecentModel adds a model to the recent-models list without
 	// changing which model is selected. Picking a model for a session
 	// still belongs in that session's "recently used" list.
@@ -286,6 +290,18 @@ type Workspace interface {
 	MCPAuthenticate(ctx context.Context, name string) error
 	MCPPendingAuth() []mcptools.PendingAuthServer
 	MCPAuthURL(name string) string
+	// MCPEnable starts a configured MCP server at runtime without
+	// persisting the change; it reverts to its configured state on
+	// the next restart.
+	MCPEnable(ctx context.Context, name string) error
+	// MCPDisable stops a configured MCP server at runtime without
+	// persisting the change; it reverts to its configured state on
+	// the next restart.
+	MCPDisable(name string) error
+
+	// Sandbox operations (server-side in client mode)
+	IsInSandbox() bool
+	EnterSandbox(ctx context.Context, cfg sandbox.Config) error
 
 	// Events
 	Subscribe(program *tea.Program)

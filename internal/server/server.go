@@ -210,6 +210,7 @@ func (s *Server) installHandler() {
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/set", c.handlePostWorkspaceConfigSet)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/remove", c.handlePostWorkspaceConfigRemove)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/model", c.handlePostWorkspaceConfigModel)
+	mux.HandleFunc("POST /v1/workspaces/{id}/config/agent-variant", c.handlePostWorkspaceConfigAgentVariant)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/recent-model", c.handlePostWorkspaceConfigRecentModel)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/prune-recent-models", c.handlePostWorkspaceConfigPruneRecentModels)
 	mux.HandleFunc("POST /v1/workspaces/{id}/config/compact", c.handlePostWorkspaceConfigCompact)
@@ -234,6 +235,10 @@ func (s *Server) installHandler() {
 	mux.HandleFunc("POST /v1/workspaces/{id}/mcp/refresh-resources", c.handlePostWorkspaceMCPRefreshResources)
 	mux.HandleFunc("POST /v1/workspaces/{id}/mcp/docker/enable", c.handlePostWorkspaceMCPEnableDocker)
 	mux.HandleFunc("POST /v1/workspaces/{id}/mcp/docker/disable", c.handlePostWorkspaceMCPDisableDocker)
+	mux.HandleFunc("POST /v1/workspaces/{id}/mcp/enable", c.handlePostWorkspaceMCPEnable)
+	mux.HandleFunc("POST /v1/workspaces/{id}/mcp/disable", c.handlePostWorkspaceMCPDisable)
+	mux.HandleFunc("GET /v1/workspaces/{id}/sandbox", c.handleGetWorkspaceSandbox)
+	mux.HandleFunc("POST /v1/workspaces/{id}/sandbox/enter", c.handlePostWorkspaceSandboxEnter)
 	mux.Handle("/v1/docs/", httpswagger.WrapHandler)
 	s.h = &http.Server{
 		Protocols: &p,

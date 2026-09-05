@@ -22,19 +22,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Run tests with coverage
         run: go test -coverprofile=coverage.out ./...
-      - name: Enforce coverage threshold
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: github.event_name == 'pull_request'
+        with:
+          python-version: "3.x"
+      - name: Enforce PR diff coverage threshold
+        if: github.event_name == 'pull_request'
         run: |
-          THRESHOLD=75
-          TOTAL=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | tr -d '%')
-          echo "Total coverage: ${TOTAL}%"
-          PASS=$(awk -v t="$TOTAL" -v th="$THRESHOLD" 'BEGIN { print (t >= th) ? "1" : "0" }')
-          if [ "$PASS" != "1" ]; then
-            echo "::error::Total coverage ${TOTAL}% is below the required threshold of ${THRESHOLD}%"
-            exit 1
-          fi
-          echo "Coverage ${TOTAL}% meets the required threshold of ${THRESHOLD}%"
+          go run github.com/boumenot/gocover-cobertura@v1.5.0 < coverage.out > coverage.xml
+          pip install --quiet diff-cover==10.5.1
+          diff-cover coverage.xml \
+            --compare-branch="origin/${{ github.base_ref }}" \
+            --fail-under=75 \
+            --show-uncovered

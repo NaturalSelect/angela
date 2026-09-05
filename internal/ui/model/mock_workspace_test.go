@@ -25,6 +25,7 @@ import (
 	permission "github.com/NaturalSelect/angela/internal/permission"
 	proto "github.com/NaturalSelect/angela/internal/proto"
 	question "github.com/NaturalSelect/angela/internal/question"
+	sandbox "github.com/NaturalSelect/angela/internal/sandbox"
 	session "github.com/NaturalSelect/angela/internal/session"
 	skills "github.com/NaturalSelect/angela/internal/skills"
 	undo "github.com/NaturalSelect/angela/internal/undo"
@@ -353,6 +354,20 @@ func (mr *MockWorkspaceMockRecorder) EnableDockerMCP(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnableDockerMCP", reflect.TypeOf((*MockWorkspace)(nil).EnableDockerMCP), ctx)
 }
 
+// EnterSandbox mocks base method.
+func (m *MockWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnterSandbox", ctx, cfg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnterSandbox indicates an expected call of EnterSandbox.
+func (mr *MockWorkspaceMockRecorder) EnterSandbox(ctx, cfg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnterSandbox", reflect.TypeOf((*MockWorkspace)(nil).EnterSandbox), ctx, cfg)
+}
+
 // FileTrackerLastReadTime mocks base method.
 func (m *MockWorkspace) FileTrackerLastReadTime(ctx context.Context, sessionID, path string) time.Time {
 	m.ctrl.T.Helper()
@@ -480,6 +495,20 @@ func (m *MockWorkspace) InitializePrompt() (string, error) {
 func (mr *MockWorkspaceMockRecorder) InitializePrompt() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InitializePrompt", reflect.TypeOf((*MockWorkspace)(nil).InitializePrompt))
+}
+
+// IsInSandbox mocks base method.
+func (m *MockWorkspace) IsInSandbox() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsInSandbox")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsInSandbox indicates an expected call of IsInSandbox.
+func (mr *MockWorkspaceMockRecorder) IsInSandbox() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsInSandbox", reflect.TypeOf((*MockWorkspace)(nil).IsInSandbox))
 }
 
 // LSPGetDiagnosticCounts mocks base method.
@@ -667,6 +696,34 @@ func (mr *MockWorkspaceMockRecorder) MCPAuthenticate(ctx, name any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MCPAuthenticate", reflect.TypeOf((*MockWorkspace)(nil).MCPAuthenticate), ctx, name)
 }
 
+// MCPDisable mocks base method.
+func (m *MockWorkspace) MCPDisable(name string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MCPDisable", name)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MCPDisable indicates an expected call of MCPDisable.
+func (mr *MockWorkspaceMockRecorder) MCPDisable(name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MCPDisable", reflect.TypeOf((*MockWorkspace)(nil).MCPDisable), name)
+}
+
+// MCPEnable mocks base method.
+func (m *MockWorkspace) MCPEnable(ctx context.Context, name string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MCPEnable", ctx, name)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MCPEnable indicates an expected call of MCPEnable.
+func (mr *MockWorkspaceMockRecorder) MCPEnable(ctx, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MCPEnable", reflect.TypeOf((*MockWorkspace)(nil).MCPEnable), ctx, name)
+}
+
 // MCPGetStates mocks base method.
 func (m *MockWorkspace) MCPGetStates() map[string]mcp.ClientInfo {
 	m.ctrl.T.Helper()
@@ -731,6 +788,20 @@ func (m *MockWorkspace) MarkProjectInitialized() error {
 func (mr *MockWorkspaceMockRecorder) MarkProjectInitialized() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkProjectInitialized", reflect.TypeOf((*MockWorkspace)(nil).MarkProjectInitialized))
+}
+
+// OverrideAgentVariant mocks base method.
+func (m *MockWorkspace) OverrideAgentVariant(agentID, variant string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OverrideAgentVariant", agentID, variant)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// OverrideAgentVariant indicates an expected call of OverrideAgentVariant.
+func (mr *MockWorkspaceMockRecorder) OverrideAgentVariant(agentID, variant any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OverrideAgentVariant", reflect.TypeOf((*MockWorkspace)(nil).OverrideAgentVariant), agentID, variant)
 }
 
 // ParseAgentToolSessionID mocks base method.

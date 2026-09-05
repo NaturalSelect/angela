@@ -1,6 +1,7 @@
 package common
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -35,6 +36,29 @@ func TestMarkdownRenderer(t *testing.T) {
 		r1 := QuietMarkdownRenderer(&sty, 82)
 		require.NotNil(t, r1)
 		require.Same(t, r1, QuietMarkdownRenderer(&sty, 82))
+	})
+
+	t.Run("user variant memoizes per width independently", func(t *testing.T) {
+		sty := styles.CharmtonePantera()
+
+		r1 := UserMarkdownRenderer(&sty, 87)
+		require.NotNil(t, r1)
+		require.Same(t, r1, UserMarkdownRenderer(&sty, 87))
+	})
+
+	t.Run("user variant preserves manual line breaks", func(t *testing.T) {
+		sty := styles.CharmtonePantera()
+		r := UserMarkdownRenderer(&sty, 88)
+		require.NotNil(t, r)
+
+		mu := LockMarkdownRenderer(r)
+		mu.Lock()
+		out, err := r.Render("first line\nsecond line\nthird line")
+		mu.Unlock()
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"first line", "second line", "third line"}, trimmedLines(out),
+			"each typed line must stay on its own line")
 	})
 
 	t.Run("renders markdown content", func(t *testing.T) {
@@ -84,4 +108,15 @@ func TestMarkdownRenderer(t *testing.T) {
 		mu2 := LockMarkdownRenderer(r)
 		require.Same(t, mu1, mu2, "the same renderer must always return the same mutex")
 	})
+}
+
+// trimmedLines strips ANSI codes and right-padding (Glamour pads wrapped
+// lines out to the render width) so line content can be compared exactly.
+func trimmedLines(rendered string) []string {
+	stripped := strings.TrimRight(ansi.Strip(rendered), "\n")
+	lines := strings.Split(stripped, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+	}
+	return lines
 }

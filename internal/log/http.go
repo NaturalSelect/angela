@@ -2,21 +2,84 @@ package log
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 )
 
+// streamIdleTimeout bounds how long a connection may go without any bytes
+// arriving before it's treated as dead. It resets on every read, so an
+// SSE keep-alive ping — real bytes on the wire even though providers
+// discard it before it becomes visible content — keeps a slow but
+// healthy stream alive indefinitely; only a connection that stops
+// producing bytes entirely, pings included, times out. Matches
+// Cloudflare's idle-connection timeout so a connection dropped at the
+// edge surfaces as an error within that window instead of hanging until
+// the process is killed.
+const streamIdleTimeout = 2 * time.Minute
+
 // NewHTTPClient creates an HTTP client with debug logging enabled when debug mode is on.
 func NewHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &HTTPRoundTripLogger{
-			Transport: http.DefaultTransport,
+			Transport: NewIdleTimeoutTransport(),
 		},
 	}
+}
+
+// NewIdleTimeoutClient returns an HTTP client with the same idle-read
+// protection as NewHTTPClient but without its debug request/response
+// logging (which fully buffers bodies and is only worth that cost when
+// debug mode is on). Use this for provider traffic that should always be
+// protected against a silently dead connection, regardless of debug mode.
+func NewIdleTimeoutClient() *http.Client {
+	return &http.Client{Transport: NewIdleTimeoutTransport()}
+}
+
+// NewIdleTimeoutTransport clones the default transport and wraps its
+// dialer so every connection it opens times out after streamIdleTimeout
+// passes without a single byte being read. Without this, a streaming
+// response whose connection dies silently (no RST/FIN — a dropped
+// network switch, a proxy, a NAT timeout) blocks the read forever, since
+// neither http.DefaultTransport nor context cancellation notices a dead
+// connection that never delivers an error.
+func NewIdleTimeoutTransport() http.RoundTripper {
+	t, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport
+	}
+	transport := t.Clone()
+	dial := transport.DialContext
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dial(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return &idleTimeoutConn{Conn: conn, timeout: streamIdleTimeout}, nil
+	}
+	return transport
+}
+
+// idleTimeoutConn resets its read deadline on every Read, turning
+// streamIdleTimeout into a sliding idle timeout rather than a cap on
+// total connection lifetime: as long as some byte arrives within the
+// window — including an SSE ping frame — the deadline keeps moving and
+// the connection can stay open indefinitely.
+type idleTimeoutConn struct {
+	net.Conn
+	timeout time.Duration
+}
+
+func (c *idleTimeoutConn) Read(b []byte) (int, error) {
+	if err := c.Conn.SetReadDeadline(time.Now().Add(c.timeout)); err != nil {
+		return 0, err
+	}
+	return c.Conn.Read(b)
 }
 
 // HTTPRoundTripLogger is an http.RoundTripper that logs requests and responses.

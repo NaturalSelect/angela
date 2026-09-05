@@ -33,6 +33,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/shell"
 	"github.com/NaturalSelect/angela/internal/skills"
@@ -60,6 +61,7 @@ type App struct {
 	Questions   question.Service
 	FileTracker filetracker.Service
 	Undo        undo.Service
+	Sandbox     sandbox.Sandbox
 
 	AgentCoordinator agent.Coordinator
 
@@ -154,6 +156,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		FileTracker: fileTracker,
 		LSPManager:  lsp.NewManager(store),
 		Skills:      skillsMgr,
+		Sandbox:     sandbox.New(),
 
 		globalCtx: ctx,
 

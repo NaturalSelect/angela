@@ -149,18 +149,31 @@ func (p *Prompt) Build(ctx context.Context, provider, model string, store *confi
 	return sb.String(), nil
 }
 
-func processFile(filePath string) *ContextFile {
+func processFile(filePath string, seen *[]os.FileInfo) *ContextFile {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil
+	}
+	// NOTE: os.SameFile compares device+inode on Unix and the file
+	// index on Windows, so a symlink alias (e.g. CLAUDE.md -> AGENTS.md)
+	// resolves to the same identity as its target and is skipped here.
+	for _, s := range *seen {
+		if os.SameFile(info, s) {
+			return nil
+		}
+	}
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil
 	}
+	*seen = append(*seen, info)
 	return &ContextFile{
 		Path:    filePath,
 		Content: string(content),
 	}
 }
 
-func processContextPath(p string, store *config.ConfigStore) []ContextFile {
+func processContextPath(p string, store *config.ConfigStore, seen *[]os.FileInfo) []ContextFile {
 	var contexts []ContextFile
 	fullPath := filepathext.SmartJoin(store.WorkingDir(), p)
 	info, err := os.Stat(fullPath)
@@ -173,14 +186,14 @@ func processContextPath(p string, store *config.ConfigStore) []ContextFile {
 				return err
 			}
 			if !d.IsDir() {
-				if result := processFile(path); result != nil {
+				if result := processFile(path, seen); result != nil {
 					contexts = append(contexts, *result)
 				}
 			}
 			return nil
 		})
 	} else {
-		result := processFile(fullPath)
+		result := processFile(fullPath, seen)
 		if result != nil {
 			contexts = append(contexts, *result)
 		}
@@ -202,8 +215,15 @@ func expandPath(path string, store *config.ConfigStore) string {
 }
 
 // loadContextFiles loads and deduplicates context files from a list of paths.
+// loadContextFiles loads and deduplicates context files from a list of
+// paths. Deduplication happens twice: first by the configured path
+// string, so re-listing the same entry is a no-op, then by file
+// identity, so a symlink alias of an already-loaded file (e.g.
+// CLAUDE.md pointing at AGENTS.md) is not embedded twice under two
+// names.
 func loadContextFiles(paths []string, store *config.ConfigStore) map[string][]ContextFile {
 	files := map[string][]ContextFile{}
+	var seen []os.FileInfo
 	for _, pth := range paths {
 		expanded := expandPath(pth, store)
 		// NOTE: an empty path joins to the working directory itself,
@@ -215,7 +235,7 @@ func loadContextFiles(paths []string, store *config.ConfigStore) map[string][]Co
 		if _, ok := files[pathKey]; ok {
 			continue
 		}
-		files[pathKey] = processContextPath(expanded, store)
+		files[pathKey] = processContextPath(expanded, store, &seen)
 	}
 	return files
 }

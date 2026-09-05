@@ -106,7 +106,7 @@ func (m *UserMessageItem) renderBody(width int) string {
 		return m.renderHighlighted(content, width, height)
 	}
 
-	renderer := common.MarkdownRenderer(m.sty, width)
+	renderer := common.UserMarkdownRenderer(m.sty, width)
 	mu := common.LockMarkdownRenderer(renderer)
 
 	mu.Lock()
@@ -138,7 +138,7 @@ func (m *UserMessageItem) renderSkillInvocation(content string, width int) strin
 	var skill skillInvocation
 	if err := xml.Unmarshal([]byte(content), &skill); err != nil {
 		// If parsing fails, just render as markdown
-		renderer := common.MarkdownRenderer(m.sty, width)
+		renderer := common.UserMarkdownRenderer(m.sty, width)
 		mu := common.LockMarkdownRenderer(renderer)
 
 		mu.Lock()

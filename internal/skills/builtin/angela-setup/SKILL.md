@@ -24,13 +24,21 @@ Ask the user which LLM provider they want to use. Common options:
 | OpenAI | `openai` | No (default works) | Yes (`OPENAI_API_KEY`) |
 | Google Gemini | `google` | No | Yes (`GEMINI_API_KEY`) |
 | OpenRouter | `openrouter` | Yes: `https://openrouter.ai/api/v1` | Yes (`OPENROUTER_API_KEY`) |
-| AWS Bedrock | `bedrock` | No | No (uses AWS credentials) |
+| AWS Bedrock | `bedrock` | No | No (uses AWS credentials; `aws_auth_refresh` can run a refresh command) |
+| GitHub Copilot | (built-in) | No | No — run `angela login copilot` instead |
 | Ollama (local) | `ollama` | Yes: `http://localhost:11434/v1` | No |
 | Any OpenAI-compatible | `openai-compat` | Yes | Usually yes |
 
 Guide the user to set the API key via an environment variable and reference
 it with shell expansion (`$VAR` or `${VAR:?message}`). Never write raw API
-keys into config files.
+keys into config files. **GitHub Copilot is the exception**: tell the user to
+run `angela login copilot` (or `angela login -f copilot` to force
+re-authentication) instead — it runs a device-code OAuth flow and writes the
+resulting token to the global config itself, so there's no key to type in.
+
+`type` also accepts `azure`, `google-vertex`, `litellm`, `llamacpp`,
+`lmstudio`, and `omlx` for less common setups — see the angela-config skill
+for the full provider field reference.
 
 ```json
 {
@@ -140,7 +148,7 @@ Read-only tools run freely; writes and commands are prompted.
 ```json
 {
   "permissions": {
-    "allowed_tools": ["View", "LS", "Grep", "Glob", "Read"],
+    "allowed_tools": ["View", "LS", "Grep", "Glob"],
     "prompt": "ask"
   }
 }
@@ -153,14 +161,14 @@ Most things run freely; only dangerous commands are blocked.
 ```json
 {
   "permissions": {
-    "allowed_tools": ["View", "LS", "Grep", "Glob", "Read", "Edit", "MultiEdit", "Write", "Bash"],
+    "allowed_tools": ["View", "LS", "Grep", "Glob", "Edit", "MultiEdit", "Write", "Bash"],
     "prompt": "ask",
     "rules": [
       { "action": "deny", "tool": "edit", "pattern": "**/.env*", "mode": "path" },
       { "action": "deny", "tool": "edit", "pattern": "**/id_rsa", "mode": "path" },
-      { "action": "allow", "tool": "bash", "pattern": "git status*" },
-      { "action": "allow", "tool": "bash", "pattern": "git diff*" },
-      { "action": "allow", "tool": "bash", "pattern": "git log*" }
+      { "action": "allow", "tool": "Bash", "pattern": "git status*" },
+      { "action": "allow", "tool": "Bash", "pattern": "git diff*" },
+      { "action": "allow", "tool": "Bash", "pattern": "git log*" }
     ]
   }
 }
@@ -199,6 +207,24 @@ ones:
 }
 ```
 
+### Docker MCP Gateway
+
+If the user has Docker installed with the MCP plugin, this is the whole
+config — Angela also has a one-command setup for this one, so mention that
+too:
+
+```json
+{
+  "mcp": {
+    "docker": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["mcp", "gateway", "run"]
+    }
+  }
+}
+```
+
 ### Custom MCP Server
 
 For any stdio-based MCP server:
@@ -220,17 +246,22 @@ For any stdio-based MCP server:
 
 Ask if the user wants to customize built-in agents. Common adjustments:
 
-- Point `explore` and other subagents at a cheaper model:
+- Point `explore`, `general`, `plan`, or `deep-research` at a cheaper model
+  — they all default to `main`:
 
 ```json
 {
   "agents": {
     "explore": { "slot": "chore" },
-    "title": { "slot": "chore" },
-    "compact": { "slot": "chore" }
+    "general": { "slot": "chore" }
   }
 }
 ```
+
+`title` and `web-fetch` already default to `chore`, so they need no
+override. Leave `compact` on `main` even though it's an auxiliary call —
+summarizing a conversation on the cheap model degrades the only context a
+resumed session keeps.
 
 - Disable unused agents:
 
@@ -301,10 +332,12 @@ If the user has project-specific instructions, mention that Angela
 automatically reads these files from the working directory (no config
 needed):
 
-- `AGENTS.md`, `AGENTS.local.md`
-- `ANGELA.md`, `ANGELA.local.md`
+- `.github/copilot-instructions.md`
+- `.cursorrules`, `.cursor/rules/`
 - `CLAUDE.md`, `CLAUDE.local.md`
-- `.cursorrules`, `.cursor/rules/*.md`
+- `GEMINI.md`
+- `ANGELA.md`, `ANGELA.local.md`
+- `AGENTS.md` (no `.local.md` variant, unlike the others)
 
 For global instructions that apply to all projects:
 

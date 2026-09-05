@@ -3,9 +3,12 @@ package model
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -97,14 +100,86 @@ func (m *UI) busyStatusFields() []string {
 
 // currentActivity names what the agent is doing right now.
 func (m *UI) currentActivity() string {
+	if label := m.retryActivity(); label != "" {
+		return label
+	}
 	tc, ok := m.chat.LastPendingTool()
 	if !ok {
 		return "Thinking"
 	}
+	label := tc.Name
 	if target := chat.ToolCallTarget(tc, maxActivityTargetWidth); target != "" {
-		return tc.Name + " " + target
+		label += " " + target
 	}
-	return tc.Name
+	if slow := m.toolSlowness(tc); slow != "" {
+		label += " (" + slow + ")"
+	}
+	return label
+}
+
+// retryStatus tracks an in-progress provider retry so the turn-status
+// line can show it instead of a silent pause. It has no explicit
+// "resolved" counterpart: retryActivity stops reporting it once the
+// announced delay elapses, since by then the retried request is
+// indistinguishable from ordinary thinking time.
+type retryStatus struct {
+	sessionID  string
+	attempt    int
+	maxAttempt int
+	reason     string
+	until      time.Time
+}
+
+// retryActivity reports the in-progress provider retry for the session
+// in view, if any, so a slow-but-recovering connection doesn't read as
+// a hang.
+func (m *UI) retryActivity() string {
+	rs := m.retryStatus
+	if rs == nil || rs.sessionID != m.currentSessionID() {
+		return ""
+	}
+	remaining := time.Until(rs.until)
+	if remaining <= 0 {
+		return ""
+	}
+	label := fmt.Sprintf("Retrying %d/%d", rs.attempt, rs.maxAttempt)
+	if rs.reason != "" {
+		label += ": " + ansi.Truncate(rs.reason, maxActivityTargetWidth, "…")
+	}
+	return label + " (" + common.FormatDuration(remaining) + ")"
+}
+
+// toolSlowThreshold is how long a tool call must be pending before its own
+// running time is appended to the activity label. Most calls finish well
+// under this, so the label only grows for the ones actually worth flagging.
+const toolSlowThreshold = 5 * time.Second
+
+// toolTiming remembers when the tool call currently named in the status
+// line was first observed by observeToolCall, so toolSlowness can report
+// how long it has actually been running.
+type toolTiming struct {
+	id    string
+	since time.Time
+}
+
+// toolSlowness reports how long tc has been running once that exceeds
+// toolSlowThreshold, so a slow tool or MCP call reads as still working
+// instead of hung — there is deliberately no timeout on tool calls, so this
+// running clock is the only signal the user gets. The Agent tool is
+// excluded: it runs a whole nested turn, so a long duration there is
+// expected rather than a sign of stalling.
+func (m *UI) toolSlowness(tc message.ToolCall) string {
+	if tc.Name == toolnames.Agent {
+		return ""
+	}
+	if m.activeTool == nil || m.activeTool.id != tc.ID {
+		return ""
+	}
+	elapsed := time.Since(m.activeTool.since)
+	if elapsed < toolSlowThreshold {
+		return ""
+	}
+	return common.FormatDuration(elapsed)
 }
 
 // renderTurnHint renders the right-hand escape hint. The three states mirror

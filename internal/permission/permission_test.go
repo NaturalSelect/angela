@@ -299,6 +299,35 @@ func TestPermissionService_DenyOutcomesDiffer(t *testing.T) {
 	assert.Equal(t, OutcomeUserDeny, wait().Outcome)
 }
 
+// TestPermissionService_DenyReasonReachesDecision pins that the text a
+// user attaches to a denial rides through Deny to the Decision the
+// caller gets back, since that's the only path a typed explanation has
+// to reach the model's tool response. A plain deny with no reason must
+// leave Decision.Reason empty, matching the pre-existing behavior
+// DecisionResponse relies on for its generic "User denied permission"
+// text.
+func TestPermissionService_DenyReasonReachesDecision(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil)
+
+	events := service.Subscribe(t.Context())
+	wait := gateAsync(t.Context(), service, "s1", "c1", editAccess("/work/a.go"))
+	request := (<-events).Payload
+	request.DenyReason = "not needed for this task"
+	service.Deny(request)
+	decision := wait()
+	assert.Equal(t, OutcomeUserDeny, decision.Outcome)
+	assert.Equal(t, "not needed for this task", decision.Reason)
+
+	events2 := service.Subscribe(t.Context())
+	wait2 := gateAsync(t.Context(), service, "s2", "c2", editAccess("/work/b.go"))
+	service.Deny((<-events2).Payload)
+	decision2 := wait2()
+	assert.Equal(t, OutcomeUserDeny, decision2.Outcome)
+	assert.Empty(t, decision2.Reason, "a plain deny must not invent a reason")
+}
+
 // TestPermissionService_SessionsPromptConcurrently pins that one
 // session waiting on the user does not block another. The old service
 // held a single global lock for the whole prompt.

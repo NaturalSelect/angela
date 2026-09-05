@@ -71,6 +71,11 @@ const (
 	// answer.
 	autoContinuePrompt = "Continue exactly where you left off in your previous response if you have next steps. Do not repeat any content already provided."
 
+	// attachmentOnlyPrompt substitutes for the current turn's prompt text
+	// when the user sends attachments with no typed message: fantasy's
+	// Agent.Stream rejects an empty prompt whenever files are attached.
+	attachmentOnlyPrompt = "Review the attached file(s)."
+
 	// interruptedPromptPrefix opens the wrapper applied by
 	// wrapInterruptedPrompt below. Recognizing it on a prompt that
 	// already carries it is what keeps repeated interruptions of the
@@ -486,12 +491,12 @@ func (a *sessionAgent) publishRunComplete(ctx context.Context, call SessionAgent
 
 // ValidateCall performs the cheap structural validation that
 // sessionAgent.Run requires before a call can be dispatched: a call must
-// carry either a non-empty prompt or a text attachment, and it must name a
-// session. It is exported so callers that accept a run before dispatching it
-// (e.g. backend.SendMessage) can apply the same checks and keep the error
-// contract consistent.
+// carry either a non-empty prompt or at least one attachment, and it must
+// name a session. It is exported so callers that accept a run before
+// dispatching it (e.g. backend.SendMessage) can apply the same checks and
+// keep the error contract consistent.
 func ValidateCall(call SessionAgentCall) error {
-	if call.Prompt == "" && !message.ContainsTextAttachment(call.Attachments) {
+	if call.Prompt == "" && len(call.Attachments) == 0 {
 		return ErrEmptyPrompt
 	}
 	if call.SessionID == "" {
@@ -745,10 +750,15 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		maxOutputTokens = &call.MaxOutputTokens
 	}
 	maxRetries := streamMaxRetries
+	retryAttempt := 0
 	retryModel := &atomic.Pointer[fantasy.LanguageModel]{}
 	retryModel.Store(&runModel.Model)
+	prompt := message.PromptWithTextAttachments(call.Prompt, call.Attachments)
+	if prompt == "" && len(files) > 0 {
+		prompt = attachmentOnlyPrompt
+	}
 	result, err = agent.Stream(genCtx, fantasy.AgentStreamCall{
-		Prompt:           message.PromptWithTextAttachments(call.Prompt, call.Attachments),
+		Prompt:           prompt,
 		Files:            files,
 		Messages:         history,
 		Headers:          sessionHeaders(call.SessionID),
@@ -892,6 +902,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		},
 		MaxRetries: &maxRetries,
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
+			retryAttempt++
 			slog.Warn("Provider request failed, retrying", providerRetryLogFields(err, delay)...)
 			// Reset streamed content so the retried response doesn't
 			// concatenate with partial content from the failed attempt.
@@ -900,6 +911,25 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			currentAssistant.ResetStreamedContent()
 			if updateErr := a.messages.Update(genCtx, *currentAssistant); updateErr != nil {
 				slog.Error("Failed to reset message on retry", "error", updateErr)
+			}
+			// Surface the retry so a slow-but-recovering connection
+			// doesn't read as a hang: without this, the whole
+			// retry-plus-backoff window passes with no visible sign
+			// of what is happening.
+			if a.notify != nil {
+				reason := ""
+				if err != nil {
+					reason = stringext.Capitalize(err.Title)
+				}
+				a.notify.Publish(pubsub.CreatedEvent, notify.Notification{
+					SessionID:        call.SessionID,
+					SessionTitle:     currentSession.Title,
+					Type:             notify.TypeAgentRetrying,
+					RetryAttempt:     retryAttempt,
+					RetryMaxAttempts: maxRetries,
+					RetryDelay:       delay,
+					Message:          reason,
+				})
 			}
 		},
 		OnAuthRefresh: a.authRefreshRebuilding(call, retryModel),

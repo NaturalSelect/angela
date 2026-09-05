@@ -34,6 +34,9 @@ type PermissionRequest struct {
 	Action      string `json:"action"`
 	Params      any    `json:"params"`
 	Path        string `json:"path"`
+	// DenyReason is an optional explanation the user attaches when
+	// denying this request.
+	DenyReason string `json:"deny_reason,omitempty"`
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface. This is needed

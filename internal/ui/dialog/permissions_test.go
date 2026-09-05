@@ -54,7 +54,7 @@ func TestPermissions_ActionKeysResolve(t *testing.T) {
 }
 
 // TestPermissions_NavigationCyclesOptions verifies that tab and arrow keys
-// cycle through the three permission options.
+// cycle through the four permission options.
 func TestPermissions_NavigationCyclesOptions(t *testing.T) {
 	t.Parallel()
 
@@ -68,13 +68,16 @@ func TestPermissions_NavigationCyclesOptions(t *testing.T) {
 	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, 2, p.selectedOption)
 
+	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, 3, p.selectedOption)
+
 	// Wrap around.
 	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, 0, p.selectedOption)
 
 	// Left cycles backward.
 	p.HandleMsg(keyMsg('h'))
-	require.Equal(t, 2, p.selectedOption)
+	require.Equal(t, 3, p.selectedOption)
 }
 
 // TestPermissions_EnterConfirmsSelection verifies that enter confirms the
@@ -100,6 +103,77 @@ func TestPermissions_EscapeDenies(t *testing.T) {
 	resp, ok := action.(ActionPermissionResponse)
 	require.True(t, ok)
 	require.Equal(t, PermissionDeny, resp.Action)
+}
+
+// TestPermissions_DenyWithReasonEntersTextMode verifies that choosing
+// the "Reason" option, whether by its key shortcut or by selecting it
+// and pressing enter, opens the text box instead of resolving the
+// request right away.
+func TestPermissions_DenyWithReasonEntersTextMode(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	action := p.HandleMsg(keyMsg('r'))
+	require.Nil(t, action, "the shortcut should switch modes, not resolve the request")
+	require.True(t, p.denyReasonMode)
+	require.True(t, p.denyReasonInput.Focused())
+
+	p2 := newTestPermissions(t)
+	p2.selectedOption = len(p2.options()) - 1 // "Reason" is always last.
+	action = p2.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Nil(t, action)
+	require.True(t, p2.denyReasonMode)
+}
+
+// TestPermissions_DenyWithReasonSubmitsTypedText verifies that text
+// typed into the reason box travels through to the response on
+// PermissionRequest.DenyReason, which is how it eventually reaches the
+// model's tool response.
+func TestPermissions_DenyWithReasonSubmitsTypedText(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	p.enterDenyReasonMode()
+
+	for _, r := range "not now" {
+		p.HandleMsg(keyMsg(r))
+	}
+
+	action := p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionPermissionResponse)
+	require.True(t, ok, "enter should submit and resolve the request")
+	require.Equal(t, PermissionDeny, resp.Action)
+	require.Equal(t, "not now", resp.Permission.DenyReason)
+}
+
+// TestPermissions_DenyWithReasonEscapeCancels verifies that escape
+// inside the reason box backs out to the button row instead of
+// resolving or closing the dialog, so a user who opened it by mistake
+// isn't forced to submit a denial.
+func TestPermissions_DenyWithReasonEscapeCancels(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	p.enterDenyReasonMode()
+
+	action := p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEscape})
+	require.Nil(t, action)
+	require.False(t, p.denyReasonMode)
+}
+
+// TestPermissions_DenyWithReasonEmptySubmit verifies that submitting
+// with no typed text still denies, just without a reason attached.
+func TestPermissions_DenyWithReasonEmptySubmit(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPermissions(t)
+	p.enterDenyReasonMode()
+
+	action := p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionPermissionResponse)
+	require.True(t, ok)
+	require.Equal(t, PermissionDeny, resp.Action)
+	require.Empty(t, resp.Permission.DenyReason)
 }
 
 // TestPermissions_RenameShowsSymbolChange pins that approving a rename
@@ -139,23 +213,39 @@ func newMergePermissions(doc string) *Permissions {
 			NewContent: doc,
 		},
 	})
-	// renderDiff serves a cache until something marks it stale; Draw does
-	// that on its first pass by sizing the viewport.
+	// Some render paths (renderDiff) cache until something marks the
+	// viewport dirty; Draw does that on its first pass by sizing it.
 	p.viewportDirty = true
 	return p
 }
 
-// A merge hands a whole proposal back and ends the branch, so the user
-// has to be able to read the document before approving it. The diff view
-// is what gives the prompt the room, the scrollbar and the fullscreen
-// key; the plain text panel caps out at half the terminal with no way to
-// expand.
-func TestPermissions_MergeShowsTheProposalAsADiff(t *testing.T) {
+func newWritePermissions(filePath, oldContent, newContent string) *Permissions {
+	s := styles.CharmtonePantera()
+	com := &common.Common{Styles: &s}
+	p := NewPermissions(com, permission.PermissionRequest{
+		ID:         "perm-test",
+		ToolCallID: "tool-call-test",
+		ToolName:   toolnames.Write,
+		Params: tools.WritePermissionsParams{
+			FilePath:   filePath,
+			OldContent: oldContent,
+			NewContent: newContent,
+		},
+	})
+	p.viewportDirty = true
+	return p
+}
+
+// A merge proposal always hands back a fresh document (mergeTool.plan
+// hardcodes its OldContent to ""), so there is nothing to diff it
+// against. It renders as plain syntax-highlighted content instead of a
+// diff where every line would show as an addition.
+func TestPermissions_MergeShowsTheProposalAsPlainContent(t *testing.T) {
 	t.Parallel()
 
 	p := newMergePermissions("# Plan\n\nRewrite the parser.")
-	require.True(t, p.hasDiffView(),
-		"a proposal is too long for the simple prompt, which cannot go fullscreen")
+	require.False(t, p.hasDiffView(),
+		"a merge proposal has no old content, so there is nothing to diff against")
 
 	content := ansi.Strip(p.renderContent(80))
 	require.Contains(t, content, "Rewrite the parser.")
@@ -168,8 +258,9 @@ func TestPermissions_MergeShowsTheProposalAsADiff(t *testing.T) {
 }
 
 // The fullscreen toggle and the split/unified switch are offered only
-// where they do something. Merge earns them by rendering a diff.
-func TestPermissions_MergeOffersDiffControls(t *testing.T) {
+// where they do something. A merge proposal has no old content to
+// diff against, so neither one applies.
+func TestPermissions_MergeOffersNoDiffControls(t *testing.T) {
 	t.Parallel()
 
 	p := newMergePermissions("# Plan\n\nRewrite the parser.")
@@ -178,8 +269,35 @@ func TestPermissions_MergeOffersDiffControls(t *testing.T) {
 	for _, b := range p.ShortHelp() {
 		names = append(names, b.Help().Key)
 	}
-	require.Contains(t, names, p.keyMap.ToggleFullscreen.Help().Key)
-	require.Contains(t, names, p.keyMap.ToggleDiffMode.Help().Key)
+	require.NotContains(t, names, p.keyMap.ToggleFullscreen.Help().Key)
+	require.NotContains(t, names, p.keyMap.ToggleDiffMode.Help().Key)
+}
+
+// Creating a new file has nothing to diff against, so the dialog shows
+// the new content as plain code rather than a diff where every line
+// would show as an addition.
+func TestPermissions_WriteNewFileShowsPlainContent(t *testing.T) {
+	t.Parallel()
+
+	p := newWritePermissions("main.go", "", "package main\n")
+	require.False(t, p.hasDiffView(),
+		"a new file has no old content, so there is nothing to diff against")
+
+	content := ansi.Strip(p.renderContent(80))
+	require.Contains(t, content, "package main")
+}
+
+// Overwriting an existing file does have old content to compare
+// against, so it keeps the diff view.
+func TestPermissions_WriteOverwriteShowsDiff(t *testing.T) {
+	t.Parallel()
+
+	p := newWritePermissions("main.go", "package old\n", "package main\n")
+	require.True(t, p.hasDiffView(),
+		"overwriting a file has old content to diff against")
+
+	content := ansi.Strip(p.renderContent(80))
+	require.Contains(t, content, "package main")
 }
 
 // A merge ends the branch the instant it's approved (mergeTool.apply sets
@@ -195,15 +313,17 @@ func TestPermissions_MergeOffersNoAllowForSession(t *testing.T) {
 	for _, o := range p.options() {
 		actions = append(actions, o.action)
 	}
-	require.Equal(t, []PermissionAction{PermissionAllow, PermissionDeny}, actions)
+	require.Equal(t, []PermissionAction{PermissionAllow, PermissionDeny, PermissionDenyWithReason}, actions)
 
 	rendered, _, _ := p.renderButtons(p.buttonOpts(), 80, false)
 	require.NotContains(t, ansi.Strip(rendered), "Allow for Session")
 
-	// Tab must cycle between exactly the two remaining options.
+	// Tab must cycle between exactly the three remaining options.
 	require.Equal(t, 0, p.selectedOption)
 	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, 1, p.selectedOption)
+	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, 2, p.selectedOption)
 	p.HandleMsg(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, 0, p.selectedOption)
 

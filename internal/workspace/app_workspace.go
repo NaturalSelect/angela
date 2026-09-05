@@ -20,6 +20,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/shell"
 	"github.com/NaturalSelect/angela/internal/skills"
@@ -41,7 +42,7 @@ func NewAppWorkspace(a *app.App, store *config.ConfigStore) *AppWorkspace {
 	return &AppWorkspace{
 		app:      a,
 		store:    store,
-		inDocker: detectInDocker(),
+		inDocker: sandbox.InDocker(),
 	}
 }
 
@@ -395,6 +396,10 @@ func (w *AppWorkspace) UpdatePreferredModel(scope config.Scope, name config.Slot
 	return w.store.UpdatePreferredModel(scope, name, model)
 }
 
+func (w *AppWorkspace) OverrideAgentVariant(agentID, variant string) error {
+	return w.store.OverrideAgentVariant(agentID, variant)
+}
+
 func (w *AppWorkspace) RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.store.RecordRecentModel(scope, name, model)
 }
@@ -536,6 +541,24 @@ func (w *AppWorkspace) MCPPendingAuth() []mcptools.PendingAuthServer {
 
 func (w *AppWorkspace) MCPAuthURL(name string) string {
 	return mcptools.MCPAuthURL(name)
+}
+
+func (w *AppWorkspace) MCPEnable(ctx context.Context, name string) error {
+	return mcptools.InitializeSingle(ctx, name, w.store)
+}
+
+func (w *AppWorkspace) MCPDisable(name string) error {
+	return mcptools.DisableSingle(w.store, name)
+}
+
+// -- Sandbox --
+
+func (w *AppWorkspace) IsInSandbox() bool {
+	return w.app.Sandbox.IsInSandbox()
+}
+
+func (w *AppWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) error {
+	return w.app.Sandbox.EnterSandbox(cfg)
 }
 
 // -- Lifecycle --

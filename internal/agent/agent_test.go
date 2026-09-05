@@ -1017,6 +1017,34 @@ func TestWorkaroundProviderMediaLimitations_VisionModel(t *testing.T) {
 	require.Equal(t, "image/png", file.MediaType)
 }
 
+// TestRun_ImageOnlyAttachmentSendsSuccessfully guards the fix for a
+// message that carries only an image attachment and no typed text.
+// fantasy.Agent.Stream rejects an empty Prompt whenever Files is
+// non-empty ("prompt can't be empty when there are files"), so Run
+// must substitute a placeholder prompt rather than pass the empty
+// string through.
+func TestRun_ImageOnlyAttachmentSendsSuccessfully(t *testing.T) {
+	t.Parallel()
+	env := testEnv(t)
+	model := &finishStreamModel{text: "done"}
+	sa, resolved := testSessionAgent(env, model, model, "system")
+	resolved.Model.CatwalkCfg.SupportsImages = true
+
+	sess, err := env.sessions.Create(t.Context(), "New Session")
+	require.NoError(t, err)
+
+	result, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     resolved,
+		SessionID: sess.ID,
+		Attachments: []message.Attachment{
+			{FileName: "paste_1.png", MimeType: "image/png", Content: []byte("fake-png-bytes")},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+}
+
 func TestWorkaroundProviderMediaLimitations_AnthropicProvider(t *testing.T) {
 	env := testEnv(t)
 	sa, _ := testSessionAgent(env, nil, nil, "test prompt")

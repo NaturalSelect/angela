@@ -43,9 +43,11 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/stringext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/attachments"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
@@ -151,6 +153,7 @@ type (
 
 	userCommandsLoadedMsg struct {
 		Commands []commands.CustomCommand
+		Skills   []skills.CatalogEntry
 	}
 	// mcpPromptsLoadedMsg is sent when mcp prompts are loaded.
 	mcpPromptsLoadedMsg struct {
@@ -219,6 +222,16 @@ type UI struct {
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
 
+	// retryStatus is the in-progress provider retry to show on the turn
+	// status line, if any. Nil when no retry has been reported for the
+	// turn currently running.
+	retryStatus *retryStatus
+
+	// activeTool is the running time of the tool call last observed by
+	// observeToolCall, used to flag a slow tool or MCP call on the turn
+	// status line. Nil until this turn's first tool call is seen.
+	activeTool *toolTiming
+
 	// sessionIsBranch memoizes whether the loaded session is a branch.
 	// Resolving it reads config through the workspace, which the status
 	// line renders too often to afford, so it is settled once per load.
@@ -269,6 +282,12 @@ type UI struct {
 	completionsQuery         string
 	completionsTrigger       string      // the character that opened the popup
 	completionsPositionStart image.Point // x,y where user typed the trigger
+	// completionsRect is the screen rectangle the popup was drawn into
+	// on the last Draw call, in the same coordinate space as
+	// tea.MouseClickMsg. It resets to the zero Rectangle whenever the
+	// popup isn't drawn, so a stale click target can never linger past
+	// the frame that closed it.
+	completionsRect image.Rectangle
 
 	// Chat components
 	chat *Chat
@@ -321,6 +340,9 @@ type UI struct {
 	// custom commands & mcp commands
 	customCommands []commands.CustomCommand
 	mcpPrompts     []commands.MCPPrompt
+	// skillEntries is the full skill catalog (regardless of
+	// UserInvocable), used to populate the "&" mention popup.
+	skillEntries []skills.CatalogEntry
 
 	// forceCompactMode tracks whether compact mode is forced by user toggle
 	forceCompactMode bool
@@ -351,6 +373,12 @@ type UI struct {
 	agentBusyCache      ttlCache[bool]
 	permissionModeCache ttlCache[permission.PermissionMode]
 	busyFetchInFlight   bool
+	// sandboxActive reports whether the workspace process is currently
+	// confined by a sandbox. Landlock restriction is irreversible for the
+	// life of the process and a Docker sandbox starts (and stays) active,
+	// so this only ever flips false->true; it is seeded once at
+	// construction and updated write-through by enterSandbox.
+	sandboxActive bool
 	// agentReady / agentActive memoize the coordinator readiness and the
 	// agent the session runs on (AgentIsReady/AgentActive are
 	// synchronous HTTP GETs in client/server mode, and modelInfo renders
@@ -473,6 +501,10 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	// Update and View never probe the workspace synchronously.
 	mode := com.Workspace.PermissionMode()
 	ui.permissionModeCache.set(mode)
+
+	// Seed the sandbox indicator the same way; see the sandboxActive
+	// field doc for why no refresh loop is needed afterwards.
+	ui.sandboxActive = com.Workspace.IsInSandbox()
 
 	// Seed the memoized agent ready/active state the same way so the
 	// first frame renders the model info; the busy probe keeps it fresh
@@ -682,7 +714,7 @@ func (m *UI) loadCustomCommands() tea.Cmd {
 			slog.Error("Failed to load skill commands", "error", err)
 		}
 		customCommands = append(customCommands, commands.FromSkillCatalog(skillEntries)...)
-		return userCommandsLoadedMsg{Commands: customCommands}
+		return userCommandsLoadedMsg{Commands: customCommands, Skills: skillEntries}
 	}
 }
 
@@ -725,6 +757,12 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case busyStateMsg:
 		cmds = append(cmds, m.applyBusyState(msg)...)
+	case sandboxEnteredMsg:
+		m.sandboxActive = true
+		m.permissionModeCache.set(permission.ModeYolo)
+		m.busyFetchGen++
+		m.setEditorPrompt(permission.ModeYolo)
+		cmds = append(cmds, util.CmdHandler(util.NewInfoMsg("Entered sandbox — permissions switched to yolo mode")))
 	case branchStatusMsg:
 		m.applyBranchStatus(msg)
 	case promptQueueMsg:
@@ -868,6 +906,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case userCommandsLoadedMsg:
 		m.customCommands = msg.Commands
+		m.skillEntries = msg.Skills
 		dia := m.dialog.Dialog(dialog.CommandsID)
 		if dia == nil {
 			break
@@ -880,6 +919,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case mcpStateChangedMsg:
 		m.mcpStates = msg.states
+		if dia := m.dialog.Dialog(dialog.MCPServersID); dia != nil {
+			if mcpDialog, ok := dia.(*dialog.MCPServers); ok {
+				mcpDialog.SetStates(m.mcpStates)
+			}
+		}
 		// Auto-open the MCP auth dialog if any servers need authentication.
 		if cmd := m.openMCPAuthDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1078,6 +1122,28 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return m, tea.Batch(cmds...)
 				}
+			}
+		}
+
+		// Route a click on the mention/file completions popup to the
+		// same insert path Enter uses. The popup renders bottom-to-top
+		// (completions.New sets SetReverse(true)), but
+		// list.ItemIndexAtPosition walks items in un-reversed order, so
+		// the clicked screen row has to be flipped before resolving
+		// which item it landed on.
+		if m.completionsOpen && m.completions.HasItems() && msg.Button == uv.MouseLeft {
+			rect := m.completionsRect
+			if msg.X >= rect.Min.X && msg.X < rect.Max.X && msg.Y >= rect.Min.Y && msg.Y < rect.Max.Y {
+				yInList := (rect.Dy() - 1) - (msg.Y - rect.Min.Y)
+				if cmd, keepOpen, handled := m.applyCompletionSelection(m.completions.SelectAt(yInList)); handled {
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+					if !keepOpen {
+						m.closeCompletions()
+					}
+				}
+				return m, tea.Batch(cmds...)
 			}
 		}
 
@@ -1757,6 +1823,9 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			}
 		}
 		m.chat.AppendMessages(items...)
+		for _, tc := range msg.ToolCalls() {
+			m.observeToolCall(tc)
+		}
 		if m.chat.Follow() {
 			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
 				cmds = append(cmds, cmd)
@@ -1877,6 +1946,7 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 		}
 		if existingToolItem == nil {
 			items = append(items, chat.NewToolMessageItem(m.com.Styles, msg.ID, tc, nil, false, m.com.Workspace.WorkingDir()))
+			m.observeToolCall(tc)
 		}
 	}
 
@@ -1896,6 +1966,18 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 	}
 
 	return tea.Sequence(cmds...)
+}
+
+// observeToolCall records the moment a newly seen tool call started, so
+// the turn status line can report its own running time later if it turns
+// out to be slow. The Agent tool is excluded: it runs a whole nested
+// turn, so a long duration there is expected rather than a sign of
+// stalling.
+func (m *UI) observeToolCall(tc message.ToolCall) {
+	if tc.Name == toolnames.Agent {
+		return
+	}
+	m.activeTool = &toolTiming{id: tc.ID, since: time.Now()}
 }
 
 // handleChildSessionMessage handles messages from child sessions (agent tools).
@@ -2169,6 +2251,14 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionDisableDockerMCP:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		cmds = append(cmds, m.disableDockerMCP)
+	case dialog.ActionToggleMCPServer:
+		// Left open deliberately: toggling should not close the dialog,
+		// so the user can flip several servers in one visit.
+		cmds = append(cmds, m.toggleMCPServer(msg.Name))
+	case dialog.ActionEnterSandbox:
+		m.dialog.CloseDialog(dialog.SandboxID)
+		cfg := msg.Config
+		cmds = append(cmds, func() tea.Msg { return m.enterSandbox(cfg) })
 	case dialog.ActionInitializeProject:
 		if m.isAgentBusy() {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before summarizing session..."))
@@ -2400,17 +2490,32 @@ func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
 	})
 }
 
-// handleSelectVariant points the session's model at a preset. The
-// variant lives on the session's agent instance, so it takes effect from
-// the next turn and leaves the global config untouched.
+// handleSelectVariant points the session's model at a preset. With a
+// session, the variant lives on its agent instance, so it takes effect
+// from the next turn and leaves the global config untouched. With no
+// session yet — the landing screen, previewing a preset before the
+// first message — there is no instance to edit, so the pick lands on
+// the agent's own config-level default instead, the same way a
+// pre-session model pick lands on the slot's default.
 func (m *UI) handleSelectVariant(variant string) tea.Cmd {
 	m.dialog.CloseDialog(dialog.VariantsID)
-	sessionID := m.currentSessionID()
-	if sessionID == "" {
-		return util.ReportWarn("Start a session before switching variants.")
-	}
 	if active := m.activeAgent(); active != nil && active.Variant == variant {
 		return nil
+	}
+
+	sessionID := m.currentSessionID()
+	if sessionID == "" {
+		active := m.activeAgent()
+		if active == nil {
+			return util.ReportWarn("The agent is still starting up.")
+		}
+		agentID := active.AgentID
+		return m.refreshActiveAgentCmd(func() tea.Msg {
+			if err := m.com.Workspace.OverrideAgentVariant(agentID, variant); err != nil {
+				return util.ReportError(err)()
+			}
+			return util.NewInfoMsg(variantSetMessage(variant))
+		})
 	}
 
 	return m.refreshActiveAgentCmd(func() tea.Msg {
@@ -2435,9 +2540,6 @@ func variantSetMessage(variant string) string {
 // through the baseline. Cycling is what makes a variant cheap to reach
 // mid-task, so it deliberately skips the dialog.
 func (m *UI) cycleVariant() tea.Cmd {
-	if m.session == nil {
-		return util.ReportWarn("Start a session before switching variants.")
-	}
 	active := m.activeAgent()
 	if active == nil {
 		return util.ReportWarn("The agent is still starting up.")
@@ -2453,16 +2555,13 @@ func (m *UI) cycleVariant() tea.Cmd {
 	return m.handleSelectVariant(choices[(current+1)%len(choices)])
 }
 
-// openVariantsDialog opens the preset picker for the session's model.
-// There is nothing to switch without a session: the variant is recorded
-// on the session, not globally.
+// openVariantsDialog opens the preset picker for the session's model,
+// or for the coder default when there is no session yet — the same
+// pre-session preview handleSelectVariant applies the pick through.
 func (m *UI) openVariantsDialog() tea.Cmd {
 	if m.dialog.ContainsDialog(dialog.VariantsID) {
 		m.dialog.BringToFront(dialog.VariantsID)
 		return nil
-	}
-	if m.session == nil {
-		return util.ReportWarn("Start a session before switching variants.")
 	}
 	active := m.activeAgent()
 	if active == nil {
@@ -2849,24 +2948,15 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 			// Handle completions if open.
 			if m.completionsOpen {
 				if msg, ok := m.completions.Update(msg); ok {
-					switch msg := msg.(type) {
-					case completions.SelectionMsg[completions.FileCompletionValue]:
-						cmds = append(cmds, m.insertFileCompletion(msg.Value.Path))
-						if !msg.KeepOpen {
-							m.closeCompletions()
-						}
-					case completions.SelectionMsg[completions.ResourceCompletionValue]:
-						cmds = append(cmds, m.insertMCPResourceCompletion(msg.Value))
-						if !msg.KeepOpen {
-							m.closeCompletions()
-						}
-					case completions.SelectionMsg[completions.AgentCompletionValue]:
-						cmds = append(cmds, m.insertAgentCompletion(msg.Value.ID))
-						if !msg.KeepOpen {
-							m.closeCompletions()
-						}
-					case completions.ClosedMsg:
+					if _, closed := msg.(completions.ClosedMsg); closed {
 						m.completionsOpen = false
+					} else if cmd, keepOpen, handled := m.applyCompletionSelection(msg); handled {
+						if cmd != nil {
+							cmds = append(cmds, cmd)
+						}
+						if !keepOpen {
+							m.closeCompletions()
+						}
 					}
 					return tea.Batch(cmds...)
 				}
@@ -2924,7 +3014,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 				attachments := m.attachments.List()
 				m.attachments.Reset()
-				if len(value) == 0 && !message.ContainsTextAttachment(attachments) {
+				if len(value) == 0 && len(attachments) == 0 {
 					return nil
 				}
 
@@ -3001,8 +3091,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				curValue := m.textarea.Value()
 				curIdx := len(curValue)
 
-				// Both triggers only fire at the start of a word, so that
-				// an address or a comment marker mid-sentence stays text.
+				// Every trigger only fires at the start of a word, so
+				// that an address or a comment marker mid-sentence
+				// stays text.
 				justOpened := false
 				if !m.completionsOpen && (curIdx == 0 || isWhitespace(curValue[curIdx-1])) {
 					switch msg.String() {
@@ -3019,6 +3110,14 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 						depth, limit := m.com.Config().Options.TUI.Completions.Limits()
 						cmds = append(cmds, m.completions.Open(depth, limit))
 						justOpened = true
+					case "&":
+						// Same empty-popup guard as "@": nothing to
+						// mention means Enter must reach the message.
+						if sk := m.mentionableSkills(); len(sk) > 0 {
+							m.openCompletions("&", curIdx)
+							m.completions.SetSkills(sk)
+							justOpened = true
+						}
 					}
 				}
 
@@ -3274,11 +3373,15 @@ func (m *UI) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		x = max(0, x)
 		y = max(0, y+1) // Offset for attachments row
 
-		completionsView := uv.NewStyledString(m.completions.Render())
-		completionsView.Draw(scr, image.Rectangle{
+		rect := image.Rectangle{
 			Min: image.Pt(x, y),
 			Max: image.Pt(x+w, y+h),
-		})
+		}
+		m.completionsRect = rect
+		completionsView := uv.NewStyledString(m.completions.Render())
+		completionsView.Draw(scr, rect)
+	} else {
+		m.completionsRect = image.Rectangle{}
 	}
 
 	// Debugging rendering (visually see when the tui rerenders)
@@ -3520,6 +3623,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 		k.Editor.Newline,
 		k.Editor.MentionAgent,
 		k.Editor.MentionFile,
+		k.Editor.MentionSkill,
 		k.Editor.OpenEditor,
 	}
 	if m.currentModelSupportsImages() {
@@ -3862,6 +3966,9 @@ func (m *UI) editorPromptFunc(mode permission.PermissionMode) func(textarea.Prom
 		railStyle = t.Editor.RailBang
 	case mode == permission.ModeYolo:
 		railStyle = t.Editor.RailYolo
+		if m.sandboxActive {
+			railStyle = t.Editor.RailYoloSandbox
+		}
 	case mode == permission.ModeAutoAcceptEdits:
 		railStyle = t.Editor.RailAutoAcceptEdits
 	}
@@ -3921,6 +4028,23 @@ func (m *UI) mentionableAgents() []completions.AgentCompletionValue {
 	return agents
 }
 
+// mentionableSkills returns the full skill catalog (unlike the "/"
+// command palette, which only lists UserInvocable skills) as mention
+// values, sorted by name so the popup is stable across openings.
+func (m *UI) mentionableSkills() []completions.SkillCompletionValue {
+	values := make([]completions.SkillCompletionValue, 0, len(m.skillEntries))
+	for _, entry := range m.skillEntries {
+		values = append(values, completions.SkillCompletionValue{
+			Name:        entry.Name,
+			Description: entry.Description,
+		})
+	}
+	slices.SortFunc(values, func(a, b completions.SkillCompletionValue) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return values
+}
+
 // insertCompletionText replaces the trigger word in the textarea with the
 // given text. The trigger character is part of what gets replaced, so a
 // caller that wants to keep it has to include it in text.
@@ -3948,6 +4072,39 @@ func (m *UI) insertAgentCompletion(id string) tea.Cmd {
 		return nil
 	}
 	return m.handleTextareaHeightChange(prevHeight)
+}
+
+// insertSkillCompletion writes the mention into the textarea as
+// "[skill:name]". Like an agent mention, this is plain text for the
+// coder to read; it does not attach the skill's content the way
+// selecting an invocable skill from the "/" command palette does.
+func (m *UI) insertSkillCompletion(name string) tea.Cmd {
+	prevHeight := m.textarea.Height()
+	if !m.insertCompletionText("[skill:" + name + "]") {
+		return nil
+	}
+	return m.handleTextareaHeightChange(prevHeight)
+}
+
+// applyCompletionSelection reacts to a message carrying a specific
+// selected completion value, whichever popup kind it came from, and
+// whether it arrived via keyboard (through completions.Update) or a
+// mouse click on the popup (through completions.SelectAt). Other
+// messages Update reacts to internally (arrow-key navigation,
+// ClosedMsg) are the caller's concern; handled reports false so the
+// caller leaves those alone.
+func (m *UI) applyCompletionSelection(msg tea.Msg) (cmd tea.Cmd, keepOpen bool, handled bool) {
+	switch msg := msg.(type) {
+	case completions.SelectionMsg[completions.FileCompletionValue]:
+		return m.insertFileCompletion(msg.Value.Path), msg.KeepOpen, true
+	case completions.SelectionMsg[completions.ResourceCompletionValue]:
+		return m.insertMCPResourceCompletion(msg.Value), msg.KeepOpen, true
+	case completions.SelectionMsg[completions.AgentCompletionValue]:
+		return m.insertAgentCompletion(msg.Value.ID), msg.KeepOpen, true
+	case completions.SelectionMsg[completions.SkillCompletionValue]:
+		return m.insertSkillCompletion(msg.Value.Name), msg.KeepOpen, true
+	}
+	return nil, false, false
 }
 
 // insertFileCompletion inserts the selected file path into the textarea,
@@ -4184,6 +4341,9 @@ func (m *UI) editorBorderStyle() lipgloss.Style {
 	case m.bangMode:
 		return t.Editor.RailBang
 	case m.permissionModeCached() == permission.ModeYolo:
+		if m.sandboxActive {
+			return t.Editor.RailYoloSandbox
+		}
 		return t.Editor.RailYolo
 	case m.permissionModeCached() == permission.ModeAutoAcceptEdits:
 		return t.Editor.RailAutoAcceptEdits
@@ -4578,6 +4738,14 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openQuitDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.SandboxID:
+		if cmd := m.openSandboxDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.MCPServersID:
+		if cmd := m.openMCPServersDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	default:
 		// Unknown dialog
 		break
@@ -4595,6 +4763,18 @@ func (m *UI) openQuitDialog() tea.Cmd {
 
 	quitDialog := dialog.NewQuit(m.com)
 	m.dialog.OpenDialog(quitDialog)
+	return nil
+}
+
+// openSandboxDialog opens the sandbox configuration dialog.
+func (m *UI) openSandboxDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.SandboxID) {
+		// Bring to front
+		m.dialog.BringToFront(dialog.SandboxID)
+		return nil
+	}
+
+	m.dialog.OpenDialog(dialog.NewSandbox(m.com))
 	return nil
 }
 
@@ -4848,6 +5028,9 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	case notify.TypeAgentError:
 		// Terminal edge like TypeAgentFinished; fall through to the
 		// busy/queue refresh below.
+	case notify.TypeAgentRetrying:
+		m.setRetryStatus(n)
+		return nil
 	case notify.TypeReAuthenticate:
 		return m.handleReAuthenticate(n.ProviderID)
 	case notify.TypeAWSSSOAuth:
@@ -4861,6 +5044,10 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	// clears its active request before publishing precisely so observers
 	// can re-probe. Drop the memoized busy state and re-fetch it and the
 	// prompt queue off-thread.
+	if m.retryStatus != nil && m.retryStatus.sessionID == n.SessionID {
+		// The turn that was retrying just ended; nothing left to show.
+		m.retryStatus = nil
+	}
 	m.invalidateBusyCaches()
 	m.invalidatePromptQueue()
 	if cmd := m.dispatchBusyRefresh(); cmd != nil {
@@ -4878,6 +5065,21 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 		}
 	}
 	return tea.Batch(cmds...)
+}
+
+// setRetryStatus records an in-progress provider retry so the turn
+// status line can show it instead of a silent pause. There is no
+// explicit "resolved" counterpart: retryActivity stops reporting it
+// once the announced delay elapses, since by then the retried request
+// is indistinguishable from ordinary thinking time.
+func (m *UI) setRetryStatus(n notify.Notification) {
+	m.retryStatus = &retryStatus{
+		sessionID:  n.SessionID,
+		attempt:    n.RetryAttempt,
+		maxAttempt: n.RetryMaxAttempts,
+		reason:     n.Message,
+		until:      time.Now().Add(n.RetryDelay),
+	}
 }
 
 // handleReAuthenticate opens the auth dialog for a provider, seeded
@@ -5051,6 +5253,15 @@ func (m *UI) handlePasteMsg(msg tea.PasteMsg) tea.Cmd {
 
 	if m.focus != uiFocusEditor {
 		return nil
+	}
+
+	// Terminals typically intercept the paste gesture themselves and send
+	// the result as this bracketed paste, rather than forwarding the raw
+	// PasteImage key chord. An image-only clipboard has no text form, so
+	// it arrives here as empty content; fall back to reading the image
+	// directly instead of silently doing nothing.
+	if strings.TrimSpace(msg.Content) == "" && m.currentModelSupportsImages() {
+		return m.pasteImageFromClipboard
 	}
 
 	if hasPasteExceededThreshold(msg) {
@@ -5233,7 +5444,7 @@ func (m *UI) pasteImageFromClipboard() tea.Msg {
 	}
 }
 
-var pasteRE = regexp.MustCompile(`paste_(\d+).txt`)
+var pasteRE = regexp.MustCompile(`^paste_(\d+)\.\w+$`)
 
 func (m *UI) pasteIdx() int {
 	result := 0
@@ -5406,6 +5617,26 @@ func (m *UI) disableDockerMCP() tea.Msg {
 	}
 
 	return util.NewInfoMsg("Docker MCP disabled successfully")
+}
+
+// sandboxEnteredMsg reports that EnterSandbox succeeded and permissions
+// were switched to yolo mode. A dedicated message (rather than reusing
+// util.InfoMsg) is needed because, unlike a plain toast, this must also
+// write through the sandbox/permission-mode caches on the main Update
+// loop.
+type sandboxEnteredMsg struct{}
+
+// enterSandbox applies cfg's kernel-level restrictions to the workspace
+// process, then switches permissions to yolo: the sandbox already
+// enforces the boundaries yolo mode would otherwise skip past, so
+// approval prompts stop adding friction without adding safety.
+func (m *UI) enterSandbox(cfg sandbox.Config) tea.Msg {
+	ctx := context.Background()
+	if err := m.com.Workspace.EnterSandbox(ctx, cfg); err != nil {
+		return util.ReportError(err)()
+	}
+	m.com.Workspace.PermissionSetMode(permission.ModeYolo)
+	return sandboxEnteredMsg{}
 }
 
 // renderLogo renders the Angela letterform wall at the given width.

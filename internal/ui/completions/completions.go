@@ -52,6 +52,7 @@ type completionKind int
 const (
 	kindFile completionKind = iota
 	kindAgent
+	kindSkill
 )
 
 // Completions represents the completions popup component.
@@ -215,6 +216,27 @@ func (c *Completions) SetAgents(agents []AgentCompletionValue) {
 	}
 
 	c.setItems(items, kindAgent)
+}
+
+// SetSkills sets the mentionable skills and rebuilds the list. Like
+// SetAgents, the catalog is already loaded in memory, so there is no
+// separate loading step. The display text is the skill name only —
+// the description rides along on the value for later use, but stays
+// out of Filter() so its words cannot outrank a name match.
+func (c *Completions) SetSkills(skills []SkillCompletionValue) {
+	items := make([]list.FilterableItem, 0, len(skills))
+	for _, skill := range skills {
+		item := NewCompletionItem(
+			skill.Name,
+			skill,
+			c.normalStyle,
+			c.focusedStyle,
+			c.matchStyle,
+		)
+		items = append(items, item)
+	}
+
+	c.setItems(items, kindSkill)
 }
 
 func (c *Completions) setItems(items []list.FilterableItem, kind completionKind) {
@@ -430,9 +452,30 @@ func (c *Completions) selectCurrent(keepOpen bool) tea.Msg {
 			Value:    item,
 			KeepOpen: keepOpen,
 		}
+	case SkillCompletionValue:
+		return SelectionMsg[SkillCompletionValue]{
+			Value:    item,
+			KeepOpen: keepOpen,
+		}
 	default:
 		return nil
 	}
+}
+
+// SelectAt selects the item at viewport-relative row y — the same
+// coordinate space list.List.ItemIndexAtPosition expects, which walks
+// items in un-reversed (insertion) order regardless of how Render()
+// displays them — and returns what Enter would have returned for that
+// item. This lets a mouse click on the popup share the exact insert
+// path keyboard selection uses. The caller is responsible for flipping
+// a reversed-list screen row into this coordinate space first.
+func (c *Completions) SelectAt(y int) tea.Msg {
+	idx, _ := c.list.ItemIndexAtPosition(0, y)
+	if idx < 0 {
+		return nil
+	}
+	c.list.SetSelected(idx)
+	return c.selectCurrent(false)
 }
 
 // Render renders the completions popup.

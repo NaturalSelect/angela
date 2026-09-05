@@ -143,3 +143,27 @@ func (b *Backend) MCPAuthenticate(ctx context.Context, workspaceID, name string)
 	defer cancel()
 	return finish(ctx)
 }
+
+// MCPEnable starts a configured MCP server at runtime without persisting
+// the change to config; it reverts to its configured state on the next
+// restart. workspaceID selects the workspace whose config the server is
+// declared in.
+func (b *Backend) MCPEnable(ctx context.Context, workspaceID, name string) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	return mcptools.InitializeSingle(ctx, name, ws.Cfg)
+}
+
+// MCPDisable stops a configured MCP server at runtime without persisting
+// the change to config; it reverts to its configured state on the next
+// restart. workspaceID selects the workspace whose config the server is
+// declared in.
+func (b *Backend) MCPDisable(workspaceID, name string) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	return mcptools.DisableSingle(ws.Cfg, name)
+}

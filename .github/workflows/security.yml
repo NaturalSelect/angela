@@ -90,3 +90,8 @@ jobs:
         with:
           fail-on-severity: critical
           allow-licenses: BSD-2-Clause, BSD-3-Clause, MIT, MIT-0, Apache-2.0, MPL-2.0, ISC, LicenseRef-scancode-google-patent-license-golang, Unlicense
+          # kernel.org/pub/linux/libs/security/libcap/psx is dual-licensed
+          # (BSD-3-Clause OR GPL-2.0-only); we use it under BSD-3-Clause.
+          # ClearlyDefined's scan of the dual-license text mis-detects it
+          # as BSD-3-Clause AND multiple GPL-2.0 variants.
+          allow-dependencies-licenses: "pkg:golang/kernel.org/pub/linux/libs/security/libcap/psx@v1.2.77"

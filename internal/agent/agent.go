@@ -750,6 +750,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		maxOutputTokens = &call.MaxOutputTokens
 	}
 	maxRetries := streamMaxRetries
+	retryAttempt := 0
 	retryModel := &atomic.Pointer[fantasy.LanguageModel]{}
 	retryModel.Store(&runModel.Model)
 	prompt := message.PromptWithTextAttachments(call.Prompt, call.Attachments)
@@ -901,6 +902,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		},
 		MaxRetries: &maxRetries,
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
+			retryAttempt++
 			slog.Warn("Provider request failed, retrying", providerRetryLogFields(err, delay)...)
 			// Reset streamed content so the retried response doesn't
 			// concatenate with partial content from the failed attempt.
@@ -909,6 +911,25 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			currentAssistant.ResetStreamedContent()
 			if updateErr := a.messages.Update(genCtx, *currentAssistant); updateErr != nil {
 				slog.Error("Failed to reset message on retry", "error", updateErr)
+			}
+			// Surface the retry so a slow-but-recovering connection
+			// doesn't read as a hang: without this, the whole
+			// retry-plus-backoff window passes with no visible sign
+			// of what is happening.
+			if a.notify != nil {
+				reason := ""
+				if err != nil {
+					reason = stringext.Capitalize(err.Title)
+				}
+				a.notify.Publish(pubsub.CreatedEvent, notify.Notification{
+					SessionID:        call.SessionID,
+					SessionTitle:     currentSession.Title,
+					Type:             notify.TypeAgentRetrying,
+					RetryAttempt:     retryAttempt,
+					RetryMaxAttempts: maxRetries,
+					RetryDelay:       delay,
+					Message:          reason,
+				})
 			}
 		},
 		OnAuthRefresh: a.authRefreshRebuilding(call, retryModel),

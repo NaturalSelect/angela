@@ -110,10 +110,6 @@ func AngelaTeal() Styles {
 	chroma.LiteralString = ansi.StylePrimitive{Color: hex(c("#ce9178"))}
 	chroma.LiteralStringEscape = ansi.StylePrimitive{Color: hex(c("#d7ba7d"))}
 
-	// Bold now matches the heading hue (primary) instead of a muted teal
-	// that didn't relate to any other accent color in the palette.
-	s.Markdown.Strong.Color = s.Markdown.H1.Color
-
 	return s
 }
 

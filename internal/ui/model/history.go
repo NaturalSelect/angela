@@ -57,8 +57,10 @@ func (m *UI) handleHistoryUp(msg tea.Msg) tea.Cmd {
 		}
 	}
 
-	// First move cursor to start before entering history.
-	if m.textarea.Line() == 0 {
+	// First move cursor to start before entering history. Only do this once
+	// we're already on the first visual row of the first line -- a wrapped
+	// long line still has rows above the cursor to visit first.
+	if m.textarea.Line() == 0 && m.textarea.LineInfo().RowOffset == 0 {
 		m.textarea.CursorStart()
 		return nil
 	}
@@ -79,8 +81,11 @@ func (m *UI) handleHistoryDown(msg tea.Msg) tea.Cmd {
 		}
 	}
 
-	// First move cursor to end before navigating history.
-	if m.textarea.Line() == max(m.textarea.LineCount()-1, 0) {
+	// First move cursor to end before navigating history. Only do this once
+	// we're already on the last visual row of the last line -- a wrapped
+	// long line still has rows below the cursor to visit first.
+	info := m.textarea.LineInfo()
+	if m.textarea.Line() == max(m.textarea.LineCount()-1, 0) && info.RowOffset == info.Height-1 {
 		m.textarea.MoveToEnd()
 		return m.updateTextarea(nil)
 	}
@@ -183,12 +188,18 @@ func (m *UI) historyReset() {
 	m.promptHistory.draft = ""
 }
 
-// isAtEditorStart returns true if we are at the 0 line and 0 col in the textarea.
+// isAtEditorStart returns true if we are at the 0 line and 0 col in the
+// textarea. A long line that soft-wraps spans several visual rows, so
+// RowOffset must also be checked; otherwise the start of any wrapped row
+// within the first line would be mistaken for the true start of the input.
 func (m *UI) isAtEditorStart() bool {
-	return m.textarea.Line() == 0 && m.textarea.LineInfo().ColumnOffset == 0
+	info := m.textarea.LineInfo()
+	return m.textarea.Line() == 0 && info.RowOffset == 0 && info.ColumnOffset == 0
 }
 
-// isAtEditorEnd returns true if we are in the last line and the last column in the textarea.
+// isAtEditorEnd returns true if we are in the last line and the last column
+// in the textarea. As with isAtEditorStart, a wrapped last line requires
+// checking that we're on its last visual row too.
 func (m *UI) isAtEditorEnd() bool {
 	lineCount := m.textarea.LineCount()
 	if lineCount == 0 {
@@ -198,5 +209,8 @@ func (m *UI) isAtEditorEnd() bool {
 		return false
 	}
 	info := m.textarea.LineInfo()
+	if info.RowOffset != info.Height-1 {
+		return false
+	}
 	return info.CharOffset >= info.CharWidth-1 || info.CharWidth == 0
 }

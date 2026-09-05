@@ -1,3 +1,38 @@
+This repository is a fork of
+[charmbracelet/crush](https://github.com/charmbracelet/crush). Code
+inherited from upstream, through and including its state at commit
+[`051955a8`](https://github.com/charmbracelet/crush/commit/051955a84c14550254d7929b4f27d01b84b4fdde)
+(2026-08-13), remains licensed under the Functional Source License below,
+copyright Charmbracelet, Inc. Original work added to this repository after
+that commit is copyright NaturalSelect and licensed under the MIT License
+below.
+
+---
+
+MIT License
+
+Copyright (c) 2026-present NaturalSelect
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
 # Functional Source License, Version 1.1, MIT Future License
 
 ## Abbreviation

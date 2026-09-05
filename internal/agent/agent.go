@@ -71,6 +71,11 @@ const (
 	// answer.
 	autoContinuePrompt = "Continue exactly where you left off in your previous response if you have next steps. Do not repeat any content already provided."
 
+	// attachmentOnlyPrompt substitutes for the current turn's prompt text
+	// when the user sends attachments with no typed message: fantasy's
+	// Agent.Stream rejects an empty prompt whenever files are attached.
+	attachmentOnlyPrompt = "Review the attached file(s)."
+
 	// interruptedPromptPrefix opens the wrapper applied by
 	// wrapInterruptedPrompt below. Recognizing it on a prompt that
 	// already carries it is what keeps repeated interruptions of the
@@ -486,12 +491,12 @@ func (a *sessionAgent) publishRunComplete(ctx context.Context, call SessionAgent
 
 // ValidateCall performs the cheap structural validation that
 // sessionAgent.Run requires before a call can be dispatched: a call must
-// carry either a non-empty prompt or a text attachment, and it must name a
-// session. It is exported so callers that accept a run before dispatching it
-// (e.g. backend.SendMessage) can apply the same checks and keep the error
-// contract consistent.
+// carry either a non-empty prompt or at least one attachment, and it must
+// name a session. It is exported so callers that accept a run before
+// dispatching it (e.g. backend.SendMessage) can apply the same checks and
+// keep the error contract consistent.
 func ValidateCall(call SessionAgentCall) error {
-	if call.Prompt == "" && !message.ContainsTextAttachment(call.Attachments) {
+	if call.Prompt == "" && len(call.Attachments) == 0 {
 		return ErrEmptyPrompt
 	}
 	if call.SessionID == "" {
@@ -747,8 +752,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	maxRetries := streamMaxRetries
 	retryModel := &atomic.Pointer[fantasy.LanguageModel]{}
 	retryModel.Store(&runModel.Model)
+	prompt := message.PromptWithTextAttachments(call.Prompt, call.Attachments)
+	if prompt == "" && len(files) > 0 {
+		prompt = attachmentOnlyPrompt
+	}
 	result, err = agent.Stream(genCtx, fantasy.AgentStreamCall{
-		Prompt:           message.PromptWithTextAttachments(call.Prompt, call.Attachments),
+		Prompt:           prompt,
 		Files:            files,
 		Messages:         history,
 		Headers:          sessionHeaders(call.SessionID),

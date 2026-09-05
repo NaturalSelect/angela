@@ -388,6 +388,38 @@ func (c *Client) MCPAuthenticate(ctx context.Context, id, name string) error {
 	return nil
 }
 
+// MCPEnable starts a configured MCP server at runtime without persisting
+// the change.
+func (c *Client) MCPEnable(ctx context.Context, id, name string) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/mcp/enable", id), nil,
+		jsonBody(proto.MCPNameRequest{Name: name}),
+		http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to enable MCP: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to enable MCP: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
+// MCPDisable stops a configured MCP server at runtime without persisting
+// the change.
+func (c *Client) MCPDisable(ctx context.Context, id, name string) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/mcp/disable", id), nil,
+		jsonBody(proto.MCPNameRequest{Name: name}),
+		http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to disable MCP: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to disable MCP: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
 // MCPRefreshPrompts refreshes prompts for a named MCP client.
 func (c *Client) MCPRefreshPrompts(ctx context.Context, id, name string) error {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/mcp/refresh-prompts", id), nil,

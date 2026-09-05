@@ -10,6 +10,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/stretchr/testify/require"
@@ -432,6 +433,20 @@ func TestHandleKeyPressMsg_PasteImage(t *testing.T) {
 	})
 }
 
+func TestPasteIdx(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+
+	require.Equal(t, 1, m.pasteIdx(), "first paste starts at 1")
+
+	m.attachments.Update(message.Attachment{FileName: "paste_1.png", MimeType: "image/png"})
+	require.Equal(t, 2, m.pasteIdx(), "an existing image attachment bumps the next index")
+
+	m.attachments.Update(message.Attachment{FileName: "paste_2.txt", MimeType: "text/plain"})
+	require.Equal(t, 3, m.pasteIdx(), "text and image paste attachments share one counter regardless of extension")
+}
+
 func TestHandleKeyPressMsg_SendMessage(t *testing.T) {
 	t.Parallel()
 
@@ -466,12 +481,13 @@ func TestHandleKeyPressMsg_SendMessage(t *testing.T) {
 		require.Nil(t, cmd)
 	})
 
-	t.Run("empty prompt with a pasted image attachment discards it silently", func(t *testing.T) {
+	t.Run("empty prompt with a pasted image attachment sends the image", func(t *testing.T) {
 		t.Parallel()
-		m, _ := newMockBusyUI(t)
+		m, ws := newMockBusyUI(t)
+		ws.EXPECT().AgentReadyErr().Return(nil)
 		m.textarea.SetValue("")
 		m.attachments.Update(message.Attachment{
-			FileName: "paste_0.png",
+			FileName: "paste_1.png",
 			MimeType: "image/png",
 			Content:  []byte("fake-png-bytes"),
 		})
@@ -479,14 +495,8 @@ func TestHandleKeyPressMsg_SendMessage(t *testing.T) {
 
 		cmd := m.handleKeyPressMsg(keyMsg("enter"))
 
-		// ContainsTextAttachment only recognizes text/* attachments, so an
-		// image-only send is rejected same as an empty prompt. But unlike
-		// the empty-prompt case, the attachment list was already reset
-		// before this check runs (see the SendMessage handling in ui.go),
-		// so the pasted image is lost with no error shown to the user
-		// instead of being kept for a retry.
-		require.Nil(t, cmd, "an image-only prompt is not sent")
-		require.Empty(t, m.attachments.List(), "pins current behavior: the pasted image is silently discarded")
+		require.NotNil(t, cmd, "an image-only prompt is sent even without typed text")
+		require.Empty(t, m.attachments.List(), "attachments are cleared once handed off to the send")
 	})
 
 	t.Run("bang mode runs a shell command instead of sending", func(t *testing.T) {
@@ -683,6 +693,21 @@ func TestHandleKeyPressMsg_MentionAgentTriggerOpensCompletions(t *testing.T) {
 	m := newBusyUIWithWorkspace(ws)
 
 	m.handleKeyPressMsg(keyMsg("@"))
+
+	require.True(t, m.completionsOpen)
+}
+
+func TestHandleKeyPressMsg_MentionSkillTriggerOpensCompletions(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return(&config.Config{}).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+	m := newBusyUIWithWorkspace(ws)
+	m.skillEntries = []skills.CatalogEntry{{Name: "jq", Description: "Query JSON"}}
+
+	m.handleKeyPressMsg(keyMsg("&"))
 
 	require.True(t, m.completionsOpen)
 }

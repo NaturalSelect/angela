@@ -345,19 +345,26 @@ func (c *Commands) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 }
 
 // ShortHelp implements [help.KeyMap].
+// ShortHelp implements [help.KeyMap].
 func (c *Commands) ShortHelp() []key.Binding {
-	return []key.Binding{
-		c.keyMap.Tab,
-		c.keyMap.UpDown,
-		c.keyMap.Select,
-		c.keyMap.Close,
+	bindings := []key.Binding{}
+	// Tab only does anything when there is a second or third tab to
+	// cycle to (see the same guard in HandleMsg's Tab/ShiftTab cases),
+	// so advertising it otherwise offers a key that does nothing.
+	if len(c.customCommands) > 0 || len(c.mcpPrompts) > 0 {
+		bindings = append(bindings, c.keyMap.Tab)
 	}
+	return append(bindings, c.keyMap.UpDown, c.keyMap.Select, c.keyMap.Close)
 }
 
 // FullHelp implements [help.KeyMap].
 func (c *Commands) FullHelp() [][]key.Binding {
+	row := []key.Binding{c.keyMap.Select, c.keyMap.Next, c.keyMap.Previous}
+	if len(c.customCommands) > 0 || len(c.mcpPrompts) > 0 {
+		row = append(row, c.keyMap.Tab)
+	}
 	return [][]key.Binding{
-		{c.keyMap.Select, c.keyMap.Next, c.keyMap.Previous, c.keyMap.Tab},
+		row,
 		{c.keyMap.Close},
 	}
 }
@@ -463,6 +470,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		NewCommandItem(c.com.Styles, "switch_session", "Sessions", "ctrl+s", ActionOpenDialog{SessionsID}),
 		NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}),
 		NewCommandItem(c.com.Styles, "switch_agent", "Switch Agent", "", ActionOpenDialog{AgentsID}).WithAliases("agent"),
+		NewCommandItem(c.com.Styles, "manage_mcp", "Manage MCP Servers", "", ActionOpenDialog{MCPServersID}).WithAliases("mcp", "mcps"),
 		NewCommandItem(c.com.Styles, "suspend", "Suspend", "ctrl+z", ActionSuspend{}),
 	}
 

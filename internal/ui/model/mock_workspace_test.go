@@ -696,6 +696,34 @@ func (mr *MockWorkspaceMockRecorder) MCPAuthenticate(ctx, name any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MCPAuthenticate", reflect.TypeOf((*MockWorkspace)(nil).MCPAuthenticate), ctx, name)
 }
 
+// MCPDisable mocks base method.
+func (m *MockWorkspace) MCPDisable(name string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MCPDisable", name)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MCPDisable indicates an expected call of MCPDisable.
+func (mr *MockWorkspaceMockRecorder) MCPDisable(name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MCPDisable", reflect.TypeOf((*MockWorkspace)(nil).MCPDisable), name)
+}
+
+// MCPEnable mocks base method.
+func (m *MockWorkspace) MCPEnable(ctx context.Context, name string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MCPEnable", ctx, name)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MCPEnable indicates an expected call of MCPEnable.
+func (mr *MockWorkspaceMockRecorder) MCPEnable(ctx, name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MCPEnable", reflect.TypeOf((*MockWorkspace)(nil).MCPEnable), ctx, name)
+}
+
 // MCPGetStates mocks base method.
 func (m *MockWorkspace) MCPGetStates() map[string]mcp.ClientInfo {
 	m.ctrl.T.Helper()

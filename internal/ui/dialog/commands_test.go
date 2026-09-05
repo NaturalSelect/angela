@@ -671,12 +671,15 @@ func TestCommandsRadioView(t *testing.T) {
 }
 
 // TestCommands_Help verifies the short help exposes the primary
-// bindings and the full help includes tab cycling.
+// bindings, and that Tab is only advertised when there is a second or
+// third tab it could actually cycle to — a bare System-only menu has
+// nothing for Tab to do, so it must be absent from both help views.
 func TestCommands_Help(t *testing.T) {
 	t.Parallel()
 
 	c := newTestCommands(t, nil, "", false, nil, nil, nil)
-	require.Len(t, c.ShortHelp(), 4)
+	require.Len(t, c.ShortHelp(), 3)
+	require.NotContains(t, c.ShortHelp(), c.keyMap.Tab)
 
 	var flat []string
 	for _, row := range c.FullHelp() {
@@ -686,6 +689,26 @@ func TestCommands_Help(t *testing.T) {
 	}
 	require.Contains(t, flat, c.keyMap.Select.Help().Key)
 	require.Contains(t, flat, c.keyMap.Close.Help().Key)
+	require.NotContains(t, flat, c.keyMap.Tab.Help().Key)
+}
+
+// TestCommands_Help_WithUserCommandsShowsTab covers the counterpart to
+// TestCommands_Help: once a second tab exists, Tab becomes real and both
+// help views must advertise it.
+func TestCommands_Help_WithUserCommandsShowsTab(t *testing.T) {
+	t.Parallel()
+
+	custom := []commands.CustomCommand{{ID: "c1", Name: "Custom One"}}
+	c := newTestCommands(t, nil, "", false, nil, custom, nil)
+	require.Len(t, c.ShortHelp(), 4)
+	require.Contains(t, c.ShortHelp(), c.keyMap.Tab)
+
+	var flat []string
+	for _, row := range c.FullHelp() {
+		for _, b := range row {
+			flat = append(flat, b.Help().Key)
+		}
+	}
 	require.Contains(t, flat, c.keyMap.Tab.Help().Key)
 }
 

@@ -159,6 +159,13 @@ type (
 	ActionEnableDockerMCP struct{}
 	// ActionDisableDockerMCP is a message to disable Docker MCP.
 	ActionDisableDockerMCP struct{}
+	// ActionToggleMCPServer requests a runtime-only (not persisted to
+	// config) enable or disable of a configured MCP server. The
+	// direction is decided by the server's current state, not carried
+	// on the message.
+	ActionToggleMCPServer struct {
+		Name string
+	}
 )
 
 // ActionEnterSandbox is emitted once the user confirms the sandbox

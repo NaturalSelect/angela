@@ -432,3 +432,53 @@ func TestClientWorkspace_MCPAuthenticate(t *testing.T) {
 		require.False(t, called.Load(), "an already-cancelled context must short-circuit before any request is sent")
 	})
 }
+
+// TestClientWorkspace_MCPEnable verifies the client-mode server enable
+// call reaches the expected endpoint and surfaces server-side failures.
+func TestClientWorkspace_MCPEnable(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/v1/workspaces/ws-1/mcp/enable", r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		})
+
+		require.NoError(t, ws.MCPEnable(t.Context(), "github"))
+	})
+
+	t.Run("server reports failure", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+
+		require.Error(t, ws.MCPEnable(t.Context(), "github"))
+	})
+}
+
+// TestClientWorkspace_MCPDisable verifies the client-mode server disable
+// call reaches the expected endpoint and surfaces server-side failures.
+func TestClientWorkspace_MCPDisable(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/v1/workspaces/ws-1/mcp/disable", r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		})
+
+		require.NoError(t, ws.MCPDisable("github"))
+	})
+
+	t.Run("server reports failure", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+
+		require.Error(t, ws.MCPDisable("github"))
+	})
+}

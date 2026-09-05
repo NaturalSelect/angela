@@ -59,7 +59,7 @@ func TestInitiatorTransportSetsHeader(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			client := &http.Client{Transport: &initiatorTransport{}}
+			client := &http.Client{Transport: &initiatorTransport{transport: http.DefaultTransport}}
 			resp, err := client.Do(req)
 			require.NoError(t, err)
 			resp.Body.Close()

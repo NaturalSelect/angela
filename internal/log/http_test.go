@@ -1,10 +1,14 @@
 package log
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestHTTPRoundTripLogger(t *testing.T) {
@@ -43,6 +47,76 @@ func TestHTTPRoundTripLogger(t *testing.T) {
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("Expected status code 500, got %d", resp.StatusCode)
 	}
+}
+
+func TestIdleTimeoutConn_TimesOutWhenNoBytesArrive(t *testing.T) {
+	t.Parallel()
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() {
+		clientConn.Close()
+		serverConn.Close()
+	})
+
+	conn := &idleTimeoutConn{Conn: clientConn, timeout: 50 * time.Millisecond}
+
+	start := time.Now()
+	_, err := conn.Read(make([]byte, 16))
+	elapsed := time.Since(start)
+
+	require.Error(t, err)
+	var netErr net.Error
+	require.ErrorAs(t, err, &netErr)
+	require.True(t, netErr.Timeout(), "expected a timeout error, got %v", err)
+	require.Less(t, elapsed, time.Second, "an idle read must time out quickly, not hang")
+}
+
+func TestIdleTimeoutConn_PingResetsDeadline(t *testing.T) {
+	t.Parallel()
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() {
+		clientConn.Close()
+		serverConn.Close()
+	})
+
+	conn := &idleTimeoutConn{Conn: clientConn, timeout: 80 * time.Millisecond}
+
+	// Simulate an upstream that sends a keep-alive ping every 40ms, shorter
+	// than the idle timeout, so surviving the loop below requires the
+	// deadline to actually reset on each read rather than staying fixed at
+	// the first call's start time.
+	stopPings := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(40 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if _, err := serverConn.Write([]byte("x")); err != nil {
+					return
+				}
+			case <-stopPings:
+				return
+			}
+		}
+	}()
+
+	buf := make([]byte, 16)
+	deadline := time.Now().Add(300 * time.Millisecond)
+	reads := 0
+	for time.Now().Before(deadline) {
+		_, err := conn.Read(buf)
+		require.NoError(t, err, "a ping arriving before the deadline must reset it, not time it out")
+		reads++
+	}
+	close(stopPings)
+	require.Greater(t, reads, 1, "expected multiple pings to be read without a timeout")
+
+	// Once pings stop, the connection must still be recognized as dead.
+	_, err := conn.Read(buf)
+	require.Error(t, err)
+	var netErr net.Error
+	require.ErrorAs(t, err, &netErr)
+	require.True(t, netErr.Timeout(), "expected a timeout error, got %v", err)
 }
 
 func TestFormatHeaders(t *testing.T) {

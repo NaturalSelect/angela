@@ -18,13 +18,21 @@ var assistantRolePattern = regexp.MustCompile(`"role"\s*:\s*"assistant"`)
 // X-Initiator header based on message history in the request body.
 func NewClient(isSubAgent, debug bool) *http.Client {
 	return &http.Client{
-		Transport: &initiatorTransport{debug: debug, isSubAgent: isSubAgent},
+		Transport: &initiatorTransport{
+			debug:      debug,
+			isSubAgent: isSubAgent,
+			transport:  log.NewIdleTimeoutTransport(),
+		},
 	}
 }
 
 type initiatorTransport struct {
 	debug      bool
 	isSubAgent bool
+	// transport is built once and reused across requests so connections
+	// stay pooled, instead of paying a fresh dial (and losing keep-alive)
+	// on every call.
+	transport http.RoundTripper
 }
 
 func (t *initiatorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -77,5 +85,5 @@ func (t *initiatorTransport) roundTrip(req *http.Request) (*http.Response, error
 	if t.debug {
 		return log.NewHTTPClient().Transport.RoundTrip(req)
 	}
-	return http.DefaultTransport.RoundTrip(req)
+	return t.transport.RoundTrip(req)
 }

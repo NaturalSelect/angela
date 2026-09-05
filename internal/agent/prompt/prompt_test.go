@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
@@ -106,6 +107,29 @@ func TestPrompt_BuildOmitsContextSectionWhenEmpty(t *testing.T) {
 	out, err := p.Build(context.Background(), "", "", store)
 	require.NoError(t, err)
 	require.NotContains(t, out, "<project_context>")
+}
+
+// TestPrompt_ContextPathsDedupesSymlinkAlias guards against a symlink
+// alias (e.g. CLAUDE.md -> AGENTS.md) being embedded twice under two
+// names: dedup by path string alone can't catch it since the two
+// entries are different strings, so it must also dedup by file identity.
+func TestPrompt_ContextPathsDedupesSymlinkAlias(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs elevated privileges on Windows")
+	}
+
+	store := newContextTestStore(t, "remember the house style")
+	require.NoError(t, os.Symlink(
+		filepath.Join(store.WorkingDir(), "AGENTS.md"),
+		filepath.Join(store.WorkingDir(), "CLAUDE.md"),
+	))
+
+	p, err := NewPrompt("x", "body", WithContextPaths([]string{"AGENTS.md", "CLAUDE.md"}))
+	require.NoError(t, err)
+
+	data, err := p.promptData(context.Background(), "", "", store)
+	require.NoError(t, err)
+	require.Len(t, data.ContextFiles, 1, "symlink alias of an already-loaded file must be skipped")
 }
 
 // newContextTestStore builds a hermetic ConfigStore whose working dir

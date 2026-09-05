@@ -28,6 +28,12 @@ type AgentCompletionValue struct {
 	ID string
 }
 
+// SkillCompletionValue represents a skill mention completion value.
+type SkillCompletionValue struct {
+	Name        string
+	Description string
+}
+
 // CompletionItem represents an item in the completions list.
 type CompletionItem struct {
 	*list.Versioned

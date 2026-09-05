@@ -255,6 +255,24 @@ func TestAppWorkspace_MCPAuthURL_UnknownName(t *testing.T) {
 	require.Empty(t, fx.ws.MCPAuthURL("nonexistent-server-xyz"))
 }
 
+func TestAppWorkspace_MCPEnable_NotConfigured(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, _ := newAWFixtureWithStore(t)
+
+	err := fx.ws.MCPEnable(t.Context(), "nonexistent-server-xyz")
+	require.ErrorContains(t, err, "not found in configuration")
+}
+
+func TestAppWorkspace_MCPDisable_NeverStarted(t *testing.T) {
+	// Not parallel: newAWFixtureWithStore calls t.Setenv.
+	fx, _ := newAWFixtureWithStore(t)
+
+	// DisableSingle only tears down local runtime state and never checks
+	// the config, so disabling a server that was never started succeeds
+	// as a no-op rather than erroring.
+	require.NoError(t, fx.ws.MCPDisable("nonexistent-server-xyz"))
+}
+
 // TestAppWorkspace_Shutdown wires just enough of app.App (LSPManager,
 // AgentCoordinator) for the production Shutdown path to run without
 // touching a real database, matching the tolerances already pinned by

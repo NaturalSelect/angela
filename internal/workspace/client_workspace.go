@@ -774,6 +774,18 @@ func (w *ClientWorkspace) DisableDockerMCP() error {
 	return w.client.DisableDockerMCP(context.Background(), w.workspaceID())
 }
 
+// MCPEnable starts a configured MCP server at runtime without persisting
+// the change.
+func (w *ClientWorkspace) MCPEnable(ctx context.Context, name string) error {
+	return w.client.MCPEnable(ctx, w.workspaceID(), name)
+}
+
+// MCPDisable stops a configured MCP server at runtime without persisting
+// the change.
+func (w *ClientWorkspace) MCPDisable(name string) error {
+	return w.client.MCPDisable(context.Background(), w.workspaceID(), name)
+}
+
 // -- Sandbox --
 
 func (w *ClientWorkspace) IsInSandbox() bool {

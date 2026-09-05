@@ -287,6 +287,14 @@ type Workspace interface {
 	MCPAuthenticate(ctx context.Context, name string) error
 	MCPPendingAuth() []mcptools.PendingAuthServer
 	MCPAuthURL(name string) string
+	// MCPEnable starts a configured MCP server at runtime without
+	// persisting the change; it reverts to its configured state on
+	// the next restart.
+	MCPEnable(ctx context.Context, name string) error
+	// MCPDisable stops a configured MCP server at runtime without
+	// persisting the change; it reverts to its configured state on
+	// the next restart.
+	MCPDisable(name string) error
 
 	// Sandbox operations (server-side in client mode)
 	IsInSandbox() bool

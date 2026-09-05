@@ -986,6 +986,54 @@ func TestUpdate_PasteMsg(t *testing.T) {
 	})
 }
 
+// TestHandlePasteMsg_EmptyContentFallsBackToClipboardImage covers the
+// common real-world path for image paste: most terminals intercept the
+// paste gesture themselves and deliver it as a bracketed-paste PasteMsg
+// rather than forwarding the raw PasteImage key chord, so an image-only
+// clipboard (no text form to paste) arrives here as empty content.
+func TestHandlePasteMsg_EmptyContentFallsBackToClipboardImage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("unsupported model is a no-op", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.focus = uiFocusEditor
+		m.agentReady = true
+		m.agentActiveKnown = true
+		m.agentActiveSession = "s1"
+		m.agentActive = workspace.ActiveAgent{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{SupportsImages: false}}}
+
+		require.NotPanics(t, func() {
+			m.handlePasteMsg(tea.PasteMsg{Content: ""})
+		})
+	})
+
+	t.Run("supported model queues a clipboard image read", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.focus = uiFocusEditor
+		m.agentReady = true
+		m.agentActiveKnown = true
+		m.agentActiveSession = "s1"
+		m.agentActive = workspace.ActiveAgent{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{SupportsImages: true}}}
+
+		cmd := m.handlePasteMsg(tea.PasteMsg{Content: "   "})
+
+		require.NotNil(t, cmd, "whitespace-only paste content falls back to a clipboard image read")
+	})
+
+	t.Run("non-empty content is not treated as an image fallback", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.focus = uiFocusEditor
+		m.agentActive = workspace.ActiveAgent{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{SupportsImages: true}}}
+
+		require.NotPanics(t, func() {
+			m.handlePasteMsg(tea.PasteMsg{Content: "hello"})
+		})
+	})
+}
+
 func TestUpdate_OpenEditorMsg_SetsTextareaValue(t *testing.T) {
 	t.Parallel()
 

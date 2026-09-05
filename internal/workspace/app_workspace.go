@@ -539,6 +539,14 @@ func (w *AppWorkspace) MCPAuthURL(name string) string {
 	return mcptools.MCPAuthURL(name)
 }
 
+func (w *AppWorkspace) MCPEnable(ctx context.Context, name string) error {
+	return mcptools.InitializeSingle(ctx, name, w.store)
+}
+
+func (w *AppWorkspace) MCPDisable(name string) error {
+	return mcptools.DisableSingle(w.store, name)
+}
+
 // -- Sandbox --
 
 func (w *AppWorkspace) IsInSandbox() bool {

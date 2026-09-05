@@ -663,6 +663,68 @@ func (c *controllerV1) handlePostWorkspaceMCPAuth(w http.ResponseWriter, r *http
 	jsonEncode(w, proto.MCPAuthResponse{})
 }
 
+// handlePostWorkspaceMCPEnable starts a configured MCP server at runtime
+// without persisting the change; it reverts to its configured state on
+// the next restart.
+//
+//	@Summary		Enable an MCP server
+//	@Tags			mcp
+//	@Accept			json
+//	@Param			id		path	string					true	"Workspace ID"
+//	@Param			request	body	proto.MCPNameRequest	true	"MCP name request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/mcp/enable [post]
+func (c *controllerV1) handlePostWorkspaceMCPEnable(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req proto.MCPNameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if err := c.backend.MCPEnable(r.Context(), id, req.Name); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handlePostWorkspaceMCPDisable stops a configured MCP server at runtime
+// without persisting the change; it reverts to its configured state on
+// the next restart.
+//
+//	@Summary		Disable an MCP server
+//	@Tags			mcp
+//	@Accept			json
+//	@Param			id		path	string					true	"Workspace ID"
+//	@Param			request	body	proto.MCPNameRequest	true	"MCP name request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/mcp/disable [post]
+func (c *controllerV1) handlePostWorkspaceMCPDisable(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req proto.MCPNameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if err := c.backend.MCPDisable(id, req.Name); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handlePostWorkspaceMCPRefreshPrompts refreshes prompts for a named MCP server.
 //
 //	@Summary		Refresh MCP prompts

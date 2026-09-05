@@ -11,6 +11,7 @@ type KeyMap struct {
 		PasteImage   key.Binding
 		MentionAgent key.Binding
 		MentionFile  key.Binding
+		MentionSkill key.Binding
 		Commands     key.Binding
 
 		// Attachments key maps
@@ -143,6 +144,10 @@ func DefaultKeyMap() KeyMap {
 	km.Editor.MentionFile = key.NewBinding(
 		key.WithKeys("#"),
 		key.WithHelp("#", "mention file"),
+	)
+	km.Editor.MentionSkill = key.NewBinding(
+		key.WithKeys("&"),
+		key.WithHelp("&", "mention skill"),
 	)
 	km.Editor.Commands = key.NewBinding(
 		key.WithKeys("/"),

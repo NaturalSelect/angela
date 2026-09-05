@@ -32,11 +32,18 @@ func TestWorkspaceScopedHandlers_SuccessPaths(t *testing.T) {
 	h := newRealCreateHarness(t)
 	h.backend.SetCreateGrace(2 * time.Second)
 
+	clientID := uuid.New().String()
 	wsResp := h.postWorkspace(t, proto.Workspace{
 		Path:     t.TempDir(),
 		DataDir:  t.TempDir(),
-		ClientID: uuid.New().String(),
+		ClientID: clientID,
 	})
+	// Release the create hold so the workspace's App (and its SQLite
+	// DB) closes before the t.TempDir() cleanups above try to remove
+	// DataDir. Without this the DB only closes later via the create-
+	// grace timer, racing TempDir's RemoveAll; Windows fails that
+	// race since it can't delete a still-open file, unlike POSIX.
+	t.Cleanup(func() { _ = h.backend.DeleteWorkspace(wsResp.ID, clientID) })
 	ws, err := h.backend.GetWorkspace(wsResp.ID)
 	require.NoError(t, err)
 

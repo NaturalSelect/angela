@@ -328,6 +328,7 @@ func TestMCPServerItem_StatusText(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			s := styles.CharmtonePantera()
 			item := NewMCPServerItem(&s, "svc", tc.info)
 			require.Equal(t, tc.want, item.statusText())

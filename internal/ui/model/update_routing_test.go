@@ -524,6 +524,8 @@ func TestUpdate_MessageEvent(t *testing.T) {
 // tool is excluded since a long nested turn is expected rather than a
 // stall.
 func TestObserveToolCallTracksNewCalls(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a brand-new assistant message with a tool call", func(t *testing.T) {
 		t.Parallel()
 		m, _ := newMockBusyUI(t)

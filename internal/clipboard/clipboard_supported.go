@@ -13,6 +13,15 @@ func writeText(text string) {
 }
 
 func read(f Format) ([]byte, error) {
+	// WSLg bridges the Windows host clipboard to the Linux X11/Wayland
+	// side for text but not images, so golang.design/x/clipboard never
+	// sees an image there. Read it straight from the Windows host instead.
+	if f == FormatImage && isWSL() {
+		if data, err := readImageWSL(); err == nil {
+			return data, nil
+		}
+	}
+
 	var format clipboard.Format
 	switch f {
 	case FormatText:

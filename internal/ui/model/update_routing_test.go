@@ -19,6 +19,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/common"
@@ -511,6 +512,66 @@ func TestUpdate_MessageEvent(t *testing.T) {
 				Payload: message.Message{ID: "m1", SessionID: "child-session"},
 			})
 		})
+	})
+}
+
+// TestObserveToolCallTracksNewCalls pins that a tool call appearing for
+// the first time — whether the message that carries it is brand new or an
+// existing one being updated mid-stream — starts the clock the turn
+// status line uses to flag a slow tool or MCP call, and that the Agent
+// tool is excluded since a long nested turn is expected rather than a
+// stall.
+func TestObserveToolCallTracksNewCalls(t *testing.T) {
+	t.Run("a brand-new assistant message with a tool call", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.session = &session.Session{ID: "s1"}
+
+		m.Update(pubsub.Event[message.Message]{
+			Type:    pubsub.CreatedEvent,
+			Payload: assistantWithCall("m1", "call-1"),
+		})
+
+		require.NotNil(t, m.activeTool)
+		require.Equal(t, "call-1", m.activeTool.id)
+	})
+
+	t.Run("a tool call added to an already-known message", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.session = &session.Session{ID: "s1"}
+		m.Update(pubsub.Event[message.Message]{
+			Type:    pubsub.CreatedEvent,
+			Payload: message.Message{ID: "m1", SessionID: "s1", Role: message.Assistant},
+		})
+
+		m.Update(pubsub.Event[message.Message]{
+			Type:    pubsub.UpdatedEvent,
+			Payload: assistantWithCall("m1", "call-1"),
+		})
+
+		require.NotNil(t, m.activeTool)
+		require.Equal(t, "call-1", m.activeTool.id)
+	})
+
+	t.Run("the Agent tool is not tracked", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.session = &session.Session{ID: "s1"}
+
+		m.Update(pubsub.Event[message.Message]{
+			Type: pubsub.CreatedEvent,
+			Payload: message.Message{
+				ID:        "m1",
+				SessionID: "s1",
+				Role:      message.Assistant,
+				Parts: []message.ContentPart{
+					message.ToolCall{ID: "call-1", Name: toolnames.Agent, Input: "{}"},
+				},
+			},
+		})
+
+		require.Nil(t, m.activeTool, "a nested sub-agent turn is expected to run long, not stalling")
 	})
 }
 

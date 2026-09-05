@@ -289,6 +289,58 @@ func TestAgentTerminalNotificationsRefreshBusy(t *testing.T) {
 	}
 }
 
+// TestAgentRetryingSetsTurnStatus pins that a retry notification reaches
+// the UI through the same pubsub path as every other agent event, and
+// that it does so without touching the busy/queue caches: the turn was
+// already known to be busy, and a retry doesn't change that.
+func TestAgentRetryingSetsTurnStatus(t *testing.T) {
+	m, _ := newMockBusyUI(t)
+	warmCaches(m, true)
+
+	_, cmd := m.Update(pubsub.Event[notify.Notification]{
+		Type: pubsub.CreatedEvent,
+		Payload: notify.Notification{
+			Type:             notify.TypeAgentRetrying,
+			SessionID:        "s1",
+			RetryAttempt:     2,
+			RetryMaxAttempts: 3,
+			RetryDelay:       10 * time.Second,
+			Message:          "Rate limited",
+		},
+	})
+
+	require.Nil(t, cmd, "a retry notification only updates in-memory state")
+	require.NotNil(t, m.retryStatus)
+	require.Contains(t, m.renderTurnStatus(200), "Retrying 2/3")
+}
+
+// TestAgentTerminalNotificationClearsRetryStatus pins that a turn ending
+// (success or error) drops any retry banner left over from earlier in
+// that same turn, scoped to the session that actually finished so an
+// unrelated session's retry status can't be wiped out from under it.
+func TestAgentTerminalNotificationClearsRetryStatus(t *testing.T) {
+	for _, typ := range []notify.Type{notify.TypeAgentFinished, notify.TypeAgentError} {
+		t.Run(string(typ), func(t *testing.T) {
+			pinTTLs(t)
+			m, ws := newMockBusyUI(t)
+			warmCaches(m, true)
+			active := workspace.ActiveAgent{}
+			stubBusyProbe(ws, true, false, permission.ModeManual, &active)
+			ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+
+			m.retryStatus = &retryStatus{sessionID: "s1", attempt: 1, maxAttempt: 3, until: time.Now().Add(time.Minute)}
+
+			_, cmd := m.Update(pubsub.Event[notify.Notification]{
+				Type:    pubsub.CreatedEvent,
+				Payload: notify.Notification{Type: typ, SessionID: "s1"},
+			})
+			runCmds(m, cmd)
+
+			require.Nil(t, m.retryStatus, "the turn that was retrying just ended")
+		})
+	}
+}
+
 // TestMergedBranchFreezesWithoutLeavingTheSession pins the reactive half of
 // freezing a merged branch: a user who watches the merge happen, without
 // navigating away and back, must lose the editor the instant the branch

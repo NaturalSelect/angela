@@ -3,10 +3,14 @@ package model
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/toolnames"
+	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -186,4 +190,119 @@ func TestTurnStatusNamesTheRunningTool(t *testing.T) {
 
 	out := m.renderTurnStatus(200)
 	require.False(t, strings.Contains(out, "\n"), "the status line must stay on one line")
+}
+
+// A retry in progress must read as recovering, not stuck, so it takes
+// over the activity segment instead of the generic "Thinking" label.
+func TestTurnStatusShowsRetryInProgress(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.retryStatus = &retryStatus{
+		sessionID:  m.currentSessionID(),
+		attempt:    2,
+		maxAttempt: 3,
+		reason:     "Rate limited",
+		until:      time.Now().Add(10 * time.Second),
+	}
+
+	status := m.renderTurnStatus(200)
+	require.Contains(t, status, "Retrying 2/3")
+	require.Contains(t, status, "Rate limited")
+	require.NotContains(t, status, "Thinking")
+}
+
+// Once the announced backoff elapses, the retried request is
+// indistinguishable from ordinary thinking time, so the label must fall
+// back on its own without any explicit "resolved" signal.
+func TestTurnStatusRetryExpiresWithoutExplicitClear(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.retryStatus = &retryStatus{
+		sessionID:  m.currentSessionID(),
+		attempt:    1,
+		maxAttempt: 3,
+		until:      time.Now().Add(-time.Millisecond),
+	}
+
+	status := m.renderTurnStatus(200)
+	require.NotContains(t, status, "Retrying")
+	require.Contains(t, status, "Thinking")
+}
+
+// A retry reported for a different session (a background sub-agent, or a
+// turn the user has since navigated away from) must not bleed into the
+// status line of whatever session is actually in view.
+func TestTurnStatusRetryScopedToSession(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.retryStatus = &retryStatus{
+		sessionID:  "other-session",
+		attempt:    1,
+		maxAttempt: 3,
+		until:      time.Now().Add(time.Minute),
+	}
+
+	require.NotContains(t, m.renderTurnStatus(200), "Retrying")
+}
+
+// There is deliberately no timeout on tool calls, so a tool call that has
+// been pending past toolSlowThreshold must report its own running time —
+// otherwise a slow bash command or MCP server reads as a hang instead of
+// as still working.
+func TestTurnStatusShowsSlowToolCall(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(&testToolMessageItem{
+		testMessageItem: testMessageItem{id: "t1", text: "t1"},
+		tc:              message.ToolCall{ID: "t1", Name: "Bash"},
+		status:          chat.ToolStatusRunning,
+	})
+	m.activeTool = &toolTiming{id: "t1", since: time.Now().Add(-10 * time.Second)}
+
+	status := m.renderTurnStatus(200)
+	require.Contains(t, status, "Bash")
+	require.Contains(t, status, "10s")
+}
+
+// Most tool calls finish in well under toolSlowThreshold, so one that
+// hasn't crossed it yet must not carry a running-time suffix: a clock on
+// every call would be noise rather than a signal.
+func TestTurnStatusHidesElapsedUnderThreshold(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(&testToolMessageItem{
+		testMessageItem: testMessageItem{id: "t1", text: "t1"},
+		tc:              message.ToolCall{ID: "t1", Name: "Bash"},
+		status:          chat.ToolStatusRunning,
+	})
+	m.activeTool = &toolTiming{id: "t1", since: time.Now().Add(-2 * time.Second)}
+
+	status := m.renderTurnStatus(200)
+	require.Contains(t, status, "Bash")
+	require.NotRegexp(t, `\(\d+s\)`, status)
+}
+
+// The Agent tool runs a whole nested turn, so a long duration there is
+// expected rather than a sign of stalling: the status line must never
+// attach a running-time suffix to it, even if activeTool's ID happens to
+// line up.
+func TestTurnStatusNeverFlagsAgentToolAsSlow(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(&testToolMessageItem{
+		testMessageItem: testMessageItem{id: "t1", text: "t1"},
+		tc:              message.ToolCall{ID: "t1", Name: toolnames.Agent},
+		status:          chat.ToolStatusRunning,
+	})
+	m.activeTool = &toolTiming{id: "t1", since: time.Now().Add(-10 * time.Second)}
+
+	status := m.renderTurnStatus(200)
+	require.Contains(t, status, toolnames.Agent)
+	require.NotRegexp(t, `\(\d+s\)`, status)
 }

@@ -47,6 +47,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/stringext"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/attachments"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
@@ -220,6 +221,16 @@ type UI struct {
 
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
+
+	// retryStatus is the in-progress provider retry to show on the turn
+	// status line, if any. Nil when no retry has been reported for the
+	// turn currently running.
+	retryStatus *retryStatus
+
+	// activeTool is the running time of the tool call last observed by
+	// observeToolCall, used to flag a slow tool or MCP call on the turn
+	// status line. Nil until this turn's first tool call is seen.
+	activeTool *toolTiming
 
 	// sessionIsBranch memoizes whether the loaded session is a branch.
 	// Resolving it reads config through the workspace, which the status
@@ -1812,6 +1823,9 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			}
 		}
 		m.chat.AppendMessages(items...)
+		for _, tc := range msg.ToolCalls() {
+			m.observeToolCall(tc)
+		}
 		if m.chat.Follow() {
 			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
 				cmds = append(cmds, cmd)
@@ -1932,6 +1946,7 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 		}
 		if existingToolItem == nil {
 			items = append(items, chat.NewToolMessageItem(m.com.Styles, msg.ID, tc, nil, false, m.com.Workspace.WorkingDir()))
+			m.observeToolCall(tc)
 		}
 	}
 
@@ -1951,6 +1966,18 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 	}
 
 	return tea.Sequence(cmds...)
+}
+
+// observeToolCall records the moment a newly seen tool call started, so
+// the turn status line can report its own running time later if it turns
+// out to be slow. The Agent tool is excluded: it runs a whole nested
+// turn, so a long duration there is expected rather than a sign of
+// stalling.
+func (m *UI) observeToolCall(tc message.ToolCall) {
+	if tc.Name == toolnames.Agent {
+		return
+	}
+	m.activeTool = &toolTiming{id: tc.ID, since: time.Now()}
 }
 
 // handleChildSessionMessage handles messages from child sessions (agent tools).
@@ -5001,6 +5028,9 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	case notify.TypeAgentError:
 		// Terminal edge like TypeAgentFinished; fall through to the
 		// busy/queue refresh below.
+	case notify.TypeAgentRetrying:
+		m.setRetryStatus(n)
+		return nil
 	case notify.TypeReAuthenticate:
 		return m.handleReAuthenticate(n.ProviderID)
 	case notify.TypeAWSSSOAuth:
@@ -5014,6 +5044,10 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	// clears its active request before publishing precisely so observers
 	// can re-probe. Drop the memoized busy state and re-fetch it and the
 	// prompt queue off-thread.
+	if m.retryStatus != nil && m.retryStatus.sessionID == n.SessionID {
+		// The turn that was retrying just ended; nothing left to show.
+		m.retryStatus = nil
+	}
 	m.invalidateBusyCaches()
 	m.invalidatePromptQueue()
 	if cmd := m.dispatchBusyRefresh(); cmd != nil {
@@ -5031,6 +5065,21 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 		}
 	}
 	return tea.Batch(cmds...)
+}
+
+// setRetryStatus records an in-progress provider retry so the turn
+// status line can show it instead of a silent pause. There is no
+// explicit "resolved" counterpart: retryActivity stops reporting it
+// once the announced delay elapses, since by then the retried request
+// is indistinguishable from ordinary thinking time.
+func (m *UI) setRetryStatus(n notify.Notification) {
+	m.retryStatus = &retryStatus{
+		sessionID:  n.SessionID,
+		attempt:    n.RetryAttempt,
+		maxAttempt: n.RetryMaxAttempts,
+		reason:     n.Message,
+		until:      time.Now().Add(n.RetryDelay),
+	}
 }
 
 // handleReAuthenticate opens the auth dialog for a provider, seeded

@@ -3,6 +3,8 @@
 // events without importing UI packages.
 package notify
 
+import "time"
+
 // Type identifies the kind of agent notification.
 type Type string
 
@@ -15,6 +17,14 @@ const (
 	// TypeAgentError indicates the agent's turn terminated with an
 	// error. The error text is carried in Notification.Message.
 	TypeAgentError Type = "error"
+	// TypeAgentRetrying indicates a provider request failed with a
+	// transient error and is being retried after a backoff delay. It
+	// is purely informational — there is no matching "resolved" event,
+	// since a subscriber can tell the retry is over once RetryDelay
+	// has elapsed. Without it, the whole retry-plus-backoff window
+	// (which can run tens of seconds to minutes) passes with no
+	// visible sign of what is happening, easily mistaken for a hang.
+	TypeAgentRetrying Type = "agent_retrying"
 	// TypeAWSSSOAuth indicates AWS SSO credentials have expired and the
 	// coordinator is running the configured refresh command. It opens the
 	// AWS SSO dialog; a follow-up with the same type carries the SSO URL
@@ -39,14 +49,22 @@ type Notification struct {
 	// specific request rather than to any in-flight run on the
 	// session. Empty when no caller set one.
 	RunID string
-	// Message carries the error text for TypeAgentError. Other
-	// notification types ignore it.
+	// Message carries the error text for TypeAgentError, or the short
+	// failure reason for TypeAgentRetrying. Other notification types
+	// ignore it.
 	Message string
 	// AWSSOCommand carries the shell command for TypeAWSSSOAuth.
 	AWSSOCommand string
 	// AWSSOURL carries the SSO verification URL for TypeAWSSSOAuth once it
 	// appears in the refresh command's output.
 	AWSSOURL string
+	// RetryAttempt and RetryMaxAttempts describe progress for
+	// TypeAgentRetrying (e.g. attempt 2 of 3).
+	RetryAttempt     int
+	RetryMaxAttempts int
+	// RetryDelay is how long the agent will wait before the next
+	// attempt, for TypeAgentRetrying.
+	RetryDelay time.Duration
 }
 
 // RunComplete is the authoritative end-of-run signal for a session.

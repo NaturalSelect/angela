@@ -330,6 +330,7 @@ func TestUpdate_UserCommandsLoadedMsg(t *testing.T) {
 		ws := NewMockWorkspace(ctrl)
 		ws.EXPECT().Config().Return(&config.Config{}).AnyTimes()
 		ws.EXPECT().WorkingDir().Return("").AnyTimes()
+		ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
 		m := newBusyUIWithWorkspace(ws)
 		m.openCommandsDialog()
 		require.True(t, m.dialog.ContainsDialog(dialog.CommandsID))
@@ -375,6 +376,7 @@ func TestUpdate_MCPPromptsLoadedMsg(t *testing.T) {
 		ws := NewMockWorkspace(ctrl)
 		ws.EXPECT().Config().Return(&config.Config{}).AnyTimes()
 		ws.EXPECT().WorkingDir().Return("").AnyTimes()
+		ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
 		m := newBusyUIWithWorkspace(ws)
 		m.openCommandsDialog()
 

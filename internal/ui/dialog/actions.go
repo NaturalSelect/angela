@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/ui/common"
@@ -159,6 +160,14 @@ type (
 	// ActionDisableDockerMCP is a message to disable Docker MCP.
 	ActionDisableDockerMCP struct{}
 )
+
+// ActionEnterSandbox is emitted once the user confirms the sandbox
+// configuration dialog. The UI applies cfg's restrictions and then
+// switches permissions to yolo mode, since the sandbox already enforces
+// the boundaries yolo mode would otherwise skip past.
+type ActionEnterSandbox struct {
+	Config sandbox.Config
+}
 
 // Messages for MCP OAuth authentication dialog.
 type (

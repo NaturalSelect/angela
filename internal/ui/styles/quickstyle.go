@@ -762,6 +762,7 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Editor.Rail = lipgloss.NewStyle().Foreground(o.fgMoreSubtle)
 	s.Editor.RailBang = lipgloss.NewStyle().Foreground(o.busy)
 	s.Editor.RailYolo = lipgloss.NewStyle().Foreground(o.error)
+	s.Editor.RailYoloSandbox = lipgloss.NewStyle().Foreground(o.attention)
 	s.Editor.RailAutoAcceptEdits = lipgloss.NewStyle().Foreground(o.warning)
 	s.Editor.Border = lipgloss.NewStyle().Foreground(o.info)
 	s.Editor.BorderFocused = lipgloss.NewStyle().Foreground(o.info)

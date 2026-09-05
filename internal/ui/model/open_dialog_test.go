@@ -40,6 +40,8 @@ func (d idOnlyDialog) HandleMsg(msg tea.Msg) dialog.Action { return msg }
 func newDialogUI(t *testing.T, ws *MockWorkspace) *UI {
 	t.Helper()
 
+	ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
+
 	sty := styles.CharmtonePantera()
 	m := &UI{
 		com:     &common.Common{Workspace: ws, Styles: &sty},
@@ -294,6 +296,7 @@ func TestOpenCommandsDialog_OpensWithoutSession(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().Config().Return(&config.Config{}).AnyTimes()
+	ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
 
 	m := newTestUI()
 	m.com = &common.Common{Workspace: ws, Styles: m.com.Styles}

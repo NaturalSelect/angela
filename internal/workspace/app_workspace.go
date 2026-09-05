@@ -20,6 +20,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/shell"
 	"github.com/NaturalSelect/angela/internal/skills"
@@ -41,7 +42,7 @@ func NewAppWorkspace(a *app.App, store *config.ConfigStore) *AppWorkspace {
 	return &AppWorkspace{
 		app:      a,
 		store:    store,
-		inDocker: detectInDocker(),
+		inDocker: sandbox.InDocker(),
 	}
 }
 
@@ -536,6 +537,16 @@ func (w *AppWorkspace) MCPPendingAuth() []mcptools.PendingAuthServer {
 
 func (w *AppWorkspace) MCPAuthURL(name string) string {
 	return mcptools.MCPAuthURL(name)
+}
+
+// -- Sandbox --
+
+func (w *AppWorkspace) IsInSandbox() bool {
+	return w.app.Sandbox.IsInSandbox()
+}
+
+func (w *AppWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) error {
+	return w.app.Sandbox.EnterSandbox(cfg)
 }
 
 // -- Lifecycle --

@@ -283,6 +283,21 @@ type PermissionUnattendedRequest struct {
 	Unattended bool   `json:"unattended"`
 }
 
+// EnterSandboxRequest is the request body for restricting the
+// workspace's process to a set of filesystem paths and, optionally,
+// network access.
+type EnterSandboxRequest struct {
+	ReadWrite    []string `json:"read_write"`
+	ReadOnly     []string `json:"read_only"`
+	AllowNetwork bool     `json:"allow_network"`
+}
+
+// SandboxStatusResponse reports whether the workspace's process is
+// currently confined by a sandbox.
+type SandboxStatusResponse struct {
+	InSandbox bool `json:"in_sandbox"`
+}
+
 // LSPEventType represents the type of LSP event.
 type LSPEventType string
 

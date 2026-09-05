@@ -11,6 +11,7 @@ import (
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/client"
 	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/stretchr/testify/require"
 )
@@ -287,6 +288,51 @@ func TestClientWorkspace_EnableDisableDockerMCP(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		})
 		require.Error(t, ws.DisableDockerMCP())
+	})
+}
+
+func TestClientWorkspace_SandboxOps(t *testing.T) {
+	t.Parallel()
+
+	t.Run("IsInSandbox success", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, http.MethodGet, r.Method)
+			require.Equal(t, "/v1/workspaces/ws-1/sandbox", r.URL.Path)
+			require.NoError(t, json.NewEncoder(w).Encode(proto.SandboxStatusResponse{InSandbox: true}))
+		})
+		require.True(t, ws.IsInSandbox())
+	})
+
+	t.Run("IsInSandbox error swallows and returns false", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+		require.False(t, ws.IsInSandbox())
+	})
+
+	t.Run("EnterSandbox success", func(t *testing.T) {
+		t.Parallel()
+		var gotPath string
+		var gotBody proto.EnterSandboxRequest
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+			w.WriteHeader(http.StatusOK)
+		})
+		require.NoError(t, ws.EnterSandbox(t.Context(), sandbox.Config{ReadWrite: []string{"/tmp"}, AllowNetwork: true}))
+		require.Equal(t, "/v1/workspaces/ws-1/sandbox/enter", gotPath)
+		require.Equal(t, []string{"/tmp"}, gotBody.ReadWrite)
+		require.True(t, gotBody.AllowNetwork)
+	})
+
+	t.Run("EnterSandbox error", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+		require.Error(t, ws.EnterSandbox(t.Context(), sandbox.Config{}))
 	})
 }
 

@@ -20,17 +20,23 @@ type ButtonOpts struct {
 	Hovered bool
 	// Padding inner horizontal padding defaults to 2 if this is 0
 	Padding int
+	// Negative marks a destructive action (e.g. remove); selecting or
+	// hovering it uses Button.Negative instead of the normal focus/hover style.
+	Negative bool
 }
 
 // Button creates a button with an underlined character and selection state
 func Button(t *styles.Styles, opts ButtonOpts) string {
 	// Select style based on selection/hover state.
 	style := t.Button.Blurred
-	if opts.Selected && opts.Hovered {
+	switch {
+	case opts.Negative && (opts.Selected || opts.Hovered):
+		style = t.Button.Negative
+	case opts.Selected && opts.Hovered:
 		style = t.Button.Focused.Bold(true)
-	} else if opts.Hovered {
+	case opts.Hovered:
 		style = t.Button.Hovered.Bold(true)
-	} else if opts.Selected {
+	case opts.Selected:
 		style = t.Button.Focused
 	}
 

@@ -38,6 +38,11 @@ func (w *configWorkspace) PruneRecentModels(_ config.Scope, _ config.SlotName, s
 	return nil
 }
 
+// IsInSandbox stubs the sandbox check defaultCommands reads to decide
+// whether to offer the /sandbox command; none of these dialogs exercise
+// sandbox behavior itself.
+func (w *configWorkspace) IsInSandbox() bool { return false }
+
 const (
 	globalModelID  = "global-model"
 	sessionModelID = "session-model"

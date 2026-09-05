@@ -53,6 +53,9 @@ angela run --quiet "Generate a README for this project"
 # Run in verbose mode (show logs)
 angela run --verbose "Generate a README for this project"
 
+# Run inside an OS-level sandbox instead of relying on prompts
+angela run --sandbox "Generate a README for this project"
+
 # Continue a previous session
 angela run --session {session-id} "Follow up on your last response"
 
@@ -167,6 +170,7 @@ func init() {
 	runCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
 	runCmd.Flags().BoolP("continue", "C", false, "Continue the most recent session")
 	runCmd.MarkFlagsMutuallyExclusive("session", "continue")
+	addSandboxFlags(runCmd)
 }
 
 // logToStderr sends logs to stderr, where a headless run's stdout is

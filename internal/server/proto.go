@@ -8,6 +8,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/backend"
 	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/google/uuid"
@@ -1392,6 +1393,8 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 		// 503, not 409: the request is not wrong, this process is just
 		// leaving. Clients retry against its replacement.
 		status = http.StatusServiceUnavailable
+	case errors.Is(err, sandbox.ErrNotSupported):
+		status = http.StatusNotImplemented
 	}
 	c.server.logError(r, err.Error())
 	jsonError(w, status, err.Error())

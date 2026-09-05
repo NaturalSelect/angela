@@ -137,6 +137,28 @@ rules in `angela.json`:
 
 Use `--yolo` to skip all prompts (at your own risk).
 
+Use `--sandbox` to restrict the process itself with OS-level isolation
+(Linux/Landlock) instead of relying on approval prompts. By default it
+leaves the working directory, Angela's own data directories, and outbound
+network access writable/reachable, and makes the rest of the filesystem
+read-only:
+
+```bash
+angela --sandbox
+angela run --sandbox "..."
+
+# Add extra directories on top of the defaults (repeatable)
+angela run --sandbox --sandbox-rw /extra/writable --sandbox-ro /extra/readable "..."
+
+# Also block outbound network access (this blocks Angela's own provider
+# requests too, since the restriction is process-wide)
+angela run --sandbox --sandbox-no-network "..."
+```
+
+`--sandbox` is independent from `--yolo` and only supported in local
+(non-`ANGELA_CLIENT_SERVER`) mode, since the restriction is irreversible
+for the life of the process.
+
 ## Local Models
 
 Angela auto-discovers models from Ollama, LM Studio, llama.cpp, and other

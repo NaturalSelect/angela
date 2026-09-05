@@ -35,6 +35,40 @@ type Config struct {
 	AllowNetwork bool
 }
 
+// DefaultConfig returns the "workspace" profile: workingDir and
+// dataDir (Angela's own state directory, skipped when empty) stay
+// writable along with globalConfigDir and the system temp directory,
+// the rest of the disk stays read-only, and outbound network is
+// allowed.
+func DefaultConfig(workingDir, dataDir, globalConfigDir string) Config {
+	paths := []string{workingDir}
+	if dataDir != "" {
+		paths = append(paths, dataDir)
+	}
+	paths = append(paths, globalConfigDir, os.TempDir())
+	return Config{
+		ReadWrite:    DedupePaths(paths),
+		ReadOnly:     []string{"/"},
+		AllowNetwork: true,
+	}
+}
+
+// DedupePaths drops empty and repeated entries while preserving order,
+// so callers don't repeat a row when e.g. the data directory already
+// lives under the working directory.
+func DedupePaths(paths []string) []string {
+	seen := make(map[string]bool, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
+}
+
 // Sandbox restricts the current process to a set of filesystem paths
 // (and, where supported, network access) using the strongest OS-level
 // isolation available on the running platform.

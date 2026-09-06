@@ -25,7 +25,7 @@ func TestNewPermissionDeniedResponse(t *testing.T) {
 		t.Parallel()
 		resp := NewPermissionDeniedResponse("not needed for this task")
 		require.True(t, resp.IsError)
-		require.True(t, resp.StopTurn)
+		require.False(t, resp.StopTurn, "a denial with a reason must let the turn continue")
 		require.Equal(t, "User denied permission: not needed for this task", resp.Content)
 	})
 }
@@ -46,7 +46,7 @@ func TestDecisionResponse_UserDenyAndDefault(t *testing.T) {
 			Reason:  "not needed for this task",
 		})
 		require.True(t, resp.IsError)
-		require.True(t, resp.StopTurn, "a user refusal must end the turn")
+		require.False(t, resp.StopTurn, "a user refusal with a reason must let the turn continue")
 		require.Equal(t, "User denied permission: not needed for this task", resp.Content)
 	})
 

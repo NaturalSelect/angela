@@ -45,7 +45,8 @@ const (
 	// OutcomePolicyDeny refuses on the configuration's behalf. The
 	// reason goes back to the model so it can take another route.
 	OutcomePolicyDeny
-	// OutcomeUserDeny refuses on the user's behalf, which ends the turn.
+	// OutcomeUserDeny refuses on the user's behalf. A bare denial ends
+	// the turn; a denial with a reason lets the model route around it.
 	OutcomeUserDeny
 	// OutcomeCancelled reports that the caller's context ended first.
 	OutcomeCancelled

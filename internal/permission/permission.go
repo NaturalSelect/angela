@@ -116,7 +116,8 @@ const (
 	// ModeAutoAcceptEdits auto-approves ActionEdit accesses and asks
 	// about everything else, same as ModeManual would.
 	ModeAutoAcceptEdits
-	// ModeYolo skips every prompt. Only a deny rule survives it.
+	// ModeYolo skips every prompt. Only a deny rule, or the merge tool
+	// when YoloSkipMerge has been turned off, survives it.
 	ModeYolo
 )
 
@@ -222,6 +223,13 @@ type Service interface {
 	Mode() PermissionMode
 	// SetMode changes the current permission mode.
 	SetMode(mode PermissionMode)
+	// YoloSkipMerge reports whether yolo mode is still allowed to skip
+	// the merge tool's approval prompt. True by default.
+	YoloSkipMerge() bool
+	// SetYoloSkipMerge changes whether yolo mode skips the merge
+	// tool's approval prompt. Turning it off means merging a branch
+	// always reaches the user, even in yolo mode.
+	SetYoloSkipMerge(enabled bool)
 	SubscribeNotifications(ctx context.Context) <-chan pubsub.Event[PermissionNotification]
 }
 
@@ -253,6 +261,10 @@ type permissionService struct {
 	// waiting on the user never blocks another.
 	sessionGates *csync.Map[string, chan struct{}]
 	mode         atomic.Uint32
+	// yoloSkipMerge controls whether ModeYolo's blanket skip reaches
+	// the merge tool. Defaults to true, matching the historical
+	// behavior of yolo mode approving everything.
+	yoloSkipMerge atomic.Bool
 }
 
 // NewPermissionService builds the service. A nil policy settles nothing
@@ -283,6 +295,7 @@ func NewPermissionService(workingDir string, initialMode PermissionMode, policy 
 		sessionGates:       csync.NewMap[string, chan struct{}](),
 	}
 	svc.mode.Store(uint32(initialMode))
+	svc.yoloSkipMerge.Store(true)
 	return svc
 }
 
@@ -299,7 +312,11 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 	}
 
 	mode := s.Mode()
-	if mode == ModeYolo {
+	// A merge is the one moment a branch's result crosses back into
+	// the conversation that forked it, so YoloSkipMerge lets yolo mode
+	// keep asking about it while everything else sails through.
+	yoloSkips := access.Action != ActionMerge || s.YoloSkipMerge()
+	if mode == ModeYolo && yoloSkips {
 		return Decision{Outcome: OutcomeAllow, Reason: "permission prompts are disabled"}
 	}
 
@@ -651,6 +668,14 @@ func (s *permissionService) Mode() PermissionMode {
 
 func (s *permissionService) SetMode(mode PermissionMode) {
 	s.mode.Store(uint32(mode))
+}
+
+func (s *permissionService) YoloSkipMerge() bool {
+	return s.yoloSkipMerge.Load()
+}
+
+func (s *permissionService) SetYoloSkipMerge(enabled bool) {
+	s.yoloSkipMerge.Store(enabled)
 }
 
 // withinScope reports the accesses that need no approval because they

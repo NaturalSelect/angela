@@ -998,6 +998,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/config/agent-variant": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Override an agent's parameter preset",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Config agent variant request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.ConfigAgentVariantRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/config/compact": {
             "post": {
                 "consumes": [
@@ -1979,6 +2031,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/mcp/disable": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "mcp"
+                ],
+                "summary": "Disable an MCP server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "MCP name request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.MCPNameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/mcp/docker/disable": {
             "post": {
                 "tags": [
@@ -2031,6 +2135,58 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/workspaces/{id}/mcp/enable": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "mcp"
+                ],
+                "summary": "Enable an MCP server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "MCP name request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.MCPNameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
                     },
                     "404": {
                         "description": "Not Found",
@@ -2688,6 +2844,96 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/permissions/yolo-skip-merge": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "permissions"
+                ],
+                "summary": "Get yolo skip-merge",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/proto.YoloSkipMergeRequest"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "permissions"
+                ],
+                "summary": "Set yolo skip-merge",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Yolo skip-merge request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.YoloSkipMergeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/project/init": {
             "post": {
                 "tags": [
@@ -2918,6 +3164,98 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/proto.QuestionAnswerResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/workspaces/{id}/sandbox": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sandbox"
+                ],
+                "summary": "Get sandbox status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/proto.SandboxStatusResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/workspaces/{id}/sandbox/enter": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sandbox"
+                ],
+                "summary": "Enter sandbox",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Sandbox restrictions",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.EnterSandboxRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     },
                     "400": {
                         "description": "Bad Request",
@@ -4268,7 +4606,7 @@ const docTemplate = `{
                     ]
                 },
                 "recent_models": {
-                    "description": "Recently used models stored in the data directory config.",
+                    "description": "Recently used models. Loaded from and persisted to a sidecar file\nnext to the scope's config file (see recent_models.go) rather than\nthis struct's own JSON encoding, so auto-recorded picks never\ntouch the hand-edited config.",
                     "type": "object",
                     "additionalProperties": {
                         "type": "array",
@@ -4726,6 +5064,17 @@ const docTemplate = `{
                 }
             }
         },
+        "proto.ConfigAgentVariantRequest": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
+                "variant": {
+                    "type": "string"
+                }
+            }
+        },
         "proto.ConfigCompactRequest": {
             "type": "object",
             "properties": {
@@ -4841,6 +5190,26 @@ const docTemplate = `{
             "properties": {
                 "session_id": {
                     "type": "string"
+                }
+            }
+        },
+        "proto.EnterSandboxRequest": {
+            "type": "object",
+            "properties": {
+                "allow_network": {
+                    "type": "boolean"
+                },
+                "read_only": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "read_write": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -5133,6 +5502,10 @@ const docTemplate = `{
                 "action": {
                     "type": "string"
                 },
+                "deny_reason": {
+                    "description": "DenyReason is an optional explanation the user attaches when\ndenying this request.",
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -5248,6 +5621,14 @@ const docTemplate = `{
                 },
                 "result": {
                     "$ref": "#/definitions/proto.SkillReadResult"
+                }
+            }
+        },
+        "proto.SandboxStatusResponse": {
+            "type": "object",
+            "properties": {
+                "in_sandbox": {
+                    "type": "boolean"
                 }
             }
         },
@@ -5551,6 +5932,10 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "no_yolo_merge": {
+                    "description": "NoYoloMerge disables the shortcut that lets yolo mode skip the\nmerge tool's approval prompt (from the --no-yolo-merge flag).",
+                    "type": "boolean"
+                },
                 "path": {
                     "type": "string"
                 },
@@ -5567,6 +5952,14 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "string"
+                }
+            }
+        },
+        "proto.YoloSkipMergeRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
                 }
             }
         },

@@ -51,6 +51,43 @@ func TestClientWorkspace_PermissionSetMode(t *testing.T) {
 	require.Equal(t, "auto_accept_edits", gotBody.Mode)
 }
 
+func TestClientWorkspace_PermissionYoloSkipMerge(t *testing.T) {
+	t.Parallel()
+
+	t.Run("parses the wire value", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, "/v1/workspaces/ws-1/permissions/yolo-skip-merge", r.URL.Path)
+			require.NoError(t, json.NewEncoder(w).Encode(proto.YoloSkipMergeRequest{Enabled: true}))
+		})
+
+		require.True(t, ws.PermissionYoloSkipMerge())
+	})
+
+	t.Run("server error defaults to false", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+
+		require.False(t, ws.PermissionYoloSkipMerge())
+	})
+}
+
+func TestClientWorkspace_PermissionSetYoloSkipMerge(t *testing.T) {
+	t.Parallel()
+
+	var gotBody proto.YoloSkipMergeRequest
+	ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/workspaces/ws-1/permissions/yolo-skip-merge", r.URL.Path)
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ws.PermissionSetYoloSkipMerge(false)
+	require.False(t, gotBody.Enabled)
+}
+
 func TestClientWorkspace_QuestionAnswer(t *testing.T) {
 	t.Parallel()
 

@@ -30,6 +30,13 @@ func TestBackendPermission_WorkspaceNotFound(t *testing.T) {
 			_, err := b.GetPermissionMode("nope")
 			return err
 		}},
+		{"SetYoloSkipMerge", func(t *testing.T) error {
+			return b.SetYoloSkipMerge("nope", false)
+		}},
+		{"GetYoloSkipMerge", func(t *testing.T) error {
+			_, err := b.GetYoloSkipMerge("nope")
+			return err
+		}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,4 +107,21 @@ func TestBackendPermission_ModeAndUnattended(t *testing.T) {
 
 	err = b.SetPermissionMode(ws.ID, "not-a-real-mode")
 	require.ErrorIs(t, err, ErrInvalidPermissionMode)
+}
+
+// TestBackendPermission_YoloSkipMerge exercises the real
+// permission.Service so GetYoloSkipMerge reflects what SetYoloSkipMerge
+// actually persisted, rather than assuming the backend's passthrough is
+// wired correctly.
+func TestBackendPermission_YoloSkipMerge(t *testing.T) {
+	b, ws, _ := newPublishingWorkspace(t)
+
+	enabled, err := b.GetYoloSkipMerge(ws.ID)
+	require.NoError(t, err)
+	require.True(t, enabled, "a fresh workspace defaults to skipping merge approval in yolo mode")
+
+	require.NoError(t, b.SetYoloSkipMerge(ws.ID, false))
+	enabled, err = b.GetYoloSkipMerge(ws.ID)
+	require.NoError(t, err)
+	require.False(t, enabled)
 }

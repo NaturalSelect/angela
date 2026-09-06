@@ -892,6 +892,38 @@ func (c *Client) GetPermissionMode(ctx context.Context, id string) (string, erro
 	return mode.Mode, nil
 }
 
+// SetYoloSkipMerge sets whether yolo mode may skip the merge tool's
+// approval prompt for a workspace.
+func (c *Client) SetYoloSkipMerge(ctx context.Context, id string, enabled bool) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/permissions/yolo-skip-merge", id), nil, jsonBody(proto.YoloSkipMergeRequest{Enabled: enabled}), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to set yolo skip-merge: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to set yolo skip-merge: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
+// GetYoloSkipMerge retrieves whether yolo mode may skip the merge
+// tool's approval prompt for a workspace.
+func (c *Client) GetYoloSkipMerge(ctx context.Context, id string) (bool, error) {
+	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/permissions/yolo-skip-merge", id), nil, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to get yolo skip-merge: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("failed to get yolo skip-merge: status code %d", rsp.StatusCode)
+	}
+	var got proto.YoloSkipMergeRequest
+	if err := json.NewDecoder(rsp.Body).Decode(&got); err != nil {
+		return false, fmt.Errorf("failed to decode yolo skip-merge: %w", err)
+	}
+	return got.Enabled, nil
+}
+
 // GetConfig retrieves the workspace-specific configuration.
 func (c *Client) GetConfig(ctx context.Context, id string) (*config.Config, error) {
 	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/config", id), nil, nil)

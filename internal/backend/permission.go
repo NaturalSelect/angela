@@ -77,3 +77,26 @@ func (b *Backend) GetPermissionMode(workspaceID string) (string, error) {
 
 	return ws.Permissions.Mode().String(), nil
 }
+
+// SetYoloSkipMerge sets whether yolo mode may skip the merge tool's
+// approval prompt for this workspace.
+func (b *Backend) SetYoloSkipMerge(workspaceID string, enabled bool) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+
+	ws.Permissions.SetYoloSkipMerge(enabled)
+	return nil
+}
+
+// GetYoloSkipMerge returns whether yolo mode may skip the merge
+// tool's approval prompt for this workspace.
+func (b *Backend) GetYoloSkipMerge(workspaceID string) (bool, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return false, err
+	}
+
+	return ws.Permissions.YoloSkipMerge(), nil
+}

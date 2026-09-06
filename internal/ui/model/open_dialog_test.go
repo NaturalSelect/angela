@@ -42,6 +42,7 @@ func newDialogUI(t *testing.T, ws *MockWorkspace) *UI {
 	t.Helper()
 
 	ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
+	ws.EXPECT().PermissionYoloSkipMerge().Return(true).AnyTimes()
 
 	sty := styles.CharmtonePantera()
 	m := &UI{
@@ -337,6 +338,7 @@ func TestOpenCommandsDialog_OpensWithoutSession(t *testing.T) {
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().Config().Return(&config.Config{}).AnyTimes()
 	ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
+	ws.EXPECT().PermissionYoloSkipMerge().Return(true).AnyTimes()
 
 	m := newTestUI()
 	m.com = &common.Common{Workspace: ws, Styles: m.com.Styles}

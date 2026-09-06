@@ -256,6 +256,31 @@ func TestDefaultCommands_DockerMCPGating(t *testing.T) {
 	})
 }
 
+// TestDefaultCommands_YoloSkipMergeGating verifies the enable/disable
+// yolo-skip-merge commands are mutually exclusive and named for the
+// action they perform, the opposite of the current setting.
+func TestDefaultCommands_YoloSkipMergeGating(t *testing.T) {
+	t.Parallel()
+
+	t.Run("currently skipping merge approval shows only disable", func(t *testing.T) {
+		t.Parallel()
+		c := newCommandsForDefaults(t, nil, false, nil, nil)
+		c.com.Workspace.(*configWorkspace).yoloSkipMerge = true
+		ids := commandIDs(c.defaultCommands())
+		require.Contains(t, ids, "disable_yolo_skip_merge")
+		require.NotContains(t, ids, "enable_yolo_skip_merge")
+	})
+
+	t.Run("currently requiring approval shows only enable", func(t *testing.T) {
+		t.Parallel()
+		c := newCommandsForDefaults(t, nil, false, nil, nil)
+		c.com.Workspace.(*configWorkspace).yoloSkipMerge = false
+		ids := commandIDs(c.defaultCommands())
+		require.Contains(t, ids, "enable_yolo_skip_merge")
+		require.NotContains(t, ids, "disable_yolo_skip_merge")
+	})
+}
+
 // TestDefaultCommands_TransparentBackgroundLabel verifies the toggle's
 // label always names the action it performs, the opposite of the
 // current setting.

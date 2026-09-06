@@ -69,6 +69,44 @@ func TestPermissionService_SkipMode(t *testing.T) {
 	assert.True(t, decision.Allowed(), "skip mode should grant without prompting")
 }
 
+// TestPermissionService_YoloSkipsMergeByDefault pins the historical
+// behavior: yolo mode auto-approves a merge just like anything else
+// unless YoloSkipMerge has been turned off.
+func TestPermissionService_YoloSkipsMergeByDefault(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/tmp", ModeYolo, nil)
+	assert.True(t, service.YoloSkipMerge(), "yolo should skip merge approval by default")
+
+	decision := gate(t.Context(), service, "test-session", "call-1", Access{Tool: "merge", Action: ActionMerge})
+	assert.True(t, decision.Allowed(), "yolo mode should grant a merge without prompting by default")
+}
+
+// TestPermissionService_YoloSkipMergeDisabled pins the --no-yolo-merge
+// behavior: once YoloSkipMerge is turned off, a merge reaches the
+// prompt even in yolo mode, while every other action keeps sailing
+// through untouched.
+func TestPermissionService_YoloSkipMergeDisabled(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/tmp", ModeYolo, nil)
+	service.SetYoloSkipMerge(false)
+	assert.False(t, service.YoloSkipMerge())
+
+	edit := gate(t.Context(), service, "s1", "call-1", editAccess("/tmp/test.txt"))
+	assert.True(t, edit.Allowed(), "yolo mode must keep skipping every other action")
+
+	events := service.Subscribe(t.Context())
+	wait := gateAsync(t.Context(), service, "s1", "call-2", Access{Tool: "merge", Action: ActionMerge})
+	select {
+	case ev := <-events:
+		service.Grant(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("merge must still reach the prompt in yolo mode once YoloSkipMerge is disabled")
+	}
+	assert.True(t, wait().Allowed(), "the user's approval must still let the merge through")
+}
+
 // TestPermissionService_AutoAcceptEditsMode pins that ModeAutoAcceptEdits
 // only widens the ladder for edits: an edit is granted without a
 // prompt, but every other action still runs the normal ladder.

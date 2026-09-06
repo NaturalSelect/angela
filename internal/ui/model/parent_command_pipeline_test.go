@@ -24,6 +24,7 @@ func newParentPaletteUI(t *testing.T, ws *MockWorkspace) *UI {
 	ws.EXPECT().Config().Return(&config.Config{}).AnyTimes()
 	ws.EXPECT().WorkingDir().Return("").AnyTimes()
 	ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
+	ws.EXPECT().PermissionYoloSkipMerge().Return(true).AnyTimes()
 
 	m := newBusyUIWithWorkspace(ws)
 	m.session = &session.Session{ID: "branch-1", ParentSessionID: "parent-1", Agent: "pairing"}

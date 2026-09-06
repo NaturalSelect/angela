@@ -171,7 +171,10 @@ prompt follows and decides everything else.
      open, so you can say what was wrong with the summary and have it try
      again.
    - Under yolo mode (`--yolo`, or permissions set to skip requests), merge
-     is approved automatically like any other tool.
+     is approved automatically like any other tool, unless the
+     `--no-yolo-merge` flag was passed at startup or the "Disable Yolo Skip
+     Merge" command has turned that off for the running session — either
+     way, merge then falls back to asking for approval like normal.
 4. **Abandon.** If the branch led nowhere, drop it: the coder is told the
    branch was abandoned and continues without a summary. That is a normal
    outcome, not an error.

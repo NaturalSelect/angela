@@ -2248,6 +2248,14 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionDisableDockerMCP:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		cmds = append(cmds, m.disableDockerMCP)
+	case dialog.ActionEnableYoloSkipMerge:
+		m.com.Workspace.PermissionSetYoloSkipMerge(true)
+		cmds = append(cmds, util.CmdHandler(util.NewInfoMsg("Yolo mode will skip merge approval")))
+		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionDisableYoloSkipMerge:
+		m.com.Workspace.PermissionSetYoloSkipMerge(false)
+		cmds = append(cmds, util.CmdHandler(util.NewInfoMsg("Yolo mode will always ask before merging")))
+		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionToggleMCPServer:
 		// Left open deliberately: toggling should not close the dialog,
 		// so the user can flip several servers in one visit.

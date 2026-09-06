@@ -159,6 +159,12 @@ type (
 	ActionEnableDockerMCP struct{}
 	// ActionDisableDockerMCP is a message to disable Docker MCP.
 	ActionDisableDockerMCP struct{}
+	// ActionEnableYoloSkipMerge lets yolo mode go back to skipping the
+	// merge tool's approval prompt.
+	ActionEnableYoloSkipMerge struct{}
+	// ActionDisableYoloSkipMerge makes yolo mode always ask before
+	// merging a branch back into its parent conversation.
+	ActionDisableYoloSkipMerge struct{}
 	// ActionToggleMCPServer requests a runtime-only (not persisted to
 	// config) enable or disable of a configured MCP server. The
 	// direction is decided by the server's current state, not carried

@@ -86,6 +86,16 @@ func TestAppWorkspace_PermissionMode(t *testing.T) {
 	require.Equal(t, permission.ModeYolo, fx.ws.PermissionMode())
 }
 
+func TestAppWorkspace_PermissionYoloSkipMerge(t *testing.T) {
+	t.Parallel()
+	fx := newAWFixture(t)
+
+	require.True(t, fx.ws.PermissionYoloSkipMerge(), "a fresh workspace defaults to skipping merge approval in yolo mode")
+
+	fx.ws.PermissionSetYoloSkipMerge(false)
+	require.False(t, fx.ws.PermissionYoloSkipMerge())
+}
+
 // TestAppWorkspace_QuestionAnswer drives AppWorkspace's Question
 // passthroughs against the real question.Service from app.NewForTest,
 // pinning that Answer both unblocks a pending Ask with the given

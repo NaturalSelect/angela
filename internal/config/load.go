@@ -50,6 +50,11 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 
 	cfg.setDefaults(workingDir, dataDir)
 
+	// Captured before the recent-models sidecar takes over below, so a
+	// pre-migration recent_models key still embedded in an old config
+	// file seeds the sidecar the first time it is read.
+	legacyRecentModels := cfg.RecentModels
+
 	store := &ConfigStore{
 		config:         cfg,
 		workingDir:     workingDir,
@@ -77,6 +82,12 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 			store.loadedPaths = append(store.loadedPaths, store.workspacePath)
 		}
 	}
+
+	// Recent models live in a sidecar file next to each scope's config
+	// file (see recent_models.go) rather than in the config JSON itself;
+	// load it last so it always wins over any legacy recent_models key
+	// a config file still carries.
+	cfg.RecentModels = loadRecentModels(store.globalDataPath, store.workspacePath, legacyRecentModels)
 
 	// Validate hooks after all config merging is complete so workspace
 	// hooks also get their matcher regexes compiled.
@@ -155,16 +166,12 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 
 	// Persist any fallback corrections while we still hold writeMu.
 	if resolved.MainFallback {
-		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-			return store.updatePreferredModelFields(c, SlotMain, resolved.Main)
-		}); err != nil {
+		if err := store.updatePreferredModelLocked(ScopeGlobal, SlotMain, resolved.Main); err != nil {
 			return nil, fmt.Errorf("failed to update preferred main model: %w", err)
 		}
 	}
 	if resolved.ChoreFallback {
-		if err := store.updateLocked(ScopeGlobal, func(c *Config) map[string]any {
-			return store.updatePreferredModelFields(c, SlotChore, resolved.Chore)
-		}); err != nil {
+		if err := store.updatePreferredModelLocked(ScopeGlobal, SlotChore, resolved.Chore); err != nil {
 			return nil, fmt.Errorf("failed to update preferred chore model: %w", err)
 		}
 	}

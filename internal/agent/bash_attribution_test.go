@@ -51,8 +51,8 @@ func TestBashAttributionNamesTheModelThatRanTheTurn(t *testing.T) {
 		"precondition: the turn runs the session's model")
 
 	desc := bashToolDescription(t, resolved.Tools)
-	require.Contains(t, desc, "large-model",
+	require.Contains(t, desc, "Large",
 		"the commit trailer must credit the model that did the work")
-	require.False(t, strings.Contains(desc, "small-model"),
+	require.False(t, strings.Contains(desc, "Small"),
 		"the global slot's model must not be credited for a turn it did not run")
 }

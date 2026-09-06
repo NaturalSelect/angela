@@ -140,10 +140,10 @@ Commit message here.
 {{ end}}
 {{if eq .Attribution.TrailerStyle "assisted-by" }}
 
-Assisted-by: Angela:{{ .ModelID }}
+Assisted-by: Angela:{{ .ModelName }}
 {{ else if eq .Attribution.TrailerStyle "co-authored-by" }}
 
-Co-Authored-By: Angela <angela@users.noreply.github.com>
+Co-Authored-By: Angela{{ if .CoAuthoredByEmail }} <{{ .CoAuthoredByEmail }}>{{ end }}
 {{ end }}
 EOF
 )"

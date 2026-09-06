@@ -366,8 +366,12 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	}
 
 	// Entered before the database connection and any other child
-	// process (LSP, MCP, bash tool) starts, so the restriction covers
-	// all of them. It must come after MkdirAll above: Landlock's
+	// process (LSP, MCP, bash tool) starts, so the path restriction
+	// covers all of them. Network restriction is narrower: only
+	// commands the shell tool spawns afterward are affected (see
+	// sandbox.ShouldRestrictChildNetwork); this process itself and
+	// any LSP/MCP servers keep whatever network access they'd
+	// otherwise have. It must come after MkdirAll above: Landlock's
 	// IgnoreIfMissing mode silently drops rules for paths that don't
 	// exist yet, so entering any earlier would leave the still-missing
 	// data directory unprotected.

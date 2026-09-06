@@ -18,10 +18,17 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/cmd"
 	_ "github.com/NaturalSelect/angela/internal/dns"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	_ "github.com/joho/godotenv/autoload"
 )
 
 func main() {
+	// Must run before anything else: when Angela relaunches itself to
+	// restrict a sandboxed command's network access (see
+	// sandbox.WrapForChildNetworkRestriction), this process is that
+	// relaunch, not a normal Angela invocation, and never returns.
+	sandbox.RunChildExecLauncherIfRequested(os.Args)
+
 	if os.Getenv("ANGELA_PROFILE") != "" {
 		go func() {
 			slog.Info("Serving pprof at localhost:6060")

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"runtime"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/update"
 	"github.com/stretchr/testify/require"
@@ -257,4 +259,49 @@ func TestNew_InvalidPermissionRule(t *testing.T) {
 	application, err := New(context.Background(), conn, store, skillsMgr)
 	require.Nil(t, application)
 	require.ErrorContains(t, err, "invalid pattern")
+}
+
+// TestNew_SandboxRespectsNoDockerSandboxOverride covers the
+// store.Overrides().NoDockerSandbox wiring feeding New's Sandbox
+// field: with InDocker forced true, New must still resolve a
+// DockerSandbox passthrough (IsInSandbox always true) by default, but
+// switch to a not-yet-entered LandlockSandbox (IsInSandbox false) once
+// the --no-docker-sandbox override is set. Not parallel: it mutates
+// the package-level sandbox.InDocker var, and no other test in this
+// package calls EnterSandbox for real, so the process-global "entered"
+// state Landlock tracks never gets set here.
+func TestNew_SandboxRespectsNoDockerSandboxOverride(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Docker detection only matters on Linux")
+	}
+
+	orig := sandbox.InDocker
+	sandbox.InDocker = func() bool { return true }
+	t.Cleanup(func() { sandbox.InDocker = orig })
+
+	tests := []struct {
+		name            string
+		noDockerSandbox bool
+		wantInSandbox   bool
+	}{
+		{"unset defers to the Docker/OCI container", false, true},
+		{"set forces Landlock even inside the container", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stubUpdateDefault(t)
+
+			dataDir := t.TempDir()
+			conn := mustConnectTestDB(t, dataDir)
+			store := newUnconfiguredStore(dataDir)
+			store.Overrides().NoDockerSandbox = tt.noDockerSandbox
+			skillsMgr := skills.NewManager(nil, nil, nil)
+
+			application, err := New(context.Background(), conn, store, skillsMgr)
+			require.NoError(t, err)
+			defer application.Shutdown()
+
+			require.Equal(t, tt.wantInSandbox, application.Sandbox.IsInSandbox())
+		})
+	}
 }

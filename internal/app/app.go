@@ -156,7 +156,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		FileTracker: fileTracker,
 		LSPManager:  lsp.NewManager(store),
 		Skills:      skillsMgr,
-		Sandbox:     sandbox.New(),
+		Sandbox:     sandbox.New(store.Overrides().NoDockerSandbox),
 
 		globalCtx: ctx,
 

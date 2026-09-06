@@ -77,6 +77,25 @@ func TestSandboxConfigFromFlags_NoNetwork(t *testing.T) {
 	require.False(t, cfg.AllowNetwork)
 }
 
+// TestSandboxConfigFromFlags_NoDockerSandboxDoesNotRequireSandbox
+// covers a case --no-docker-sandbox is deliberately exempt from:
+// unlike the --sandbox-* refinement flags, it also governs the
+// standalone App.Sandbox behind IsInSandbox() (e.g. the /sandbox TUI
+// command's visibility), which applies whether or not --sandbox was
+// passed at startup. So, unlike sandboxFlagNames entries, it must
+// stay usable on its own instead of being rejected.
+func TestSandboxConfigFromFlags_NoDockerSandboxDoesNotRequireSandbox(t *testing.T) {
+	t.Parallel()
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("no-docker-sandbox", "true"))
+
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data")
+	require.NoError(t, err)
+	require.False(t, enabled)
+	require.Zero(t, cfg)
+}
+
 // TestSandboxConfigFromFlags_RequiresSandboxFlag covers every
 // refinement flag: setting it without --sandbox is rejected rather
 // than silently ignored.

@@ -22,6 +22,7 @@ func addSandboxFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSlice("sandbox-rw", nil, "Additional read-write directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().StringSlice("sandbox-ro", nil, "Additional read-only directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access under --sandbox; since the restriction is process-wide, this also blocks Angela's own provider requests")
+	cmd.Flags().Bool("no-docker-sandbox", false, "Do not treat an existing Docker/OCI container as sufficient sandboxing; apply Landlock restriction as well, both under --sandbox and for the /sandbox command")
 }
 
 // sandboxConfigFromFlags builds the sandbox config from cmd's --sandbox

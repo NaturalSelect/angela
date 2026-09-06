@@ -93,12 +93,14 @@ type Sandbox interface {
 // New returns the Sandbox implementation appropriate for the current
 // process: a NoneSandbox on platforms without a supported enforcement
 // mechanism, a DockerSandbox if the process is already confined by a
-// Docker/OCI container, otherwise a LandlockSandbox.
-func New() Sandbox {
+// Docker/OCI container, otherwise a LandlockSandbox. noDockerSandbox
+// disables the Docker/OCI shortcut so a container is treated like any
+// other Linux host, still getting Landlock enforcement on top of it.
+func New(noDockerSandbox bool) Sandbox {
 	if runtime.GOOS != "linux" {
 		return NoneSandbox{}
 	}
-	if InDocker() {
+	if !noDockerSandbox && InDocker() {
 		return DockerSandbox{}
 	}
 	return LandlockSandbox{}

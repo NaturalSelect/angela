@@ -51,13 +51,10 @@ func processGroupExecHandler(killTimeout time.Duration) interp.ExecHandlerFunc {
 			return interp.ExitStatus(127)
 		}
 
-		if sandbox.ShouldRestrictChildNetwork() {
-			wrapped, wrapErr := sandbox.WrapForChildNetworkRestriction(path, args)
-			if wrapErr != nil {
-				fmt.Fprintln(hc.Stderr, wrapErr)
-				return interp.ExitStatus(127)
-			}
-			path, args = wrapped[0], wrapped
+		path, args, err = networkRestrictedArgv(path, args)
+		if err != nil {
+			fmt.Fprintln(hc.Stderr, err)
+			return interp.ExitStatus(127)
 		}
 
 		cmd := exec.Cmd{
@@ -91,6 +88,22 @@ func processGroupExecHandler(killTimeout time.Duration) interp.ExecHandlerFunc {
 
 		return exitStatusFromError(ctx, hc.Stderr, err)
 	}
+}
+
+// networkRestrictedArgv rewrites path and args through
+// sandbox.WrapForChildNetworkRestriction when the shell tool must
+// block this command's outbound network, leaving them unchanged
+// otherwise. Extracted from processGroupExecHandler so the rewrite
+// itself is unit-testable without starting a real process.
+func networkRestrictedArgv(path string, args []string) (string, []string, error) {
+	if !sandbox.ShouldRestrictChildNetwork() {
+		return path, args, nil
+	}
+	wrapped, err := sandbox.WrapForChildNetworkRestriction(path, args)
+	if err != nil {
+		return "", nil, err
+	}
+	return wrapped[0], wrapped, nil
 }
 
 // exitStatusFromError translates an exec error into an interp exit status,

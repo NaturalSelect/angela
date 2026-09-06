@@ -56,15 +56,18 @@ func TestBuildChildNetworkFilter(t *testing.T) {
 // binary that needs the network, so the real enforcement is only ever
 // exercised in a disposable subprocess.
 const (
-	networkFilterHelperEnv = "ANGELA_TEST_INSTALL_NETWORK_FILTER"
-	launcherDriverEnv      = "ANGELA_TEST_RUN_CHILD_EXEC_LAUNCHER"
-	dialCheckEnv           = "ANGELA_TEST_DIAL_CHECK"
+	networkFilterHelperEnv    = "ANGELA_TEST_INSTALL_NETWORK_FILTER"
+	udpFilterHelperEnv        = "ANGELA_TEST_INSTALL_NETWORK_FILTER_UDP"
+	launcherDriverEnv         = "ANGELA_TEST_RUN_CHILD_EXEC_LAUNCHER"
+	dialCheckEnv              = "ANGELA_TEST_DIAL_CHECK"
 )
 
 func TestMain(m *testing.M) {
 	switch {
 	case os.Getenv(networkFilterHelperEnv) == "1":
 		os.Exit(runNetworkFilterHelperProcess())
+	case os.Getenv(udpFilterHelperEnv) == "1":
+		os.Exit(runUDPNetworkFilterHelperProcess())
 	case os.Getenv(launcherDriverEnv) == "1":
 		// Hands off to dialCheckEnv instead of re-triggering this same
 		// branch: runChildExecLauncher execs into this very binary
@@ -136,6 +139,53 @@ func TestInstallChildNetworkFilter_BlocksOutboundConnect(t *testing.T) {
 
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), networkFilterHelperEnv+"=1")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "helper subprocess output: %s", output)
+}
+
+// runUDPNetworkFilterHelperProcess installs the filter and issues a
+// raw SYS_SENDMMSG on an unconnected UDP socket, the way a program
+// sending batched datagrams (e.g. DNS queries) would without ever
+// calling the already-blocked SYS_SENDTO or SYS_SENDMSG. The msgvec
+// pointer is left nil: seccomp evaluates the syscall number before
+// the kernel would dereference it, so an EPERM here proves the filter
+// caught it rather than the kernel rejecting a bad argument.
+func runUDPNetworkFilterHelperProcess() int {
+	runtime.LockOSThread()
+
+	if err := installChildNetworkFilter(); err != nil {
+		fmt.Fprintln(os.Stderr, "install filter:", err)
+		return 10
+	}
+
+	fd, sockErr := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM, 0)
+	if sockErr != nil {
+		fmt.Fprintln(os.Stderr, "socket:", sockErr)
+		return 13
+	}
+	defer unix.Close(fd)
+
+	_, _, errno := unix.Syscall6(unix.SYS_SENDMMSG, uintptr(fd), 0, 1, 0, 0, 0)
+	if errno == 0 {
+		fmt.Fprintln(os.Stderr, "sendmmsg unexpectedly succeeded")
+		return 11
+	}
+	if errno != unix.EPERM {
+		fmt.Fprintln(os.Stderr, "sendmmsg failed with unexpected errno:", errno)
+		return 12
+	}
+	return 0
+}
+
+// TestInstallChildNetworkFilter_BlocksOutboundSendmmsg exercises the
+// real seccomp enforcement end to end, in a subprocess: it verifies
+// that a UDP sendmmsg, which bypasses SYS_SENDTO and SYS_SENDMSG, is
+// still rejected with EPERM once installChildNetworkFilter runs.
+func TestInstallChildNetworkFilter_BlocksOutboundSendmmsg(t *testing.T) {
+	t.Parallel()
+
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), udpFilterHelperEnv+"=1")
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "helper subprocess output: %s", output)
 }

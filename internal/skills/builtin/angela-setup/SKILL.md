@@ -286,7 +286,9 @@ resumed session keeps.
 ## Step 6 — Hooks (Optional)
 
 Ask if the user wants pre-execution hooks. Hooks run shell commands before
-tool calls and can allow, deny, rewrite input, or inject context.
+tool calls and can allow, deny, rewrite input, or inject context. Mention
+that hooks are experimental: no compatibility guarantee, and the feature
+may change or be removed in a future release.
 
 A simple example — auto-approve read-only tools:
 

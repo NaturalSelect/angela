@@ -380,6 +380,9 @@ fills in any of `command`, `args`, `env`, `filetypes`, `root_markers`,
 
 ## hooks
 
+> **Experimental.** No compatibility guarantee — the config format and
+> supported events may change or be removed in a future release.
+
 `hooks` maps an event name to a list of shell commands that fire on it.
 Currently only **`PreToolUse`** is supported, which runs before a tool
 executes. Event keys are normalized, so `PreToolUse`, `pretooluse`,

@@ -3,6 +3,11 @@
 > [!NOTE]
 > This document was designed for both humans and agents.
 
+> [!WARNING]
+> Hooks are an **experimental** feature. The config format, payload/env
+> contract, and supported events carry no compatibility guarantee and may
+> change or be removed in a future release without notice.
+
 Hooks are user-defined shell scripts that run when various events happen during
 the agent lifecycle, allowing you to both build on top of Angela, customize
 its behavior, and exert deterministic control over an agent's wily behavior.

@@ -121,7 +121,8 @@ internal/
   returns decisions. The `hookedTool` decorator in
   `internal/agent/hooked_tool.go` wraps tools at the coordinator level.
   Hooks run before permission checks. See `docs/hooks/README.md` for the user-facing
-  protocol.
+  protocol. **Experimental**: the hook config format and behavior carry no
+  compatibility guarantee and may change or be removed in a future release.
 - **CGO disabled**: builds with `CGO_ENABLED=0` and
   `GOEXPERIMENT=greenteagc`.
 

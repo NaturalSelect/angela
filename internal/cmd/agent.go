@@ -15,6 +15,7 @@ func init() {
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentCreateCmd)
 	rootCmd.AddCommand(agentCmd)
+	addSandboxFlags(agentCreateCmd)
 }
 
 var agentCmd = &cobra.Command{
@@ -93,7 +94,10 @@ it to .angela/agents/<id>.md.
 Runs locally and requires an already configured provider.`,
 	Args: cobra.ExactArgs(1),
 	Example: `# Generate an agent
-angela agent create "Reviews Go code for concurrency bugs"`,
+angela agent create "Reviews Go code for concurrency bugs"
+
+# Generate an agent inside an OS-level sandbox
+angela agent create --sandbox "Reviews Go code for concurrency bugs"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ws, cleanup, err := setupLocalWorkspace(cmd)
 		if err != nil {

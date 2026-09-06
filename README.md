@@ -102,6 +102,9 @@ Custom agents can be defined in `angela.json` or as markdown files. See
 
 ## Hooks
 
+> Experimental — no compatibility guarantee; may change or be removed in a
+> future release.
+
 Hooks are shell commands that fire before tool execution. Use them to block
 dangerous commands, rewrite tool input, inject context, or auto-approve safe
 operations.

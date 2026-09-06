@@ -72,7 +72,7 @@ full agent turn.
 
 A PreToolUse hook can read the current nesting level from the `depth` field
 in its JSON payload or the `ANGELA_AGENT_DEPTH` environment variable — see
-[Hooks](../hooks/README.md).
+[Hooks](../hooks/README.md) (experimental feature).
 
 ## Branch Agents
 

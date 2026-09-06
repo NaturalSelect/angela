@@ -5,6 +5,11 @@ description: Use when the user wants to add, write, debug, or configure an Angel
 
 # Angela Hooks
 
+> [!WARNING]
+> Hooks are experimental. There is no compatibility guarantee for the
+> config format or behavior, and this feature may change or be removed in
+> a future release.
+
 Hooks are user-defined commands in `angela.json` that fire at
 specific points during execution, giving deterministic control over tool
 behavior. They run **before** permission checks, and on **every** tool call —

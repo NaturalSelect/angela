@@ -212,7 +212,8 @@ parameters, and variants all live on the model's catalog entry under
 
 ### Hooks
 
-See the [hooks docs](../hooks/) for the full guide.
+**Experimental** — no compatibility guarantee; may change or be removed in a
+future release. See the [hooks docs](../hooks/) for the full guide.
 
 ```jsonc
 {

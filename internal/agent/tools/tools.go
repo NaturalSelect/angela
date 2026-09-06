@@ -63,30 +63,25 @@ func GetModelNameFromContext(ctx context.Context) string {
 }
 
 // NewPermissionDeniedResponse returns a tool response indicating the user
-// denied permission, with StopTurn set so the agent loop does not retry.
-// NewPermissionDeniedResponse returns a tool response indicating the user
-// denied permission, with StopTurn set so the agent loop does not retry.
-// When reason is non-empty it is appended so the model learns why.
+// denied permission. A bare denial (no reason) sets StopTurn so the agent
+// loop does not retry; a denial with a reason instead carries the reason
+// back so the model can see why and try a different approach in the same
+// turn.
 func NewPermissionDeniedResponse(reason string) fantasy.ToolResponse {
 	text := "User denied permission"
 	if reason != "" {
 		text += ": " + reason
 	}
 	resp := fantasy.NewTextErrorResponse(text)
-	resp.StopTurn = true
+	resp.StopTurn = reason == ""
 	return resp
 }
 
-// DecisionResponse turns a refusal into what the model sees. The two
-// refusals mean different things and must not be collapsed: the user
-// saying no ends the turn, while the configuration saying no is an
-// obstacle the model should route around, so it carries the reason back
-// and lets the turn continue.
-// DecisionResponse turns a refusal into what the model sees. The two
-// refusals mean different things and must not be collapsed: the user
-// saying no ends the turn, while the configuration saying no is an
-// obstacle the model should route around, so it carries the reason back
-// and lets the turn continue.
+// DecisionResponse turns a refusal into what the model sees. A user
+// denial with no reason ends the turn, since there is nothing for the
+// model to route around. A denial with a reason and the configuration
+// saying no are both obstacles the model can route around, so they carry
+// the reason back and let the turn continue.
 func DecisionResponse(decision permission.Decision) fantasy.ToolResponse {
 	switch decision.Outcome {
 	case permission.OutcomePolicyDeny:

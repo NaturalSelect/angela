@@ -195,7 +195,7 @@ loop:
 	}
 
 	require.True(t, resp.IsError)
-	require.True(t, resp.StopTurn, "a user refusal ends the turn")
+	require.False(t, resp.StopTurn, "a user refusal with a reason lets the turn continue")
 	require.Contains(t, resp.Content, "not needed for this task")
 }
 

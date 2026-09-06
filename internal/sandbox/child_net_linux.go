@@ -13,15 +13,21 @@ import (
 )
 
 // blockedNetworkSyscalls lists the syscalls installChildNetworkFilter
-// blocks: everything needed to open or use a network connection,
-// mirroring grok-build's xai-grok-sandbox child network filter.
+// blocks: everything needed to open or use a network connection. This
+// mirrors grok-build's xai-grok-sandbox child network filter, plus
+// SYS_SENDMMSG, which grok-build's own list omits and which otherwise
+// lets a program send UDP datagrams on an unconnected socket without
+// ever calling SYS_SENDTO or SYS_SENDMSG. unix.SYS_ACCEPT is added to
+// this list separately in child_net_linux_accept.go: it doesn't exist
+// on linux/386, the one Linux architecture without a direct accept(2)
+// syscall.
 var blockedNetworkSyscalls = []uint32{
 	unix.SYS_CONNECT,
 	unix.SYS_BIND,
 	unix.SYS_SENDTO,
 	unix.SYS_SENDMSG,
+	unix.SYS_SENDMMSG,
 	unix.SYS_LISTEN,
-	unix.SYS_ACCEPT,
 	unix.SYS_ACCEPT4,
 }
 

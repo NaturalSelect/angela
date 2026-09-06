@@ -432,7 +432,7 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	helpView := m.frame.RenderHelp(&m.help, m, m.metrics.ContentWidth)
 
 	preamble := m.headerView() + "\n" +
-		t.Dialog.SecondaryText.Render("Applies filesystem and network limits via Landlock.")
+		t.Dialog.SecondaryText.Render("Limits filesystem via Landlock; blocks commands' network.")
 	sectionLabel := t.Dialog.Arguments.InputLabelBlurred.PaddingLeft(rowLeftPad).Render("FileSystem Access")
 	networkBlock, networkTarget := m.networkView(rowLeftPad)
 

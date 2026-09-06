@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"mvdan.cc/sh/v3/interp"
 )
 
@@ -48,6 +49,15 @@ func processGroupExecHandler(killTimeout time.Duration) interp.ExecHandlerFunc {
 		if err != nil {
 			fmt.Fprintln(hc.Stderr, err)
 			return interp.ExitStatus(127)
+		}
+
+		if sandbox.ShouldRestrictChildNetwork() {
+			wrapped, wrapErr := sandbox.WrapForChildNetworkRestriction(path, args)
+			if wrapErr != nil {
+				fmt.Fprintln(hc.Stderr, wrapErr)
+				return interp.ExitStatus(127)
+			}
+			path, args = wrapped[0], wrapped
 		}
 
 		cmd := exec.Cmd{

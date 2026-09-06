@@ -153,8 +153,8 @@ angela run --sandbox "..."
 # Add extra directories on top of the defaults (repeatable)
 angela run --sandbox --sandbox-rw /extra/writable --sandbox-ro /extra/readable "..."
 
-# Also block outbound network access (this blocks Angela's own provider
-# requests too, since the restriction is process-wide)
+# Also block outbound network access for commands the agent runs
+# (Angela's own provider requests are unaffected)
 angela run --sandbox --sandbox-no-network "..."
 ```
 

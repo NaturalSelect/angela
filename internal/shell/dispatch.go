@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/NaturalSelect/angela/internal/filepathext"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -190,7 +191,24 @@ func dispatchShebang(ctx context.Context, scriptPath string, probe []byte, args 
 	cmdArgs = append(cmdArgs, scriptPath)
 	cmdArgs = append(cmdArgs, args[1:]...)
 
-	cmd := exec.CommandContext(ctx, interpreter, cmdArgs...)
+	execPath, execArgs := interpreter, cmdArgs
+	if sandbox.ShouldRestrictChildNetwork() {
+		resolved, lookErr := exec.LookPath(interpreter)
+		if lookErr != nil {
+			hc := interp.HandlerCtx(ctx)
+			fmt.Fprintf(hc.Stderr, "angela: %s: %s\n", scriptPath, lookErr)
+			return interp.ExitStatus(127)
+		}
+		wrapped, wrapErr := sandbox.WrapForChildNetworkRestriction(resolved, append([]string{interpreter}, cmdArgs...))
+		if wrapErr != nil {
+			hc := interp.HandlerCtx(ctx)
+			fmt.Fprintf(hc.Stderr, "angela: %s: %s\n", scriptPath, wrapErr)
+			return interp.ExitStatus(127)
+		}
+		execPath, execArgs = wrapped[0], wrapped[1:]
+	}
+
+	cmd := exec.CommandContext(ctx, execPath, execArgs...)
 	hc := interp.HandlerCtx(ctx)
 	cmd.Dir = hc.Dir
 	cmd.Env = execEnvList(hc.Env)

@@ -1,6 +1,7 @@
-// Package sandbox restricts the current process's filesystem access
-// using the strongest OS-level isolation available on the running
-// platform.
+// Package sandbox restricts the current process's filesystem access,
+// and outbound network access for commands it later spawns via the
+// shell tool, using the strongest OS-level isolation available on the
+// running platform.
 package sandbox
 
 import (
@@ -28,10 +29,12 @@ type Config struct {
 	// Paths outside both ReadWrite and ReadOnly become inaccessible
 	// once EnterSandbox succeeds.
 	ReadOnly []string
-	// AllowNetwork leaves outbound network access unrestricted when
-	// true. When false, EnterSandbox blocks it. Since restriction is
-	// process-wide, this also blocks the sandboxed process's own
-	// network calls, not just its children's.
+	// AllowNetwork leaves outbound network access unrestricted for
+	// commands the shell tool spawns when true. When false, those
+	// commands have their outbound network syscalls blocked (see
+	// ShouldRestrictChildNetwork). It never affects the sandboxed
+	// process's own network access, which Angela needs for its own
+	// provider calls.
 	AllowNetwork bool
 }
 
@@ -78,15 +81,19 @@ type Sandbox interface {
 	// or by an earlier call to EnterSandbox.
 	IsInSandbox() bool
 
-	// EnterSandbox restricts the process according to cfg. The
-	// restriction covers every goroutine and is inherited by every
-	// child process spawned afterwards. It is irreversible for the
-	// life of the process: once entered, access can only be narrowed
-	// further, never widened. On platforms without a supported
-	// enforcement mechanism, it fails with ErrNotSupported instead of
-	// restricting anything. If Landlock is merely unavailable on the
-	// running (Linux) kernel, it degrades to a safe no-op instead of
-	// failing.
+	// EnterSandbox restricts the process according to cfg. Filesystem
+	// restrictions cover every goroutine in this process and are
+	// inherited by every child process spawned afterwards. Network
+	// restriction is narrower and never applies to this process
+	// itself, which may still need outbound access (e.g. for its own
+	// provider calls): it only marks commands the shell tool spawns
+	// afterward for restriction, see ShouldRestrictChildNetwork. It is
+	// irreversible for the life of the process: once entered, access
+	// can only be narrowed further, never widened. On platforms
+	// without a supported enforcement mechanism, it fails with
+	// ErrNotSupported instead of restricting anything. If Landlock is
+	// merely unavailable on the running (Linux) kernel, it degrades to
+	// a safe no-op instead of failing.
 	EnterSandbox(cfg Config) error
 }
 
@@ -127,15 +134,37 @@ type DockerSandbox struct{}
 // detected at startup.
 func (DockerSandbox) IsInSandbox() bool { return true }
 
-// EnterSandbox is a no-op: the surrounding container already confines
-// the process.
-func (DockerSandbox) EnterSandbox(Config) error { return nil }
+// EnterSandbox is a no-op for filesystem confinement: the surrounding
+// container already confines the process. Network is handled the same
+// way as LandlockSandbox: cfg.AllowNetwork never restricts this
+// process's own network, only commands the shell tool spawns
+// afterward (see ShouldRestrictChildNetwork).
+func (DockerSandbox) EnterSandbox(cfg Config) error {
+	if !cfg.AllowNetwork {
+		restrictChildNetwork.Store(true)
+	}
+	return nil
+}
 
 // entered tracks whether LandlockSandbox.EnterSandbox has already
 // restricted this process. Landlock confinement is process-wide and
 // irreversible, so this is process-global state rather than
 // per-instance state.
 var entered atomic.Bool
+
+// restrictChildNetwork tracks whether EnterSandbox was called with
+// Config.AllowNetwork false. It never restricts the sandboxed
+// process's own network access: only ShouldRestrictChildNetwork's
+// callers (the shell tool) consult it, to block a spawned command's
+// own outbound network instead.
+var restrictChildNetwork atomic.Bool
+
+// ShouldRestrictChildNetwork reports whether a command the shell tool
+// is about to spawn should have its outbound network access blocked.
+// Use WrapForChildNetworkRestriction to apply the restriction.
+func ShouldRestrictChildNetwork() bool {
+	return restrictChildNetwork.Load()
+}
 
 // LandlockSandbox restricts the process using the Linux Landlock LSM.
 // On platforms or kernels without Landlock support, EnterSandbox
@@ -150,7 +179,10 @@ func (LandlockSandbox) IsInSandbox() bool {
 
 // EnterSandbox applies cfg using Landlock's best-effort mode: it
 // enforces as much as the running kernel supports and never fails
-// just because a stronger ABI version isn't available.
+// just because a stronger ABI version isn't available. Landlock has
+// no way to restrict network access for only this process's
+// children, so cfg.AllowNetwork never touches Landlock; see
+// ShouldRestrictChildNetwork for how it's enforced instead.
 func (LandlockSandbox) EnterSandbox(cfg Config) error {
 	cf := landlock.V10.BestEffort()
 
@@ -168,10 +200,7 @@ func (LandlockSandbox) EnterSandbox(cfg Config) error {
 	}
 
 	if !cfg.AllowNetwork {
-		// No rules permitted means no TCP bind/connect is allowed.
-		if err := cf.RestrictNet(); err != nil {
-			return fmt.Errorf("enter sandbox: restrict network: %w", err)
-		}
+		restrictChildNetwork.Store(true)
 	}
 
 	entered.Store(true)

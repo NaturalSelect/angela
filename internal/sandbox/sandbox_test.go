@@ -65,9 +65,13 @@ func TestNew_Linux(t *testing.T) {
 func TestDockerSandbox(t *testing.T) {
 	t.Parallel()
 
+	orig := restrictChildNetwork.Load()
+	t.Cleanup(func() { restrictChildNetwork.Store(orig) })
+
 	var s Sandbox = DockerSandbox{}
 	require.True(t, s.IsInSandbox())
 	require.NoError(t, s.EnterSandbox(Config{ReadOnly: []string{"/"}, AllowNetwork: false}))
+	require.True(t, ShouldRestrictChildNetwork(), "AllowNetwork false must mark children for network restriction")
 }
 
 // TestNew_Linux_InDocker covers the DockerSandbox branch of New()
@@ -144,4 +148,26 @@ func TestLandlockSandbox_EnterSandbox_RuleBuilding(t *testing.T) {
 		})
 		require.NoError(t, err, tt.name)
 	}
+}
+
+// TestLandlockSandbox_EnterSandbox_RestrictChildNetwork verifies
+// EnterSandbox's Config.AllowNetwork only ever marks children for
+// restriction (via ShouldRestrictChildNetwork), never the calling
+// process itself, since RestrictNet was dropped from this path. Not
+// parallel: it mutates the shared restrictChildNetwork package var,
+// saving and restoring it so it doesn't leak into other tests.
+func TestLandlockSandbox_EnterSandbox_RestrictChildNetwork(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Skipping test on non-Linux")
+	}
+
+	orig := restrictChildNetwork.Load()
+	t.Cleanup(func() { restrictChildNetwork.Store(orig) })
+
+	restrictChildNetwork.Store(false)
+	require.NoError(t, (LandlockSandbox{}).EnterSandbox(Config{ReadWrite: []string{"/"}, AllowNetwork: true}))
+	require.False(t, ShouldRestrictChildNetwork(), "AllowNetwork true must not mark children for network restriction")
+
+	require.NoError(t, (LandlockSandbox{}).EnterSandbox(Config{ReadWrite: []string{"/"}, AllowNetwork: false}))
+	require.True(t, ShouldRestrictChildNetwork(), "AllowNetwork false must mark children for network restriction")
 }

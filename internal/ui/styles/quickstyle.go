@@ -230,15 +230,15 @@ func quickStyle(o quickStyleOpts) Styles {
 		// Emph/Strong each get their own hue, off the heading color so
 		// frequent inline emphasis doesn't compete with H1/H2 for
 		// attention, and off each other so the two are never mistaken
-		// for one shade at a glance: accent for the quieter italic,
-		// keyword — a genuinely different hue, not just a shade of the
+		// for one shade at a glance: keyword for the quieter italic,
+		// accent — a genuinely different hue, not just a shade of the
 		// same one — for the more assertive bold.
 		Emph: ansi.StylePrimitive{
-			Color:  hex(o.accent),
+			Color:  hex(o.keyword),
 			Italic: new(true),
 		},
 		Strong: ansi.StylePrimitive{
-			Color: hex(o.keyword),
+			Color: hex(o.accent),
 			Bold:  new(true),
 		},
 		HorizontalRule: ansi.StylePrimitive{

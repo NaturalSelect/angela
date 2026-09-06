@@ -441,6 +441,22 @@ func (w *ClientWorkspace) PermissionSetMode(mode permission.PermissionMode) {
 	_ = w.client.SetPermissionMode(context.Background(), w.workspaceID(), mode.String())
 }
 
+// PermissionYoloSkipMerge falls back to false (always ask) if the
+// round trip fails, matching PermissionMode's fail-safe default of
+// the most restrictive behavior rather than silently trusting yolo
+// to skip an approval it may not actually skip.
+func (w *ClientWorkspace) PermissionYoloSkipMerge() bool {
+	enabled, err := w.client.GetYoloSkipMerge(context.Background(), w.workspaceID())
+	if err != nil {
+		return false
+	}
+	return enabled
+}
+
+func (w *ClientWorkspace) PermissionSetYoloSkipMerge(enabled bool) {
+	_ = w.client.SetYoloSkipMerge(context.Background(), w.workspaceID(), enabled)
+}
+
 // -- Questions --
 
 // QuestionAnswer submits answers for a question via the client SDK.

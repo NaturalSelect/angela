@@ -458,6 +458,63 @@ func TestSetPermissionModeNonOKStatus(t *testing.T) {
 	require.Contains(t, err.Error(), "status code 500")
 }
 
+func TestSetYoloSkipMergeSuccess(t *testing.T) {
+	t.Parallel()
+
+	var got proto.YoloSkipMergeRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/v1/workspaces/ws1/permissions/yolo-skip-merge", r.URL.Path)
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	require.NoError(t, captureClient(t, srv).SetYoloSkipMerge(context.Background(), "ws1", false))
+	require.False(t, got.Enabled)
+}
+
+func TestSetYoloSkipMergeNonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	err := captureClient(t, srv).SetYoloSkipMerge(context.Background(), "ws1", false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "status code 500")
+}
+
+func TestGetYoloSkipMergeSuccess(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/v1/workspaces/ws1/permissions/yolo-skip-merge", r.URL.Path)
+		require.NoError(t, json.NewEncoder(w).Encode(proto.YoloSkipMergeRequest{Enabled: true}))
+	}))
+	defer srv.Close()
+
+	got, err := captureClient(t, srv).GetYoloSkipMerge(context.Background(), "ws1")
+	require.NoError(t, err)
+	require.True(t, got)
+}
+
+func TestGetYoloSkipMergeNonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	_, err := captureClient(t, srv).GetYoloSkipMerge(context.Background(), "ws1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "status code 500")
+}
+
 func TestListMessagesToleratesEmptyBody(t *testing.T) {
 	t.Parallel()
 

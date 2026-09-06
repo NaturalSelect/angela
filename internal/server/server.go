@@ -188,6 +188,8 @@ func (s *Server) installHandler() {
 	mux.HandleFunc("POST /v1/workspaces/{id}/lsps/stop", c.handlePostWorkspaceLSPStopAll)
 	mux.HandleFunc("GET /v1/workspaces/{id}/permissions/mode", c.handleGetWorkspacePermissionsMode)
 	mux.HandleFunc("POST /v1/workspaces/{id}/permissions/mode", c.handlePostWorkspacePermissionsMode)
+	mux.HandleFunc("GET /v1/workspaces/{id}/permissions/yolo-skip-merge", c.handleGetWorkspacePermissionsYoloSkipMerge)
+	mux.HandleFunc("POST /v1/workspaces/{id}/permissions/yolo-skip-merge", c.handlePostWorkspacePermissionsYoloSkipMerge)
 	mux.HandleFunc("POST /v1/workspaces/{id}/permissions/unattended", c.handlePostWorkspacePermissionsUnattended)
 	mux.HandleFunc("POST /v1/workspaces/{id}/permissions/grant", c.handlePostWorkspacePermissionsGrant)
 	mux.HandleFunc("POST /v1/workspaces/{id}/questions/answer", c.handlePostWorkspaceQuestionsAnswer)

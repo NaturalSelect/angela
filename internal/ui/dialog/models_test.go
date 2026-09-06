@@ -21,9 +21,10 @@ import (
 type configWorkspace struct {
 	workspace.Workspace
 
-	cfg    *config.Config
-	writes int
-	pruned []config.SelectedModel
+	cfg           *config.Config
+	writes        int
+	pruned        []config.SelectedModel
+	yoloSkipMerge bool
 }
 
 func (w *configWorkspace) Config() *config.Config { return w.cfg }
@@ -42,6 +43,11 @@ func (w *configWorkspace) PruneRecentModels(_ config.Scope, _ config.SlotName, s
 // whether to offer the /sandbox command; none of these dialogs exercise
 // sandbox behavior itself.
 func (w *configWorkspace) IsInSandbox() bool { return false }
+
+// PermissionYoloSkipMerge stubs the yolo/merge toggle defaultCommands
+// reads to label its command; none of these dialogs exercise permission
+// behavior itself.
+func (w *configWorkspace) PermissionYoloSkipMerge() bool { return w.yoloSkipMerge }
 
 const (
 	globalModelID  = "global-model"

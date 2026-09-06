@@ -16,13 +16,16 @@ type Workspace struct {
 	Path string `json:"path"`
 	// PermissionMode is the wire representation of permission.PermissionMode
 	// ("manual", "auto_accept_edits", or "yolo").
-	PermissionMode string         `json:"permission_mode,omitempty"`
-	Debug          bool           `json:"debug,omitempty"`
-	DataDir        string         `json:"data_dir,omitempty"`
-	Version        string         `json:"version,omitempty"`
-	ClientID       string         `json:"client_id,omitempty"`
-	Config         *config.Config `json:"config,omitempty"`
-	Env            []string       `json:"env,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
+	// NoYoloMerge disables the shortcut that lets yolo mode skip the
+	// merge tool's approval prompt (from the --no-yolo-merge flag).
+	NoYoloMerge bool           `json:"no_yolo_merge,omitempty"`
+	Debug       bool           `json:"debug,omitempty"`
+	DataDir     string         `json:"data_dir,omitempty"`
+	Version     string         `json:"version,omitempty"`
+	ClientID    string         `json:"client_id,omitempty"`
+	Config      *config.Config `json:"config,omitempty"`
+	Env         []string       `json:"env,omitempty"`
 	// Channels lists the MCP servers opted in as channels for this workspace
 	// (from the --channels flag).
 	Channels []string `json:"channels,omitempty"`
@@ -272,6 +275,14 @@ type QuestionNotification struct {
 // request body of the permission-mode endpoint.
 type PermissionModeRequest struct {
 	Mode string `json:"mode"`
+}
+
+// YoloSkipMergeRequest carries the wire representation of whether
+// yolo mode may skip the merge tool's approval prompt, for both the
+// GET response and the POST request body of the yolo-skip-merge
+// endpoint.
+type YoloSkipMergeRequest struct {
+	Enabled bool `json:"enabled"`
 }
 
 // PermissionUnattendedRequest marks whether a session has anyone who

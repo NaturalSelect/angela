@@ -14,7 +14,7 @@ import (
 	reflect "reflect"
 	time "time"
 
-	tea "charm.land/bubbletea/v2"
+	v2 "charm.land/bubbletea/v2"
 	mcp "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	commands "github.com/NaturalSelect/angela/internal/commands"
 	config "github.com/NaturalSelect/angela/internal/config"
@@ -888,6 +888,32 @@ func (mr *MockWorkspaceMockRecorder) PermissionSetMode(mode any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PermissionSetMode", reflect.TypeOf((*MockWorkspace)(nil).PermissionSetMode), mode)
 }
 
+// PermissionSetYoloSkipMerge mocks base method.
+func (m *MockWorkspace) PermissionSetYoloSkipMerge(enabled bool) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "PermissionSetYoloSkipMerge", enabled)
+}
+
+// PermissionSetYoloSkipMerge indicates an expected call of PermissionSetYoloSkipMerge.
+func (mr *MockWorkspaceMockRecorder) PermissionSetYoloSkipMerge(enabled any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PermissionSetYoloSkipMerge", reflect.TypeOf((*MockWorkspace)(nil).PermissionSetYoloSkipMerge), enabled)
+}
+
+// PermissionYoloSkipMerge mocks base method.
+func (m *MockWorkspace) PermissionYoloSkipMerge() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PermissionYoloSkipMerge")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// PermissionYoloSkipMerge indicates an expected call of PermissionYoloSkipMerge.
+func (mr *MockWorkspaceMockRecorder) PermissionYoloSkipMerge() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PermissionYoloSkipMerge", reflect.TypeOf((*MockWorkspace)(nil).PermissionYoloSkipMerge))
+}
+
 // PreviewUndo mocks base method.
 func (m *MockWorkspace) PreviewUndo(ctx context.Context, sessionID string) (undo.Preview, error) {
 	m.ctrl.T.Helper()
@@ -1143,7 +1169,7 @@ func (mr *MockWorkspaceMockRecorder) Shutdown() *gomock.Call {
 }
 
 // Subscribe mocks base method.
-func (m *MockWorkspace) Subscribe(program *tea.Program) {
+func (m *MockWorkspace) Subscribe(program *v2.Program) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Subscribe", program)
 }

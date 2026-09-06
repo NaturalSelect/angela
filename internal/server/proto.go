@@ -1333,6 +1333,56 @@ func (c *controllerV1) handleGetWorkspacePermissionsMode(w http.ResponseWriter, 
 	jsonEncode(w, proto.PermissionModeRequest{Mode: mode})
 }
 
+// handlePostWorkspacePermissionsYoloSkipMerge sets whether yolo mode
+// may skip the merge tool's approval prompt.
+//
+//	@Summary		Set yolo skip-merge
+//	@Tags			permissions
+//	@Accept			json
+//	@Param			id		path	string						true	"Workspace ID"
+//	@Param			request	body	proto.YoloSkipMergeRequest	true	"Yolo skip-merge request"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/permissions/yolo-skip-merge [post]
+func (c *controllerV1) handlePostWorkspacePermissionsYoloSkipMerge(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req proto.YoloSkipMergeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	if err := c.backend.SetYoloSkipMerge(id, req.Enabled); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+}
+
+// handleGetWorkspacePermissionsYoloSkipMerge returns whether yolo
+// mode may skip the merge tool's approval prompt.
+//
+//	@Summary		Get yolo skip-merge
+//	@Tags			permissions
+//	@Produce		json
+//	@Param			id	path		string						true	"Workspace ID"
+//	@Success		200	{object}	proto.YoloSkipMergeRequest
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/permissions/yolo-skip-merge [get]
+func (c *controllerV1) handleGetWorkspacePermissionsYoloSkipMerge(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	enabled, err := c.backend.GetYoloSkipMerge(id)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, proto.YoloSkipMergeRequest{Enabled: enabled})
+}
+
 // handleError maps backend errors to HTTP status codes and writes the
 // JSON error response.
 //

@@ -40,6 +40,7 @@ func newKeyRoutingUI(t *testing.T) (*UI, *MockWorkspace) {
 	ws.EXPECT().WorkingDir().Return("").AnyTimes()
 	ws.EXPECT().ListSessions(gomock.Any()).Return([]session.Session{{ID: "s1"}}, nil).AnyTimes()
 	ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
+	ws.EXPECT().PermissionYoloSkipMerge().Return(true).AnyTimes()
 
 	m := newBusyUIWithWorkspace(ws)
 	m.agentReady = true

@@ -207,6 +207,12 @@ type Workspace interface {
 	PermissionMode() permission.PermissionMode
 	// PermissionSetMode changes the current permission mode.
 	PermissionSetMode(mode permission.PermissionMode)
+	// PermissionYoloSkipMerge reports whether yolo mode is currently
+	// allowed to skip the merge tool's approval prompt.
+	PermissionYoloSkipMerge() bool
+	// PermissionSetYoloSkipMerge changes whether yolo mode skips the
+	// merge tool's approval prompt.
+	PermissionSetYoloSkipMerge(enabled bool)
 
 	// Questions
 	//

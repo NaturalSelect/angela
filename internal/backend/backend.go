@@ -439,6 +439,7 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	mode, _ := permission.ParsePermissionMode(args.PermissionMode)
 	cfg.Overrides().PermissionMode = mode
 	cfg.Overrides().EnabledChannels = args.Channels
+	cfg.Overrides().NoYoloMerge = args.NoYoloMerge
 
 	if err := createDotAngelaDir(cfg.Config().Options.DataDirectory); err != nil {
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create data directory: %w", err)
@@ -1106,6 +1107,7 @@ func workspaceToProto(ws *Workspace) proto.Workspace {
 		ID:             ws.ID,
 		Path:           ws.Path,
 		PermissionMode: ws.Cfg.Overrides().PermissionMode.String(),
+		NoYoloMerge:    ws.Cfg.Overrides().NoYoloMerge,
 		Channels:       ws.Cfg.Overrides().EnabledChannels,
 		DataDir:        cfg.Options.DataDirectory,
 		Debug:          cfg.Options.Debug,
@@ -1134,6 +1136,7 @@ func logFirstWinsMismatch(existing *Workspace, args proto.Workspace) {
 	requestedMode, _ := permission.ParsePermissionMode(args.PermissionMode)
 	existingChannels := existing.Cfg.Overrides().EnabledChannels
 	if existingMode == requestedMode &&
+		existing.Cfg.Overrides().NoYoloMerge == args.NoYoloMerge &&
 		existingCfg.Options.Debug == args.Debug &&
 		existingCfg.Options.DataDirectory == args.DataDir &&
 		stringSlicesEqual(existing.Env, args.Env) &&

@@ -297,6 +297,14 @@ func (w *AppWorkspace) PermissionSetMode(mode permission.PermissionMode) {
 	w.app.Permissions.SetMode(mode)
 }
 
+func (w *AppWorkspace) PermissionYoloSkipMerge() bool {
+	return w.app.Permissions.YoloSkipMerge()
+}
+
+func (w *AppWorkspace) PermissionSetYoloSkipMerge(enabled bool) {
+	w.app.Permissions.SetYoloSkipMerge(enabled)
+}
+
 // -- Questions --
 
 func (w *AppWorkspace) QuestionAnswer(responses []question.Answer) bool {

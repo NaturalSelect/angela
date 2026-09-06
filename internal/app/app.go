@@ -147,11 +147,16 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 
 	permissionMode := store.Overrides().PermissionMode
 
+	permissions := permission.NewPermissionService(store.WorkingDir(), permissionMode, policy, cfg.Options.SkillsPaths...)
+	if store.Overrides().NoYoloMerge {
+		permissions.SetYoloSkipMerge(false)
+	}
+
 	app := &App{
 		Sessions:    sessions,
 		Messages:    messages,
 		History:     files,
-		Permissions: permission.NewPermissionService(store.WorkingDir(), permissionMode, policy, cfg.Options.SkillsPaths...),
+		Permissions: permissions,
 		Questions:   question.NewService(),
 		FileTracker: fileTracker,
 		LSPManager:  lsp.NewManager(store),

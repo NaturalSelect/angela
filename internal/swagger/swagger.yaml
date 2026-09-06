@@ -528,7 +528,11 @@ definitions:
           items:
             $ref: '#/definitions/config.SelectedModel'
           type: array
-        description: Recently used models stored in the data directory config.
+        description: |-
+          Recently used models. Loaded from and persisted to a sidecar file
+          next to the scope's config file (see recent_models.go) rather than
+          this struct's own JSON encoding, so auto-recorded picks never
+          touch the hand-edited config.
         type: object
       slots:
         additionalProperties:
@@ -860,6 +864,13 @@ definitions:
       mime_type:
         type: string
     type: object
+  proto.ConfigAgentVariantRequest:
+    properties:
+      agent_id:
+        type: string
+      variant:
+        type: string
+    type: object
   proto.ConfigCompactRequest:
     properties:
       enabled:
@@ -935,6 +946,19 @@ definitions:
     properties:
       session_id:
         type: string
+    type: object
+  proto.EnterSandboxRequest:
+    properties:
+      allow_network:
+        type: boolean
+      read_only:
+        items:
+          type: string
+        type: array
+      read_write:
+        items:
+          type: string
+        type: array
     type: object
   proto.Error:
     properties:
@@ -1132,6 +1156,11 @@ definitions:
     properties:
       action:
         type: string
+      deny_reason:
+        description: |-
+          DenyReason is an optional explanation the user attaches when
+          denying this request.
+        type: string
       description:
         type: string
       id:
@@ -1207,6 +1236,11 @@ definitions:
         type: array
       result:
         $ref: '#/definitions/proto.SkillReadResult'
+    type: object
+  proto.SandboxStatusResponse:
+    properties:
+      in_sandbox:
+        type: boolean
     type: object
   proto.ServerControl:
     properties:
@@ -1409,6 +1443,11 @@ definitions:
         type: array
       id:
         type: string
+      no_yolo_merge:
+        description: |-
+          NoYoloMerge disables the shortcut that lets yolo mode skip the
+          merge tool's approval prompt (from the --no-yolo-merge flag).
+        type: boolean
       path:
         type: string
       permission_mode:
@@ -1426,6 +1465,11 @@ definitions:
         type: array
       version:
         type: string
+    type: object
+  proto.YoloSkipMergeRequest:
+    properties:
+      enabled:
+        type: boolean
     type: object
   time.Duration:
     enum:
@@ -2099,6 +2143,40 @@ paths:
       summary: Get workspace config
       tags:
       - workspaces
+  /workspaces/{id}/config/agent-variant:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Config agent variant request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.ConfigAgentVariantRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Override an agent's parameter preset
+      tags:
+      - config
   /workspaces/{id}/config/compact:
     post:
       consumes:
@@ -2741,6 +2819,40 @@ paths:
       summary: Get MCP OAuth authorization URL
       tags:
       - mcp
+  /workspaces/{id}/mcp/disable:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: MCP name request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.MCPNameRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Disable an MCP server
+      tags:
+      - mcp
   /workspaces/{id}/mcp/docker/disable:
     post:
       parameters:
@@ -2783,6 +2895,40 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Enable Docker MCP
+      tags:
+      - mcp
+  /workspaces/{id}/mcp/enable:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: MCP name request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.MCPNameRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Enable an MCP server
       tags:
       - mcp
   /workspaces/{id}/mcp/get-prompt:
@@ -3204,6 +3350,65 @@ paths:
       summary: Set session unattended
       tags:
       - permissions
+  /workspaces/{id}/permissions/yolo-skip-merge:
+    get:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.YoloSkipMergeRequest'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Get yolo skip-merge
+      tags:
+      - permissions
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Yolo skip-merge request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.YoloSkipMergeRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Set yolo skip-merge
+      tags:
+      - permissions
   /workspaces/{id}/project/init:
     post:
       parameters:
@@ -3368,6 +3573,66 @@ paths:
       summary: Cancel question batch
       tags:
       - questions
+  /workspaces/{id}/sandbox:
+    get:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.SandboxStatusResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Get sandbox status
+      tags:
+      - sandbox
+  /workspaces/{id}/sandbox/enter:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Sandbox restrictions
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.EnterSandboxRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Enter sandbox
+      tags:
+      - sandbox
   /workspaces/{id}/sessions:
     get:
       parameters:

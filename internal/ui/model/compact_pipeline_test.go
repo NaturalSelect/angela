@@ -33,6 +33,7 @@ func newCompactPaletteUI(t *testing.T, ws *MockWorkspace) *UI {
 	// reads do not themselves become unexpected calls.
 	ws.EXPECT().Config().Return(&config.Config{}).AnyTimes()
 	ws.EXPECT().IsInSandbox().Return(false).AnyTimes()
+	ws.EXPECT().PermissionYoloSkipMerge().Return(true).AnyTimes()
 
 	sess := session.Session{ID: "current"}
 	sty := styles.CharmtonePantera()

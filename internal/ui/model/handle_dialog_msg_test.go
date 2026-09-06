@@ -131,6 +131,38 @@ func TestHandleDialogMsg_ActionCyclePermissionMode(t *testing.T) {
 	require.Equal(t, permission.ModeAutoAcceptEdits, m.permissionModeCached())
 }
 
+func TestHandleDialogMsg_ActionEnableYoloSkipMerge(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().PermissionSetYoloSkipMerge(true)
+	m := newHandleDialogUI(t, ws)
+
+	cmd := m.handleDialogMsg(dialog.ActionEnableYoloSkipMerge{})
+	require.False(t, m.dialog.HasDialogs(), "the palette must close")
+	require.NotNil(t, cmd)
+	info, ok := cmd().(util.InfoMsg)
+	require.True(t, ok)
+	require.Contains(t, info.Msg, "skip merge approval")
+}
+
+func TestHandleDialogMsg_ActionDisableYoloSkipMerge(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().PermissionSetYoloSkipMerge(false)
+	m := newHandleDialogUI(t, ws)
+
+	cmd := m.handleDialogMsg(dialog.ActionDisableYoloSkipMerge{})
+	require.False(t, m.dialog.HasDialogs(), "the palette must close")
+	require.NotNil(t, cmd)
+	info, ok := cmd().(util.InfoMsg)
+	require.True(t, ok)
+	require.Contains(t, info.Msg, "ask before merging")
+}
+
 func TestHandleDialogMsg_ActionSelectNotificationStyle(t *testing.T) {
 	t.Parallel()
 

@@ -81,6 +81,10 @@ type RuntimeOverrides struct {
 	// enforcement even when the process is already running inside a
 	// container.
 	NoDockerSandbox bool
+	// NoYoloMerge disables the shortcut that lets yolo mode skip the
+	// merge tool's approval prompt (via the --no-yolo-merge flag), so
+	// merging a branch is always approved explicitly even in yolo mode.
+	NoYoloMerge bool
 }
 
 // ConfigStore is the single entry point for all config access. It owns the

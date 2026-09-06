@@ -62,6 +62,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&clientHost, "host", "H", server.DefaultHost(), "Connect to a specific angela server host (for advanced users)")
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
+	rootCmd.Flags().Bool("no-yolo-merge", false, "Still require approval for the merge tool even in yolo mode")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
 	_ = rootCmd.PersistentFlags().MarkHidden("channels")
 	rootCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
@@ -102,6 +103,9 @@ angela --debug --cwd /path/to/project
 
 # Run in yolo mode (auto-accept all permissions; use with care)
 angela --yolo
+
+# Run in yolo mode but still ask before merging a branch
+angela --yolo --no-yolo-merge
 
 # Run inside an OS-level sandbox instead of relying on prompts
 angela --sandbox
@@ -337,6 +341,7 @@ func setupWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
 func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
+	noYoloMerge, _ := cmd.Flags().GetBool("no-yolo-merge")
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 	noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox")
@@ -360,6 +365,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	store.Overrides().PermissionMode = mode
 	store.Overrides().EnabledChannels = channels
 	store.Overrides().NoDockerSandbox = noDockerSandbox
+	store.Overrides().NoYoloMerge = noYoloMerge
 
 	if err := os.MkdirAll(cfg.Options.DataDirectory, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("failed to create data directory: %q %w", cfg.Options.DataDirectory, err)
@@ -508,6 +514,7 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
+	noYoloMerge, _ := cmd.Flags().GetBool("no-yolo-merge")
 	mode := permission.ModeManual
 	if yolo {
 		mode = permission.ModeYolo
@@ -530,6 +537,7 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 		DataDir:        dataDir,
 		Debug:          debug,
 		PermissionMode: mode.String(),
+		NoYoloMerge:    noYoloMerge,
 		Channels:       channels,
 		Version:        version.Version,
 		Env:            os.Environ(),

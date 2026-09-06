@@ -511,13 +511,15 @@ func TestE2E_PermissionFlowCrossClient(t *testing.T) {
 	// Wait for the PermissionRequest to arrive on client A's SSE
 	// stream. We need its ID to drive the grant.
 	//
-	// Each of the three sequential waits below gets its own 10s
+	// Each of the three sequential waits below gets its own 30s
 	// budget rather than sharing one deadline: a single shared
 	// deadline lets a slow first step starve the later ones of their
 	// fair share, which previously surfaced as flakes on loaded CI
 	// runners (notably macOS) even after the per-wait budget was
-	// widened from 3s to 10s.
-	reqCtx, reqCancel := context.WithTimeout(ctx, 10*time.Second)
+	// widened from 3s to 10s. A loaded Linux runner has since been
+	// seen exhausting the unstarved first wait alone at 10s, so the
+	// shared per-step budget was widened again to 30s.
+	reqCtx, reqCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer reqCancel()
 	reqEv, ok := drainUntil(reqCtx, evcA, func(e pubsub.Event[proto.PermissionRequest]) bool {
 		return e.Payload.ToolCallID == toolCallID
@@ -532,7 +534,7 @@ func TestE2E_PermissionFlowCrossClient(t *testing.T) {
 	require.True(t, resolvedA, "client A's grant must resolve the pending request")
 
 	// The blocked Request call must now return granted=true.
-	grantCtx, grantCancel := context.WithTimeout(ctx, 10*time.Second)
+	grantCtx, grantCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer grantCancel()
 	select {
 	case r := <-done:
@@ -546,7 +548,7 @@ func TestE2E_PermissionFlowCrossClient(t *testing.T) {
 	// Granted=true for the same ToolCallID. The initial neither-
 	// granted-nor-denied notification published at the start of
 	// Request also lands on B's stream — match on the granted one.
-	notifCtx, notifCancel := context.WithTimeout(ctx, 10*time.Second)
+	notifCtx, notifCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer notifCancel()
 	notif, ok := drainUntil(notifCtx, evcB, func(e pubsub.Event[proto.PermissionNotification]) bool {
 		return e.Payload.ToolCallID == toolCallID && e.Payload.Granted

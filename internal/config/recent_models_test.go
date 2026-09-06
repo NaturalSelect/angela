@@ -22,13 +22,11 @@ func readConfigJSON(t *testing.T, path string) map[string]any {
 	return out
 }
 
-// readRecentModels reads the recent_models section from the config file.
-func readRecentModels(t *testing.T, path string) map[string]any {
+// readRecentModels reads the recent-models sidecar file that sits next
+// to the config file at configPath.
+func readRecentModels(t *testing.T, configPath string) map[string]any {
 	t.Helper()
-	out := readConfigJSON(t, path)
-	rm, ok := out["recent_models"].(map[string]any)
-	require.True(t, ok)
-	return rm
+	return readConfigJSON(t, recentModelsSidecarPath(configPath))
 }
 
 // testStoreWithPath creates a ConfigStore backed by a Config for recent model tests.
@@ -257,4 +255,90 @@ func TestPruneRecentModels_IsANoOpWhenNothingMatches(t *testing.T) {
 		[]SelectedModel{{Provider: "never", Model: "existed"}}))
 
 	require.Equal(t, []SelectedModel{sel}, store.Config().RecentModels[SlotMain])
+}
+
+// TestRecordRecentModel_UsesSidecarFile pins the storage-location
+// contract: recording a pick must never touch the hand-edited config
+// file, only the sidecar file next to it.
+func TestRecordRecentModel_UsesSidecarFile(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "angela.json")
+
+	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
+	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	resetProviderState()
+	t.Cleanup(resetProviderState)
+
+	require.NoError(t, os.WriteFile(configPath, []byte(twoProviderConfig("openai", "gpt-4")), 0o600))
+
+	store, err := Load(dir, dir, false)
+	require.NoError(t, err)
+	store.globalDataPath = configPath
+	store.CaptureStalenessSnapshot([]string{configPath})
+
+	sel := SelectedModel{Provider: "anthropic", Model: "claude-3"}
+	require.NoError(t, store.RecordRecentModel(ScopeGlobal, SlotMain, sel))
+
+	require.Equal(t, sel, store.Config().RecentModels[SlotMain][0])
+
+	raw, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "recent_models",
+		"recording a pick must not add a recent_models key to the config file")
+
+	sidecar, err := os.ReadFile(recentModelsSidecarPath(configPath))
+	require.NoError(t, err)
+	require.Contains(t, string(sidecar), "claude-3",
+		"the pick must land in the sidecar file next to the config file")
+}
+
+// TestLoad_MigratesLegacyRecentModelsToSidecar covers upgrading from the
+// old storage, where recent models were embedded directly in the config
+// file under a recent_models key: the first load must carry that
+// history into the new sidecar file rather than silently dropping it.
+func TestLoad_MigratesLegacyRecentModelsToSidecar(t *testing.T) {
+	// globalDir and workDir are kept distinct: if they were the same
+	// directory, lookupConfigs would find angela.json both as the
+	// global config and as a project config in the same walk, merging
+	// it with itself and doubling every array field it carries,
+	// recent_models included.
+	globalDir := t.TempDir()
+	workDir := t.TempDir()
+	configPath := filepath.Join(globalDir, "angela.json")
+
+	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
+	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	resetProviderState()
+	t.Cleanup(resetProviderState)
+
+	legacy := `{
+		"slots": {
+			"main": {"provider": "openai", "model": "gpt-4"}
+		},
+		"providers": {
+			"openai": {
+				"api_key": "test-key",
+				"models": [{"id": "gpt-4", "name": "GPT-4"}]
+			}
+		},
+		"recent_models": {
+			"main": [{"provider": "anthropic", "model": "claude-3"}]
+		}
+	}`
+	require.NoError(t, os.WriteFile(configPath, []byte(legacy), 0o600))
+
+	store, err := Load(workDir, workDir, false)
+	require.NoError(t, err)
+	store.globalDataPath = configPath
+
+	require.Equal(t,
+		[]SelectedModel{{Provider: "anthropic", Model: "claude-3"}},
+		store.Config().RecentModels[SlotMain],
+		"legacy recent_models embedded in the config file must survive the first load")
+
+	sidecar := loadRecentModelsFile(recentModelsSidecarPath(configPath))
+	require.Equal(t,
+		[]SelectedModel{{Provider: "anthropic", Model: "claude-3"}},
+		sidecar[SlotMain],
+		"the legacy entry must be migrated onto disk, not just held in memory")
 }

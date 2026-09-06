@@ -56,10 +56,10 @@ func TestBuildChildNetworkFilter(t *testing.T) {
 // binary that needs the network, so the real enforcement is only ever
 // exercised in a disposable subprocess.
 const (
-	networkFilterHelperEnv    = "ANGELA_TEST_INSTALL_NETWORK_FILTER"
-	udpFilterHelperEnv        = "ANGELA_TEST_INSTALL_NETWORK_FILTER_UDP"
-	launcherDriverEnv         = "ANGELA_TEST_RUN_CHILD_EXEC_LAUNCHER"
-	dialCheckEnv              = "ANGELA_TEST_DIAL_CHECK"
+	networkFilterHelperEnv = "ANGELA_TEST_INSTALL_NETWORK_FILTER"
+	udpFilterHelperEnv     = "ANGELA_TEST_INSTALL_NETWORK_FILTER_UDP"
+	launcherDriverEnv      = "ANGELA_TEST_RUN_CHILD_EXEC_LAUNCHER"
+	dialCheckEnv           = "ANGELA_TEST_DIAL_CHECK"
 )
 
 func TestMain(m *testing.M) {

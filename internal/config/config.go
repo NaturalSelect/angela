@@ -879,7 +879,10 @@ type Config struct {
 	// any other name may be defined and referenced by an agent.
 	Slots map[SlotName]SelectedModel `json:"slots,omitempty" jsonschema:"description=Named model configurations,example={\"main\":{\"model\":\"gpt-4o\",\"provider\":\"openai\"}}"`
 
-	// Recently used models stored in the data directory config.
+	// Recently used models. Loaded from and persisted to a sidecar file
+	// next to the scope's config file (see recent_models.go) rather than
+	// this struct's own JSON encoding, so auto-recorded picks never
+	// touch the hand-edited config.
 	RecentModels map[SlotName][]SelectedModel `json:"recent_models,omitempty" jsonschema:"-"`
 
 	// The providers that are configured

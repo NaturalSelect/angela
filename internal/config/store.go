@@ -235,12 +235,18 @@ func (s *ConfigStore) LoadedPaths() []string {
 // as soon as the file access is complete — no I/O should be performed
 // while the lock is held.
 func (s *ConfigStore) lockConfig(scope Scope) (func(), error) {
-	s.mu.Lock()
 	path, err := s.configPath(scope)
 	if err != nil {
-		s.mu.Unlock()
 		return nil, err
 	}
+	return s.lockPath(path)
+}
+
+// lockPath is the path-based core of lockConfig, also used to guard
+// sidecar files (see recent_models.go) that live outside the scoped
+// config files.
+func (s *ConfigStore) lockPath(path string) (func(), error) {
+	s.mu.Lock()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("create config directory: %w", err)
@@ -263,16 +269,22 @@ func (s *ConfigStore) lockConfig(scope Scope) (func(), error) {
 // contents (raw bytes, or {} if the file is missing) and must return the
 // new contents. fn must be pure — no I/O, no network calls.
 func (s *ConfigStore) atomicWrite(scope Scope, fn func(current []byte) ([]byte, error)) error {
-	unlock, err := s.lockConfig(scope)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-
 	path, err := s.configPath(scope)
 	if err != nil {
 		return err
 	}
+	return s.atomicWriteAt(path, fn)
+}
+
+// atomicWriteAt is the path-based core of atomicWrite, also used to
+// persist sidecar files (see recent_models.go) that live outside the
+// scoped config files.
+func (s *ConfigStore) atomicWriteAt(path string, fn func(current []byte) ([]byte, error)) error {
+	unlock, err := s.lockPath(path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -563,49 +575,22 @@ func (s *ConfigStore) UpdatePreferredModel(scope Scope, modelType SlotName, mode
 		s.OverridePreferredModel(modelType, model)
 		return nil
 	}
-	return s.update(scope, func(c *Config) map[string]any {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.updatePreferredModelLocked(scope, modelType, model)
+}
+
+// updatePreferredModelLocked is the lock-free core of UpdatePreferredModel
+// for non-ephemeral scopes, also used by Load's fallback-correction path.
+// It folds the pick into the recents list first (see recent_models.go),
+// matching what a direct RecordRecentModel call would do, then persists
+// the selection itself. Caller must hold writeMu.
+func (s *ConfigStore) updatePreferredModelLocked(scope Scope, modelType SlotName, model SelectedModel) error {
+	if err := s.recordRecentModelLocked(scope, modelType, model); err != nil {
+		return err
+	}
+	return s.updateLocked(scope, func(c *Config) map[string]any {
 		return s.updatePreferredModelFields(c, modelType, model)
-	})
-}
-
-// RecordRecentModel adds a model to the recent-models list for the given
-// type and persists it, without touching which model is selected.
-//
-// It is split from UpdatePreferredModel because the two answer different
-// questions: "what do I run" is owned by the session's ActiveAgent, while
-// "what have I picked lately" is a global list feeding the model dialog.
-// Recording a recent model never changes what any session resolves to.
-func (s *ConfigStore) RecordRecentModel(scope Scope, modelType SlotName, model SelectedModel) error {
-	return s.update(scope, func(c *Config) map[string]any {
-		return recentModelFields(c, modelType, model)
-	})
-}
-
-// PruneRecentModels removes the given entries from the recent-models
-// list for the given type.
-//
-// It takes the entries to drop rather than the list to keep. The caller
-// decided what was stale from a snapshot, and between that decision and
-// this write another client may have recorded a fresh pick; filtering
-// the live list under writeMu preserves it, while writing back a
-// precomputed list would silently erase it.
-func (s *ConfigStore) PruneRecentModels(scope Scope, modelType SlotName, stale []SelectedModel) error {
-	if len(stale) == 0 {
-		return nil
-	}
-	isStale := func(recent SelectedModel) bool {
-		return slices.ContainsFunc(stale, func(dead SelectedModel) bool {
-			return dead.Provider == recent.Provider && dead.Model == recent.Model
-		})
-	}
-	return s.update(scope, func(c *Config) map[string]any {
-		current := c.RecentModels[modelType]
-		kept := slices.DeleteFunc(slices.Clone(current), isStale)
-		if len(kept) == len(current) {
-			return nil
-		}
-		c.RecentModels[modelType] = kept
-		return map[string]any{fmt.Sprintf("recent_models.%s", modelType): kept}
 	})
 }
 
@@ -701,26 +686,9 @@ func (s *ConfigStore) updatePreferredModelFields(c *Config, modelType SlotName, 
 	c.Slots[modelType] = model
 	s.pinPreferredModelLocked(modelType, model)
 
-	fields := map[string]any{
+	return map[string]any{
 		fmt.Sprintf("slots.%s", modelType): model,
 	}
-	maps.Copy(fields, recentModelFields(c, modelType, model))
-	return fields
-}
-
-// recentModelFields folds a model into the recent-models list and returns
-// the fields to persist, or nothing when the list already had it at the
-// front. Caller must hold writeMu.
-func recentModelFields(c *Config, modelType SlotName, model SelectedModel) map[string]any {
-	updated, changed := nextRecentModels(c, modelType, model)
-	if !changed {
-		return nil
-	}
-	if c.RecentModels == nil {
-		c.RecentModels = make(map[SlotName][]SelectedModel)
-	}
-	c.RecentModels[modelType] = updated
-	return map[string]any{fmt.Sprintf("recent_models.%s", modelType): updated}
 }
 
 // SetCompactMode sets the compact mode setting and persists it.
@@ -1121,42 +1089,6 @@ func (s *ConfigStore) loadTokenFromDisk(scope Scope, providerID string) (*oauth.
 	return &token, nil
 }
 
-// nextRecentModels computes the recent-models list for the given type
-// after recording the supplied model at the front, operating on the
-// provided config without persisting anything. It returns the new slice
-// and whether it differs from cfg's current list. Callers fold the result
-// into a clone they are about to publish.
-func nextRecentModels(cfg *Config, modelType SlotName, model SelectedModel) ([]SelectedModel, bool) {
-	if model.Provider == "" || model.Model == "" {
-		return nil, false
-	}
-
-	eq := func(a, b SelectedModel) bool {
-		return a.Provider == b.Provider && a.Model == b.Model
-	}
-
-	entry := SelectedModel{
-		Provider: model.Provider,
-		Model:    model.Model,
-	}
-
-	current := cfg.RecentModels[modelType]
-	withoutCurrent := slices.DeleteFunc(slices.Clone(current), func(existing SelectedModel) bool {
-		return eq(existing, entry)
-	})
-
-	updated := append([]SelectedModel{entry}, withoutCurrent...)
-	if len(updated) > maxRecentModelsPerType {
-		updated = updated[:maxRecentModelsPerType]
-	}
-
-	if slices.EqualFunc(current, updated, eq) {
-		return current, false
-	}
-
-	return updated, true
-}
-
 // NewTestStore creates a ConfigStore for testing purposes.
 func NewTestStore(cfg *Config, loadedPaths ...string) *ConfigStore {
 	return &ConfigStore{
@@ -1363,6 +1295,11 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	}
 	cfg.setDefaults(s.workingDir, dataDir)
 
+	// Captured before the recent-models sidecar takes over below, so a
+	// pre-migration recent_models key still embedded in an old config
+	// file seeds the sidecar the first time it is read.
+	legacyRecentModels := cfg.RecentModels
+
 	// Merge workspace config if present
 	workspacePath := filepath.Join(cfg.Options.DataDirectory, fmt.Sprintf("%s.json", appName))
 	if wsData, err := os.ReadFile(workspacePath); err == nil && len(wsData) > 0 {
@@ -1377,6 +1314,11 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 			loadedPaths = append(loadedPaths, workspacePath)
 		}
 	}
+
+	// Recent models live in a sidecar file next to each scope's config
+	// file (see recent_models.go); load it last so it always wins over
+	// any legacy recent_models key a config file still carries.
+	cfg.RecentModels = loadRecentModels(s.globalDataPath, workspacePath, legacyRecentModels)
 
 	// Validate hooks after all config merging is complete so matcher
 	// regexes are recompiled on the reloaded config (mirrors Load).

@@ -892,7 +892,7 @@ func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
 	})
 }
 
-// buildTools assembles the tool set for a turn. modelID is the model
+// buildTools assembles the tool set for a turn. modelName is the model
 // the turn actually resolved to; it reaches the bash tool's commit
 // attribution, which must name the model that did the work rather than
 // whatever the global slot happens to point at.
@@ -902,7 +902,7 @@ func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
 // Options.SubagentMaxDepth, the agent tool: a turn only holds it while
 // it still has delegation budget left, which keeps the dispatch chain
 // from growing past the configured limit.
-func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) ([]fantasy.AgentTool, error) {
+func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int) ([]fantasy.AgentTool, error) {
 	var allTools []fantasy.AgentTool
 	isSubAgent := depth > 0
 	canDelegate := depth < c.cfg.Config().Options.SubagentMaxDepth()
@@ -930,7 +930,7 @@ func (c *coordinator) buildTools(agent config.Agent, modelID string, depth int) 
 
 	allTools = append(
 		allTools,
-		tools.NewBashTool(c.cfg.WorkingDir(), c.cfg.Config().Options.Attribution, modelID),
+		tools.NewBashTool(c.cfg.WorkingDir(), c.cfg.Config().Options.Attribution, modelName),
 		tools.NewAngelaInfoTool(c.cfg, c.lspManager, c.allSkills, c.activeSkills, c.skillTracker),
 		tools.NewAngelaLogsTool(logFile),
 		tools.NewJobOutputTool(),

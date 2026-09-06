@@ -61,13 +61,18 @@ var bashDescriptionTpl = template.Must(
 		Parse(string(bashDescriptionTmpl)),
 )
 
+// coAuthoredByEmail names the account credited in the Co-Authored-By
+// trailer. It stays blank until we have one to point at.
+const coAuthoredByEmail = ""
+
 type bashDescriptionData struct {
-	BannedCommands  string
-	MaxOutputLength int
-	Attribution     config.Attribution
-	ModelID         string
-	RgAvailable     bool
-	GhAvailable     bool
+	BannedCommands    string
+	MaxOutputLength   int
+	Attribution       config.Attribution
+	ModelName         string
+	CoAuthoredByEmail string
+	RgAvailable       bool
+	GhAvailable       bool
 }
 
 var bannedCommands = []string{
@@ -143,16 +148,17 @@ var bannedCommands = []string{
 	"ufw",
 }
 
-func bashDescription(attribution *config.Attribution, modelID string) string {
+func bashDescription(attribution *config.Attribution, modelName string) string {
 	bannedCommandsStr := strings.Join(bannedCommands, ", ")
 	var out bytes.Buffer
 	if err := bashDescriptionTpl.Execute(&out, bashDescriptionData{
-		BannedCommands:  bannedCommandsStr,
-		MaxOutputLength: MaxOutputLength,
-		Attribution:     *attribution,
-		ModelID:         modelID,
-		RgAvailable:     getRg() != "",
-		GhAvailable:     ghAvailable,
+		BannedCommands:    bannedCommandsStr,
+		MaxOutputLength:   MaxOutputLength,
+		Attribution:       *attribution,
+		ModelName:         modelName,
+		CoAuthoredByEmail: coAuthoredByEmail,
+		RgAvailable:       getRg() != "",
+		GhAvailable:       ghAvailable,
 	}); err != nil {
 		// this should never happen.
 		panic("failed to execute bash description template: " + err.Error())
@@ -192,10 +198,10 @@ func blockFuncs() []shell.BlockFunc {
 	}
 }
 
-func NewBashTool(workingDir string, attribution *config.Attribution, modelID string) fantasy.AgentTool {
+func NewBashTool(workingDir string, attribution *config.Attribution, modelName string) fantasy.AgentTool {
 	return fantasy.NewAgentTool(
 		toolnames.Bash,
-		string(bashDescription(attribution, modelID)),
+		string(bashDescription(attribution, modelName)),
 		func(ctx context.Context, params BashParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			if params.Command == "" {
 				return fantasy.NewTextErrorResponse("missing command"), nil

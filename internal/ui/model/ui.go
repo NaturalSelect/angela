@@ -241,12 +241,6 @@ type UI struct {
 	bangMode     bool
 	bangWasEmpty bool // true when bang prompt became empty on last keystroke
 
-	// pendingBangCommand holds a shell command that was issued before
-	// the session finished loading. The loadSessionMsg handler creates
-	// the pending UI item and starts execution once the chat list is
-	// stable, eliminating races between session load and shell output.
-	pendingBangCommand string
-
 	// bangCancel cancels a running bang-mode shell command. Nil when no
 	// bang command is in progress. Set by runShellCommand, cleared by
 	// shellResultMsg. Checked by isAgentBusy and cancelAgent so that
@@ -879,12 +873,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
 		cmds = append(cmds, m.loadSessionMessagesCmd(m.session.ID))
-		// If a bang command was issued before the session finished
-		// loading, start it now that the chat list is stable.
-		if m.pendingBangCommand != "" {
-			cmds = append(cmds, m.runShellCommandInternal(m.pendingBangCommand, true))
-			m.pendingBangCommand = ""
-		}
 		if cmd := m.syncTurnSpinner(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -3009,6 +2997,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					m.setEditorPrompt(m.permissionModeCached())
 					m.textarea.Placeholder = m.editorPlaceholder()
 					m.historyReset()
+					if !m.hasSession() {
+						return util.ReportWarn("Start a session before running shell commands with !")
+					}
 					return tea.Batch(m.runShellCommand(value))
 				}
 
@@ -4513,33 +4504,9 @@ func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.
 
 // runShellCommand executes a shell command server-side without triggering
 // the LLM. The result is displayed as a tool-style item in the chat.
+// Callers must ensure a session already exists.
 func (m *UI) runShellCommand(command string) tea.Cmd {
-	return m.runShellCommandInternal(command, false)
-}
-
-// runShellCommandInternal is the shared implementation for bang-mode shell
-// execution. isFirstMessage indicates the command is the first user message
-// in a newly created session, which triggers title generation.
-func (m *UI) runShellCommandInternal(command string, isFirstMessage bool) tea.Cmd {
 	var cmds []tea.Cmd
-	if !m.hasSession() {
-		newSession, err := m.com.Workspace.CreateSession(context.Background(), "New Session")
-		if err != nil {
-			return util.ReportError(err)
-		}
-		if m.forceCompactMode {
-			m.isCompact = true
-		}
-		if newSession.ID != "" {
-			m.session = &newSession
-			cmds = append(cmds, m.loadSession(newSession.ID))
-		}
-		m.setState(uiChat, m.focus)
-		// Defer shell execution until loadSessionMsg fires so the chat
-		// list is stable before we add items or start streaming.
-		m.pendingBangCommand = command
-		return tea.Batch(cmds...)
-	}
 
 	sessionID := m.session.ID
 	contentWidth := min(m.layout.main.Dx()-2, 120)
@@ -4580,7 +4547,7 @@ func (m *UI) runShellCommandInternal(command string, isFirstMessage bool) tea.Cm
 	m.bangCancel = cancel
 
 	cmds = append(cmds, func() tea.Msg {
-		resp, err := m.com.Workspace.AgentRunShellCommand(ctx, sessionID, command, contentWidth, onProgress, isFirstMessage)
+		resp, err := m.com.Workspace.AgentRunShellCommand(ctx, sessionID, command, contentWidth, onProgress, false)
 		close(streamCh)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return util.InfoMsg{

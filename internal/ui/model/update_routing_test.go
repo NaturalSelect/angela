@@ -268,16 +268,6 @@ func TestUpdate_LoadSessionMsg(t *testing.T) {
 
 		require.True(t, m.isCompact)
 	})
-
-	t.Run("a pending bang command is started and cleared", func(t *testing.T) {
-		t.Parallel()
-		m, _ := newMockBusyUI(t)
-		m.pendingBangCommand = "ls"
-
-		m.Update(loadSessionMsg{session: &session.Session{ID: "s1"}})
-
-		require.Empty(t, m.pendingBangCommand)
-	})
 }
 
 func TestUpdate_SessionFilesUpdatesMsg_StartsLSPs(t *testing.T) {

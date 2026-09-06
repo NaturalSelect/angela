@@ -483,6 +483,15 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 	if sandboxRequested, _ := cmd.Flags().GetBool("sandbox"); sandboxRequested {
 		return nil, nil, nil, fmt.Errorf("--sandbox is not supported in client-server mode (it would restrict every workspace the shared daemon serves); run without ANGELA_CLIENT_SERVER instead")
 	}
+	// Backend.EnterSandbox always rejects daemon-hosted workspaces
+	// outright (see internal/backend/sandbox.go), so --no-docker-sandbox
+	// can never actually change enforcement here; propagating it would
+	// only flip IsInSandbox to false and surface a TUI "Enter Sandbox"
+	// command that is guaranteed to fail. Reject it for the same reason
+	// as --sandbox instead of shipping a broken affordance.
+	if noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox"); noDockerSandbox {
+		return nil, nil, nil, fmt.Errorf("--no-docker-sandbox is not supported in client-server mode (entering a sandbox is never available for a daemon-hosted workspace); run without ANGELA_CLIENT_SERVER instead")
+	}
 
 	hostURL, err := server.ParseHostURL(clientHost)
 	if err != nil {

@@ -53,3 +53,21 @@ func TestTruncateDescriptionMarksElision(t *testing.T) {
 	got := truncateDescription(strings.Repeat("a", 120))
 	require.True(t, strings.HasSuffix(got, "..."), "a shortened description must show it was cut")
 }
+
+// TestAgentCreateCmd_RegistersSandboxFlags covers a gap where
+// agentCreateCmd called setupLocalWorkspace (which reads --sandbox,
+// its refinements, and --no-docker-sandbox) without ever registering
+// those flags itself. Since they live on rootCmd's non-persistent
+// FlagSet rather than PersistentFlags, agentCreateCmd never inherited
+// them, so passing any of them failed at cobra's parse stage with
+// "unknown flag" before setupLocalWorkspace ever ran.
+func TestAgentCreateCmd_RegistersSandboxFlags(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range append([]string{"sandbox"}, sandboxFlagNames...) {
+		require.NotNil(t, agentCreateCmd.Flags().Lookup(name),
+			"agentCreateCmd must register --%s so setupLocalWorkspace's read of it reflects real user intent", name)
+	}
+	require.NotNil(t, agentCreateCmd.Flags().Lookup("no-docker-sandbox"),
+		"agentCreateCmd must register --no-docker-sandbox so setupLocalWorkspace's read of it reflects real user intent")
+}

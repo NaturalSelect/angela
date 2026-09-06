@@ -28,6 +28,7 @@ func newConnectToServerTestCmd(t *testing.T, cwd, dataDir string) *cobra.Command
 	cmd.Flags().Bool("yolo", false, "")
 	cmd.Flags().StringSlice("channels", nil, "")
 	cmd.Flags().Bool("sandbox", false, "")
+	cmd.Flags().Bool("no-docker-sandbox", false, "")
 	return cmd
 }
 
@@ -103,6 +104,24 @@ func TestConnectToServer_RejectsSandbox(t *testing.T) {
 	_, _, _, err := connectToServer(cmd)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "--sandbox")
+	require.Contains(t, err.Error(), "client-server")
+}
+
+// TestConnectToServer_RejectsNoDockerSandbox covers the client-server
+// guard for --no-docker-sandbox: since Backend.EnterSandbox rejects
+// every daemon-hosted workspace outright regardless of config, the
+// flag can never change enforcement remotely, so it must fail
+// immediately instead of being silently dropped or surfacing a TUI
+// "Enter Sandbox" command that would always fail.
+func TestConnectToServer_RejectsNoDockerSandbox(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cmd := newConnectToServerTestCmd(t, "", t.TempDir())
+	require.NoError(t, cmd.Flags().Set("no-docker-sandbox", "true"))
+
+	_, _, _, err := connectToServer(cmd)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--no-docker-sandbox")
 	require.Contains(t, err.Error(), "client-server")
 }
 

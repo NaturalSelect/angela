@@ -3,6 +3,7 @@
 package sandbox
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -84,7 +85,8 @@ func TestMain(m *testing.M) {
 // by the time it runs it no longer has anything else to hand a code
 // back through other than this process's own exit.
 func runDialCheckProcess() int {
-	_, err := net.DialTimeout("tcp", "127.0.0.1:1", 2*time.Second)
+	dialer := &net.Dialer{Timeout: 2 * time.Second}
+	_, err := dialer.DialContext(context.Background(), "tcp", "127.0.0.1:1")
 	switch {
 	case err == nil:
 		fmt.Println("CONNECTED")
@@ -111,7 +113,8 @@ func runNetworkFilterHelperProcess() int {
 		return 10
 	}
 
-	conn, dialErr := net.DialTimeout("tcp", "127.0.0.1:1", 2*time.Second)
+	dialer := &net.Dialer{Timeout: 2 * time.Second}
+	conn, dialErr := dialer.DialContext(context.Background(), "tcp", "127.0.0.1:1")
 	if dialErr == nil {
 		_ = conn.Close()
 		fmt.Fprintln(os.Stderr, "dial unexpectedly succeeded")
@@ -131,7 +134,7 @@ func runNetworkFilterHelperProcess() int {
 func TestInstallChildNetworkFilter_BlocksOutboundConnect(t *testing.T) {
 	t.Parallel()
 
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), networkFilterHelperEnv+"=1")
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "helper subprocess output: %s", output)
@@ -147,7 +150,7 @@ func TestInstallChildNetworkFilter_BlocksOutboundConnect(t *testing.T) {
 func TestRunChildExecLauncher_BlocksTargetNetwork(t *testing.T) {
 	t.Parallel()
 
-	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), launcherDriverEnv+"=1")
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "driver subprocess output: %s", output)

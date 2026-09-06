@@ -75,6 +75,12 @@ type RuntimeOverrides struct {
 	// agent ID. They are reapplied after a config reload for the same
 	// reason Slots is — see pinAgentVariantLocked.
 	AgentVariants map[string]string
+	// NoDockerSandbox disables the shortcut that treats an existing
+	// Docker/OCI container as sufficient sandboxing (via the
+	// --no-docker-sandbox flag), so sandbox.New still applies Landlock
+	// enforcement even when the process is already running inside a
+	// container.
+	NoDockerSandbox bool
 }
 
 // ConfigStore is the single entry point for all config access. It owns the

@@ -45,7 +45,7 @@ func TestNew_NonLinux(t *testing.T) {
 	}
 	t.Parallel()
 
-	require.IsType(t, NoneSandbox{}, New())
+	require.IsType(t, NoneSandbox{}, New(false))
 }
 
 func TestNew_Linux(t *testing.T) {
@@ -54,7 +54,7 @@ func TestNew_Linux(t *testing.T) {
 	}
 	t.Parallel()
 
-	got := New()
+	got := New(false)
 	if InDocker() {
 		require.IsType(t, DockerSandbox{}, got)
 	} else {
@@ -85,7 +85,25 @@ func TestNew_Linux_InDocker(t *testing.T) {
 	InDocker = func() bool { return true }
 	t.Cleanup(func() { InDocker = orig })
 
-	require.IsType(t, DockerSandbox{}, New())
+	require.IsType(t, DockerSandbox{}, New(false))
+}
+
+// TestNew_Linux_InDocker_NoDockerSandboxOverride covers the
+// noDockerSandbox=true branch of New(): even with InDocker forced
+// true, it must skip the DockerSandbox passthrough and fall back to
+// LandlockSandbox, since noDockerSandbox disables the Docker/OCI
+// shortcut. Not parallel for the same reason as TestNew_Linux_InDocker:
+// it mutates the shared InDocker package var.
+func TestNew_Linux_InDocker_NoDockerSandboxOverride(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Skipping test on non-Linux")
+	}
+
+	orig := InDocker
+	InDocker = func() bool { return true }
+	t.Cleanup(func() { InDocker = orig })
+
+	require.IsType(t, LandlockSandbox{}, New(true))
 }
 
 // TestLandlockSandbox_IsInSandbox_PreEntry pins the natural pre-entry

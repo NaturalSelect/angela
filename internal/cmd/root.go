@@ -106,6 +106,9 @@ angela --yolo
 # Run inside an OS-level sandbox instead of relying on prompts
 angela --sandbox
 
+# Run the sandbox even when already inside a Docker/OCI container
+angela --sandbox --no-docker-sandbox
+
 # Run with custom data directory
 angela --data-dir /path/to/custom/.angela
 
@@ -336,6 +339,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	yolo, _ := cmd.Flags().GetBool("yolo")
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
+	noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox")
 	ctx := cmd.Context()
 
 	cwd, err := ResolveCwd(cmd)
@@ -355,6 +359,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	}
 	store.Overrides().PermissionMode = mode
 	store.Overrides().EnabledChannels = channels
+	store.Overrides().NoDockerSandbox = noDockerSandbox
 
 	if err := os.MkdirAll(cfg.Options.DataDirectory, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("failed to create data directory: %q %w", cfg.Options.DataDirectory, err)
@@ -371,7 +376,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 		return nil, nil, err
 	}
 	if sandboxEnabled {
-		if err := sandbox.New().EnterSandbox(sandboxCfg); err != nil {
+		if err := sandbox.New(noDockerSandbox).EnterSandbox(sandboxCfg); err != nil {
 			return nil, nil, fmt.Errorf("failed to enter sandbox: %w", err)
 		}
 	}

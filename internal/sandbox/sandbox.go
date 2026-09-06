@@ -126,25 +126,22 @@ func (NoneSandbox) IsInSandbox() bool { return false }
 func (NoneSandbox) EnterSandbox(Config) error { return ErrNotSupported }
 
 // DockerSandbox represents a process already confined by an external
-// Docker (or other OCI) container. The container itself already
-// provides the isolation, so EnterSandbox is a no-op.
+// Docker (or other OCI) container. The container is trusted to
+// already provide both the filesystem and network isolation its
+// operator wants, so EnterSandbox is a no-op; pass
+// --no-docker-sandbox to have Angela apply LandlockSandbox's own
+// restrictions on top of the container instead of trusting it.
 type DockerSandbox struct{}
 
 // IsInSandbox always reports true: a Docker/OCI container was
 // detected at startup.
 func (DockerSandbox) IsInSandbox() bool { return true }
 
-// EnterSandbox is a no-op for filesystem confinement: the surrounding
-// container already confines the process. Network is handled the same
-// way as LandlockSandbox: cfg.AllowNetwork never restricts this
-// process's own network, only commands the shell tool spawns
-// afterward (see ShouldRestrictChildNetwork).
-func (DockerSandbox) EnterSandbox(cfg Config) error {
-	if !cfg.AllowNetwork {
-		restrictChildNetwork.Store(true)
-	}
-	return nil
-}
+// EnterSandbox is a no-op: the surrounding container is trusted to
+// already confine both the filesystem and cfg.AllowNetwork's intent
+// the way its operator wants, unlike LandlockSandbox which must
+// enforce them itself.
+func (DockerSandbox) EnterSandbox(Config) error { return nil }
 
 // entered tracks whether LandlockSandbox.EnterSandbox has already
 // restricted this process. Landlock confinement is process-wide and

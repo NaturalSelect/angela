@@ -21,7 +21,7 @@ func addSandboxFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("sandbox", false, "Restrict this process and the commands it runs to the working directory and Angela's own data directories, using OS-level sandboxing (Linux/Landlock only); outbound network is unrestricted by default")
 	cmd.Flags().StringSlice("sandbox-rw", nil, "Additional read-write directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().StringSlice("sandbox-ro", nil, "Additional read-only directory for --sandbox, on top of the default set (repeatable)")
-	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests")
+	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests; has no effect inside an auto-detected Docker/OCI container unless --no-docker-sandbox is also set")
 	cmd.Flags().Bool("no-docker-sandbox", false, "Do not treat an existing Docker/OCI container as sufficient sandboxing; apply Landlock restriction as well, both under --sandbox and for the /sandbox command")
 }
 

@@ -62,16 +62,21 @@ func TestNew_Linux(t *testing.T) {
 	}
 }
 
+// TestDockerSandbox verifies that DockerSandbox.EnterSandbox is a
+// true no-op: the container is trusted to already provide the
+// network isolation its operator wants, so unlike LandlockSandbox,
+// AllowNetwork false must not mark children for restriction. Not
+// parallel: it mutates the shared restrictChildNetwork package var,
+// saving and restoring it so it doesn't leak into other tests.
 func TestDockerSandbox(t *testing.T) {
-	t.Parallel()
-
 	orig := restrictChildNetwork.Load()
 	t.Cleanup(func() { restrictChildNetwork.Store(orig) })
+	restrictChildNetwork.Store(false)
 
 	var s Sandbox = DockerSandbox{}
 	require.True(t, s.IsInSandbox())
 	require.NoError(t, s.EnterSandbox(Config{ReadOnly: []string{"/"}, AllowNetwork: false}))
-	require.True(t, ShouldRestrictChildNetwork(), "AllowNetwork false must mark children for network restriction")
+	require.False(t, ShouldRestrictChildNetwork(), "DockerSandbox must trust the container's own network configuration")
 }
 
 // TestNew_Linux_InDocker covers the DockerSandbox branch of New()

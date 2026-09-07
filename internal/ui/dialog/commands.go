@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -278,7 +279,15 @@ func (c *Commands) InitialCmd() tea.Cmd {
 
 // Cursor returns the cursor position relative to the dialog.
 func (c *Commands) Cursor() *tea.Cursor {
-	return InputCursor(c.com.Styles, c.input.Cursor())
+	cur := c.input.Cursor()
+	if cur != nil {
+		// textinput.Cursor() offsets X by rune count, not display width;
+		// correct for double-width runes (CJK).
+		value := []rune(c.input.Value())
+		n := c.input.Position()
+		cur.X += lipgloss.Width(string(value[:n])) - n
+	}
+	return InputCursor(c.com.Styles, cur)
 }
 
 // commandsRadioView generates the command type selector radio buttons.

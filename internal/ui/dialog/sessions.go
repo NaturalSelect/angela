@@ -231,7 +231,15 @@ func (s *Session) HandleMsg(msg tea.Msg) Action {
 
 // Cursor returns the cursor position relative to the dialog.
 func (s *Session) Cursor() *tea.Cursor {
-	return InputCursor(s.com.Styles, s.input.Cursor())
+	cur := s.input.Cursor()
+	if cur != nil {
+		// textinput.Cursor() offsets X by rune count, not display width;
+		// correct for double-width runes (CJK).
+		value := []rune(s.input.Value())
+		n := s.input.Position()
+		cur.X += lipgloss.Width(string(value[:n])) - n
+	}
+	return InputCursor(s.com.Styles, cur)
 }
 
 // Draw implements [Dialog].

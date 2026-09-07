@@ -12,6 +12,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
@@ -243,9 +244,9 @@ func TestHandleDialogMsg_ActionAskSideQuestion_EmptyQuestionOpensArgumentsDialog
 }
 
 // TestHandleDialogMsg_ActionAskSideQuestion_DispatchesAndAnswers verifies
-// that a question typed in reaches the workspace and that its answer
-// comes back as a sideQuestionAnsweredMsg, alongside the "in flight" info
-// toast, once the resulting batch is run.
+// that a question typed in reaches the workspace, is shown as a pending
+// chat item immediately, and that its answer comes back as a
+// sideQuestionAnsweredMsg once the resulting batch is run.
 func TestHandleDialogMsg_ActionAskSideQuestion_DispatchesAndAnswers(t *testing.T) {
 	t.Parallel()
 
@@ -259,23 +260,13 @@ func TestHandleDialogMsg_ActionAskSideQuestion_DispatchesAndAnswers(t *testing.T
 	require.NotNil(t, cmd)
 	require.False(t, m.dialog.HasDialogs(), "the palette must close once the question is dispatched")
 
-	batch, ok := cmd().(tea.BatchMsg)
-	require.True(t, ok, "both the info toast and the async fetch must be dispatched")
+	answered := drainForSideQuestionAnswered(t, cmd)
+	require.NoError(t, answered.err)
+	require.Equal(t, "the answer", answered.answer)
 
-	var gotInfo bool
-	var gotAnswer sideQuestionAnsweredMsg
-	for _, sub := range batch {
-		switch got := sub().(type) {
-		case util.InfoMsg:
-			gotInfo = true
-			require.Contains(t, got.Msg, "Asking side question")
-		case sideQuestionAnsweredMsg:
-			gotAnswer = got
-		}
-	}
-	require.True(t, gotInfo, "must report that the question is in flight")
-	require.NoError(t, gotAnswer.err)
-	require.Equal(t, "the answer", gotAnswer.answer)
+	item, ok := m.chat.MessageItem(answered.pendingID).(*chat.SideQuestionItem)
+	require.True(t, ok, "handleDialogMsg must append a pending *chat.SideQuestionItem for the question")
+	require.Equal(t, "what now?", item.FilterValue())
 }
 
 // TestHandleDialogMsg_ActionToggleMCPServer pins that toggling leaves

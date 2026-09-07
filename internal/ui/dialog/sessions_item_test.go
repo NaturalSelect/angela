@@ -148,6 +148,34 @@ func TestSessionItem_HandleInputAndCursor(t *testing.T) {
 	require.NotNil(t, item.Cursor())
 }
 
+// TestSessionItem_CursorAccountsForWideRunes verifies the rename
+// input's screen cursor lands past double-width runes (CJK text) by
+// their real display width, not by rune count.
+func TestSessionItem_CursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+
+	asciiItems := sessionItems(&sty, sessionsModeUpdating, session.Session{ID: "sess-1", Title: "My Session"})
+	asciiItem := asciiItems[0].(*SessionItem)
+	for _, r := range "abc" {
+		asciiItem.HandleInput(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	curASCII := asciiItem.Cursor()
+	require.NotNil(t, curASCII)
+
+	cjkItems := sessionItems(&sty, sessionsModeUpdating, session.Session{ID: "sess-1", Title: "My Session"})
+	cjkItem := cjkItems[0].(*SessionItem)
+	for _, r := range "不好呀" {
+		cjkItem.HandleInput(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	curCJK := cjkItem.Cursor()
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+
 // TestSessionItem_Render_HighlightsFuzzyMatches exercises the
 // highlighted-range branch of renderItem with both a contiguous run
 // and a disjoint index, so the underline segments must be split.

@@ -184,3 +184,30 @@ func TestSelectingTheAddProviderRowReturnsAddCustomProvider(t *testing.T) {
 	require.Equal(t, twoProviderCatalog(), action.Catalog,
 		"the already-fetched catalog is carried along instead of being fetched again")
 }
+
+// TestProvidersCursorAccountsForWideRunes verifies the filter
+// input's screen cursor lands past double-width runes (CJK text) by
+// their real display width, not by rune count.
+func TestProvidersCursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+
+	mASCII := newProvidersDialog(t, ws)
+	for _, r := range "abc" {
+		mASCII.HandleMsg(keyMsg(r))
+	}
+	curASCII := mASCII.Cursor()
+	require.NotNil(t, curASCII)
+
+	mCJK := newProvidersDialog(t, ws)
+	for _, r := range "不好呀" {
+		mCJK.HandleMsg(keyMsg(r))
+	}
+	curCJK := mCJK.Cursor()
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+

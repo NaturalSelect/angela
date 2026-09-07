@@ -213,3 +213,28 @@ func TestVariantItem_Finished(t *testing.T) {
 	item := &VariantItem{variant: "medium"}
 	require.True(t, item.Finished())
 }
+
+// TestVariants_CursorAccountsForWideRunes verifies the filter
+// input's screen cursor lands past double-width runes (CJK text) by
+// their real display width, not by rune count.
+func TestVariants_CursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	vASCII := newTestVariants(t, []string{"a", "b"}, "a")
+	for _, r := range "abc" {
+		vASCII.HandleMsg(keyMsg(r))
+	}
+	curASCII := vASCII.Cursor()
+	require.NotNil(t, curASCII)
+
+	vCJK := newTestVariants(t, []string{"a", "b"}, "a")
+	for _, r := range "不好呀" {
+		vCJK.HandleMsg(keyMsg(r))
+	}
+	curCJK := vCJK.Cursor()
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+

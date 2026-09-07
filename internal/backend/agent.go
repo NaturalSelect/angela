@@ -265,6 +265,26 @@ func (b *Backend) SummarizeSession(ctx context.Context, workspaceID, sessionID s
 	return ws.AgentCoordinator.Summarize(ctx, sessionID)
 }
 
+// AskSideQuestion answers a one-off question from a session's existing
+// context, concurrently with any turn already running on it, without
+// adding the question or its answer to the session's message history.
+func (b *Backend) AskSideQuestion(ctx context.Context, workspaceID string, req proto.SideQuestionRequest) (proto.SideQuestionResponse, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return proto.SideQuestionResponse{}, err
+	}
+
+	if ws.AgentCoordinator == nil {
+		return proto.SideQuestionResponse{}, ErrAgentNotInitialized
+	}
+
+	answer, err := ws.AgentCoordinator.AskSideQuestion(ctx, req.SessionID, req.Question)
+	if err != nil {
+		return proto.SideQuestionResponse{}, err
+	}
+	return proto.SideQuestionResponse{Answer: answer}, nil
+}
+
 // QueuedPrompts returns the number of queued prompts for the session.
 func (b *Backend) QueuedPrompts(workspaceID, sessionID string) (int, error) {
 	ws, err := b.GetWorkspace(workspaceID)

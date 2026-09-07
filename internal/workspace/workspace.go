@@ -176,6 +176,11 @@ type Workspace interface {
 	AgentQueuedPromptsList(sessionID string) []string
 	AgentClearQueue(sessionID string)
 	AgentSummarize(ctx context.Context, sessionID string) error
+	// AgentAskSideQuestion answers a one-off question from a
+	// session's existing context, concurrently with any turn
+	// already running on it, without adding the question or its
+	// answer to the session's message history.
+	AgentAskSideQuestion(ctx context.Context, sessionID, question string) (string, error)
 
 	// AgentActive reports what a session is running, with its
 	// parameter preset already folded into the model. An empty

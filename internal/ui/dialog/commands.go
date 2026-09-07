@@ -484,6 +484,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "btw", "Ask Side Question", "", ActionAskSideQuestion{SessionID: c.sessionID}).WithAliases("btw", "side"))
+	}
+
+	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "undo", "Undo Last Turn", "", ActionUndo{SessionID: c.sessionID}).WithAliases("revert"))
 	}
 

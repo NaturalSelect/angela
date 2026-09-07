@@ -1147,6 +1147,42 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionShell(w http.ResponseWrite
 	jsonEncode(w, resp)
 }
 
+// handlePostWorkspaceAgentSessionSideQuestion answers a one-off question
+// from a session's existing context without joining the turn queue or
+// writing to the session's message history.
+//
+//	@Summary		Ask a side question
+//	@Tags			agent
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string						true	"Workspace ID"
+//	@Param			sid		path		string						true	"Session ID"
+//	@Param			request	body		proto.SideQuestionRequest	true	"Side question"
+//	@Success		200		{object}	proto.SideQuestionResponse
+//	@Failure		400		{object}	proto.Error
+//	@Failure		404		{object}	proto.Error
+//	@Failure		500		{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/side-question [post]
+func (c *controllerV1) handlePostWorkspaceAgentSessionSideQuestion(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+
+	var req proto.SideQuestionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+	req.SessionID = sid
+
+	resp, err := c.backend.AskSideQuestion(r.Context(), id, req)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, resp)
+}
+
 // handleGetWorkspaceAgentSessionPromptList returns the list of queued prompts.
 //
 //	@Summary		List queued prompts

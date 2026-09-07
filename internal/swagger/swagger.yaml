@@ -16,14 +16,14 @@ definitions:
       top_p:
         type: number
     type: object
-  config.ActiveAgentState:
+  github_com_NaturalSelect_angela_internal_config.ActiveAgentState:
     properties:
       agent:
         type: string
       model:
-        $ref: '#/definitions/config.SelectedModel'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel'
       slot:
-        $ref: '#/definitions/config.SlotName'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName'
       think:
         description: |-
           Think is the thinking-mode value the user picked, and is absent
@@ -41,18 +41,18 @@ definitions:
           empty string is a real pick, namely backing out of a preset.
         type: string
     type: object
-  config.Agent:
+  github_com_NaturalSelect_angela_internal_config.Agent:
     properties:
       allowed_mcp:
         allOf:
-        - $ref: '#/definitions/config.AllowedMCPSet'
+        - $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.AllowedMCPSet'
         description: |-
           AllowedMCP controls which MCP servers and tools are available,
           with the same tri-state semantics as AllowedTools. nil means
           this layer did not mention allowed_mcp.
       allowed_tools:
         allOf:
-        - $ref: '#/definitions/config.AllowedToolSet'
+        - $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.AllowedToolSet'
         description: |-
           AllowedTools controls which tools this layer grants. A nil
           value means this layer did not mention allowed_tools (the
@@ -100,7 +100,7 @@ definitions:
         type: integer
       mode:
         allOf:
-        - $ref: '#/definitions/config.AgentMode'
+        - $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.AgentMode'
         description: |-
           Mode controls how the agent can be used. Primary agents are
           top-level; subagents are launched via the agent tool; a branch is
@@ -115,7 +115,7 @@ definitions:
           template with the same data as built-in templates.
         type: string
       slot:
-        $ref: '#/definitions/config.SlotName'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName'
       temperature:
         description: Temperature overrides the model's default sampling temperature.
         type: number
@@ -125,7 +125,7 @@ definitions:
           Unknown names degrade to the model's baseline parameters.
         type: string
     type: object
-  config.AgentMode:
+  github_com_NaturalSelect_angela_internal_config.AgentMode:
     enum:
     - primary
     - subagent
@@ -135,10 +135,10 @@ definitions:
     - AgentModePrimary
     - AgentModeSubagent
     - AgentModeBranch
-  config.AllowedMCPSet:
+  github_com_NaturalSelect_angela_internal_config.AllowedMCPSet:
     properties:
       kind:
-        $ref: '#/definitions/config.ToolSetKind'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ToolSetKind'
       servers:
         additionalProperties:
           items:
@@ -146,25 +146,25 @@ definitions:
           type: array
         type: object
     type: object
-  config.AllowedToolSet:
+  github_com_NaturalSelect_angela_internal_config.AllowedToolSet:
     properties:
       kind:
-        $ref: '#/definitions/config.ToolSetKind'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ToolSetKind'
       tools:
         items:
           type: string
         type: array
     type: object
-  config.Attribution:
+  github_com_NaturalSelect_angela_internal_config.Attribution:
     properties:
       co_authored_by:
         type: boolean
       generated_with:
         type: boolean
       trailer_style:
-        $ref: '#/definitions/config.TrailerStyle'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.TrailerStyle'
     type: object
-  config.CompactionOptions:
+  github_com_NaturalSelect_angela_internal_config.CompactionOptions:
     properties:
       auto:
         type: boolean
@@ -175,14 +175,69 @@ definitions:
       small_context_ratio:
         type: number
     type: object
-  config.Completions:
+  github_com_NaturalSelect_angela_internal_config.Completions:
     properties:
       max_depth:
         type: integer
       max_items:
         type: integer
     type: object
-  config.HookConfig:
+  github_com_NaturalSelect_angela_internal_config.Config:
+    properties:
+      $schema:
+        type: string
+      agents:
+        additionalProperties:
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Agent'
+        description: |-
+          AgentConfigs holds user-defined agent overrides and custom agents.
+          These are merged over built-in defaults during SetupAgents().
+        type: object
+      env:
+        additionalProperties:
+          type: string
+        description: Env is a map of environment variables set on startup.
+        type: object
+      hooks:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.HookConfig'
+          type: array
+        type: object
+      lsp:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.LSPs'
+      mcp:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.MCPs'
+      options:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Options'
+      permissions:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Permissions'
+      providers:
+        allOf:
+        - $ref: '#/definitions/github_com_NaturalSelect_angela_internal_csync.Map-string-github_com_NaturalSelect_angela_internal_config_ProviderConfig'
+        description: The providers that are configured
+      recent_models:
+        additionalProperties:
+          items:
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel'
+          type: array
+        description: |-
+          Recently used models. Loaded from and persisted to a sidecar file
+          next to the scope's config file (see recent_models.go) rather than
+          this struct's own JSON encoding, so auto-recorded picks never
+          touch the hand-edited config.
+        type: object
+      slots:
+        additionalProperties:
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel'
+        description: |-
+          Named model configurations. "main" and "chore" ship as seeds;
+          any other name may be defined and referenced by an agent.
+        type: object
+      tools:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Tools'
+    type: object
+  github_com_NaturalSelect_angela_internal_config.HookConfig:
     properties:
       command:
         description: Shell command to execute.
@@ -199,7 +254,7 @@ definitions:
         description: Timeout in seconds. Default 30.
         type: integer
     type: object
-  config.LSPConfig:
+  github_com_NaturalSelect_angela_internal_config.LSPConfig:
     properties:
       args:
         items:
@@ -230,11 +285,11 @@ definitions:
       timeout:
         type: integer
     type: object
-  config.LSPs:
+  github_com_NaturalSelect_angela_internal_config.LSPs:
     additionalProperties:
-      $ref: '#/definitions/config.LSPConfig'
+      $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.LSPConfig'
     type: object
-  config.MCPConfig:
+  github_com_NaturalSelect_angela_internal_config.MCPConfig:
     properties:
       args:
         items:
@@ -297,18 +352,18 @@ definitions:
         type: string
       oauth_token:
         allOf:
-        - $ref: '#/definitions/oauth.Token'
+        - $ref: '#/definitions/github_com_NaturalSelect_angela_internal_oauth.Token'
         description: |-
           OAuthToken is the persisted OAuth token for this server. It is
           managed internally and stored in the global data config.
       timeout:
         type: integer
       type:
-        $ref: '#/definitions/config.MCPType'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.MCPType'
       url:
         type: string
     type: object
-  config.MCPType:
+  github_com_NaturalSelect_angela_internal_config.MCPType:
     enum:
     - stdio
     - sse
@@ -318,231 +373,9 @@ definitions:
     - MCPStdio
     - MCPSSE
     - MCPHttp
-  config.MCPs:
+  github_com_NaturalSelect_angela_internal_config.MCPs:
     additionalProperties:
-      $ref: '#/definitions/config.MCPConfig'
-    type: object
-  config.Permissions:
-    properties:
-      allowed_tools:
-        items:
-          type: string
-        type: array
-      prompt:
-        type: string
-      rules:
-        items:
-          $ref: '#/definitions/permission.Rule'
-        type: array
-    type: object
-  config.ProviderModel:
-    properties:
-      can_reason:
-        type: boolean
-      context_window:
-        type: integer
-      cost_per_1m_in:
-        type: number
-      cost_per_1m_in_cached:
-        type: number
-      cost_per_1m_out:
-        type: number
-      cost_per_1m_out_cached:
-        type: number
-      default_max_tokens:
-        type: integer
-      default_reasoning_effort:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      options:
-        $ref: '#/definitions/catwalk.ModelOptions'
-      reasoning_levels:
-        items:
-          type: string
-        type: array
-      supports_attachments:
-        type: boolean
-      think:
-        description: |-
-          Think sets the default thinking mode for Anthropic-family
-          models that support it. A session can still flip this with
-          /think; Think only decides where a fresh session starts.
-        type: boolean
-      variants:
-        additionalProperties:
-          $ref: '#/definitions/config.SelectedModelOverride'
-        description: |-
-          Variants are named parameter presets over this model. They
-          override only the keys they name, so N models by M presets
-          stays N+M configs instead of N*M. Selecting one is how a
-          session overrides this model's defaults for a turn.
-        type: object
-    type: object
-  config.SelectedModel:
-    properties:
-      model:
-        description: |-
-          The model id as used by the provider API.
-          Required.
-        type: string
-      provider:
-        description: |-
-          The model provider, same as the key/id used in the providers config.
-          Required.
-        type: string
-    type: object
-  config.SelectedModelOverride:
-    properties:
-      frequency_penalty:
-        type: number
-      max_tokens:
-        type: integer
-      presence_penalty:
-        type: number
-      provider_options:
-        additionalProperties: {}
-        description: |-
-          ProviderOptions merges key by key: the keys a variant names win,
-          the baseline's other keys survive.
-        type: object
-      reasoning_effort:
-        type: string
-      temperature:
-        type: number
-      think:
-        type: boolean
-      top_k:
-        type: integer
-      top_p:
-        type: number
-    type: object
-  config.SlotName:
-    enum:
-    - main
-    - chore
-    type: string
-    x-enum-varnames:
-    - SlotMain
-    - SlotChore
-  config.TUIOptions:
-    properties:
-      compact_mode:
-        type: boolean
-      completions:
-        $ref: '#/definitions/config.Completions'
-      diff_mode:
-        type: string
-      scrollbar:
-        type: string
-      transparent:
-        type: boolean
-    type: object
-  config.ToolGlob:
-    properties:
-      timeout:
-        $ref: '#/definitions/time.Duration'
-    type: object
-  config.ToolGrep:
-    properties:
-      timeout:
-        $ref: '#/definitions/time.Duration'
-    type: object
-  config.ToolLs:
-    properties:
-      max_depth:
-        type: integer
-      max_items:
-        type: integer
-    type: object
-  config.ToolSetKind:
-    enum:
-    - 0
-    - 1
-    - 2
-    format: int32
-    type: integer
-    x-enum-varnames:
-    - ToolSetScope
-    - ToolSetAll
-    - ToolSetInherited
-  config.Tools:
-    properties:
-      glob:
-        $ref: '#/definitions/config.ToolGlob'
-      grep:
-        $ref: '#/definitions/config.ToolGrep'
-      ls:
-        $ref: '#/definitions/config.ToolLs'
-    type: object
-  config.TrailerStyle:
-    enum:
-    - none
-    - co-authored-by
-    - assisted-by
-    type: string
-    x-enum-varnames:
-    - TrailerStyleNone
-    - TrailerStyleCoAuthoredBy
-    - TrailerStyleAssistedBy
-  csync.Map-string-config_ProviderConfig:
-    type: object
-  github_com_NaturalSelect_angela_internal_config.Config:
-    properties:
-      $schema:
-        type: string
-      agents:
-        additionalProperties:
-          $ref: '#/definitions/config.Agent'
-        description: |-
-          AgentConfigs holds user-defined agent overrides and custom agents.
-          These are merged over built-in defaults during SetupAgents().
-        type: object
-      env:
-        additionalProperties:
-          type: string
-        description: Env is a map of environment variables set on startup.
-        type: object
-      hooks:
-        additionalProperties:
-          items:
-            $ref: '#/definitions/config.HookConfig'
-          type: array
-        type: object
-      lsp:
-        $ref: '#/definitions/config.LSPs'
-      mcp:
-        $ref: '#/definitions/config.MCPs'
-      options:
-        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Options'
-      permissions:
-        $ref: '#/definitions/config.Permissions'
-      providers:
-        allOf:
-        - $ref: '#/definitions/csync.Map-string-config_ProviderConfig'
-        description: The providers that are configured
-      recent_models:
-        additionalProperties:
-          items:
-            $ref: '#/definitions/config.SelectedModel'
-          type: array
-        description: |-
-          Recently used models. Loaded from and persisted to a sidecar file
-          next to the scope's config file (see recent_models.go) rather than
-          this struct's own JSON encoding, so auto-recorded picks never
-          touch the hand-edited config.
-        type: object
-      slots:
-        additionalProperties:
-          $ref: '#/definitions/config.SelectedModel'
-        description: |-
-          Named model configurations. "main" and "chore" ship as seeds;
-          any other name may be defined and referenced by an agent.
-        type: object
-      tools:
-        $ref: '#/definitions/config.Tools'
+      $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.MCPConfig'
     type: object
   github_com_NaturalSelect_angela_internal_config.Options:
     properties:
@@ -551,11 +384,11 @@ definitions:
           type: string
         type: array
       attribution:
-        $ref: '#/definitions/config.Attribution'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Attribution'
       auto_lsp:
         type: boolean
       compaction:
-        $ref: '#/definitions/config.CompactionOptions'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.CompactionOptions'
       context_paths:
         items:
           type: string
@@ -606,7 +439,66 @@ definitions:
       subagent_depth:
         type: integer
       tui:
-        $ref: '#/definitions/config.TUIOptions'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.TUIOptions'
+    type: object
+  github_com_NaturalSelect_angela_internal_config.Permissions:
+    properties:
+      allowed_tools:
+        items:
+          type: string
+        type: array
+      prompt:
+        type: string
+      rules:
+        items:
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_permission.Rule'
+        type: array
+    type: object
+  github_com_NaturalSelect_angela_internal_config.ProviderModel:
+    properties:
+      can_reason:
+        type: boolean
+      context_window:
+        type: integer
+      cost_per_1m_in:
+        type: number
+      cost_per_1m_in_cached:
+        type: number
+      cost_per_1m_out:
+        type: number
+      cost_per_1m_out_cached:
+        type: number
+      default_max_tokens:
+        type: integer
+      default_reasoning_effort:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      options:
+        $ref: '#/definitions/catwalk.ModelOptions'
+      reasoning_levels:
+        items:
+          type: string
+        type: array
+      supports_attachments:
+        type: boolean
+      think:
+        description: |-
+          Think sets the default thinking mode for Anthropic-family
+          models that support it. A session can still flip this with
+          /think; Think only decides where a fresh session starts.
+        type: boolean
+      variants:
+        additionalProperties:
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModelOverride'
+        description: |-
+          Variants are named parameter presets over this model. They
+          override only the keys they name, so N models by M presets
+          stays N+M configs instead of N*M. Selecting one is how a
+          session overrides this model's defaults for a turn.
+        type: object
     type: object
   github_com_NaturalSelect_angela_internal_config.Scope:
     enum:
@@ -618,29 +510,115 @@ definitions:
     - ScopeGlobal
     - ScopeWorkspace
     - ScopeEphemeral
-  github_com_NaturalSelect_angela_internal_proto.Message:
+  github_com_NaturalSelect_angela_internal_config.SelectedModel:
     properties:
-      created_at:
-        type: integer
-      id:
-        type: string
-      is_summary_message:
-        type: boolean
       model:
+        description: |-
+          The model id as used by the provider API.
+          Required.
         type: string
-      parts:
-        items: {}
-        type: array
       provider:
+        description: |-
+          The model provider, same as the key/id used in the providers config.
+          Required.
         type: string
-      role:
-        $ref: '#/definitions/proto.MessageRole'
-      session_id:
+    type: object
+  github_com_NaturalSelect_angela_internal_config.SelectedModelOverride:
+    properties:
+      frequency_penalty:
+        type: number
+      max_tokens:
+        type: integer
+      presence_penalty:
+        type: number
+      provider_options:
+        additionalProperties: {}
+        description: |-
+          ProviderOptions merges key by key: the keys a variant names win,
+          the baseline's other keys survive.
+        type: object
+      reasoning_effort:
         type: string
-      updated_at:
+      temperature:
+        type: number
+      think:
+        type: boolean
+      top_k:
+        type: integer
+      top_p:
+        type: number
+    type: object
+  github_com_NaturalSelect_angela_internal_config.SlotName:
+    enum:
+    - main
+    - chore
+    type: string
+    x-enum-varnames:
+    - SlotMain
+    - SlotChore
+  github_com_NaturalSelect_angela_internal_config.TUIOptions:
+    properties:
+      compact_mode:
+        type: boolean
+      completions:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Completions'
+      diff_mode:
+        type: string
+      scrollbar:
+        type: string
+      transparent:
+        type: boolean
+    type: object
+  github_com_NaturalSelect_angela_internal_config.ToolGlob:
+    properties:
+      timeout:
+        $ref: '#/definitions/time.Duration'
+    type: object
+  github_com_NaturalSelect_angela_internal_config.ToolGrep:
+    properties:
+      timeout:
+        $ref: '#/definitions/time.Duration'
+    type: object
+  github_com_NaturalSelect_angela_internal_config.ToolLs:
+    properties:
+      max_depth:
+        type: integer
+      max_items:
         type: integer
     type: object
-  lsp.ServerState:
+  github_com_NaturalSelect_angela_internal_config.ToolSetKind:
+    enum:
+    - 0
+    - 1
+    - 2
+    format: int32
+    type: integer
+    x-enum-varnames:
+    - ToolSetScope
+    - ToolSetAll
+    - ToolSetInherited
+  github_com_NaturalSelect_angela_internal_config.Tools:
+    properties:
+      glob:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ToolGlob'
+      grep:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ToolGrep'
+      ls:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ToolLs'
+    type: object
+  github_com_NaturalSelect_angela_internal_config.TrailerStyle:
+    enum:
+    - none
+    - co-authored-by
+    - assisted-by
+    type: string
+    x-enum-varnames:
+    - TrailerStyleNone
+    - TrailerStyleCoAuthoredBy
+    - TrailerStyleAssistedBy
+  github_com_NaturalSelect_angela_internal_csync.Map-string-github_com_NaturalSelect_angela_internal_config_ProviderConfig:
+    type: object
+  github_com_NaturalSelect_angela_internal_lsp.ServerState:
     enum:
     - 0
     - 1
@@ -656,7 +634,7 @@ definitions:
     - StateError
     - StateStopped
     - StateDisabled
-  oauth.OAuthClient:
+  github_com_NaturalSelect_angela_internal_oauth.OAuthClient:
     properties:
       auth_style:
         type: integer
@@ -669,12 +647,12 @@ definitions:
       token_url:
         type: string
     type: object
-  oauth.Token:
+  github_com_NaturalSelect_angela_internal_oauth.Token:
     properties:
       access_token:
         type: string
       client:
-        $ref: '#/definitions/oauth.OAuthClient'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_oauth.OAuthClient'
       expires_at:
         type: integer
       expires_in:
@@ -682,7 +660,7 @@ definitions:
       refresh_token:
         type: string
     type: object
-  permission.PatternMode:
+  github_com_NaturalSelect_angela_internal_permission.PatternMode:
     enum:
     - 0
     - 1
@@ -695,15 +673,15 @@ definitions:
     - PatternPath
     - PatternFree
     - PatternDomain
-  permission.Rule:
+  github_com_NaturalSelect_angela_internal_permission.Rule:
     properties:
       action:
         allOf:
-        - $ref: '#/definitions/permission.RuleAction'
+        - $ref: '#/definitions/github_com_NaturalSelect_angela_internal_permission.RuleAction'
         description: Action is what to do when the rule matches.
       mode:
         allOf:
-        - $ref: '#/definitions/permission.PatternMode'
+        - $ref: '#/definitions/github_com_NaturalSelect_angela_internal_permission.PatternMode'
         description: Mode selects how Pattern is compared.
       pattern:
         description: Pattern narrows the rule further. Empty or "*" matches everything.
@@ -715,7 +693,7 @@ definitions:
           tool name ("Bash", "View"). Empty matches everything.
         type: string
     type: object
-  permission.RuleAction:
+  github_com_NaturalSelect_angela_internal_permission.RuleAction:
     enum:
     - 0
     - 1
@@ -726,7 +704,7 @@ definitions:
     - RuleDeny
     - RuleAsk
     - RuleAllow
-  proto.APIKeyKind:
+  github_com_NaturalSelect_angela_internal_proto.APIKeyKind:
     enum:
     - string
     - oauth
@@ -734,24 +712,24 @@ definitions:
     x-enum-varnames:
     - APIKeyKindString
     - APIKeyKindOAuth
-  proto.ActiveAgent:
+  github_com_NaturalSelect_angela_internal_proto.ActiveAgent:
     properties:
       agent_id:
         type: string
       agent_name:
         type: string
       catwalk_cfg:
-        $ref: '#/definitions/config.ProviderModel'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ProviderModel'
       model_cfg:
-        $ref: '#/definitions/config.SelectedModel'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel'
       slot:
-        $ref: '#/definitions/config.SlotName'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName'
       think:
         type: boolean
       variant:
         type: string
     type: object
-  proto.ActiveAgentEditRequest:
+  github_com_NaturalSelect_angela_internal_proto.ActiveAgentEditRequest:
     properties:
       agent:
         description: |-
@@ -759,10 +737,10 @@ definitions:
           different primary agent.
         type: string
       model:
-        $ref: '#/definitions/config.SelectedModel'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel'
       slot:
         allOf:
-        - $ref: '#/definitions/config.SlotName'
+        - $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName'
         description: |-
           Model, when non-nil, replaces the session's model outright, and
           Slot labels which global slot it was taken from.
@@ -787,22 +765,22 @@ definitions:
           out of a preset.
         type: string
     type: object
-  proto.AgentInfo:
+  github_com_NaturalSelect_angela_internal_proto.AgentInfo:
     properties:
       is_busy:
         type: boolean
       is_ready:
         type: boolean
       model:
-        $ref: '#/definitions/config.ProviderModel'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ProviderModel'
       model_cfg:
-        $ref: '#/definitions/config.SelectedModel'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel'
     type: object
-  proto.AgentMessage:
+  github_com_NaturalSelect_angela_internal_proto.AgentMessage:
     properties:
       attachments:
         items:
-          $ref: '#/definitions/proto.Attachment'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Attachment'
         type: array
       prompt:
         type: string
@@ -811,10 +789,10 @@ definitions:
       session_id:
         type: string
     type: object
-  proto.AgentSession:
+  github_com_NaturalSelect_angela_internal_proto.AgentSession:
     properties:
       active_agent:
-        $ref: '#/definitions/config.ActiveAgentState'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ActiveAgentState'
       agent:
         type: string
       attached_clients:
@@ -846,12 +824,12 @@ definitions:
         type: string
       todos:
         items:
-          $ref: '#/definitions/proto.Todo'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Todo'
         type: array
       updated_at:
         type: integer
     type: object
-  proto.Attachment:
+  github_com_NaturalSelect_angela_internal_proto.Attachment:
     properties:
       content:
         items:
@@ -864,77 +842,77 @@ definitions:
       mime_type:
         type: string
     type: object
-  proto.ConfigAgentVariantRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigAgentVariantRequest:
     properties:
       agent_id:
         type: string
       variant:
         type: string
     type: object
-  proto.ConfigCompactRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigCompactRequest:
     properties:
       enabled:
         type: boolean
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
-  proto.ConfigModelRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigModelRequest:
     properties:
       model:
-        $ref: '#/definitions/config.SelectedModel'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel'
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
       slot:
-        $ref: '#/definitions/config.SlotName'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName'
     type: object
-  proto.ConfigProviderKeyRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigProviderKeyRequest:
     properties:
       api_key:
         items:
           type: integer
         type: array
       kind:
-        $ref: '#/definitions/proto.APIKeyKind'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.APIKeyKind'
       provider_id:
         type: string
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
-  proto.ConfigProviderModelRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigProviderModelRequest:
     properties:
       model:
-        $ref: '#/definitions/config.ProviderModel'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ProviderModel'
       provider_id:
         type: string
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
-  proto.ConfigPruneRecentModelsRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigPruneRecentModelsRequest:
     properties:
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
       slot:
-        $ref: '#/definitions/config.SlotName'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName'
       stale:
         items:
-          $ref: '#/definitions/config.SelectedModel'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel'
         type: array
     type: object
-  proto.ConfigRefreshOAuthRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigRefreshOAuthRequest:
     properties:
       provider_id:
         type: string
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
-  proto.ConfigRemoveRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigRemoveRequest:
     properties:
       key:
         type: string
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
     type: object
-  proto.ConfigSetRequest:
+  github_com_NaturalSelect_angela_internal_proto.ConfigSetRequest:
     properties:
       key:
         type: string
@@ -942,12 +920,12 @@ definitions:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
       value: {}
     type: object
-  proto.CurrentSession:
+  github_com_NaturalSelect_angela_internal_proto.CurrentSession:
     properties:
       session_id:
         type: string
     type: object
-  proto.EnterSandboxRequest:
+  github_com_NaturalSelect_angela_internal_proto.EnterSandboxRequest:
     properties:
       allow_network:
         type: boolean
@@ -960,12 +938,12 @@ definitions:
           type: string
         type: array
     type: object
-  proto.Error:
+  github_com_NaturalSelect_angela_internal_proto.Error:
     properties:
       message:
         type: string
     type: object
-  proto.File:
+  github_com_NaturalSelect_angela_internal_proto.File:
     properties:
       content:
         type: string
@@ -982,20 +960,20 @@ definitions:
       version:
         type: integer
     type: object
-  proto.FileTrackerReadRequest:
+  github_com_NaturalSelect_angela_internal_proto.FileTrackerReadRequest:
     properties:
       path:
         type: string
       session_id:
         type: string
     type: object
-  proto.ImportCopilotResponse:
+  github_com_NaturalSelect_angela_internal_proto.ImportCopilotResponse:
     properties:
       success:
         type: boolean
       token: {}
     type: object
-  proto.LSPClientInfo:
+  github_com_NaturalSelect_angela_internal_proto.LSPClientInfo:
     properties:
       connected_at:
         type: string
@@ -1005,14 +983,14 @@ definitions:
       name:
         type: string
       state:
-        $ref: '#/definitions/lsp.ServerState'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_lsp.ServerState'
     type: object
-  proto.LSPStartRequest:
+  github_com_NaturalSelect_angela_internal_proto.LSPStartRequest:
     properties:
       path:
         type: string
     type: object
-  proto.MCPAuthResponse:
+  github_com_NaturalSelect_angela_internal_proto.MCPAuthResponse:
     properties:
       auth_url:
         description: |-
@@ -1020,7 +998,7 @@ definitions:
           the flow is still in progress.
         type: string
     type: object
-  proto.MCPClientInfo:
+  github_com_NaturalSelect_angela_internal_proto.MCPClientInfo:
     properties:
       connected_at:
         type: string
@@ -1032,11 +1010,11 @@ definitions:
       resource_count:
         type: integer
       state:
-        $ref: '#/definitions/proto.MCPState'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPState'
       tool_count:
         type: integer
     type: object
-  proto.MCPGetPromptRequest:
+  github_com_NaturalSelect_angela_internal_proto.MCPGetPromptRequest:
     properties:
       args:
         additionalProperties:
@@ -1047,28 +1025,28 @@ definitions:
       prompt_id:
         type: string
     type: object
-  proto.MCPGetPromptResponse:
+  github_com_NaturalSelect_angela_internal_proto.MCPGetPromptResponse:
     properties:
       prompt:
         type: string
     type: object
-  proto.MCPNameRequest:
+  github_com_NaturalSelect_angela_internal_proto.MCPNameRequest:
     properties:
       name:
         type: string
     type: object
-  proto.MCPPendingAuthServer:
+  github_com_NaturalSelect_angela_internal_proto.MCPPendingAuthServer:
     properties:
       name:
         type: string
       url:
         type: string
     type: object
-  proto.MCPPrompt:
+  github_com_NaturalSelect_angela_internal_proto.MCPPrompt:
     properties:
       arguments:
         items:
-          $ref: '#/definitions/proto.MCPPromptArgument'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPPromptArgument'
         type: array
       client_id:
         type: string
@@ -1081,7 +1059,7 @@ definitions:
       title:
         type: string
     type: object
-  proto.MCPPromptArgument:
+  github_com_NaturalSelect_angela_internal_proto.MCPPromptArgument:
     properties:
       description:
         type: string
@@ -1092,14 +1070,14 @@ definitions:
       title:
         type: string
     type: object
-  proto.MCPReadResourceRequest:
+  github_com_NaturalSelect_angela_internal_proto.MCPReadResourceRequest:
     properties:
       name:
         type: string
       uri:
         type: string
     type: object
-  proto.MCPState:
+  github_com_NaturalSelect_angela_internal_proto.MCPState:
     enum:
     - 0
     - 1
@@ -1113,7 +1091,29 @@ definitions:
     - MCPStateConnected
     - MCPStateError
     - MCPStateNeedsAuth
-  proto.MessageRole:
+  github_com_NaturalSelect_angela_internal_proto.Message:
+    properties:
+      created_at:
+        type: integer
+      id:
+        type: string
+      is_summary_message:
+        type: boolean
+      model:
+        type: string
+      parts:
+        items: {}
+        type: array
+      provider:
+        type: string
+      role:
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MessageRole'
+      session_id:
+        type: string
+      updated_at:
+        type: integer
+    type: object
+  github_com_NaturalSelect_angela_internal_proto.MessageRole:
     enum:
     - assistant
     - user
@@ -1125,7 +1125,7 @@ definitions:
     - User
     - System
     - Tool
-  proto.PermissionAction:
+  github_com_NaturalSelect_angela_internal_proto.PermissionAction:
     enum:
     - allow
     - allow_session
@@ -1135,24 +1135,24 @@ definitions:
     - PermissionAllow
     - PermissionAllowForSession
     - PermissionDeny
-  proto.PermissionGrant:
+  github_com_NaturalSelect_angela_internal_proto.PermissionGrant:
     properties:
       action:
-        $ref: '#/definitions/proto.PermissionAction'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionAction'
       permission:
-        $ref: '#/definitions/proto.PermissionRequest'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionRequest'
     type: object
-  proto.PermissionGrantResponse:
+  github_com_NaturalSelect_angela_internal_proto.PermissionGrantResponse:
     properties:
       resolved:
         type: boolean
     type: object
-  proto.PermissionModeRequest:
+  github_com_NaturalSelect_angela_internal_proto.PermissionModeRequest:
     properties:
       mode:
         type: string
     type: object
-  proto.PermissionRequest:
+  github_com_NaturalSelect_angela_internal_proto.PermissionRequest:
     properties:
       action:
         type: string
@@ -1175,38 +1175,38 @@ definitions:
       tool_name:
         type: string
     type: object
-  proto.PermissionUnattendedRequest:
+  github_com_NaturalSelect_angela_internal_proto.PermissionUnattendedRequest:
     properties:
       session_id:
         type: string
       unattended:
         type: boolean
     type: object
-  proto.ProjectInitPromptResponse:
+  github_com_NaturalSelect_angela_internal_proto.ProjectInitPromptResponse:
     properties:
       prompt:
         type: string
     type: object
-  proto.ProjectNeedsInitResponse:
+  github_com_NaturalSelect_angela_internal_proto.ProjectNeedsInitResponse:
     properties:
       needs_init:
         type: boolean
     type: object
-  proto.QuestionAnswer:
+  github_com_NaturalSelect_angela_internal_proto.QuestionAnswer:
     properties:
       batch_request_id:
         type: string
       responses:
         items:
-          $ref: '#/definitions/proto.QuestionResponse'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.QuestionResponse'
         type: array
     type: object
-  proto.QuestionAnswerResponse:
+  github_com_NaturalSelect_angela_internal_proto.QuestionAnswerResponse:
     properties:
       resolved:
         type: boolean
     type: object
-  proto.QuestionResponse:
+  github_com_NaturalSelect_angela_internal_proto.QuestionResponse:
     properties:
       fill_in_text:
         type: string
@@ -1223,34 +1223,34 @@ definitions:
       "yes":
         type: boolean
     type: object
-  proto.ReadSkillRequest:
+  github_com_NaturalSelect_angela_internal_proto.ReadSkillRequest:
     properties:
       skill_id:
         type: string
     type: object
-  proto.ReadSkillResponse:
+  github_com_NaturalSelect_angela_internal_proto.ReadSkillResponse:
     properties:
       content:
         items:
           type: integer
         type: array
       result:
-        $ref: '#/definitions/proto.SkillReadResult'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.SkillReadResult'
     type: object
-  proto.SandboxStatusResponse:
+  github_com_NaturalSelect_angela_internal_proto.SandboxStatusResponse:
     properties:
       in_sandbox:
         type: boolean
     type: object
-  proto.ServerControl:
+  github_com_NaturalSelect_angela_internal_proto.ServerControl:
     properties:
       command:
         type: string
     type: object
-  proto.Session:
+  github_com_NaturalSelect_angela_internal_proto.Session:
     properties:
       active_agent:
-        $ref: '#/definitions/config.ActiveAgentState'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.ActiveAgentState'
       agent:
         type: string
       attached_clients:
@@ -1277,12 +1277,12 @@ definitions:
         type: string
       todos:
         items:
-          $ref: '#/definitions/proto.Todo'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Todo'
         type: array
       updated_at:
         type: integer
     type: object
-  proto.ShellCommandRequest:
+  github_com_NaturalSelect_angela_internal_proto.ShellCommandRequest:
     properties:
       command:
         type: string
@@ -1291,14 +1291,26 @@ definitions:
       term_width:
         type: integer
     type: object
-  proto.ShellCommandResponse:
+  github_com_NaturalSelect_angela_internal_proto.ShellCommandResponse:
     properties:
       exit_code:
         type: integer
       output:
         type: string
     type: object
-  proto.SkillDiscoveryState:
+  github_com_NaturalSelect_angela_internal_proto.SideQuestionRequest:
+    properties:
+      question:
+        type: string
+      session_id:
+        type: string
+    type: object
+  github_com_NaturalSelect_angela_internal_proto.SideQuestionResponse:
+    properties:
+      answer:
+        type: string
+    type: object
+  github_com_NaturalSelect_angela_internal_proto.SkillDiscoveryState:
     enum:
     - 0
     - 1
@@ -1306,7 +1318,7 @@ definitions:
     x-enum-varnames:
     - SkillStateNormal
     - SkillStateError
-  proto.SkillInfo:
+  github_com_NaturalSelect_angela_internal_proto.SkillInfo:
     properties:
       description:
         type: string
@@ -1321,7 +1333,7 @@ definitions:
       user_invocable:
         type: boolean
     type: object
-  proto.SkillReadResult:
+  github_com_NaturalSelect_angela_internal_proto.SkillReadResult:
     properties:
       builtin:
         type: boolean
@@ -1332,7 +1344,7 @@ definitions:
       source:
         type: string
     type: object
-  proto.SkillState:
+  github_com_NaturalSelect_angela_internal_proto.SkillState:
     properties:
       error:
         type: string
@@ -1341,9 +1353,9 @@ definitions:
       path:
         type: string
       state:
-        $ref: '#/definitions/proto.SkillDiscoveryState'
+        $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.SkillDiscoveryState'
     type: object
-  proto.Todo:
+  github_com_NaturalSelect_angela_internal_proto.Todo:
     properties:
       active_form:
         type: string
@@ -1352,7 +1364,7 @@ definitions:
       status:
         type: string
     type: object
-  proto.UndoPreview:
+  github_com_NaturalSelect_angela_internal_proto.UndoPreview:
     properties:
       cut_message_id:
         description: |-
@@ -1373,15 +1385,15 @@ definitions:
         type: array
       skipped:
         items:
-          $ref: '#/definitions/proto.UndoSkippedFile'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoSkippedFile'
         type: array
     type: object
-  proto.UndoRequest:
+  github_com_NaturalSelect_angela_internal_proto.UndoRequest:
     properties:
       cut_message_id:
         type: string
     type: object
-  proto.UndoResult:
+  github_com_NaturalSelect_angela_internal_proto.UndoResult:
     properties:
       deleted:
         items:
@@ -1397,17 +1409,17 @@ definitions:
         type: array
       skipped:
         items:
-          $ref: '#/definitions/proto.UndoSkippedFile'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoSkippedFile'
         type: array
     type: object
-  proto.UndoSkippedFile:
+  github_com_NaturalSelect_angela_internal_proto.UndoSkippedFile:
     properties:
       path:
         type: string
       reason:
         type: string
     type: object
-  proto.VersionInfo:
+  github_com_NaturalSelect_angela_internal_proto.VersionInfo:
     properties:
       build_id:
         type: string
@@ -1420,7 +1432,7 @@ definitions:
       version:
         type: string
     type: object
-  proto.Workspace:
+  github_com_NaturalSelect_angela_internal_proto.Workspace:
     properties:
       channels:
         description: |-
@@ -1461,12 +1473,12 @@ definitions:
           creation time. Subsequent updates flow through the SSE event
           stream.
         items:
-          $ref: '#/definitions/proto.SkillState'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.SkillState'
         type: array
       version:
         type: string
     type: object
-  proto.YoloSkipMergeRequest:
+  github_com_NaturalSelect_angela_internal_proto.YoloSkipMergeRequest:
     properties:
       enabled:
         type: boolean
@@ -1519,7 +1531,7 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Retire a client
       tags:
       - system
@@ -1545,18 +1557,18 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ServerControl'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ServerControl'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Send server control command
       tags:
       - system
@@ -1576,7 +1588,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.VersionInfo'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.VersionInfo'
       summary: Get server version
       tags:
       - system
@@ -1589,7 +1601,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/proto.Workspace'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Workspace'
             type: array
       summary: List workspaces
       tags:
@@ -1603,22 +1615,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.Workspace'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Workspace'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.Workspace'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Workspace'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Create workspace
       tags:
       - workspaces
@@ -1636,7 +1648,7 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Delete workspace
       tags:
       - workspaces
@@ -1653,15 +1665,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.Workspace'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Workspace'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get workspace
       tags:
       - workspaces
@@ -1679,15 +1691,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.AgentInfo'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.AgentInfo'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get agent info
       tags:
       - agent
@@ -1705,26 +1717,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.AgentMessage'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.AgentMessage'
       responses:
         "202":
           description: Accepted
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Send message to agent
       tags:
       - agent
@@ -1742,15 +1754,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.ActiveAgent'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ActiveAgent'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get the default active agent
       tags:
       - agent
@@ -1768,11 +1780,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Initialize agent
       tags:
       - agent
@@ -1795,15 +1807,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.AgentSession'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.AgentSession'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get agent session
       tags:
       - agent
@@ -1826,11 +1838,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Abandon agent branch session
       tags:
       - agent
@@ -1853,15 +1865,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.ActiveAgent'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ActiveAgent'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get the session's active agent
       tags:
       - agent
@@ -1884,26 +1896,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ActiveAgentEditRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ActiveAgentEditRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.ActiveAgent'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ActiveAgent'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Edit the session's active agent
       tags:
       - agent
@@ -1926,11 +1938,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Cancel agent session
       tags:
       - agent
@@ -1953,11 +1965,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Clear prompt queue
       tags:
       - agent
@@ -1986,11 +1998,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: List queued prompts
       tags:
       - agent
@@ -2017,11 +2029,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get queued prompt status
       tags:
       - agent
@@ -2045,27 +2057,70 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ShellCommandRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ShellCommandRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.ShellCommandResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ShellCommandResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Run shell command
+      tags:
+      - agent
+  /workspaces/{id}/agent/sessions/{sid}/side-question:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: Side question
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.SideQuestionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.SideQuestionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
+      summary: Ask a side question
       tags:
       - agent
   /workspaces/{id}/agent/sessions/{sid}/summarize:
@@ -2087,11 +2142,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Summarize session
       tags:
       - agent
@@ -2109,11 +2164,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Update agent
       tags:
       - agent
@@ -2135,11 +2190,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get workspace config
       tags:
       - workspaces
@@ -2158,22 +2213,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigAgentVariantRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigAgentVariantRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Override an agent's parameter preset
       tags:
       - config
@@ -2192,22 +2247,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigCompactRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigCompactRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Set compact mode
       tags:
       - config
@@ -2225,15 +2280,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.ImportCopilotResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ImportCopilotResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Import Copilot credentials
       tags:
       - config
@@ -2252,22 +2307,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigModelRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigModelRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Set the preferred model
       tags:
       - config
@@ -2286,22 +2341,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigProviderKeyRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigProviderKeyRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Set provider API key
       tags:
       - config
@@ -2320,22 +2375,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigProviderModelRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigProviderModelRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Upsert provider model
       tags:
       - config
@@ -2354,22 +2409,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigPruneRecentModelsRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigPruneRecentModelsRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Prune stale recent models
       tags:
       - config
@@ -2388,22 +2443,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigModelRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigModelRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Record a recently used model
       tags:
       - config
@@ -2422,22 +2477,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigRefreshOAuthRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigRefreshOAuthRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Refresh OAuth token
       tags:
       - config
@@ -2456,22 +2511,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigRemoveRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigRemoveRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Remove a config field
       tags:
       - config
@@ -2490,22 +2545,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ConfigSetRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigSetRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Set a config field
       tags:
       - config
@@ -2529,7 +2584,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.CurrentSession'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.CurrentSession'
       produces:
       - application/json
       responses:
@@ -2538,11 +2593,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Set current session for a client
       tags:
       - workspaces
@@ -2562,11 +2617,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Stream workspace events (SSE)
       tags:
       - workspaces
@@ -2597,11 +2652,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get last read time for file
       tags:
       - filetracker
@@ -2620,22 +2675,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.FileTrackerReadRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.FileTrackerReadRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Record file read
       tags:
       - filetracker
@@ -2654,16 +2709,16 @@ paths:
           description: OK
           schema:
             additionalProperties:
-              $ref: '#/definitions/proto.LSPClientInfo'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.LSPClientInfo'
             type: object
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: List LSP clients
       tags:
       - lsp
@@ -2690,11 +2745,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get LSP diagnostics
       tags:
       - lsp
@@ -2713,22 +2768,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.LSPStartRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.LSPStartRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Start LSP server
       tags:
       - lsp
@@ -2746,11 +2801,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Stop all LSP servers
       tags:
       - lsp
@@ -2769,26 +2824,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.MCPNameRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.MCPAuthResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPAuthResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Authenticate an MCP server
       tags:
       - mcp
@@ -2811,11 +2866,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.MCPAuthResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPAuthResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get MCP OAuth authorization URL
       tags:
       - mcp
@@ -2834,22 +2889,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.MCPNameRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Disable an MCP server
       tags:
       - mcp
@@ -2867,11 +2922,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Disable Docker MCP
       tags:
       - mcp
@@ -2889,11 +2944,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Enable Docker MCP
       tags:
       - mcp
@@ -2912,22 +2967,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.MCPNameRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Enable an MCP server
       tags:
       - mcp
@@ -2946,26 +3001,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.MCPGetPromptRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPGetPromptRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.MCPGetPromptResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPGetPromptResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get MCP prompt
       tags:
       - mcp
@@ -2984,16 +3039,16 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/proto.MCPPendingAuthServer'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPPendingAuthServer'
             type: array
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get MCP servers pending OAuth
       tags:
       - mcp
@@ -3012,16 +3067,16 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/proto.MCPPrompt'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPPrompt'
             type: array
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get MCP prompts
       tags:
       - mcp
@@ -3040,7 +3095,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.MCPReadResourceRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPReadResourceRequest'
       produces:
       - application/json
       responses:
@@ -3051,15 +3106,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Read MCP resource
       tags:
       - mcp
@@ -3078,22 +3133,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.MCPNameRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Refresh MCP prompts
       tags:
       - mcp
@@ -3112,22 +3167,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.MCPNameRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Refresh MCP resources
       tags:
       - mcp
@@ -3146,22 +3201,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.MCPNameRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Refresh MCP tools
       tags:
       - mcp
@@ -3180,16 +3235,16 @@ paths:
           description: OK
           schema:
             additionalProperties:
-              $ref: '#/definitions/proto.MCPClientInfo'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPClientInfo'
             type: object
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get MCP client states
       tags:
       - mcp
@@ -3213,11 +3268,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get all user messages for workspace
       tags:
       - workspaces
@@ -3236,24 +3291,24 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.PermissionGrant'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionGrant'
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.PermissionGrantResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionGrantResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Grant permission
       tags:
       - permissions
@@ -3271,15 +3326,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.PermissionModeRequest'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionModeRequest'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get permission mode
       tags:
       - permissions
@@ -3297,22 +3352,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.PermissionModeRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionModeRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Set permission mode
       tags:
       - permissions
@@ -3331,22 +3386,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.PermissionUnattendedRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionUnattendedRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Set session unattended
       tags:
       - permissions
@@ -3364,15 +3419,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.YoloSkipMergeRequest'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.YoloSkipMergeRequest'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get yolo skip-merge
       tags:
       - permissions
@@ -3390,22 +3445,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.YoloSkipMergeRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.YoloSkipMergeRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Set yolo skip-merge
       tags:
       - permissions
@@ -3423,11 +3478,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Mark project as initialized
       tags:
       - project
@@ -3445,15 +3500,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.ProjectInitPromptResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ProjectInitPromptResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get project initialization prompt
       tags:
       - project
@@ -3471,15 +3526,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.ProjectNeedsInitResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ProjectNeedsInitResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Check if project needs initialization
       tags:
       - project
@@ -3501,11 +3556,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get workspace providers
       tags:
       - workspaces
@@ -3524,24 +3579,24 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.QuestionAnswer'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.QuestionAnswer'
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.QuestionAnswerResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.QuestionAnswerResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Answer question batch
       tags:
       - questions
@@ -3557,19 +3612,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.QuestionAnswerResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.QuestionAnswerResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Cancel question batch
       tags:
       - questions
@@ -3587,15 +3642,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.SandboxStatusResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.SandboxStatusResponse'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get sandbox status
       tags:
       - sandbox
@@ -3614,22 +3669,22 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.EnterSandboxRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.EnterSandboxRequest'
       responses:
         "200":
           description: OK
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Enter sandbox
       tags:
       - sandbox
@@ -3648,16 +3703,16 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/proto.Session'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Session'
             type: array
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: List sessions
       tags:
       - sessions
@@ -3675,26 +3730,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.Session'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Session'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.Session'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Session'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Create session
       tags:
       - sessions
@@ -3717,11 +3772,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Delete session
       tags:
       - sessions
@@ -3743,15 +3798,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.Session'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Session'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get session
       tags:
       - sessions
@@ -3774,26 +3829,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.Session'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Session'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.Session'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Session'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Update session
       tags:
       - sessions
@@ -3822,11 +3877,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: List tracked files for session
       tags:
       - filetracker
@@ -3850,16 +3905,16 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/proto.File'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.File'
             type: array
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get session history
       tags:
       - sessions
@@ -3888,11 +3943,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get session messages
       tags:
       - sessions
@@ -3921,11 +3976,11 @@ paths:
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Get user messages for session
       tags:
       - sessions
@@ -3948,19 +4003,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.UndoPreview'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoPreview'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Preview undo
       tags:
       - sessions
@@ -3983,30 +4038,30 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.UndoRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.UndoResult'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoResult'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Undo the last turn
       tags:
       - sessions
@@ -4025,16 +4080,16 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/proto.SkillInfo'
+              $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.SkillInfo'
             type: array
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: List visible skills
       tags:
       - skills
@@ -4053,26 +4108,26 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/proto.ReadSkillRequest'
+          $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ReadSkillRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/proto.ReadSkillResponse'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.ReadSkillResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/proto.Error'
+            $ref: '#/definitions/github_com_NaturalSelect_angela_internal_proto.Error'
       summary: Read skill content
       tags:
       - skills

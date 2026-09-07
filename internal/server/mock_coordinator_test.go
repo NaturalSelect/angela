@@ -74,6 +74,21 @@ func (mr *MockCoordinatorMockRecorder) ActiveAgent(ctx, sessionID any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActiveAgent", reflect.TypeOf((*MockCoordinator)(nil).ActiveAgent), ctx, sessionID)
 }
 
+// AskSideQuestion mocks base method.
+func (m *MockCoordinator) AskSideQuestion(ctx context.Context, sessionID, question string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AskSideQuestion", ctx, sessionID, question)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AskSideQuestion indicates an expected call of AskSideQuestion.
+func (mr *MockCoordinatorMockRecorder) AskSideQuestion(ctx, sessionID, question any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AskSideQuestion", reflect.TypeOf((*MockCoordinator)(nil).AskSideQuestion), ctx, sessionID, question)
+}
+
 // BeginAccepted mocks base method.
 func (m *MockCoordinator) BeginAccepted(ctx context.Context, sessionID string) *agent.AcceptedRun {
 	m.ctrl.T.Helper()
@@ -307,17 +322,17 @@ func (mr *MockCoordinatorMockRecorder) RunAccepted(ctx, accept, sessionID, promp
 }
 
 // Summarize mocks base method.
-func (m *MockCoordinator) Summarize(arg0 context.Context, arg1 string) error {
+func (m *MockCoordinator) Summarize(ctx context.Context, sessionID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Summarize", arg0, arg1)
+	ret := m.ctrl.Call(m, "Summarize", ctx, sessionID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Summarize indicates an expected call of Summarize.
-func (mr *MockCoordinatorMockRecorder) Summarize(arg0, arg1 any) *gomock.Call {
+func (mr *MockCoordinatorMockRecorder) Summarize(ctx, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Summarize", reflect.TypeOf((*MockCoordinator)(nil).Summarize), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Summarize", reflect.TypeOf((*MockCoordinator)(nil).Summarize), ctx, sessionID)
 }
 
 // SwitchAgent mocks base method.

@@ -100,6 +100,10 @@ func (s *runCoordinator) GenerateAgent(context.Context, string) (config.Agent, s
 func (s *runCoordinator) SwitchAgent(context.Context, string, string) error   { return nil }
 func (s *runCoordinator) SwitchVariant(context.Context, string, string) error { return nil }
 
+func (s *runCoordinator) AskSideQuestion(context.Context, string, string) (string, error) {
+	return "", nil
+}
+
 func (s *runCoordinator) capturedCtx() context.Context {
 	s.mu.Lock()
 	defer s.mu.Unlock()

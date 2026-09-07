@@ -192,6 +192,10 @@ type SessionAgent interface {
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
 	Summarize(context.Context, string, resolvedAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error
+	// SideQuestion answers a one-off question from a session's existing
+	// context without joining the turn queue, taking the per-session
+	// lock, or writing anything to the session's message history.
+	SideQuestion(ctx context.Context, sessionID, question string, resolved resolvedAgent, opts fantasy.ProviderOptions) (string, error)
 	AgentID() string
 }
 

@@ -218,6 +218,9 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 				case ActionRunMCPPrompt:
 					action.Args = args
 					return action
+				case ActionAskSideQuestion:
+					action.Question = args["QUESTION"]
+					return action
 				}
 			}
 			a.focusInput(a.focused + 1)

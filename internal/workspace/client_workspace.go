@@ -362,6 +362,14 @@ func (w *ClientWorkspace) AgentSummarize(ctx context.Context, sessionID string) 
 	return w.client.AgentSummarizeSession(ctx, w.workspaceID(), sessionID)
 }
 
+func (w *ClientWorkspace) AgentAskSideQuestion(ctx context.Context, sessionID, question string) (string, error) {
+	resp, err := w.client.AgentAskSideQuestion(ctx, w.workspaceID(), sessionID, question)
+	if err != nil {
+		return "", err
+	}
+	return resp.Answer, nil
+}
+
 func (w *ClientWorkspace) UpdateAgentModel(ctx context.Context) error {
 	return w.client.UpdateAgent(ctx, w.workspaceID())
 }

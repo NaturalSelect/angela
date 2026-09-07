@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/agent"
@@ -219,6 +220,49 @@ func TestBackend_GetSessionActiveAgent(t *testing.T) {
 		t.Parallel()
 		b, _ := newTestBackend(t)
 		_, err := b.GetSessionActiveAgent(t.Context(), "nope", "s1")
+		require.ErrorIs(t, err, ErrWorkspaceNotFound)
+	})
+}
+
+func TestBackend_AskSideQuestion(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil coordinator", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		ws := insertAgentWorkspace(t, b, nil)
+
+		_, err := b.AskSideQuestion(t.Context(), ws.ID, proto.SideQuestionRequest{SessionID: "s1", Question: "what now?"})
+		require.ErrorIs(t, err, ErrAgentNotInitialized)
+	})
+
+	t.Run("delegates to coordinator", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		coord := &fakeCoordinator{sideQuestionAnswer: "here's the answer"}
+		ws := insertAgentWorkspace(t, b, coord)
+
+		resp, err := b.AskSideQuestion(t.Context(), ws.ID, proto.SideQuestionRequest{SessionID: "s1", Question: "what now?"})
+		require.NoError(t, err)
+		require.Equal(t, proto.SideQuestionResponse{Answer: "here's the answer"}, resp)
+		require.Equal(t, []string{"s1"}, coord.sideQuestionCalls)
+	})
+
+	t.Run("propagates coordinator error", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		wantErr := errors.New("side question failed")
+		coord := &fakeCoordinator{sideQuestionErr: wantErr}
+		ws := insertAgentWorkspace(t, b, coord)
+
+		_, err := b.AskSideQuestion(t.Context(), ws.ID, proto.SideQuestionRequest{SessionID: "s1", Question: "what now?"})
+		require.ErrorIs(t, err, wantErr)
+	})
+
+	t.Run("workspace not found", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		_, err := b.AskSideQuestion(t.Context(), "nope", proto.SideQuestionRequest{SessionID: "s1", Question: "what now?"})
 		require.ErrorIs(t, err, ErrWorkspaceNotFound)
 	})
 }

@@ -84,6 +84,21 @@ func (mr *MockWorkspaceMockRecorder) AgentActive(ctx, sessionID any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentActive", reflect.TypeOf((*MockWorkspace)(nil).AgentActive), ctx, sessionID)
 }
 
+// AgentAskSideQuestion mocks base method.
+func (m *MockWorkspace) AgentAskSideQuestion(ctx context.Context, sessionID, arg2 string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AgentAskSideQuestion", ctx, sessionID, arg2)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AgentAskSideQuestion indicates an expected call of AgentAskSideQuestion.
+func (mr *MockWorkspaceMockRecorder) AgentAskSideQuestion(ctx, sessionID, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentAskSideQuestion", reflect.TypeOf((*MockWorkspace)(nil).AgentAskSideQuestion), ctx, sessionID, arg2)
+}
+
 // AgentCancel mocks base method.
 func (m *MockWorkspace) AgentCancel(sessionID string) {
 	m.ctrl.T.Helper()

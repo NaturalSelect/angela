@@ -225,6 +225,59 @@ func TestHandleDialogMsg_ActionNewSession_WithoutSessionIsNoOpButClosesPalette(t
 	require.False(t, m.dialog.HasDialogs(), "the palette must close even when there was no session to clear")
 }
 
+// TestHandleDialogMsg_ActionAskSideQuestion_EmptyQuestionOpensArgumentsDialog
+// verifies that picking "btw" from the command palette without having
+// typed a question yet (Question == "") opens the arguments dialog to
+// collect it, instead of asking the workspace anything.
+func TestHandleDialogMsg_ActionAskSideQuestion_EmptyQuestionOpensArgumentsDialog(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+
+	cmd := m.handleDialogMsg(dialog.ActionAskSideQuestion{SessionID: "current", Question: ""})
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the arguments dialog opens")
+	require.True(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
+	if cmd != nil {
+		drain(cmd)
+	}
+}
+
+// TestHandleDialogMsg_ActionAskSideQuestion_DispatchesAndAnswers verifies
+// that a question typed in reaches the workspace and that its answer
+// comes back as a sideQuestionAnsweredMsg, alongside the "in flight" info
+// toast, once the resulting batch is run.
+func TestHandleDialogMsg_ActionAskSideQuestion_DispatchesAndAnswers(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentAskSideQuestion(gomock.Any(), "current", "what now?").Return("the answer", nil)
+
+	m := newHandleDialogUI(t, ws)
+
+	cmd := m.handleDialogMsg(dialog.ActionAskSideQuestion{SessionID: "current", Question: "what now?"})
+	require.NotNil(t, cmd)
+	require.False(t, m.dialog.HasDialogs(), "the palette must close once the question is dispatched")
+
+	batch, ok := cmd().(tea.BatchMsg)
+	require.True(t, ok, "both the info toast and the async fetch must be dispatched")
+
+	var gotInfo bool
+	var gotAnswer sideQuestionAnsweredMsg
+	for _, sub := range batch {
+		switch got := sub().(type) {
+		case util.InfoMsg:
+			gotInfo = true
+			require.Contains(t, got.Msg, "Asking side question")
+		case sideQuestionAnsweredMsg:
+			gotAnswer = got
+		}
+	}
+	require.True(t, gotInfo, "must report that the question is in flight")
+	require.NoError(t, gotAnswer.err)
+	require.Equal(t, "the answer", gotAnswer.answer)
+}
+
 // TestHandleDialogMsg_ActionToggleMCPServer pins that toggling leaves
 // the command palette open (see the comment on the production switch
 // case) so several servers can be flipped in one visit, while still

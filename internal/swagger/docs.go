@@ -44,7 +44,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -85,7 +85,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ServerControl"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ServerControl"
                         }
                     }
                 ],
@@ -96,13 +96,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -134,7 +134,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.VersionInfo"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.VersionInfo"
                         }
                     }
                 }
@@ -155,7 +155,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/proto.Workspace"
+                                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Workspace"
                             }
                         }
                     }
@@ -179,7 +179,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.Workspace"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Workspace"
                         }
                     }
                 ],
@@ -187,19 +187,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.Workspace"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Workspace"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -227,19 +227,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.Workspace"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Workspace"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -265,7 +265,7 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -293,19 +293,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.AgentInfo"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.AgentInfo"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -332,7 +332,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.AgentMessage"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.AgentMessage"
                         }
                     }
                 ],
@@ -343,25 +343,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -389,19 +389,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.ActiveAgent"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ActiveAgent"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -429,13 +429,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -470,19 +470,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.AgentSession"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.AgentSession"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -517,13 +517,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -558,19 +558,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.ActiveAgent"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ActiveAgent"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -607,7 +607,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ActiveAgentEditRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ActiveAgentEditRequest"
                         }
                     }
                 ],
@@ -615,25 +615,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.ActiveAgent"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ActiveAgent"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -668,13 +668,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -709,13 +709,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -759,13 +759,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -806,13 +806,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -851,7 +851,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ShellCommandRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ShellCommandRequest"
                         }
                     }
                 ],
@@ -859,25 +859,90 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.ShellCommandResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ShellCommandResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/workspaces/{id}/agent/sessions/{sid}/side-question": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent"
+                ],
+                "summary": "Ask a side question",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Side question",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.SideQuestionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.SideQuestionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -912,13 +977,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -946,13 +1011,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -986,13 +1051,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1021,7 +1086,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigAgentVariantRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigAgentVariantRequest"
                         }
                     }
                 ],
@@ -1032,19 +1097,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1073,7 +1138,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigCompactRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigCompactRequest"
                         }
                     }
                 ],
@@ -1084,19 +1149,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1124,19 +1189,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.ImportCopilotResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ImportCopilotResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1165,7 +1230,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigModelRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigModelRequest"
                         }
                     }
                 ],
@@ -1176,19 +1241,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1217,7 +1282,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigProviderKeyRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigProviderKeyRequest"
                         }
                     }
                 ],
@@ -1228,19 +1293,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1269,7 +1334,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigProviderModelRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigProviderModelRequest"
                         }
                     }
                 ],
@@ -1280,19 +1345,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1321,7 +1386,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigPruneRecentModelsRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigPruneRecentModelsRequest"
                         }
                     }
                 ],
@@ -1332,19 +1397,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1373,7 +1438,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigModelRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigModelRequest"
                         }
                     }
                 ],
@@ -1384,19 +1449,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1425,7 +1490,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigRefreshOAuthRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigRefreshOAuthRequest"
                         }
                     }
                 ],
@@ -1436,19 +1501,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1477,7 +1542,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigRemoveRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigRemoveRequest"
                         }
                     }
                 ],
@@ -1488,19 +1553,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1529,7 +1594,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ConfigSetRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ConfigSetRequest"
                         }
                     }
                 ],
@@ -1540,19 +1605,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1591,7 +1656,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.CurrentSession"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.CurrentSession"
                         }
                     }
                 ],
@@ -1602,13 +1667,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1639,13 +1704,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1692,13 +1757,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1727,7 +1792,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.FileTrackerReadRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.FileTrackerReadRequest"
                         }
                     }
                 ],
@@ -1738,19 +1803,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1780,20 +1845,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
-                                "$ref": "#/definitions/proto.LSPClientInfo"
+                                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.LSPClientInfo"
                             }
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1822,7 +1887,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.LSPStartRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.LSPStartRequest"
                         }
                     }
                 ],
@@ -1833,19 +1898,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1873,13 +1938,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1920,13 +1985,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -1958,7 +2023,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPNameRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest"
                         }
                     }
                 ],
@@ -1966,25 +2031,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPAuthResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPAuthResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2019,13 +2084,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPAuthResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPAuthResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2054,7 +2119,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPNameRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest"
                         }
                     }
                 ],
@@ -2065,19 +2130,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2105,13 +2170,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2139,13 +2204,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2174,7 +2239,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPNameRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest"
                         }
                     }
                 ],
@@ -2185,19 +2250,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2229,7 +2294,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPGetPromptRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPGetPromptRequest"
                         }
                     }
                 ],
@@ -2237,25 +2302,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPGetPromptResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPGetPromptResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2285,20 +2350,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/proto.MCPPendingAuthServer"
+                                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPPendingAuthServer"
                             }
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2328,20 +2393,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/proto.MCPPrompt"
+                                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPPrompt"
                             }
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2373,7 +2438,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPReadResourceRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPReadResourceRequest"
                         }
                     }
                 ],
@@ -2387,19 +2452,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2428,7 +2493,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPNameRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest"
                         }
                     }
                 ],
@@ -2439,19 +2504,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2480,7 +2545,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPNameRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest"
                         }
                     }
                 ],
@@ -2491,19 +2556,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2532,7 +2597,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.MCPNameRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPNameRequest"
                         }
                     }
                 ],
@@ -2543,19 +2608,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2585,20 +2650,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
-                                "$ref": "#/definitions/proto.MCPClientInfo"
+                                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPClientInfo"
                             }
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2635,13 +2700,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2670,7 +2735,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.PermissionGrant"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionGrant"
                         }
                     }
                 ],
@@ -2678,25 +2743,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.PermissionGrantResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionGrantResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2724,19 +2789,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.PermissionModeRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionModeRequest"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2763,7 +2828,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.PermissionModeRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionModeRequest"
                         }
                     }
                 ],
@@ -2774,19 +2839,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2815,7 +2880,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.PermissionUnattendedRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionUnattendedRequest"
                         }
                     }
                 ],
@@ -2826,19 +2891,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2866,19 +2931,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.YoloSkipMergeRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.YoloSkipMergeRequest"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2905,7 +2970,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.YoloSkipMergeRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.YoloSkipMergeRequest"
                         }
                     }
                 ],
@@ -2916,19 +2981,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2956,13 +3021,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -2990,19 +3055,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.ProjectInitPromptResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ProjectInitPromptResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3030,19 +3095,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.ProjectNeedsInitResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ProjectNeedsInitResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3076,13 +3141,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3111,7 +3176,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.QuestionAnswer"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.QuestionAnswer"
                         }
                     }
                 ],
@@ -3119,25 +3184,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.QuestionAnswerResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.QuestionAnswerResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3162,25 +3227,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.QuestionAnswerResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.QuestionAnswerResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3208,19 +3273,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.SandboxStatusResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.SandboxStatusResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3249,7 +3314,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.EnterSandboxRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.EnterSandboxRequest"
                         }
                     }
                 ],
@@ -3260,19 +3325,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3302,20 +3367,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/proto.Session"
+                                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Session"
                             }
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3345,7 +3410,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.Session"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Session"
                         }
                     }
                 ],
@@ -3353,25 +3418,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.Session"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Session"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3406,19 +3471,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.Session"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Session"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3455,7 +3520,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.Session"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Session"
                         }
                     }
                 ],
@@ -3463,25 +3528,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.Session"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Session"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3514,13 +3579,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3564,13 +3629,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3607,20 +3672,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/proto.File"
+                                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.File"
                             }
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3664,13 +3729,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3714,13 +3779,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3755,25 +3820,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.UndoPreview"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoPreview"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3810,7 +3875,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.UndoRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoRequest"
                         }
                     }
                 ],
@@ -3818,31 +3883,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.UndoResult"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoResult"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3872,20 +3937,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/proto.SkillInfo"
+                                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.SkillInfo"
                             }
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3917,7 +3982,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/proto.ReadSkillRequest"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ReadSkillRequest"
                         }
                     }
                 ],
@@ -3925,25 +3990,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/proto.ReadSkillResponse"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.ReadSkillResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/proto.Error"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Error"
                         }
                     }
                 }
@@ -3975,17 +4040,17 @@ const docTemplate = `{
                 }
             }
         },
-        "config.ActiveAgentState": {
+        "github_com_NaturalSelect_angela_internal_config.ActiveAgentState": {
             "type": "object",
             "properties": {
                 "agent": {
                     "type": "string"
                 },
                 "model": {
-                    "$ref": "#/definitions/config.SelectedModel"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel"
                 },
                 "slot": {
-                    "$ref": "#/definitions/config.SlotName"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName"
                 },
                 "think": {
                     "description": "Think is the thinking-mode value the user picked, and is absent\nwhen they never touched it, for the same reason Variant is: a\nmodel's catalog default must keep reaching a session that never\noverrode it.",
@@ -3997,14 +4062,14 @@ const docTemplate = `{
                 }
             }
         },
-        "config.Agent": {
+        "github_com_NaturalSelect_angela_internal_config.Agent": {
             "type": "object",
             "properties": {
                 "allowed_mcp": {
                     "description": "AllowedMCP controls which MCP servers and tools are available,\nwith the same tri-state semantics as AllowedTools. nil means\nthis layer did not mention allowed_mcp.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/config.AllowedMCPSet"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.AllowedMCPSet"
                         }
                     ]
                 },
@@ -4012,7 +4077,7 @@ const docTemplate = `{
                     "description": "AllowedTools controls which tools this layer grants. A nil\nvalue means this layer did not mention allowed_tools (the\nmerge keeps whatever a lower-priority layer set); a non-nil\nvalue is self-describing via its Kind: ToolSetAll grants every\ntool, ToolSetInherited takes the coder's resolved set, and\nToolSetScope grants only Tools. ResolveAgents' output is always\nnon-nil with Kind == ToolSetScope: a fully materialized\nwhitelist with every deny list already applied.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/config.AllowedToolSet"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.AllowedToolSet"
                         }
                     ]
                 },
@@ -4052,7 +4117,7 @@ const docTemplate = `{
                     "description": "Mode controls how the agent can be used. Primary agents are\ntop-level; subagents are launched via the agent tool; a branch is\ndispatched like a subagent but forks the caller's transcript and\nhands the conversation to the user.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/config.AgentMode"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.AgentMode"
                         }
                     ]
                 },
@@ -4064,7 +4129,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "slot": {
-                    "$ref": "#/definitions/config.SlotName"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName"
                 },
                 "temperature": {
                     "description": "Temperature overrides the model's default sampling temperature.",
@@ -4076,7 +4141,7 @@ const docTemplate = `{
                 }
             }
         },
-        "config.AgentMode": {
+        "github_com_NaturalSelect_angela_internal_config.AgentMode": {
             "type": "string",
             "enum": [
                 "primary",
@@ -4089,11 +4154,11 @@ const docTemplate = `{
                 "AgentModeBranch"
             ]
         },
-        "config.AllowedMCPSet": {
+        "github_com_NaturalSelect_angela_internal_config.AllowedMCPSet": {
             "type": "object",
             "properties": {
                 "kind": {
-                    "$ref": "#/definitions/config.ToolSetKind"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ToolSetKind"
                 },
                 "servers": {
                     "type": "object",
@@ -4106,11 +4171,11 @@ const docTemplate = `{
                 }
             }
         },
-        "config.AllowedToolSet": {
+        "github_com_NaturalSelect_angela_internal_config.AllowedToolSet": {
             "type": "object",
             "properties": {
                 "kind": {
-                    "$ref": "#/definitions/config.ToolSetKind"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ToolSetKind"
                 },
                 "tools": {
                     "type": "array",
@@ -4120,7 +4185,7 @@ const docTemplate = `{
                 }
             }
         },
-        "config.Attribution": {
+        "github_com_NaturalSelect_angela_internal_config.Attribution": {
             "type": "object",
             "properties": {
                 "co_authored_by": {
@@ -4130,11 +4195,11 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "trailer_style": {
-                    "$ref": "#/definitions/config.TrailerStyle"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.TrailerStyle"
                 }
             }
         },
-        "config.CompactionOptions": {
+        "github_com_NaturalSelect_angela_internal_config.CompactionOptions": {
             "type": "object",
             "properties": {
                 "auto": {
@@ -4151,7 +4216,7 @@ const docTemplate = `{
                 }
             }
         },
-        "config.Completions": {
+        "github_com_NaturalSelect_angela_internal_config.Completions": {
             "type": "object",
             "properties": {
                 "max_depth": {
@@ -4162,7 +4227,78 @@ const docTemplate = `{
                 }
             }
         },
-        "config.HookConfig": {
+        "github_com_NaturalSelect_angela_internal_config.Config": {
+            "type": "object",
+            "properties": {
+                "$schema": {
+                    "type": "string"
+                },
+                "agents": {
+                    "description": "AgentConfigs holds user-defined agent overrides and custom agents.\nThese are merged over built-in defaults during SetupAgents().",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Agent"
+                    }
+                },
+                "env": {
+                    "description": "Env is a map of environment variables set on startup.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "hooks": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.HookConfig"
+                        }
+                    }
+                },
+                "lsp": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.LSPs"
+                },
+                "mcp": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.MCPs"
+                },
+                "options": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Options"
+                },
+                "permissions": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Permissions"
+                },
+                "providers": {
+                    "description": "The providers that are configured",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_csync.Map-string-github_com_NaturalSelect_angela_internal_config_ProviderConfig"
+                        }
+                    ]
+                },
+                "recent_models": {
+                    "description": "Recently used models. Loaded from and persisted to a sidecar file\nnext to the scope's config file (see recent_models.go) rather than\nthis struct's own JSON encoding, so auto-recorded picks never\ntouch the hand-edited config.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel"
+                        }
+                    }
+                },
+                "slots": {
+                    "description": "Named model configurations. \"main\" and \"chore\" ship as seeds;\nany other name may be defined and referenced by an agent.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel"
+                    }
+                },
+                "tools": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Tools"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.HookConfig": {
             "type": "object",
             "properties": {
                 "command": {
@@ -4183,7 +4319,7 @@ const docTemplate = `{
                 }
             }
         },
-        "config.LSPConfig": {
+        "github_com_NaturalSelect_angela_internal_config.LSPConfig": {
             "type": "object",
             "properties": {
                 "args": {
@@ -4229,13 +4365,13 @@ const docTemplate = `{
                 }
             }
         },
-        "config.LSPs": {
+        "github_com_NaturalSelect_angela_internal_config.LSPs": {
             "type": "object",
             "additionalProperties": {
-                "$ref": "#/definitions/config.LSPConfig"
+                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.LSPConfig"
             }
         },
-        "config.MCPConfig": {
+        "github_com_NaturalSelect_angela_internal_config.MCPConfig": {
             "type": "object",
             "properties": {
                 "args": {
@@ -4295,7 +4431,7 @@ const docTemplate = `{
                     "description": "OAuthToken is the persisted OAuth token for this server. It is\nmanaged internally and stored in the global data config.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/oauth.Token"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_oauth.Token"
                         }
                     ]
                 },
@@ -4303,14 +4439,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "type": {
-                    "$ref": "#/definitions/config.MCPType"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.MCPType"
                 },
                 "url": {
                     "type": "string"
                 }
             }
         },
-        "config.MCPType": {
+        "github_com_NaturalSelect_angela_internal_config.MCPType": {
             "type": "string",
             "enum": [
                 "stdio",
@@ -4323,308 +4459,10 @@ const docTemplate = `{
                 "MCPHttp"
             ]
         },
-        "config.MCPs": {
+        "github_com_NaturalSelect_angela_internal_config.MCPs": {
             "type": "object",
             "additionalProperties": {
-                "$ref": "#/definitions/config.MCPConfig"
-            }
-        },
-        "config.Permissions": {
-            "type": "object",
-            "properties": {
-                "allowed_tools": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "prompt": {
-                    "type": "string"
-                },
-                "rules": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/permission.Rule"
-                    }
-                }
-            }
-        },
-        "config.ProviderModel": {
-            "type": "object",
-            "properties": {
-                "can_reason": {
-                    "type": "boolean"
-                },
-                "context_window": {
-                    "type": "integer"
-                },
-                "cost_per_1m_in": {
-                    "type": "number"
-                },
-                "cost_per_1m_in_cached": {
-                    "type": "number"
-                },
-                "cost_per_1m_out": {
-                    "type": "number"
-                },
-                "cost_per_1m_out_cached": {
-                    "type": "number"
-                },
-                "default_max_tokens": {
-                    "type": "integer"
-                },
-                "default_reasoning_effort": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "options": {
-                    "$ref": "#/definitions/catwalk.ModelOptions"
-                },
-                "reasoning_levels": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "supports_attachments": {
-                    "type": "boolean"
-                },
-                "think": {
-                    "description": "Think sets the default thinking mode for Anthropic-family\nmodels that support it. A session can still flip this with\n/think; Think only decides where a fresh session starts.",
-                    "type": "boolean"
-                },
-                "variants": {
-                    "description": "Variants are named parameter presets over this model. They\noverride only the keys they name, so N models by M presets\nstays N+M configs instead of N*M. Selecting one is how a\nsession overrides this model's defaults for a turn.",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/config.SelectedModelOverride"
-                    }
-                }
-            }
-        },
-        "config.SelectedModel": {
-            "type": "object",
-            "properties": {
-                "model": {
-                    "description": "The model id as used by the provider API.\nRequired.",
-                    "type": "string"
-                },
-                "provider": {
-                    "description": "The model provider, same as the key/id used in the providers config.\nRequired.",
-                    "type": "string"
-                }
-            }
-        },
-        "config.SelectedModelOverride": {
-            "type": "object",
-            "properties": {
-                "frequency_penalty": {
-                    "type": "number"
-                },
-                "max_tokens": {
-                    "type": "integer"
-                },
-                "presence_penalty": {
-                    "type": "number"
-                },
-                "provider_options": {
-                    "description": "ProviderOptions merges key by key: the keys a variant names win,\nthe baseline's other keys survive.",
-                    "type": "object",
-                    "additionalProperties": {}
-                },
-                "reasoning_effort": {
-                    "type": "string"
-                },
-                "temperature": {
-                    "type": "number"
-                },
-                "think": {
-                    "type": "boolean"
-                },
-                "top_k": {
-                    "type": "integer"
-                },
-                "top_p": {
-                    "type": "number"
-                }
-            }
-        },
-        "config.SlotName": {
-            "type": "string",
-            "enum": [
-                "main",
-                "chore"
-            ],
-            "x-enum-varnames": [
-                "SlotMain",
-                "SlotChore"
-            ]
-        },
-        "config.TUIOptions": {
-            "type": "object",
-            "properties": {
-                "compact_mode": {
-                    "type": "boolean"
-                },
-                "completions": {
-                    "$ref": "#/definitions/config.Completions"
-                },
-                "diff_mode": {
-                    "type": "string"
-                },
-                "scrollbar": {
-                    "type": "string"
-                },
-                "transparent": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "config.ToolGlob": {
-            "type": "object",
-            "properties": {
-                "timeout": {
-                    "$ref": "#/definitions/time.Duration"
-                }
-            }
-        },
-        "config.ToolGrep": {
-            "type": "object",
-            "properties": {
-                "timeout": {
-                    "$ref": "#/definitions/time.Duration"
-                }
-            }
-        },
-        "config.ToolLs": {
-            "type": "object",
-            "properties": {
-                "max_depth": {
-                    "type": "integer"
-                },
-                "max_items": {
-                    "type": "integer"
-                }
-            }
-        },
-        "config.ToolSetKind": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-                0,
-                1,
-                2
-            ],
-            "x-enum-varnames": [
-                "ToolSetScope",
-                "ToolSetAll",
-                "ToolSetInherited"
-            ]
-        },
-        "config.Tools": {
-            "type": "object",
-            "properties": {
-                "glob": {
-                    "$ref": "#/definitions/config.ToolGlob"
-                },
-                "grep": {
-                    "$ref": "#/definitions/config.ToolGrep"
-                },
-                "ls": {
-                    "$ref": "#/definitions/config.ToolLs"
-                }
-            }
-        },
-        "config.TrailerStyle": {
-            "type": "string",
-            "enum": [
-                "none",
-                "co-authored-by",
-                "assisted-by"
-            ],
-            "x-enum-varnames": [
-                "TrailerStyleNone",
-                "TrailerStyleCoAuthoredBy",
-                "TrailerStyleAssistedBy"
-            ]
-        },
-        "csync.Map-string-config_ProviderConfig": {
-            "type": "object"
-        },
-        "github_com_NaturalSelect_angela_internal_config.Config": {
-            "type": "object",
-            "properties": {
-                "$schema": {
-                    "type": "string"
-                },
-                "agents": {
-                    "description": "AgentConfigs holds user-defined agent overrides and custom agents.\nThese are merged over built-in defaults during SetupAgents().",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/config.Agent"
-                    }
-                },
-                "env": {
-                    "description": "Env is a map of environment variables set on startup.",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "hooks": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/definitions/config.HookConfig"
-                        }
-                    }
-                },
-                "lsp": {
-                    "$ref": "#/definitions/config.LSPs"
-                },
-                "mcp": {
-                    "$ref": "#/definitions/config.MCPs"
-                },
-                "options": {
-                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Options"
-                },
-                "permissions": {
-                    "$ref": "#/definitions/config.Permissions"
-                },
-                "providers": {
-                    "description": "The providers that are configured",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/csync.Map-string-config_ProviderConfig"
-                        }
-                    ]
-                },
-                "recent_models": {
-                    "description": "Recently used models. Loaded from and persisted to a sidecar file\nnext to the scope's config file (see recent_models.go) rather than\nthis struct's own JSON encoding, so auto-recorded picks never\ntouch the hand-edited config.",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/definitions/config.SelectedModel"
-                        }
-                    }
-                },
-                "slots": {
-                    "description": "Named model configurations. \"main\" and \"chore\" ship as seeds;\nany other name may be defined and referenced by an agent.",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/config.SelectedModel"
-                    }
-                },
-                "tools": {
-                    "$ref": "#/definitions/config.Tools"
-                }
+                "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.MCPConfig"
             }
         },
         "github_com_NaturalSelect_angela_internal_config.Options": {
@@ -4637,13 +4475,13 @@ const docTemplate = `{
                     }
                 },
                 "attribution": {
-                    "$ref": "#/definitions/config.Attribution"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Attribution"
                 },
                 "auto_lsp": {
                     "type": "boolean"
                 },
                 "compaction": {
-                    "$ref": "#/definitions/config.CompactionOptions"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.CompactionOptions"
                 },
                 "context_paths": {
                     "type": "array",
@@ -4713,7 +4551,85 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "tui": {
-                    "$ref": "#/definitions/config.TUIOptions"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.TUIOptions"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.Permissions": {
+            "type": "object",
+            "properties": {
+                "allowed_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "prompt": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_permission.Rule"
+                    }
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.ProviderModel": {
+            "type": "object",
+            "properties": {
+                "can_reason": {
+                    "type": "boolean"
+                },
+                "context_window": {
+                    "type": "integer"
+                },
+                "cost_per_1m_in": {
+                    "type": "number"
+                },
+                "cost_per_1m_in_cached": {
+                    "type": "number"
+                },
+                "cost_per_1m_out": {
+                    "type": "number"
+                },
+                "cost_per_1m_out_cached": {
+                    "type": "number"
+                },
+                "default_max_tokens": {
+                    "type": "integer"
+                },
+                "default_reasoning_effort": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "options": {
+                    "$ref": "#/definitions/catwalk.ModelOptions"
+                },
+                "reasoning_levels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supports_attachments": {
+                    "type": "boolean"
+                },
+                "think": {
+                    "description": "Think sets the default thinking mode for Anthropic-family\nmodels that support it. A session can still flip this with\n/think; Think only decides where a fresh session starts.",
+                    "type": "boolean"
+                },
+                "variants": {
+                    "description": "Variants are named parameter presets over this model. They\noverride only the keys they name, so N models by M presets\nstays N+M configs instead of N*M. Selecting one is how a\nsession overrides this model's defaults for a turn.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModelOverride"
+                    }
                 }
             }
         },
@@ -4730,40 +4646,156 @@ const docTemplate = `{
                 "ScopeEphemeral"
             ]
         },
-        "github_com_NaturalSelect_angela_internal_proto.Message": {
+        "github_com_NaturalSelect_angela_internal_config.SelectedModel": {
             "type": "object",
             "properties": {
-                "created_at": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "is_summary_message": {
-                    "type": "boolean"
-                },
                 "model": {
+                    "description": "The model id as used by the provider API.\nRequired.",
                     "type": "string"
-                },
-                "parts": {
-                    "type": "array",
-                    "items": {}
                 },
                 "provider": {
+                    "description": "The model provider, same as the key/id used in the providers config.\nRequired.",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.SelectedModelOverride": {
+            "type": "object",
+            "properties": {
+                "frequency_penalty": {
+                    "type": "number"
+                },
+                "max_tokens": {
+                    "type": "integer"
+                },
+                "presence_penalty": {
+                    "type": "number"
+                },
+                "provider_options": {
+                    "description": "ProviderOptions merges key by key: the keys a variant names win,\nthe baseline's other keys survive.",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "reasoning_effort": {
                     "type": "string"
                 },
-                "role": {
-                    "$ref": "#/definitions/proto.MessageRole"
+                "temperature": {
+                    "type": "number"
                 },
-                "session_id": {
+                "think": {
+                    "type": "boolean"
+                },
+                "top_k": {
+                    "type": "integer"
+                },
+                "top_p": {
+                    "type": "number"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.SlotName": {
+            "type": "string",
+            "enum": [
+                "main",
+                "chore"
+            ],
+            "x-enum-varnames": [
+                "SlotMain",
+                "SlotChore"
+            ]
+        },
+        "github_com_NaturalSelect_angela_internal_config.TUIOptions": {
+            "type": "object",
+            "properties": {
+                "compact_mode": {
+                    "type": "boolean"
+                },
+                "completions": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Completions"
+                },
+                "diff_mode": {
                     "type": "string"
                 },
-                "updated_at": {
+                "scrollbar": {
+                    "type": "string"
+                },
+                "transparent": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.ToolGlob": {
+            "type": "object",
+            "properties": {
+                "timeout": {
+                    "$ref": "#/definitions/time.Duration"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.ToolGrep": {
+            "type": "object",
+            "properties": {
+                "timeout": {
+                    "$ref": "#/definitions/time.Duration"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.ToolLs": {
+            "type": "object",
+            "properties": {
+                "max_depth": {
+                    "type": "integer"
+                },
+                "max_items": {
                     "type": "integer"
                 }
             }
         },
-        "lsp.ServerState": {
+        "github_com_NaturalSelect_angela_internal_config.ToolSetKind": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+                0,
+                1,
+                2
+            ],
+            "x-enum-varnames": [
+                "ToolSetScope",
+                "ToolSetAll",
+                "ToolSetInherited"
+            ]
+        },
+        "github_com_NaturalSelect_angela_internal_config.Tools": {
+            "type": "object",
+            "properties": {
+                "glob": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ToolGlob"
+                },
+                "grep": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ToolGrep"
+                },
+                "ls": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ToolLs"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_config.TrailerStyle": {
+            "type": "string",
+            "enum": [
+                "none",
+                "co-authored-by",
+                "assisted-by"
+            ],
+            "x-enum-varnames": [
+                "TrailerStyleNone",
+                "TrailerStyleCoAuthoredBy",
+                "TrailerStyleAssistedBy"
+            ]
+        },
+        "github_com_NaturalSelect_angela_internal_csync.Map-string-github_com_NaturalSelect_angela_internal_config_ProviderConfig": {
+            "type": "object"
+        },
+        "github_com_NaturalSelect_angela_internal_lsp.ServerState": {
             "type": "integer",
             "enum": [
                 0,
@@ -4782,7 +4814,7 @@ const docTemplate = `{
                 "StateDisabled"
             ]
         },
-        "oauth.OAuthClient": {
+        "github_com_NaturalSelect_angela_internal_oauth.OAuthClient": {
             "type": "object",
             "properties": {
                 "auth_style": {
@@ -4802,14 +4834,14 @@ const docTemplate = `{
                 }
             }
         },
-        "oauth.Token": {
+        "github_com_NaturalSelect_angela_internal_oauth.Token": {
             "type": "object",
             "properties": {
                 "access_token": {
                     "type": "string"
                 },
                 "client": {
-                    "$ref": "#/definitions/oauth.OAuthClient"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_oauth.OAuthClient"
                 },
                 "expires_at": {
                     "type": "integer"
@@ -4822,7 +4854,7 @@ const docTemplate = `{
                 }
             }
         },
-        "permission.PatternMode": {
+        "github_com_NaturalSelect_angela_internal_permission.PatternMode": {
             "type": "integer",
             "format": "int32",
             "enum": [
@@ -4838,14 +4870,14 @@ const docTemplate = `{
                 "PatternDomain"
             ]
         },
-        "permission.Rule": {
+        "github_com_NaturalSelect_angela_internal_permission.Rule": {
             "type": "object",
             "properties": {
                 "action": {
                     "description": "Action is what to do when the rule matches.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/permission.RuleAction"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_permission.RuleAction"
                         }
                     ]
                 },
@@ -4853,7 +4885,7 @@ const docTemplate = `{
                     "description": "Mode selects how Pattern is compared.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/permission.PatternMode"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_permission.PatternMode"
                         }
                     ]
                 },
@@ -4867,7 +4899,7 @@ const docTemplate = `{
                 }
             }
         },
-        "permission.RuleAction": {
+        "github_com_NaturalSelect_angela_internal_permission.RuleAction": {
             "type": "integer",
             "format": "int32",
             "enum": [
@@ -4881,7 +4913,7 @@ const docTemplate = `{
                 "RuleAllow"
             ]
         },
-        "proto.APIKeyKind": {
+        "github_com_NaturalSelect_angela_internal_proto.APIKeyKind": {
             "type": "string",
             "enum": [
                 "string",
@@ -4892,7 +4924,7 @@ const docTemplate = `{
                 "APIKeyKindOAuth"
             ]
         },
-        "proto.ActiveAgent": {
+        "github_com_NaturalSelect_angela_internal_proto.ActiveAgent": {
             "type": "object",
             "properties": {
                 "agent_id": {
@@ -4902,13 +4934,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "catwalk_cfg": {
-                    "$ref": "#/definitions/config.ProviderModel"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ProviderModel"
                 },
                 "model_cfg": {
-                    "$ref": "#/definitions/config.SelectedModel"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel"
                 },
                 "slot": {
-                    "$ref": "#/definitions/config.SlotName"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName"
                 },
                 "think": {
                     "type": "boolean"
@@ -4918,7 +4950,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ActiveAgentEditRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ActiveAgentEditRequest": {
             "type": "object",
             "properties": {
                 "agent": {
@@ -4926,13 +4958,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "model": {
-                    "$ref": "#/definitions/config.SelectedModel"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel"
                 },
                 "slot": {
                     "description": "Model, when non-nil, replaces the session's model outright, and\nSlot labels which global slot it was taken from.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/config.SlotName"
+                            "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName"
                         }
                     ]
                 },
@@ -4950,7 +4982,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.AgentInfo": {
+        "github_com_NaturalSelect_angela_internal_proto.AgentInfo": {
             "type": "object",
             "properties": {
                 "is_busy": {
@@ -4960,20 +4992,20 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "model": {
-                    "$ref": "#/definitions/config.ProviderModel"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ProviderModel"
                 },
                 "model_cfg": {
-                    "$ref": "#/definitions/config.SelectedModel"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel"
                 }
             }
         },
-        "proto.AgentMessage": {
+        "github_com_NaturalSelect_angela_internal_proto.AgentMessage": {
             "type": "object",
             "properties": {
                 "attachments": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/proto.Attachment"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Attachment"
                     }
                 },
                 "prompt": {
@@ -4987,11 +5019,11 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.AgentSession": {
+        "github_com_NaturalSelect_angela_internal_proto.AgentSession": {
             "type": "object",
             "properties": {
                 "active_agent": {
-                    "$ref": "#/definitions/config.ActiveAgentState"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ActiveAgentState"
                 },
                 "agent": {
                     "type": "string"
@@ -5036,7 +5068,7 @@ const docTemplate = `{
                 "todos": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/proto.Todo"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Todo"
                     }
                 },
                 "updated_at": {
@@ -5044,7 +5076,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.Attachment": {
+        "github_com_NaturalSelect_angela_internal_proto.Attachment": {
             "type": "object",
             "properties": {
                 "content": {
@@ -5064,7 +5096,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ConfigAgentVariantRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigAgentVariantRequest": {
             "type": "object",
             "properties": {
                 "agent_id": {
@@ -5075,7 +5107,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ConfigCompactRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigCompactRequest": {
             "type": "object",
             "properties": {
                 "enabled": {
@@ -5086,21 +5118,21 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ConfigModelRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigModelRequest": {
             "type": "object",
             "properties": {
                 "model": {
-                    "$ref": "#/definitions/config.SelectedModel"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel"
                 },
                 "scope": {
                     "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Scope"
                 },
                 "slot": {
-                    "$ref": "#/definitions/config.SlotName"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName"
                 }
             }
         },
-        "proto.ConfigProviderKeyRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigProviderKeyRequest": {
             "type": "object",
             "properties": {
                 "api_key": {
@@ -5110,7 +5142,7 @@ const docTemplate = `{
                     }
                 },
                 "kind": {
-                    "$ref": "#/definitions/proto.APIKeyKind"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.APIKeyKind"
                 },
                 "provider_id": {
                     "type": "string"
@@ -5120,11 +5152,11 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ConfigProviderModelRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigProviderModelRequest": {
             "type": "object",
             "properties": {
                 "model": {
-                    "$ref": "#/definitions/config.ProviderModel"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ProviderModel"
                 },
                 "provider_id": {
                     "type": "string"
@@ -5134,24 +5166,24 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ConfigPruneRecentModelsRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigPruneRecentModelsRequest": {
             "type": "object",
             "properties": {
                 "scope": {
                     "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.Scope"
                 },
                 "slot": {
-                    "$ref": "#/definitions/config.SlotName"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SlotName"
                 },
                 "stale": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/config.SelectedModel"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.SelectedModel"
                     }
                 }
             }
         },
-        "proto.ConfigRefreshOAuthRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigRefreshOAuthRequest": {
             "type": "object",
             "properties": {
                 "provider_id": {
@@ -5162,7 +5194,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ConfigRemoveRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigRemoveRequest": {
             "type": "object",
             "properties": {
                 "key": {
@@ -5173,7 +5205,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ConfigSetRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ConfigSetRequest": {
             "type": "object",
             "properties": {
                 "key": {
@@ -5185,7 +5217,7 @@ const docTemplate = `{
                 "value": {}
             }
         },
-        "proto.CurrentSession": {
+        "github_com_NaturalSelect_angela_internal_proto.CurrentSession": {
             "type": "object",
             "properties": {
                 "session_id": {
@@ -5193,7 +5225,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.EnterSandboxRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.EnterSandboxRequest": {
             "type": "object",
             "properties": {
                 "allow_network": {
@@ -5213,7 +5245,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.Error": {
+        "github_com_NaturalSelect_angela_internal_proto.Error": {
             "type": "object",
             "properties": {
                 "message": {
@@ -5221,7 +5253,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.File": {
+        "github_com_NaturalSelect_angela_internal_proto.File": {
             "type": "object",
             "properties": {
                 "content": {
@@ -5247,7 +5279,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.FileTrackerReadRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.FileTrackerReadRequest": {
             "type": "object",
             "properties": {
                 "path": {
@@ -5258,7 +5290,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ImportCopilotResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.ImportCopilotResponse": {
             "type": "object",
             "properties": {
                 "success": {
@@ -5267,7 +5299,7 @@ const docTemplate = `{
                 "token": {}
             }
         },
-        "proto.LSPClientInfo": {
+        "github_com_NaturalSelect_angela_internal_proto.LSPClientInfo": {
             "type": "object",
             "properties": {
                 "connected_at": {
@@ -5281,11 +5313,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "state": {
-                    "$ref": "#/definitions/lsp.ServerState"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_lsp.ServerState"
                 }
             }
         },
-        "proto.LSPStartRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.LSPStartRequest": {
             "type": "object",
             "properties": {
                 "path": {
@@ -5293,7 +5325,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPAuthResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPAuthResponse": {
             "type": "object",
             "properties": {
                 "auth_url": {
@@ -5302,7 +5334,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPClientInfo": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPClientInfo": {
             "type": "object",
             "properties": {
                 "connected_at": {
@@ -5319,14 +5351,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "state": {
-                    "$ref": "#/definitions/proto.MCPState"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPState"
                 },
                 "tool_count": {
                     "type": "integer"
                 }
             }
         },
-        "proto.MCPGetPromptRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPGetPromptRequest": {
             "type": "object",
             "properties": {
                 "args": {
@@ -5343,7 +5375,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPGetPromptResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPGetPromptResponse": {
             "type": "object",
             "properties": {
                 "prompt": {
@@ -5351,7 +5383,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPNameRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPNameRequest": {
             "type": "object",
             "properties": {
                 "name": {
@@ -5359,7 +5391,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPPendingAuthServer": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPPendingAuthServer": {
             "type": "object",
             "properties": {
                 "name": {
@@ -5370,13 +5402,13 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPPrompt": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPPrompt": {
             "type": "object",
             "properties": {
                 "arguments": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/proto.MCPPromptArgument"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MCPPromptArgument"
                     }
                 },
                 "client_id": {
@@ -5396,7 +5428,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPPromptArgument": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPPromptArgument": {
             "type": "object",
             "properties": {
                 "description": {
@@ -5413,7 +5445,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPReadResourceRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPReadResourceRequest": {
             "type": "object",
             "properties": {
                 "name": {
@@ -5424,7 +5456,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.MCPState": {
+        "github_com_NaturalSelect_angela_internal_proto.MCPState": {
             "type": "integer",
             "enum": [
                 0,
@@ -5441,7 +5473,40 @@ const docTemplate = `{
                 "MCPStateNeedsAuth"
             ]
         },
-        "proto.MessageRole": {
+        "github_com_NaturalSelect_angela_internal_proto.Message": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_summary_message": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "parts": {
+                    "type": "array",
+                    "items": {}
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "role": {
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.MessageRole"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_proto.MessageRole": {
             "type": "string",
             "enum": [
                 "assistant",
@@ -5456,7 +5521,7 @@ const docTemplate = `{
                 "Tool"
             ]
         },
-        "proto.PermissionAction": {
+        "github_com_NaturalSelect_angela_internal_proto.PermissionAction": {
             "type": "string",
             "enum": [
                 "allow",
@@ -5469,18 +5534,18 @@ const docTemplate = `{
                 "PermissionDeny"
             ]
         },
-        "proto.PermissionGrant": {
+        "github_com_NaturalSelect_angela_internal_proto.PermissionGrant": {
             "type": "object",
             "properties": {
                 "action": {
-                    "$ref": "#/definitions/proto.PermissionAction"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionAction"
                 },
                 "permission": {
-                    "$ref": "#/definitions/proto.PermissionRequest"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.PermissionRequest"
                 }
             }
         },
-        "proto.PermissionGrantResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.PermissionGrantResponse": {
             "type": "object",
             "properties": {
                 "resolved": {
@@ -5488,7 +5553,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.PermissionModeRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.PermissionModeRequest": {
             "type": "object",
             "properties": {
                 "mode": {
@@ -5496,7 +5561,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.PermissionRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.PermissionRequest": {
             "type": "object",
             "properties": {
                 "action": {
@@ -5527,7 +5592,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.PermissionUnattendedRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.PermissionUnattendedRequest": {
             "type": "object",
             "properties": {
                 "session_id": {
@@ -5538,7 +5603,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ProjectInitPromptResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.ProjectInitPromptResponse": {
             "type": "object",
             "properties": {
                 "prompt": {
@@ -5546,7 +5611,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ProjectNeedsInitResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.ProjectNeedsInitResponse": {
             "type": "object",
             "properties": {
                 "needs_init": {
@@ -5554,7 +5619,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.QuestionAnswer": {
+        "github_com_NaturalSelect_angela_internal_proto.QuestionAnswer": {
             "type": "object",
             "properties": {
                 "batch_request_id": {
@@ -5563,12 +5628,12 @@ const docTemplate = `{
                 "responses": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/proto.QuestionResponse"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.QuestionResponse"
                     }
                 }
             }
         },
-        "proto.QuestionAnswerResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.QuestionAnswerResponse": {
             "type": "object",
             "properties": {
                 "resolved": {
@@ -5576,7 +5641,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.QuestionResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.QuestionResponse": {
             "type": "object",
             "properties": {
                 "fill_in_text": {
@@ -5602,7 +5667,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ReadSkillRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ReadSkillRequest": {
             "type": "object",
             "properties": {
                 "skill_id": {
@@ -5610,7 +5675,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ReadSkillResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.ReadSkillResponse": {
             "type": "object",
             "properties": {
                 "content": {
@@ -5620,11 +5685,11 @@ const docTemplate = `{
                     }
                 },
                 "result": {
-                    "$ref": "#/definitions/proto.SkillReadResult"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.SkillReadResult"
                 }
             }
         },
-        "proto.SandboxStatusResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.SandboxStatusResponse": {
             "type": "object",
             "properties": {
                 "in_sandbox": {
@@ -5632,7 +5697,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ServerControl": {
+        "github_com_NaturalSelect_angela_internal_proto.ServerControl": {
             "type": "object",
             "properties": {
                 "command": {
@@ -5640,11 +5705,11 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.Session": {
+        "github_com_NaturalSelect_angela_internal_proto.Session": {
             "type": "object",
             "properties": {
                 "active_agent": {
-                    "$ref": "#/definitions/config.ActiveAgentState"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_config.ActiveAgentState"
                 },
                 "agent": {
                     "type": "string"
@@ -5685,7 +5750,7 @@ const docTemplate = `{
                 "todos": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/proto.Todo"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.Todo"
                     }
                 },
                 "updated_at": {
@@ -5693,7 +5758,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ShellCommandRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.ShellCommandRequest": {
             "type": "object",
             "properties": {
                 "command": {
@@ -5707,7 +5772,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.ShellCommandResponse": {
+        "github_com_NaturalSelect_angela_internal_proto.ShellCommandResponse": {
             "type": "object",
             "properties": {
                 "exit_code": {
@@ -5718,7 +5783,26 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.SkillDiscoveryState": {
+        "github_com_NaturalSelect_angela_internal_proto.SideQuestionRequest": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_proto.SideQuestionResponse": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_NaturalSelect_angela_internal_proto.SkillDiscoveryState": {
             "type": "integer",
             "enum": [
                 0,
@@ -5729,7 +5813,7 @@ const docTemplate = `{
                 "SkillStateError"
             ]
         },
-        "proto.SkillInfo": {
+        "github_com_NaturalSelect_angela_internal_proto.SkillInfo": {
             "type": "object",
             "properties": {
                 "description": {
@@ -5752,7 +5836,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.SkillReadResult": {
+        "github_com_NaturalSelect_angela_internal_proto.SkillReadResult": {
             "type": "object",
             "properties": {
                 "builtin": {
@@ -5769,7 +5853,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.SkillState": {
+        "github_com_NaturalSelect_angela_internal_proto.SkillState": {
             "type": "object",
             "properties": {
                 "error": {
@@ -5782,11 +5866,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "state": {
-                    "$ref": "#/definitions/proto.SkillDiscoveryState"
+                    "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.SkillDiscoveryState"
                 }
             }
         },
-        "proto.Todo": {
+        "github_com_NaturalSelect_angela_internal_proto.Todo": {
             "type": "object",
             "properties": {
                 "active_form": {
@@ -5800,7 +5884,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.UndoPreview": {
+        "github_com_NaturalSelect_angela_internal_proto.UndoPreview": {
             "type": "object",
             "properties": {
                 "cut_message_id": {
@@ -5828,12 +5912,12 @@ const docTemplate = `{
                 "skipped": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/proto.UndoSkippedFile"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoSkippedFile"
                     }
                 }
             }
         },
-        "proto.UndoRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.UndoRequest": {
             "type": "object",
             "properties": {
                 "cut_message_id": {
@@ -5841,7 +5925,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.UndoResult": {
+        "github_com_NaturalSelect_angela_internal_proto.UndoResult": {
             "type": "object",
             "properties": {
                 "deleted": {
@@ -5865,12 +5949,12 @@ const docTemplate = `{
                 "skipped": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/proto.UndoSkippedFile"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.UndoSkippedFile"
                     }
                 }
             }
         },
-        "proto.UndoSkippedFile": {
+        "github_com_NaturalSelect_angela_internal_proto.UndoSkippedFile": {
             "type": "object",
             "properties": {
                 "path": {
@@ -5881,7 +5965,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.VersionInfo": {
+        "github_com_NaturalSelect_angela_internal_proto.VersionInfo": {
             "type": "object",
             "properties": {
                 "build_id": {
@@ -5901,7 +5985,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.Workspace": {
+        "github_com_NaturalSelect_angela_internal_proto.Workspace": {
             "type": "object",
             "properties": {
                 "channels": {
@@ -5947,7 +6031,7 @@ const docTemplate = `{
                     "description": "Skills carries the snapshot of skill discovery state at workspace\ncreation time. Subsequent updates flow through the SSE event\nstream.",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/proto.SkillState"
+                        "$ref": "#/definitions/github_com_NaturalSelect_angela_internal_proto.SkillState"
                     }
                 },
                 "version": {
@@ -5955,7 +6039,7 @@ const docTemplate = `{
                 }
             }
         },
-        "proto.YoloSkipMergeRequest": {
+        "github_com_NaturalSelect_angela_internal_proto.YoloSkipMergeRequest": {
             "type": "object",
             "properties": {
                 "enabled": {

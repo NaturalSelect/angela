@@ -575,6 +575,28 @@ func (c *Client) RunShellCommand(ctx context.Context, id, sessionID, command str
 	return resp, nil
 }
 
+// AgentAskSideQuestion answers a one-off question from a session's
+// existing context, concurrently with any turn already running on it,
+// without adding the question or its answer to the session's message
+// history.
+func (c *Client) AgentAskSideQuestion(ctx context.Context, id, sessionID, question string) (proto.SideQuestionResponse, error) {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/side-question", id, sessionID), nil, jsonBody(proto.SideQuestionRequest{
+		Question: question,
+	}), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return proto.SideQuestionResponse{}, fmt.Errorf("failed to ask side question: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return proto.SideQuestionResponse{}, fmt.Errorf("failed to ask side question: status code %d", rsp.StatusCode)
+	}
+	var resp proto.SideQuestionResponse
+	if err := json.NewDecoder(rsp.Body).Decode(&resp); err != nil {
+		return proto.SideQuestionResponse{}, fmt.Errorf("failed to decode side question response: %w", err)
+	}
+	return resp, nil
+}
+
 // GetAgentSessionInfo retrieves the agent session info for a workspace.
 func (c *Client) GetAgentSessionInfo(ctx context.Context, id string, sessionID string) (*proto.AgentSession, error) {
 	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s", id, sessionID), nil, nil)

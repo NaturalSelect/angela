@@ -100,6 +100,16 @@ type (
 	ActionSummarize                   struct {
 		SessionID string
 	}
+	// ActionAskSideQuestion asks a one-off question from a session's
+	// existing context, concurrently with any turn already running
+	// on it, without adding the question or its answer to the
+	// session's message history. An empty Question means the user
+	// picked the command from the palette but has not typed the
+	// question yet, so the caller should prompt for it.
+	ActionAskSideQuestion struct {
+		SessionID string
+		Question  string
+	}
 	// ActionUndo asks for a preview of undoing sessionID's last turn,
 	// to be shown in a confirmation dialog before anything is reverted.
 	ActionUndo struct {

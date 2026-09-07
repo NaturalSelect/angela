@@ -804,6 +804,12 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			cmds = append(cmds, util.ReportInfo("Undid last turn"))
 		}
+	case sideQuestionAnsweredMsg:
+		if msg.err != nil {
+			cmds = append(cmds, util.ReportError(msg.err))
+			break
+		}
+		m.dialog.OpenDialogWithGrace(dialog.NewSideQuestion(m.com, msg.question, msg.answer))
 	case transparentToggledMsg:
 		m.isTransparent = msg.on
 		status := "disabled"
@@ -2346,6 +2352,21 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionAttachSkill:
 		m.dialog.CloseFrontDialog()
 		cmds = append(cmds, m.attachSkill(msg.ID, msg.Name))
+	case dialog.ActionAskSideQuestion:
+		if strings.TrimSpace(msg.Question) == "" {
+			m.dialog.CloseFrontDialog()
+			argsDialog := dialog.NewArguments(
+				m.com,
+				"Side Question",
+				"Answered from the current conversation only — no tools, and it never enters the session history.",
+				[]commands.Argument{{ID: "QUESTION", Title: "Question", Required: true}},
+				msg, // Pass the action as the result
+			)
+			m.dialog.OpenDialog(argsDialog)
+			break
+		}
+		cmds = append(cmds, util.ReportInfo("Asking side question…"), m.askSideQuestion(msg.SessionID, msg.Question))
+		m.dialog.CloseFrontDialog()
 	case dialog.ActionRunMCPPrompt:
 		if len(msg.Arguments) > 0 && msg.Args == nil {
 			m.dialog.CloseFrontDialog()

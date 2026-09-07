@@ -36,6 +36,10 @@ type fakeCoordinator struct {
 
 	summarizeErr   error
 	summarizeCalls []string
+
+	sideQuestionAnswer string
+	sideQuestionErr    error
+	sideQuestionCalls  []string
 }
 
 func (c *fakeCoordinator) Run(context.Context, string, string, ...message.Attachment) (*fantasy.AgentResult, error) {
@@ -100,3 +104,8 @@ func (c *fakeCoordinator) GenerateAgent(context.Context, string) (config.Agent, 
 
 func (c *fakeCoordinator) SwitchAgent(context.Context, string, string) error   { return nil }
 func (c *fakeCoordinator) SwitchVariant(context.Context, string, string) error { return nil }
+
+func (c *fakeCoordinator) AskSideQuestion(ctx context.Context, sessionID, question string) (string, error) {
+	c.sideQuestionCalls = append(c.sideQuestionCalls, sessionID)
+	return c.sideQuestionAnswer, c.sideQuestionErr
+}

@@ -158,6 +158,11 @@ type Coordinator interface {
 	QueuedPromptsList(sessionID string) []string
 	ClearQueue(sessionID string)
 	Summarize(ctx context.Context, sessionID string) error
+	// AskSideQuestion answers a one-off question from a session's
+	// existing context, concurrently with any turn already running on
+	// it, without adding the question or its answer to the session's
+	// message history.
+	AskSideQuestion(ctx context.Context, sessionID, question string) (string, error)
 
 	// DefaultModel reports what a brand new session would run on.
 	// Callers asking what a specific session runs want ActiveAgent.

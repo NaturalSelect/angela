@@ -165,6 +165,18 @@ type ShellCommandResponse struct {
 	ExitCode int    `json:"exit_code"`
 }
 
+// SideQuestionRequest represents a one-off question answered from the
+// session's existing context without tools or history writes.
+type SideQuestionRequest struct {
+	SessionID string `json:"session_id"`
+	Question  string `json:"question"`
+}
+
+// SideQuestionResponse carries the side question's answer.
+type SideQuestionResponse struct {
+	Answer string `json:"answer"`
+}
+
 // AgentSession represents a session with its busy status.
 type AgentSession struct {
 	Session

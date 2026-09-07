@@ -39,7 +39,10 @@ func TestAppWorkspace_Agent_NilCoordinator(t *testing.T) {
 
 	require.Error(t, fx.ws.AgentSummarize(t.Context(), "sess-1"))
 
-	_, err := fx.ws.AgentActive(t.Context(), "sess-1")
+	_, err := fx.ws.AgentAskSideQuestion(t.Context(), "sess-1", "hi")
+	require.Error(t, err)
+
+	_, err = fx.ws.AgentActive(t.Context(), "sess-1")
 	require.Error(t, err)
 
 	_, err = fx.ws.AgentEditActive(t.Context(), "sess-1", config.ActiveAgentEdit{})
@@ -153,6 +156,30 @@ func TestAppWorkspace_AgentSummarize(t *testing.T) {
 		fx.coord.EXPECT().Summarize(gomock.Any(), "sess-1").Return(boom)
 
 		require.ErrorIs(t, fx.ws.AgentSummarize(t.Context(), "sess-1"), boom)
+	})
+}
+
+func TestAppWorkspace_AgentAskSideQuestion(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		fx.coord.EXPECT().AskSideQuestion(gomock.Any(), "sess-1", "what now?").Return("here's the answer", nil)
+
+		got, err := fx.ws.AgentAskSideQuestion(t.Context(), "sess-1", "what now?")
+		require.NoError(t, err)
+		require.Equal(t, "here's the answer", got)
+	})
+
+	t.Run("propagates coordinator error", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		boom := errors.New("side question failed")
+		fx.coord.EXPECT().AskSideQuestion(gomock.Any(), "sess-1", "what now?").Return("", boom)
+
+		_, err := fx.ws.AgentAskSideQuestion(t.Context(), "sess-1", "what now?")
+		require.ErrorIs(t, err, boom)
 	})
 }
 

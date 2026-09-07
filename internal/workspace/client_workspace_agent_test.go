@@ -215,6 +215,44 @@ func TestClientWorkspace_AgentClearQueue(t *testing.T) {
 	require.Equal(t, "/v1/workspaces/ws-1/agent/sessions/s1/prompts/clear", gotPath)
 }
 
+func TestClientWorkspace_AgentAskSideQuestion(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "success"},
+		{name: "server error", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/v1/workspaces/ws-1/agent/sessions/s1/side-question", r.URL.Path)
+				if tc.wantErr {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				var req proto.SideQuestionRequest
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+				require.Equal(t, "what now?", req.Question)
+				require.NoError(t, json.NewEncoder(w).Encode(proto.SideQuestionResponse{Answer: "here's the answer"}))
+			})
+
+			got, err := ws.AgentAskSideQuestion(t.Context(), "s1", "what now?")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "here's the answer", got)
+		})
+	}
+}
+
 func TestClientWorkspace_AgentActive_ServerError(t *testing.T) {
 	t.Parallel()
 

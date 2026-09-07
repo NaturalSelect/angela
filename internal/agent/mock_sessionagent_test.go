@@ -190,6 +190,21 @@ func (mr *MockSessionAgentMockRecorder) Run(arg0, arg1 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Run", reflect.TypeOf((*MockSessionAgent)(nil).Run), arg0, arg1)
 }
 
+// SideQuestion mocks base method.
+func (m *MockSessionAgent) SideQuestion(ctx context.Context, sessionID, question string, resolved resolvedAgent, opts fantasy.ProviderOptions) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SideQuestion", ctx, sessionID, question, resolved, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SideQuestion indicates an expected call of SideQuestion.
+func (mr *MockSessionAgentMockRecorder) SideQuestion(ctx, sessionID, question, resolved, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SideQuestion", reflect.TypeOf((*MockSessionAgent)(nil).SideQuestion), ctx, sessionID, question, resolved, opts)
+}
+
 // Summarize mocks base method.
 func (m *MockSessionAgent) Summarize(arg0 context.Context, arg1 string, arg2 resolvedAgent, arg3 fantasy.ProviderOptions, arg4 func(context.Context, *fantasy.ProviderError) error) error {
 	m.ctrl.T.Helper()

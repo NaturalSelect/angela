@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
@@ -173,7 +174,15 @@ func (a *Agents) HandleMsg(msg tea.Msg) Action {
 
 // Cursor returns the cursor position relative to the dialog.
 func (a *Agents) Cursor() *tea.Cursor {
-	return InputCursor(a.com.Styles, a.input.Cursor())
+	cur := a.input.Cursor()
+	if cur != nil {
+		// textinput.Cursor() offsets X by rune count, not display width;
+		// correct for double-width runes (CJK).
+		value := []rune(a.input.Value())
+		n := a.input.Position()
+		cur.X += lipgloss.Width(string(value[:n])) - n
+	}
+	return InputCursor(a.com.Styles, cur)
 }
 
 // Draw implements [Dialog].

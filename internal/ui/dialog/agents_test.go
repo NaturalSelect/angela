@@ -293,3 +293,28 @@ func TestAgentItem_SetFocusedAndSetMatchDedupe(t *testing.T) {
 	item.SetMatch(m)
 	require.Equal(t, afterMatch, item.Version(), "an identical match must not bump")
 }
+
+// TestAgents_CursorAccountsForWideRunes verifies the filter input's
+// screen cursor lands past double-width runes (CJK text) by their
+// real display width, not by rune count.
+func TestAgents_CursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	aASCII := newTestAgents(t, "")
+	for _, r := range "abc" {
+		aASCII.HandleMsg(keyMsg(r))
+	}
+	curASCII := aASCII.Cursor()
+	require.NotNil(t, curASCII)
+
+	aCJK := newTestAgents(t, "")
+	for _, r := range "不好呀" {
+		aCJK.HandleMsg(keyMsg(r))
+	}
+	curCJK := aCJK.Cursor()
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+

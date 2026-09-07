@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
@@ -170,7 +171,15 @@ func (d *MCPServers) HandleMsg(msg tea.Msg) Action {
 
 // Cursor returns the cursor position relative to the dialog.
 func (d *MCPServers) Cursor() *tea.Cursor {
-	return InputCursor(d.com.Styles, d.input.Cursor())
+	cur := d.input.Cursor()
+	if cur != nil {
+		// textinput.Cursor() offsets X by rune count, not display width;
+		// correct for double-width runes (CJK).
+		value := []rune(d.input.Value())
+		n := d.input.Position()
+		cur.X += lipgloss.Width(string(value[:n])) - n
+	}
+	return InputCursor(d.com.Styles, cur)
 }
 
 // ShortHelp implements [help.KeyMap].

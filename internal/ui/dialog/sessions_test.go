@@ -360,3 +360,28 @@ func TestSessions_Help(t *testing.T) {
 	require.ElementsMatch(t, []string{"enter", "esc"}, keys())
 	require.NotEmpty(t, d.FullHelp())
 }
+
+// TestSessions_CursorAccountsForWideRunes verifies the filter
+// input's screen cursor lands past double-width runes (CJK text) by
+// their real display width, not by rune count.
+func TestSessions_CursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	dASCII, _ := newTestSessions(t, twoTestSessions(), "s1")
+	for _, r := range "abc" {
+		dASCII.HandleMsg(keyMsg(r))
+	}
+	curASCII := dASCII.Cursor()
+	require.NotNil(t, curASCII)
+
+	dCJK, _ := newTestSessions(t, twoTestSessions(), "s1")
+	for _, r := range "不好呀" {
+		dCJK.HandleMsg(keyMsg(r))
+	}
+	curCJK := dCJK.Cursor()
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+

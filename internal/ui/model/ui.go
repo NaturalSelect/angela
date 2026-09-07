@@ -805,11 +805,36 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, util.ReportInfo("Undid last turn"))
 		}
 	case sideQuestionAnsweredMsg:
-		if msg.err != nil {
-			cmds = append(cmds, util.ReportError(msg.err))
-			break
+		completed := false
+		if item := m.chat.MessageItem(msg.pendingID); item != nil {
+			if sq, ok := item.(*chat.SideQuestionItem); ok {
+				if msg.err != nil {
+					sq.Fail(msg.err)
+				} else {
+					sq.Complete(msg.answer)
+				}
+				if m.chat.Follow() {
+					if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+				}
+				completed = true
+			}
 		}
-		m.dialog.OpenDialogWithGrace(dialog.NewSideQuestion(m.com, msg.question, msg.answer))
+		if !completed {
+			if msg.err != nil {
+				cmds = append(cmds, util.ReportError(msg.err))
+				break
+			}
+			if m.hasSession() && m.session.ID == msg.sessionID {
+				item := chat.NewPendingSideQuestionItem(m.com.Styles, msg.question)
+				item.Complete(msg.answer)
+				m.chat.AppendMessages(item)
+				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		}
 	case transparentToggledMsg:
 		m.isTransparent = msg.on
 		status := "disabled"
@@ -2365,7 +2390,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			m.dialog.OpenDialog(argsDialog)
 			break
 		}
-		cmds = append(cmds, util.ReportInfo("Asking side question…"), m.askSideQuestion(msg.SessionID, msg.Question))
+		cmds = append(cmds, m.askSideQuestion(msg.SessionID, msg.Question))
 		m.dialog.CloseFrontDialog()
 	case dialog.ActionRunMCPPrompt:
 		if len(msg.Arguments) > 0 && msg.Args == nil {

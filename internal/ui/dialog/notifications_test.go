@@ -227,3 +227,28 @@ func TestNotificationItem_RenderIncludesTitle(t *testing.T) {
 		}
 	}
 }
+
+// TestNotifications_CursorAccountsForWideRunes verifies the filter
+// input's screen cursor lands past double-width runes (CJK text) by
+// their real display width, not by rune count.
+func TestNotifications_CursorAccountsForWideRunes(t *testing.T) {
+	t.Parallel()
+
+	nASCII := newTestNotifications(t, "")
+	for _, r := range "abc" {
+		nASCII.HandleMsg(keyMsg(r))
+	}
+	curASCII := nASCII.Cursor()
+	require.NotNil(t, curASCII)
+
+	nCJK := newTestNotifications(t, "")
+	for _, r := range "不好呀" {
+		nCJK.HandleMsg(keyMsg(r))
+	}
+	curCJK := nCJK.Cursor()
+	require.NotNil(t, curCJK)
+
+	require.Equal(t, curASCII.X+3, curCJK.X,
+		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
+}
+

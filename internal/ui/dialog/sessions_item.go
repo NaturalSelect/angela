@@ -102,7 +102,15 @@ func (s *SessionItem) HandleInput(msg tea.Msg) tea.Cmd {
 
 // Cursor returns the cursor of the update title input
 func (s *SessionItem) Cursor() *tea.Cursor {
-	return s.updateTitleInput.Cursor()
+	cur := s.updateTitleInput.Cursor()
+	if cur != nil {
+		// textinput.Cursor() offsets X by rune count, not display width;
+		// correct for double-width runes (CJK).
+		value := []rune(s.updateTitleInput.Value())
+		n := s.updateTitleInput.Position()
+		cur.X += lipgloss.Width(string(value[:n])) - n
+	}
+	return cur
 }
 
 // InfoText returns the secondary text shown on the right of the item.

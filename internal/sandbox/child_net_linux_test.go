@@ -77,6 +77,8 @@ func TestMain(m *testing.M) {
 		runChildExecLauncher([]string{os.Args[0], os.Args[0]})
 	case os.Getenv(dialCheckEnv) == "1":
 		os.Exit(runDialCheckProcess())
+	case os.Getenv(devFilesHelperEnv) == "1":
+		os.Exit(runDevFilesHelperProcess())
 	default:
 		os.Exit(m.Run())
 	}

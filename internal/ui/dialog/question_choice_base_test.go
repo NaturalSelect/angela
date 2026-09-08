@@ -245,3 +245,74 @@ func TestFillInBarFollowsSelection(t *testing.T) {
 			"in hover mode the bar belongs to the hovered choice")
 	})
 }
+
+// TestChoiceList_FillInCursorRelativeToArea verifies the fill-in
+// cursor returned by Draw is relative to the drawing area, not
+// polluted by the area's absolute screen offset. Regression test:
+// fillInCursor used to add the area's absolute Min.X into the
+// cursor it returns, and the caller (UI.Cursor) added Min.X again
+// on top, so the terminal cursor drifted far to the right of the
+// typed text whenever the dialog wasn't flush against the screen's
+// left edge.
+func TestChoiceList_FillInCursorRelativeToArea(t *testing.T) {
+	t.Parallel()
+
+	typeText := func(d *SingleChoice, text string) {
+		d.cursorIdx = len(d.Request.Choices)
+		d.fillIn.Focus()
+		for _, r := range text {
+			d.HandleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+	}
+
+	const w, h = 45, 14
+	origin := newTestSingleChoice(t)
+	typeText(origin, "看起来")
+	scrOrigin := uv.NewScreenBuffer(w, h)
+	curOrigin := origin.Draw(scrOrigin, image.Rect(0, 0, w, h))
+	require.NotNil(t, curOrigin)
+
+	const offsetX, offsetY = 20, 3
+	offset := newTestSingleChoice(t)
+	typeText(offset, "看起来")
+	scrOffset := uv.NewScreenBuffer(offsetX+w, offsetY+h)
+	curOffset := offset.Draw(scrOffset, image.Rect(offsetX, offsetY, offsetX+w, offsetY+h))
+	require.NotNil(t, curOffset)
+
+	require.Equal(t, curOrigin.X, curOffset.X,
+		"the cursor must be relative to the area regardless of the area's absolute screen position")
+	require.Less(t, curOffset.X, w, "cursor must stay within the area, not include its absolute offset")
+}
+
+// TestChoiceList_NoteCursorRelativeToArea is the note-editor
+// counterpart of TestChoiceList_FillInCursorRelativeToArea:
+// noteCursor had the identical absolute-offset bug.
+func TestChoiceList_NoteCursorRelativeToArea(t *testing.T) {
+	t.Parallel()
+
+	openNoteAndType := func(d *SingleChoice, text string) {
+		d.cursorIdx = 0
+		d.openNote(d.noteKey())
+		for _, r := range text {
+			d.HandleKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+	}
+
+	const w, h = 45, 14
+	origin := newTestSingleChoice(t)
+	openNoteAndType(origin, "看起来")
+	scrOrigin := uv.NewScreenBuffer(w, h)
+	curOrigin := origin.Draw(scrOrigin, image.Rect(0, 0, w, h))
+	require.NotNil(t, curOrigin)
+
+	const offsetX, offsetY = 20, 3
+	offset := newTestSingleChoice(t)
+	openNoteAndType(offset, "看起来")
+	scrOffset := uv.NewScreenBuffer(offsetX+w, offsetY+h)
+	curOffset := offset.Draw(scrOffset, image.Rect(offsetX, offsetY, offsetX+w, offsetY+h))
+	require.NotNil(t, curOffset)
+
+	require.Equal(t, curOrigin.X, curOffset.X,
+		"the note cursor must be relative to the area regardless of the area's absolute screen position")
+	require.Less(t, curOffset.X, w, "cursor must stay within the area, not include its absolute offset")
+}

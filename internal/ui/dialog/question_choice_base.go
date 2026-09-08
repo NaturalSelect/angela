@@ -507,13 +507,13 @@ func (c *choiceList) drawContent(scr uv.Screen, area uv.Rectangle, fillInPrefix 
 		}
 		if ln.fillInRow {
 			fillPrefix := c.Styles.Editor.QuestionBody.Render("> ")
-			if tc := c.fillInCursor(screenRow, area.Min.X, lipgloss.Width(fillPrefix)); tc != nil {
+			if tc := c.fillInCursor(screenRow, lipgloss.Width(fillPrefix)); tc != nil {
 				cur = tc
 			}
 		}
 		if ln.noteRow {
 			const notePrefix = "> "
-			if tc := c.noteCursor(screenRow, area.Min.X, lipgloss.Width(notePrefix)); tc != nil {
+			if tc := c.noteCursor(screenRow, lipgloss.Width(notePrefix)); tc != nil {
 				cur = tc
 			}
 		}

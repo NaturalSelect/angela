@@ -1548,9 +1548,11 @@ func TestInitialize_DisabledServerSkipsConnectionAttempt(t *testing.T) {
 	}
 }
 
-// TestInitializeSingle covers InitializeSingle's two guard branches that
-// don't require a real connection: an unknown server errors, and a disabled
-// one records StateDisabled and returns without attempting to connect.
+// TestInitializeSingle covers InitializeSingle's unknown-server guard and
+// its runtime-enable contract: a server marked Disabled in config is still
+// attempted rather than skipped, since the runtime MCP-enable toggle calls
+// InitializeSingle specifically to override a config-level disable for the
+// current session (see doc comment on InitializeSingle).
 func TestInitializeSingle(t *testing.T) {
 	t.Parallel()
 	t.Run("unknown server", func(t *testing.T) {
@@ -1560,16 +1562,22 @@ func TestInitializeSingle(t *testing.T) {
 		require.ErrorContains(t, err, "not found")
 	})
 
-	t.Run("disabled server records state without connecting", func(t *testing.T) {
+	t.Run("disabled server is still attempted, not skipped", func(t *testing.T) {
 		t.Parallel()
 		const name = "test-init-single-disabled"
 		t.Cleanup(func() { states.Del(name) })
-		cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: {Type: config.MCPStdio, Disabled: true}}})
+		cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: {
+			Type:     config.MCPStdio,
+			Command:  "echo",
+			Env:      map[string]string{"TOKEN": "$(false)"},
+			Disabled: true,
+		}}})
 
-		require.NoError(t, InitializeSingle(context.Background(), name, cfg))
+		err := InitializeSingle(context.Background(), name, cfg)
+		require.ErrorContains(t, err, "env TOKEN")
 
 		info, ok := GetState(name)
 		require.True(t, ok)
-		require.Equal(t, StateDisabled, info.State)
+		require.Equal(t, StateError, info.State, "a Disabled entry must still be attempted, not short-circuited to StateDisabled")
 	})
 }

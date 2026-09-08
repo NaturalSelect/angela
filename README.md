@@ -162,6 +162,12 @@ angela run --sandbox --sandbox-no-network "..."
 (non-`ANGELA_CLIENT_SERVER`) mode, since the restriction is irreversible
 for the life of the process.
 
+When Angela runs inside VS Code's integrated terminal with the GitHub
+Copilot Chat extension active, an edit-shaped permission prompt also opens
+a native VS Code diff tab with Accept/Reject buttons, alongside the usual
+terminal dialog — whichever you answer first settles the request. Pass
+`--no-vscode-diff` to always use the terminal dialog only.
+
 ## Local Models
 
 Angela auto-discovers models from Ollama, LM Studio, llama.cpp, and other

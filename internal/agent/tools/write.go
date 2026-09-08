@@ -35,6 +35,12 @@ type WritePermissionsParams struct {
 	NewContent string `json:"new_content,omitempty"`
 }
 
+// DiffPreview lets the permission package offer this write to an
+// external code editor for review, without importing this package.
+func (p WritePermissionsParams) DiffPreview() (filePath, oldContent, newContent string) {
+	return p.FilePath, p.OldContent, p.NewContent
+}
+
 type WriteResponseMetadata struct {
 	Diff       string `json:"diff"`
 	Additions  int    `json:"additions"`

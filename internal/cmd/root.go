@@ -63,6 +63,7 @@ func init() {
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
 	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
 	rootCmd.Flags().Bool("no-yolo-merge", false, "Still require approval for the merge tool even in yolo mode")
+	rootCmd.Flags().Bool("no-vscode-diff", false, "Do not open edit diffs in VS Code even when running inside its terminal")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
 	_ = rootCmd.PersistentFlags().MarkHidden("channels")
 	rootCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
@@ -106,6 +107,9 @@ angela --yolo
 
 # Run in yolo mode but still ask before merging a branch
 angela --yolo --no-yolo-merge
+
+# Run without opening edit diffs in VS Code's own diff viewer
+angela --no-vscode-diff
 
 # Run inside an OS-level sandbox instead of relying on prompts
 angela --sandbox
@@ -342,6 +346,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
 	noYoloMerge, _ := cmd.Flags().GetBool("no-yolo-merge")
+	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 	noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox")
@@ -366,6 +371,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	store.Overrides().EnabledChannels = channels
 	store.Overrides().NoDockerSandbox = noDockerSandbox
 	store.Overrides().NoYoloMerge = noYoloMerge
+	store.Overrides().NoVSCodeDiff = noVSCodeDiff
 
 	if err := os.MkdirAll(cfg.Options.DataDirectory, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("failed to create data directory: %q %w", cfg.Options.DataDirectory, err)
@@ -515,6 +521,7 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 	debug, _ := cmd.Flags().GetBool("debug")
 	yolo, _ := cmd.Flags().GetBool("yolo")
 	noYoloMerge, _ := cmd.Flags().GetBool("no-yolo-merge")
+	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
 	mode := permission.ModeManual
 	if yolo {
 		mode = permission.ModeYolo
@@ -538,6 +545,7 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 		Debug:          debug,
 		PermissionMode: mode.String(),
 		NoYoloMerge:    noYoloMerge,
+		NoVSCodeDiff:   noVSCodeDiff,
 		Channels:       channels,
 		Version:        version.Version,
 		Env:            os.Environ(),

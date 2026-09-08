@@ -21,6 +21,12 @@ type MergePermissionsParams struct {
 	NewContent string `json:"new_content,omitempty"`
 }
 
+// DiffPreview lets the permission package offer this merge proposal to
+// an external code editor for review, without importing this package.
+func (p MergePermissionsParams) DiffPreview() (filePath, oldContent, newContent string) {
+	return p.Name, p.OldContent, p.NewContent
+}
+
 // MCPIdentity is implemented by the dynamic MCP tools, which carry the
 // server and the tool they call.
 //

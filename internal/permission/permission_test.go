@@ -2,6 +2,7 @@ package permission
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/editorapproval"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1206,4 +1208,251 @@ func TestCommandsThatLeaveTheMachineReachTheUser(t *testing.T) {
 		assert.True(t, decision.Allowed(),
 			"taking it off the safe list must leave it configurable")
 	})
+}
+
+// fakeDiffParams stands in for tools.EditPermissionsParams and its
+// write/multiedit/merge equivalents: something outside this package
+// that satisfies diffPreview structurally. permission can't import
+// tools to use the real thing without an import cycle (tools imports
+// permission).
+type fakeDiffParams struct {
+	filePath, oldContent, newContent string
+}
+
+func (p fakeDiffParams) DiffPreview() (filePath, oldContent, newContent string) {
+	return p.filePath, p.oldContent, p.newContent
+}
+
+// diffPreviewOf builds a Preview whose Params satisfies diffPreview,
+// the shape prompt looks for before asking an EditorReviewer.
+func diffPreviewOf(filePath, oldContent, newContent string) Preview {
+	return Preview{Params: fakeDiffParams{filePath: filePath, oldContent: oldContent, newContent: newContent}}
+}
+
+// fakeBashParams looks like a Preview.Params with nothing to do with a
+// file diff, e.g. tools.BashPermissionsParams.
+type fakeBashParams struct {
+	Command string
+}
+
+// fakeEditor is a scriptable EditorReviewer.
+type fakeEditor struct {
+	available bool
+	// reviewed, if set, receives every request Review is called with.
+	reviewed chan editorapproval.Request
+	// hold makes Review block until ctx is cancelled instead of
+	// returning immediately, standing in for a diff tab the user
+	// hasn't answered yet.
+	hold bool
+	// cancelled, if set, is closed once a held Review observes ctx
+	// cancellation.
+	cancelled chan struct{}
+	decision  editorapproval.Decision
+	err       error
+}
+
+func (f *fakeEditor) Available() bool { return f.available }
+
+func (f *fakeEditor) Review(ctx context.Context, req editorapproval.Request) (editorapproval.Decision, error) {
+	if f.reviewed != nil {
+		f.reviewed <- req
+	}
+	if f.hold {
+		<-ctx.Done()
+		if f.cancelled != nil {
+			close(f.cancelled)
+		}
+		return editorapproval.Decision{}, ctx.Err()
+	}
+	return f.decision, f.err
+}
+
+// gateWithPreviewAsync is gateAsync for tests that need to control
+// what Preview an EditorReviewer sees.
+func gateWithPreviewAsync(ctx context.Context, svc Service, req GateRequest) func() Decision {
+	var (
+		wg       sync.WaitGroup
+		decision Decision
+	)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		decision = svc.Gate(ctx, req)
+	}()
+	return func() Decision {
+		wg.Wait()
+		return decision
+	}
+}
+
+// TestPermissionService_EditorReviewer_ApproveSettlesWithoutTerminal
+// pins that an editor approval alone is enough to let the call
+// through: prompt never needs a Grant from a terminal caller.
+func TestPermissionService_EditorReviewer_ApproveSettlesWithoutTerminal(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil)
+	service.SetEditorReviewer(&fakeEditor{
+		available: true,
+		decision:  editorapproval.Decision{Outcome: editorapproval.OutcomeApprove},
+	})
+
+	decision := service.Gate(t.Context(), GateRequest{
+		SessionID:  "s1",
+		ToolCallID: "call-1",
+		Access:     editAccess("/work/main.go"),
+		Preview:    diffPreviewOf("/work/main.go", "old", "new"),
+	})
+	assert.True(t, decision.Allowed(), "an editor approval must let the call through on its own")
+}
+
+// TestPermissionService_EditorReviewer_DenyReachesDecision pins that a
+// VS Code rejection carries its reason all the way to the caller, the
+// same way a terminal denial with a reason does.
+func TestPermissionService_EditorReviewer_DenyReachesDecision(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil)
+	service.SetEditorReviewer(&fakeEditor{
+		available: true,
+		decision:  editorapproval.Decision{Outcome: editorapproval.OutcomeDeny, Reason: "rejected in VS Code"},
+	})
+
+	decision := service.Gate(t.Context(), GateRequest{
+		SessionID:  "s1",
+		ToolCallID: "call-1",
+		Access:     editAccess("/work/main.go"),
+		Preview:    diffPreviewOf("/work/main.go", "old", "new"),
+	})
+	assert.Equal(t, OutcomeUserDeny, decision.Outcome)
+	assert.Equal(t, "rejected in VS Code", decision.Reason)
+}
+
+// TestPermissionService_EditorReviewer_TerminalAnswerCancelsEditor pins
+// the parallel design: the terminal dialog is asked at the same time
+// as the editor, and whichever answers first wins and cancels the
+// other.
+func TestPermissionService_EditorReviewer_TerminalAnswerCancelsEditor(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil)
+	reviewed := make(chan editorapproval.Request, 1)
+	cancelled := make(chan struct{})
+	service.SetEditorReviewer(&fakeEditor{available: true, hold: true, reviewed: reviewed, cancelled: cancelled})
+
+	events := service.Subscribe(t.Context())
+	wait := gateWithPreviewAsync(t.Context(), service, GateRequest{
+		SessionID:  "s1",
+		ToolCallID: "call-1",
+		Access:     editAccess("/work/main.go"),
+		Preview:    diffPreviewOf("/work/main.go", "old", "new"),
+	})
+
+	select {
+	case <-reviewed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("an edit-shaped request must be offered to the editor")
+	}
+
+	select {
+	case ev := <-events:
+		service.Grant(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the terminal dialog must still be published alongside the editor review")
+	}
+	assert.True(t, wait().Allowed(), "the terminal's answer must settle the request")
+
+	select {
+	case <-cancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt returning must cancel the editor review still in flight")
+	}
+}
+
+// TestPermissionService_EditorReviewer_ErrorLeavesTerminalPrompting
+// pins the failure-degrades-silently rule: a broken editor channel
+// never surfaces to the caller, it just leaves the terminal prompt as
+// the only way to answer.
+func TestPermissionService_EditorReviewer_ErrorLeavesTerminalPrompting(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil)
+	service.SetEditorReviewer(&fakeEditor{available: true, err: errors.New("dial: connection refused")})
+
+	events := service.Subscribe(t.Context())
+	wait := gateWithPreviewAsync(t.Context(), service, GateRequest{
+		SessionID:  "s1",
+		ToolCallID: "call-1",
+		Access:     editAccess("/work/main.go"),
+		Preview:    diffPreviewOf("/work/main.go", "old", "new"),
+	})
+
+	select {
+	case ev := <-events:
+		service.Deny(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("a broken editor channel must still leave the terminal prompt reachable")
+	}
+	assert.Equal(t, OutcomeUserDeny, wait().Outcome)
+}
+
+// TestPermissionService_EditorReviewer_UnavailableSkipsReview pins
+// that prompt checks Available before ever calling Review, so an
+// editor that reports itself unavailable is never dialed.
+func TestPermissionService_EditorReviewer_UnavailableSkipsReview(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil)
+	reviewed := make(chan editorapproval.Request, 1)
+	service.SetEditorReviewer(&fakeEditor{available: false, reviewed: reviewed})
+
+	events := service.Subscribe(t.Context())
+	wait := gateAsync(t.Context(), service, "s1", "call-1", editAccess("/work/main.go"))
+
+	select {
+	case ev := <-events:
+		service.Grant(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the terminal prompt must still fire when the editor is unavailable")
+	}
+	assert.True(t, wait().Allowed())
+
+	select {
+	case <-reviewed:
+		t.Fatal("Review must not be called when Available reports false")
+	default:
+	}
+}
+
+// TestPermissionService_EditorReviewer_NonDiffParamsSkipsReview pins
+// that only requests whose Preview.Params look like a file diff are
+// offered to the editor; a request like a bash command never is.
+func TestPermissionService_EditorReviewer_NonDiffParamsSkipsReview(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil)
+	reviewed := make(chan editorapproval.Request, 1)
+	service.SetEditorReviewer(&fakeEditor{available: true, reviewed: reviewed})
+
+	events := service.Subscribe(t.Context())
+	wait := gateWithPreviewAsync(t.Context(), service, GateRequest{
+		SessionID:  "s1",
+		ToolCallID: "call-1",
+		Access:     editAccess("/work/main.go"),
+		Preview:    Preview{Params: fakeBashParams{Command: "echo hi"}},
+	})
+
+	select {
+	case ev := <-events:
+		service.Grant(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("the terminal prompt must still fire for a non-diff request")
+	}
+	assert.True(t, wait().Allowed())
+
+	select {
+	case <-reviewed:
+		t.Fatal("Review must not be called for Params that aren't diff-shaped")
+	default:
+	}
 }

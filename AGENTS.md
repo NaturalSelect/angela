@@ -52,6 +52,7 @@ internal/
   ui/                              Bubble Tea v2 TUI (see internal/ui/AGENTS.md)
   permission/                      Tool permission checking and allow-lists
     shellscan/                     Shell command AST scanner for permission decisions
+  editorapproval/                  External-editor diff review (VS Code MCP `open_diff` channel)
   skills/                          Skill file discovery and loading
     builtin/                       Embedded builtin skills (setup, hooks, config, jq, etc.)
   shell/                           Bash command execution with background job support

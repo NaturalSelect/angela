@@ -440,6 +440,11 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	cfg.Overrides().PermissionMode = mode
 	cfg.Overrides().EnabledChannels = args.Channels
 	cfg.Overrides().NoYoloMerge = args.NoYoloMerge
+	cfg.Overrides().NoVSCodeDiff = args.NoVSCodeDiff
+	// Overrides().Env lets app.New see the connecting client's
+	// environment instead of this daemon process's own, so a check
+	// like TERM_PROGRAM reflects the terminal the user is sitting at.
+	cfg.Overrides().Env = args.Env
 
 	if err := createDotAngelaDir(cfg.Config().Options.DataDirectory); err != nil {
 		return nil, proto.Workspace{}, fmt.Errorf("failed to create data directory: %w", err)
@@ -1108,6 +1113,7 @@ func workspaceToProto(ws *Workspace) proto.Workspace {
 		Path:           ws.Path,
 		PermissionMode: ws.Cfg.Overrides().PermissionMode.String(),
 		NoYoloMerge:    ws.Cfg.Overrides().NoYoloMerge,
+		NoVSCodeDiff:   ws.Cfg.Overrides().NoVSCodeDiff,
 		Channels:       ws.Cfg.Overrides().EnabledChannels,
 		DataDir:        cfg.Options.DataDirectory,
 		Debug:          cfg.Options.Debug,
@@ -1137,6 +1143,7 @@ func logFirstWinsMismatch(existing *Workspace, args proto.Workspace) {
 	existingChannels := existing.Cfg.Overrides().EnabledChannels
 	if existingMode == requestedMode &&
 		existing.Cfg.Overrides().NoYoloMerge == args.NoYoloMerge &&
+		existing.Cfg.Overrides().NoVSCodeDiff == args.NoVSCodeDiff &&
 		existingCfg.Options.Debug == args.Debug &&
 		existingCfg.Options.DataDirectory == args.DataDir &&
 		stringSlicesEqual(existing.Env, args.Env) &&

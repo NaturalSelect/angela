@@ -36,6 +36,12 @@ type EditPermissionsParams struct {
 	NewContent string `json:"new_content,omitempty"`
 }
 
+// DiffPreview lets the permission package offer this edit to an
+// external code editor for review, without importing this package.
+func (p EditPermissionsParams) DiffPreview() (filePath, oldContent, newContent string) {
+	return p.FilePath, p.OldContent, p.NewContent
+}
+
 type EditResponseMetadata struct {
 	Additions  int    `json:"additions"`
 	Removals   int    `json:"removals"`

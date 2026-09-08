@@ -251,4 +251,3 @@ func TestNotifications_CursorAccountsForWideRunes(t *testing.T) {
 	require.Equal(t, curASCII.X+3, curCJK.X,
 		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
 }
-

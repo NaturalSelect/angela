@@ -81,6 +81,14 @@ func Wrap(text string) string {
 	return "<" + Tag + ">\n" + text + "\n</" + Tag + ">"
 }
 
+// IsWrapped reports whether text is a single notice enclosed in the
+// reminder tag, as produced by Wrap. Callers use this to recognize a
+// persisted reminder among ordinary messages.
+func IsWrapped(text string) bool {
+	text = strings.TrimSpace(text)
+	return strings.HasPrefix(text, "<"+Tag+">") && strings.HasSuffix(text, "</"+Tag+">")
+}
+
 // tagPattern matches an opening or closing reminder tag in any case, and
 // with either separator. The underscore spelling is matched because
 // sessions recorded before the tag was renamed still hold it.

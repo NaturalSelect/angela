@@ -152,13 +152,19 @@ func TestRun_AutoContinuesMultipleTimes(t *testing.T) {
 	require.NoError(t, err)
 
 	var assistantMsgs, userMsgs int
-	for i, m := range msgs {
+	for _, m := range msgs {
 		switch m.Role {
 		case message.Assistant:
 			assistantMsgs++
 		case message.User:
+			// Persisted reminders (e.g. todo recency, once enough
+			// assistant turns pile up across truncations) are also
+			// User-role messages but are not a follow-up prompt.
+			if m.IsReminder() {
+				continue
+			}
 			userMsgs++
-			if i > 0 {
+			if userMsgs > 1 {
 				require.Equal(t, autoContinuePrompt, m.Content().Text,
 					"every follow-up after the first user prompt must be the fixed auto-continue prompt")
 			}

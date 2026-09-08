@@ -571,12 +571,18 @@ func (s *service) ListUserMessages(ctx context.Context, sessionID string) ([]Mes
 	if err != nil {
 		return nil, err
 	}
-	messages := make([]Message, len(dbMessages))
-	for i, dbMessage := range dbMessages {
-		messages[i], err = s.fromDBItem(dbMessage)
+	messages := make([]Message, 0, len(dbMessages))
+	for _, dbMessage := range dbMessages {
+		msg, err := s.fromDBItem(dbMessage)
 		if err != nil {
 			return nil, err
 		}
+		// Persisted reminders are harness-internal, not something the
+		// user typed; prompt-history recall must not surface them.
+		if msg.IsReminder() {
+			continue
+		}
+		messages = append(messages, msg)
 	}
 	return messages, nil
 }
@@ -586,12 +592,16 @@ func (s *service) ListAllUserMessages(ctx context.Context) ([]Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	messages := make([]Message, len(dbMessages))
-	for i, dbMessage := range dbMessages {
-		messages[i], err = s.fromDBItem(dbMessage)
+	messages := make([]Message, 0, len(dbMessages))
+	for _, dbMessage := range dbMessages {
+		msg, err := s.fromDBItem(dbMessage)
 		if err != nil {
 			return nil, err
 		}
+		if msg.IsReminder() {
+			continue
+		}
+		messages = append(messages, msg)
 	}
 	return messages, nil
 }

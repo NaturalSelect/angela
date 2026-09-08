@@ -3791,7 +3791,7 @@ func (m *UI) updateSize() {
 	m.status.SetWidth(m.layout.status.Dx())
 
 	m.chat.SetSize(m.layout.main.Dx(), m.layout.main.Dy())
-	m.textarea.MaxHeight = TextareaMaxHeight
+	m.textarea.MaxHeight = m.maxTextareaContentHeight()
 	m.textarea.SetWidth(m.layout.editor.Dx() - editorBoxBorders)
 }
 
@@ -3900,7 +3900,10 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 	turnStatusRect.Min.Y += editorGap
 
 	// Main keeps a blank row above the editor so text never touches it.
-	mainRect.Max.Y -= mainBottomGap
+	// Clamp rather than subtract unconditionally: main can already be at
+	// its zero-height floor when the editor claims everything else, and an
+	// unclamped subtraction would invert the rect (Max.Y < Min.Y).
+	mainRect.Max.Y = max(mainRect.Max.Y-mainBottomGap, mainRect.Min.Y)
 
 	l.main = mainRect
 	l.editor = editorRect
@@ -3914,6 +3917,50 @@ func (m *UI) generateLayout(w, h int) uiLayout {
 	}
 
 	return l
+}
+
+// maxTextareaContentHeight returns the tallest the textarea's own content
+// may grow to before the editor band would no longer fit the terminal.
+// generateLayout lets main shrink to nothing but still hands the editor
+// whatever editorHeight() asks for; without this cap DynamicHeight keeps
+// growing the textarea past that point, so the box the terminal actually
+// draws ends up shorter than the textarea's own reported height instead of
+// the textarea switching to internal scrolling.
+func (m *UI) maxTextareaContentHeight() int {
+	if m.state != uiChat && m.state != uiLanding {
+		return TextareaMaxHeight
+	}
+
+	helpHeight := 1
+	var helpKeyMap help.KeyMap = m
+	if m.status != nil && m.status.ShowingAll() {
+		for _, row := range helpKeyMap.FullHelp() {
+			helpHeight = max(helpHeight, len(row))
+		}
+	}
+
+	header := headerHeight
+	headerGap := headerGapHeight
+	if m.isCompact {
+		headerGap = 0
+	}
+
+	statusRows := 0
+	if m.state == uiChat {
+		statusRows = turnStatusHeight
+	}
+	editorGap := editorGapHeight
+	if m.isCompact || statusRows == 0 {
+		editorGap = 0
+	}
+
+	// Two app margin rows (top and bottom) plus everything else that
+	// shares the body band with the editor: the header, its gap, and the
+	// turn-status row with its gap. This mirrors generateLayout's bodyRect
+	// and split math; main is the one allowed to shrink to nothing there.
+	maxEditorHeight := m.height - helpHeight - 2 - header - headerGap - statusRows - editorGap
+
+	return max(TextareaMinHeight, min(maxEditorHeight-editorHeightMargin, TextareaMaxHeight))
 }
 
 // editorHeight is the number of rows the editor band needs: the textarea plus

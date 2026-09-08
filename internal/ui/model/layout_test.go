@@ -105,6 +105,45 @@ func TestUpdateLayoutAndSize_EditorGrowthShrinksChat(t *testing.T) {
 	}
 }
 
+// TestUpdateLayoutAndSize_EditorNeverOutgrowsTerminal pins that the editor
+// band always gets exactly what editorHeight() asks for, and that main
+// never inverts into a negative-height rect, even when the textarea has
+// grown close to TextareaMaxHeight on a short terminal. Before
+// maxTextareaContentHeight capped DynamicHeight growth to the room the
+// terminal actually has, the layout solver would silently shrink editor
+// (and even invert main) below what the textarea itself reported as its
+// height, so the box drawn on screen no longer matched the textarea's own
+// content and it took far more typing than expected for the textarea to
+// start scrolling internally instead of visually overflowing.
+func TestUpdateLayoutAndSize_EditorNeverOutgrowsTerminal(t *testing.T) {
+	t.Parallel()
+
+	for h := 15; h <= 32; h++ {
+		for lines := 1; lines <= TextareaMaxHeight; lines++ {
+			u := newTestUI()
+			u.height = h
+			u.updateLayoutAndSize()
+
+			prevHeight := u.textarea.Height()
+			u.textarea.SetValue(strings.Repeat("line\n", lines-1) + "line")
+			u.textarea.MoveToEnd()
+			_ = u.handleTextareaHeightChange(prevHeight)
+
+			if got, want := u.layout.editor.Dy(), u.editorHeight(); got != want {
+				t.Errorf("h=%d lines=%d: layout.editor.Dy()=%d, want editorHeight()=%d",
+					h, lines, got, want)
+			}
+			if got := u.layout.main.Dy(); got < 0 {
+				t.Errorf("h=%d lines=%d: layout.main has negative height %d", h, lines, got)
+			}
+			if u.layout.editor.Max.Y > u.layout.area.Max.Y {
+				t.Errorf("h=%d lines=%d: editor bottom %d exceeds screen bottom %d",
+					h, lines, u.layout.editor.Max.Y, u.layout.area.Max.Y)
+			}
+		}
+	}
+}
+
 func TestHandleTextareaHeightChange_FollowModeStaysAtBottom(t *testing.T) {
 	t.Parallel()
 

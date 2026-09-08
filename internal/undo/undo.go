@@ -375,7 +375,7 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 	var poppedTexts []string
 	for _, m := range toDelete {
 		deletedIDs[m.ID] = true
-		if m.Role == message.User {
+		if m.Role == message.User && !m.IsReminder() {
 			poppedTexts = append(poppedTexts, m.Content().Text)
 		}
 	}

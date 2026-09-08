@@ -1609,6 +1609,9 @@ func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat
 		msgRunActive := runActive && i == lastAssistant
 		switch msg.Role {
 		case message.User:
+			if msg.IsReminder() {
+				continue
+			}
 			lastUserMessageTime = msg.CreatedAt
 			items = append(items, chat.ExtractMessageItems(m.com.Styles, msg, toolResultMap, m.com.Workspace.WorkingDir(), msgRunActive)...)
 		case message.Assistant:
@@ -1776,6 +1779,12 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 
 	switch msg.Role {
 	case message.User:
+		// Persisted reminders are harness-internal nudges kept in the
+		// transcript for prompt caching; they were never typed by the
+		// user and must not render as a message from them.
+		if msg.IsReminder() {
+			return nil
+		}
 		// Shell commands are rendered live via shellResultMsg; skip
 		// the persisted duplicate.
 		hasShellCmd := false

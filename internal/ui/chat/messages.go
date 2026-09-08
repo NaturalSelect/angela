@@ -375,6 +375,13 @@ func cappedMessageWidth(availableWidth int) int {
 func ExtractMessageItems(sty *styles.Styles, msg *message.Message, toolResults map[string]message.ToolResult, workingDir string, runActive bool) []MessageItem {
 	switch msg.Role {
 	case message.User:
+		// Persisted reminders are harness-internal nudges kept in the
+		// transcript only so replay sends an identical prefix; they were
+		// never something the user typed and must not render as a
+		// message from them.
+		if msg.IsReminder() {
+			return []MessageItem{}
+		}
 		// Reconstruct shell command items from ShellCommand parts.
 		var items []MessageItem
 		for _, part := range msg.Parts {

@@ -650,13 +650,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		go a.generateTitle(titleCtx, call.SessionID, call.Prompt)
 	}
 
-	// Add the user message to the session.
-	_, err = a.createUserMessage(ctx, call)
-	if err != nil {
-		return nil, err
-	}
-	userMsgCreated = true
-
 	// Add the session to the context. The run context (genCtx) and its
 	// cancel func were already created and registered under the dispatch
 	// mutex above for both the accepted and in-process paths.
@@ -723,6 +716,15 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	history, files := a.preparePrompt(msgs, runModel.CatwalkCfg.SupportsImages, call.Attachments...)
 	failedMCP, pendingMCP := unavailableMCPServers()
+	// Reminders are persisted as ordinary User-role messages ahead of
+	// this turn's prompt instead of only appended to history in
+	// memory. Once written they never move, so replaying the session
+	// next turn reads them back at this same position rather than
+	// recomputing a fresh set somewhere else in the transcript. That
+	// keeps the prefix this turn sends byte-identical to what next
+	// turn will send for it — required both for providers with
+	// explicit cache breakpoints and ones (e.g. the OpenAI SDK) that
+	// cache purely on prefix identity with no breakpoints to anchor.
 	for _, notice := range reminder.Collect(reminder.DefaultSources(), reminder.State{
 		IsSubAgent:           a.isSubAgent,
 		TurnsSinceTodos:      turnsSinceTodosCall(msgs),
@@ -735,8 +737,24 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		CanDispatch:          hasAgentTool(agentTools),
 	}) {
 		slog.Debug("Injecting system reminder", "source", notice.Source, "session_id", call.SessionID)
-		history = append(history, fantasy.NewUserMessage(reminder.Wrap(notice.Text)))
+		reminderMsg, createErr := a.messages.Create(ctx, call.SessionID, message.CreateMessageParams{
+			Role:  message.User,
+			Parts: []message.ContentPart{message.TextContent{Text: reminder.Wrap(notice.Text)}},
+		})
+		if createErr != nil {
+			return nil, fmt.Errorf("failed to persist system reminder: %w", createErr)
+		}
+		history = append(history, reminderMsg.ToAIMessage()...)
 	}
+
+	// Add the user message to the session, after any reminders above
+	// so replay next turn sees them in the same order they were
+	// actually sent this turn.
+	_, err = a.createUserMessage(ctx, call)
+	if err != nil {
+		return nil, err
+	}
+	userMsgCreated = true
 
 	startTime := time.Now()
 	a.eventPromptSent(call.SessionID, runModel)
@@ -801,20 +819,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 			prepared.Messages = a.workaroundProviderMediaLimitations(prepared.Messages, runModel)
 
-			lastSystemRoleInx := 0
-			systemMessageUpdated := false
-			for i, msg := range prepared.Messages {
-				// Only add cache control to the last message.
-				if msg.Role == fantasy.MessageRoleSystem {
-					lastSystemRoleInx = i
-				} else if !systemMessageUpdated {
-					prepared.Messages[lastSystemRoleInx].ProviderOptions = a.getCacheControlOptions()
-					systemMessageUpdated = true
-				}
-				// Than add cache control to the last 2 messages.
-				if i > len(prepared.Messages)-3 {
-					prepared.Messages[i].ProviderOptions = a.getCacheControlOptions()
-				}
+			for _, idx := range cacheBreakpointIndices(prepared.Messages) {
+				prepared.Messages[idx].ProviderOptions = a.getCacheControlOptions()
 			}
 
 			if promptPrefix != "" {
@@ -1593,6 +1599,61 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 	return qErr
 }
 
+// cacheBreakpointIndices picks which messages in this step's prompt get
+// an Anthropic-style cache breakpoint: the last system message, the tip
+// of this request (its final message), and the tip of the previous
+// completed turn.
+//
+// The previous turn's tip is the last User-role message before the last
+// Assistant-role message that precedes this turn's tip, found by
+// walking role transitions rather than a fixed offset from the end. A
+// turn can end with more than one consecutive User-role message —
+// reminders (dispatch nudges, todo recency, MCP status, etc.) are
+// persisted immediately ahead of the prompt they belong to, and folded
+// queued prompts land the same way — so a fixed "last N" offset can
+// land inside the current turn's own tail instead of on the previous
+// turn's boundary. That tail grows and changes every turn, so a
+// breakpoint pinned to it would never match what was cached last time;
+// walking to the role transition instead lands on the same message
+// every time it is computed, because reminders and prompts are
+// persisted once and never rewritten.
+func cacheBreakpointIndices(messages []fantasy.Message) []int {
+	var indices []int
+	lastSystemRoleInx := -1
+	for i, msg := range messages {
+		if msg.Role == fantasy.MessageRoleSystem {
+			lastSystemRoleInx = i
+		}
+	}
+	if lastSystemRoleInx >= 0 {
+		indices = append(indices, lastSystemRoleInx)
+	}
+
+	tip := len(messages) - 1
+	if tip < 0 {
+		return indices
+	}
+	indices = append(indices, tip)
+
+	assistantIdx := -1
+	for i := tip - 1; i >= 0; i-- {
+		if messages[i].Role == fantasy.MessageRoleAssistant {
+			assistantIdx = i
+			break
+		}
+	}
+	if assistantIdx < 0 {
+		return indices
+	}
+	for i := assistantIdx - 1; i >= 0; i-- {
+		if messages[i].Role == fantasy.MessageRoleUser {
+			indices = append(indices, i)
+			break
+		}
+	}
+	return indices
+}
+
 func (a *sessionAgent) getCacheControlOptions() fantasy.ProviderOptions {
 	if t, _ := strconv.ParseBool(os.Getenv("ANGELA_DISABLE_ANTHROPIC_CACHE")); t {
 		return fantasy.ProviderOptions{}
@@ -1941,10 +2002,12 @@ func (a *sessionAgent) getSessionMessages(ctx context.Context, session session.S
 }
 
 // hasUserTextMessage reports whether any user message in msgs contains
-// text content (as opposed to only shell commands or other non-text parts).
+// text content (as opposed to only shell commands or other non-text
+// parts). Persisted reminders are excluded: they carry text too, but
+// are not the real user prompt title generation is waiting for.
 func hasUserTextMessage(msgs []message.Message) bool {
 	for _, msg := range msgs {
-		if msg.Role != message.User {
+		if msg.Role != message.User || msg.IsReminder() {
 			continue
 		}
 		for _, part := range msg.Parts {

@@ -13,6 +13,7 @@ import (
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/google"
 	"charm.land/fantasy/providers/openai"
+	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/stringext"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -164,6 +165,32 @@ func (m *Message) ShellCommands() []ShellCommand {
 		}
 	}
 	return cmds
+}
+
+// IsReminder reports whether m is a system reminder persisted as an
+// ordinary User-role message (so it keeps a stable position in the
+// transcript for prompt caching) rather than real user input. Create
+// always appends a Finish part to non-assistant messages, so that part
+// is ignored; any other part (an attachment, a shell command, ...)
+// means this is real user content.
+func (m *Message) IsReminder() bool {
+	if m.Role != User {
+		return false
+	}
+	var text string
+	textParts := 0
+	for _, part := range m.Parts {
+		switch p := part.(type) {
+		case TextContent:
+			text = p.Text
+			textParts++
+		case Finish:
+			// Always present on persisted non-assistant messages; not content.
+		default:
+			return false
+		}
+	}
+	return textParts == 1 && reminder.IsWrapped(text)
 }
 
 type Message struct {

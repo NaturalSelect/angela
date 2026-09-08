@@ -51,8 +51,6 @@ func findLock(dir, workingDir string) (lockFile, bool) {
 		return lockFile{}, false
 	}
 
-	resolvedWorkingDir := resolvePath(workingDir)
-
 	best := lockFile{}
 	found := false
 	for _, entry := range entries {
@@ -75,7 +73,7 @@ func findLock(dir, workingDir string) (lockFile, bool) {
 		if !processAlive(lock.PID) {
 			continue
 		}
-		if !containsWorkspace(lock.WorkspaceFolders, resolvedWorkingDir) {
+		if !containsWorkspace(lock.WorkspaceFolders, workingDir) {
 			continue
 		}
 
@@ -90,7 +88,7 @@ func findLock(dir, workingDir string) (lockFile, bool) {
 // containsWorkspace reports whether workingDir is inside any of folders.
 func containsWorkspace(folders []string, workingDir string) bool {
 	for _, f := range folders {
-		if isWithin(resolvePath(f), workingDir) {
+		if isWithin(f, workingDir) {
 			return true
 		}
 	}
@@ -109,8 +107,23 @@ func resolvePath(p string) string {
 }
 
 // isWithin reports whether workingDir equals folder or is nested inside
-// it. Both arguments must already be cleaned (e.g. via resolvePath).
+// it. It tries resolvePath's output first, then falls back to comparing
+// the plain Clean-ed paths. The fallback matters on Windows: resolving
+// a path there normalizes each component through a separate FindFirstFile
+// call (to expand 8.3 short names like RUNNER~1 and fix case), and on CI
+// runners that lookup has been observed to succeed for one side of a
+// comparison and not the other, which would otherwise turn two paths
+// that are lexically identical (or nested) into a false negative.
 func isWithin(folder, workingDir string) bool {
+	if pathContains(resolvePath(folder), resolvePath(workingDir)) {
+		return true
+	}
+	return pathContains(filepath.Clean(folder), filepath.Clean(workingDir))
+}
+
+// pathContains reports whether workingDir equals folder or is nested
+// inside it. Both arguments must already be cleaned.
+func pathContains(folder, workingDir string) bool {
 	if folder == workingDir {
 		return true
 	}

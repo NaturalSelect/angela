@@ -910,6 +910,29 @@ type Config struct {
 	// Agents is the resolved agent map (built-in + markdown + config).
 	// Not serialized; rebuilt by SetupAgents() on every load.
 	Agents map[string]Agent `json:"-"`
+
+	// DefaultAgent is the primary agent a session runs on before it has
+	// picked one of its own — what the landing page previews and what a
+	// brand new session starts on. Not serialized and not configurable
+	// via angela.json: it is set only in memory, via
+	// ConfigStore.OverrideDefaultAgent, for a pick made before any
+	// session exists to scope it to. Empty means the built-in coder.
+	// Read through DefaultAgentID rather than directly, since a config
+	// reload can leave it naming an agent that has since disappeared.
+	DefaultAgent string `json:"-"`
+}
+
+// DefaultAgentID returns the primary agent a session starts on before
+// picking one of its own. It is DefaultAgent when that still names an
+// available primary agent, and the built-in coder otherwise — which
+// covers both the common case (DefaultAgent unset) and a config reload
+// that removed, hid, or demoted the agent a pre-session pick had
+// chosen.
+func (c *Config) DefaultAgentID() string {
+	if agent, ok := c.Agents[c.DefaultAgent]; ok && agent.Mode == AgentModePrimary && !agent.IsHidden() {
+		return c.DefaultAgent
+	}
+	return AgentCoder
 }
 
 // cloneForWrite returns a copy of c that the store's typed field mutators

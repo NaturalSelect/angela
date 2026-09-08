@@ -206,17 +206,25 @@ func TestOpenAgentsDialog_AlreadyOpenBringsToFront(t *testing.T) {
 	require.Equal(t, dialog.AgentsID, m.dialog.DialogLast().ID())
 }
 
-func TestOpenAgentsDialog_RequiresSession(t *testing.T) {
+// TestOpenAgentsDialog_OpensBeforeSession is a regression test: a
+// primary agent picked on the landing screen, before any session
+// exists, now opens the picker instead of refusing — mirroring how
+// TestOpenVariantsDialog_OpensBeforeSession already behaves. Unlike
+// the variants dialog, the agents dialog reads the full agent list
+// from the workspace config, so it needs a mock rather than
+// newTestUI's nil workspace.
+func TestOpenAgentsDialog_OpensBeforeSession(t *testing.T) {
 	t.Parallel()
 
-	m := newTestUI()
-	m.dialog = dialog.NewOverlay()
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	m := newDialogUI(t, ws)
+	m.session = nil
+	m.agentActiveSession = "" // no session yet, matching currentSessionID()
 
 	cmd := m.openAgentsDialog()
-	require.NotNil(t, cmd)
-	msg := cmd().(util.InfoMsg)
-	require.Equal(t, util.InfoTypeWarn, msg.Type)
-	require.False(t, m.dialog.HasDialogs())
+	require.Nil(t, cmd)
+	require.True(t, m.dialog.ContainsDialog(dialog.AgentsID))
 }
 
 func TestOpenAgentsDialog_RequiresResolvedActiveAgent(t *testing.T) {

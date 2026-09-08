@@ -65,22 +65,22 @@ const noMatchFilter = "zzzzz_NO_MATCH_zzzzz"
 // Agents dialog
 // ---------------------------------------------------------------------
 
-func TestAgentsDialog_OpenRequiresSession(t *testing.T) {
+// TestAgentsDialog_OpenWorksWithoutSession is a regression test: a
+// primary agent picked on the landing screen, before any session
+// exists, now opens the picker instead of refusing — mirroring how the
+// variants dialog already behaves there (TestOpenVariantsDialog_OpensBeforeSession).
+func TestAgentsDialog_OpenWorksWithoutSession(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
-	m := newDialogUI(t, ws)
+	m := pickerDlgThreeAgents(t, ws)
 	m.session = nil
+	m.agentActiveSession = "" // no session yet, matching currentSessionID()
 
 	cmd := m.openAgentsDialog()
-	require.NotNil(t, cmd)
-	msg := cmd()
-	info, ok := msg.(util.InfoMsg)
-	require.True(t, ok, "expected util.InfoMsg, got %T", msg)
-	require.Equal(t, util.InfoTypeWarn, info.Type)
-	require.Contains(t, info.Msg, "Start a session")
-	require.False(t, m.dialog.ContainsDialog(dialog.AgentsID))
+	require.Nil(t, cmd)
+	require.True(t, m.dialog.ContainsDialog(dialog.AgentsID))
 }
 
 func TestAgentsDialog_OpenRequiresActiveAgent(t *testing.T) {

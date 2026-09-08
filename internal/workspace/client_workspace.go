@@ -620,6 +620,10 @@ func (w *ClientWorkspace) OverrideAgentVariant(agentID, variant string) error {
 	return w.refreshAfter(w.client.OverrideAgentVariant(context.Background(), w.workspaceID(), agentID, variant))
 }
 
+func (w *ClientWorkspace) OverrideDefaultAgent(agentID string) error {
+	return w.refreshAfter(w.client.OverrideDefaultAgent(context.Background(), w.workspaceID(), agentID))
+}
+
 func (w *ClientWorkspace) RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.refreshAfter(w.client.RecordRecentModel(context.Background(), w.workspaceID(), scope, name, model))
 }

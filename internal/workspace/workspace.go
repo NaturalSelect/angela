@@ -261,6 +261,10 @@ type Workspace interface {
 	// OverrideAgentVariant sets an agent's parameter preset in memory
 	// only, for a pick made before any session exists to scope it to.
 	OverrideAgentVariant(agentID, variant string) error
+	// OverrideDefaultAgent sets the primary agent a new session starts
+	// on, in memory only, for a pick made before any session exists to
+	// scope it to.
+	OverrideDefaultAgent(agentID string) error
 	// RecordRecentModel adds a model to the recent-models list without
 	// changing which model is selected. Picking a model for a session
 	// still belongs in that session's "recently used" list.

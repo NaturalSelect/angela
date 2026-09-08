@@ -136,7 +136,7 @@ Follow <git_safety> throughout.
 Commit message here.
 
 {{ if .Attribution.GeneratedWith }}
-💘 Generated with Angela
+Generated with Angela
 {{ end}}
 {{if eq .Attribution.TrailerStyle "assisted-by" }}
 
@@ -185,7 +185,7 @@ IMPORTANT: When the user asks you to create a pull request, follow these steps c
 ## Test plan
 <checklist of TODOs for verifying the pull request>
 {{ if .Attribution.GeneratedWith }}
-💘 Generated with Angela
+Generated with Angela
 {{- end }}
 EOF
 )"

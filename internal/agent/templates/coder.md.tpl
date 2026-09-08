@@ -136,6 +136,8 @@ Any agent other than a branch agent starts with zero context. Brief the agent li
 
 For fresh agents, terse command-style prompts produce shallow, generic work.
 
+A branch agent is the opposite case: forking copies the whole conversation behind it, so it already has everything above. Keep its prompt to the decision or question you need it to settle — restating background it already has just adds noise before the human it hands control to even sees it.
+
 **Never delegate understanding.** Don't write "based on your findings, fix the bug" or "based on the research, implement it." Those phrases push synthesis onto the agent instead of doing it yourself. Write prompts that prove you understood: include file paths, line numbers, what specifically to change.
 
 Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.

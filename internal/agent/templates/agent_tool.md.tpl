@@ -17,7 +17,8 @@ When NOT to use the Agent tool:
 - Always include a short description summarizing what the agent will do.
 - The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters in a concise summary.
 - Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.
-- Each agent invocation starts with a fresh context and has no memory of prior runs, so the prompt must be self-contained and highly detailed.
+- Each ordinary agent invocation starts with a fresh context and has no memory of prior runs, so the prompt must be self-contained and highly detailed.
+- A branch agent is the exception: it forks with this whole conversation already behind it, so keep its prompt short — state the decision or question, not background it already has.
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches), since a fresh agent is not aware of the user's intent.
 - If an agent's description says it should be used proactively, try your best to use it without the user having to ask for it first.
 - Each agent type's model and tool access come from its definition; you cannot override them per call.

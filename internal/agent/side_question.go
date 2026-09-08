@@ -88,26 +88,21 @@ Rules for this answer:
 // AskSideQuestion answers a one-off question from a session's existing
 // context, concurrently with any turn already running on it, without
 // adding the question or its answer to the session's message history.
-// The question is answered by the same model and system prompt the
-// session's main turns run on.
+//
+// Executor and identity are resolved together through turnExecutorFor,
+// the same resolution a real turn on sessionID would get: a child
+// (sub-agent) session is answered by that sub-agent's own executor,
+// model, system prompt and delegation depth, not the top-level active
+// agent at depth zero. Resolving them separately — the executor routed
+// to the child but the identity resolved as if sessionID were
+// top-level — was a bug: it answered a /btw asked inside an explore (or
+// other subagent) session with the coder's model and prompt.
 func (c *coordinator) AskSideQuestion(ctx context.Context, sessionID, question string) (string, error) {
-	// A child session's turns run on its own sub-agent executor, which
-	// owns the busy-check and per-session bookkeeping SideQuestion
-	// relies on. See summarizeExecutorFor for why Summarize routes the
-	// same way.
-	executor, err := c.summarizeExecutorFor(ctx, sessionID)
+	target, err := c.turnExecutorFor(ctx, sessionID)
 	if err != nil {
 		return "", err
 	}
-
-	active, err := c.activeAgentFor(ctx, sessionID)
-	if err != nil {
-		return "", err
-	}
-	resolved, err := c.resolveAgent(ctx, active, 0)
-	if err != nil {
-		return "", err
-	}
+	executor, resolved := target.executor, target.resolved
 
 	providerCfg, ok := c.cfg.Config().Providers.Get(resolved.Model.ModelCfg.Provider)
 	if !ok {

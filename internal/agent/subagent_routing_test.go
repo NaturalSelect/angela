@@ -13,6 +13,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // routingFixture is a coordinator holding one parent session and one child
@@ -317,6 +318,63 @@ func TestTurnOnAChildSessionRunsAsTheSubAgent(t *testing.T) {
 	require.True(t, routed)
 	require.True(t, route.executor == target.executor,
 		"the turn ran on a different executor than the one cancellation addresses")
+}
+
+// A /btw side question asked inside a child session must be answered by
+// that sub-agent's own model, system prompt and delegation depth, not the
+// top-level agent's at depth zero. AskSideQuestion resolves its executor
+// through the same route a real turn would use; it must resolve identity
+// the same way too, or the executor it just picked runs with someone
+// else's identity.
+//
+// The child runs as General rather than Explore: General inherits the
+// coder's full tool set, so it keeps the agent (delegation) tool as long
+// as the turn is within its delegation budget. Explore's own allowed-tool
+// scope excludes that tool at every depth, so a depth-zero resolution and
+// a depth-one resolution of Explore end up with the same tool list —
+// resolving Explore would let this test pass even against the depth-zero
+// bug this guards against. General's budget-gated tool makes the two
+// depths observably different, which is the whole point of the test.
+func TestAskSideQuestionOnAChildSessionUsesTheSubAgentIdentity(t *testing.T) {
+	t.Parallel()
+	coord := newGateTestCoordinator(t, false)
+	childID := persistedChildSession(t, coord, config.AgentGeneral)
+
+	// Route the child session to a mock executor so the assertion is
+	// about which identity SideQuestion receives, not about a live
+	// model call.
+	mockChild := newMockSessionAgent(t, config.AgentGeneral, nil)
+	var got resolvedAgent
+	mockChild.EXPECT().
+		SideQuestion(gomock.Any(), childID, "what now?", gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _, _ string, resolved resolvedAgent, _ fantasy.ProviderOptions) (string, error) {
+			got = resolved
+			return "the answer", nil
+		})
+	coord.registerSubagentRoute(childID, config.AgentGeneral, mockChild)
+
+	want, err := coord.resolveSubagent(t.Context(), config.AgentGeneral, childID)
+	require.NoError(t, err)
+	require.Equal(t, 1, coord.dispatchDepth(t.Context(), childID),
+		"test premise: a direct child sits at delegation depth 1")
+	require.NotContains(t, toolNames(want), toolnames.Agent,
+		"test premise: depth 1 already meets the default subagent_max_depth of 1, so the correct resolution must not carry the agent tool")
+
+	answer, err := coord.AskSideQuestion(t.Context(), childID, "what now?")
+	require.NoError(t, err)
+	require.Equal(t, "the answer", answer)
+
+	require.Equal(t, config.AgentGeneral, got.ID, "the side question ran as the wrong agent")
+	require.NotEqual(t, config.AgentCoder, got.ID,
+		"the side question fell back to the top-level agent instead of the child's own")
+	require.Equal(t, want.SystemPrompt, got.SystemPrompt,
+		"the child session's own system prompt must be used")
+	require.Equal(t, want.Model.ModelCfg, got.Model.ModelCfg,
+		"the child session's own model must be used")
+	require.NotContains(t, toolNames(got), toolnames.Agent,
+		"resolving at delegation depth zero regranted the agent tool a direct child had already spent its budget on")
+	require.Equal(t, len(want.Tools), len(got.Tools),
+		"the child session's own delegation-depth tool budget must be used")
 }
 
 // A cached route must not freeze the identity the session was first resolved

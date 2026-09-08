@@ -312,6 +312,58 @@ func TestVariantPickBeforeSessionReportsOverrideError(t *testing.T) {
 	require.Contains(t, text, wantErr.Error())
 }
 
+// TestAgentPickBeforeSessionAppliesEphemeralOverride is the primary-agent
+// counterpart of TestVariantPickBeforeSessionAppliesEphemeralOverride:
+// with a resolved preview agent but no session yet, picking a different
+// primary agent has no session instance to land on, so it must go
+// through OverrideDefaultAgent instead of refusing outright.
+// AgentEditActive is deliberately left unstubbed on this mock, so a
+// call that still reached for it would fail the test.
+func TestAgentPickBeforeSessionAppliesEphemeralOverride(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	m.session = nil
+	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
+	warmCaches(m, false)
+
+	var gotAgentID string
+	ws.EXPECT().OverrideDefaultAgent(gomock.Any()).
+		DoAndReturn(func(agentID string) error {
+			gotAgentID = agentID
+			return nil
+		})
+
+	msg := m.handleSelectAgent(dialog.ActionSelectAgent{AgentID: "reviewer"})()
+	// The edit is sequenced ahead of the cache re-probe (see infoText),
+	// so the side effect only happens once the first element runs.
+	text := infoText(t, msg)
+
+	require.Equal(t, "reviewer", gotAgentID)
+	require.Contains(t, text, "reviewer")
+}
+
+// TestAgentPickBeforeSessionReportsOverrideError covers the error path
+// TestAgentPickBeforeSessionAppliesEphemeralOverride does not reach: when
+// OverrideDefaultAgent itself fails, the failure must be reported to the
+// user rather than silently swallowed.
+func TestAgentPickBeforeSessionReportsOverrideError(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	m.session = nil
+	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
+	warmCaches(m, false)
+
+	wantErr := errors.New("override boom")
+	ws.EXPECT().OverrideDefaultAgent(gomock.Any()).Return(wantErr)
+
+	msg := m.handleSelectAgent(dialog.ActionSelectAgent{AgentID: "reviewer"})()
+	text := infoText(t, msg)
+
+	require.Contains(t, text, wantErr.Error())
+}
+
 // TestCycleVariantWorksBeforeSession pins that ctrl+e, which used to
 // warn "Start a session" unconditionally, now cycles the coder
 // default's preset the same as the dialog does.

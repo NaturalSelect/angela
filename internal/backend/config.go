@@ -102,6 +102,21 @@ func (b *Backend) OverrideAgentVariant(workspaceID, agentID, variant string) err
 	return nil
 }
 
+// OverrideDefaultAgent sets the primary agent a new session starts on,
+// in memory only, for a pick made before any session exists to scope
+// it to.
+func (b *Backend) OverrideDefaultAgent(workspaceID, agentID string) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	if err := ws.Cfg.OverrideDefaultAgent(agentID); err != nil {
+		return err
+	}
+	publishConfigChanged(ws)
+	return nil
+}
+
 // RecordRecentModel adds a model to the recent-models list for the given
 // type without changing which model is selected.
 func (b *Backend) RecordRecentModel(workspaceID string, scope config.Scope, name config.SlotName, model config.SelectedModel) error {

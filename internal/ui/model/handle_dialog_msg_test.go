@@ -542,16 +542,24 @@ func TestHandleDialogMsg_ActionSelectModel_MissingConfigReportsError(t *testing.
 func TestHandleDialogMsg_ActionSelectAgent(t *testing.T) {
 	t.Parallel()
 
-	t.Run("without a session it warns and still closes the agents dialog", func(t *testing.T) {
+	t.Run("without a session it applies an ephemeral override and closes the agents dialog", func(t *testing.T) {
 		t.Parallel()
 
-		m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+		ctrl := gomock.NewController(t)
+		ws := NewMockWorkspace(ctrl)
+		ws.EXPECT().OverrideDefaultAgent("coder").Return(nil)
+		ws.EXPECT().Config().Return(&config.Config{
+			Agents: map[string]config.Agent{
+				"coder": {ID: "coder", Name: "Coder", Mode: config.AgentModePrimary},
+			},
+		}).AnyTimes()
+
+		m := newHandleDialogUI(t, ws)
 		m.dialog = dialog.NewOverlay(idOnlyDialog{id: dialog.AgentsID})
 
 		cmd := m.handleDialogMsg(dialog.ActionSelectAgent{AgentID: "coder"})
 		require.NotNil(t, cmd)
-		msg := cmd().(util.InfoMsg)
-		require.Equal(t, util.InfoTypeWarn, msg.Type)
+		require.Equal(t, "Agent set to Coder", infoText(t, cmd()))
 		require.False(t, m.dialog.ContainsDialog(dialog.AgentsID))
 	})
 

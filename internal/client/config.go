@@ -77,6 +77,22 @@ func (c *Client) OverrideAgentVariant(ctx context.Context, id, agentID, variant 
 	return nil
 }
 
+// OverrideDefaultAgent sets the primary agent a new session starts on,
+// on the server, in memory only.
+func (c *Client) OverrideDefaultAgent(ctx context.Context, id, agentID string) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/default-agent", id), nil,
+		jsonBody(proto.ConfigDefaultAgentRequest{AgentID: agentID}),
+		http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to override default agent: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to override default agent: status code %d", rsp.StatusCode)
+	}
+	return nil
+}
+
 // RecordRecentModel records a recently used model on the server.
 func (c *Client) RecordRecentModel(ctx context.Context, id string, scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/recent-model", id), nil, jsonBody(struct {

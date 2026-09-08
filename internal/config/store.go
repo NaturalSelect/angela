@@ -75,6 +75,11 @@ type RuntimeOverrides struct {
 	// agent ID. They are reapplied after a config reload for the same
 	// reason Slots is — see pinAgentVariantLocked.
 	AgentVariants map[string]string
+	// DefaultAgent records the primary agent picked in this instance
+	// for a session with no instance of its own to scope it to. It is
+	// reapplied after a config reload for the same reason Slots is —
+	// see pinDefaultAgentLocked.
+	DefaultAgent string
 	// NoDockerSandbox disables the shortcut that treats an existing
 	// Docker/OCI container as sufficient sandboxing (via the
 	// --no-docker-sandbox flag), so sandbox.New still applies Landlock
@@ -531,6 +536,45 @@ func (s *ConfigStore) pinAgentVariantLocked(agentID, variant string) {
 		s.overrides.AgentVariants = make(map[string]string)
 	}
 	s.overrides.AgentVariants[agentID] = variant
+}
+
+// OverrideDefaultAgent sets which primary agent a new session starts
+// on, in memory only, without persisting. It backs a primary agent
+// picked from the agents dialog before any session exists: with no
+// session there is no instance for EditActiveAgent to point elsewhere,
+// so the pick lands on the config-level default instead, the same way
+// a pre-session model or variant pick does.
+//
+// It returns an error when agentID names no configured primary agent,
+// mirroring checkPrimaryAgent's rejections for a session-scoped edit —
+// the UI cannot hit this in practice, since it only ever offers agents
+// switchableAgents already filtered to primary and visible.
+func (s *ConfigStore) OverrideDefaultAgent(agentID string) error {
+	var err error
+	s.mutateInMemory(func(c *Config) {
+		agent, exists := c.Agents[agentID]
+		if !exists || agent.IsHidden() {
+			err = fmt.Errorf("unknown agent %q", agentID)
+			return
+		}
+		if agent.Mode != AgentModePrimary {
+			err = fmt.Errorf("%q is a subagent", agentID)
+			return
+		}
+		c.DefaultAgent = agentID
+		s.pinDefaultAgentLocked(agentID)
+	})
+	return err
+}
+
+// pinDefaultAgentLocked records a default-agent choice made in this
+// instance so that a later config reload cannot replace it with
+// whatever the shared config file says, mirroring pinPreferredModelLocked
+// for the same reason.
+//
+// Caller must hold writeMu.
+func (s *ConfigStore) pinDefaultAgentLocked(agentID string) {
+	s.overrides.DefaultAgent = agentID
 }
 
 // pinPreferredModelLocked records a model choice made in this instance so
@@ -1405,6 +1449,12 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 			cfg.Agents[agentID] = agent
 		}
 	}
+
+	// Reapply a pre-session default-agent pick made in this instance,
+	// for the same reason. DefaultAgentID re-validates it against the
+	// reloaded Agents map on every read, so an agent that disappeared
+	// or was hidden by the reload falls back to the coder on its own.
+	cfg.DefaultAgent = overrides.DefaultAgent
 
 	s.setConfig(cfg)
 	s.loadedPaths = loadedPaths

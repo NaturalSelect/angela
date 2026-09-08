@@ -1085,27 +1085,32 @@ func (c *coordinator) loadActiveAgent(ctx context.Context, sessionID string) (co
 // point: editing the config steers prompts and tools on the next turn,
 // while a model the user picked for this session stays picked.
 //
-// A session with no delta yet runs the coder on the configured default,
-// and keeps following that default until it picks something of its own.
+// A session with no delta yet runs the config-level default agent —
+// the coder, unless a pre-session pick pointed it elsewhere — and
+// keeps following that default until it picks something of its own.
 // A session naming an agent config has since removed, disabled or
-// hidden falls back to the coder — erroring there would strand the
+// hidden falls back the same way — erroring there would strand the
 // session with no way to type the command that fixes it.
 func (c *coordinator) materializeActiveAgent(sessionID string, state config.ActiveAgentState) (config.ActiveAgent, error) {
 	cfg := c.cfg.Config()
 
 	if state.IsZero() {
-		return coderInstance(cfg)
+		return defaultAgentInstance(cfg)
 	}
 	if active, ok := cfg.Restore(state); ok && !active.Agent.IsHidden() {
 		return active, nil
 	}
-	slog.Warn("Session points at an agent that is no longer available; falling back to the coder",
+	slog.Warn("Session points at an agent that is no longer available; falling back to the default",
 		"sessionID", sessionID, "agent", state.Agent)
-	return coderInstance(cfg)
+	return defaultAgentInstance(cfg)
 }
 
-func coderInstance(cfg *config.Config) (config.ActiveAgent, error) {
-	active, ok := cfg.InstantiateAgent(config.AgentCoder)
+// defaultAgentInstance builds the agent instance a session runs before
+// it has picked one of its own: the coder, unless the user pointed the
+// pre-session agent picker at a different primary agent (see
+// config.Config.DefaultAgentID).
+func defaultAgentInstance(cfg *config.Config) (config.ActiveAgent, error) {
+	active, ok := cfg.InstantiateAgent(cfg.DefaultAgentID())
 	if !ok {
 		return config.ActiveAgent{}, errCoderAgentNotConfigured
 	}
@@ -1889,9 +1894,9 @@ func (c *coordinator) DefaultModel() Model {
 // session exists.
 func (c *coordinator) ActiveAgent(ctx context.Context, sessionID string) (config.ActiveAgent, Model, error) {
 	if sessionID == "" {
-		active, ok := c.cfg.Config().InstantiateAgent(config.AgentCoder)
-		if !ok {
-			return config.ActiveAgent{}, Model{}, errCoderAgentNotConfigured
+		active, err := defaultAgentInstance(c.cfg.Config())
+		if err != nil {
+			return config.ActiveAgent{}, Model{}, err
 		}
 		model, err := c.buildModel(ctx, active, false)
 		return active, model, err

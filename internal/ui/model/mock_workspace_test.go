@@ -14,7 +14,7 @@ import (
 	reflect "reflect"
 	time "time"
 
-	v2 "charm.land/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	mcp "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	commands "github.com/NaturalSelect/angela/internal/commands"
 	config "github.com/NaturalSelect/angela/internal/config"
@@ -819,6 +819,20 @@ func (mr *MockWorkspaceMockRecorder) OverrideAgentVariant(agentID, variant any) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OverrideAgentVariant", reflect.TypeOf((*MockWorkspace)(nil).OverrideAgentVariant), agentID, variant)
 }
 
+// OverrideDefaultAgent mocks base method.
+func (m *MockWorkspace) OverrideDefaultAgent(agentID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OverrideDefaultAgent", agentID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// OverrideDefaultAgent indicates an expected call of OverrideDefaultAgent.
+func (mr *MockWorkspaceMockRecorder) OverrideDefaultAgent(agentID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OverrideDefaultAgent", reflect.TypeOf((*MockWorkspace)(nil).OverrideDefaultAgent), agentID)
+}
+
 // ParseAgentToolSessionID mocks base method.
 func (m *MockWorkspace) ParseAgentToolSessionID(sessionID string) (string, string, bool) {
 	m.ctrl.T.Helper()
@@ -1184,7 +1198,7 @@ func (mr *MockWorkspaceMockRecorder) Shutdown() *gomock.Call {
 }
 
 // Subscribe mocks base method.
-func (m *MockWorkspace) Subscribe(program *v2.Program) {
+func (m *MockWorkspace) Subscribe(program *tea.Program) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Subscribe", program)
 }

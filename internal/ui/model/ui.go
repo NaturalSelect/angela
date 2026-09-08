@@ -2520,18 +2520,27 @@ func (m *UI) toggleThinkingCmd() tea.Cmd {
 // handleSelectAgent points the current session at the chosen primary
 // agent. The switch lands on the session's agent instance, so it takes
 // effect from the next turn; a turn already streaming keeps the agent it
-// started on.
+// started on. With no session yet, there is no instance to edit, so the
+// pick lands on the config-level default instead — the same way a
+// pre-session variant pick does — and the session the first message
+// creates starts on it.
 func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
 	m.dialog.CloseDialog(dialog.AgentsID)
-	sessionID := m.currentSessionID()
-	if sessionID == "" {
-		return util.ReportWarn("Start a session before switching agents.")
-	}
 	if active := m.activeAgent(); active != nil && active.AgentID == msg.AgentID {
 		return nil
 	}
 
 	agentID := msg.AgentID
+	sessionID := m.currentSessionID()
+	if sessionID == "" {
+		return m.refreshActiveAgentCmd(func() tea.Msg {
+			if err := m.com.Workspace.OverrideDefaultAgent(agentID); err != nil {
+				return util.ReportError(err)()
+			}
+			return util.NewInfoMsg(agentSetMessage(m.com.Workspace.Config(), agentID))
+		})
+	}
+
 	return m.refreshActiveAgentCmd(func() tea.Msg {
 		edit := config.ActiveAgentEdit{Agent: agentID}
 		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
@@ -2539,6 +2548,20 @@ func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
 		}
 		return nil
 	})
+}
+
+// agentSetMessage names the agent a pre-session pick just set, the
+// same way variantSetMessage does for a preset. cfg is nil in tests
+// that never stub Config(), so it is treated the same as an agent
+// with no configured display name.
+func agentSetMessage(cfg *config.Config, agentID string) string {
+	name := agentID
+	if cfg != nil {
+		if agent, ok := cfg.Agents[agentID]; ok && agent.Name != "" {
+			name = agent.Name
+		}
+	}
+	return "Agent set to " + name
 }
 
 // handleSelectVariant points the session's model at a preset. With a
@@ -4922,16 +4945,14 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	return commands.InitialCmd()
 }
 
-// openAgentsDialog opens the primary-agent picker for the current
-// session. There is nothing to switch without a session: the agent
-// belongs to the session, not to the global config.
+// openAgentsDialog opens the primary-agent picker. With no session
+// yet, a pick lands on the config-level default a new session starts
+// on — the same way the variants dialog previews a preset before a
+// session exists to scope it to.
 func (m *UI) openAgentsDialog() tea.Cmd {
 	if m.dialog.ContainsDialog(dialog.AgentsID) {
 		m.dialog.BringToFront(dialog.AgentsID)
 		return nil
-	}
-	if m.session == nil {
-		return util.ReportWarn("Start a session before switching agents.")
 	}
 	active := m.activeAgent()
 	if active == nil {

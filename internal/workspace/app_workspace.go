@@ -415,6 +415,10 @@ func (w *AppWorkspace) OverrideAgentVariant(agentID, variant string) error {
 	return w.store.OverrideAgentVariant(agentID, variant)
 }
 
+func (w *AppWorkspace) OverrideDefaultAgent(agentID string) error {
+	return w.store.OverrideDefaultAgent(agentID)
+}
+
 func (w *AppWorkspace) RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.store.RecordRecentModel(scope, name, model)
 }

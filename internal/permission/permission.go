@@ -2,6 +2,7 @@ package permission
 
 import (
 	"context"
+	"log/slog"
 	"net/url"
 	"path/filepath"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/editorapproval"
 	"github.com/NaturalSelect/angela/internal/permission/shellscan"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/google/uuid"
@@ -184,6 +186,16 @@ type PermissionRequest struct {
 	DenyReason string `json:"deny_reason,omitempty"`
 }
 
+// EditorReviewer is the one call prompt makes on an external code
+// editor when a request looks like a file diff. editorapproval.Editor
+// satisfies it; the narrower interface lets this package depend on
+// only what prompt actually uses, and lets tests fake it without
+// building a real Editor.
+type EditorReviewer interface {
+	Available() bool
+	Review(ctx context.Context, req editorapproval.Request) (editorapproval.Decision, error)
+}
+
 type Service interface {
 	pubsub.Subscriber[PermissionRequest]
 	// GrantPersistent grants a permission request and remembers the grant
@@ -230,6 +242,11 @@ type Service interface {
 	// tool's approval prompt. Turning it off means merging a branch
 	// always reaches the user, even in yolo mode.
 	SetYoloSkipMerge(enabled bool)
+	// SetEditorReviewer attaches an external editor as a second,
+	// parallel channel for edit-shaped approval prompts: prompt asks
+	// it alongside the terminal dialog and takes whichever answers
+	// first. Nil disables it, which is also the default.
+	SetEditorReviewer(editor EditorReviewer)
 	SubscribeNotifications(ctx context.Context) <-chan pubsub.Event[PermissionNotification]
 }
 
@@ -265,6 +282,10 @@ type permissionService struct {
 	// the merge tool. Defaults to true, matching the historical
 	// behavior of yolo mode approving everything.
 	yoloSkipMerge atomic.Bool
+	// editor is the optional external editor prompt races against the
+	// terminal dialog for edit-shaped requests. A nil pointer, which
+	// is also the zero value, means the channel is disabled.
+	editor atomic.Pointer[EditorReviewer]
 }
 
 // NewPermissionService builds the service. A nil policy settles nothing
@@ -437,6 +458,14 @@ func (s *permissionService) prompt(ctx context.Context, ticket *Ticket, preview 
 
 	s.Publish(pubsub.CreatedEvent, request)
 
+	if reviewer := s.editorReviewer(); reviewer != nil && reviewer.Available() {
+		if edReq, ok := editorRequest(preview); ok {
+			reviewCtx, cancelReview := context.WithCancel(ctx)
+			defer cancelReview()
+			go s.editorReview(reviewCtx, reviewer, request, edReq)
+		}
+	}
+
 	select {
 	case <-ctx.Done():
 		return Decision{Outcome: OutcomeCancelled, Reason: "cancelled while waiting for approval"}
@@ -445,6 +474,65 @@ func (s *permissionService) prompt(ctx context.Context, ticket *Ticket, preview 
 			return Decision{Outcome: OutcomeAllow, Reason: "approved by the user"}
 		}
 		return Decision{Outcome: OutcomeUserDeny, Reason: res.reason}
+	}
+}
+
+// diffPreview is implemented by the Params of edit-shaped requests
+// (tools.EditPermissionsParams and its write/multiedit/merge
+// equivalents). permission cannot import the tools package without
+// creating an import cycle, so the match is structural: any Params
+// satisfying this interface is offered to the editor.
+type diffPreview interface {
+	// DiffPreview returns the file identity and both sides of the
+	// change, in the order editorapproval.Request wants them.
+	DiffPreview() (filePath, oldContent, newContent string)
+}
+
+// editorRequest builds an editorapproval.Request from a Preview whose
+// Params describes a file diff. It reports false for anything else,
+// such as a bash command or an MCP call.
+func editorRequest(preview Preview) (editorapproval.Request, bool) {
+	dp, ok := preview.Params.(diffPreview)
+	if !ok {
+		return editorapproval.Request{}, false
+	}
+	filePath, oldContent, newContent := dp.DiffPreview()
+	return editorapproval.Request{
+		FilePath:    filePath,
+		OldContent:  oldContent,
+		NewContent:  newContent,
+		Description: preview.Description,
+	}, true
+}
+
+// editorReviewer loads the attached EditorReviewer, if any.
+func (s *permissionService) editorReviewer() EditorReviewer {
+	p := s.editor.Load()
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+// editorReview asks an external editor to review req and feeds its
+// decision into the same resolution path a terminal answer takes.
+// resolve makes the first answer from either side win and turns the
+// other into a no-op, so this needs no coordination with prompt's own
+// select beyond the context it's passed.
+func (s *permissionService) editorReview(ctx context.Context, reviewer EditorReviewer, request PermissionRequest, req editorapproval.Request) {
+	decision, err := reviewer.Review(ctx, req)
+	if err != nil {
+		if ctx.Err() == nil {
+			slog.Warn("VS Code diff review failed; waiting on the terminal prompt", "error", err)
+		}
+		return
+	}
+	switch decision.Outcome {
+	case editorapproval.OutcomeApprove:
+		s.Grant(request)
+	case editorapproval.OutcomeDeny:
+		request.DenyReason = decision.Reason
+		s.Deny(request)
 	}
 }
 
@@ -676,6 +764,15 @@ func (s *permissionService) YoloSkipMerge() bool {
 
 func (s *permissionService) SetYoloSkipMerge(enabled bool) {
 	s.yoloSkipMerge.Store(enabled)
+}
+
+// SetEditorReviewer implements Service.
+func (s *permissionService) SetEditorReviewer(editor EditorReviewer) {
+	if editor == nil {
+		s.editor.Store(nil)
+		return
+	}
+	s.editor.Store(&editor)
 }
 
 // withinScope reports the accesses that need no approval because they

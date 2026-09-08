@@ -22,6 +22,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/clipboard"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/editorapproval"
 	"github.com/NaturalSelect/angela/internal/event"
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/format"
@@ -151,6 +152,12 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	if store.Overrides().NoYoloMerge {
 		permissions.SetYoloSkipMerge(false)
 	}
+	if !store.Overrides().NoVSCodeDiff {
+		permissions.SetEditorReviewer(editorapproval.VSCodeMCP{
+			WorkingDir: store.WorkingDir(),
+			Getenv:     clientEnvGetenv(store),
+		})
+	}
 
 	app := &App{
 		Sessions:    sessions,
@@ -234,6 +241,34 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	go app.LSPManager.TrackConfigured(ctx)
 
 	return app, nil
+}
+
+// clientEnvGetenv returns a Getenv function for editorapproval.VSCodeMCP
+// to probe TERM_PROGRAM (and anything else it needs) against the
+// environment of the client that asked for this workspace, not this
+// process's own.
+//
+// In local mode there is no daemon in between, so this process's
+// environment already is the client's, and store.Overrides().Env is
+// left nil: Getenv falls back to os.Getenv. In client-server mode,
+// connectToServer sends the CLI's os.Environ() over the wire, and
+// backend.CreateWorkspace copies it into Overrides().Env before
+// New runs — looking a key up only in that snapshot, rather than
+// falling back to this daemon process's own environment on a miss,
+// keeps a check like TERM_PROGRAM answering for the client's terminal
+// even when the two processes' environments disagree.
+func clientEnvGetenv(store *config.ConfigStore) func(string) string {
+	overrides := store.Overrides().Env
+	if overrides == nil {
+		return os.Getenv
+	}
+	env := make(map[string]string, len(overrides))
+	for _, kv := range overrides {
+		if key, value, ok := strings.Cut(kv, "="); ok {
+			env[key] = value
+		}
+	}
+	return func(key string) string { return env[key] }
 }
 
 // Config returns the pure-data configuration.

@@ -273,6 +273,41 @@ func TestApp_ConfigAndStore(t *testing.T) {
 	require.Same(t, store, app.Store())
 }
 
+// TestClientEnvGetenv_FallsBackToProcessEnvByDefault verifies that with
+// no client env override recorded (local mode, where this process's
+// own environment already is the client's), clientEnvGetenv reads
+// straight from the process environment.
+func TestClientEnvGetenv_FallsBackToProcessEnvByDefault(t *testing.T) {
+	t.Setenv("ANGELA_TEST_CLIENT_ENV_PROBE", "from-process")
+
+	store := config.NewTestStore(&config.Config{})
+	getenv := clientEnvGetenv(store)
+	require.Equal(t, "from-process", getenv("ANGELA_TEST_CLIENT_ENV_PROBE"))
+}
+
+// TestClientEnvGetenv_UsesOverrideOnceSet verifies that once
+// Overrides().Env is populated (client-server mode, set from the
+// connecting client's os.Environ()), clientEnvGetenv answers only from
+// that snapshot: a hit returns the client's value even when the
+// process disagrees, and a miss returns empty rather than silently
+// falling back to the daemon's own environment.
+func TestClientEnvGetenv_UsesOverrideOnceSet(t *testing.T) {
+	t.Setenv("ANGELA_TEST_CLIENT_ENV_PROBE", "from-process")
+	t.Setenv("ANGELA_TEST_CLIENT_ONLY_ON_PROCESS", "leaked-if-seen")
+
+	store := config.NewTestStore(&config.Config{})
+	store.Overrides().Env = []string{
+		"ANGELA_TEST_CLIENT_ENV_PROBE=from-client",
+		"TERM_PROGRAM=vscode",
+	}
+	getenv := clientEnvGetenv(store)
+	require.Equal(t, "from-client", getenv("ANGELA_TEST_CLIENT_ENV_PROBE"),
+		"a key present in the override must win over the process environment")
+	require.Equal(t, "vscode", getenv("TERM_PROGRAM"))
+	require.Empty(t, getenv("ANGELA_TEST_CLIENT_ONLY_ON_PROCESS"),
+		"a miss in the override must not fall back to the daemon's own environment")
+}
+
 // TestApp_SendEvent_DeliversToSubscriber verifies SendEvent publishes to
 // every subscriber returned by Events, and that ReportCurrentSession is
 // safe to call when no herdr client is attached (the common case in

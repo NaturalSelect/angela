@@ -420,3 +420,54 @@ func TestAccessOfProposalToolsOnlyRead(t *testing.T) {
 		})
 	}
 }
+
+// TestDiffPreview_ImplementedByEditShapedParams pins that every Params
+// type an edit-shaped permission request can carry implements the
+// structural interface permission matches against to offer a request
+// to an external editor for review (see permission.diffPreview).
+// permission can't import this package to assert that directly
+// without an import cycle, so this test guards it from this side.
+func TestDiffPreview_ImplementedByEditShapedParams(t *testing.T) {
+	t.Parallel()
+
+	type diffPreview interface {
+		DiffPreview() (filePath, oldContent, newContent string)
+	}
+
+	cases := []struct {
+		name                           string
+		params                         diffPreview
+		wantFilePath, wantOld, wantNew string
+	}{
+		{
+			name:         "edit",
+			params:       EditPermissionsParams{FilePath: "/work/a.go", OldContent: "old", NewContent: "new"},
+			wantFilePath: "/work/a.go", wantOld: "old", wantNew: "new",
+		},
+		{
+			name:         "write",
+			params:       WritePermissionsParams{FilePath: "/work/b.go", OldContent: "old2", NewContent: "new2"},
+			wantFilePath: "/work/b.go", wantOld: "old2", wantNew: "new2",
+		},
+		{
+			name:         "multiedit",
+			params:       MultiEditPermissionsParams{FilePath: "/work/c.go", OldContent: "old3", NewContent: "new3"},
+			wantFilePath: "/work/c.go", wantOld: "old3", wantNew: "new3",
+		},
+		{
+			name:         "merge",
+			params:       MergePermissionsParams{Name: ProposalDocumentName, OldContent: "", NewContent: "proposed"},
+			wantFilePath: ProposalDocumentName, wantOld: "", wantNew: "proposed",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			filePath, oldContent, newContent := tc.params.DiffPreview()
+			require.Equal(t, tc.wantFilePath, filePath)
+			require.Equal(t, tc.wantOld, oldContent)
+			require.Equal(t, tc.wantNew, newContent)
+		})
+	}
+}

@@ -37,6 +37,12 @@ type MultiEditPermissionsParams struct {
 	NewContent string `json:"new_content,omitempty"`
 }
 
+// DiffPreview lets the permission package offer this batch of edits to
+// an external code editor for review, without importing this package.
+func (p MultiEditPermissionsParams) DiffPreview() (filePath, oldContent, newContent string) {
+	return p.FilePath, p.OldContent, p.NewContent
+}
+
 type FailedEdit struct {
 	Index int                `json:"index"`
 	Error string             `json:"error"`

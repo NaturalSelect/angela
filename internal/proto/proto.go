@@ -19,13 +19,16 @@ type Workspace struct {
 	PermissionMode string `json:"permission_mode,omitempty"`
 	// NoYoloMerge disables the shortcut that lets yolo mode skip the
 	// merge tool's approval prompt (from the --no-yolo-merge flag).
-	NoYoloMerge bool           `json:"no_yolo_merge,omitempty"`
-	Debug       bool           `json:"debug,omitempty"`
-	DataDir     string         `json:"data_dir,omitempty"`
-	Version     string         `json:"version,omitempty"`
-	ClientID    string         `json:"client_id,omitempty"`
-	Config      *config.Config `json:"config,omitempty"`
-	Env         []string       `json:"env,omitempty"`
+	NoYoloMerge bool `json:"no_yolo_merge,omitempty"`
+	// NoVSCodeDiff disables the VS Code MCP diff-review channel (from
+	// the --no-vscode-diff flag).
+	NoVSCodeDiff bool           `json:"no_vscode_diff,omitempty"`
+	Debug        bool           `json:"debug,omitempty"`
+	DataDir      string         `json:"data_dir,omitempty"`
+	Version      string         `json:"version,omitempty"`
+	ClientID     string         `json:"client_id,omitempty"`
+	Config       *config.Config `json:"config,omitempty"`
+	Env          []string       `json:"env,omitempty"`
 	// Channels lists the MCP servers opted in as channels for this workspace
 	// (from the --channels flag).
 	Channels []string `json:"channels,omitempty"`

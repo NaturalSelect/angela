@@ -85,6 +85,18 @@ type RuntimeOverrides struct {
 	// merge tool's approval prompt (via the --no-yolo-merge flag), so
 	// merging a branch is always approved explicitly even in yolo mode.
 	NoYoloMerge bool
+	// NoVSCodeDiff disables the VS Code MCP diff-review channel (via
+	// the --no-vscode-diff flag), even when a matching VS Code window
+	// is detected, so an edit-shaped prompt only ever opens in the
+	// terminal.
+	NoVSCodeDiff bool
+	// Env is the environment of the client that requested this
+	// workspace, as KEY=VALUE strings. It is nil in local mode, where
+	// this process's own os.Getenv already reflects the terminal the
+	// user is sitting at; client-server mode sets it from the
+	// connecting client's os.Environ() so checks like TERM_PROGRAM
+	// still see the client's terminal rather than the daemon's.
+	Env []string
 }
 
 // ConfigStore is the single entry point for all config access. It owns the

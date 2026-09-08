@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,8 +23,9 @@ const devFilesHelperEnv = "ANGELA_TEST_ENTER_SANDBOX_DEV_FILES"
 
 // runDevFilesHelperProcess enters a sandbox with a read-only "/",
 // mirroring DefaultConfig's workspace profile, and reports on stdout
-// whether /dev/null stays writable and /dev/zero stays readable,
-// which a bare read-only "/" rule would otherwise deny.
+// whether /dev/null stays writable and /dev/zero, /dev/full,
+// /dev/random, and /dev/urandom stay readable, which a bare
+// read-only "/" rule would otherwise deny.
 func runDevFilesHelperProcess() int {
 	if err := (LandlockSandbox{}).EnterSandbox(Config{ReadOnly: []string{"/"}}); err != nil {
 		fmt.Fprintln(os.Stderr, "enter sandbox:", err)
@@ -43,26 +45,30 @@ func runDevFilesHelperProcess() int {
 	}
 	fmt.Println("NULL_WRITE_OK")
 
-	zero, err := os.Open("/dev/zero")
-	if err != nil {
-		fmt.Println("ZERO_OPEN_FAILED:", err)
-		return 0
+	for _, name := range []string{"zero", "full", "random", "urandom"} {
+		f, err := os.Open("/dev/" + name)
+		if err != nil {
+			fmt.Println(strings.ToUpper(name)+"_OPEN_FAILED:", err)
+			return 0
+		}
+		buf := make([]byte, 4)
+		_, readErr := f.Read(buf)
+		f.Close()
+		if readErr != nil {
+			fmt.Println(strings.ToUpper(name)+"_READ_FAILED:", readErr)
+			return 0
+		}
+		fmt.Println(strings.ToUpper(name) + "_READ_OK")
 	}
-	defer zero.Close()
-	buf := make([]byte, 4)
-	if _, err := zero.Read(buf); err != nil {
-		fmt.Println("ZERO_READ_FAILED:", err)
-		return 0
-	}
-	fmt.Println("ZERO_READ_OK")
 	return 0
 }
 
-// TestLandlockSandbox_EnterSandbox_AllowsDevNullAndDevZero exercises
+// TestLandlockSandbox_EnterSandbox_AllowsSafeDevFiles exercises
 // the real Landlock enforcement end to end, in a subprocess: a
 // read-only "/" sandbox, matching DefaultConfig's workspace profile,
-// must still allow writing to /dev/null and reading from /dev/zero.
-func TestLandlockSandbox_EnterSandbox_AllowsDevNullAndDevZero(t *testing.T) {
+// must still allow writing to /dev/null and reading from /dev/zero,
+// /dev/full, /dev/random, and /dev/urandom.
+func TestLandlockSandbox_EnterSandbox_AllowsSafeDevFiles(t *testing.T) {
 	t.Parallel()
 
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
@@ -71,4 +77,7 @@ func TestLandlockSandbox_EnterSandbox_AllowsDevNullAndDevZero(t *testing.T) {
 	require.NoError(t, err, "helper subprocess output: %s", output)
 	require.Contains(t, string(output), "NULL_WRITE_OK")
 	require.Contains(t, string(output), "ZERO_READ_OK")
+	require.Contains(t, string(output), "FULL_READ_OK")
+	require.Contains(t, string(output), "RANDOM_READ_OK")
+	require.Contains(t, string(output), "URANDOM_READ_OK")
 }

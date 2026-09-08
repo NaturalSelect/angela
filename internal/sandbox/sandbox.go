@@ -191,14 +191,17 @@ func (LandlockSandbox) EnterSandbox(cfg Config) error {
 		rules = append(rules, landlock.RWDirs(cfg.ReadWrite...).IgnoreIfMissing())
 	}
 	if len(rules) > 0 {
-		// /dev/null and /dev/zero are safe regardless of the rest of
-		// the sandbox (they don't expose or persist anything) and are
-		// routinely needed for I/O redirection, e.g. "cmd >/dev/null".
-		// Grant them explicitly: the workspace profile's read-only
-		// "/" would otherwise block writing to /dev/null.
+		// /dev/null, /dev/zero, /dev/full, /dev/random, and
+		// /dev/urandom are safe regardless of the rest of the
+		// sandbox (they don't expose or persist anything) and are
+		// routinely needed for I/O redirection and random data
+		// generation, e.g. "cmd >/dev/null" or "head -c16
+		// /dev/urandom". Grant them explicitly: the workspace
+		// profile's read-only "/" would otherwise block writing to
+		// /dev/null.
 		rules = append(rules,
 			landlock.RWFiles("/dev/null").IgnoreIfMissing(),
-			landlock.ROFiles("/dev/zero").IgnoreIfMissing(),
+			landlock.ROFiles("/dev/zero", "/dev/full", "/dev/random", "/dev/urandom").IgnoreIfMissing(),
 		)
 		if err := cf.RestrictPaths(rules...); err != nil {
 			return fmt.Errorf("enter sandbox: restrict paths: %w", err)

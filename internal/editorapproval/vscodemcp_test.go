@@ -2,7 +2,6 @@ package editorapproval
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,19 +13,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 )
-
-// shortSocketDir returns a fresh temp directory suitable as the base for
-// a Unix socket path. Unlike t.TempDir(), it doesn't embed the test
-// name, so paths built under it stay well below the 104-byte macOS
-// sun_path limit regardless of how long the test name is (see the same
-// pattern in internal/herdr/client_test.go and internal/server).
-func shortSocketDir(t *testing.T) string {
-	t.Helper()
-	dir, err := os.MkdirTemp("", "vscodemcp-sock")
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	return dir
-}
 
 type openDiffArgs struct {
 	OriginalFilePath string `json:"original_file_path"`
@@ -66,7 +52,7 @@ type closeDiffArgs struct {
 // to resolve a still-pending openDiff callback (mirroring VS Code's own
 // diff-state tracking, which resolves the matching open_diff call when
 // close_diff names its tab) use it to do so.
-func startFakeVSCodeServer(t *testing.T, openDiff func(ctx context.Context, args openDiffArgs) (*mcp.CallToolResult, error), onCloseDiff func(tabName string)) (sockPath, nonce string, closeDiffCh chan string) {
+func startFakeVSCodeServer(t *testing.T, openDiff func(ctx context.Context, args openDiffArgs) (*mcp.CallToolResult, error), onCloseDiff func(tabName string)) (scheme, sockPath, nonce string, closeDiffCh chan string) {
 	t.Helper()
 
 	nonce = uuid.NewString()
@@ -117,15 +103,13 @@ func startFakeVSCodeServer(t *testing.T, openDiff func(ctx context.Context, args
 		transport.ServeHTTP(w, r)
 	})
 
-	sockPath = filepath.Join(shortSocketDir(t), "mcp.sock")
-	l, err := net.Listen("unix", sockPath) //nolint:noctx
-	require.NoError(t, err)
+	l, scheme, sockPath := fakeLockListener(t)
 
 	httpSrv := &http.Server{Handler: mimicVSCodeSessions}
 	go func() { _ = httpSrv.Serve(l) }()
 	t.Cleanup(func() { _ = httpSrv.Close() })
 
-	return sockPath, nonce, closeDiffCh
+	return scheme, sockPath, nonce, closeDiffCh
 }
 
 // lockGetenv builds a Getenv func for a VSCodeMCP under test.
@@ -145,7 +129,7 @@ func lockGetenv(copilotHome, termProgram string) func(string) string {
 // fresh working directory, and returns a VSCodeMCP wired to find it
 // (plus the $COPILOT_HOME it lives under, for tests that need to build
 // their own variant Getenv).
-func newTestEditor(t *testing.T, sockPath, nonce string) (VSCodeMCP, string) {
+func newTestEditor(t *testing.T, scheme, sockPath, nonce string) (VSCodeMCP, string) {
 	t.Helper()
 	copilotHome := t.TempDir()
 	ideDir := filepath.Join(copilotHome, "ide")
@@ -154,7 +138,7 @@ func newTestEditor(t *testing.T, sockPath, nonce string) (VSCodeMCP, string) {
 
 	writeLock(t, ideDir, "test.lock", lockFile{
 		SocketPath:       sockPath,
-		Scheme:           "unix",
+		Scheme:           scheme,
 		Headers:          map[string]string{"Authorization": "Nonce " + nonce},
 		PID:              os.Getpid(),
 		WorkspaceFolders: []string{work},
@@ -172,8 +156,8 @@ func TestVSCodeMCP_Name(t *testing.T) {
 }
 
 func TestVSCodeMCP_Available_RequiresVSCodeTerminalAndLock(t *testing.T) {
-	sockPath, nonce, _ := startFakeVSCodeServer(t, nil, nil)
-	editor, copilotHome := newTestEditor(t, sockPath, nonce)
+	scheme, sockPath, nonce, _ := startFakeVSCodeServer(t, nil, nil)
+	editor, copilotHome := newTestEditor(t, scheme, sockPath, nonce)
 	require.True(t, editor.Available())
 
 	editor.Getenv = lockGetenv(copilotHome, "") // not inside VS Code's integrated terminal
@@ -184,14 +168,14 @@ func TestVSCodeMCP_Available_RequiresVSCodeTerminalAndLock(t *testing.T) {
 }
 
 func TestVSCodeMCP_Review_Approve(t *testing.T) {
-	sockPath, nonce, _ := startFakeVSCodeServer(t, func(_ context.Context, args openDiffArgs) (*mcp.CallToolResult, error) {
+	scheme, sockPath, nonce, _ := startFakeVSCodeServer(t, func(_ context.Context, args openDiffArgs) (*mcp.CallToolResult, error) {
 		require.Equal(t, "new\n", args.NewFileContents)
 		require.NotEmpty(t, args.TabName)
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{
 			Text: `{"success":true,"result":"SAVED","trigger":"accept_button","message":"applied"}`,
 		}}}, nil
 	}, nil)
-	editor, _ := newTestEditor(t, sockPath, nonce)
+	editor, _ := newTestEditor(t, scheme, sockPath, nonce)
 
 	got, err := editor.Review(t.Context(), Request{
 		FilePath:    "foo.go",
@@ -204,12 +188,12 @@ func TestVSCodeMCP_Review_Approve(t *testing.T) {
 }
 
 func TestVSCodeMCP_Review_Reject(t *testing.T) {
-	sockPath, nonce, _ := startFakeVSCodeServer(t, func(context.Context, openDiffArgs) (*mcp.CallToolResult, error) {
+	scheme, sockPath, nonce, _ := startFakeVSCodeServer(t, func(context.Context, openDiffArgs) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{
 			Text: `{"success":true,"result":"REJECTED","trigger":"reject_button","message":"discarded"}`,
 		}}}, nil
 	}, nil)
-	editor, _ := newTestEditor(t, sockPath, nonce)
+	editor, _ := newTestEditor(t, scheme, sockPath, nonce)
 
 	got, err := editor.Review(t.Context(), Request{FilePath: "foo.go", OldContent: "old\n", NewContent: "new\n"})
 	require.NoError(t, err)
@@ -217,20 +201,20 @@ func TestVSCodeMCP_Review_Reject(t *testing.T) {
 }
 
 func TestVSCodeMCP_Review_ServerReportedError(t *testing.T) {
-	sockPath, nonce, _ := startFakeVSCodeServer(t, func(context.Context, openDiffArgs) (*mcp.CallToolResult, error) {
+	scheme, sockPath, nonce, _ := startFakeVSCodeServer(t, func(context.Context, openDiffArgs) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "boom"}}}, nil
 	}, nil)
-	editor, _ := newTestEditor(t, sockPath, nonce)
+	editor, _ := newTestEditor(t, scheme, sockPath, nonce)
 
 	_, err := editor.Review(t.Context(), Request{FilePath: "foo.go"})
 	require.Error(t, err)
 }
 
 func TestVSCodeMCP_Review_MalformedResultErrors(t *testing.T) {
-	sockPath, nonce, _ := startFakeVSCodeServer(t, func(context.Context, openDiffArgs) (*mcp.CallToolResult, error) {
+	scheme, sockPath, nonce, _ := startFakeVSCodeServer(t, func(context.Context, openDiffArgs) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "not json"}}}, nil
 	}, nil)
-	editor, _ := newTestEditor(t, sockPath, nonce)
+	editor, _ := newTestEditor(t, scheme, sockPath, nonce)
 
 	_, err := editor.Review(t.Context(), Request{FilePath: "foo.go"})
 	require.Error(t, err)
@@ -251,7 +235,7 @@ func TestVSCodeMCP_Review_CancelCallsCloseDiff(t *testing.T) {
 	// connection open_diff's call is running on, which Review
 	// deliberately avoids doing (see closeDiff's doc comment).
 	resolved := make(chan struct{})
-	sockPath, nonce, closeDiffCh := startFakeVSCodeServer(t,
+	scheme, sockPath, nonce, closeDiffCh := startFakeVSCodeServer(t,
 		func(_ context.Context, _ openDiffArgs) (*mcp.CallToolResult, error) {
 			close(started)
 			<-resolved
@@ -261,7 +245,7 @@ func TestVSCodeMCP_Review_CancelCallsCloseDiff(t *testing.T) {
 		},
 		func(string) { close(resolved) },
 	)
-	editor, _ := newTestEditor(t, sockPath, nonce)
+	editor, _ := newTestEditor(t, scheme, sockPath, nonce)
 
 	reviewCtx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)

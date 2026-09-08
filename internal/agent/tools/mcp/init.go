@@ -334,17 +334,15 @@ func WaitForInit(ctx context.Context) error {
 	}
 }
 
-// InitializeSingle initializes a single MCP client by name.
+// InitializeSingle initializes a single MCP client by name. Unlike
+// [Initialize]'s bulk startup pass, it always attempts to connect even if
+// the server's config marks it Disabled: callers use it for the runtime
+// MCP-enable action, whose entire purpose is to start a config-disabled
+// server for the current session without persisting the change.
 func InitializeSingle(ctx context.Context, name string, cfg *config.ConfigStore) error {
 	m, exists := cfg.Config().MCP[name]
 	if !exists {
 		return fmt.Errorf("mcp '%s' not found in configuration", name)
-	}
-
-	if m.Disabled {
-		updateState(name, StateDisabled, nil, nil, Counts{})
-		slog.Debug("Skipping disabled MCP", "name", name)
-		return nil
 	}
 
 	return initClient(ctx, cfg, name, m, currentGen(name), cfg.Resolver())

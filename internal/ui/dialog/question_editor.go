@@ -195,9 +195,10 @@ func (e *questionEditor) drawNote(lines *[]contentLine, innerWidth int, bar, bar
 }
 
 // fillInCursor returns the hardware cursor position for the fill-in
-// textarea when it's focused. areaMinX is the left edge of the
-// content area; prefixWidth is the visual width of the "> " prompt.
-func (e *questionEditor) fillInCursor(screenRow, areaMinX, prefixWidth int) *tea.Cursor {
+// textarea when it's focused, relative to the content area's
+// top-left per the InlineEditor contract. prefixWidth is the visual
+// width of the "> " prompt.
+func (e *questionEditor) fillInCursor(screenRow, prefixWidth int) *tea.Cursor {
 	if !e.fillIn.Focused() {
 		return nil
 	}
@@ -205,14 +206,16 @@ func (e *questionEditor) fillInCursor(screenRow, areaMinX, prefixWidth int) *tea
 	if tc == nil {
 		return nil
 	}
-	tc.X += areaMinX + 1 + prefixWidth
+	const barWidth = 2 // "┃ " or "  ", applied by buildLines.
+	tc.X += barWidth + prefixWidth
 	tc.Y += screenRow
 	return tc
 }
 
 // noteCursor returns the hardware cursor position for the note
-// editor when it's focused.
-func (e *questionEditor) noteCursor(screenRow, areaMinX, prefixWidth int) *tea.Cursor {
+// editor when it's focused, relative to the content area's
+// top-left per the InlineEditor contract.
+func (e *questionEditor) noteCursor(screenRow, prefixWidth int) *tea.Cursor {
 	if !e.noteEditor.Focused() {
 		return nil
 	}
@@ -220,7 +223,8 @@ func (e *questionEditor) noteCursor(screenRow, areaMinX, prefixWidth int) *tea.C
 	if tc == nil {
 		return nil
 	}
-	tc.X += areaMinX + 1 + prefixWidth
+	const barWidth = 2 // "┃ " or "  ", applied by buildLines.
+	tc.X += barWidth + prefixWidth
 	tc.Y += screenRow
 	return tc
 }

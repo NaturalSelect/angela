@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -36,22 +38,22 @@ func (i Info) IsDevelopment() bool {
 
 // Available returns true if there's an update available.
 //
-// If both current and latest are stable versions, returns true if versions are
-// different.
-// If current is a pre-release and latest isn't, returns true.
-// If latest is a pre-release and current isn't, returns false.
+// If latest is a pre-release and current isn't, returns false: users on a
+// stable release are never prompted to install a pre-release.
+// Otherwise, returns true if latest is a numerically newer version than
+// current according to semantic version precedence. This covers going from
+// a pre-release to the matching or a newer stable release, as well as
+// ordinary stable-to-stable and pre-release-to-pre-release upgrades, while
+// rejecting cases where the fetched "latest" release is actually older than
+// current (e.g. current is an unreleased pre-release of a newer version).
 func (i Info) Available() bool {
 	cpr := strings.Contains(i.Current, "-")
 	lpr := strings.Contains(i.Latest, "-")
-	// current is pre release && latest isn't a prerelease
-	if cpr && !lpr {
-		return true
-	}
 	// latest is pre release && current isn't a prerelease
 	if lpr && !cpr {
 		return false
 	}
-	return i.Current != i.Latest
+	return semver.Compare("v"+i.Latest, "v"+i.Current) > 0
 }
 
 // Check checks if a new version is available.

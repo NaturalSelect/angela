@@ -307,19 +307,23 @@ func TestPermissions_MergeShowsTheProposalAsPlainContent(t *testing.T) {
 		"the proposal is held in memory and has no path to show")
 }
 
-// The fullscreen toggle and the split/unified switch are offered only
-// where they do something. A merge proposal has no old content to
-// diff against, so neither one applies.
-func TestPermissions_MergeOffersNoDiffControls(t *testing.T) {
+// The split/unified switch is offered only where it does something: a
+// merge proposal has no old content to diff against, so there is no
+// second side to switch between. The fullscreen toggle is different —
+// a proposal document can still run long, so it keeps that control
+// (and defaults to fullscreen, mirroring Edit/MultiEdit) even though
+// it renders as plain content rather than a diff.
+func TestPermissions_MergeOffersFullscreenButNotDiffMode(t *testing.T) {
 	t.Parallel()
 
 	p := newMergePermissions("# Plan\n\nRewrite the parser.")
+	require.True(t, p.fullscreen, "a merge proposal should default to fullscreen like a diff does")
 
 	var names []string
 	for _, b := range p.ShortHelp() {
 		names = append(names, b.Help().Key)
 	}
-	require.NotContains(t, names, p.keyMap.ToggleFullscreen.Help().Key)
+	require.Contains(t, names, p.keyMap.ToggleFullscreen.Help().Key)
 	require.NotContains(t, names, p.keyMap.ToggleDiffMode.Help().Key)
 }
 

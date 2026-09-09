@@ -238,7 +238,7 @@ func NewPermissions(com *common.Common, perm permission.PermissionRequest, opts 
 	}
 	// Diff-producing tools (Edit, Merge, etc.) default to fullscreen so the
 	// user can review the whole change without an extra keypress.
-	p.fullscreen = p.hasDiffView()
+	p.fullscreen = p.wantsRoomyFrame()
 
 	for _, opt := range opts {
 		opt(p)
@@ -302,7 +302,7 @@ func (p *Permissions) HandleMsg(msg tea.Msg) Action {
 				p.viewportDirty = true
 			}
 		case key.Matches(msg, p.keyMap.ToggleFullscreen):
-			if p.hasDiffView() {
+			if p.wantsRoomyFrame() {
 				p.fullscreen = !p.fullscreen
 			}
 		case key.Matches(msg, p.keyMap.ScrollDown):
@@ -494,6 +494,17 @@ func (p *Permissions) hasDiffView() bool {
 	return false
 }
 
+// wantsRoomyFrame reports whether this request's content can run long
+// enough to deserve the larger diff-sized frame and default-fullscreen
+// treatment. A real diff always qualifies. A merge proposal does too,
+// even though hasDiffView is false for it: mergeTool always hands back
+// a whole document with no old side, so it renders as plain content,
+// but that content is exactly the kind of long-form review a small box
+// would cramp.
+func (p *Permissions) wantsRoomyFrame() bool {
+	return p.hasDiffView() || p.permission.ToolName == toolnames.Merge
+}
+
 func (p *Permissions) isSplitMode() bool {
 	if p.diffSplitMode != nil {
 		return *p.diffSplitMode
@@ -521,9 +532,9 @@ func (p *Permissions) scrollRight() {
 func (p *Permissions) frameSpec(area uv.Rectangle) (FrameSpec, bool) {
 	forceFullscreen := area.Dx() <= minWindowWidth || area.Dy() <= minWindowHeight
 	switch {
-	case forceFullscreen || (p.fullscreen && p.hasDiffView()):
+	case forceFullscreen || (p.fullscreen && p.wantsRoomyFrame()):
 		return FrameSpec{Fullscreen: true}, forceFullscreen
-	case p.hasDiffView():
+	case p.wantsRoomyFrame():
 		return FrameSpec{
 			WidthRatio:  diffSizeRatio,
 			MaxWidth:    diffMaxWidth,
@@ -543,7 +554,7 @@ func (p *Permissions) frameSpec(area uv.Rectangle) (FrameSpec, bool) {
 // the content's natural height. Simple prompts shrink to fit their
 // content; diff and fullscreen views always take all remaining height.
 func (p *Permissions) contentViewportHeight(forceFullscreen bool, maxHeight, fixedHeight, contentHeight int) int {
-	if p.hasDiffView() || forceFullscreen {
+	if p.wantsRoomyFrame() || forceFullscreen {
 		return maxHeight - fixedHeight
 	}
 	if fixedHeight+contentHeight < maxHeight {
@@ -561,7 +572,7 @@ func (p *Permissions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	dialogStyle := t.Dialog.View.Width(width).Padding(0, 1)
 	// The dialog fills the screen when forced small or when a diff is
 	// expanded; center the buttons then instead of hugging the far edge.
-	fullscreen := forceFullscreen || (p.fullscreen && p.hasDiffView())
+	fullscreen := forceFullscreen || (p.fullscreen && p.wantsRoomyFrame())
 
 	contentWidth := p.calculateContentWidth(width)
 	header := p.renderHeader(contentWidth)
@@ -1137,11 +1148,10 @@ func (p *Permissions) ShortHelp() []key.Binding {
 	}
 
 	if p.hasDiffView() {
-		bindings = append(
-			bindings,
-			p.keyMap.ToggleDiffMode,
-			p.keyMap.ToggleFullscreen,
-		)
+		bindings = append(bindings, p.keyMap.ToggleDiffMode)
+	}
+	if p.wantsRoomyFrame() {
+		bindings = append(bindings, p.keyMap.ToggleFullscreen)
 	}
 
 	return bindings

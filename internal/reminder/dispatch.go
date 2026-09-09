@@ -33,9 +33,11 @@ type dispatch struct{}
 func (dispatch) Name() string { return "dispatch" }
 
 func (dispatch) Collect(s State) string {
-	// A sub-agent is already the dedicated agent for its task, and an
-	// agent the tool was filtered out of has nowhere to delegate to.
-	if s.IsSubAgent || !s.CanDispatch {
+	// An agent the tool was filtered out of has nowhere to delegate to. A
+	// sub-agent that still holds it (e.g. a general-purpose agent allowed
+	// to nest further within the depth limit) weighs the same question
+	// the main agent does.
+	if !s.CanDispatch {
 		return ""
 	}
 	return dispatchText

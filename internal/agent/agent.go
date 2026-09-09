@@ -739,6 +739,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		PendingMCPServers:    pendingMCP,
 		UserReminders:        a.reminders,
 		CanDispatch:          hasAgentTool(agentTools),
+		CanUseTodos:          hasTodosTool(agentTools),
 	}) {
 		slog.Debug("Injecting system reminder", "source", notice.Source, "session_id", call.SessionID)
 		reminderMsg, createErr := a.messages.Create(ctx, call.SessionID, message.CreateMessageParams{
@@ -1785,6 +1786,15 @@ func splitUnavailableMCP(servers []mcp.ClientInfo) (failed, pending []string) {
 func hasAgentTool(tools []fantasy.AgentTool) bool {
 	return slices.ContainsFunc(tools, func(t fantasy.AgentTool) bool {
 		return t.Info().Name == toolnames.Agent
+	})
+}
+
+// hasTodosTool reports whether the Todos tool survived this turn's tool
+// filtering. An agent it was filtered out of has no list to track work
+// in, so the reminder that nudges toward it has nothing to say.
+func hasTodosTool(tools []fantasy.AgentTool) bool {
+	return slices.ContainsFunc(tools, func(t fantasy.AgentTool) bool {
+		return t.Info().Name == toolnames.Todos
 	})
 }
 

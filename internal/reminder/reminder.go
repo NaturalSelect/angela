@@ -18,6 +18,9 @@ const Tag = "system-reminder"
 type State struct {
 	IsSubAgent      bool
 	TurnsSinceTodos int
+	// CanUseTodos reports that the Todos tool survived this turn's tool
+	// filtering, so there is a list for the model to track work in.
+	CanUseTodos bool
 	// Compacted reports that the conversation was summarized, so everything
 	// before the summary is gone from the model's view.
 	Compacted bool

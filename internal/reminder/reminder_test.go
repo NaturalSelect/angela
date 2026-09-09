@@ -37,14 +37,15 @@ func TestTodoRecencyFiresOnAnInterval(t *testing.T) {
 		state      State
 		wantNudged bool
 	}{
-		{"first turn stays quiet", State{TurnsSinceTodos: 0}, false},
-		{"still quiet below the threshold", State{TurnsSinceTodos: 2}, false},
-		{"nudges once the threshold is reached", State{TurnsSinceTodos: 3}, true},
-		{"does not repeat on the very next turn", State{TurnsSinceTodos: 4}, false},
-		{"stays quiet until the interval elapses", State{TurnsSinceTodos: 5}, false},
-		{"nudges again a full interval later", State{TurnsSinceTodos: 6}, true},
-		{"a subagent is never nudged", State{TurnsSinceTodos: 3, IsSubAgent: true}, false},
-		{"a subagent stays quiet however long it waits", State{TurnsSinceTodos: 99, IsSubAgent: true}, false},
+		{"first turn stays quiet", State{CanUseTodos: true, TurnsSinceTodos: 0}, false},
+		{"still quiet below the threshold", State{CanUseTodos: true, TurnsSinceTodos: 2}, false},
+		{"nudges once the threshold is reached", State{CanUseTodos: true, TurnsSinceTodos: 3}, true},
+		{"does not repeat on the very next turn", State{CanUseTodos: true, TurnsSinceTodos: 4}, false},
+		{"stays quiet until the interval elapses", State{CanUseTodos: true, TurnsSinceTodos: 5}, false},
+		{"nudges again a full interval later", State{CanUseTodos: true, TurnsSinceTodos: 6}, true},
+		{"an agent the tool was filtered out of has no list to track work in", State{TurnsSinceTodos: 3}, false},
+		{"a subagent holding the tool is nudged just like the main agent", State{CanUseTodos: true, IsSubAgent: true, TurnsSinceTodos: 3}, true},
+		{"a subagent without the tool stays quiet however long it waits", State{IsSubAgent: true, TurnsSinceTodos: 99}, false},
 	}
 
 	for _, tt := range tests {
@@ -346,7 +347,8 @@ func TestDispatchFiresOnlyWhenDelegationIsPossible(t *testing.T) {
 		{"a main agent holding the tool is nudged", State{CanDispatch: true}, true},
 		{"the nudge repeats, it is not a first-turn briefing", State{CanDispatch: true, TurnsSinceTodos: 9}, true},
 		{"an agent the tool was filtered out of has nowhere to send work", State{}, false},
-		{"a subagent does not re-delegate its own assignment", State{IsSubAgent: true, CanDispatch: true}, false},
+		{"a subagent holding the tool weighs delegation like the main agent", State{IsSubAgent: true, CanDispatch: true}, true},
+		{"a subagent the tool was filtered out of has nowhere to send work either", State{IsSubAgent: true}, false},
 	}
 
 	for _, tt := range tests {

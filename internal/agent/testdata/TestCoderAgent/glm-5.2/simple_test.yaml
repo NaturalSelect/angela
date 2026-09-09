@@ -24,15 +24,27 @@ interactions:
     proto_minor: 0
     content_length: -1
     body: |+
-      data: {"id": "chatcmpl-123bb0fabacaaf3aee6830dc", "object": "chat.completion.chunk", "created": 1788874878, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-123bb0fabacaaf3aee6830dc", "object": "chat.completion.chunk", "created": 1788874878, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "Hello! How"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "Hello! How"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-123bb0fabacaaf3aee6830dc", "object": "chat.completion.chunk", "created": 1788874878, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " can I help you"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " can I help you"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-123bb0fabacaaf3aee6830dc", "object": "chat.completion.chunk", "created": 1788874878, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " today?"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " today? I"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-123bb0fabacaaf3aee6830dc", "object": "chat.completion.chunk", "created": 1788874878, "model": "glm-5.2", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"completion_tokens": 11, "prompt_tokens": 10551, "total_tokens": 10562, "completion_tokens_details": {"accepted_prediction_tokens": null, "audio_tokens": null, "reasoning_tokens": 0, "rejected_prediction_tokens": null}, "prompt_tokens_details": {"audio_tokens": null, "cached_tokens": 0}}}
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "'m ready"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " to assist"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " with software engineering tasks"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " in"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " your"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " current working directory."}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-063865b0ba4988cd5aac03a8", "object": "chat.completion.chunk", "created": 1788915808, "model": "glm-5.2", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"completion_tokens": 26, "prompt_tokens": 10551, "total_tokens": 10577, "completion_tokens_details": {"accepted_prediction_tokens": null, "audio_tokens": null, "reasoning_tokens": 0, "rejected_prediction_tokens": null}, "prompt_tokens_details": {"audio_tokens": null, "cached_tokens": 0}}}
 
       data: [DONE]
 
@@ -41,4 +53,4 @@ interactions:
       - text/event-stream
     status: 200 OK
     code: 200
-    duration: 10.278027397s
+    duration: 12.236554177s

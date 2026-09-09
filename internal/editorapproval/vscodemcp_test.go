@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -271,4 +272,47 @@ func TestVSCodeMCP_Review_CancelCallsCloseDiff(t *testing.T) {
 
 	err := <-done
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestReviewTabName(t *testing.T) {
+	t.Parallel()
+
+	workingDir := filepath.Join(t.TempDir(), "project")
+	inside := filepath.Join(workingDir, "internal", "foo.go")
+	outside := filepath.Join(t.TempDir(), "bar.go")
+
+	tests := []struct {
+		name string
+		req  Request
+		want string
+	}{
+		{
+			name: "no description falls back to the base name",
+			req:  Request{FilePath: inside},
+			want: "foo.go",
+		},
+		{
+			name: "a description path inside the working dir is shortened",
+			req:  Request{FilePath: inside, Description: "Replace content in file " + inside},
+			want: "Replace content in file " + filepath.Join("internal", "foo.go"),
+		},
+		{
+			name: "a description path outside the working dir stays absolute",
+			req:  Request{FilePath: outside, Description: "Replace content in file " + outside},
+			want: "Replace content in file " + outside,
+		},
+		{
+			name: "a description without a real path is left untouched",
+			req:  Request{FilePath: "PROPOSAL.md", Description: "Merge PROPOSAL.md"},
+			want: "Merge PROPOSAL.md",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := reviewTabName(tt.req, workingDir)
+			require.True(t, strings.HasPrefix(got, "angela: "+tt.want+" ("), "got %q", got)
+		})
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -80,7 +81,7 @@ func (v VSCodeMCP) Review(ctx context.Context, req Request) (Decision, error) {
 	}
 	defer session.Close()
 
-	tabName := reviewTabName(req)
+	tabName := reviewTabName(req, v.WorkingDir)
 
 	type callOutcome struct {
 		res *mcp.CallToolResult
@@ -165,13 +166,33 @@ func connectVSCodeMCP(ctx context.Context, lock lockFile) (*mcp.ClientSession, e
 
 // reviewTabName names the VS Code diff tab. It's suffixed with a short
 // unique id because the server tracks open diffs by tab name, and
-// Angela can have more than one review in flight at once.
-func reviewTabName(req Request) string {
+// Angela can have more than one review in flight at once. The
+// absolute path req.Description embeds is shortened to one relative
+// to workingDir when it sits inside it, so a deeply nested project
+// doesn't turn the tab title into a wall of directories.
+func reviewTabName(req Request, workingDir string) string {
 	name := req.Description
 	if name == "" {
 		name = filepath.Base(req.FilePath)
+	} else if rel, ok := workspaceRelative(req.FilePath, workingDir); ok {
+		name = strings.Replace(name, req.FilePath, rel, 1)
 	}
 	return fmt.Sprintf("angela: %s (%s)", name, uuid.NewString()[:8])
+}
+
+// workspaceRelative reports path relative to workingDir, for
+// shortening an absolute path embedded in a UI label. It reports
+// false when path isn't absolute or doesn't sit inside workingDir, so
+// callers fall back to showing it unchanged.
+func workspaceRelative(path, workingDir string) (string, bool) {
+	if workingDir == "" || !filepathext.SmartIsAbs(path) {
+		return "", false
+	}
+	rel, err := filepath.Rel(workingDir, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
 }
 
 // openDiffResult is the JSON payload open_diff's text content decodes

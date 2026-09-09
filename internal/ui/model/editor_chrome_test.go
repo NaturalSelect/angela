@@ -199,7 +199,7 @@ func TestEditorPlaceholderHasNoPersonality(t *testing.T) {
 	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 	m.width = 120
 
-	require.Equal(t, "Ask anything — / for commands, @ for agents, # for files", m.editorPlaceholder())
+	require.Equal(t, "Ask anything — / for commands, @ for agents, # for files, & for skills", m.editorPlaceholder())
 
 	m.width = 40
 	require.Equal(t, "Ask anything…", m.editorPlaceholder())

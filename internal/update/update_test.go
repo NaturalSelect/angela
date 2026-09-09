@@ -36,6 +36,17 @@ func TestCheckForUpdate_Beta(t *testing.T) {
 		require.NotNil(t, info)
 		require.True(t, info.Available())
 	})
+
+	t.Run("current is a pre-release ahead of the latest stable release", func(t *testing.T) {
+		// The latest GitHub release only tracks the newest non-prerelease
+		// tag, so it can lag behind a pre-release of a not-yet-released
+		// version. Current being numerically newer must not be reported as
+		// an available update.
+		info, err := Check(t.Context(), "v0.0.2-rc1", newClient(t, "v0.0.1"))
+		require.NoError(t, err)
+		require.NotNil(t, info)
+		require.False(t, info.Available())
+	})
 }
 
 // newClient returns a MockClient whose Latest reports tag, mirroring the

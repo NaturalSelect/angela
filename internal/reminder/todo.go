@@ -39,7 +39,8 @@ type todoRecency struct{}
 func (todoRecency) Name() string { return "todo_recency" }
 
 func (todoRecency) Collect(s State) string {
-	if s.IsSubAgent {
+	// An agent the tool was filtered out of has no list to track work in.
+	if !s.CanUseTodos {
 		return ""
 	}
 	if s.TurnsSinceTodos < todoRecencyNudgeEvery || s.TurnsSinceTodos%todoRecencyNudgeEvery != 0 {

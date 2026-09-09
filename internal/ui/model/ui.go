@@ -4411,7 +4411,7 @@ func (m *UI) editorPlaceholder() string {
 	if m.width < narrowWidthBreakpoint {
 		return "Ask anything…"
 	}
-	return "Ask anything — / for commands, @ for agents, # for files"
+	return "Ask anything — / for commands, @ for agents, # for files, & for skills"
 }
 
 // editorCaption returns the one-line run context: which agent and model the

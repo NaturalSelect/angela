@@ -10,6 +10,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -268,6 +269,31 @@ func TestSummarizeExecutorForRebuildsAPersistedChildRoute(t *testing.T) {
 	route, routed := coord.subagentRoutes.Get(childID)
 	require.True(t, routed, "the route was resolved but never registered")
 	require.Equal(t, config.AgentExplore, route.agentID)
+}
+
+// routeFor must rebuild not just the in-memory route but the permission
+// chain that goes with it: a child session resumed after a restart has to
+// keep inheriting its parent's attendedness, the same as one dispatched in
+// this same process would, not start out judged as its own root.
+func TestRouteForRebuildsThePermissionChain(t *testing.T) {
+	t.Parallel()
+	coord := newGateTestCoordinator(t, false)
+	coord.permissions = permission.NewPermissionService(t.TempDir(), permission.ModeManual, nil)
+	childID := persistedChildSession(t, coord, config.AgentExplore)
+
+	child, err := coord.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
+	coord.permissions.SetSessionUnattended(child.ParentSessionID, true)
+
+	require.False(t, coord.permissions.SessionUnattended(childID),
+		"test premise: the permission chain must not exist before routeFor rebuilds it")
+
+	_, routed, err := coord.routeFor(t.Context(), childID)
+	require.NoError(t, err)
+	require.True(t, routed)
+
+	assert.True(t, coord.permissions.SessionUnattended(childID),
+		"a resumed child session must still defer to its parent's attendedness")
 }
 
 // Quitting has to stop sub-agents too, and each executor should be told once

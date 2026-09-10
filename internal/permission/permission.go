@@ -219,17 +219,22 @@ type Service interface {
 	// asks first, so a refused path is never read in order to build a
 	// preview of reading it.
 	PolicyDenial(access Access) (Decision, bool)
-	// SetSessionPromptPolicy decides what a session does when a request
-	// reaches the prompt. It can never override a deny rule or a
-	// dangerous command.
-	SetSessionPromptPolicy(sessionID string, policy PromptPolicy)
+	// RegisterChild records that childID was spawned by parentID, e.g.
+	// a sub-agent or branch session. Nothing about a child ever grants
+	// it more than the parent already has: RegisterChild only lets
+	// SessionUnattended and a session grant resolve by walking up to
+	// the root instead of being copied once at spawn time and left to
+	// go stale when the root's own state changes later. Idempotent.
+	RegisterChild(childID, parentID string)
 	// SetSessionUnattended records whether anything is attached to this
 	// session that could answer a prompt. An unattended session refuses
 	// a request that must be asked about instead of blocking on a
 	// prompt nobody will ever see.
 	SetSessionUnattended(sessionID string, unattended bool)
-	// SessionUnattended reports what SetSessionUnattended recorded, so a
-	// session spawned by another can inherit its answer.
+	// SessionUnattended reports whether sessionID, or the nearest
+	// ancestor RegisterChild connects it to, was marked unattended by
+	// SetSessionUnattended. A session with no explicit mark anywhere
+	// on its chain is attended.
 	SessionUnattended(sessionID string) bool
 	// Mode reports the current permission mode.
 	Mode() PermissionMode
@@ -271,7 +276,11 @@ type permissionService struct {
 	sessionPermissions *csync.Map[GrantKey, bool]
 	pendingRequests    *csync.Map[string, chan resolution]
 	pendingGrants      *csync.Map[string, Ticket]
-	sessionPrompts     *csync.Map[string, PromptPolicy]
+	// sessionParents maps a derived session (sub-agent, branch) to
+	// whichever session spawned it, so attendedness and grants can be
+	// resolved by walking up to the root rather than copied at spawn
+	// time and left to go stale.
+	sessionParents *csync.Map[string, string]
 	// sessionUnattended marks sessions with no one to answer a prompt.
 	sessionUnattended *csync.Map[string, bool]
 	// sessionGates serialises prompts per session, so one session
@@ -311,7 +320,7 @@ func NewPermissionService(workingDir string, initialMode PermissionMode, policy 
 		sessionPermissions: csync.NewMap[GrantKey, bool](),
 		pendingRequests:    csync.NewMap[string, chan resolution](),
 		pendingGrants:      csync.NewMap[string, Ticket](),
-		sessionPrompts:     csync.NewMap[string, PromptPolicy](),
+		sessionParents:     csync.NewMap[string, string](),
 		sessionUnattended:  csync.NewMap[string, bool](),
 		sessionGates:       csync.NewMap[string, chan struct{}](),
 	}
@@ -322,8 +331,9 @@ func NewPermissionService(workingDir string, initialMode PermissionMode, policy 
 
 // Gate walks the decision ladder. The order is load bearing: a deny
 // rule is the configuration's word and outranks even the user's own
-// yolo mode, while a dangerous or unanalysable command outranks every
-// form of pre-approval below it.
+// yolo mode, while a dangerous or unanalysable command — and an ask
+// rule, which asks for exactly the same reason — outranks every form
+// of pre-approval below it.
 func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision {
 	access := req.Access
 
@@ -342,14 +352,20 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 	}
 
 	forced, forcedReason := s.forcedPrompt(access)
+	if !forced && verdict.Matched && verdict.Action == RuleAsk {
+		forced, forcedReason = true, verdict.Reason
+	}
 
 	if !forced && hookApproved(ctx, req.ToolCallID) {
 		s.notify(req.ToolCallID, true, false)
 		return Decision{Outcome: OutcomeAllow, Reason: "approved by a PreToolUse hook"}
 	}
 
+	// Grants live at the session tree's root, so a sub-agent and the
+	// session that dispatched it share one approval rather than each
+	// asking on its own.
 	grant := GrantKey{
-		SessionID: req.SessionID,
+		SessionID: s.rootOf(req.SessionID),
 		Action:    access.Action,
 		Dir:       s.grantDir(access),
 		Scope:     s.grantScope(access),
@@ -358,9 +374,6 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 	if !forced {
 		if mode == ModeAutoAcceptEdits && access.Action == ActionEdit {
 			return Decision{Outcome: OutcomeAllow, Reason: "auto-accepting edits"}
-		}
-		if s.sessionPrompt(req.SessionID) == PromptAllow {
-			return Decision{Outcome: OutcomeAllow, Reason: "session runs without prompting"}
 		}
 		if _, ok := s.sessionPermissions.Get(grant); ok {
 			s.notify(req.ToolCallID, true, false)
@@ -405,7 +418,7 @@ func (s *permissionService) promptRefusal(sessionID, forcedReason string) (Decis
 			reason = forcedReason + "; " + reason
 		}
 		return Decision{Outcome: OutcomePolicyDeny, Reason: reason}, true
-	case s.sessionPrompt(sessionID) == PromptDeny || s.policy.Prompt() == PromptDeny:
+	case s.policy.Prompt() == PromptDeny:
 		reason := forcedReason
 		if reason == "" {
 			reason = "permission prompts are disabled"
@@ -658,25 +671,65 @@ func (s *permissionService) acquireSession(ctx context.Context, sessionID string
 	}
 }
 
-func (s *permissionService) sessionPrompt(sessionID string) PromptPolicy {
-	policy, ok := s.sessionPrompts.Get(sessionID)
-	if !ok {
-		return PromptAsk
+// RegisterChild records that childID was spawned by parentID, e.g. a
+// sub-agent or branch session. It never grants childID anything on
+// its own; it only lets sessionChain resolve attendedness and grants
+// by walking up to the root instead of copying state once at spawn
+// time. Calling it more than once for the same child simply updates
+// the parent it points at.
+func (s *permissionService) RegisterChild(childID, parentID string) {
+	if childID == "" || parentID == "" || childID == parentID {
+		return
 	}
-	return policy
+	s.sessionParents.Set(childID, parentID)
 }
 
-func (s *permissionService) SetSessionPromptPolicy(sessionID string, policy PromptPolicy) {
-	s.sessionPrompts.Set(sessionID, policy)
+// sessionChain lists sessionID and every ancestor RegisterChild
+// connects it to, root last. The cap guards a RegisterChild misuse
+// that formed a cycle; it never triggers on the tree any caller in
+// this codebase actually builds.
+func (s *permissionService) sessionChain(sessionID string) []string {
+	chain := []string{sessionID}
+	seen := map[string]bool{sessionID: true}
+	for len(chain) < 64 {
+		parent, ok := s.sessionParents.Get(chain[len(chain)-1])
+		if !ok {
+			break
+		}
+		if seen[parent] {
+			slog.Warn("Permission session chain has a cycle", "session", sessionID, "at", parent)
+			break
+		}
+		chain = append(chain, parent)
+		seen[parent] = true
+	}
+	return chain
+}
+
+// rootOf reports the top of sessionID's RegisterChild chain, or
+// sessionID itself when nothing ever registered it as a child. Grants
+// are keyed on the root so a sub-agent and the session that
+// dispatched it share one approval instead of asking twice.
+func (s *permissionService) rootOf(sessionID string) string {
+	chain := s.sessionChain(sessionID)
+	return chain[len(chain)-1]
 }
 
 func (s *permissionService) SetSessionUnattended(sessionID string, unattended bool) {
 	s.sessionUnattended.Set(sessionID, unattended)
 }
 
+// SessionUnattended reports the nearest explicit mark on sessionID's
+// chain, checking sessionID itself before any ancestor. A session
+// nothing ever marked, anywhere on its chain, is attended: the
+// ordinary, interactive case.
 func (s *permissionService) SessionUnattended(sessionID string) bool {
-	unattended, _ := s.sessionUnattended.Get(sessionID)
-	return unattended
+	for _, id := range s.sessionChain(sessionID) {
+		if unattended, ok := s.sessionUnattended.Get(id); ok {
+			return unattended
+		}
+	}
+	return false
 }
 
 func (s *permissionService) notify(toolCallID string, granted, denied bool) {

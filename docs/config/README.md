@@ -238,9 +238,13 @@ future release. See the [hooks docs](../hooks/) for the full guide.
     // Tools that don't require permission prompts.
     "allowed_tools": ["View", "LS", "Grep"],
 
-    // Declarative permission rules. Precedence: deny > ask > allow.
+    // Declarative permission rules. Precedence: deny > ask > allow. An
+    // "ask" rule always reaches a real prompt, even where auto-accept
+    // edits, a PreToolUse hook, or an earlier grant in the same session
+    // would otherwise skip it.
     "rules": [
       { "action": "deny",  "tool": "read",    "pattern": "**/.env", "mode": "path" },
+      { "action": "ask",   "tool": "bash",    "pattern": "git push*" },
       { "action": "allow", "tool": "bash",    "pattern": "git status*" },
       { "action": "allow", "tool": "network", "pattern": "docs.example.com", "mode": "domain" }
     ],

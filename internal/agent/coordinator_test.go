@@ -386,27 +386,28 @@ func TestRunSubAgent(t *testing.T) {
 		assert.InDelta(t, 0.05, updated.Cost, 1e-9)
 	})
 
-	// TestRunSubAgent/child session is pre-approved pins a regression:
-	// the generic dispatch path used to lose agentic_fetch's explicit
-	// per-session grant on its child session. A child session has
-	// no UI subscriber to ever answer its permission events, so without
-	// this, any permission-gated tool a subagent uses (web_fetch,
-	// web_search, or bash/edit inherited by "general") would block until
-	// ctx is done rather than resolve. env.permissions defaults to
-	// skip=true, which would mask that, so this uses its own
-	// skip=false, rule-free service to isolate the child-session
-	// grant from the global YOLO shortcut.
-	t.Run("child session is pre-approved", func(t *testing.T) {
+	// TestRunSubAgent/child session is not pre-approved pins the fix for
+	// a permission bypass: runSubAgent used to grant its child session a
+	// blanket PromptAllow, so any permission-gated tool a subagent used
+	// skipped the ladder entirely regardless of what its parent session
+	// was allowed to do. A sub-agent must now be judged exactly as its
+	// parent would be, linked only through RegisterChild.
+	t.Run("child session is not pre-approved", func(t *testing.T) {
 		env := testEnv(t)
 		coord := newTestCoordinator(t, env, providerID, providerCfg)
 		coord.permissions = permission.NewPermissionService(env.workingDir, permission.ModeManual, nil)
 
 		parentSession, err := env.sessions.Create(t.Context(), "Parent")
 		require.NoError(t, err)
+		// Mirrors what a headless run marks on its own session: nothing
+		// is attached to answer a prompt, so an unsettled access must
+		// be refused rather than silently allowed just because it
+		// happened to run inside a sub-agent.
+		coord.permissions.SetSessionUnattended(parentSession.ID, true)
 
-		var granted bool
+		var decision permission.Decision
 		agent, resolved := newMockAgent(t, providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
-			decision := coord.permissions.Gate(ctx, permission.GateRequest{
+			decision = coord.permissions.Gate(ctx, permission.GateRequest{
 				SessionID:  call.SessionID,
 				ToolCallID: "child-call",
 				Access: permission.Access{
@@ -415,7 +416,6 @@ func TestRunSubAgent(t *testing.T) {
 					URL:    "https://example.com",
 				},
 			})
-			granted = decision.Allowed()
 			return agentResultWithText("fetched"), nil
 		})
 
@@ -433,7 +433,69 @@ func TestRunSubAgent(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.False(t, resp.IsError, resp.Content)
-		require.True(t, granted, "child session's permission request must resolve without an interactive prompt")
+		assert.Equal(t, permission.OutcomePolicyDeny, decision.Outcome,
+			"a sub-agent must not inherit a blanket approval its parent never had")
+	})
+
+	// This is the flip side of the previous case: RegisterChild must
+	// still let a child see a grant its parent legitimately earned,
+	// since grants live at the root of the session tree.
+	t.Run("child sees a grant its parent already earned", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+		coord.permissions = permission.NewPermissionService(env.workingDir, permission.ModeManual, nil)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		access := permission.Access{
+			Tool:   toolnames.WebFetch,
+			Action: permission.ActionNetwork,
+			URL:    "https://example.com",
+		}
+
+		events := coord.permissions.Subscribe(t.Context())
+		parentDone := make(chan permission.Decision, 1)
+		go func() {
+			parentDone <- coord.permissions.Gate(t.Context(), permission.GateRequest{
+				SessionID:  parentSession.ID,
+				ToolCallID: "parent-call",
+				Access:     access,
+			})
+		}()
+		select {
+		case ev := <-events:
+			coord.permissions.GrantPersistent(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("expected the parent's request to reach a prompt")
+		}
+		require.True(t, (<-parentDone).Allowed())
+
+		var decision permission.Decision
+		agent, resolved := newMockAgent(t, providerID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+			decision = coord.permissions.Gate(ctx, permission.GateRequest{
+				SessionID:  call.SessionID,
+				ToolCallID: "child-call",
+				Access:     access,
+			})
+			return agentResultWithText("fetched"), nil
+		})
+
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
+
+		resp, err := coord.runSubAgent(ctx, subAgentParams{
+			Agent:          agent,
+			Resolved:       resolved,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "fetch it",
+			SessionTitle:   "Test",
+		})
+		require.NoError(t, err)
+		require.False(t, resp.IsError, resp.Content)
+		assert.True(t, decision.Allowed(), "the child must see the grant its parent already earned")
 	})
 }
 

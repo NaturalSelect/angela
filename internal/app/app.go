@@ -433,12 +433,10 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 		}
 	}
 
-	// Automatically approve all permission requests for this non-interactive
-	// session. PromptAllow only covers what can be settled without asking:
-	// a dangerous or unreadable command still insists on a prompt, and
-	// there is no terminal here to show one, so mark the session
-	// unattended and let those be refused rather than hang.
-	app.Permissions.SetSessionPromptPolicy(sess.ID, permission.PromptAllow)
+	// There is no terminal here to show a prompt, so mark the session
+	// unattended: anything the permission mode does not already settle
+	// on its own is refused rather than left to hang. Pass --yolo to
+	// skip prompts instead of leaving them to be refused.
 	app.Permissions.SetSessionUnattended(sess.ID, true)
 
 	// Report session identity to herdr.

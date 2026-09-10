@@ -56,6 +56,11 @@ angela run --verbose "Generate a README for this project"
 # Run inside an OS-level sandbox instead of relying on prompts
 angela run --sandbox "Generate a README for this project"
 
+# Run in yolo mode (auto-accept all permissions; use with care). Without
+# it, a headless run has no one to answer a prompt and refuses anything
+# it cannot already settle on its own.
+angela run --yolo "Refactor this package and run the tests"
+
 # Continue a previous session
 angela run --session {session-id} "Follow up on your last response"
 

@@ -61,8 +61,12 @@ func init() {
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Debug")
 	rootCmd.PersistentFlags().StringVarP(&clientHost, "host", "H", server.DefaultHost(), "Connect to a specific angela server host (for advanced users)")
 	rootCmd.Flags().BoolP("help", "h", false, "Help")
-	rootCmd.Flags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
-	rootCmd.Flags().Bool("no-yolo-merge", false, "Still require approval for the merge tool even in yolo mode")
+	// Persistent so `angela run` and other subcommands can see it too:
+	// the permission ladder now has no other way to skip a prompt a
+	// headless run cannot answer, so --yolo must reach every command
+	// that can end up gating a permission request.
+	rootCmd.PersistentFlags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
+	rootCmd.PersistentFlags().Bool("no-yolo-merge", false, "Still require approval for the merge tool even in yolo mode")
 	rootCmd.Flags().Bool("no-vscode-diff", false, "Do not open edit diffs in VS Code even when running inside its terminal")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
 	_ = rootCmd.PersistentFlags().MarkHidden("channels")

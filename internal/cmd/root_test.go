@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/spf13/cobra"
@@ -182,6 +183,37 @@ func TestResolveCwd_GetwdErrorPropagates(t *testing.T) {
 	_, err := ResolveCwd(cmd)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to get current working directory")
+}
+
+// TestPermissionModeFromFlags covers every combination of --yolo and
+// --auto-accept-edits reaching setupLocalWorkspace/connectToServer.
+// cobra rejects the two flags being set together via
+// MarkFlagsMutuallyExclusive, but the helper is exercised directly
+// here anyway, which also documents that yolo would stay the wider
+// mode if that guard were ever bypassed.
+func TestPermissionModeFromFlags(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name            string
+		yolo            bool
+		autoAcceptEdits bool
+		want            permission.PermissionMode
+	}{
+		{"neither flag set", false, false, permission.ModeManual},
+		{"auto-accept-edits only", false, true, permission.ModeAutoAcceptEdits},
+		{"yolo only", true, false, permission.ModeYolo},
+		{"both set", true, true, permission.ModeYolo},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cobra.Command{}
+			cmd.Flags().Bool("yolo", tt.yolo, "")
+			cmd.Flags().Bool("auto-accept-edits", tt.autoAcceptEdits, "")
+
+			require.Equal(t, tt.want, permissionModeFromFlags(cmd))
+		})
+	}
 }
 
 // newSetupWorkspaceTestCmd builds a standalone command carrying the

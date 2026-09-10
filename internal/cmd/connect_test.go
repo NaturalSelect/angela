@@ -26,6 +26,7 @@ func newConnectToServerTestCmd(t *testing.T, cwd, dataDir string) *cobra.Command
 	cmd.Flags().String("data-dir", dataDir, "")
 	cmd.Flags().Bool("debug", false, "")
 	cmd.Flags().Bool("yolo", false, "")
+	cmd.Flags().Bool("auto-accept-edits", false, "")
 	cmd.Flags().StringSlice("channels", nil, "")
 	cmd.Flags().Bool("sandbox", false, "")
 	cmd.Flags().Bool("no-docker-sandbox", false, "")
@@ -193,6 +194,41 @@ func TestConnectToServer_YoloFlagSetsPermissionMode(t *testing.T) {
 	cleanup()
 
 	require.Equal(t, permission.ModeYolo.String(), gotMode.Load())
+}
+
+// TestConnectToServer_AutoAcceptEditsFlagSetsPermissionMode covers the
+// --auto-accept-edits branch: the workspace creation request must
+// carry the auto-accept-edits permission mode instead of the manual
+// default.
+func TestConnectToServer_AutoAcceptEditsFlagSetsPermissionMode(t *testing.T) {
+	t.Setenv("ANGELA_DISABLE_METRICS", "true")
+	t.Chdir(t.TempDir())
+
+	var gotMode atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/workspaces") {
+			var req proto.Workspace
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			gotMode.Store(req.PermissionMode)
+			require.NoError(t, json.NewEncoder(w).Encode(proto.Workspace{
+				ID:     "ws1",
+				Config: &config.Config{Options: &config.Options{}},
+			}))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	pointClientHostAtServer(t, srv)
+
+	cmd := newConnectToServerTestCmd(t, "", t.TempDir())
+	require.NoError(t, cmd.Flags().Set("auto-accept-edits", "true"))
+
+	_, _, cleanup, err := connectToServer(cmd)
+	require.NoError(t, err)
+	cleanup()
+
+	require.Equal(t, permission.ModeAutoAcceptEdits.String(), gotMode.Load())
 }
 
 // TestConnectToServer_CleanupFallsBackToDeleteWorkspace covers the

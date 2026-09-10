@@ -138,7 +138,9 @@ rules in `angela.json`:
 }
 ```
 
-Use `--yolo` to skip all prompts (at your own risk).
+Use `--yolo` to skip all prompts (at your own risk). Use
+`--auto-accept-edits` to auto-approve file edits while still being asked
+about everything else; it cannot be combined with `--yolo`.
 
 Use `--sandbox` to restrict the process itself with OS-level isolation
 (Linux/Landlock) instead of relying on approval prompts. By default it

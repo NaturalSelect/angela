@@ -622,8 +622,17 @@ func setupSubscriber[T any](
 	subscriber func(context.Context) <-chan pubsub.Event[T],
 	broker *pubsub.Broker[tea.Msg],
 ) {
+	// Subscribe synchronously, before the forwarding loop starts on
+	// its own goroutine. If Subscribe ran inside that goroutine
+	// instead, a publish on the upstream broker between this
+	// function returning and the goroutine actually being scheduled
+	// would have no registered subscriber to deliver to — Publish
+	// does not queue for late subscribers, so the event would be
+	// dropped for good. Subscribing here closes that window: by the
+	// time setupSubscriber returns, the upstream broker already
+	// has us as a subscriber.
+	subCh := subscriber(ctx)
 	wg.Go(func() {
-		subCh := subscriber(ctx)
 		for {
 			select {
 			case event, ok := <-subCh:
@@ -654,8 +663,10 @@ func setupSubscriberMustDeliver[T any](
 	subscriber func(context.Context) <-chan pubsub.Event[T],
 	broker *pubsub.Broker[tea.Msg],
 ) {
+	// Subscribe synchronously; see setupSubscriber for why this must
+	// not happen inside the goroutine below.
+	subCh := subscriber(ctx)
 	wg.Go(func() {
-		subCh := subscriber(ctx)
 		for {
 			select {
 			case event, ok := <-subCh:

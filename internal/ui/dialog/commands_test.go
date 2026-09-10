@@ -103,6 +103,7 @@ func TestNewCommands_DefaultSystemCommands(t *testing.T) {
 	require.Contains(t, ids, "suspend")
 	require.Contains(t, ids, "quit")
 	require.NotContains(t, ids, "session_details", "no session is open yet")
+	require.NotContains(t, ids, "show_todos", "no session is open yet")
 }
 
 // TestNewCommands_SessionGatedCommands verifies the commands that only
@@ -117,6 +118,7 @@ func TestNewCommands_SessionGatedCommands(t *testing.T) {
 	require.Contains(t, ids, "undo")
 	require.Contains(t, ids, "scroll_to_bottom")
 	require.Contains(t, ids, "toggle_compact")
+	require.Contains(t, ids, "show_todos")
 }
 
 // TestDefaultCommands_ActiveAgentGating pins which of the thinking
@@ -367,6 +369,20 @@ func TestCommands_HandleMsg_TypingFiltersList(t *testing.T) {
 
 	ids := visibleCommandIDs(c)
 	require.Equal(t, []string{"quit"}, ids)
+}
+
+// TestCommands_HandleMsg_TypingTodoFiltersToShowTodos verifies the
+// "todo"/"todos" aliases make the show_todos command reachable by
+// typing "/todo", the way a user would invoke it.
+func TestCommands_HandleMsg_TypingTodoFiltersToShowTodos(t *testing.T) {
+	t.Parallel()
+
+	c := newTestCommands(t, nil, "sess-1", true, nil, nil, nil)
+	for _, r := range "todos" {
+		c.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	require.Contains(t, visibleCommandIDs(c), "show_todos")
 }
 
 // TestCommands_HandleMsg_TabCycling verifies tab is inert with only

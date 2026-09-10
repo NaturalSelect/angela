@@ -87,6 +87,7 @@ type (
 	ActionToggleHelp              struct{}
 	ActionToggleCompactMode       struct{}
 	ActionToggleDetails           struct{}
+	ActionShowTodos               struct{}
 	ActionSuspend                 struct{}
 	ActionToggleThinking          struct{}
 	ActionExternalEditor          struct{}

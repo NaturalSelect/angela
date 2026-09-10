@@ -410,6 +410,37 @@ func TestHandleDialogMsg_ActionToggleDetails(t *testing.T) {
 	})
 }
 
+func TestHandleDialogMsg_ActionShowTodos(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with a session it appends a todos notice and closes the palette", func(t *testing.T) {
+		t.Parallel()
+
+		m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+		m.session = &session.Session{
+			ID: "s1",
+			Todos: []session.Todo{
+				{Content: "buy milk", Status: session.TodoStatusPending},
+			},
+		}
+
+		m.handleDialogMsg(dialog.ActionShowTodos{})
+		require.Equal(t, 1, m.chat.Len())
+		require.False(t, m.dialog.HasDialogs())
+	})
+
+	t.Run("without a session nothing is appended but the palette still closes", func(t *testing.T) {
+		t.Parallel()
+
+		m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+		m.session = nil
+
+		m.handleDialogMsg(dialog.ActionShowTodos{})
+		require.Equal(t, 0, m.chat.Len())
+		require.False(t, m.dialog.HasDialogs())
+	})
+}
+
 func TestHandleDialogMsg_ActionSuspend(t *testing.T) {
 	t.Parallel()
 

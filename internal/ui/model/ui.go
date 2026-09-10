@@ -2258,6 +2258,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			m.updateLayoutAndSize()
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionShowTodos:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if cmd := m.showTodos(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.ActionSuspend:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if m.isAgentBusy() {

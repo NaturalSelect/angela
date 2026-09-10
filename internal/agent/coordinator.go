@@ -2153,16 +2153,13 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 		)
 	}
 
-	// The dispatch that created this session already ran inside the
-	// permission scope the user controls; that covers the delegated work
-	// too, so routine gated tools the child uses need not be asked about
-	// again. Whether anyone can answer a prompt is a property of where
-	// the run started, not of how deep it has nested, so the child
-	// inherits it: under a TUI the child's prompts reach the same
-	// dialog, and under a headless run they are refused instead of
-	// stalling the whole dispatch.
-	c.permissions.SetSessionPromptPolicy(session.ID, permission.PromptAllow)
-	c.permissions.SetSessionUnattended(session.ID, c.permissions.SessionUnattended(params.SessionID))
+	// A sub-agent never gets more than the session that dispatched it
+	// already had: no blanket permission bypass, so a gated action it
+	// takes is judged exactly as it would be at the top level.
+	// RegisterChild only lets that judgment resolve grants and
+	// attendedness by walking up to this session, rather than copying
+	// them once here and leaving the copy to go stale.
+	c.permissions.RegisterChild(session.ID, params.SessionID)
 
 	model := params.Resolved.Model
 	maxTokens := params.Resolved.MaxTokens
@@ -2226,12 +2223,13 @@ func subAgentOutput(result *fantasy.AgentResult) string {
 // runBranchAgent forks the caller's conversation into a session the user
 // drives themselves, and suspends this tool call until they resolve it.
 //
-// It differs from runSubAgent in what it does not do. It grants no blanket
-// permission policy, because a branch acts on the user's behalf in front of
-// the user, so its prompts belong to them. It does not run non-interactively.
-// And it does not read a result off the agent run at all: the first turn
-// merely starts the conversation, and what crosses back is whatever the user
-// eventually approves through the merge tool — possibly many turns later.
+// It differs from runSubAgent in what it does not do. It does not run
+// non-interactively, so it never marks its session unattended: a branch
+// acts on the user's behalf in front of the user, and its prompts belong
+// to them. And it does not read a result off the agent run at all: the
+// first turn merely starts the conversation, and what crosses back is
+// whatever the user eventually approves through the merge tool —
+// possibly many turns later.
 func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams) (fantasy.ToolResponse, error) {
 	branchSessionID := c.sessions.CreateAgentToolSessionID(params.AgentMessageID, params.ToolCallID)
 	session, err := c.sessions.CreateTaskSession(ctx, branchSessionID, params.SessionID, params.SessionTitle)
@@ -2241,6 +2239,7 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)
 
 	c.registerSubagentRoute(session.ID, params.Resolved.ID, params.Agent)
+	c.permissions.RegisterChild(session.ID, params.SessionID)
 
 	if err := c.sessions.UpdateActiveAgent(ctx, session.ID, params.Resolved.Host.State()); err != nil {
 		slog.Warn(

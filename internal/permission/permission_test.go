@@ -179,13 +179,14 @@ func TestPermissionService_DenyRuleOutranksSkip(t *testing.T) {
 }
 
 // TestPermissionService_DangerousCommandAlwaysPrompts pins that no
-// stored grant and no session policy can wave a dangerous verb
-// through: the user has to see it every time.
+// stored grant and no allow rule can wave a dangerous verb through:
+// the user has to see it every time.
 func TestPermissionService_DangerousCommandAlwaysPrompts(t *testing.T) {
 	t.Parallel()
 
-	service := NewPermissionService("/work", ModeManual, nil)
-	service.SetSessionPromptPolicy("s1", PromptAllow)
+	policy, err := CompilePolicy([]Rule{{Action: RuleAllow, Tool: "bash"}}, nil, PromptAsk)
+	require.NoError(t, err)
+	service := NewPermissionService("/work", ModeManual, policy)
 
 	access := Access{
 		Tool:    "bash",
@@ -1036,11 +1037,11 @@ func forcedCommand(command string) Access {
 }
 
 // TestUnattendedSessionRefusesRatherThanWaits covers the headless case:
-// `angela run`, CI, anything piping a prompt in. Such a session
-// pre-approves itself with PromptAllow, but that only settles requests
-// that can be settled without asking — a dangerous or unreadable
-// command insists on a prompt regardless. With nothing subscribed to
-// answer, reaching that prompt parks the run until its context dies.
+// `angela run`, CI, anything piping a prompt in. Such a session has
+// nobody to answer a prompt, so whatever the ladder cannot settle on
+// its own — a dangerous or unreadable command, chief among them — must
+// be refused outright instead of parking the run until its context
+// dies.
 func TestUnattendedSessionRefusesRatherThanWaits(t *testing.T) {
 	t.Parallel()
 
@@ -1048,7 +1049,6 @@ func TestUnattendedSessionRefusesRatherThanWaits(t *testing.T) {
 		t.Helper()
 		service := NewPermissionService("/work", ModeManual, nil)
 		// Exactly what App.RunNonInteractive does.
-		service.SetSessionPromptPolicy("s1", PromptAllow)
 		service.SetSessionUnattended("s1", true)
 		return service
 	}
@@ -1081,8 +1081,9 @@ func TestUnattendedSessionRefusesRatherThanWaits(t *testing.T) {
 
 	t.Run("work that needs no prompt still runs", func(t *testing.T) {
 		t.Parallel()
-		// The point of PromptAllow is that a headless run works at all.
-		// Refusing the unanswerable must not refuse the ordinary.
+		// Being unattended only changes what happens once a request
+		// reaches a prompt; refusing the unanswerable must not refuse
+		// work the ladder already settles on its own via scope.
 		decision := settle(t, unattendedRun(t), "s1", forcedCommand("git status"))
 
 		assert.True(t, decision.Allowed(),
@@ -1094,7 +1095,6 @@ func TestUnattendedSessionRefusesRatherThanWaits(t *testing.T) {
 		policy, err := CompilePolicy([]Rule{{Action: RuleDeny, Tool: "edit"}}, nil, PromptAsk)
 		require.NoError(t, err)
 		service := NewPermissionService("/work", ModeManual, policy)
-		service.SetSessionPromptPolicy("s1", PromptAllow)
 		service.SetSessionUnattended("s1", true)
 
 		decision := settle(t, service, "s1", editAccess("/work/main.go"))
@@ -1110,10 +1110,11 @@ func TestUnattendedSessionRefusesRatherThanWaits(t *testing.T) {
 func TestUnattendedIsInheritedByDispatchedWork(t *testing.T) {
 	t.Parallel()
 
-	// What Coordinator does when it spawns a sub-agent session.
+	// What Coordinator does when it spawns a sub-agent session: it
+	// registers the parent, and nothing else. Attendedness resolves by
+	// walking the chain rather than being copied at spawn time.
 	dispatch := func(svc Service, parent, child string) {
-		svc.SetSessionPromptPolicy(child, PromptAllow)
-		svc.SetSessionUnattended(child, svc.SessionUnattended(parent))
+		svc.RegisterChild(child, parent)
 	}
 
 	t.Run("a child of a headless run refuses too", func(t *testing.T) {
@@ -1208,6 +1209,275 @@ func TestCommandsThatLeaveTheMachineReachTheUser(t *testing.T) {
 		assert.True(t, decision.Allowed(),
 			"taking it off the safe list must leave it configurable")
 	})
+}
+
+// TestAskRuleIsForced pins that an `ask` rule gets exactly the same
+// treatment as a dangerous command: it survives every form of
+// pre-approval below it in the ladder, and it never mints a reusable
+// grant, so the user sees it on every matching call. Only Yolo, which
+// skips before the ladder is even consulted, still skips it.
+func TestAskRuleIsForced(t *testing.T) {
+	t.Parallel()
+
+	policy := mustPolicy(t, []Rule{
+		{Action: RuleAsk, Tool: "edit", Pattern: "**/.env"},
+	}, nil)
+
+	t.Run("auto-accepting edits does not skip it", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeAutoAcceptEdits, policy)
+		events := service.Subscribe(t.Context())
+		wait := gateAsync(t.Context(), service, "s1", "call-1", editAccess("/work/.env"))
+
+		select {
+		case ev := <-events:
+			service.Grant(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("an ask rule must reach the prompt even under auto-accept-edits")
+		}
+		assert.True(t, wait().Allowed())
+	})
+
+	t.Run("a hook approval does not skip it", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, policy)
+		ctx := WithHookApproval(t.Context(), "call-1")
+		events := service.Subscribe(t.Context())
+		wait := gateAsync(ctx, service, "s1", "call-1", editAccess("/work/.env"))
+
+		select {
+		case ev := <-events:
+			service.Grant(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("an ask rule must reach the prompt despite the hook approval")
+		}
+		assert.True(t, wait().Allowed())
+	})
+
+	t.Run("GrantPersistent does not mint a grant", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, policy)
+		events := service.Subscribe(t.Context())
+
+		wait := gateAsync(t.Context(), service, "s1", "call-1", editAccess("/work/.env"))
+		select {
+		case ev := <-events:
+			service.GrantPersistent(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("an ask rule must reach the prompt")
+		}
+		require.True(t, wait().Allowed())
+
+		wait2 := gateAsync(t.Context(), service, "s1", "call-2", editAccess("/work/.env"))
+		select {
+		case ev := <-events:
+			service.Deny(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("an ask rule must prompt again despite the grant")
+		}
+		assert.Equal(t, OutcomeUserDeny, wait2().Outcome)
+	})
+
+	t.Run("yolo still skips it", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeYolo, policy)
+		decision := gate(t.Context(), service, "s1", "call-1", editAccess("/work/.env"))
+		assert.True(t, decision.Allowed())
+	})
+}
+
+// TestAskRuleReachesCommandOperands pins the one behavioural change
+// bash commands see from folding ask rules into forced: evaluateCommand
+// already computes RuleAsk for a file a command touches, but until now
+// Gate ignored it and withinScope waved the read through anyway. An
+// ask rule written against a path must reach that file regardless of
+// which tool touches it, the same way a deny rule already does.
+func TestAskRuleReachesCommandOperands(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	policy := mustPolicy(t, []Rule{
+		{Action: RuleAsk, Tool: "read", Pattern: "**/.env"},
+	}, nil)
+	service := NewPermissionService(dir, ModeManual, policy)
+
+	events := service.Subscribe(t.Context())
+	wait := gateAsync(t.Context(), service, "s1", "call-1", Access{
+		Tool: "bash", Action: ActionExecute, Command: "cat .env", Path: dir,
+	})
+	select {
+	case ev := <-events:
+		service.Grant(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("an ask rule on a path must stop a command that reaches it, not just the view tool")
+	}
+	assert.True(t, wait().Allowed())
+
+	// A file the rule does not name is untouched by it and still runs
+	// straight off scope, unprompted.
+	decision := gate(t.Context(), service, "s1", "call-2", Access{
+		Tool: "bash", Action: ActionExecute, Command: "cat README.md", Path: dir,
+	})
+	assert.True(t, decision.Allowed())
+}
+
+// TestBashReadPathUnchanged is a regression anchor for the one part of
+// the ladder this rework must not touch: a safe, read-only command
+// confined to the working directory still runs straight off scope, and
+// one that is not still needs a real decision. Run identically on a
+// root and a session registered under it, since a child must never
+// land anywhere different from its root.
+func TestBashReadPathUnchanged(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	allowed := []string{
+		"git status",
+		"cat README.md",
+		"grep -n foo internal/agent/coordinator.go",
+		"cat foo.txt | grep bar",
+	}
+	denied := []string{
+		"grep foo /etc/passwd",
+		"grep -r foo .",
+		"rm -rf build",
+		"grep foo $(find .)",
+	}
+
+	for _, sessionID := range []string{"root", "child"} {
+		t.Run(sessionID, func(t *testing.T) {
+			t.Parallel()
+			service := NewPermissionService(dir, ModeManual, nil)
+			service.SetSessionUnattended("root", true)
+			service.RegisterChild("child", "root")
+
+			for _, c := range allowed {
+				decision := settle(t, service, sessionID, Access{Tool: "bash", Action: ActionExecute, Command: c, Path: dir})
+				assert.True(t, decision.Allowed(), "%q should run unprompted", c)
+			}
+			for _, c := range denied {
+				decision := settle(t, service, sessionID, Access{Tool: "bash", Action: ActionExecute, Command: c, Path: dir})
+				assert.False(t, decision.Allowed(), "%q must not be auto-approved", c)
+			}
+		})
+	}
+}
+
+// TestUnattendedResolvesUpTheChain pins SessionUnattended's exact
+// resolution order: a session's own mark always wins, and only a
+// session nothing ever marked defers to its parent.
+func TestUnattendedResolvesUpTheChain(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil)
+	service.SetSessionUnattended("root", true)
+	service.RegisterChild("child", "root")
+	service.RegisterChild("grandchild", "child")
+
+	assert.True(t, service.SessionUnattended("child"), "an unmarked child defers to its root")
+	assert.True(t, service.SessionUnattended("grandchild"), "an unmarked grandchild defers all the way to the root")
+
+	// An explicit mark partway up the chain shadows anything further
+	// up: the nearest answer wins, not the root's.
+	service.SetSessionUnattended("child", false)
+	assert.False(t, service.SessionUnattended("child"))
+	assert.False(t, service.SessionUnattended("grandchild"),
+		"grandchild must see child's own mark before it ever reaches root")
+
+	// A session's own mark always wins over anything inherited, and
+	// never leaks back up to an ancestor.
+	service.SetSessionUnattended("grandchild", true)
+	assert.True(t, service.SessionUnattended("grandchild"))
+	assert.False(t, service.SessionUnattended("child"))
+}
+
+// TestGrantsAreSharedAcrossTheTree pins that a grant is keyed on the
+// root of the session chain, not the session that happened to ask, so
+// approving something once covers it everywhere in the same dispatch
+// tree.
+func TestGrantsAreSharedAcrossTheTree(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a grant from the root covers a child", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, nil)
+		service.RegisterChild("child", "root")
+
+		events := service.Subscribe(t.Context())
+		wait := gateAsync(t.Context(), service, "root", "call-1", editAccess("/work/main.go"))
+		select {
+		case ev := <-events:
+			service.GrantPersistent(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("expected the root's edit to reach a prompt")
+		}
+		require.True(t, wait().Allowed())
+
+		decision := gate(t.Context(), service, "child", "call-2", editAccess("/work/main.go"))
+		assert.True(t, decision.Allowed(), "a child must see a grant its root already earned")
+	})
+
+	t.Run("a grant from a child covers the root", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, nil)
+		service.RegisterChild("child", "root")
+
+		events := service.Subscribe(t.Context())
+		wait := gateAsync(t.Context(), service, "child", "call-1", editAccess("/work/other.go"))
+		select {
+		case ev := <-events:
+			service.GrantPersistent(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("expected the child's edit to reach a prompt")
+		}
+		require.True(t, wait().Allowed())
+
+		decision := gate(t.Context(), service, "root", "call-2", editAccess("/work/other.go"))
+		assert.True(t, decision.Allowed(), "the root must see a grant its own dispatched child already earned")
+	})
+}
+
+// TestChildNeverWiderThanRoot is the hard constraint this rework
+// exists to guarantee: a session registered as a child of a root that
+// cannot answer a prompt must reach exactly the same outcome as the
+// root would for the same access. Nothing about being a child ever
+// widens what it can do.
+func TestChildNeverWiderThanRoot(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	policy := mustPolicy(t, []Rule{
+		{Action: RuleDeny, Tool: "edit", Pattern: "**/.env"},
+	}, nil)
+
+	cases := []struct {
+		name   string
+		access Access
+	}{
+		{"read inside workdir", Access{Tool: "view", Action: ActionRead, Path: filepath.Join(dir, "main.go")}},
+		{"read outside workdir", Access{Tool: "view", Action: ActionRead, Path: "/etc/passwd"}},
+		{"list inside workdir", Access{Tool: "ls", Action: ActionList, Path: dir}},
+		{"edit denied by rule", Access{Tool: "edit", Action: ActionEdit, Path: filepath.Join(dir, ".env")}},
+		{"edit not covered by any rule", Access{Tool: "edit", Action: ActionEdit, Path: filepath.Join(dir, "main.go")}},
+		{"safe command", Access{Tool: "bash", Action: ActionExecute, Command: "git status", Path: dir}},
+		{"dangerous command", Access{Tool: "bash", Action: ActionExecute, Command: "rm -rf build", Path: dir}},
+		{"network", Access{Tool: "fetch", Action: ActionNetwork, URL: "https://example.com"}},
+		{"mcp", Access{Tool: "mcp", Action: ActionMCP, Server: "docker", MCPTool: "list"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			service := NewPermissionService(dir, ModeManual, policy)
+			service.SetSessionUnattended("root", true)
+			service.RegisterChild("child", "root")
+
+			rootDecision := settle(t, service, "root", tc.access)
+			childDecision := settle(t, service, "child", tc.access)
+			assert.Equal(t, rootDecision.Outcome, childDecision.Outcome,
+				"child and root must reach the same outcome for %q", tc.name)
+		})
+	}
 }
 
 // fakeDiffParams stands in for tools.EditPermissionsParams and its

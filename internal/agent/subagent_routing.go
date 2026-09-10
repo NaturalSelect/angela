@@ -244,6 +244,11 @@ func (c *coordinator) routeFor(ctx context.Context, sessionID string) (subagentR
 
 	executor := c.subagentExecutor(entry)
 	c.registerSubagentRoute(sessionID, sess.Agent, executor)
+	// The in-memory permission chain does not survive a restart any
+	// better than subagentRoutes does; rebuild it here too, or a child
+	// resumed after one would be judged as its own root instead of
+	// inheriting its parent's grants and attendedness.
+	c.permissions.RegisterChild(sessionID, sess.ParentSessionID)
 	return subagentRoute{agentID: sess.Agent, executor: executor}, true, nil
 }
 

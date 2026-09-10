@@ -160,15 +160,11 @@ const (
 	// PromptDeny refuses without asking, for sessions that cannot
 	// prompt.
 	PromptDeny
-	// PromptAllow grants without asking. It never overrides a deny
-	// rule or a dangerous command.
-	PromptAllow
 )
 
 var promptPolicyNames = [...]string{
-	PromptAsk:   "ask",
-	PromptDeny:  "deny",
-	PromptAllow: "allow",
+	PromptAsk:  "ask",
+	PromptDeny: "deny",
 }
 
 func (p PromptPolicy) String() string {

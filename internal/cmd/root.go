@@ -67,6 +67,8 @@ func init() {
 	// that can end up gating a permission request.
 	rootCmd.PersistentFlags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
 	rootCmd.PersistentFlags().Bool("no-yolo-merge", false, "Still require approval for the merge tool even in yolo mode")
+	rootCmd.PersistentFlags().Bool("auto-accept-edits", false, "Automatically accept file edits but still ask about everything else (same as cycling Shift+Tab once)")
+	rootCmd.MarkFlagsMutuallyExclusive("yolo", "auto-accept-edits")
 	rootCmd.Flags().Bool("no-vscode-diff", false, "Do not open edit diffs in VS Code even when running inside its terminal")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
 	_ = rootCmd.PersistentFlags().MarkHidden("channels")
@@ -111,6 +113,9 @@ angela --yolo
 
 # Run in yolo mode but still ask before merging a branch
 angela --yolo --no-yolo-merge
+
+# Auto-accept file edits but still ask about commands, network, etc.
+angela --auto-accept-edits
 
 # Run without opening edit diffs in VS Code's own diff viewer
 angela --no-vscode-diff
@@ -344,11 +349,24 @@ func setupWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
 	return setupLocalWorkspace(cmd)
 }
 
+// permissionModeFromFlags maps --yolo / --auto-accept-edits to the
+// startup PermissionMode. cobra rejects the two flags being set
+// together (see the MarkFlagsMutuallyExclusive call in init), so the
+// order checked here only documents that yolo is the wider of the two.
+func permissionModeFromFlags(cmd *cobra.Command) permission.PermissionMode {
+	if yolo, _ := cmd.Flags().GetBool("yolo"); yolo {
+		return permission.ModeYolo
+	}
+	if autoAcceptEdits, _ := cmd.Flags().GetBool("auto-accept-edits"); autoAcceptEdits {
+		return permission.ModeAutoAcceptEdits
+	}
+	return permission.ModeManual
+}
+
 // setupLocalWorkspace creates an in-process app.App and wraps it in an
 // AppWorkspace.
 func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
 	debug, _ := cmd.Flags().GetBool("debug")
-	yolo, _ := cmd.Flags().GetBool("yolo")
 	noYoloMerge, _ := cmd.Flags().GetBool("no-yolo-merge")
 	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
 	channels, _ := cmd.Flags().GetStringSlice("channels")
@@ -367,11 +385,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	}
 
 	cfg := store.Config()
-	mode := permission.ModeManual
-	if yolo {
-		mode = permission.ModeYolo
-	}
-	store.Overrides().PermissionMode = mode
+	store.Overrides().PermissionMode = permissionModeFromFlags(cmd)
 	store.Overrides().EnabledChannels = channels
 	store.Overrides().NoDockerSandbox = noDockerSandbox
 	store.Overrides().NoYoloMerge = noYoloMerge
@@ -523,13 +537,9 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 	}
 
 	debug, _ := cmd.Flags().GetBool("debug")
-	yolo, _ := cmd.Flags().GetBool("yolo")
 	noYoloMerge, _ := cmd.Flags().GetBool("no-yolo-merge")
 	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
-	mode := permission.ModeManual
-	if yolo {
-		mode = permission.ModeYolo
-	}
+	mode := permissionModeFromFlags(cmd)
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 

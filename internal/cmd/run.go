@@ -61,6 +61,10 @@ angela run --sandbox "Generate a README for this project"
 # it cannot already settle on its own.
 angela run --yolo "Refactor this package and run the tests"
 
+# Auto-accept file edits only; commands, network, etc. that need
+# approval are still refused since there is no one to answer.
+angela run --auto-accept-edits "Fix the typos in README.md"
+
 # Continue a previous session
 angela run --session {session-id} "Follow up on your last response"
 

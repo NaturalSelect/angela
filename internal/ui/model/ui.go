@@ -353,7 +353,7 @@ type UI struct {
 	// dispatchPromptQueueRefresh (see workspace_cache.go); promptQueue is
 	// always len(promptQueueItems).
 	promptQueue          int
-	promptQueueItems     []string
+	promptQueueItems     []message.QueuedPrompt
 	promptQueueCheckedAt time.Time
 	promptQueueInFlight  bool
 	// promptQueueGen is bumped by every queue state transition; an
@@ -4776,13 +4776,14 @@ func (m *UI) cancelAgent() tea.Cmd {
 }
 
 // popQueuedPromptsToEditor clears the UI's mirror of the session's queued
-// prompts and, if any were waiting, restores their text into the editor
-// and syncs the transcript so the "queued" entries disappear along with
-// them. It never touches the backend queue itself — callers pair it with
-// AgentCancel or AgentClearQueue, which is what actually drops the queue
-// there. Restored text is placed ahead of whatever draft the user was
-// already composing, in queue order, so a half-typed follow-up is never
-// clobbered and nothing queued is ever silently lost.
+// prompts and, if any were waiting, restores their text and attachments
+// into the editor and syncs the transcript so the "queued" entries
+// disappear along with them. It never touches the backend queue itself —
+// callers pair it with AgentCancel or AgentClearQueue, which is what
+// actually drops the queue there. Restored text and attachments are
+// placed ahead of whatever draft the user was already composing, in
+// queue order, so a half-typed follow-up is never clobbered and nothing
+// queued is ever silently lost.
 func (m *UI) popQueuedPromptsToEditor() tea.Cmd {
 	items := m.promptQueueItems
 	if len(items) == 0 {
@@ -4797,7 +4798,24 @@ func (m *UI) popQueuedPromptsToEditor() tea.Cmd {
 	m.syncQueuedChatItems()
 	m.updateLayoutAndSize()
 
-	return m.prependToEditor(strings.Join(items, "\n\n"))
+	texts := make([]string, len(items))
+	var atts []message.Attachment
+	for i, qp := range items {
+		texts[i] = qp.Prompt
+		atts = append(atts, qp.Attachments...)
+	}
+	if len(atts) > 0 {
+		draft := m.attachments.List()
+		m.attachments.Reset()
+		for _, a := range atts {
+			m.attachments.Update(a)
+		}
+		for _, a := range draft {
+			m.attachments.Update(a)
+		}
+	}
+
+	return m.prependToEditor(strings.Join(texts, "\n\n"))
 }
 
 // prependToEditor places text ahead of whatever draft is being composed,

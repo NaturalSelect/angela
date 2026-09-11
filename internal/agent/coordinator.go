@@ -155,7 +155,7 @@ type Coordinator interface {
 	IsSessionBranch(sessionID string) bool
 	IsBusy() bool
 	QueuedPrompts(sessionID string) int
-	QueuedPromptsList(sessionID string) []string
+	QueuedPromptsList(sessionID string) []message.QueuedPrompt
 	ClearQueue(sessionID string)
 	Summarize(ctx context.Context, sessionID string) error
 	// AskSideQuestion answers a one-off question from a session's
@@ -1933,7 +1933,7 @@ func (c *coordinator) QueuedPrompts(sessionID string) int {
 	return executor.QueuedPrompts(sessionID)
 }
 
-func (c *coordinator) QueuedPromptsList(sessionID string) []string {
+func (c *coordinator) QueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	executor, ok := c.executorForSession(sessionID)
 	if !ok {
 		return nil

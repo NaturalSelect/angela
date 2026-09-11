@@ -1190,7 +1190,7 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionSideQuestion(w http.Respon
 //	@Produce		json
 //	@Param			id	path		string		true	"Workspace ID"
 //	@Param			sid	path		string		true	"Session ID"
-//	@Success		200	{array}		string
+//	@Success		200	{array}		proto.QueuedPrompt
 //	@Failure		404	{object}	proto.Error
 //	@Failure		500	{object}	proto.Error
 //	@Router			/workspaces/{id}/agent/sessions/{sid}/prompts/list [get]
@@ -1202,7 +1202,7 @@ func (c *controllerV1) handleGetWorkspaceAgentSessionPromptList(w http.ResponseW
 		c.handleError(w, r, err)
 		return
 	}
-	jsonEncode(w, prompts)
+	jsonEncode(w, proto.QueuedPromptsFromMessage(prompts))
 }
 
 // handlePostWorkspacePermissionsGrant grants a permission request.

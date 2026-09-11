@@ -31,6 +31,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/workspace"
@@ -113,7 +114,7 @@ type promptQueueMsg struct {
 	// busyStateMsg.gen it guards against a stale in-flight result
 	// overwriting newer optimistic or invalidated queue state.
 	gen     uint64
-	prompts []string
+	prompts []message.QueuedPrompt
 }
 
 // agentRunSubmittedMsg reports that AgentRun accepted a prompt (it either
@@ -339,8 +340,8 @@ func (m *UI) syncQueuedChatItems() {
 		return
 	}
 	items := make([]chat.MessageItem, 0, len(m.promptQueueItems))
-	for i, prompt := range m.promptQueueItems {
-		items = append(items, chat.NewQueuedMessageItem(m.com.Styles, prompt, i))
+	for i, qp := range m.promptQueueItems {
+		items = append(items, chat.NewQueuedMessageItem(m.com.Styles, qp.Prompt, qp.Attachments, i))
 	}
 	m.chat.SetQueued(items...)
 }

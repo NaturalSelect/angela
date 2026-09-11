@@ -317,7 +317,7 @@ func (w *ClientWorkspace) AgentQueuedPrompts(sessionID string) int {
 	return count
 }
 
-func (w *ClientWorkspace) AgentQueuedPromptsList(sessionID string) []string {
+func (w *ClientWorkspace) AgentQueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	prompts, err := w.client.GetAgentSessionQueuedPromptsList(context.Background(), w.workspaceID(), sessionID)
 	if err != nil {
 		return nil

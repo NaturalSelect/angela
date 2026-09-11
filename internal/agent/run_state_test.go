@@ -4,6 +4,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,8 +47,8 @@ func TestRunStateQueuedPromptsList(t *testing.T) {
 	s.enqueueCall(SessionAgentCall{SessionID: "session-1", Prompt: "second"})
 	s.enqueueCall(SessionAgentCall{SessionID: "session-2", Prompt: "other session"})
 
-	require.Equal(t, []string{"first", "second"}, s.QueuedPromptsList("session-1"))
-	require.Equal(t, []string{"other session"}, s.QueuedPromptsList("session-2"))
+	require.Equal(t, []message.QueuedPrompt{{Prompt: "first"}, {Prompt: "second"}}, s.QueuedPromptsList("session-1"))
+	require.Equal(t, []message.QueuedPrompt{{Prompt: "other session"}}, s.QueuedPromptsList("session-2"))
 }
 
 // TestRunStateEnqueueAutoContinueRaceWithEnqueueCall is the regression

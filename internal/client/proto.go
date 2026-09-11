@@ -1061,9 +1061,9 @@ func (c *Client) AbandonAgentBranch(ctx context.Context, id string, sessionID st
 	return nil
 }
 
-// GetAgentSessionQueuedPromptsList retrieves the list of queued prompt
-// strings for a session.
-func (c *Client) GetAgentSessionQueuedPromptsList(ctx context.Context, id string, sessionID string) ([]string, error) {
+// GetAgentSessionQueuedPromptsList retrieves the list of queued prompts
+// for a session, including the attachments each was submitted with.
+func (c *Client) GetAgentSessionQueuedPromptsList(ctx context.Context, id string, sessionID string) ([]message.QueuedPrompt, error) {
 	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/prompts/list", id, sessionID), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get queued prompts list: %w", err)
@@ -1072,11 +1072,11 @@ func (c *Client) GetAgentSessionQueuedPromptsList(ctx context.Context, id string
 	if rsp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to get queued prompts list: status code %d", rsp.StatusCode)
 	}
-	var prompts []string
+	var prompts []proto.QueuedPrompt
 	if err := json.NewDecoder(rsp.Body).Decode(&prompts); err != nil {
 		return nil, fmt.Errorf("failed to decode queued prompts list: %w", err)
 	}
-	return prompts, nil
+	return proto.QueuedPromptsToMessage(prompts), nil
 }
 
 // FileTrackerRecordRead records a file read for a session.

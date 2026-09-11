@@ -10,6 +10,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/assert"
@@ -100,10 +101,10 @@ func TestQueueOperationsRouteToTheSubAgentExecutor(t *testing.T) {
 	t.Parallel()
 	f := newRoutingFixture(t)
 	f.register()
-	f.child.queued = []string{"follow up"}
+	f.child.queued = []message.QueuedPrompt{{Prompt: "follow up"}}
 
 	require.Equal(t, 1, f.coord.QueuedPrompts(f.childID))
-	require.Equal(t, []string{"follow up"}, f.coord.QueuedPromptsList(f.childID))
+	require.Equal(t, []message.QueuedPrompt{{Prompt: "follow up"}}, f.coord.QueuedPromptsList(f.childID))
 	require.Equal(t, 0, f.coord.QueuedPrompts(f.parentID))
 
 	f.coord.ClearQueue(f.childID)

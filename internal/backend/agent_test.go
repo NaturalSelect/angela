@@ -59,7 +59,7 @@ func (c *blockingCoordinator) IsBusy() bool                                     
 func (c *blockingCoordinator) IsSessionBusy(string) bool                          { return false }
 func (c *blockingCoordinator) IsSessionBranch(string) bool                        { return false }
 func (c *blockingCoordinator) QueuedPrompts(string) int                           { return 0 }
-func (c *blockingCoordinator) QueuedPromptsList(string) []string                  { return nil }
+func (c *blockingCoordinator) QueuedPromptsList(string) []message.QueuedPrompt    { return nil }
 func (c *blockingCoordinator) ClearQueue(string)                                  {}
 func (c *blockingCoordinator) Summarize(context.Context, string) error            { return nil }
 func (c *blockingCoordinator) DefaultModel() agent.Model                          { return agent.Model{} }

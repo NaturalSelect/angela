@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/ui/attachments"
 	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 )
@@ -15,24 +17,36 @@ const queuedMarker = "⋯ queued"
 // QueuedMessageItem renders a prompt that is waiting for the agent to
 // finish the current turn. It is not backed by a stored message: the
 // queue lives in the agent's run state and is replaced wholesale
-// whenever it changes, so the item carries only its text and position.
+// whenever it changes, so the item carries only its text, attachments,
+// and position.
 type QueuedMessageItem struct {
 	*list.Versioned
 
-	prompt string
-	index  int
-	sty    *styles.Styles
+	prompt      string
+	atts        []message.Attachment
+	attachments *attachments.Renderer
+	index       int
+	sty         *styles.Styles
 }
 
 // NewQueuedMessageItem creates a chat entry for a prompt still waiting in
 // the queue. index is its position, used only to give the item a stable
 // identity within the current queue.
-func NewQueuedMessageItem(sty *styles.Styles, prompt string, index int) MessageItem {
+func NewQueuedMessageItem(sty *styles.Styles, prompt string, atts []message.Attachment, index int) MessageItem {
 	return &QueuedMessageItem{
 		Versioned: list.NewVersioned(),
 		prompt:    prompt,
-		index:     index,
-		sty:       sty,
+		atts:      atts,
+		attachments: attachments.NewRenderer(
+			sty.Attachments.Normal,
+			sty.Attachments.Deleting,
+			sty.Attachments.Image,
+			sty.Attachments.Text,
+			sty.Attachments.Skill,
+			sty.Attachments.Remove,
+		),
+		index: index,
+		sty:   sty,
 	}
 }
 
@@ -75,11 +89,23 @@ func (m *QueuedMessageItem) render(width int) string {
 	}
 
 	text := strings.TrimSpace(m.prompt)
-	if text == "" {
+	if text == "" && len(m.atts) == 0 {
 		return ""
 	}
 
-	body := m.sty.Messages.QueuedText.Width(width).Render(text)
+	var body string
+	if text != "" {
+		body = m.sty.Messages.QueuedText.Width(width).Render(text)
+	}
+	if len(m.atts) > 0 {
+		attachmentsStr := m.attachments.Render(m.atts, false, false, width)
+		if body == "" {
+			body = attachmentsStr
+		} else {
+			body = strings.Join([]string{body, "", attachmentsStr}, "\n")
+		}
+	}
+
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.sty.Messages.QueuedMarker.Render(queuedMarker),

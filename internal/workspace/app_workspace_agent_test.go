@@ -124,10 +124,10 @@ func TestAppWorkspace_AgentQueuedPrompts(t *testing.T) {
 	t.Parallel()
 	fx := newAWFixture(t)
 	fx.coord.EXPECT().QueuedPrompts("sess-1").Return(3)
-	fx.coord.EXPECT().QueuedPromptsList("sess-1").Return([]string{"a", "b", "c"})
+	fx.coord.EXPECT().QueuedPromptsList("sess-1").Return([]message.QueuedPrompt{{Prompt: "a"}, {Prompt: "b"}, {Prompt: "c"}})
 
 	require.Equal(t, 3, fx.ws.AgentQueuedPrompts("sess-1"))
-	require.Equal(t, []string{"a", "b", "c"}, fx.ws.AgentQueuedPromptsList("sess-1"))
+	require.Equal(t, []message.QueuedPrompt{{Prompt: "a"}, {Prompt: "b"}, {Prompt: "c"}}, fx.ws.AgentQueuedPromptsList("sess-1"))
 }
 
 func TestAppWorkspace_AgentClearQueue(t *testing.T) {

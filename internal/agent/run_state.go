@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/message"
 )
 
 // runState is the per-agent execution coordination state: everything
@@ -288,14 +289,24 @@ func (s *runState) QueuedPrompts(sessionID string) int {
 	return len(l)
 }
 
-func (s *runState) QueuedPromptsList(sessionID string) []string {
+func (s *runState) QueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	l, ok := s.messageQueue.Get(sessionID)
 	if !ok {
 		return nil
 	}
-	prompts := make([]string, len(l))
+	prompts := make([]message.QueuedPrompt, len(l))
 	for i, call := range l {
-		prompts[i] = call.Prompt
+		// Only the metadata needed to preview an attachment travels
+		// here; the queue itself (call.Attachments) keeps the bytes
+		// for when the turn actually runs.
+		var atts []message.Attachment
+		if len(call.Attachments) > 0 {
+			atts = make([]message.Attachment, len(call.Attachments))
+			for j, a := range call.Attachments {
+				atts[j] = message.Attachment{FilePath: a.FilePath, FileName: a.FileName, MimeType: a.MimeType}
+			}
+		}
+		prompts[i] = message.QueuedPrompt{Prompt: call.Prompt, Attachments: atts}
 	}
 	return prompts
 }

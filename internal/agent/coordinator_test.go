@@ -18,6 +18,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -32,7 +33,7 @@ type mockSessionAgent struct {
 	*MockSessionAgent
 	agentID    string
 	busy       bool
-	queued     []string
+	queued     []message.QueuedPrompt
 	cancelled  []string
 	cleared    []string
 	summarized []string
@@ -57,7 +58,7 @@ func newMockSessionAgent(t *testing.T, agentID string, runFunc func(context.Cont
 	a.EXPECT().IsSessionBusy(gomock.Any()).DoAndReturn(func(string) bool { return a.busy }).AnyTimes()
 	a.EXPECT().IsBusy().DoAndReturn(func() bool { return a.busy }).AnyTimes()
 	a.EXPECT().QueuedPrompts(gomock.Any()).DoAndReturn(func(string) int { return len(a.queued) }).AnyTimes()
-	a.EXPECT().QueuedPromptsList(gomock.Any()).DoAndReturn(func(string) []string { return a.queued }).AnyTimes()
+	a.EXPECT().QueuedPromptsList(gomock.Any()).DoAndReturn(func(string) []message.QueuedPrompt { return a.queued }).AnyTimes()
 	a.EXPECT().ClearQueue(gomock.Any()).Do(func(sessionID string) { a.cleared = append(a.cleared, sessionID) }).AnyTimes()
 	a.EXPECT().Summarize(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, sessionID string, _ resolvedAgent, _ fantasy.ProviderOptions, _ func(context.Context, *fantasy.ProviderError) error) error {

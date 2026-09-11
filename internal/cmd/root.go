@@ -404,7 +404,11 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	// otherwise have. It must come after MkdirAll above: Landlock's
 	// IgnoreIfMissing mode silently drops rules for paths that don't
 	// exist yet, so entering any earlier would leave the still-missing
-	// data directory unprotected.
+	// data directory unprotected. On macOS, EnterSandbox instead
+	// relaunches this process under sandbox-exec and never returns on
+	// success; everything above it in this function (config load,
+	// MkdirAll) simply runs again in the relaunched process, which is
+	// safe since both are idempotent.
 	sandboxCfg, sandboxEnabled, err := sandboxConfigFromFlags(cmd, cwd, cfg.Options.DataDirectory)
 	if err != nil {
 		return nil, nil, err

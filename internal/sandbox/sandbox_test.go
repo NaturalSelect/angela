@@ -39,13 +39,23 @@ func TestNoneSandbox(t *testing.T) {
 	require.ErrorIs(t, s.EnterSandbox(Config{ReadWrite: []string{"/tmp"}}), ErrNotSupported)
 }
 
-func TestNew_NonLinux(t *testing.T) {
-	if runtime.GOOS == "linux" {
-		t.Skip("Skipping test on Linux")
+func TestNew_Other(t *testing.T) {
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		t.Skip("Skipping test on Linux/Darwin")
 	}
 	t.Parallel()
 
 	require.IsType(t, NoneSandbox{}, New(false))
+}
+
+func TestNew_Darwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Skipping test on non-Darwin")
+	}
+	t.Parallel()
+
+	require.IsType(t, SeatbeltSandbox{}, New(false))
+	require.IsType(t, SeatbeltSandbox{}, New(true))
 }
 
 func TestNew_Linux(t *testing.T) {
@@ -131,11 +141,16 @@ func TestLandlockSandbox_IsInSandbox_PreEntry(t *testing.T) {
 // read, write, and dial out normally afterward. Unlike a narrower
 // config, it cannot regress any test that runs later in this shared
 // binary. Not parallel, and declared after
-// TestLandlockSandbox_IsInSandbox_PreEntry.
+// TestLandlockSandbox_IsInSandbox_PreEntry; it also saves and restores
+// the shared restrictChildNetwork package var, since its last case
+// uses AllowNetwork: false.
 func TestLandlockSandbox_EnterSandbox_RuleBuilding(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Skipping test on non-Linux")
 	}
+
+	orig := restrictChildNetwork.Load()
+	t.Cleanup(func() { restrictChildNetwork.Store(orig) })
 
 	tests := []struct {
 		name         string

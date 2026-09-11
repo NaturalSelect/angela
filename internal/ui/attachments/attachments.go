@@ -39,6 +39,10 @@ type Attachments struct {
 func (m *Attachments) List() []message.Attachment { return m.list }
 func (m *Attachments) Reset()                     { m.list = nil }
 
+// SetList replaces the attachment list wholesale, used to restore or
+// clear a previously captured draft.
+func (m *Attachments) SetList(list []message.Attachment) { m.list = list }
+
 func (m *Attachments) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
 	case message.Attachment:

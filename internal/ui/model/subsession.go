@@ -1,16 +1,54 @@
 package model
 
 import (
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 )
 
 // sessionStackFrame remembers a level the view drilled down from. The title is
 // captured on the way in because popping reloads the parent asynchronously, and
-// the breadcrumb has to name the level before that load lands.
+// the breadcrumb has to name the level before that load lands. The compose box
+// at that moment is captured too — draftText and draftAttachments — so
+// drilling back out returns it exactly as it was left instead of leaving it
+// sitting in the child session's box.
 type sessionStackFrame struct {
 	id    string
 	title string
+
+	draftText        string
+	draftAttachments []message.Attachment
+}
+
+// editorDraft snapshots the compose box: the logical text (with a leading
+// "!" reinstated if bang mode was active) plus the attachment list.
+type editorDraft struct {
+	text        string
+	attachments []message.Attachment
+}
+
+// captureDraft snapshots the compose box as it stands right now, for a
+// frame about to be pushed onto the stack. The attachment slice is cloned
+// since m.attachments.List() aliases the live slice, which keeps changing
+// after this snapshot is taken.
+func (m *UI) captureDraft() editorDraft {
+	text := m.textarea.Value()
+	if m.bangMode {
+		text = "!" + text
+	}
+	return editorDraft{text: text, attachments: slices.Clone(m.attachments.List())}
+}
+
+// applyDraft replaces the compose box with a captured draft. The zero
+// value clears it, which is what a session with nothing saved to return
+// to — a fresh drill-down, or a load with no matching frame — wants.
+func (m *UI) applyDraft(d editorDraft) {
+	m.textarea.Reset()
+	m.textarea.InsertString(d.text)
+	m.syncBangModeFromTextarea()
+	m.attachments.SetList(d.attachments)
 }
 
 // loadSessionOpt carries deferred stack operations for sub-session
@@ -29,6 +67,13 @@ type loadSessionOpt struct {
 	// when the user jumps straight to an ancestor via the breadcrumb
 	// instead of leaving one level at a time.
 	truncateStackTo *int
+	// draftAfter, applied on success like the stack ops above, replaces
+	// the compose box: a saved draft when returning to a level that had
+	// one, or the zero value to clear a box that belongs to the session
+	// being left rather than the one coming into view. Nil leaves the
+	// box untouched, for loads that are not a navigation (startup,
+	// reconnect refresh).
+	draftAfter *editorDraft
 }
 
 // inSubSession reports whether the view is below the session the user opened.
@@ -95,18 +140,25 @@ func (m *UI) selectedAgentTool() (*chat.AgentToolMessageItem, bool) {
 }
 
 // enterSubSession drills into the session a sub-agent ran in. The parent
-// frame is captured now but pushed onto the stack only when the child
-// loads successfully — a failed load never leaves a phantom frame.
+// frame — including its compose box — is captured now but pushed onto the
+// stack only when the child loads successfully — a failed load never
+// leaves a phantom frame, nor discards what the user was typing.
 func (m *UI) enterSubSession(item *chat.AgentToolMessageItem) tea.Cmd {
 	if m.session == nil {
 		return nil
 	}
 	childID := m.com.Workspace.CreateAgentToolSessionID(item.MessageID(), item.ToolCall().ID)
+	draft := m.captureDraft()
 	frame := sessionStackFrame{
-		id:    m.session.ID,
-		title: m.session.Title,
+		id:               m.session.ID,
+		title:            m.session.Title,
+		draftText:        draft.text,
+		draftAttachments: draft.attachments,
 	}
-	return m.loadSession(childID, loadSessionOpt{enterFrame: &frame})
+	// The child starts with an empty box: whatever the parent's held
+	// belongs to the parent, and comes back on the way out rather than
+	// sitting in a transcript it was never composed for.
+	return m.loadSession(childID, loadSessionOpt{enterFrame: &frame, draftAfter: &editorDraft{}})
 }
 
 // leaveSubSession pops back one level. The parent is reloaded from the
@@ -123,9 +175,13 @@ func (m *UI) enterSubSession(item *chat.AgentToolMessageItem) tea.Cmd {
 func (m *UI) leaveSubSession() tea.Cmd {
 	if top := len(m.sessionStack) - 1; top >= 0 {
 		parent := m.sessionStack[top]
-		return m.loadSession(parent.id, loadSessionOpt{leaveLevel: true})
+		draft := editorDraft{text: parent.draftText, attachments: parent.draftAttachments}
+		return m.loadSession(parent.id, loadSessionOpt{leaveLevel: true, draftAfter: &draft})
 	}
-	return m.loadSession(m.session.ParentSessionID)
+	// No frame to restore from: whatever is in the box was typed for the
+	// session being left, not the parent about to come into view, so
+	// clear it rather than carry it across.
+	return m.loadSession(m.session.ParentSessionID, loadSessionOpt{draftAfter: &editorDraft{}})
 }
 
 // goToBreadcrumbLevel jumps directly to the ancestor session at the given
@@ -137,7 +193,8 @@ func (m *UI) goToBreadcrumbLevel(index int) tea.Cmd {
 		return nil
 	}
 	frame := m.sessionStack[index]
-	return m.loadSession(frame.id, loadSessionOpt{truncateStackTo: &index})
+	draft := editorDraft{text: frame.draftText, attachments: frame.draftAttachments}
+	return m.loadSession(frame.id, loadSessionOpt{truncateStackTo: &index, draftAfter: &draft})
 }
 
 // escapeCancels reports whether the escape key means "stop what is running"

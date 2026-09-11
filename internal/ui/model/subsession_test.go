@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/ui/attachments"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/charmbracelet/x/ansi"
@@ -39,6 +40,14 @@ func newSubSessionUI(t *testing.T) *UI {
 	m.header = newHeader(m.com)
 	m.dialog = dialog.NewOverlay()
 	m.session = &session.Session{ID: "root", Title: "Root task"}
+	m.attachments = attachments.New(attachments.NewRenderer(
+		m.com.Styles.Attachments.Normal,
+		m.com.Styles.Attachments.Deleting,
+		m.com.Styles.Attachments.Image,
+		m.com.Styles.Attachments.Text,
+		m.com.Styles.Attachments.Skill,
+		m.com.Styles.Attachments.Remove,
+	), attachments.Keymap{})
 	return m
 }
 
@@ -263,4 +272,214 @@ func TestBreadcrumbNeverExceedsItsWidth(t *testing.T) {
 		got := m.header.renderTrail(trail, width, 0)
 		require.LessOrEqual(t, ansi.StringWidth(got), width, "width %d overflowed", width)
 	}
+}
+
+// TestCaptureDraftClonesTextAndAttachments pins captureDraft's two jobs:
+// reading the logical compose-box text, and cloning the attachment list
+// rather than aliasing it — m.attachments.List() returns the live slice,
+// which keeps changing after the snapshot is taken.
+func TestCaptureDraftClonesTextAndAttachments(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+	m.textarea.SetValue("what does this do?")
+	m.attachments.Update(message.Attachment{FileName: "notes.txt"})
+
+	d := m.captureDraft()
+	require.Equal(t, "what does this do?", d.text)
+	require.Len(t, d.attachments, 1)
+	require.Equal(t, "notes.txt", d.attachments[0].FileName)
+
+	m.attachments.Update(message.Attachment{FileName: "extra.txt"})
+	require.Len(t, d.attachments, 1, "captureDraft must clone, not alias, the attachment list")
+}
+
+// TestCaptureDraftReinstatesTheBangPrefix pins that a draft captured while
+// in bang mode round-trips through the same "!" convention used
+// everywhere else a draft is stored (prompt history, external editor).
+func TestCaptureDraftReinstatesTheBangPrefix(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+	m.textarea.SetValue("ls -la")
+	m.bangMode = true
+
+	d := m.captureDraft()
+	require.Equal(t, "!ls -la", d.text)
+}
+
+// TestApplyDraftRestoresTextAttachmentsAndBangMode pins applyDraft as the
+// inverse of captureDraft: a leading "!" re-derives bang mode the same way
+// syncBangModeFromTextarea does for prompt-history navigation.
+func TestApplyDraftRestoresTextAttachmentsAndBangMode(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+	m.attachments.Update(message.Attachment{FileName: "stale.txt"})
+
+	m.applyDraft(editorDraft{
+		text:        "!git status",
+		attachments: []message.Attachment{{FileName: "notes.txt"}},
+	})
+
+	require.Equal(t, "git status", m.textarea.Value())
+	require.True(t, m.bangMode)
+	require.Len(t, m.attachments.List(), 1)
+	require.Equal(t, "notes.txt", m.attachments.List()[0].FileName)
+}
+
+// TestApplyDraftZeroValueClearsTheBox pins that the zero-value editorDraft
+// — what a session with nothing saved to return to gets — empties the box
+// rather than leaving stale text or attachments behind.
+func TestApplyDraftZeroValueClearsTheBox(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+	m.textarea.SetValue("leftover")
+	m.bangMode = true
+	m.attachments.Update(message.Attachment{FileName: "leftover.txt"})
+
+	m.applyDraft(editorDraft{})
+
+	require.Empty(t, m.textarea.Value())
+	require.False(t, m.bangMode)
+	require.Empty(t, m.attachments.List())
+}
+
+// TestEnterSubSessionCmdCarriesTheCapturedDraft is the regression for the
+// missing push/pop: entering a sub-agent's transcript (or a branch) used
+// to leave whatever the user had typed, and any attached files, sitting
+// in the box for a transcript never composed for them. This runs the real
+// command enterSubSession returns, rather than a hand-built stand-in, to
+// prove the wiring — not just captureDraft/applyDraft in isolation —
+// actually saves the parent's draft into the pushed frame and clears the
+// child's box.
+func TestEnterSubSessionCmdCarriesTheCapturedDraft(t *testing.T) {
+	t.Parallel()
+	m, ws := newMockBusyUI(t)
+	m.textarea.SetValue("what does this do?")
+	m.attachments.Update(message.Attachment{FileName: "notes.txt"})
+
+	item := agentItem(m, "msg-1", "call-1")
+	childID := "msg-1$$call-1"
+	ws.EXPECT().CreateAgentToolSessionID("msg-1", "call-1").Return(childID)
+	ws.EXPECT().GetSession(gomock.Any(), childID).
+		Return(session.Session{ID: childID, Title: "explore", ParentSessionID: "s1"}, nil)
+	ws.EXPECT().ListSessionHistory(gomock.Any(), childID).Return(nil, nil)
+	ws.EXPECT().FileTrackerListReadFiles(gomock.Any(), childID).Return(nil, nil)
+	ws.EXPECT().AgentIsSessionBranch(childID).Return(false)
+	ws.EXPECT().SetCurrentSession(gomock.Any(), childID).Return(nil)
+
+	msgs := runCmds(m, m.enterSubSession(item))
+
+	var loaded loadSessionMsg
+	found := false
+	for _, msg := range msgs {
+		if lm, ok := msg.(loadSessionMsg); ok {
+			loaded, found = lm, true
+		}
+	}
+	require.True(t, found, "enterSubSession's command must produce a loadSessionMsg")
+	require.NotNil(t, loaded.enterFrame)
+	require.Equal(t, "what does this do?", loaded.enterFrame.draftText)
+	require.Len(t, loaded.enterFrame.draftAttachments, 1)
+	require.Equal(t, "notes.txt", loaded.enterFrame.draftAttachments[0].FileName)
+	require.NotNil(t, loaded.draftAfter, "the child must start from a cleared box")
+	require.Equal(t, editorDraft{}, *loaded.draftAfter)
+}
+
+// TestSubSessionNavigationPushesAndPopsTheDraft drives the pushed frame
+// through Update, exercising the loadSessionMsg handler's draftAfter
+// branch: drilling down clears the box, and popping back out restores
+// exactly what was typed and attached before drilling down.
+func TestSubSessionNavigationPushesAndPopsTheDraft(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+	m.textarea.SetValue("what does this do?")
+	m.attachments.Update(message.Attachment{FileName: "notes.txt"})
+
+	draft := m.captureDraft()
+	m.Update(loadSessionMsg{
+		session: &session.Session{ID: "msg-1$$call-1", Title: "explore", ParentSessionID: "root"},
+		enterFrame: &sessionStackFrame{
+			id: "root", title: "Root task",
+			draftText: draft.text, draftAttachments: draft.attachments,
+		},
+		draftAfter: &editorDraft{},
+	})
+	m.session = &session.Session{ID: "msg-1$$call-1", Title: "explore", ParentSessionID: "root"}
+
+	require.Empty(t, m.textarea.Value(), "the child sub-session must not inherit the parent's draft")
+	require.Empty(t, m.attachments.List(), "the child sub-session must not inherit the parent's attachments")
+
+	parent := m.sessionStack[len(m.sessionStack)-1]
+	restore := editorDraft{text: parent.draftText, attachments: parent.draftAttachments}
+	m.Update(loadSessionMsg{
+		session:    &session.Session{ID: "root", Title: "Root task"},
+		leaveLevel: true,
+		draftAfter: &restore,
+	})
+
+	require.Equal(t, "what does this do?", m.textarea.Value(),
+		"leaving must restore exactly what was typed before drilling down")
+	require.Len(t, m.attachments.List(), 1)
+	require.Equal(t, "notes.txt", m.attachments.List()[0].FileName)
+}
+
+// TestGoToBreadcrumbLevelRestoresThatLevelsDraft pins the multi-level
+// jump: the draft restored is the one captured when the view first
+// drilled down from that level, not the level immediately below it.
+func TestGoToBreadcrumbLevelRestoresThatLevelsDraft(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+
+	m.textarea.SetValue("root draft")
+	m.Update(loadSessionMsg{
+		session:    &session.Session{ID: "level-1", Title: "level 1", ParentSessionID: "root"},
+		enterFrame: &sessionStackFrame{id: "root", title: "Root task", draftText: "root draft"},
+		draftAfter: &editorDraft{},
+	})
+	m.session = &session.Session{ID: "level-1", Title: "level 1", ParentSessionID: "root"}
+
+	m.textarea.SetValue("level 1 draft")
+	m.Update(loadSessionMsg{
+		session:    &session.Session{ID: "level-2", Title: "level 2", ParentSessionID: "level-1"},
+		enterFrame: &sessionStackFrame{id: "level-1", title: "level 1", draftText: "level 1 draft"},
+		draftAfter: &editorDraft{},
+	})
+	m.session = &session.Session{ID: "level-2", Title: "level 2", ParentSessionID: "level-1"}
+	require.Len(t, m.sessionStack, 2)
+
+	wantFrame := m.sessionStack[0]
+	require.NotNil(t, m.goToBreadcrumbLevel(0))
+	m.Update(loadSessionMsg{
+		session:         &session.Session{ID: "root", Title: "Root task"},
+		truncateStackTo: &[]int{0}[0],
+		draftAfter:      &editorDraft{text: wantFrame.draftText, attachments: wantFrame.draftAttachments},
+	})
+
+	require.Equal(t, "root draft", m.textarea.Value(),
+		"jumping to the root must restore the draft captured there, not level 1's")
+	require.Empty(t, m.sessionStack)
+}
+
+// TestSwitchingSessionsClearsTheDraft is the switcher counterpart to
+// TestSwitchingSessionsClearsTheStack: a switcher pick has no saved level
+// to restore, so whatever was typed for the old session must not leak
+// into the one just switched to.
+func TestSwitchingSessionsClearsTheDraft(t *testing.T) {
+	t.Parallel()
+	m := newSubSessionUI(t)
+	m.dialog = dialog.NewOverlay(passThroughDialog{})
+	m.textarea.SetValue("typed for the root session")
+	m.attachments.Update(message.Attachment{FileName: "root-notes.txt"})
+
+	m.handleDialogMsg(dialog.ActionSelectSession{Session: session.Session{ID: "other"}})
+	require.Equal(t, "typed for the root session", m.textarea.Value(),
+		"the box must not clear before the switch actually lands")
+
+	m.Update(loadSessionMsg{
+		session:    &session.Session{ID: "other", Title: "Other"},
+		clearStack: true,
+		draftAfter: &editorDraft{},
+	})
+
+	require.Empty(t, m.textarea.Value())
+	require.Empty(t, m.attachments.List())
 }

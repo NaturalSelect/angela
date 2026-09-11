@@ -870,6 +870,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.clearStack {
 			m.sessionStack = nil
 		}
+		if msg.draftAfter != nil {
+			m.applyDraft(*msg.draftAfter)
+		}
 		if m.forceCompactMode {
 			m.isCompact = true
 		}
@@ -2128,7 +2131,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	// Session dialog messages.
 	case dialog.ActionSelectSession:
 		m.dialog.CloseDialog(dialog.SessionsID)
-		cmds = append(cmds, m.loadSession(msg.Session.ID, loadSessionOpt{clearStack: true}))
+		// A switcher pick is a sideways jump, not a level of the current
+		// stack, so there is no saved draft to restore — clear the box
+		// rather than carry text typed for the old session into the new
+		// one.
+		cmds = append(cmds, m.loadSession(msg.Session.ID, loadSessionOpt{clearStack: true, draftAfter: &editorDraft{}}))
 
 	// Open dialog message.
 	case dialog.ActionOpenDialog:

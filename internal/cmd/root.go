@@ -409,7 +409,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	// success; everything above it in this function (config load,
 	// MkdirAll) simply runs again in the relaunched process, which is
 	// safe since both are idempotent.
-	sandboxCfg, sandboxEnabled, err := sandboxConfigFromFlags(cmd, cwd, cfg.Options.DataDirectory)
+	sandboxCfg, sandboxEnabled, err := sandboxConfigFromFlags(cmd, cwd, cfg.Options.DataDirectory, cfg.Permissions)
 	if err != nil {
 		return nil, nil, err
 	}

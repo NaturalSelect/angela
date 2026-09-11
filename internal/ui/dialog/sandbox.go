@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -149,13 +150,29 @@ func newSandboxRow(t *styles.Styles, path string, readOnly bool) sandboxPathRow 
 }
 
 // sandboxDefaultConfig builds the sandbox.Config NewSandbox pre-fills
-// the form with, sourced from the current workspace and config.
+// the form with, sourced from the current workspace and config. Any
+// directory a filesystem allow rule in the config already covers (see
+// permission.FilesystemAllowPaths) is folded in too, so the form
+// starts pre-populated with what the user has already approved
+// without a prompt.
 func sandboxDefaultConfig(com *common.Common) sandbox.Config {
 	var dataDir string
-	if cfg := com.Config(); cfg != nil && cfg.Options != nil {
-		dataDir = cfg.Options.DataDirectory
+	var permissions *config.Permissions
+	if cfg := com.Config(); cfg != nil {
+		if cfg.Options != nil {
+			dataDir = cfg.Options.DataDirectory
+		}
+		permissions = cfg.Permissions
 	}
-	return sandbox.DefaultConfig(com.Workspace.WorkingDir(), dataDir, filepath.Dir(config.GlobalConfig()))
+
+	workingDir := com.Workspace.WorkingDir()
+	result := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig()))
+	if permissions != nil {
+		readOnly, readWrite := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
+		result.ReadOnly = sandbox.DedupePaths(append(result.ReadOnly, readOnly...))
+		result.ReadWrite = sandbox.DedupePaths(append(result.ReadWrite, readWrite...))
+	}
+	return result
 }
 
 // ID implements [Dialog].

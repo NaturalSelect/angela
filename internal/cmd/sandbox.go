@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,7 @@ var sandboxFlagNames = []string{"sandbox-rw", "sandbox-ro", "sandbox-no-network"
 // addSandboxFlags registers the --sandbox flag and its refinements on
 // cmd.
 func addSandboxFlags(cmd *cobra.Command) {
-	cmd.Flags().Bool("sandbox", false, "Restrict this process and the commands it runs to the working directory and Angela's own data directories, using OS-level sandboxing (Linux via Landlock, macOS via Seatbelt); outbound network is unrestricted by default")
+	cmd.Flags().Bool("sandbox", false, "Restrict this process and the commands it runs to the working directory, Angela's own data directories, and any path already allowed by a permissions.rules entry, using OS-level sandboxing (Linux via Landlock, macOS via Seatbelt); outbound network is unrestricted by default")
 	cmd.Flags().StringSlice("sandbox-rw", nil, "Additional read-write directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().StringSlice("sandbox-ro", nil, "Additional read-only directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests; has no effect inside an auto-detected Docker/OCI container unless --no-docker-sandbox is also set, and no effect at all on macOS")
@@ -30,7 +31,12 @@ func addSandboxFlags(cmd *cobra.Command) {
 // false, cfg is the zero value. workingDir and dataDir seed the same
 // default read-write set the /sandbox TUI dialog pre-fills, and
 // --sandbox-rw/--sandbox-ro add to it rather than replacing it.
-func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string) (sandbox.Config, bool, error) {
+// permissions, when non-nil, contributes further: every directory its
+// rules already allow without a prompt (see
+// permission.FilesystemAllowPaths) is folded in too, so entering the
+// sandbox never turns an already-approved edit into a confusing I/O
+// error.
+func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, permissions *config.Permissions) (sandbox.Config, bool, error) {
 	enabled, _ := cmd.Flags().GetBool("sandbox")
 	if !enabled {
 		for _, name := range sandboxFlagNames {
@@ -48,6 +54,11 @@ func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string) (san
 	cfg := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig()))
 	cfg.ReadWrite = sandbox.DedupePaths(append(cfg.ReadWrite, rw...))
 	cfg.ReadOnly = sandbox.DedupePaths(append(cfg.ReadOnly, ro...))
+	if permissions != nil {
+		ruleReadOnly, ruleReadWrite := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
+		cfg.ReadOnly = sandbox.DedupePaths(append(cfg.ReadOnly, ruleReadOnly...))
+		cfg.ReadWrite = sandbox.DedupePaths(append(cfg.ReadWrite, ruleReadWrite...))
+	}
 	if noNetwork {
 		cfg.AllowNetwork = false
 	}

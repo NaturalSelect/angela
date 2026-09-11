@@ -52,6 +52,11 @@ type loadSessionMsg struct {
 	// enterFrame, the trim is deferred so a transient error never
 	// discards the breadcrumb.
 	truncateStackTo *int
+
+	// draftAfter, applied on success, replaces the compose box (text and
+	// attachments): restoring a saved draft, or clearing one that
+	// belongs to the session being left. Nil leaves the box untouched.
+	draftAfter *editorDraft
 }
 
 // lspFilePaths returns deduplicated file paths from both modified and read
@@ -125,6 +130,7 @@ func (m *UI) loadSession(sessionID string, opts ...loadSessionOpt) tea.Cmd {
 			leaveLevel:      o.leaveLevel,
 			clearStack:      o.clearStack,
 			truncateStackTo: o.truncateStackTo,
+			draftAfter:      o.draftAfter,
 		}
 	}
 	return tea.Batch(load, m.reportCurrentSession(sessionID))

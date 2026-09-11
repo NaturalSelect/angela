@@ -13,7 +13,7 @@ func TestQueuedMessageItem_IdentityAndFinished(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	item := NewQueuedMessageItem(&sty, "do the thing", 3)
+	item := NewQueuedMessageItem(&sty, "do the thing", nil, 3)
 
 	require.Equal(t, "queued-3", item.ID())
 	require.True(t, item.Finished(), "a queued prompt is always considered finished")
@@ -23,7 +23,7 @@ func TestQueuedMessageItem_RawRenderShowsMarkerAndPrompt(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	item := NewQueuedMessageItem(&sty, "run the tests", 0)
+	item := NewQueuedMessageItem(&sty, "run the tests", nil, 0)
 
 	out := ansi.Strip(item.RawRender(80))
 	require.Contains(t, out, "queued")
@@ -37,7 +37,7 @@ func TestQueuedMessageItem_RenderAddsGutterToEveryLine(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	item := NewQueuedMessageItem(&sty, "first line\nsecond line", 1)
+	item := NewQueuedMessageItem(&sty, "first line\nsecond line", nil, 1)
 
 	rendered := item.Render(80)
 	raw := item.RawRender(80)
@@ -57,7 +57,7 @@ func TestQueuedMessageItem_BlankPromptRendersEmpty(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	item := NewQueuedMessageItem(&sty, "   \n  ", 0)
+	item := NewQueuedMessageItem(&sty, "   \n  ", nil, 0)
 
 	require.Empty(t, item.RawRender(80))
 	require.Empty(t, item.Render(80))
@@ -70,7 +70,7 @@ func TestQueuedMessageItem_TinyWidthRendersEmpty(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	item := NewQueuedMessageItem(&sty, "hello", 0)
+	item := NewQueuedMessageItem(&sty, "hello", nil, 0)
 
 	require.Empty(t, item.RawRender(1))
 }

@@ -217,14 +217,15 @@ func (c *scriptedCoordinator) CancelAll() {
 	}
 }
 
-func (c *scriptedCoordinator) IsBusy() bool                            { return false }
-func (c *scriptedCoordinator) IsSessionBusy(string) bool               { return false }
-func (c *scriptedCoordinator) IsSessionBranch(string) bool             { return false }
-func (c *scriptedCoordinator) QueuedPrompts(string) int                { return 0 }
-func (c *scriptedCoordinator) QueuedPromptsList(string) []string       { return nil }
-func (c *scriptedCoordinator) ClearQueue(string)                       {}
-func (c *scriptedCoordinator) Summarize(context.Context, string) error { return nil }
-func (c *scriptedCoordinator) DefaultModel() agent.Model               { return agent.Model{} }
+func (c *scriptedCoordinator) IsBusy() bool                                    { return false }
+func (c *scriptedCoordinator) IsSessionBusy(string) bool                       { return false }
+func (c *scriptedCoordinator) IsSessionBranch(string) bool                     { return false }
+func (c *scriptedCoordinator) QueuedPrompts(string) int                        { return 0 }
+func (c *scriptedCoordinator) QueuedPromptsList(string) []message.QueuedPrompt { return nil }
+func (c *scriptedCoordinator) ClearQueue(string)                               {}
+func (c *scriptedCoordinator) Summarize(context.Context, string) error         { return nil }
+func (c *scriptedCoordinator) DefaultModel() agent.Model                       { return agent.Model{} }
+
 func (c *scriptedCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
 	return config.ActiveAgent{}, nil
 }

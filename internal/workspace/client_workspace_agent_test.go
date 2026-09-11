@@ -8,6 +8,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/client"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/stretchr/testify/require"
 )
@@ -186,10 +187,10 @@ func TestClientWorkspace_AgentQueuedPromptsList(t *testing.T) {
 		t.Parallel()
 		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(t, "/v1/workspaces/ws-1/agent/sessions/s1/prompts/list", r.URL.Path)
-			require.NoError(t, json.NewEncoder(w).Encode([]string{"first", "second"}))
+			require.NoError(t, json.NewEncoder(w).Encode([]proto.QueuedPrompt{{Prompt: "first"}, {Prompt: "second"}}))
 		})
 
-		require.Equal(t, []string{"first", "second"}, ws.AgentQueuedPromptsList("s1"))
+		require.Equal(t, []message.QueuedPrompt{{Prompt: "first"}, {Prompt: "second"}}, ws.AgentQueuedPromptsList("s1"))
 	})
 
 	t.Run("server error defaults to nil", func(t *testing.T) {

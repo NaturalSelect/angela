@@ -8,6 +8,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/shell"
@@ -312,9 +313,9 @@ func (b *Backend) ClearQueue(workspaceID, sessionID string) error {
 	return nil
 }
 
-// QueuedPromptsList returns the list of queued prompt strings for a
-// session.
-func (b *Backend) QueuedPromptsList(workspaceID, sessionID string) ([]string, error) {
+// QueuedPromptsList returns the list of queued prompts for a session,
+// including the attachments each was submitted with.
+func (b *Backend) QueuedPromptsList(workspaceID, sessionID string) ([]message.QueuedPrompt, error) {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return nil, err

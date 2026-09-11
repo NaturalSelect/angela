@@ -666,6 +666,9 @@ func AttachmentFromMessage(a message.Attachment) Attachment {
 // AttachmentsToMessage converts a slice of proto Attachments to a slice
 // of [message.Attachment].
 func AttachmentsToMessage(as []Attachment) []message.Attachment {
+	if len(as) == 0 {
+		return nil
+	}
 	out := make([]message.Attachment, len(as))
 	for i, a := range as {
 		out[i] = a.ToMessage()
@@ -676,6 +679,9 @@ func AttachmentsToMessage(as []Attachment) []message.Attachment {
 // AttachmentsFromMessage converts a slice of [message.Attachment] to a
 // slice of proto Attachments.
 func AttachmentsFromMessage(as []message.Attachment) []Attachment {
+	if len(as) == 0 {
+		return nil
+	}
 	out := make([]Attachment, len(as))
 	for i, a := range as {
 		out[i] = AttachmentFromMessage(a)
@@ -713,4 +719,48 @@ func (a *Attachment) UnmarshalJSON(data []byte) error {
 	}
 	a.Content = content
 	return nil
+}
+
+// QueuedPrompt represents a prompt waiting in a session's turn queue,
+// together with the attachments it was submitted with.
+type QueuedPrompt struct {
+	Prompt      string       `json:"prompt"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// ToMessage converts a proto QueuedPrompt to a [message.QueuedPrompt].
+func (p QueuedPrompt) ToMessage() message.QueuedPrompt {
+	return message.QueuedPrompt{
+		Prompt:      p.Prompt,
+		Attachments: AttachmentsToMessage(p.Attachments),
+	}
+}
+
+// QueuedPromptFromMessage converts a [message.QueuedPrompt] to a proto
+// QueuedPrompt.
+func QueuedPromptFromMessage(p message.QueuedPrompt) QueuedPrompt {
+	return QueuedPrompt{
+		Prompt:      p.Prompt,
+		Attachments: AttachmentsFromMessage(p.Attachments),
+	}
+}
+
+// QueuedPromptsToMessage converts a slice of proto QueuedPrompts to a
+// slice of [message.QueuedPrompt].
+func QueuedPromptsToMessage(ps []QueuedPrompt) []message.QueuedPrompt {
+	out := make([]message.QueuedPrompt, len(ps))
+	for i, p := range ps {
+		out[i] = p.ToMessage()
+	}
+	return out
+}
+
+// QueuedPromptsFromMessage converts a slice of [message.QueuedPrompt] to
+// a slice of proto QueuedPrompts.
+func QueuedPromptsFromMessage(ps []message.QueuedPrompt) []QueuedPrompt {
+	out := make([]QueuedPrompt, len(ps))
+	for i, p := range ps {
+		out[i] = QueuedPromptFromMessage(p)
+	}
+	return out
 }

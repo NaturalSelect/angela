@@ -268,10 +268,10 @@ func (mr *MockCoordinatorMockRecorder) QueuedPrompts(sessionID any) *gomock.Call
 }
 
 // QueuedPromptsList mocks base method.
-func (m *MockCoordinator) QueuedPromptsList(sessionID string) []string {
+func (m *MockCoordinator) QueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "QueuedPromptsList", sessionID)
-	ret0, _ := ret[0].([]string)
+	ret0, _ := ret[0].([]message.QueuedPrompt)
 	return ret0
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/lsp"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/charmbracelet/x/powernap/pkg/lsp/protocol"
@@ -969,11 +970,11 @@ func TestProtoMethodsSuccessPaths(t *testing.T) {
 			name:       "GetAgentSessionQueuedPromptsList",
 			wantMethod: http.MethodGet,
 			wantPath:   "/v1/workspaces/ws1/agent/sessions/sess1/prompts/list",
-			body:       mustJSON(t, []string{"p1", "p2"}),
+			body:       mustJSON(t, []proto.QueuedPrompt{{Prompt: "p1"}, {Prompt: "p2"}}),
 			call: func(t *testing.T, c *Client) {
 				got, err := c.GetAgentSessionQueuedPromptsList(context.Background(), "ws1", "sess1")
 				require.NoError(t, err)
-				require.Equal(t, []string{"p1", "p2"}, got)
+				require.Equal(t, []message.QueuedPrompt{{Prompt: "p1"}, {Prompt: "p2"}}, got)
 			},
 		},
 		{

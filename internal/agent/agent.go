@@ -189,7 +189,7 @@ type SessionAgent interface {
 	IsSessionBusy(sessionID string) bool
 	IsBusy() bool
 	QueuedPrompts(sessionID string) int
-	QueuedPromptsList(sessionID string) []string
+	QueuedPromptsList(sessionID string) []message.QueuedPrompt
 	ClearQueue(sessionID string)
 	Summarize(context.Context, string, resolvedAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error
 	// SideQuestion answers a one-off question from a session's existing

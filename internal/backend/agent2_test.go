@@ -6,6 +6,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/stretchr/testify/require"
 )
@@ -137,8 +138,10 @@ func TestBackend_QueueOperations(t *testing.T) {
 		t.Parallel()
 		b, _ := newTestBackend(t)
 		coord := &fakeCoordinator{
-			queued:     map[string]int{"s1": 3},
-			queuedList: map[string][]string{"s1": {"first", "second", "third"}},
+			queued: map[string]int{"s1": 3},
+			queuedList: map[string][]message.QueuedPrompt{
+				"s1": {{Prompt: "first"}, {Prompt: "second"}, {Prompt: "third"}},
+			},
 		}
 		ws := insertAgentWorkspace(t, b, coord)
 
@@ -148,7 +151,7 @@ func TestBackend_QueueOperations(t *testing.T) {
 
 		list, err := b.QueuedPromptsList(ws.ID, "s1")
 		require.NoError(t, err)
-		require.Equal(t, []string{"first", "second", "third"}, list)
+		require.Equal(t, []message.QueuedPrompt{{Prompt: "first"}, {Prompt: "second"}, {Prompt: "third"}}, list)
 
 		require.NoError(t, b.ClearQueue(ws.ID, "s1"))
 		require.Equal(t, []string{"s1"}, coord.clearedQueue)

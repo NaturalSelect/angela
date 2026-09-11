@@ -212,7 +212,7 @@ func (w *AppWorkspace) AgentQueuedPrompts(sessionID string) int {
 	return w.app.AgentCoordinator.QueuedPrompts(sessionID)
 }
 
-func (w *AppWorkspace) AgentQueuedPromptsList(sessionID string) []string {
+func (w *AppWorkspace) AgentQueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	if w.app.AgentCoordinator == nil {
 		return nil
 	}

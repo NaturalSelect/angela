@@ -209,10 +209,10 @@ func (mr *MockWorkspaceMockRecorder) AgentQueuedPrompts(sessionID any) *gomock.C
 }
 
 // AgentQueuedPromptsList mocks base method.
-func (m *MockWorkspace) AgentQueuedPromptsList(sessionID string) []string {
+func (m *MockWorkspace) AgentQueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AgentQueuedPromptsList", sessionID)
-	ret0, _ := ret[0].([]string)
+	ret0, _ := ret[0].([]message.QueuedPrompt)
 	return ret0
 }
 

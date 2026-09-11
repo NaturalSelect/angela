@@ -250,7 +250,7 @@ func TestMessageCreatedEventRefreshesBusyAndQueue(t *testing.T) {
 
 	active := workspace.ActiveAgent{}
 	stubBusyProbe(ws, true, true, permission.ModeManual, &active)
-	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return([]string{"queued prompt"}).AnyTimes()
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return([]message.QueuedPrompt{{Prompt: "queued prompt"}}).AnyTimes()
 
 	runCmds(m, cmd)
 	require.True(t, m.isAgentBusy(), "refreshed busy state must land in the cache")
@@ -412,10 +412,10 @@ func TestSessionSwitchRefreshesQueueAndBusy(t *testing.T) {
 	m, ws := newMockBusyUI(t)
 	warmCaches(m, true)
 	m.promptQueue = 5 // stale queue pill from the previous session
-	m.promptQueueItems = []string{"x", "y", "z", "w", "v"}
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "x"}, {Prompt: "y"}, {Prompt: "z"}, {Prompt: "w"}, {Prompt: "v"}}
 	active := workspace.ActiveAgent{}
 	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
-	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return([]string{"a", "b"}).AnyTimes()
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return([]message.QueuedPrompt{{Prompt: "a"}, {Prompt: "b"}}).AnyTimes()
 	ws.EXPECT().ListMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	ws.EXPECT().ListUserMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
@@ -426,7 +426,7 @@ func TestSessionSwitchRefreshesQueueAndBusy(t *testing.T) {
 
 	runCmds(m, cmd)
 	require.Equal(t, 2, m.promptQueue, "the new session's queue must be fetched")
-	require.Equal(t, []string{"a", "b"}, m.promptQueueItems)
+	require.Equal(t, []message.QueuedPrompt{{Prompt: "a"}, {Prompt: "b"}}, m.promptQueueItems)
 }
 
 // TestSessionSwitchLoadsTheTranscriptOffThread is B3. Loading a session
@@ -559,7 +559,7 @@ func TestCancelAgentClearsQueueFromCachedCount(t *testing.T) {
 	m, ws := newMockBusyUI(t)
 	warmCaches(m, true)
 	m.promptQueue = 1
-	m.promptQueueItems = []string{"a"}
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "a"}}
 
 	ws.EXPECT().AgentClearQueue(gomock.Any())
 	// AgentQueuedPrompts/AgentQueuedPromptsList deliberately left
@@ -585,7 +585,7 @@ func TestCancelAgentRestoresQueueOnActiveCancel(t *testing.T) {
 	m.isCanceling = true       // first esc press already armed cancellation
 	m.busyFetchInFlight = true // keeps dispatchBusyRefresh's returned cmd nil
 	m.promptQueue = 1
-	m.promptQueueItems = []string{"queued follow-up"}
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "queued follow-up"}}
 
 	ws.EXPECT().AgentCancel(gomock.Any())
 
@@ -606,7 +606,7 @@ func TestCancelAgentRestoresQueueAheadOfDraft(t *testing.T) {
 	m, ws := newMockBusyUI(t)
 	warmCaches(m, true)
 	m.promptQueue = 2
-	m.promptQueueItems = []string{"first queued", "second queued"}
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "first queued"}, {Prompt: "second queued"}}
 	m.textarea.SetValue("still typing this")
 
 	ws.EXPECT().AgentClearQueue(gomock.Any())
@@ -736,7 +736,7 @@ func TestStalePromptQueueDiscardedAndReDispatched(t *testing.T) {
 	m, _ := newMockBusyUI(t)
 	warmCaches(m, false)
 	m.promptQueue = 1
-	m.promptQueueItems = []string{"real"}
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "real"}}
 
 	// A fetch is in flight; capture its generation, then a newer transition
 	// (esc clears the queue) supersedes it.
@@ -750,7 +750,7 @@ func TestStalePromptQueueDiscardedAndReDispatched(t *testing.T) {
 	cmds := m.applyPromptQueue(promptQueueMsg{
 		forSession: "s1",
 		gen:        staleGen,
-		prompts:    []string{"stale"},
+		prompts:    []message.QueuedPrompt{{Prompt: "stale"}},
 	})
 	require.Zero(t, m.promptQueue,
 		"a stale queue result must not repopulate the cleared queue")
@@ -775,7 +775,7 @@ func TestStalePromptQueuePreservesSessionScoping(t *testing.T) {
 	cmds := m.applyPromptQueue(promptQueueMsg{
 		forSession: "other",
 		gen:        gen,
-		prompts:    []string{"from other session"},
+		prompts:    []message.QueuedPrompt{{Prompt: "from other session"}},
 	})
 	require.Zero(t, m.promptQueue,
 		"a result from a different session must never populate the queue")

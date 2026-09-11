@@ -20,7 +20,7 @@ type fakeCoordinator struct {
 	sessionBusy   map[string]bool
 	sessionBranch map[string]bool
 	queued        map[string]int
-	queuedList    map[string][]string
+	queuedList    map[string][]message.QueuedPrompt
 
 	clearedQueue []string
 	abandoned    []string
@@ -71,7 +71,7 @@ func (c *fakeCoordinator) IsSessionBranch(sessionID string) bool { return c.sess
 
 func (c *fakeCoordinator) QueuedPrompts(sessionID string) int { return c.queued[sessionID] }
 
-func (c *fakeCoordinator) QueuedPromptsList(sessionID string) []string {
+func (c *fakeCoordinator) QueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	return c.queuedList[sessionID]
 }
 

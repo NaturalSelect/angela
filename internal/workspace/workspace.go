@@ -173,7 +173,7 @@ type Workspace interface {
 	// both cases into "agent offline".
 	AgentReadyErr() error
 	AgentQueuedPrompts(sessionID string) int
-	AgentQueuedPromptsList(sessionID string) []string
+	AgentQueuedPromptsList(sessionID string) []message.QueuedPrompt
 	AgentClearQueue(sessionID string)
 	AgentSummarize(ctx context.Context, sessionID string) error
 	// AgentAskSideQuestion answers a one-off question from a

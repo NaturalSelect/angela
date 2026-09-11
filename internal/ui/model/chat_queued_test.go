@@ -39,8 +39,8 @@ func TestQueuedPromptsParkAtTheEnd(t *testing.T) {
 	)
 
 	u.chat.SetQueued(
-		chat.NewQueuedMessageItem(u.com.Styles, "first waiting", 0),
-		chat.NewQueuedMessageItem(u.com.Styles, "second waiting", 1),
+		chat.NewQueuedMessageItem(u.com.Styles, "first waiting", nil, 0),
+		chat.NewQueuedMessageItem(u.com.Styles, "second waiting", nil, 1),
 	)
 
 	require.Equal(t, 4, u.chat.list.Len())
@@ -58,7 +58,7 @@ func TestQueuedPromptsAreReplacedNotAccumulated(t *testing.T) {
 
 	for range 5 {
 		u.chat.SetQueued(
-			chat.NewQueuedMessageItem(u.com.Styles, "still waiting", 0),
+			chat.NewQueuedMessageItem(u.com.Styles, "still waiting", nil, 0),
 		)
 	}
 
@@ -70,7 +70,7 @@ func TestAnEmptyQueueRemovesTheTail(t *testing.T) {
 
 	u := newTestUI()
 	u.chat.SetMessages(testMessageItem{id: "a", text: "alpha"})
-	u.chat.SetQueued(chat.NewQueuedMessageItem(u.com.Styles, "waiting", 0))
+	u.chat.SetQueued(chat.NewQueuedMessageItem(u.com.Styles, "waiting", nil, 0))
 	require.Equal(t, 2, u.chat.list.Len())
 
 	u.chat.SetQueued()
@@ -87,7 +87,7 @@ func TestNewMessagesLandAboveTheQueue(t *testing.T) {
 
 	u := newTestUI()
 	u.chat.SetMessages(testMessageItem{id: "a", text: "alpha"})
-	u.chat.SetQueued(chat.NewQueuedMessageItem(u.com.Styles, "waiting", 0))
+	u.chat.SetQueued(chat.NewQueuedMessageItem(u.com.Styles, "waiting", nil, 0))
 
 	u.chat.AppendMessages(testMessageItem{id: "b", text: "beta"})
 
@@ -102,7 +102,7 @@ func TestReloadingTheTranscriptClearsTheQueue(t *testing.T) {
 
 	u := newTestUI()
 	u.chat.SetMessages(testMessageItem{id: "a", text: "alpha"})
-	u.chat.SetQueued(chat.NewQueuedMessageItem(u.com.Styles, "waiting", 0))
+	u.chat.SetQueued(chat.NewQueuedMessageItem(u.com.Styles, "waiting", nil, 0))
 
 	u.chat.SetMessages(testMessageItem{id: "a", text: "alpha"})
 
@@ -116,7 +116,7 @@ func TestAQueuedPromptRendersItsText(t *testing.T) {
 	t.Parallel()
 
 	u := newTestUI()
-	item := chat.NewQueuedMessageItem(u.com.Styles, "please refactor the parser", 0)
+	item := chat.NewQueuedMessageItem(u.com.Styles, "please refactor the parser", nil, 0)
 
 	require.Contains(t, item.Render(80), "please refactor the parser")
 	require.Contains(t, item.Render(80), "queued")

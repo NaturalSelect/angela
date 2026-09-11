@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	fantasy "charm.land/fantasy"
+	message "github.com/NaturalSelect/angela/internal/message"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -162,10 +163,10 @@ func (mr *MockSessionAgentMockRecorder) QueuedPrompts(sessionID any) *gomock.Cal
 }
 
 // QueuedPromptsList mocks base method.
-func (m *MockSessionAgent) QueuedPromptsList(sessionID string) []string {
+func (m *MockSessionAgent) QueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "QueuedPromptsList", sessionID)
-	ret0, _ := ret[0].([]string)
+	ret0, _ := ret[0].([]message.QueuedPrompt)
 	return ret0
 }
 

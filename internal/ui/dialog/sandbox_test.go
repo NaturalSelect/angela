@@ -2,12 +2,14 @@ package dialog
 
 import (
 	"image"
+	"path/filepath"
 	"testing"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/workspace"
@@ -302,6 +304,45 @@ func TestSandbox_DefaultConfigIncludesConfiguredDataDirectory(t *testing.T) {
 	m := NewSandbox(com)
 
 	require.Contains(t, m.config().ReadWrite, dataDir)
+}
+
+// sandboxPermissionsWorkspace additionally reports a config with
+// permission rules set, exercising the branch that folds
+// permission.FilesystemAllowPaths into the pre-filled form.
+type sandboxPermissionsWorkspace struct {
+	workspace.Workspace
+
+	dir   string
+	rules []permission.Rule
+}
+
+func (w *sandboxPermissionsWorkspace) WorkingDir() string { return w.dir }
+func (w *sandboxPermissionsWorkspace) Config() *config.Config {
+	return &config.Config{Permissions: &config.Permissions{Rules: w.rules}}
+}
+
+// TestSandbox_DefaultConfigIncludesPermissionRulePaths verifies that
+// sandboxDefaultConfig widens the pre-filled form with directories a
+// filesystem allow rule in the config already covers, so the dialog
+// starts pre-populated with what the user has already approved
+// without a prompt.
+func TestSandbox_DefaultConfigIncludesPermissionRulePaths(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	s := styles.CharmtonePantera()
+	com := &common.Common{
+		Styles: &s,
+		Workspace: &sandboxPermissionsWorkspace{
+			dir: dir,
+			rules: []permission.Rule{
+				{Action: permission.RuleAllow, Tool: "edit", Pattern: "external/**"},
+			},
+		},
+	}
+	m := NewSandbox(com)
+
+	require.Contains(t, m.config().ReadWrite, filepath.Join(dir, "external"))
 }
 
 // TestSandbox_RemoveRowOutOfBounds verifies that removeRow silently

@@ -3,6 +3,8 @@ package cmd
 import (
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +23,7 @@ func TestSandboxConfigFromFlags_Disabled(t *testing.T) {
 
 	cmd := newSandboxTestCmd(t)
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data")
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
 	require.NoError(t, err)
 	require.False(t, enabled)
 	require.Zero(t, cfg)
@@ -33,7 +35,7 @@ func TestSandboxConfigFromFlags_DefaultsOnly(t *testing.T) {
 	cmd := newSandboxTestCmd(t)
 	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data")
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
 	require.NoError(t, err)
 	require.True(t, enabled)
 	require.Contains(t, cfg.ReadWrite, "/work")
@@ -54,7 +56,7 @@ func TestSandboxConfigFromFlags_AppendsExtraPaths(t *testing.T) {
 	require.NoError(t, cmd.Flags().Set("sandbox-rw", "/extra-rw"))
 	require.NoError(t, cmd.Flags().Set("sandbox-ro", "/extra-ro"))
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data")
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
 	require.NoError(t, err)
 	require.True(t, enabled)
 	require.Contains(t, cfg.ReadWrite, "/work")
@@ -71,7 +73,7 @@ func TestSandboxConfigFromFlags_NoNetwork(t *testing.T) {
 	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
 	require.NoError(t, cmd.Flags().Set("sandbox-no-network", "true"))
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data")
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
 	require.NoError(t, err)
 	require.True(t, enabled)
 	require.False(t, cfg.AllowNetwork)
@@ -90,7 +92,7 @@ func TestSandboxConfigFromFlags_NoDockerSandboxDoesNotRequireSandbox(t *testing.
 	cmd := newSandboxTestCmd(t)
 	require.NoError(t, cmd.Flags().Set("no-docker-sandbox", "true"))
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data")
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
 	require.NoError(t, err)
 	require.False(t, enabled)
 	require.Zero(t, cfg)
@@ -113,11 +115,39 @@ func TestSandboxConfigFromFlags_RequiresSandboxFlag(t *testing.T) {
 			}
 			require.NoError(t, cmd.Flags().Set(name, value))
 
-			cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data")
+			cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "--sandbox")
 			require.False(t, enabled)
 			require.Zero(t, cfg)
 		})
 	}
+}
+
+// TestSandboxConfigFromFlags_PermissionRulesAddPaths covers the
+// permission-rule overlay: an unconditional allow rule for a
+// filesystem category widens the sandbox to match it, so a path the
+// permission policy already approves without a prompt doesn't also
+// need an OS-level grant added by hand. A rule for a non-filesystem
+// category (execute) contributes nothing, since its pattern isn't a
+// path.
+func TestSandboxConfigFromFlags_PermissionRulesAddPaths(t *testing.T) {
+	t.Parallel()
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
+
+	permissions := &config.Permissions{
+		Rules: []permission.Rule{
+			{Action: permission.RuleAllow, Tool: "edit", Pattern: "external/**"},
+			{Action: permission.RuleAllow, Tool: "read", Pattern: "/etc/angela/**"},
+			{Action: permission.RuleAllow, Tool: "execute", Pattern: "ls *"},
+		},
+	}
+
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", permissions)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	require.Contains(t, cfg.ReadWrite, "/work/external")
+	require.Contains(t, cfg.ReadOnly, "/etc/angela")
 }

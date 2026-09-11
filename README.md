@@ -160,6 +160,12 @@ angela run --sandbox --sandbox-rw /extra/writable --sandbox-ro /extra/readable "
 angela run --sandbox --sandbox-no-network "..."
 ```
 
+The default set is also widened with any directory an unconditional
+filesystem allow rule under `permissions.rules` (see [Permissions](#permissions)
+above) already covers, so an edit or read the permission policy already
+approves without a prompt doesn't instead run into a confusing sandbox I/O
+error.
+
 `--sandbox` is independent from `--yolo` and only supported in local
 (non-`ANGELA_CLIENT_SERVER`) mode, since the restriction is irreversible
 for the life of the process. On macOS, entering the sandbox works by

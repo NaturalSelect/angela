@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Geometry of the user message band. The band is a filled surface, so these
@@ -116,7 +117,11 @@ func (m *UserMessageItem) renderBody(width int) string {
 	if err != nil {
 		content = msgContent
 	} else {
-		content = strings.TrimSuffix(result, "\n")
+		// A message that starts with something Markdown reads as a block
+		// marker (e.g. "1. ") renders with a blank line above it. Left
+		// in place, that blank line lands on the band's prompt/timestamp
+		// row and pushes the real text down a row.
+		content = trimLeadingBlankLines(strings.TrimSuffix(result, "\n"))
 	}
 
 	if len(m.message.BinaryContent()) > 0 {
@@ -131,6 +136,17 @@ func (m *UserMessageItem) renderBody(width int) string {
 	height = lipgloss.Height(content)
 	m.setCachedRender(content, width, height)
 	return m.renderHighlighted(content, width, height)
+}
+
+// trimLeadingBlankLines drops leading lines that are blank once ANSI
+// styling is stripped.
+func trimLeadingBlankLines(s string) string {
+	lines := strings.Split(s, "\n")
+	i := 0
+	for i < len(lines) && strings.TrimSpace(ansi.Strip(lines[i])) == "" {
+		i++
+	}
+	return strings.Join(lines[i:], "\n")
 }
 
 // renderSkillInvocation renders a loaded_skill XML as a special UI element.

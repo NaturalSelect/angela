@@ -2083,7 +2083,7 @@ func updateSessionTokenCounters(session *session.Session, usage fantasy.Usage) {
 	if usage.OutputTokens != 0 {
 		session.CompletionTokens = usage.OutputTokens
 	}
-	if promptTokens := usage.InputTokens + usage.CacheReadTokens; promptTokens != 0 {
+	if promptTokens := usage.InputTokens + usage.CacheReadTokens + usage.CacheCreationTokens; promptTokens != 0 {
 		session.PromptTokens = promptTokens
 	}
 }

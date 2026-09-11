@@ -254,6 +254,22 @@ func TestUpdateSessionUsagePreservesOmittedCountersForPartialUsage(t *testing.T)
 	require.Equal(t, int64(456), currentSession.CompletionTokens)
 }
 
+func TestUpdateSessionUsageIncludesCacheCreationTokensInPrompt(t *testing.T) {
+	t.Parallel()
+
+	agent := &sessionAgent{}
+	currentSession := &session.Session{ID: "session-id"}
+	model := Model{CatwalkCfg: config.ProviderModel{Model: catwalk.Model{CostPer1MIn: 10, CostPer1MOut: 20}}}
+	// A cache write dominates the request (e.g. a fresh breakpoint after
+	// the ephemeral cache expired), leaving InputTokens and CacheReadTokens
+	// small on their own.
+	usage := fantasy.Usage{InputTokens: 100, CacheReadTokens: 5000, CacheCreationTokens: 20000}
+
+	agent.updateSessionUsage(model, currentSession, usage, nil, false)
+
+	require.Equal(t, int64(25100), currentSession.PromptTokens)
+}
+
 func TestUpdateSessionUsagePreservesCountersForTotalOnlyUsage(t *testing.T) {
 	t.Parallel()
 

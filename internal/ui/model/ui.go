@@ -2237,9 +2237,19 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if cmd := m.leaveSubSession(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.ActionScrollToTop:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if cmd := m.chat.ScrollToTopAndSelectFirst(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.ActionScrollToBottom:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+		if cmd := m.chat.ScrollToBottomAndSelectLast(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionScrollToLatestUser:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if cmd := m.chat.ScrollToLatestUserMessage(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case dialog.ActionToggleHelp:
@@ -3348,10 +3358,9 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				}
 				m.chat.SelectLastInView()
 			case key.Matches(msg, m.keyMap.Chat.Home):
-				if cmd := m.chat.ScrollToTopAndAnimate(); cmd != nil {
+				if cmd := m.chat.ScrollToTopAndSelectFirst(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
-				m.chat.SelectFirst()
 			case key.Matches(msg, m.keyMap.Chat.End):
 				if cmd := m.chat.ScrollToBottomAndSelectLast(); cmd != nil {
 					cmds = append(cmds, cmd)

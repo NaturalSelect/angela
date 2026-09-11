@@ -104,6 +104,8 @@ func TestNewCommands_DefaultSystemCommands(t *testing.T) {
 	require.Contains(t, ids, "quit")
 	require.NotContains(t, ids, "session_details", "no session is open yet")
 	require.NotContains(t, ids, "show_todos", "no session is open yet")
+	require.NotContains(t, ids, "scroll_to_top", "no session is open yet")
+	require.NotContains(t, ids, "scroll_to_latest_user", "no session is open yet")
 }
 
 // TestNewCommands_SessionGatedCommands verifies the commands that only
@@ -116,7 +118,9 @@ func TestNewCommands_SessionGatedCommands(t *testing.T) {
 	require.Contains(t, ids, "session_details")
 	require.Contains(t, ids, "summarize")
 	require.Contains(t, ids, "undo")
+	require.Contains(t, ids, "scroll_to_top")
 	require.Contains(t, ids, "scroll_to_bottom")
+	require.Contains(t, ids, "scroll_to_latest_user")
 	require.Contains(t, ids, "toggle_compact")
 	require.Contains(t, ids, "show_todos")
 }

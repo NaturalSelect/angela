@@ -330,6 +330,81 @@ func TestChatScrollToIndex(t *testing.T) {
 	require.True(t, u.chat.follow)
 }
 
+func TestChatScrollToTopAndSelectFirst(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	msgs := []chat.MessageItem{&testHighlightableItem{testMessageItem: testMessageItem{id: "m-0", text: "message 0"}}}
+	for i := 1; i < 60; i++ {
+		msgs = append(msgs, testMessageItem{id: "m-" + strconv.Itoa(i), text: "message " + strconv.Itoa(i)})
+	}
+	u.chat.SetMessages(msgs...)
+	u.updateLayoutAndSize()
+	u.chat.SetSelected(59)
+
+	cmd := u.chat.ScrollToTopAndSelectFirst()
+
+	require.Equal(t, 0, u.chat.list.Selected())
+	require.False(t, u.chat.follow)
+	require.NotNil(t, cmd)
+}
+
+func TestChatScrollToLatestUserMessage(t *testing.T) {
+	t.Parallel()
+
+	newUserMsg := func(u *UI, id string) chat.MessageItem {
+		return chat.NewUserMessageItem(u.com.Styles, &message.Message{
+			ID:        id,
+			Role:      message.User,
+			CreatedAt: time.Now().Unix(),
+			Parts:     []message.ContentPart{message.TextContent{Text: id}},
+		}, nil)
+	}
+
+	t.Run("scrolls to and selects the only user message", func(t *testing.T) {
+		t.Parallel()
+		u := newTestUI()
+		u.chat.SetMessages(
+			newUserMsg(u, "u1"),
+			testMessageItem{id: "a1", text: "assistant reply"},
+			testMessageItem{id: "a2", text: "more assistant text"},
+		)
+		u.updateLayoutAndSize()
+
+		cmd := u.chat.ScrollToLatestUserMessage()
+
+		require.Equal(t, 0, u.chat.list.Selected())
+		require.NotNil(t, cmd)
+	})
+
+	t.Run("finds the latest of several user messages", func(t *testing.T) {
+		t.Parallel()
+		u := newTestUI()
+		u.chat.SetMessages(
+			newUserMsg(u, "u1"),
+			testMessageItem{id: "a1", text: "assistant reply"},
+			newUserMsg(u, "u2"),
+			testMessageItem{id: "a2", text: "assistant reply 2"},
+		)
+		u.updateLayoutAndSize()
+
+		u.chat.ScrollToLatestUserMessage()
+
+		require.Equal(t, 2, u.chat.list.Selected())
+	})
+
+	t.Run("no-op when there is no user message", func(t *testing.T) {
+		t.Parallel()
+		u := newTestUI()
+		u.chat.SetMessages(testMessageItem{id: "a1", text: "assistant only"})
+		u.updateLayoutAndSize()
+
+		cmd := u.chat.ScrollToLatestUserMessage()
+
+		require.Nil(t, cmd)
+	})
+}
+
 func TestChatIsSelectable(t *testing.T) {
 	t.Parallel()
 

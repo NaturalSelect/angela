@@ -505,7 +505,15 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "scroll_to_top", "Scroll to Top", "home", ActionScrollToTop{}).WithAliases("top"))
+	}
+
+	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "scroll_to_bottom", "Scroll to Bottom", "ctrl+down", ActionScrollToBottom{}).WithAliases("bottom"))
+	}
+
+	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "scroll_to_latest_user", "Scroll to Latest User Message", "", ActionScrollToLatestUser{}).WithAliases("latest"))
 	}
 
 	if c.hasParent {

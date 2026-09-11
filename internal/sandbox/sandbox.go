@@ -6,14 +6,9 @@ package sandbox
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"runtime"
-	"strings"
-	"sync"
 	"sync/atomic"
-
-	"github.com/landlock-lsm/go-landlock/landlock"
 )
 
 // ErrNotSupported indicates the running platform has no supported
@@ -125,30 +120,6 @@ func (NoneSandbox) IsInSandbox() bool { return false }
 // no mechanism to confine the process.
 func (NoneSandbox) EnterSandbox(Config) error { return ErrNotSupported }
 
-// DockerSandbox represents a process already confined by an external
-// Docker (or other OCI) container. The container is trusted to
-// already provide both the filesystem and network isolation its
-// operator wants, so EnterSandbox is a no-op; pass
-// --no-docker-sandbox to have Angela apply LandlockSandbox's own
-// restrictions on top of the container instead of trusting it.
-type DockerSandbox struct{}
-
-// IsInSandbox always reports true: a Docker/OCI container was
-// detected at startup.
-func (DockerSandbox) IsInSandbox() bool { return true }
-
-// EnterSandbox is a no-op: the surrounding container is trusted to
-// already confine both the filesystem and cfg.AllowNetwork's intent
-// the way its operator wants, unlike LandlockSandbox which must
-// enforce them itself.
-func (DockerSandbox) EnterSandbox(Config) error { return nil }
-
-// entered tracks whether LandlockSandbox.EnterSandbox has already
-// restricted this process. Landlock confinement is process-wide and
-// irreversible, so this is process-global state rather than
-// per-instance state.
-var entered atomic.Bool
-
 // restrictChildNetwork tracks whether EnterSandbox was called with
 // Config.AllowNetwork false. It never restricts the sandboxed
 // process's own network access: only ShouldRestrictChildNetwork's
@@ -162,77 +133,3 @@ var restrictChildNetwork atomic.Bool
 func ShouldRestrictChildNetwork() bool {
 	return restrictChildNetwork.Load()
 }
-
-// LandlockSandbox restricts the process using the Linux Landlock LSM.
-// On platforms or kernels without Landlock support, EnterSandbox
-// degrades to a safe no-op rather than failing.
-type LandlockSandbox struct{}
-
-// IsInSandbox reports whether EnterSandbox has already restricted
-// this process.
-func (LandlockSandbox) IsInSandbox() bool {
-	return entered.Load()
-}
-
-// EnterSandbox applies cfg using Landlock's best-effort mode: it
-// enforces as much as the running kernel supports and never fails
-// just because a stronger ABI version isn't available. Landlock has
-// no way to restrict network access for only this process's
-// children, so cfg.AllowNetwork never touches Landlock; see
-// ShouldRestrictChildNetwork for how it's enforced instead.
-func (LandlockSandbox) EnterSandbox(cfg Config) error {
-	cf := landlock.V10.BestEffort()
-
-	rules := make([]landlock.Rule, 0, 4)
-	if len(cfg.ReadOnly) > 0 {
-		rules = append(rules, landlock.RODirs(cfg.ReadOnly...).IgnoreIfMissing())
-	}
-	if len(cfg.ReadWrite) > 0 {
-		rules = append(rules, landlock.RWDirs(cfg.ReadWrite...).IgnoreIfMissing())
-	}
-	if len(rules) > 0 {
-		// /dev/null, /dev/zero, /dev/full, /dev/random, and
-		// /dev/urandom are safe regardless of the rest of the
-		// sandbox (they don't expose or persist anything) and are
-		// routinely needed for I/O redirection and random data
-		// generation, e.g. "cmd >/dev/null" or "head -c16
-		// /dev/urandom". Grant them explicitly: the workspace
-		// profile's read-only "/" would otherwise block writing to
-		// /dev/null.
-		rules = append(rules,
-			landlock.RWFiles("/dev/null").IgnoreIfMissing(),
-			landlock.ROFiles("/dev/zero", "/dev/full", "/dev/random", "/dev/urandom").IgnoreIfMissing(),
-		)
-		if err := cf.RestrictPaths(rules...); err != nil {
-			return fmt.Errorf("enter sandbox: restrict paths: %w", err)
-		}
-	}
-
-	if !cfg.AllowNetwork {
-		restrictChildNetwork.Store(true)
-	}
-
-	entered.Store(true)
-	return nil
-}
-
-// InDocker reports whether the current process is running inside a
-// Docker (or other OCI) container. The result is cached for the
-// process's lifetime since container status never changes during a
-// process's lifetime.
-var InDocker = sync.OnceValue(func() bool {
-	if runtime.GOOS != "linux" {
-		return false
-	}
-	if _, err := os.Stat("/.dockerenv"); err == nil {
-		return true
-	}
-	data, err := os.ReadFile("/proc/1/cgroup")
-	if err != nil {
-		return false
-	}
-	content := string(data)
-	return strings.Contains(content, "docker") ||
-		strings.Contains(content, "containerd") ||
-		strings.Contains(content, "kubepods")
-})

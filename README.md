@@ -143,10 +143,10 @@ Use `--yolo` to skip all prompts (at your own risk). Use
 about everything else; it cannot be combined with `--yolo`.
 
 Use `--sandbox` to restrict the process itself with OS-level isolation
-(Linux/Landlock) instead of relying on approval prompts. By default it
-leaves the working directory, Angela's own data directories, and outbound
-network access writable/reachable, and makes the rest of the filesystem
-read-only:
+(Linux via Landlock, macOS via Seatbelt) instead of relying on approval
+prompts. By default it leaves the working directory, Angela's own data
+directories, and outbound network access writable/reachable, and makes
+the rest of the filesystem read-only:
 
 ```bash
 angela --sandbox
@@ -156,13 +156,19 @@ angela run --sandbox "..."
 angela run --sandbox --sandbox-rw /extra/writable --sandbox-ro /extra/readable "..."
 
 # Also block outbound network access for commands the agent runs
-# (Angela's own provider requests are unaffected)
+# (Angela's own provider requests are unaffected; not enforced on macOS)
 angela run --sandbox --sandbox-no-network "..."
 ```
 
 `--sandbox` is independent from `--yolo` and only supported in local
 (non-`ANGELA_CLIENT_SERVER`) mode, since the restriction is irreversible
-for the life of the process.
+for the life of the process. On macOS, entering the sandbox works by
+relaunching the whole process under `sandbox-exec`, so `--sandbox` at
+startup is the only way to use it there: the interactive sandbox command
+isn't available, and `--sandbox-no-network` has no effect.
+`sandbox-exec` is deprecated but still ships with macOS as of the
+current release; if a future release removes it, `--sandbox` fails at
+startup instead of silently skipping the restriction.
 
 When Angela runs inside VS Code's integrated terminal with the GitHub
 Copilot Chat extension active, an edit-shaped permission prompt also opens

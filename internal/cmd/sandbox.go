@@ -18,10 +18,10 @@ var sandboxFlagNames = []string{"sandbox-rw", "sandbox-ro", "sandbox-no-network"
 // addSandboxFlags registers the --sandbox flag and its refinements on
 // cmd.
 func addSandboxFlags(cmd *cobra.Command) {
-	cmd.Flags().Bool("sandbox", false, "Restrict this process and the commands it runs to the working directory and Angela's own data directories, using OS-level sandboxing (Linux/Landlock only); outbound network is unrestricted by default")
+	cmd.Flags().Bool("sandbox", false, "Restrict this process and the commands it runs to the working directory and Angela's own data directories, using OS-level sandboxing (Linux via Landlock, macOS via Seatbelt); outbound network is unrestricted by default")
 	cmd.Flags().StringSlice("sandbox-rw", nil, "Additional read-write directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().StringSlice("sandbox-ro", nil, "Additional read-only directory for --sandbox, on top of the default set (repeatable)")
-	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests; has no effect inside an auto-detected Docker/OCI container unless --no-docker-sandbox is also set")
+	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests; has no effect inside an auto-detected Docker/OCI container unless --no-docker-sandbox is also set, and no effect at all on macOS")
 	cmd.Flags().Bool("no-docker-sandbox", false, "Do not treat an existing Docker/OCI container as sufficient sandboxing; apply Landlock restriction as well, both under --sandbox and for the /sandbox command")
 }
 
@@ -58,9 +58,10 @@ func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string) (san
 }
 
 // warnMissingSandboxPaths logs a warning for every path in cfg that
-// doesn't exist. Landlock's IgnoreIfMissing mode silently drops rules
-// for missing paths, so entering the sandbox would otherwise succeed
-// without actually restricting (or granting access to) them.
+// doesn't exist. Landlock's IgnoreIfMissing mode, and Seatbelt's
+// subpath rules on macOS, both silently drop rules for missing paths,
+// so entering the sandbox would otherwise succeed without actually
+// restricting (or granting access to) them.
 func warnMissingSandboxPaths(cfg sandbox.Config) {
 	for _, p := range cfg.ReadWrite {
 		if _, err := os.Stat(p); err != nil {

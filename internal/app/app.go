@@ -180,6 +180,15 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		agentNotifications: pubsub.NewBroker[notify.Notification](),
 		runCompletions:     pubsub.NewBroker[notify.RunComplete](),
 	}
+
+	// From here on, this process holds a database connection and is
+	// about to grow background goroutines, so SeatbeltSandbox.EnterSandbox
+	// (macOS) can no longer relaunch it into a sandbox: that would
+	// silently discard all of it. Mark the window closed regardless of
+	// whether --sandbox was actually used, since app.Sandbox.EnterSandbox
+	// can also be reached later via the /sandbox TUI command.
+	sandbox.MarkStartupComplete()
+
 	app.Undo = undo.NewService(messages, files, sessions, fileTracker, coordinatorBusyChecker{app: app}, store.WorkingDir())
 
 	app.setupEvents()

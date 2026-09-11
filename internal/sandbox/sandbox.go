@@ -29,7 +29,10 @@ type Config struct {
 	// commands have their outbound network syscalls blocked (see
 	// ShouldRestrictChildNetwork). It never affects the sandboxed
 	// process's own network access, which Angela needs for its own
-	// provider calls.
+	// provider calls. Not enforced on macOS: SeatbeltSandbox logs a
+	// warning instead of restricting anything, since Seatbelt can't
+	// spare just this process's children the way Landlock's
+	// restrictChildNetwork side channel does.
 	AllowNetwork bool
 }
 
@@ -88,24 +91,33 @@ type Sandbox interface {
 	// without a supported enforcement mechanism, it fails with
 	// ErrNotSupported instead of restricting anything. If Landlock is
 	// merely unavailable on the running (Linux) kernel, it degrades to
-	// a safe no-op instead of failing.
+	// a safe no-op instead of failing. On macOS, SeatbeltSandbox
+	// applies cfg by relaunching the process under sandbox-exec and
+	// never returns on success; see its doc for why that limits it to
+	// startup, before MarkStartupComplete is called.
 	EnterSandbox(cfg Config) error
 }
 
 // New returns the Sandbox implementation appropriate for the current
-// process: a NoneSandbox on platforms without a supported enforcement
-// mechanism, a DockerSandbox if the process is already confined by a
-// Docker/OCI container, otherwise a LandlockSandbox. noDockerSandbox
-// disables the Docker/OCI shortcut so a container is treated like any
-// other Linux host, still getting Landlock enforcement on top of it.
+// process: NoneSandbox on platforms without a supported enforcement
+// mechanism, DockerSandbox if a Linux process is already confined by
+// a Docker/OCI container, LandlockSandbox on any other Linux host,
+// and SeatbeltSandbox on macOS. noDockerSandbox disables the
+// Docker/OCI shortcut so a container is treated like any other Linux
+// host, still getting Landlock enforcement on top of it; it has no
+// effect outside Linux.
 func New(noDockerSandbox bool) Sandbox {
-	if runtime.GOOS != "linux" {
+	switch runtime.GOOS {
+	case "linux":
+		if !noDockerSandbox && InDocker() {
+			return DockerSandbox{}
+		}
+		return LandlockSandbox{}
+	case "darwin":
+		return SeatbeltSandbox{}
+	default:
 		return NoneSandbox{}
 	}
-	if !noDockerSandbox && InDocker() {
-		return DockerSandbox{}
-	}
-	return LandlockSandbox{}
 }
 
 // NoneSandbox represents a platform with no supported sandboxing
@@ -132,4 +144,21 @@ var restrictChildNetwork atomic.Bool
 // Use WrapForChildNetworkRestriction to apply the restriction.
 func ShouldRestrictChildNetwork() bool {
 	return restrictChildNetwork.Load()
+}
+
+// startupComplete tracks whether the process has moved past the
+// point where SeatbeltSandbox can safely relaunch it under
+// sandbox-exec: once app.New returns, the process holds a database
+// connection, background goroutines, and, in the TUI, terminal state
+// that a relaunch would silently discard. LandlockSandbox and
+// DockerSandbox don't consult it: restricting them in place has no
+// such window.
+var startupComplete atomic.Bool
+
+// MarkStartupComplete records that the process now holds state a
+// relaunch would lose, so SeatbeltSandbox.EnterSandbox must no longer
+// attempt one. Call it once, after startup's own EnterSandbox callers
+// (e.g. --sandbox in setupLocalWorkspace) have already run.
+func MarkStartupComplete() {
+	startupComplete.Store(true)
 }

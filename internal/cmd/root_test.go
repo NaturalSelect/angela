@@ -260,6 +260,12 @@ func TestSetupLocalWorkspace_SandboxFlagErrorPropagates(t *testing.T) {
 // the sandbox block.
 func TestSetupLocalWorkspace_SandboxEnabled_EntersWithoutError(t *testing.T) {
 	if runtime.GOOS != "linux" {
+		// A real EnterSandbox call on macOS relaunches this whole
+		// process under sandbox-exec (see SeatbeltSandbox), which
+		// would hijack this shared test binary rather than just this
+		// test; that path is instead covered, in a disposable
+		// subprocess, by internal/sandbox's own
+		// seatbelt_darwin_test.go.
 		t.Skip("sandbox enforcement is Linux-only")
 	}
 

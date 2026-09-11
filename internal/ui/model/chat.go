@@ -670,6 +670,15 @@ func (m *Chat) ScrollToTopAndAnimate() tea.Cmd {
 	return tea.Batch(m.ScrollToTop(), m.RestartPausedVisibleAnimations())
 }
 
+// ScrollToTopAndSelectFirst scrolls the chat view to the top, selects the
+// first item, and returns a command to restart any paused animations that
+// are now visible.
+func (m *Chat) ScrollToTopAndSelectFirst() tea.Cmd {
+	cmd := m.ScrollToTopAndAnimate()
+	m.SelectFirst()
+	return cmd
+}
+
 // ScrollToBottomAndAnimate scrolls the chat view to the bottom and returns a command to
 // restart any paused animations that are now visible.
 func (m *Chat) ScrollToBottomAndAnimate() tea.Cmd {
@@ -683,6 +692,21 @@ func (m *Chat) ScrollToBottomAndSelectLast() tea.Cmd {
 	cmd := m.ScrollToBottomAndAnimate()
 	m.SelectLast()
 	return cmd
+}
+
+// ScrollToLatestUserMessage scrolls the chat view to the most recent user
+// message, selects it, and returns a command to restart any paused
+// animations that are now visible. It is a no-op if the chat has no user
+// message.
+func (m *Chat) ScrollToLatestUserMessage() tea.Cmd {
+	for i := m.list.Len() - 1; i >= 0; i-- {
+		if _, ok := m.list.ItemAt(i).(*chat.UserMessageItem); ok {
+			cmd := m.ScrollToIndex(i)
+			m.SetSelected(i)
+			return tea.Batch(cmd, m.RestartPausedVisibleAnimations())
+		}
+	}
+	return nil
 }
 
 // ScrollByAndAnimate scrolls the chat view by the given number of line deltas and returns

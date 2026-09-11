@@ -133,8 +133,13 @@ type (
 	// without ending or otherwise touching it — the non-destructive
 	// counterpart to ActionAbortBranch.
 	ActionGoToParent struct{}
+	// ActionScrollToTop scrolls the chat view to the earliest message.
+	ActionScrollToTop struct{}
 	// ActionScrollToBottom scrolls the chat view to the latest message.
 	ActionScrollToBottom struct{}
+	// ActionScrollToLatestUser scrolls the chat view to the most recent
+	// user message.
+	ActionScrollToLatestUser struct{}
 	// ActionSelectVariant is a message indicating a model variant has
 	// been selected. An empty Variant selects the model's baseline.
 	ActionSelectVariant struct {

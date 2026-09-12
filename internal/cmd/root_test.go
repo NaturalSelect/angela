@@ -248,25 +248,19 @@ func TestSetupLocalWorkspace_SandboxFlagErrorPropagates(t *testing.T) {
 }
 
 // TestSetupLocalWorkspace_SandboxEnabled_EntersWithoutError exercises
-// the --sandbox branch of setupLocalWorkspace for real:
-// sandbox.New() resolves to a real LandlockSandbox on this platform,
-// so EnterSandbox actually runs. The extra --sandbox-rw "/" flag
-// makes the resulting rule fully permissive (verified in isolation:
-// granting read-write on "/" leaves the process able to read, write,
-// and dial out normally afterward), so this cannot regress any other
-// test in this shared binary the way the feature's narrower default
-// sandbox config could. A bounded context keeps the call from
-// hanging if it reaches further setup (DB, LSP/MCP discovery) below
-// the sandbox block.
+// the --sandbox branch of setupLocalWorkspace for real: sandbox.New()
+// resolves to a real LandlockSandbox or SeatbeltSandbox on this
+// platform, so EnterSandbox actually runs. The extra --sandbox-rw "/"
+// flag makes the resulting rule fully permissive (verified in
+// isolation: granting read-write on "/" leaves the process able to
+// read, write, and dial out normally afterward), so this cannot
+// regress any other test in this shared binary the way the feature's
+// narrower default sandbox config could. A bounded context keeps the
+// call from hanging if it reaches further setup (DB, LSP/MCP
+// discovery) below the sandbox block.
 func TestSetupLocalWorkspace_SandboxEnabled_EntersWithoutError(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		// A real EnterSandbox call on macOS relaunches this whole
-		// process under sandbox-exec (see SeatbeltSandbox), which
-		// would hijack this shared test binary rather than just this
-		// test; that path is instead covered, in a disposable
-		// subprocess, by internal/sandbox's own
-		// seatbelt_darwin_test.go.
-		t.Skip("sandbox enforcement is Linux-only")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("sandbox enforcement is Linux/macOS-only")
 	}
 
 	t.Chdir(t.TempDir())

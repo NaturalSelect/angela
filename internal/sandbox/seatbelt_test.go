@@ -58,7 +58,7 @@ func TestSeatbeltPathForms_ResolvesSymlinks(t *testing.T) {
 func TestSeatbeltProfile_EmptyConfig(t *testing.T) {
 	t.Parallel()
 
-	profile, err := seatbeltProfile(Config{}, "/opt/angela/angela")
+	profile, err := seatbeltProfile(resolve(Config{}))
 	require.NoError(t, err)
 	require.Equal(t, "(version 1)\n(allow default)\n", profile)
 }
@@ -66,15 +66,13 @@ func TestSeatbeltProfile_EmptyConfig(t *testing.T) {
 func TestSeatbeltProfile_WithRules(t *testing.T) {
 	t.Parallel()
 
-	profile, err := seatbeltProfile(Config{ReadOnly: []string{"/"}, ReadWrite: []string{"/work"}}, "/opt/angela/angela")
+	profile, err := seatbeltProfile(resolve(Config{ReadOnly: []string{"/"}, ReadWrite: []string{"/work"}}))
 	require.NoError(t, err)
 	require.Contains(t, profile, "(version 1)\n(allow default)\n")
 	require.Contains(t, profile, "(deny file-read* file-write*)\n")
 	require.Contains(t, profile, "(allow file-read-metadata)\n")
 	require.Contains(t, profile, `(allow file-read* (subpath "/") (subpath "/work"))`)
 	require.Contains(t, profile, `(allow file-write* (subpath "/work"))`)
-	require.Contains(t, profile, `(allow file-read* (literal "/opt/angela/angela"))`)
-	require.Contains(t, profile, `(subpath "/System")`)
 	require.Contains(t, profile, `(allow file-write* (literal "/dev/null"))`)
 	require.Contains(t, profile, `(literal "/dev/urandom")`)
 }
@@ -83,17 +81,19 @@ func TestSeatbeltProfile_WithRules(t *testing.T) {
 // ReadWriteFiles get "literal" rules, not "subpath" rules: granting a
 // single file must not also grant every other file in its parent
 // directory, which is what a "subpath" rule for that directory would
-// do.
+// do. The /dev/null write grant lands in the same "literal" clause as
+// the user's own file grant, since resolve folds both into
+// ruleSet.writeFiles; see profile.go.
 func TestSeatbeltProfile_WithFileRules(t *testing.T) {
 	t.Parallel()
 
-	profile, err := seatbeltProfile(Config{
+	profile, err := seatbeltProfile(resolve(Config{
 		ReadOnlyFiles:  []string{"/data/ro-file.txt"},
 		ReadWriteFiles: []string{"/work/secrets/key.txt"},
-	}, "/opt/angela/angela")
+	}))
 	require.NoError(t, err)
-	require.Contains(t, profile, `(allow file-read* (literal "/data/ro-file.txt") (literal "/work/secrets/key.txt"))`)
-	require.Contains(t, profile, `(allow file-write* (literal "/work/secrets/key.txt"))`)
+	require.Contains(t, profile, `(literal "/data/ro-file.txt")`)
+	require.Contains(t, profile, `(allow file-write* (literal "/work/secrets/key.txt") (literal "/dev/null"))`)
 	require.NotContains(t, profile, `(subpath "/work/secrets")`)
 	require.NotContains(t, profile, `(subpath "/data")`)
 }
@@ -101,55 +101,28 @@ func TestSeatbeltProfile_WithFileRules(t *testing.T) {
 func TestSeatbeltProfile_RejectsControlCharacters(t *testing.T) {
 	t.Parallel()
 
-	_, err := seatbeltProfile(Config{ReadWrite: []string{"/tmp/has\nnewline"}}, "/opt/angela/angela")
+	_, err := seatbeltProfile(resolve(Config{ReadWrite: []string{"/tmp/has\nnewline"}}))
 	require.Error(t, err)
 }
 
-func TestSeatbeltRelaunchArgv(t *testing.T) {
-	t.Parallel()
-
-	argv := seatbeltRelaunchArgv("(version 1)\n(allow default)\n", "/opt/angela/angela", []string{"--sandbox", "run", "hello"})
-	require.Equal(t, []string{"sandbox-exec", "-p", "(version 1)\n(allow default)\n", "--", "/opt/angela/angela", "--sandbox", "run", "hello"}, argv)
-}
-
-func TestSeatbeltSandbox_IsInSandbox_FollowsMarker(t *testing.T) {
-	t.Setenv(seatbeltMarkerEnv, "")
-	require.False(t, (SeatbeltSandbox{}).IsInSandbox())
-
-	t.Setenv(seatbeltMarkerEnv, "1")
-	require.True(t, (SeatbeltSandbox{}).IsInSandbox())
-}
-
-// TestSeatbeltSandbox_EnterSandbox_AlreadyEntered verifies a second
-// EnterSandbox call, once the marker a prior relaunch set is already
-// present, is a no-op rather than attempting to relaunch again, which
-// would either loop or fail depending on whether the running sandbox
-// permits a nested sandbox-exec. Safe on every platform: it returns
-// before ever calling relaunchUnderSeatbelt.
-func TestSeatbeltSandbox_EnterSandbox_AlreadyEntered(t *testing.T) {
-	t.Setenv(seatbeltMarkerEnv, "1")
-	require.NoError(t, (SeatbeltSandbox{}).EnterSandbox(Config{ReadOnly: []string{"/"}}))
-}
-
-// TestSeatbeltSandbox_EnterSandbox_AfterStartup verifies EnterSandbox
-// refuses to relaunch once MarkStartupComplete has been called: by
-// then the process may hold a database connection, background
-// goroutines, or TUI state a relaunch would silently discard. Safe on
-// every platform: it returns before ever calling
-// relaunchUnderSeatbelt. Not parallel: it mutates the shared
-// startupComplete and restrictChildNetwork package vars, saving and
-// restoring both so they don't leak into other tests.
-func TestSeatbeltSandbox_EnterSandbox_AfterStartup(t *testing.T) {
-	origStartup := startupComplete.Load()
-	t.Cleanup(func() { startupComplete.Store(origStartup) })
-	startupComplete.Store(true)
-
-	origNetwork := restrictChildNetwork.Load()
+// TestSeatbeltSandbox_EnterSandbox_RefusesNetworkRestriction verifies
+// AllowNetwork false fails closed on every platform instead of
+// silently leaving children's network access open: an
+// already-sandboxed process cannot apply a second, tighter profile to
+// its own children the way Landlock's restrictChildNetwork side
+// channel does, so pretending to honor the request would be worse
+// than refusing it outright. Not parallel: it forces the shared
+// entered and restrictChildNetwork package vars to a known baseline
+// for the duration of the call (a real EnterSandbox call earlier in
+// this binary would otherwise make this a silent no-op, or leave
+// restrictChildNetwork already true) and restores both afterward.
+func TestSeatbeltSandbox_EnterSandbox_RefusesNetworkRestriction(t *testing.T) {
+	origEntered := entered.Swap(false)
+	t.Cleanup(func() { entered.Store(origEntered) })
+	origNetwork := restrictChildNetwork.Swap(false)
 	t.Cleanup(func() { restrictChildNetwork.Store(origNetwork) })
-	restrictChildNetwork.Store(false)
 
-	t.Setenv(seatbeltMarkerEnv, "")
 	err := (SeatbeltSandbox{}).EnterSandbox(Config{ReadOnly: []string{"/"}, AllowNetwork: false})
 	require.ErrorIs(t, err, ErrNotSupported)
-	require.False(t, ShouldRestrictChildNetwork(), "macOS EnterSandbox must never mark children for network restriction")
+	require.False(t, ShouldRestrictChildNetwork(), "a refused EnterSandbox call must not mark children for network restriction")
 }

@@ -127,67 +127,57 @@ func TestNew_Linux_InDocker_NoDockerSandboxOverride(t *testing.T) {
 
 // TestLandlockSandbox_IsInSandbox_PreEntry pins the natural pre-entry
 // state. Not parallel, and declared before
-// TestLandlockSandbox_EnterSandbox_RuleBuilding: entered is
-// process-global and irreversible once set, so this must run first.
+// TestLandlockSandbox_EnterSandbox_Real: entered is process-global
+// and irreversible once set, so this must run first.
 func TestLandlockSandbox_IsInSandbox_PreEntry(t *testing.T) {
 	var s Sandbox = LandlockSandbox{}
 	require.False(t, s.IsInSandbox())
 }
 
-// TestLandlockSandbox_EnterSandbox_RuleBuilding exercises the real
-// rule-building branches of EnterSandbox. Landlock confinement is
-// process-global and irreversible, so every case grants ReadWrite on
-// "/", which was verified in isolation to leave the process able to
-// read, write, and dial out normally afterward. Unlike a narrower
-// config, it cannot regress any test that runs later in this shared
-// binary. Not parallel, and declared after
-// TestLandlockSandbox_IsInSandbox_PreEntry; it also saves and restores
-// the shared restrictChildNetwork package var, since its last case
-// uses AllowNetwork: false.
-func TestLandlockSandbox_EnterSandbox_RuleBuilding(t *testing.T) {
+// TestLandlockSandbox_EnterSandbox_Real is the one real, in-process
+// EnterSandbox call in this shared test binary: entered is
+// process-global and one-shot across both LandlockSandbox and
+// SeatbeltSandbox (see sandbox.go), so every other test that needs to
+// observe real filesystem enforcement runs a disposable subprocess
+// instead (see sandbox_linux_test.go). It grants ReadWrite on "/",
+// which was verified in isolation to leave the process able to read,
+// write, and dial out normally afterward, so unlike a narrower
+// config it cannot regress any test that runs later in this shared
+// binary. resolve's own field-building logic (which paths land in
+// which ruleSet field) is covered exhaustively in profile_test.go;
+// this only needs to prove EnterSandbox itself wires a resolved
+// ruleSet into real landlock.Rule values and into
+// ShouldRestrictChildNetwork without error. Not parallel, and
+// declared after TestLandlockSandbox_IsInSandbox_PreEntry.
+func TestLandlockSandbox_EnterSandbox_Real(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Skipping test on non-Linux")
 	}
 
-	orig := restrictChildNetwork.Load()
-	t.Cleanup(func() { restrictChildNetwork.Store(orig) })
-
-	tests := []struct {
-		name         string
-		readOnly     []string
-		allowNetwork bool
-	}{
-		{"read-only and read-write rules, network allowed", []string{"/"}, true},
-		{"no read-only rule, network restricted", nil, false},
-	}
-	for _, tt := range tests {
-		err := (LandlockSandbox{}).EnterSandbox(Config{
-			ReadOnly:     tt.readOnly,
-			ReadWrite:    []string{"/"},
-			AllowNetwork: tt.allowNetwork,
-		})
-		require.NoError(t, err, tt.name)
-	}
+	err := (LandlockSandbox{}).EnterSandbox(Config{
+		ReadOnly:     []string{"/"},
+		ReadWrite:    []string{"/"},
+		AllowNetwork: false,
+	})
+	require.NoError(t, err)
+	require.True(t, (LandlockSandbox{}).IsInSandbox())
+	require.True(t, ShouldRestrictChildNetwork(), "AllowNetwork false must mark children for network restriction")
 }
 
-// TestLandlockSandbox_EnterSandbox_RestrictChildNetwork verifies
-// EnterSandbox's Config.AllowNetwork only ever marks children for
-// restriction (via ShouldRestrictChildNetwork), never the calling
-// process itself, since RestrictNet was dropped from this path. Not
-// parallel: it mutates the shared restrictChildNetwork package var,
-// saving and restoring it so it doesn't leak into other tests.
-func TestLandlockSandbox_EnterSandbox_RestrictChildNetwork(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("Skipping test on non-Linux")
-	}
+// TestSandbox_EnterSandbox_AlreadyEnteredIsNoop verifies a second
+// EnterSandbox call, once entered is already set (by an earlier real
+// call, on either backend), is a no-op on both LandlockSandbox and
+// SeatbeltSandbox rather than attempting to restrict the process
+// again, which could error, or, on macOS, is rejected by the kernel
+// outright for an already-sandboxed process. Not parallel: it
+// mutates the shared entered package var, saving and restoring it so
+// it doesn't leak into other tests.
+func TestSandbox_EnterSandbox_AlreadyEnteredIsNoop(t *testing.T) {
+	orig := entered.Swap(true)
+	t.Cleanup(func() { entered.Store(orig) })
 
-	orig := restrictChildNetwork.Load()
-	t.Cleanup(func() { restrictChildNetwork.Store(orig) })
-
-	restrictChildNetwork.Store(false)
-	require.NoError(t, (LandlockSandbox{}).EnterSandbox(Config{ReadWrite: []string{"/"}, AllowNetwork: true}))
-	require.False(t, ShouldRestrictChildNetwork(), "AllowNetwork true must not mark children for network restriction")
-
-	require.NoError(t, (LandlockSandbox{}).EnterSandbox(Config{ReadWrite: []string{"/"}, AllowNetwork: false}))
-	require.True(t, ShouldRestrictChildNetwork(), "AllowNetwork false must mark children for network restriction")
+	require.NoError(t, (LandlockSandbox{}).EnterSandbox(Config{ReadOnly: []string{"/"}}))
+	require.NoError(t, (SeatbeltSandbox{}).EnterSandbox(Config{ReadOnly: []string{"/"}}))
+	require.True(t, (LandlockSandbox{}).IsInSandbox())
+	require.True(t, (SeatbeltSandbox{}).IsInSandbox())
 }

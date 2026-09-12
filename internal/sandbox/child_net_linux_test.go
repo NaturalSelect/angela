@@ -49,12 +49,14 @@ func TestBuildChildNetworkFilter(t *testing.T) {
 }
 
 // networkFilterHelperEnv and its siblings below, when set to "1" in a
-// subprocess re-running this same test binary, make TestMain act as a
-// standalone helper instead of running the package's tests. Installing
-// the real outbound-network filter in the normal test process would be
-// unsafe: it's irreversible and would break every later test in this
-// binary that needs the network, so the real enforcement is only ever
-// exercised in a disposable subprocess.
+// subprocess re-running this same test binary, make
+// runPlatformHelperIfRequested (called from TestMain in
+// main_test.go) act as a standalone helper instead of running the
+// package's tests. Installing the real outbound-network filter in
+// the normal test process would be unsafe: it's irreversible and
+// would break every later test in this binary that needs the
+// network, so the real enforcement is only ever exercised in a
+// disposable subprocess.
 const (
 	networkFilterHelperEnv = "ANGELA_TEST_INSTALL_NETWORK_FILTER"
 	udpFilterHelperEnv     = "ANGELA_TEST_INSTALL_NETWORK_FILTER_UDP"
@@ -62,12 +64,18 @@ const (
 	dialCheckEnv           = "ANGELA_TEST_DIAL_CHECK"
 )
 
-func TestMain(m *testing.M) {
+// runPlatformHelperIfRequested reports whether this process's
+// environment names one of this file's Linux-only helpers (network
+// filtering, child-exec launching, or a dial check), and if so runs
+// it and returns its exit code. See TestMain in main_test.go for why
+// these run as disposable subprocesses instead of inside the normal
+// test binary.
+func runPlatformHelperIfRequested() (int, bool) {
 	switch {
 	case os.Getenv(networkFilterHelperEnv) == "1":
-		os.Exit(runNetworkFilterHelperProcess())
+		return runNetworkFilterHelperProcess(), true
 	case os.Getenv(udpFilterHelperEnv) == "1":
-		os.Exit(runUDPNetworkFilterHelperProcess())
+		return runUDPNetworkFilterHelperProcess(), true
 	case os.Getenv(launcherDriverEnv) == "1":
 		// Hands off to dialCheckEnv instead of re-triggering this same
 		// branch: runChildExecLauncher execs into this very binary
@@ -75,14 +83,11 @@ func TestMain(m *testing.M) {
 		_ = os.Unsetenv(launcherDriverEnv)
 		_ = os.Setenv(dialCheckEnv, "1")
 		runChildExecLauncher([]string{os.Args[0], os.Args[0]})
+		return 0, true
 	case os.Getenv(dialCheckEnv) == "1":
-		os.Exit(runDialCheckProcess())
-	case os.Getenv(devFilesHelperEnv) == "1":
-		os.Exit(runDevFilesHelperProcess())
-	case os.Getenv(fileGrantHelperEnv) == "1":
-		os.Exit(runFileGrantHelperProcess())
+		return runDialCheckProcess(), true
 	default:
-		os.Exit(m.Run())
+		return 0, false
 	}
 }
 

@@ -156,7 +156,7 @@ angela run --sandbox "..."
 angela run --sandbox --sandbox-rw /extra/writable --sandbox-ro /extra/readable "..."
 
 # Also block outbound network access for commands the agent runs
-# (Angela's own provider requests are unaffected; not enforced on macOS)
+# (Angela's own provider requests are unaffected; Linux only, refused on macOS)
 angela run --sandbox --sandbox-no-network "..."
 ```
 
@@ -168,13 +168,16 @@ error.
 
 `--sandbox` is independent from `--yolo` and only supported in local
 (non-`ANGELA_CLIENT_SERVER`) mode, since the restriction is irreversible
-for the life of the process. On macOS, entering the sandbox works by
-relaunching the whole process under `sandbox-exec`, so `--sandbox` at
-startup is the only way to use it there: the interactive sandbox command
-isn't available, and `--sandbox-no-network` has no effect.
-`sandbox-exec` is deprecated but still ships with macOS as of the
-current release; if a future release removes it, `--sandbox` fails at
-startup instead of silently skipping the restriction.
+for the life of the process. Both Linux and macOS restrict the running
+process in place and return normally on success, so the interactive
+`/sandbox` command works the same way on both, not just at startup.
+`--sandbox-no-network` is Linux-only: an already-sandboxed macOS process
+can't apply a second, tighter profile to just the commands it spawns, so
+`--sandbox --sandbox-no-network` fails at startup on macOS instead of
+silently leaving those commands' network access open. macOS enforcement
+goes through `sandbox_init(3)`, the same deprecated-but-still-present API
+`sandbox-exec(1)` itself is built on; if a future release removes it,
+`--sandbox` fails at startup instead of silently skipping the restriction.
 
 When Angela runs inside VS Code's integrated terminal with the GitHub
 Copilot Chat extension active, an edit-shaped permission prompt also opens

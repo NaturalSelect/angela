@@ -3,11 +3,13 @@
 package sandbox
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -59,7 +61,22 @@ func TestMain(m *testing.M) {
 // shared parent directory would (see permission.FilesystemAllowPaths,
 // which this guards against feeding a literal single-file allow rule
 // into a "subpath" rule instead of a "literal" one).
+//
+// The "HELPER:" lines are diagnostic. EnterSandbox's relaunch
+// replaces this process's image via sandbox-exec (see
+// relaunchUnderSeatbelt): if that relaunch never makes it back into
+// Go code (e.g. dyld aborting under a too-narrow profile), the only
+// visible symptom is the whole subprocess dying with no explanation
+// on its own stdout/stderr. Printing the exact profile before the
+// relaunch, and a line right after it returns, lets a failing run
+// tell "the relaunch itself never got Go code running again" apart
+// from "Go code ran, but the write logic misbehaved", by whether the
+// "EnterSandbox returned" line shows up a second time in the
+// subprocess's captured output.
 func runSeatbeltFileGrantHelperProcess() int {
+	inSandbox := (SeatbeltSandbox{}).IsInSandbox()
+	fmt.Println("HELPER: start pid=", os.Getpid(), "in_sandbox=", inSandbox)
+
 	dir := os.Getenv(seatbeltFileGrantHelperDirEnv)
 	if dir == "" {
 		fmt.Println("MISSING_DIR")
@@ -67,10 +84,25 @@ func runSeatbeltFileGrantHelperProcess() int {
 	}
 	keyFile := filepath.Join(dir, "key.txt")
 
+	if !inSandbox {
+		if exe, err := os.Executable(); err != nil {
+			fmt.Println("HELPER: os.Executable failed:", err)
+		} else if profile, err := seatbeltProfile(Config{ReadWriteFiles: []string{keyFile}}, exe); err != nil {
+			fmt.Println("HELPER: seatbeltProfile failed:", err)
+		} else {
+			fmt.Println("HELPER: exe=", exe)
+			fmt.Println("HELPER: profile begin")
+			fmt.Println(profile)
+			fmt.Println("HELPER: profile end")
+		}
+	}
+
+	fmt.Println("HELPER: calling EnterSandbox")
 	if err := (SeatbeltSandbox{}).EnterSandbox(Config{ReadWriteFiles: []string{keyFile}}); err != nil {
 		fmt.Println("ENTER_FAILED:", err)
 		return 10
 	}
+	fmt.Println("HELPER: EnterSandbox returned pid=", os.Getpid())
 
 	if err := os.WriteFile(keyFile, []byte("x"), 0o644); err != nil {
 		fmt.Println("KEY_WRITE_FAILED:", err)
@@ -178,6 +210,28 @@ func requireSandboxExec(t *testing.T) {
 	}
 }
 
+// dumpSandboxDiagnosticLog logs recent macOS unified log entries
+// mentioning the sandbox or dyld, best-effort, via t.Logf. A Seatbelt
+// helper subprocess that dies during dyld/process startup (e.g. a
+// dyld abort under a too-narrow profile) leaves nothing on its own
+// stdout/stderr explaining why, since Go code never got control back
+// to print anything; the unified log is the only remaining source
+// for that. It never fails the test itself: if "log show" errors
+// (e.g. unavailable, or needs a permission this process doesn't
+// have), it just logs that and returns.
+func dumpSandboxDiagnosticLog(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "log", "show", "--last", "2m", "--style", "compact",
+		"--predicate", `process == "sandboxd" OR sender == "dyld" OR eventMessage CONTAINS "Sandbox"`).CombinedOutput()
+	if err != nil {
+		t.Logf("could not capture macOS unified log (non-fatal): %v", err)
+		return
+	}
+	t.Logf("macOS unified log, last 2m, sandboxd/dyld/Sandbox entries:\n%s", out)
+}
+
 // TestSeatbeltSandbox_EnterSandbox_RestrictsFilesystem exercises the
 // real Seatbelt enforcement end to end, in a subprocess: entering a
 // sandbox restricted to a single directory must allow writes inside
@@ -219,6 +273,9 @@ func TestSeatbeltSandbox_EnterSandbox_FileGrantDoesNotCoverSiblings(t *testing.T
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), seatbeltFileGrantHelperEnv+"=1", seatbeltFileGrantHelperDirEnv+"="+dir)
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		dumpSandboxDiagnosticLog(t)
+	}
 	require.NoError(t, err, "helper subprocess output: %s", output)
 
 	out := string(output)

@@ -1041,6 +1041,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				"finish_reason", string(finishReason),
 				"input_tokens", usage.InputTokens,
 				"output_tokens", usage.OutputTokens,
+				"cache_read_tokens", usage.CacheReadTokens,
+				"cache_creation_tokens", usage.CacheCreationTokens,
 				"estimated_usage", estimated,
 			)
 			_, sessionErr := a.sessions.Save(ctx, updatedSession)

@@ -8,9 +8,12 @@ what was concluded or produced, and whatever that agent needs in order to carry
 on. Merging an empty proposal is an error, not a decision to put to the user.
 
 The user sees the whole proposal as a diff and approves it before it goes
-through. If they turn it down, the branch stays open and the proposal is kept —
-ask what they want changed, revise it with `ProposalEdit`, and call this tool
-again. There is no limit on attempts, and a rejection says nothing about the
-quality of the work.
+through — that is the approval step itself, so do not ask them in chat
+whether to merge first. The proposal is invisible until this call runs, so a
+question asked before it has nothing for them to judge yet. If they turn it
+down, the branch stays open and the proposal is kept — ask what they want
+changed, revise it with `ProposalEdit`, and call this tool again. There is no
+limit on attempts, and a rejection says nothing about the quality of the
+work.
 
 Calling this ends the branch, so call it once the work is actually done.

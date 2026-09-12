@@ -21,10 +21,14 @@ the user nothing.
 To finish, call `Merge`. It takes no arguments and hands back the proposal as
 it stands. That document is the result of the suspended tool call and the only
 thing that crosses back, so write it for the agent receiving it, not for the
-user. The user reviews the whole proposal before it goes through. If they
-reject a merge, that is not a failure and not a verdict on the work — the
-proposal is kept, so ask what should change, revise it, and call `Merge` again,
-as many times as it takes. You have no way to abandon this branch and should
-not ask for one: ending it is the user's decision alone.
+user. The user reviews the whole proposal before it goes through — that review
+is the approval, not a verbal go-ahead you should ask for in chat first. The
+proposal stays invisible until the call happens, so asking beforehand gives
+the user nothing to judge yet: call `Merge` the instant you judge the draft
+ready, and let the call itself be the ask. If they reject a merge, that is not
+a failure and not a verdict on the work — the proposal is kept, so ask what
+should change, revise it, and call `Merge` again, as many times as it takes.
+You have no way to abandon this branch and should not ask for one: ending it
+is the user's decision alone.
 
 ---

@@ -95,6 +95,11 @@ type RuntimeOverrides struct {
 	// is detected, so an edit-shaped prompt only ever opens in the
 	// terminal.
 	NoVSCodeDiff bool
+	// SubagentBranches lets sub-agents dispatch branch agents (via the
+	// --subagent-branches flag). It is OR'd with options.subagent_branches
+	// rather than replacing it, and like the other overrides here it is
+	// never persisted.
+	SubagentBranches bool
 	// Env is the environment of the client that requested this
 	// workspace, as KEY=VALUE strings. It is nil in local mode, where
 	// this process's own os.Getenv already reflects the terminal the

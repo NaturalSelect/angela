@@ -441,6 +441,7 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	cfg.Overrides().EnabledChannels = args.Channels
 	cfg.Overrides().NoYoloMerge = args.NoYoloMerge
 	cfg.Overrides().NoVSCodeDiff = args.NoVSCodeDiff
+	cfg.Overrides().SubagentBranches = args.SubagentBranches
 	// Overrides().Env lets app.New see the connecting client's
 	// environment instead of this daemon process's own, so a check
 	// like TERM_PROGRAM reflects the terminal the user is sitting at.
@@ -1109,17 +1110,18 @@ func validateClientID(id string) (string, error) {
 func workspaceToProto(ws *Workspace) proto.Workspace {
 	cfg := ws.Cfg.Config()
 	out := proto.Workspace{
-		ID:             ws.ID,
-		Path:           ws.Path,
-		PermissionMode: ws.Cfg.Overrides().PermissionMode.String(),
-		NoYoloMerge:    ws.Cfg.Overrides().NoYoloMerge,
-		NoVSCodeDiff:   ws.Cfg.Overrides().NoVSCodeDiff,
-		Channels:       ws.Cfg.Overrides().EnabledChannels,
-		DataDir:        cfg.Options.DataDirectory,
-		Debug:          cfg.Options.Debug,
-		Config:         cfg,
-		Env:            ws.Env,
-		Version:        version.Version,
+		ID:               ws.ID,
+		Path:             ws.Path,
+		PermissionMode:   ws.Cfg.Overrides().PermissionMode.String(),
+		NoYoloMerge:      ws.Cfg.Overrides().NoYoloMerge,
+		NoVSCodeDiff:     ws.Cfg.Overrides().NoVSCodeDiff,
+		SubagentBranches: ws.Cfg.Overrides().SubagentBranches,
+		Channels:         ws.Cfg.Overrides().EnabledChannels,
+		DataDir:          cfg.Options.DataDirectory,
+		Debug:            cfg.Options.Debug,
+		Config:           cfg,
+		Env:              ws.Env,
+		Version:          version.Version,
 	}
 	if ws.Skills != nil {
 		out.Skills = skillStatesToProto(ws.Skills.States())
@@ -1144,6 +1146,7 @@ func logFirstWinsMismatch(existing *Workspace, args proto.Workspace) {
 	if existingMode == requestedMode &&
 		existing.Cfg.Overrides().NoYoloMerge == args.NoYoloMerge &&
 		existing.Cfg.Overrides().NoVSCodeDiff == args.NoVSCodeDiff &&
+		existing.Cfg.Overrides().SubagentBranches == args.SubagentBranches &&
 		existingCfg.Options.Debug == args.Debug &&
 		existingCfg.Options.DataDirectory == args.DataDir &&
 		stringSlicesEqual(existing.Env, args.Env) &&

@@ -603,6 +603,8 @@ definitions:
         items:
           type: string
         type: array
+      subagent_branches:
+        type: boolean
       subagent_depth:
         type: integer
       tui:
@@ -1228,6 +1230,15 @@ definitions:
       "yes":
         type: boolean
     type: object
+  proto.QueuedPrompt:
+    properties:
+      attachments:
+        items:
+          $ref: '#/definitions/proto.Attachment'
+        type: array
+      prompt:
+        type: string
+    type: object
   proto.ReadSkillRequest:
     properties:
       skill_id:
@@ -1485,6 +1496,11 @@ definitions:
         items:
           $ref: '#/definitions/proto.SkillState'
         type: array
+      subagent_branches:
+        description: |-
+          SubagentBranches lets sub-agents dispatch branch agents, not just
+          the top-level session (from the --subagent-branches flag).
+        type: boolean
       version:
         type: string
     type: object
@@ -2003,7 +2019,7 @@ paths:
           description: OK
           schema:
             items:
-              type: string
+              $ref: '#/definitions/proto.QueuedPrompt'
             type: array
         "404":
           description: Not Found

@@ -2189,7 +2189,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionExportSession:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		sessionID := msg.SessionID
-		workingDir := m.com.Workspace.WorkingDir()
 		cmds = append(cmds, func() tea.Msg {
 			ctx := context.Background()
 			sess, err := m.com.Workspace.GetSession(ctx, sessionID)
@@ -2197,6 +2196,16 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 				return util.ReportError(err)()
 			}
 			sessionMessages, err := m.com.Workspace.ListMessages(ctx, sessionID)
+			if err != nil {
+				return util.ReportError(err)()
+			}
+
+			// The export always writes through this process's own
+			// filesystem, never the workspace's: in client-server mode
+			// Workspace.WorkingDir() names a path on the daemon host,
+			// which this client cannot write to and which may not even
+			// exist locally.
+			workingDir, err := os.Getwd()
 			if err != nil {
 				return util.ReportError(err)()
 			}

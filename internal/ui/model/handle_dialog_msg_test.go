@@ -3,12 +3,14 @@ package model
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -749,4 +751,47 @@ func TestHandleDialogMsg_ActionRunMCPPrompt_OpensArgumentsDialogWhenUnfilled(t *
 	}
 	m.handleDialogMsg(action)
 	require.True(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
+}
+
+// TestHandleDialogMsg_ActionExportSession_WritesToLocalWorkingDirectory is
+// the regression for a bug where the export handler derived its output
+// directory from Workspace.WorkingDir(). In client-server mode that method
+// names a path on the remote daemon host, not on the machine actually
+// running this process, so writing there either fails outright or (worse)
+// silently lands in an unrelated local directory that just happens to
+// share the same name. The mock workspace below has no WorkingDir
+// expectation at all, so the test fails immediately via ctrl.Finish if the
+// handler ever calls it again; the export must be written relative to
+// this test process's own current directory instead. This does not run
+// in parallel because it changes the process's working directory.
+func TestHandleDialogMsg_ActionExportSession_WritesToLocalWorkingDirectory(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().GetSession(gomock.Any(), "current").
+		Return(session.Session{ID: "current", Title: "Regression Session"}, nil)
+	ws.EXPECT().ListMessages(gomock.Any(), "current").
+		Return([]message.Message{
+			{ID: "m1", Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "hi"}}},
+		}, nil)
+
+	m := newHandleDialogUI(t, ws)
+
+	dir := t.TempDir()
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(origWd)) })
+
+	cmd := m.handleDialogMsg(dialog.ActionExportSession{SessionID: "current"})
+	require.NotNil(t, cmd)
+	msg := cmd()
+
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "export must report success, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeInfo, info.Type)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the export must land in this process's own working directory, not a remote workspace path")
+	require.Equal(t, "regression-session.md", entries[0].Name())
 }

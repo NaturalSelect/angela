@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"errors"
-	"fmt"
 
 	"charm.land/fantasy"
 
@@ -110,10 +109,7 @@ func (t *mergeTool) apply(sessionID, doc string) (fantasy.ToolResponse, error) {
 	// The full proposal goes into this branch's own result, not just the
 	// parent's: the proposal store is discarded once the branch ends, so
 	// this is the only place it survives for the user to reopen later.
-	resp := fantasy.NewTextResponse(fmt.Sprintf(
-		"Merged. The conversation this branch was forked from has resumed.\n\n## %s\n\n%s",
-		tools.ProposalDocumentName, doc,
-	))
+	resp := fantasy.NewTextResponse(doc)
 	resp.StopTurn = true
 	return resp, nil
 }

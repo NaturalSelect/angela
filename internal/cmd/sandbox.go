@@ -23,7 +23,7 @@ func addSandboxFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("sandbox", false, "Restrict this process and the commands it runs to the working directory, Angela's own data directories, and any path already allowed by a permissions.rules entry, using OS-level sandboxing (Linux via Landlock, macOS via Seatbelt); outbound network is unrestricted by default")
 	cmd.Flags().StringSlice("sandbox-rw", nil, "Additional read-write directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().StringSlice("sandbox-ro", nil, "Additional read-only directory for --sandbox, on top of the default set (repeatable)")
-	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests; has no effect inside an auto-detected Docker/OCI container unless --no-docker-sandbox is also set, and no effect at all on macOS")
+	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests; has no effect inside an auto-detected Docker/OCI container unless --no-docker-sandbox is also set, and is not supported on macOS: --sandbox then fails at startup")
 	cmd.Flags().Bool("no-docker-sandbox", false, "Do not treat an existing Docker/OCI container as sufficient sandboxing; apply Landlock restriction as well, both under --sandbox and for the /sandbox command")
 }
 
@@ -72,8 +72,8 @@ func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, perm
 }
 
 // warnMissingSandboxPaths logs a warning for every path in cfg that
-// doesn't exist. Landlock's IgnoreIfMissing mode, and Seatbelt's
-// subpath/literal rules on macOS, both silently drop rules for
+// doesn't exist. Both backends resolve cfg through ruleSet.existing()
+// (see internal/sandbox/profile.go), which silently drops rules for
 // missing paths, so entering the sandbox would otherwise succeed
 // without actually restricting (or granting access to) them.
 func warnMissingSandboxPaths(cfg sandbox.Config) {

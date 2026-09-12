@@ -16,7 +16,6 @@ import (
 var ErrNotSupported = errors.ErrUnsupported
 
 // Config describes the restrictions to apply when entering a sandbox.
-// Config describes the restrictions to apply when entering a sandbox.
 type Config struct {
 	// ReadWrite lists directories the process may read from and
 	// write to.
@@ -41,9 +40,10 @@ type Config struct {
 	// commands have their outbound network syscalls blocked (see
 	// ShouldRestrictChildNetwork). It never affects the sandboxed
 	// process's own network access, which Angela needs for its own
-	// provider calls. Not enforced on macOS: SeatbeltSandbox logs a
-	// warning instead of restricting anything, since Seatbelt can't
-	// spare just this process's children the way Landlock's
+	// provider calls. Not supported on macOS: SeatbeltSandbox fails
+	// EnterSandbox instead of restricting anything, since an
+	// already-sandboxed process cannot apply a second, tighter
+	// profile to just its own children the way Landlock's
 	// restrictChildNetwork side channel does.
 	AllowNetwork bool
 }
@@ -91,22 +91,23 @@ type Sandbox interface {
 	// or by an earlier call to EnterSandbox.
 	IsInSandbox() bool
 
-	// EnterSandbox restricts the process according to cfg. Filesystem
-	// restrictions cover every goroutine in this process and are
-	// inherited by every child process spawned afterwards. Network
-	// restriction is narrower and never applies to this process
-	// itself, which may still need outbound access (e.g. for its own
-	// provider calls): it only marks commands the shell tool spawns
-	// afterward for restriction, see ShouldRestrictChildNetwork. It is
-	// irreversible for the life of the process: once entered, access
-	// can only be narrowed further, never widened. On platforms
+	// EnterSandbox restricts the process according to cfg, in place:
+	// unlike a re-exec-based sandbox, it returns normally on success
+	// and can be called at any point in the process's life, not just
+	// at startup. Filesystem restrictions cover every goroutine in
+	// this process and are inherited by every child process spawned
+	// afterwards. Network restriction is narrower and never applies
+	// to this process itself, which may still need outbound access
+	// (e.g. for its own provider calls): it only marks commands the
+	// shell tool spawns afterward for restriction, see
+	// ShouldRestrictChildNetwork. It is irreversible for the life of
+	// the process: once entered, access can only be narrowed further,
+	// never widened, and a second call is a no-op. On platforms
 	// without a supported enforcement mechanism, it fails with
 	// ErrNotSupported instead of restricting anything. If Landlock is
 	// merely unavailable on the running (Linux) kernel, it degrades to
-	// a safe no-op instead of failing. On macOS, SeatbeltSandbox
-	// applies cfg by relaunching the process under sandbox-exec and
-	// never returns on success; see its doc for why that limits it to
-	// startup, before MarkStartupComplete is called.
+	// a safe no-op instead of failing. On macOS, cfg.AllowNetwork
+	// false also fails with ErrNotSupported; see Config.AllowNetwork.
 	EnterSandbox(cfg Config) error
 }
 
@@ -151,26 +152,18 @@ func (NoneSandbox) EnterSandbox(Config) error { return ErrNotSupported }
 // own outbound network instead.
 var restrictChildNetwork atomic.Bool
 
+// entered tracks whether EnterSandbox has already restricted this
+// process, on whichever backend New returned. Confinement is
+// process-wide and irreversible on every backend that enforces
+// anything, so this is process-global state shared across backends
+// rather than per-instance state, and a second EnterSandbox call
+// (even via a different Sandbox value) is always a no-op once it's
+// set.
+var entered atomic.Bool
+
 // ShouldRestrictChildNetwork reports whether a command the shell tool
 // is about to spawn should have its outbound network access blocked.
 // Use WrapForChildNetworkRestriction to apply the restriction.
 func ShouldRestrictChildNetwork() bool {
 	return restrictChildNetwork.Load()
-}
-
-// startupComplete tracks whether the process has moved past the
-// point where SeatbeltSandbox can safely relaunch it under
-// sandbox-exec: once app.New returns, the process holds a database
-// connection, background goroutines, and, in the TUI, terminal state
-// that a relaunch would silently discard. LandlockSandbox and
-// DockerSandbox don't consult it: restricting them in place has no
-// such window.
-var startupComplete atomic.Bool
-
-// MarkStartupComplete records that the process now holds state a
-// relaunch would lose, so SeatbeltSandbox.EnterSandbox must no longer
-// attempt one. Call it once, after startup's own EnterSandbox callers
-// (e.g. --sandbox in setupLocalWorkspace) have already run.
-func MarkStartupComplete() {
-	startupComplete.Store(true)
 }

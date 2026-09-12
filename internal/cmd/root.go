@@ -402,13 +402,11 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	// sandbox.ShouldRestrictChildNetwork); this process itself and
 	// any LSP/MCP servers keep whatever network access they'd
 	// otherwise have. It must come after MkdirAll above: Landlock's
-	// IgnoreIfMissing mode silently drops rules for paths that don't
-	// exist yet, so entering any earlier would leave the still-missing
-	// data directory unprotected. On macOS, EnterSandbox instead
-	// relaunches this process under sandbox-exec and never returns on
-	// success; everything above it in this function (config load,
-	// MkdirAll) simply runs again in the relaunched process, which is
-	// safe since both are idempotent.
+	// IgnoreIfMissing mode, and the equivalent existing-path check
+	// on macOS, both silently drop rules for paths that don't exist
+	// yet, so entering any earlier would leave the still-missing
+	// data directory unprotected. Both backends restrict the running
+	// process in place and return normally on success.
 	sandboxCfg, sandboxEnabled, err := sandboxConfigFromFlags(cmd, cwd, cfg.Options.DataDirectory, cfg.Permissions)
 	if err != nil {
 		return nil, nil, err

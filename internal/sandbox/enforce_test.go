@@ -61,13 +61,16 @@ type enforceScenario struct {
 }
 
 // enforceScenarios is the table TestEnterSandbox_Conformance and
-// runEnforceHelperIfRequested both drive. no_network is the sole
-// entry whose expectation depends on runtime.GOOS: Seatbelt cannot
+// runEnforceHelperIfRequested both drive. Two entries have
+// expectations that depend on runtime.GOOS, neither from a permission
+// mismatch between the backends: no_network, because Seatbelt cannot
 // apply a second, tighter profile to just this process's children
 // while the process itself is already sandboxed (see
 // SeatbeltSandbox.EnterSandbox), so the same AllowNetwork:false
 // Config that narrows Landlock's children on Linux must instead fail
-// closed on macOS rather than silently leaving them unrestricted.
+// closed on macOS rather than silently leaving them unrestricted; and
+// dev_files, whose read_full probe only runs on Linux, since
+// /dev/full has no Darwin equivalent to probe in the first place.
 func enforceScenarios() []enforceScenario {
 	noNetwork := enforceScenario{
 		name: "no_network",
@@ -83,6 +86,35 @@ func enforceScenarios() []enforceScenario {
 				return ShouldRestrictChildNetwork()
 			}},
 		}
+	}
+
+	devFiles := enforceScenario{
+		name: "dev_files",
+		config: func(_, _ string) Config {
+			return Config{ReadOnly: []string{"/"}, AllowNetwork: true}
+		},
+		probes: []enforceProbe{
+			{name: "write_devnull", want: true, run: func(_, _ string) bool {
+				return probeWrite("/dev/null")
+			}},
+			{name: "read_zero", want: true, run: func(_, _ string) bool {
+				return probeRead("/dev/zero")
+			}},
+			{name: "read_random", want: true, run: func(_, _ string) bool {
+				return probeRead("/dev/random")
+			}},
+			{name: "read_urandom", want: true, run: func(_, _ string) bool {
+				return probeRead("/dev/urandom")
+			}},
+			{name: "write_dir", want: false, run: func(dir, _ string) bool {
+				return probeWrite(filepath.Join(dir, "probe.txt"))
+			}},
+		},
+	}
+	if runtime.GOOS == "linux" {
+		devFiles.probes = append(devFiles.probes, enforceProbe{name: "read_full", want: true, run: func(_, _ string) bool {
+			return probeRead("/dev/full")
+		}})
 	}
 
 	return []enforceScenario{
@@ -156,32 +188,7 @@ func enforceScenarios() []enforceScenario {
 				}},
 			},
 		},
-		{
-			name: "dev_files",
-			config: func(_, _ string) Config {
-				return Config{ReadOnly: []string{"/"}, AllowNetwork: true}
-			},
-			probes: []enforceProbe{
-				{name: "write_devnull", want: true, run: func(_, _ string) bool {
-					return probeWrite("/dev/null")
-				}},
-				{name: "read_zero", want: true, run: func(_, _ string) bool {
-					return probeRead("/dev/zero")
-				}},
-				{name: "read_full", want: true, run: func(_, _ string) bool {
-					return probeRead("/dev/full")
-				}},
-				{name: "read_random", want: true, run: func(_, _ string) bool {
-					return probeRead("/dev/random")
-				}},
-				{name: "read_urandom", want: true, run: func(_, _ string) bool {
-					return probeRead("/dev/urandom")
-				}},
-				{name: "write_dir", want: false, run: func(dir, _ string) bool {
-					return probeWrite(filepath.Join(dir, "probe.txt"))
-				}},
-			},
-		},
+		devFiles,
 		{
 			name: "missing_file_grant",
 			config: func(dir, _ string) Config {
@@ -296,9 +303,9 @@ func runEnforceHelperIfRequested() (int, bool) {
 // unification goal: for every scenario in enforceScenarios, the same
 // Config produces the same effective permissions through whichever
 // real backend New returns for the running platform (LandlockSandbox
-// on Linux, SeatbeltSandbox on macOS), with no_network's documented,
-// GOOS-keyed exception being the only place they're allowed to
-// differ. Each scenario runs in its own disposable subprocess (see
+// on Linux, SeatbeltSandbox on macOS), with no_network and dev_files'
+// documented, GOOS-keyed exceptions being the only places they're
+// allowed to differ. Each scenario runs in its own disposable subprocess (see
 // runEnforceHelperIfRequested) because entering a real sandbox is
 // irreversible.
 func TestEnterSandbox_Conformance(t *testing.T) {

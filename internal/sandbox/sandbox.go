@@ -16,6 +16,7 @@ import (
 var ErrNotSupported = errors.ErrUnsupported
 
 // Config describes the restrictions to apply when entering a sandbox.
+// Config describes the restrictions to apply when entering a sandbox.
 type Config struct {
 	// ReadWrite lists directories the process may read from and
 	// write to.
@@ -24,6 +25,17 @@ type Config struct {
 	// Paths outside both ReadWrite and ReadOnly become inaccessible
 	// once EnterSandbox succeeds.
 	ReadOnly []string
+	// ReadWriteFiles lists individual files the process may read
+	// from and write to, without granting access to any other file
+	// in their parent directory the way a ReadWrite entry for that
+	// directory would. Use this for a path known to name one file
+	// rather than a directory.
+	ReadWriteFiles []string
+	// ReadOnlyFiles lists individual files the process may only
+	// read from, without granting access to any other file in their
+	// parent directory the way a ReadOnly entry for that directory
+	// would.
+	ReadOnlyFiles []string
 	// AllowNetwork leaves outbound network access unrestricted for
 	// commands the shell tool spawns when true. When false, those
 	// commands have their outbound network syscalls blocked (see

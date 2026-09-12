@@ -101,6 +101,11 @@ type (
 	ActionSummarize                   struct {
 		SessionID string
 	}
+	// ActionExportSession asks for the session's transcript to be
+	// rendered to a Markdown file on disk.
+	ActionExportSession struct {
+		SessionID string
+	}
 	// ActionAskSideQuestion asks a one-off question from a session's
 	// existing context, concurrently with any turn already running
 	// on it, without adding the question or its answer to the

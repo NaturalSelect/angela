@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -38,11 +39,12 @@ var sessionCmd = &cobra.Command{
 }
 
 var (
-	sessionListJSON   bool
-	sessionShowJSON   bool
-	sessionLastJSON   bool
-	sessionDeleteJSON bool
-	sessionRenameJSON bool
+	sessionListJSON     bool
+	sessionShowJSON     bool
+	sessionLastJSON     bool
+	sessionDeleteJSON   bool
+	sessionRenameJSON   bool
+	sessionExportOutput string
 )
 
 var sessionListCmd = &cobra.Command{
@@ -85,17 +87,27 @@ var sessionRenameCmd = &cobra.Command{
 	RunE:  runSessionRename,
 }
 
+var sessionExportCmd = &cobra.Command{
+	Use:   "export <id>",
+	Short: "Export a session to Markdown",
+	Long:  "Export a session's transcript to a Markdown file. ID can be a UUID, full hash, or hash prefix. Without --output, the file is named after the session title and written to the current directory.",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSessionExport,
+}
+
 func init() {
 	sessionListCmd.Flags().BoolVar(&sessionListJSON, "json", false, "output in JSON format")
 	sessionShowCmd.Flags().BoolVar(&sessionShowJSON, "json", false, "output in JSON format")
 	sessionLastCmd.Flags().BoolVar(&sessionLastJSON, "json", false, "output in JSON format")
 	sessionDeleteCmd.Flags().BoolVar(&sessionDeleteJSON, "json", false, "output in JSON format")
 	sessionRenameCmd.Flags().BoolVar(&sessionRenameJSON, "json", false, "output in JSON format")
+	sessionExportCmd.Flags().StringVarP(&sessionExportOutput, "output", "o", "", "output file path (default: derived from the session title)")
 	sessionCmd.AddCommand(sessionListCmd)
 	sessionCmd.AddCommand(sessionShowCmd)
 	sessionCmd.AddCommand(sessionLastCmd)
 	sessionCmd.AddCommand(sessionDeleteCmd)
 	sessionCmd.AddCommand(sessionRenameCmd)
+	sessionCmd.AddCommand(sessionExportCmd)
 }
 
 type sessionServices struct {
@@ -388,6 +400,72 @@ func runSessionLast(cmd *cobra.Command, _ []string) error {
 		return outputSessionJSON(cmd.OutOrStdout(), sess, msgPtrs)
 	}
 	return outputSessionHuman(ctx, sess, msgPtrs)
+}
+
+// runSessionExport renders a session's transcript to a Markdown file
+// on disk. When --output is omitted, the file is named after a
+// filesystem-safe slug of the session title (falling back to the
+// session ID) and written to the current directory. Either way, an
+// existing file at the target path is never overwritten silently: a
+// numeric suffix is added instead.
+func runSessionExport(cmd *cobra.Command, args []string) error {
+	event.SetNonInteractive(true)
+
+	ctx, svc, cleanup, err := sessionSetup(cmd)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	event.SessionExported()
+
+	sess, err := resolveSessionID(ctx, svc.sessions, args[0])
+	if err != nil {
+		return err
+	}
+
+	// This is a fresh, single-purpose service instance with nothing
+	// else writing through it, so there is normally no debounced state
+	// to drain; flushing anyway keeps this command correct if that
+	// ever changes (e.g. a future daemon-attached mode).
+	if err := svc.messages.FlushAll(ctx); err != nil {
+		return fmt.Errorf("failed to flush pending messages: %w", err)
+	}
+
+	msgs, err := svc.messages.List(ctx, sess.ID)
+	if err != nil {
+		return fmt.Errorf("failed to list messages: %w", err)
+	}
+
+	outPath := sessionExportOutput
+	if outPath == "" {
+		outPath = chat.SessionExportSlug(sess.Title, sess.ID) + ".md"
+	}
+	outPath, err = chat.UniqueExportPath(outPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve output path: %w", err)
+	}
+
+	doc, err := chat.SessionToMarkdown(sess, msgs, chat.AssetsDirName(outPath))
+	if err != nil {
+		return fmt.Errorf("failed to render session: %w", err)
+	}
+
+	if dir := filepath.Dir(outPath); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+	}
+	if err := os.WriteFile(outPath, []byte(doc), 0o644); err != nil {
+		return fmt.Errorf("failed to write export file: %w", err)
+	}
+
+	absPath, err := filepath.Abs(outPath)
+	if err != nil {
+		absPath = outPath
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), absPath)
+	return nil
 }
 
 const (

@@ -79,6 +79,8 @@ func TestMain(m *testing.M) {
 		os.Exit(runDialCheckProcess())
 	case os.Getenv(devFilesHelperEnv) == "1":
 		os.Exit(runDevFilesHelperProcess())
+	case os.Getenv(fileGrantHelperEnv) == "1":
+		os.Exit(runFileGrantHelperProcess())
 	default:
 		os.Exit(m.Run())
 	}

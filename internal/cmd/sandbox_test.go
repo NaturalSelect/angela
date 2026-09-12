@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
@@ -148,6 +149,32 @@ func TestSandboxConfigFromFlags_PermissionRulesAddPaths(t *testing.T) {
 	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", permissions)
 	require.NoError(t, err)
 	require.True(t, enabled)
-	require.Contains(t, cfg.ReadWrite, "/work/external")
-	require.Contains(t, cfg.ReadOnly, "/etc/angela")
+	require.Contains(t, cfg.ReadWrite, filepath.Join("/work", "external"))
+	require.Contains(t, cfg.ReadOnly, filepath.Clean("/etc/angela"))
+}
+
+// TestSandboxConfigFromFlags_LiteralFilePermissionRuleGrantsExactFile
+// is the regression test for the vulnerability where a permission
+// rule approving edits to a single literal file ended up widening the
+// OS-level sandbox to cover its whole parent directory instead: the
+// rule must land in ReadWriteFiles/ReadOnlyFiles, naming the exact
+// file, and must not also appear in ReadWrite/ReadOnly.
+func TestSandboxConfigFromFlags_LiteralFilePermissionRuleGrantsExactFile(t *testing.T) {
+	t.Parallel()
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
+
+	permissions := &config.Permissions{
+		Rules: []permission.Rule{
+			{Action: permission.RuleAllow, Tool: "edit", Pattern: "secrets/key.txt"},
+		},
+	}
+
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", permissions)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	require.Contains(t, cfg.ReadWriteFiles, filepath.Join("/work", "secrets", "key.txt"))
+	require.NotContains(t, cfg.ReadWrite, filepath.Join("/work", "secrets"),
+		"a literal file rule must not widen its whole parent directory")
 }

@@ -752,7 +752,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "string"
+                                "$ref": "#/definitions/proto.QueuedPrompt"
                             }
                         }
                     },
@@ -4826,6 +4826,9 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "subagent_branches": {
+                    "type": "boolean"
+                },
                 "subagent_depth": {
                     "type": "integer"
                 },
@@ -5727,6 +5730,20 @@ const docTemplate = `{
                 }
             }
         },
+        "proto.QueuedPrompt": {
+            "type": "object",
+            "properties": {
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/proto.Attachment"
+                    }
+                },
+                "prompt": {
+                    "type": "string"
+                }
+            }
+        },
         "proto.ReadSkillRequest": {
             "type": "object",
             "properties": {
@@ -6097,6 +6114,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/proto.SkillState"
                     }
+                },
+                "subagent_branches": {
+                    "description": "SubagentBranches lets sub-agents dispatch branch agents, not just\nthe top-level session (from the --subagent-branches flag).",
+                    "type": "boolean"
                 },
                 "version": {
                     "type": "string"

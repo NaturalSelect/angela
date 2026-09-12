@@ -712,6 +712,10 @@ func TestFirstWinsMismatch_LogsOnFlagDifferences(t *testing.T) {
 			name:   "env",
 			mutate: func(p *proto.Workspace) { p.Env = []string{"NEW=val"} },
 		},
+		{
+			name:   "subagent_branches",
+			mutate: func(p *proto.Workspace) { p.SubagentBranches = true },
+		},
 	}
 
 	for _, tc := range tests {

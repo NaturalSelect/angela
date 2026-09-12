@@ -2,14 +2,17 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/require"
 )
 
@@ -297,6 +300,50 @@ func TestRunBranchAgentReturnsTheMergedSummary(t *testing.T) {
 	require.Equal(t, "invalidate all but the current", resp.Content)
 }
 
+// A branch is easy to miss when a sub-agent forks it in the background
+// rather than in front of the user, so runBranchAgent announces every
+// branch it creates — including one forked from the top-level session
+// — and leaves it to the subscriber to decide whether that fork is
+// already visible on screen.
+func TestRunBranchAgentPublishesBranchForked(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	broker := pubsub.NewBroker[notify.Notification]()
+	t.Cleanup(broker.Shutdown)
+	c.notify = broker
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+	events := broker.Subscribe(subCtx)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 1)
+	agent, resolved := idleBranchAgent(t, seen)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+
+	requireBranchStarted(t, seen)
+	branchID := requireBranchSession(t, c, parent.ID)
+
+	notification := recvNotification(t, events)
+	require.Equal(t, notify.TypeBranchForked, notification.Type)
+	require.Equal(t, branchID, notification.SessionID)
+	require.Equal(t, "Pairing", notification.SessionTitle)
+
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+	wg.Wait()
+}
+
 // Abandoning is not merging: the caller has to be able to tell that no
 // result was approved, and its turn ends rather than looping on a branch
 // that no longer exists. /abort reaches this through AbandonBranch, not
@@ -492,6 +539,51 @@ func TestAbandonBranchLeavesAnOrdinarySessionAlone(t *testing.T) {
 	require.False(t, c.AbandonBranch("nobody"))
 }
 
+// A branch does not consume the delegation budget, so it can fork a branch
+// of its own exactly like a top-level conversation can. Abandoning the
+// outer one must reach the inner one too: once the outer branch is gone,
+// nothing else is left to resolve whatever it forked, and the nested
+// branch would otherwise wait forever on a parent that no longer exists.
+func TestAbandonBranchCascadesToNestedBranches(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	outerSeen := make(chan string, 1)
+	outerAgent, outerResolved := idleBranchAgent(t, outerSeen)
+	go func() {
+		_, _ = c.runBranchAgent(t.Context(), branchParams(outerAgent, outerResolved, parent.ID, forking.ID))
+	}()
+	requireBranchStarted(t, outerSeen)
+	outerID := requireBranchSession(t, c, parent.ID)
+
+	nestedForking, err := env.messages.Create(t.Context(), outerID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	innerSeen := make(chan string, 1)
+	innerAgent, innerResolved := newMockAgent(t, branchProviderID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		innerSeen <- call.Prompt
+		return agentResultWithText("hello"), nil
+	})
+	go func() {
+		_, _ = c.runBranchAgent(t.Context(), branchParams(innerAgent, innerResolved, outerID, nestedForking.ID))
+	}()
+	requireBranchStarted(t, innerSeen)
+	innerID := requireBranchSession(t, c, outerID)
+	require.True(t, c.branches.Waiting(innerID))
+
+	require.True(t, c.AbandonBranch(outerID))
+	require.False(t, c.branches.Waiting(outerID), "the outer branch must be resolved")
+	require.False(t, c.branches.Waiting(innerID),
+		"a branch nested under an abandoned branch must not be left dangling with no one left to resolve it")
+	require.Equal(t, []string{innerID}, innerAgent.cancelled,
+		"the nested branch must stop working for a result nobody will read")
+}
+
 // The escape gesture keeps its own meaning on a busy branch: it interrupts
 // the turn and leaves the branch itself alive, which is what lets the user
 // stop it mid-thought and redirect it. Only the named command gives up the
@@ -583,6 +675,57 @@ func TestCancelOnTheParentInterruptsABusyBranch(t *testing.T) {
 	require.Equal(t, "done", f.finish(t).Content)
 }
 
+// The reach-through cannot stop at one hop: a branch suspended on a fork
+// of its own has nothing of its own running either, the same way the
+// parent above it does not, so cancelling all the way from the root must
+// still reach a branch two forks down. Otherwise switching back to the
+// root and pressing escape would silently do nothing to it, the same gap
+// TestCancelOnTheParentInterruptsABusyBranch closes for a single fork.
+func TestCancelOnTheRootInterruptsANestedBusyBranch(t *testing.T) {
+	f := forkBusyBranch(t, nil)
+	// Cancel resolves a plain top-level session like the root through
+	// currentAgent, which the other fixtures here never need.
+	f.c.currentAgent = newMockSessionAgent(t, "coder", nil)
+
+	nestedForking, err := f.c.messages.Create(t.Context(), f.branchID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	innerSeen := make(chan string, 1)
+	innerRelease := make(chan struct{})
+	innerAgent, innerResolved := newMockAgent(t, branchProviderID, 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		innerSeen <- call.Prompt
+		<-innerRelease
+		return agentResultWithText("hello"), nil
+	})
+	innerAgent.busy = true
+
+	var innerResp fantasy.ToolResponse
+	var innerWG sync.WaitGroup
+	innerWG.Add(1)
+	go func() {
+		defer innerWG.Done()
+		innerResp, _ = f.c.runBranchAgent(t.Context(), branchParams(innerAgent, innerResolved, f.branchID, nestedForking.ID))
+	}()
+	requireBranchStarted(t, innerSeen)
+	innerID := requireBranchSession(t, f.c, f.branchID)
+
+	f.c.Cancel(f.parentID)
+	require.True(t, f.c.branches.Waiting(f.branchID), "cancelling the root must not give up the outer branch")
+	require.True(t, f.c.branches.Waiting(innerID), "cancelling the root must not give up a branch nested two forks down")
+	require.Equal(t, []string{f.branchID}, f.agent.cancelled,
+		"cancelling the root must reach through and interrupt the outer branch's turn")
+	require.Equal(t, []string{innerID}, innerAgent.cancelled,
+		"cancelling the root must also reach a branch the outer one forked in turn")
+
+	require.True(t, f.c.branches.Signal(innerID, branchOutcome{Merged: true, Payload: "inner done"}))
+	close(innerRelease)
+	innerWG.Wait()
+	require.Equal(t, "inner done", innerResp.Content)
+
+	require.True(t, f.c.branches.Signal(f.branchID, branchOutcome{Merged: true, Payload: "outer done"}))
+	require.Equal(t, "outer done", f.finish(t).Content)
+}
+
 // A cancel that names neither a branch nor a suspended conversation must be
 // left entirely to the pre-existing path.
 func TestCancelOnAnOrdinarySessionIsUnchanged(t *testing.T) {
@@ -659,6 +802,42 @@ func TestRunBranchAgentSurvivesACancelledOpeningTurn(t *testing.T) {
 	require.Equal(t, "done", resp.Content)
 }
 
+// A transport error on the opening turn lands the same way a cancellation
+// does. Fantasy already retried it and gave up by the time it reaches
+// here, so all it proves is that the provider's own connection dropped
+// mid-stream, not that the branch is broken. Ending it outright would
+// make that call for the user instead of leaving it to AbandonBranch.
+func TestRunBranchAgentSurvivesATransportErrorOnOpeningTurn(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	agent, resolved := newMockAgent(t, branchProviderID, 4096,
+		func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+			return nil, errors.New("http2: connection error: PROTOCOL_ERROR")
+		})
+
+	var resp fantasy.ToolResponse
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+
+	branchID := requireBranchSessions(t, c, parent.ID, 1)[0]
+	require.True(t, c.branches.Waiting(branchID),
+		"a transport error on the opening turn must leave the branch alive, not report it as failed to start")
+
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+	wg.Wait()
+	require.Equal(t, "done", resp.Content)
+}
+
 // TestBranchDispatchRefusals covers the two ways a fork is turned down, and
 // the case that looks like a third but is not. Each refusal has to explain
 // itself: the model can only act on it if it says what to do instead.
@@ -696,6 +875,53 @@ func TestBranchDispatchRefusals(t *testing.T) {
 		require.Contains(t, strings.ToLower(refusal), "subagent instead")
 	})
 
+	t.Run("a sub-agent may fork once options.subagent_branches is on", func(t *testing.T) {
+		t.Parallel()
+
+		env := testEnv(t)
+		c := branchCoordinator(t, env)
+		c.cfg.Config().Options.SubagentBranches = true
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		child, err := env.sessions.CreateTaskSession(t.Context(), "child-1", parent.ID, "Child")
+		require.NoError(t, err)
+
+		require.Empty(t, c.branchDispatchRefusal(t.Context(), child.ID))
+	})
+
+	t.Run("a sub-agent may fork once the runtime override is on", func(t *testing.T) {
+		t.Parallel()
+
+		env := testEnv(t)
+		c := branchCoordinator(t, env)
+		c.cfg.Overrides().SubagentBranches = true
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		child, err := env.sessions.CreateTaskSession(t.Context(), "child-1", parent.ID, "Child")
+		require.NoError(t, err)
+
+		require.Empty(t, c.branchDispatchRefusal(t.Context(), child.ID))
+	})
+
+	t.Run("a headless run still cannot fork even with the option on", func(t *testing.T) {
+		t.Parallel()
+
+		env := testEnv(t)
+		c := branchCoordinator(t, env)
+		c.interactive = false
+		c.cfg.Config().Options.SubagentBranches = true
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		child, err := env.sessions.CreateTaskSession(t.Context(), "child-1", parent.ID, "Child")
+		require.NoError(t, err)
+
+		refusal := c.branchDispatchRefusal(t.Context(), child.ID)
+		require.Contains(t, refusal, "interactive")
+	})
+
 	t.Run("an outstanding branch does not block another", func(t *testing.T) {
 		t.Parallel()
 
@@ -720,6 +946,43 @@ func TestBranchDispatchRefusals(t *testing.T) {
 
 		require.Empty(t, c.branchDispatchRefusal(t.Context(), parent.ID))
 	})
+}
+
+// A branch forked by a sub-agent must still be able to prompt the user.
+// Attendedness threads through the same RegisterChild chain a regular
+// subagent dispatch already builds (see runBranchAgent), so being reached
+// one hop further away must not make a branch auto-reject prompts as if
+// it were part of a headless run.
+func TestBranchForkedBySubagentStaysAttended(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	root, err := env.sessions.Create(t.Context(), "Root")
+	require.NoError(t, err)
+	sub, err := env.sessions.CreateTaskSession(t.Context(), "sub-1", root.ID, "Sub")
+	require.NoError(t, err)
+	env.permissions.RegisterChild(sub.ID, root.ID)
+
+	forking, err := env.messages.Create(t.Context(), sub.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 1)
+	agent, resolved := idleBranchAgent(t, seen)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, sub.ID, forking.ID))
+	}()
+
+	requireBranchStarted(t, seen)
+	branchID := requireBranchSession(t, c, sub.ID)
+	require.False(t, env.permissions.SessionUnattended(branchID),
+		"a branch forked by a sub-agent under an attended session must still be able to prompt the user")
+
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+	wg.Wait()
 }
 
 // A branch stands in for the conversation it forked, so it must keep that

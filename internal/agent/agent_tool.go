@@ -34,10 +34,32 @@ type AgentParams struct {
 //
 // depth is the dispatch depth of the agent this tool instance belongs
 // to; a dispatch through it runs the new subagent at depth+1.
-func (c *coordinator) agentTool(depth int) (fantasy.AgentTool, error) {
-	description, err := renderAgentToolDescription(c.subagents.Metadata())
+//
+// branchOnly narrows both the description and the dispatch itself to
+// branch-mode agents. buildTools sets it once a sub-agent has spent its
+// regular delegation budget: a branch does not spend that budget
+// (dispatchDepth skips the branch hop), so it is the one dispatch a
+// sub-agent in that position may still make. Listing an ordinary
+// subagent here without also refusing it in the run closure would let
+// a caller reach one more hop than options.subagent_depth allows simply
+// by asking for it.
+func (c *coordinator) agentTool(depth int, branchOnly bool) (fantasy.AgentTool, error) {
+	metadata := c.subagents.Metadata()
+	if branchOnly {
+		metadata = branchAgentsOnly(metadata)
+	}
+	if len(metadata) == 0 {
+		return nil, nil
+	}
+
+	description, err := renderAgentToolDescription(metadata, branchOnly)
 	if err != nil {
 		return nil, fmt.Errorf("render agent tool description: %w", err)
+	}
+
+	branchIDs := make([]string, len(metadata))
+	for i, a := range metadata {
+		branchIDs[i] = a.ID
 	}
 
 	return fantasy.NewParallelAgentTool(
@@ -60,6 +82,13 @@ func (c *coordinator) agentTool(depth int) (fantasy.AgentTool, error) {
 				return fantasy.NewTextErrorResponse(
 					fmt.Sprintf("Unknown subagent_type %q. Available types: %s",
 						agentType, strings.Join(c.subagents.IDs(), ", ")),
+				), nil
+			}
+
+			if branchOnly && entry.cfg.Mode != config.AgentModeBranch {
+				return fantasy.NewTextErrorResponse(
+					fmt.Sprintf("This turn has no delegation budget left, so only a branch agent may be dispatched from here. Available: %s",
+						strings.Join(branchIDs, ", ")),
 				), nil
 			}
 
@@ -145,12 +174,29 @@ func withReportHeader(resp fantasy.ToolResponse, reportID, agentType, task strin
 // description template.
 type agentToolDescription struct {
 	Agents []agentToolDescriptionAgent
+	// ForkOnly marks a description rendered for a caller with no
+	// delegation budget left who may still fork a branch. The template
+	// calls this out explicitly, because otherwise every branch agent it
+	// lists reads as offered by choice rather than as the only option.
+	ForkOnly bool
 }
 
 // HasBranch reports whether any agent needs the branch section rendered.
 func (d agentToolDescription) HasBranch() bool {
 	for _, a := range d.Agents {
 		if a.Branch {
+			return true
+		}
+	}
+	return false
+}
+
+// HasSubagent reports whether any agent needs the "Available agent
+// types:" section rendered. It is always false once agentTool has
+// filtered the list down to branchOnly.
+func (d agentToolDescription) HasSubagent() bool {
+	for _, a := range d.Agents {
+		if !a.Branch {
 			return true
 		}
 	}
@@ -167,15 +213,27 @@ type agentToolDescriptionAgent struct {
 	Branch bool
 }
 
-func renderAgentToolDescription(agents []agentToolDescriptionAgent) (string, error) {
+func renderAgentToolDescription(agents []agentToolDescriptionAgent, forkOnly bool) (string, error) {
 	tmpl, err := template.New("agent_tool").Parse(agentToolDescriptionTmpl)
 	if err != nil {
 		return "", err
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, agentToolDescription{Agents: agents}); err != nil {
+	if err := tmpl.Execute(&buf, agentToolDescription{Agents: agents, ForkOnly: forkOnly}); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
+}
+
+// branchAgentsOnly filters a metadata list down to branch-mode agents,
+// for a caller that may only fork a branch rather than delegate.
+func branchAgentsOnly(agents []agentToolDescriptionAgent) []agentToolDescriptionAgent {
+	branches := make([]agentToolDescriptionAgent, 0, len(agents))
+	for _, a := range agents {
+		if a.Branch {
+			branches = append(branches, a)
+		}
+	}
+	return branches
 }

@@ -106,6 +106,14 @@ func (t *mergeTool) apply(sessionID, doc string) (fantasy.ToolResponse, error) {
 		), nil
 	}
 
+	// A prompt queued behind this turn — sent while the merge sat at the
+	// approval prompt, say — would otherwise fire as one more request
+	// once StopTurn below ends the turn: the branch's own Run hands off
+	// to whatever is queued regardless of why the turn ended, and by now
+	// the result has already crossed back to the parent with no one left
+	// to read a further reply.
+	t.c.ClearQueue(sessionID)
+
 	// The full proposal goes into this branch's own result, not just the
 	// parent's: the proposal store is discarded once the branch ends, so
 	// this is the only place it survives for the user to reopen later.

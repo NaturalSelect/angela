@@ -911,15 +911,22 @@ func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int
 	var allTools []fantasy.AgentTool
 	isSubAgent := depth > 0
 	canDelegate := depth < c.cfg.Config().Options.SubagentMaxDepth()
+	// A sub-agent that has spent its regular delegation budget may still
+	// fork a branch once the caller has opted into deeper branch
+	// nesting: a branch does not spend that budget (dispatchDepth skips
+	// the branch hop), so it is the one dispatch left for a sub-agent
+	// stuck at the bottom of its budget to hand a decision to the user
+	// instead of guessing at it.
+	forkOnly := !canDelegate && isSubAgent && c.interactive && c.subagentBranchesEnabled()
 
-	if canDelegate && agent.AllowedTools.Allows(toolnames.Agent) {
-		if c.subagents.Len() == 0 {
+	if (canDelegate || forkOnly) && agent.AllowedTools.Allows(toolnames.Agent) {
+		agentTool, err := c.agentTool(depth, forkOnly)
+		if err != nil {
+			return nil, err
+		}
+		if agentTool == nil {
 			slog.Info("No subagents available; omitting the agent tool")
 		} else {
-			agentTool, err := c.agentTool(depth)
-			if err != nil {
-				return nil, err
-			}
 			allTools = append(allTools, agentTool)
 		}
 	}
@@ -1811,16 +1818,37 @@ func (c *coordinator) Cancel(sessionID string) {
 	//
 	// What a parent's cancel must still do is reach through: it has
 	// nothing of its own to interrupt, so the branches it is suspended
-	// on are interrupted in its place. branchesOf only lists them —
-	// nothing here ever calls Signal, so none of this can resolve a
-	// branch, only interrupt whatever turn happens to be running on it.
+	// on are interrupted in its place, and so is whatever those branches
+	// have gone on to fork themselves — branchesOf only lists direct
+	// children, so reaching a grandchild takes the same descent
+	// AbandonBranch uses. Nothing here ever calls Signal, so none of
+	// this can resolve a branch, only interrupt whatever turn happens
+	// to be running on it.
 	for _, branchSessionID := range c.branches.branchesOf(sessionID) {
-		if executor, ok := c.executorForSession(branchSessionID); ok {
-			executor.Cancel(branchSessionID)
-		}
+		c.interruptBranchTree(branchSessionID)
 	}
 	if executor, ok := c.executorForSession(sessionID); ok {
 		executor.Cancel(sessionID)
+	}
+}
+
+// interruptBranchTree stops whatever turn is running on a branch, then
+// does the same for every branch it has forked in turn. It never resolves
+// anything — that is Signal's job alone — so each of them survives this
+// exactly like the branch directly in front of the user does; only the
+// turn in progress is cut short.
+//
+// Children are read before the branch itself is touched, for the same
+// reason AbandonBranch reads them first: interrupting a branch suspended
+// on another can unblock its dispatch and let it forget that child before
+// this walk gets a chance to see it.
+func (c *coordinator) interruptBranchTree(sessionID string) {
+	children := c.branches.branchesOf(sessionID)
+	if executor, ok := c.executorForSession(sessionID); ok {
+		executor.Cancel(sessionID)
+	}
+	for _, childID := range children {
+		c.interruptBranchTree(childID)
 	}
 }
 
@@ -1834,12 +1862,23 @@ func (c *coordinator) Cancel(sessionID string) {
 // arrives second and is discarded. Cancelling first would let a failing
 // first turn report "could not be started" through the same rendezvous and
 // win, leaving the parent with an outcome the user never chose.
+//
+// It also cascades. A branch can fork branches of its own — it does not
+// consume the delegation budget, so it may do this many times over — and
+// once this one is gone nothing else is left to resolve them. Its children
+// are read before it is touched, because cancelling it can race with its
+// own dispatch unwinding and forgetting them first; losing that race would
+// leave a nested branch waiting on a parent that no longer exists.
 func (c *coordinator) AbandonBranch(sessionID string) bool {
+	children := c.branches.branchesOf(sessionID)
 	if !c.branches.Signal(sessionID, branchOutcome{Payload: branchAbandonedMessage}) {
 		return false
 	}
 	if executor, ok := c.executorForSession(sessionID); ok {
 		executor.Cancel(sessionID)
+	}
+	for _, childID := range children {
+		c.AbandonBranch(childID)
 	}
 	return true
 }
@@ -2289,7 +2328,16 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	defer c.branches.Forget(session.ID)
 	defer c.proposals.Discard(session.ID)
 
-	if err := c.startBranchTurn(ctx, session.ID, forkPrompt, params); err != nil && !errors.Is(err, context.Canceled) {
+	if c.notify != nil {
+		c.notify.Publish(pubsub.CreatedEvent, notify.Notification{
+			Type:         notify.TypeBranchForked,
+			SessionID:    session.ID,
+			SessionTitle: session.Title,
+		})
+	}
+
+	if err := c.startBranchTurn(ctx, session.ID, forkPrompt, params); err != nil &&
+		!errors.Is(err, context.Canceled) && !fantasy.IsTransportError(err) {
 		// Reported through the rendezvous rather than returned, so that a
 		// user who abandoned the branch while it was failing to start
 		// still sees their own outcome: delivery happens once, and
@@ -2297,7 +2345,11 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 		//
 		// A plain cancellation is excluded: interrupting the opening
 		// turn — the same way any later turn can be interrupted — must
-		// leave the branch alive and idle, not end it. Only a genuine
+		// leave the branch alive and idle, not end it. A transport
+		// error is excluded for the same reason: it means the
+		// provider's connection dropped mid-stream after fantasy
+		// already retried and gave up, which says nothing about
+		// whether the branch itself is worth keeping. Only a genuine
 		// failure is reported here; ending the branch outright is still
 		// AbandonBranch's call alone.
 		slog.Error("Branch first turn failed", "session", session.ID, "error", err)
@@ -2349,6 +2401,19 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 	return err
 }
 
+// subagentBranchesEnabled reports whether a sub-agent may fork a branch of
+// its own, rather than only the top-level session. It is off by default: a
+// branch forked from a background sub-agent is easy for the user to miss,
+// since nothing about the primary conversation changes when it happens.
+//
+// The runtime override (--subagent-branches) is OR'd with the config option
+// rather than replacing it, matching every other override in
+// RuntimeOverrides: the flag can only turn the behavior on for this
+// process, never override an angela.json that already turned it on.
+func (c *coordinator) subagentBranchesEnabled() bool {
+	return c.cfg.Overrides().SubagentBranches || c.cfg.Config().Options.SubagentBranches
+}
+
 // branchDispatchRefusal reports why this caller may not fork a branch, or an
 // empty string when it may. Each refusal names the alternative, because the
 // model has to be able to act on it without guessing.
@@ -2358,14 +2423,20 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 // question, or several unrelated questions, side by side and resolve each on
 // its own. The rendezvous keeps a waiter per branch, so the dispatches stay
 // independent however many are outstanding.
+//
+// Only a top-level conversation can fork by default, because the user has
+// to be able to take a branch over and a sub-agent's turn usually runs in
+// the background where a forked branch would go unnoticed. subagentBranchesEnabled
+// lifts that for callers who have decided their sub-agents are supervised
+// closely enough for this to be safe.
 func (c *coordinator) branchDispatchRefusal(ctx context.Context, sessionID string) string {
 	if !c.interactive {
 		return "A branch hands the conversation to the user, so it needs an interactive session. " +
 			"Dispatch a regular subagent instead."
 	}
-	if c.dispatchDepth(ctx, sessionID) != 0 {
+	if c.dispatchDepth(ctx, sessionID) != 0 && !c.subagentBranchesEnabled() {
 		return "Only a top-level conversation can fork a branch, because the user has to be able to take it over. " +
-			"Dispatch a regular subagent instead."
+			"Dispatch a regular subagent instead, or enable options.subagent_branches to allow this."
 	}
 	return ""
 }

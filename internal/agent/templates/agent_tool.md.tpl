@@ -24,11 +24,13 @@ When NOT to use the Agent tool:
 - Each agent type's model and tool access come from its definition; you cannot override them per call.
 - If the user asks you to run agents "in parallel", send a single message with multiple Agent tool use blocks.
 - Once you have delegated work to an agent, do not duplicate that work yourself while it runs.
+{{- if .HasSubagent}}
 
 Available agent types:
 {{- range .Agents}}
 {{- if not .Branch}}
 - {{.ID}}: {{.Description}}
+{{- end}}
 {{- end}}
 {{- end}}
 {{- if .HasBranch}}
@@ -54,6 +56,11 @@ time. Each branch is its own conversation and comes back with its own
 outcome. Your turn resumes only once every branch you forked is resolved, so
 fork per direction the user would genuinely want to hold apart, not per
 thought.
+{{- if .ForkOnly}}
+
+This turn has already spent its delegation budget, so a branch agent is the
+only dispatch left here — the one that does not count against that budget.
+{{- end}}
 {{- range .Agents}}
 {{- if .Branch}}
 - {{.ID}}: {{.Description}}

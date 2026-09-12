@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/hooks"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -196,4 +198,77 @@ func TestSubagentDepthBudget(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOutOfBudgetSubagentGetsNoToolWithoutTheOption pins the default: a
+// sub-agent that has spent its delegation budget gets no agent tool at
+// all, exactly as before options.subagent_branches existed.
+func TestOutOfBudgetSubagentGetsNoToolWithoutTheOption(t *testing.T) {
+	coord := newGateTestCoordinator(t, true)
+	generalCfg := coord.cfg.Config().Agents[config.AgentGeneral]
+
+	toolList, err := coord.buildTools(generalCfg, "", 1)
+	require.NoError(t, err)
+
+	var names []string
+	for _, tool := range toolList {
+		names = append(names, tool.Info().Name)
+	}
+	require.NotContains(t, names, toolnames.Agent)
+}
+
+// TestOutOfBudgetSubagentStillGetsBranchOnlyTool pins the one dispatch
+// left once a sub-agent has spent its regular delegation budget: with
+// options.subagent_branches on, it still holds the agent tool, but the
+// tool only lists branch agents and refuses anything else.
+func TestOutOfBudgetSubagentStillGetsBranchOnlyTool(t *testing.T) {
+	coord := newGateTestCoordinator(t, true)
+	coord.cfg.Config().Options.SubagentBranches = true
+	generalCfg := coord.cfg.Config().Agents[config.AgentGeneral]
+
+	// The default budget is 1, so a depth-1 dispatch has none left.
+	toolList, err := coord.buildTools(generalCfg, "", 1)
+	require.NoError(t, err)
+
+	var agentTool fantasy.AgentTool
+	for _, tool := range toolList {
+		if tool.Info().Name == toolnames.Agent {
+			agentTool = tool
+		}
+	}
+	require.NotNil(t, agentTool, "an out-of-budget sub-agent must still get the agent tool when subagent_branches is on")
+	require.NotContains(t, agentTool.Info().Description, "Available agent types:",
+		"an out-of-budget caller must not be offered ordinary delegation")
+	require.Contains(t, agentTool.Info().Description, config.AgentDeepResearch)
+
+	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
+	ctx = context.WithValue(ctx, tools.MessageIDContextKey, "msg-1")
+	resp, err := agentTool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-1",
+		Name:  toolnames.Agent,
+		Input: fmt.Sprintf(`{"prompt":"look into this","subagent_type":%q}`, config.AgentGeneral),
+	})
+	require.NoError(t, err)
+	require.True(t, resp.IsError, "dispatching an ordinary subagent must still be refused once the budget is spent")
+	require.Contains(t, resp.Content, "no delegation budget left")
+}
+
+// TestOutOfBudgetHeadlessSubagentGetsNoToolEvenWithTheOption pins that
+// a headless run does not regain the agent tool from
+// subagent_branches: a branch always needs an interactive session
+// regardless of this option, so there would be nothing useful to
+// dispatch.
+func TestOutOfBudgetHeadlessSubagentGetsNoToolEvenWithTheOption(t *testing.T) {
+	coord := newGateTestCoordinator(t, false)
+	coord.cfg.Config().Options.SubagentBranches = true
+	generalCfg := coord.cfg.Config().Agents[config.AgentGeneral]
+
+	toolList, err := coord.buildTools(generalCfg, "", 1)
+	require.NoError(t, err)
+
+	var names []string
+	for _, tool := range toolList {
+		names = append(names, tool.Info().Name)
+	}
+	require.NotContains(t, names, toolnames.Agent)
 }

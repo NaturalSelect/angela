@@ -688,6 +688,11 @@
           "examples": [
             2
           ]
+        },
+        "subagent_branches": {
+          "type": "boolean",
+          "description": "Let sub-agents dispatch branch agents, not just the top-level session. Off by default: a branch hands the conversation to the user directly, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.",
+          "default": false
         }
       },
       "additionalProperties": false,

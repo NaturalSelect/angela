@@ -487,6 +487,7 @@ type Options struct {
 	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=angela-config"`
 	AgentPaths                []string     `json:"agent_paths,omitempty" jsonschema:"description=Paths to directories containing agent markdown files,example=~/.config/angela/agents,example=./agents"`
 	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool. 1 (the default) lets a primary agent dispatch a subagent that cannot itself dispatch further subagents\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=1,example=2"`
+	SubagentBranches          bool         `json:"subagent_branches,omitempty" jsonschema:"description=Let sub-agents dispatch branch agents\\, not just the top-level session. Off by default: a branch hands the conversation to the user directly\\, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.,default=false"`
 }
 
 // DefaultSubagentDepth is the effective subagent dispatch depth when

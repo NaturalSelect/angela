@@ -210,10 +210,18 @@ resolved, so an abandoned branch still has to be abandoned explicitly.
 
 ### Limits
 
-- Only the top-level conversation can open a branch. A sub-agent cannot open
-  one: there is no user attached to its turn.
-- Branches are unavailable in non-interactive runs (`angela run`), where
-  there is nobody to hand the conversation to.
+- Only the top-level conversation can open a branch by default: a sub-agent
+  cannot, since there is no user attached to its turn. Setting
+  `options.subagent_branches` (or passing `--subagent-branches`) lifts this
+  for sub-agents at any depth, including one that has already spent its own
+  `subagent_depth` budget — its `agent` tool then lists only branch agents,
+  rather than disappearing once delegation is no longer possible. The branch
+  continues that sub-agent's own transcript, and you get a toast plus a
+  desktop notification when one is forked from a session you are not
+  currently looking at.
+- Branches are unavailable in non-interactive runs (`angela run`) no matter
+  how `subagent_branches` is set: there is nobody to hand the conversation
+  to.
 - A branch does not consume the `options.subagent_depth` budget, and it can
   dispatch sub-agents of its own exactly like the coder can.
 

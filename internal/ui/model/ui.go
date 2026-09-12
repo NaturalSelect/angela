@@ -5213,6 +5213,8 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 		return m.handleAWSSSOAuth(n.AWSSOCommand, n.AWSSOURL)
 	case notify.TypeAWSSSOAuthResult:
 		return m.handleAWSSSOAuthResult(n.Message)
+	case notify.TypeBranchForked:
+		return m.handleBranchForked(n)
 	default:
 		return nil
 	}
@@ -5241,6 +5243,42 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 		}
 	}
 	return tea.Batch(cmds...)
+}
+
+// handleBranchForked tells the user a branch now exists and is waiting
+// on them, unless the tool call that forked it is already part of the
+// transcript on screen — its running/waiting state is visible there,
+// so a toast would only repeat it. This is published for every branch,
+// including one forked from the top-level session, so this is the one
+// place that decides which of them are actually worth surfacing.
+func (m *UI) handleBranchForked(n notify.Notification) tea.Cmd {
+	if m.branchForkVisible(n.SessionID) {
+		return nil
+	}
+	return tea.Batch(
+		util.CmdHandler(util.NewInfoMsg(fmt.Sprintf("Branch %q is waiting for you", n.SessionTitle))),
+		m.sendNotification(notification.Notification{
+			Title:   "Angela is waiting...",
+			Message: fmt.Sprintf("A sub-agent forked branch %q and needs your input", n.SessionTitle),
+		}),
+	)
+}
+
+// branchForkVisible reports whether the agent tool call that forked
+// branchSessionID is part of the transcript currently on screen. A
+// branch session's ID is the messageID$$toolCallID pair that spawned
+// it (see session.Service.CreateAgentToolSessionID), so the lookup
+// handleChildSessionMessage uses to find a running child's block finds
+// it here too.
+func (m *UI) branchForkVisible(branchSessionID string) bool {
+	if m.chat == nil || m.com == nil || m.com.Workspace == nil {
+		return false
+	}
+	_, toolCallID, ok := m.com.Workspace.ParseAgentToolSessionID(branchSessionID)
+	if !ok {
+		return false
+	}
+	return m.chat.MessageItem(toolCallID) != nil
 }
 
 // setRetryStatus records an in-progress provider retry so the turn

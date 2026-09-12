@@ -35,6 +35,13 @@ const (
 	// finished. Message carries the error text when it failed, empty on
 	// success.
 	TypeAWSSSOAuthResult Type = "aws_sso_auth_result"
+	// TypeBranchForked indicates a branch session now exists and is
+	// waiting on the user. SessionID and SessionTitle name the branch
+	// itself, not whatever dispatched it. Published for every branch,
+	// including ones forked from the top-level session; a subscriber
+	// decides whether the fork is already visible on screen and only
+	// surfaces the ones that are not.
+	TypeBranchForked Type = "branch_forked"
 )
 
 // Notification represents a domain event published by the agent.

@@ -19,7 +19,7 @@ import (
 func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0)
+	tool, err := coord.agentTool(0, false)
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -38,7 +38,7 @@ func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
 func TestAgentToolRequiresAgentMessageID(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0)
+	tool, err := coord.agentTool(0, false)
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
@@ -63,7 +63,7 @@ func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
 		"ghost": {ID: "ghost", Mode: config.AgentModeSubagent, Description: "no longer configured"},
 	}, nil)
 
-	tool, err := coord.agentTool(0)
+	tool, err := coord.agentTool(0, false)
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
@@ -88,7 +88,7 @@ func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
 func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0)
+	tool, err := coord.agentTool(0, false)
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -107,7 +107,7 @@ func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 func TestAgentToolUnknownSubagentTypeListsAvailable(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0)
+	tool, err := coord.agentTool(0, false)
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -154,9 +154,9 @@ func TestSubagentRegistryMetadataIsStable(t *testing.T) {
 
 	require.Equal(t, []string{"alpha", "mid", "zeta"}, reg.IDs())
 
-	first, err := renderAgentToolDescription(reg.Metadata())
+	first, err := renderAgentToolDescription(reg.Metadata(), false)
 	require.NoError(t, err)
-	second, err := renderAgentToolDescription(reg.Metadata())
+	second, err := renderAgentToolDescription(reg.Metadata(), false)
 	require.NoError(t, err)
 
 	require.Equal(t, first, second)
@@ -183,7 +183,7 @@ func TestAgentToolDescriptionSeparatesBranches(t *testing.T) {
 		"pairing":  {Description: "thinks it through with you", Mode: config.AgentModeBranch},
 	}, nil)
 
-	desc, err := renderAgentToolDescription(reg.Metadata())
+	desc, err := renderAgentToolDescription(reg.Metadata(), false)
 	require.NoError(t, err)
 
 	branchAt := strings.Index(desc, "Branch agents:")
@@ -211,7 +211,7 @@ func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
 		"research": {Description: "reads code", Mode: config.AgentModeSubagent},
 	}, nil)
 
-	desc, err := renderAgentToolDescription(reg.Metadata())
+	desc, err := renderAgentToolDescription(reg.Metadata(), false)
 	require.NoError(t, err)
 
 	require.NotContains(t, desc, "Branch agents:")

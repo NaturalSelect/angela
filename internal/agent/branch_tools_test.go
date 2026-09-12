@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"context"
 	"testing"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
@@ -17,19 +19,25 @@ func mergeCall() fantasy.ToolCall {
 	return fantasy.ToolCall{ID: "call-1", Name: toolnames.Merge, Input: "{}"}
 }
 
-// mergeCoordinator is the smallest coordinator the merge tool needs: it
-// reaches nothing but the branch controller and the proposal store.
-func mergeCoordinator() *coordinator {
-	return &coordinator{
-		branches:  newBranchController(),
-		proposals: tools.NewProposalStore(),
-	}
+// mergeCoordinator is the smallest coordinator the merge tool needs. It
+// is wired through the same fake session service and routing table a
+// real coordinator uses, so a successful merge can route its
+// queue-clearing call to whichever executor owns the branch exactly as
+// it would in production. currentAgent stands in for the plain "s1"
+// session ID these tests favor, which (unlike a real branch's) is not
+// shaped like an agent-tool session and so falls through to it rather
+// than a routed executor — a real coordinator never leaves it nil.
+func mergeCoordinator(t *testing.T) *coordinator {
+	t.Helper()
+	c := newTestCoordinator(t, testEnv(t), branchProviderID, config.ProviderConfig{ID: branchProviderID})
+	c.currentAgent = newMockSessionAgent(t, "coder", nil)
+	return c
 }
 
 func TestMergeToolResolvesTheBranch(t *testing.T) {
 	t.Parallel()
 
-	c := mergeCoordinator()
+	c := mergeCoordinator(t)
 	done := c.branches.Register("s1", "parent-1")
 	c.proposals.Set("s1", "found the leak")
 
@@ -46,13 +54,47 @@ func TestMergeToolResolvesTheBranch(t *testing.T) {
 	require.Equal(t, "found the leak", out.Payload)
 }
 
+// A prompt queued behind the branch's own turn — sent, say, while the
+// merge sat at the approval prompt — must not survive a successful
+// merge. The branch's own Run hands off to whatever is queued once its
+// turn ends, whatever the reason, and by the time StopTurn ends this
+// one the result has already crossed back to the parent: nothing is
+// left to read a further reply from this session.
+func TestMergeToolClearsAQueuedFollowUpOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	c := mergeCoordinator(t)
+
+	parent, err := c.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	branchID := c.sessions.CreateAgentToolSessionID("msg-1", "call-1")
+	_, err = c.sessions.CreateTaskSession(t.Context(), branchID, parent.ID, "branch")
+	require.NoError(t, err)
+
+	branchAgent, _ := newMockAgent(t, branchProviderID, 4096, nil)
+	c.registerSubagentRoute(branchID, "coder", branchAgent)
+	branchAgent.queued = []message.QueuedPrompt{{Prompt: "one more thing"}}
+
+	done := c.branches.Register(branchID, parent.ID)
+	c.proposals.Set(branchID, "found the leak")
+
+	ctx := context.WithValue(t.Context(), tools.SessionIDContextKey, branchID)
+	resp, err := c.mergeTool().Run(ctx, mergeCall())
+	require.NoError(t, err)
+	require.False(t, resp.IsError)
+	require.True(t, (<-done).Merged)
+
+	require.Equal(t, []string{branchID}, branchAgent.cleared,
+		"a prompt queued behind the merge must not survive to fire on an already-merged branch")
+}
+
 // An empty proposal is the model's mistake to fix, not a decision to put
 // to the user: the call settles before the gate, and the branch stays
 // alive so it can draft and try again.
 func TestMergeToolRejectsAnEmptyProposal(t *testing.T) {
 	t.Parallel()
 
-	c := mergeCoordinator()
+	c := mergeCoordinator(t)
 	done := c.branches.Register("s1", "parent-1")
 
 	resp, err := c.mergeTool().Run(sessionCtx(t.Context()), mergeCall())
@@ -69,7 +111,7 @@ func TestMergeToolRejectsAnEmptyProposal(t *testing.T) {
 func TestMergeToolPlans(t *testing.T) {
 	t.Parallel()
 
-	require.Implements(t, (*tools.Planner)(nil), mergeCoordinator().mergeTool())
+	require.Implements(t, (*tools.Planner)(nil), mergeCoordinator(t).mergeTool())
 }
 
 // The approval prompt has to carry the whole proposal: the user is
@@ -78,7 +120,7 @@ func TestMergeToolPlans(t *testing.T) {
 func TestMergePreviewCarriesTheProposal(t *testing.T) {
 	t.Parallel()
 
-	c := mergeCoordinator()
+	c := mergeCoordinator(t)
 	c.branches.Register("s1", "parent-1")
 	c.proposals.Set("s1", "# Plan\n\nStep one.")
 
@@ -103,7 +145,7 @@ func TestMergePreviewCarriesTheProposal(t *testing.T) {
 func TestMergeToolWithNoWaiter(t *testing.T) {
 	t.Parallel()
 
-	c := mergeCoordinator()
+	c := mergeCoordinator(t)
 	c.proposals.Set("s1", "x")
 
 	resp, err := c.mergeTool().Run(sessionCtx(t.Context()), mergeCall())
@@ -123,7 +165,7 @@ func TestMergeToolDeniedNeverRuns(t *testing.T) {
 	dir := t.TempDir()
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
-	c := mergeCoordinator()
+	c := mergeCoordinator(t)
 	done := c.branches.Register("s1", "parent-1")
 	c.proposals.Set("s1", "found the leak")
 	gated := newPermissionedTool(c.mergeTool(), svc, dir)
@@ -160,7 +202,7 @@ func TestMergeToolRetriesAfterDenial(t *testing.T) {
 	dir := t.TempDir()
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
-	c := mergeCoordinator()
+	c := mergeCoordinator(t)
 	done := c.branches.Register("s1", "parent-1")
 	c.proposals.Set("s1", "ship the first try")
 	gated := newPermissionedTool(c.mergeTool(), svc, dir)

@@ -497,6 +497,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "export_session", "Export to Markdown", "", ActionExportSession{SessionID: c.sessionID}).WithAliases("export", "md"))
+	}
+
+	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "btw", "Ask Side Question", "", ActionAskSideQuestion{SessionID: c.sessionID}).WithAliases("btw", "side"))
 	}
 

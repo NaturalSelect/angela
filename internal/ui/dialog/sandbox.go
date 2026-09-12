@@ -154,7 +154,12 @@ func newSandboxRow(t *styles.Styles, path string, readOnly bool) sandboxPathRow 
 // directory a filesystem allow rule in the config already covers (see
 // permission.FilesystemAllowPaths) is folded in too, so the form
 // starts pre-populated with what the user has already approved
-// without a prompt.
+// without a prompt. A rule naming a single literal file is left out
+// of the pre-fill instead: every row this form produces feeds back
+// into ReadWrite/ReadOnly on submit (see (*Sandbox).config), which has
+// no per-file concept, so showing it as a row would silently turn the
+// exact-file grant back into a directory-wide one once the user
+// confirms.
 func sandboxDefaultConfig(com *common.Common) sandbox.Config {
 	var dataDir string
 	var permissions *config.Permissions
@@ -168,7 +173,7 @@ func sandboxDefaultConfig(com *common.Common) sandbox.Config {
 	workingDir := com.Workspace.WorkingDir()
 	result := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig()))
 	if permissions != nil {
-		readOnly, readWrite := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
+		readOnly, readWrite, _, _ := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
 		result.ReadOnly = sandbox.DedupePaths(append(result.ReadOnly, readOnly...))
 		result.ReadWrite = sandbox.DedupePaths(append(result.ReadWrite, readWrite...))
 	}

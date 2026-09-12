@@ -112,22 +112,45 @@ func (SeatbeltSandbox) EnterSandbox(cfg Config) error {
 // a deny-everything one, so relaunching under an empty sandbox still
 // marks IsInSandbox true without restricting anything, matching
 // Landlock's own no-op-when-empty behavior.
+// seatbeltProfile renders cfg as an SBPL (Sandbox Profile Language)
+// document for sandbox-exec. exe is the Angela binary being
+// relaunched: the profile must explicitly allow reading it, and the
+// dynamic linker and system libraries any command the shell tool
+// later spawns needs, or the relaunch below replaces this process
+// with one unable to read its own executable, and Angela never
+// starts.
+//
+// Mirrors LandlockSandbox.EnterSandbox: with no rules to add, it
+// returns the fully permissive "(allow default)" profile instead of
+// a deny-everything one, so relaunching under an empty sandbox still
+// marks IsInSandbox true without restricting anything, matching
+// Landlock's own no-op-when-empty behavior. ReadOnlyFiles and
+// ReadWriteFiles get "literal" rules rather than the "subpath" rules
+// ReadOnly and ReadWrite use, so a single-file grant can't be
+// tricked into covering every other file in its parent directory.
 func seatbeltProfile(cfg Config, exe string) (string, error) {
 	var b strings.Builder
 	b.WriteString("(version 1)\n(allow default)\n")
 
-	if len(cfg.ReadOnly) == 0 && len(cfg.ReadWrite) == 0 {
+	if len(cfg.ReadOnly) == 0 && len(cfg.ReadWrite) == 0 && len(cfg.ReadOnlyFiles) == 0 && len(cfg.ReadWriteFiles) == 0 {
 		return b.String(), nil
 	}
 
 	b.WriteString("(deny file-read* file-write*)\n")
 	b.WriteString("(allow file-read-metadata)\n")
 
-	readable := DedupePaths(append(append([]string{}, cfg.ReadOnly...), cfg.ReadWrite...))
-	if err := writePathRule(&b, "file-read*", "subpath", readable); err != nil {
+	readableDirs := DedupePaths(append(append([]string{}, cfg.ReadOnly...), cfg.ReadWrite...))
+	if err := writePathRule(&b, "file-read*", "subpath", readableDirs); err != nil {
 		return "", err
 	}
 	if err := writePathRule(&b, "file-write*", "subpath", cfg.ReadWrite); err != nil {
+		return "", err
+	}
+	readableFiles := DedupePaths(append(append([]string{}, cfg.ReadOnlyFiles...), cfg.ReadWriteFiles...))
+	if err := writePathRule(&b, "file-read*", "literal", readableFiles); err != nil {
+		return "", err
+	}
+	if err := writePathRule(&b, "file-write*", "literal", cfg.ReadWriteFiles); err != nil {
 		return "", err
 	}
 	if err := writePathRule(&b, "file-read*", "literal", []string{exe}); err != nil {
@@ -179,8 +202,17 @@ func writePathRule(b *strings.Builder, op, kind string, paths []string) error {
 // one of privatePrefixes (or the reverse), and the result of
 // resolving any symlinks in p, when that differs from p itself (e.g.
 // os.TempDir() on macOS is under a per-user symlinked path).
+// seatbeltPathForms returns p, cleaned, plus every alias the kernel
+// might resolve it to or from: the /private/... form of a path under
+// one of privatePrefixes (or the reverse), and the result of
+// resolving any symlinks in p, when that differs from p itself (e.g.
+// os.TempDir() on macOS is under a per-user symlinked path). Every
+// returned form is forward-slash: SBPL is macOS-only and always uses
+// "/", regardless of the separator convention of whatever OS happens
+// to be building and running this package's tests.
 func seatbeltPathForms(p string) []string {
-	clean := filepath.Clean(p)
+	nativeClean := filepath.Clean(p)
+	clean := filepath.ToSlash(nativeClean)
 	forms := []string{clean}
 
 	for _, prefix := range privatePrefixes {
@@ -194,8 +226,10 @@ func seatbeltPathForms(p string) []string {
 		}
 	}
 
-	if resolved, err := filepath.EvalSymlinks(clean); err == nil && resolved != clean {
-		forms = append(forms, resolved)
+	if resolved, err := filepath.EvalSymlinks(nativeClean); err == nil {
+		if resolved = filepath.ToSlash(resolved); resolved != clean {
+			forms = append(forms, resolved)
+		}
 	}
 
 	return DedupePaths(forms)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -20,6 +21,12 @@ import (
 // test in this binary that touches the filesystem, so the real
 // enforcement is only ever exercised in a disposable subprocess.
 const devFilesHelperEnv = "ANGELA_TEST_ENTER_SANDBOX_DEV_FILES"
+
+// fileGrantHelperEnv, when set to "1" in a subprocess re-running this
+// same test binary, makes TestMain (in child_net_linux_test.go) run
+// runFileGrantHelperProcess instead of the package's tests, for the
+// same reason devFilesHelperEnv does.
+const fileGrantHelperEnv = "ANGELA_TEST_ENTER_SANDBOX_FILE_GRANT"
 
 // runDevFilesHelperProcess enters a sandbox with a read-only "/",
 // mirroring DefaultConfig's workspace profile, and reports on stdout
@@ -80,4 +87,73 @@ func TestLandlockSandbox_EnterSandbox_AllowsSafeDevFiles(t *testing.T) {
 	require.Contains(t, string(output), "FULL_READ_OK")
 	require.Contains(t, string(output), "RANDOM_READ_OK")
 	require.Contains(t, string(output), "URANDOM_READ_OK")
+}
+
+// fileGrantHelperDirEnv carries the directory containing the two
+// files runFileGrantHelperProcess probes: the sandboxed process only
+// gets a ReadWriteFiles grant for one of them. A subprocess started
+// from os.Args[0] alone can't see the parent test's t.TempDir(), so
+// the parent passes it explicitly.
+const fileGrantHelperDirEnv = "ANGELA_TEST_ENTER_SANDBOX_FILE_GRANT_DIR"
+
+// runFileGrantHelperProcess enters a sandbox that grants ReadWrite
+// access to exactly one file (fileGrantHelperDirEnv/key.txt), then
+// reports on stdout whether it can still write that file and whether
+// it can write a different, pre-existing file sitting right next to
+// it. The second write must fail: a ReadWriteFiles entry for one
+// file must not implicitly cover its siblings the way a ReadWrite
+// entry for their shared parent directory would (see
+// permission.FilesystemAllowPaths, which this guards against feeding
+// a literal single-file allow rule into RWDirs instead of RWFiles).
+func runFileGrantHelperProcess() int {
+	dir := os.Getenv(fileGrantHelperDirEnv)
+	if dir == "" {
+		fmt.Println("MISSING_DIR")
+		return 10
+	}
+	keyFile := filepath.Join(dir, "key.txt")
+
+	if err := (LandlockSandbox{}).EnterSandbox(Config{ReadWriteFiles: []string{keyFile}}); err != nil {
+		fmt.Println("ENTER_FAILED:", err)
+		return 10
+	}
+
+	if err := os.WriteFile(keyFile, []byte("x"), 0o644); err != nil {
+		fmt.Println("KEY_WRITE_FAILED:", err)
+	} else {
+		fmt.Println("KEY_WRITE_OK")
+	}
+
+	otherFile := filepath.Join(dir, "other.txt")
+	if err := os.WriteFile(otherFile, []byte("x"), 0o644); err != nil {
+		fmt.Println("OTHER_WRITE_BLOCKED")
+	} else {
+		fmt.Println("OTHER_WRITE_SUCCEEDED")
+	}
+	return 0
+}
+
+// TestLandlockSandbox_EnterSandbox_FileGrantDoesNotCoverSiblings is
+// the regression test for the vulnerability where a permission rule
+// approving edits to a single literal file ended up granting write
+// access to every file in its parent directory once fed into an
+// OS-level sandbox. It exercises the real Landlock enforcement end to
+// end, in a subprocess: granting ReadWriteFiles for exactly one file
+// must still let it write that file, but must block writing to a
+// different, pre-existing file in the same directory.
+func TestLandlockSandbox_EnterSandbox_FileGrantDoesNotCoverSiblings(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "key.txt"), []byte("secret"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "other.txt"), []byte("sibling"), 0o644))
+
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), fileGrantHelperEnv+"=1", fileGrantHelperDirEnv+"="+dir)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "helper subprocess output: %s", output)
+
+	out := string(output)
+	require.Contains(t, out, "KEY_WRITE_OK")
+	require.Contains(t, out, "OTHER_WRITE_BLOCKED")
 }

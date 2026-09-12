@@ -27,11 +27,64 @@ const seatbeltHelperEnv = "ANGELA_TEST_ENTER_SEATBELT_SANDBOX"
 // t.TempDir(), so the parent passes it explicitly.
 const seatbeltHelperRWDirEnv = "ANGELA_TEST_ENTER_SEATBELT_SANDBOX_RWDIR"
 
+// seatbeltFileGrantHelperEnv, when set to "1" in a subprocess
+// re-running this same test binary, makes TestMain run
+// runSeatbeltFileGrantHelperProcess instead of the package's tests,
+// for the same reason seatbeltHelperEnv does.
+const seatbeltFileGrantHelperEnv = "ANGELA_TEST_ENTER_SEATBELT_SANDBOX_FILE_GRANT"
+
+// seatbeltFileGrantHelperDirEnv carries the directory containing the
+// two files runSeatbeltFileGrantHelperProcess probes: the sandboxed
+// process only gets a ReadWriteFiles grant for one of them.
+const seatbeltFileGrantHelperDirEnv = "ANGELA_TEST_ENTER_SEATBELT_SANDBOX_FILE_GRANT_DIR"
+
 func TestMain(m *testing.M) {
-	if os.Getenv(seatbeltHelperEnv) == "1" {
+	switch {
+	case os.Getenv(seatbeltHelperEnv) == "1":
 		os.Exit(runSeatbeltHelperProcess())
+	case os.Getenv(seatbeltFileGrantHelperEnv) == "1":
+		os.Exit(runSeatbeltFileGrantHelperProcess())
+	default:
+		os.Exit(m.Run())
 	}
-	os.Exit(m.Run())
+}
+
+// runSeatbeltFileGrantHelperProcess enters a sandbox that grants
+// ReadWrite access to exactly one file
+// (seatbeltFileGrantHelperDirEnv/key.txt), then reports on stdout
+// whether it can still write that file and whether it can write a
+// different, pre-existing file sitting right next to it. The second
+// write must fail: a ReadWriteFiles entry for one file must not
+// implicitly cover its siblings the way a ReadWrite entry for their
+// shared parent directory would (see permission.FilesystemAllowPaths,
+// which this guards against feeding a literal single-file allow rule
+// into a "subpath" rule instead of a "literal" one).
+func runSeatbeltFileGrantHelperProcess() int {
+	dir := os.Getenv(seatbeltFileGrantHelperDirEnv)
+	if dir == "" {
+		fmt.Println("MISSING_DIR")
+		return 10
+	}
+	keyFile := filepath.Join(dir, "key.txt")
+
+	if err := (SeatbeltSandbox{}).EnterSandbox(Config{ReadWriteFiles: []string{keyFile}}); err != nil {
+		fmt.Println("ENTER_FAILED:", err)
+		return 10
+	}
+
+	if err := os.WriteFile(keyFile, []byte("x"), 0o644); err != nil {
+		fmt.Println("KEY_WRITE_FAILED:", err)
+	} else {
+		fmt.Println("KEY_WRITE_OK")
+	}
+
+	otherFile := filepath.Join(dir, "other.txt")
+	if err := os.WriteFile(otherFile, []byte("x"), 0o644); err != nil {
+		fmt.Println("OTHER_WRITE_BLOCKED")
+	} else {
+		fmt.Println("OTHER_WRITE_SUCCEEDED")
+	}
+	return 0
 }
 
 // runSeatbeltHelperProcess enters a Seatbelt sandbox restricted to
@@ -147,4 +200,28 @@ func TestSeatbeltSandbox_EnterSandbox_RestrictsFilesystem(t *testing.T) {
 	require.Contains(t, out, "DEVNULL_WRITE_OK")
 	require.Contains(t, out, "READONLY_READ_OK")
 	require.Contains(t, out, "CHILD_DENIED_WRITE_BLOCKED")
+}
+
+// TestSeatbeltSandbox_EnterSandbox_FileGrantDoesNotCoverSiblings is
+// the regression test for the vulnerability where a permission rule
+// approving edits to a single literal file ended up granting write
+// access to every file in its parent directory once fed into an
+// OS-level sandbox. It exercises the real Seatbelt enforcement end to
+// end, in a subprocess: granting ReadWriteFiles for exactly one file
+// must still let it write that file, but must block writing to a
+// different, pre-existing file in the same directory.
+func TestSeatbeltSandbox_EnterSandbox_FileGrantDoesNotCoverSiblings(t *testing.T) {
+	requireSandboxExec(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "key.txt"), []byte("secret"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "other.txt"), []byte("sibling"), 0o644))
+
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), seatbeltFileGrantHelperEnv+"=1", seatbeltFileGrantHelperDirEnv+"="+dir)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "helper subprocess output: %s", output)
+
+	out := string(output)
+	require.Contains(t, out, "KEY_WRITE_OK")
+	require.Contains(t, out, "OTHER_WRITE_BLOCKED")
 }

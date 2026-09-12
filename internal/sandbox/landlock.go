@@ -30,15 +30,27 @@ func (LandlockSandbox) IsInSandbox() bool {
 // no way to restrict network access for only this process's
 // children, so cfg.AllowNetwork never touches Landlock; see
 // ShouldRestrictChildNetwork for how it's enforced instead.
+// EnterSandbox applies cfg using Landlock's best-effort mode: it
+// enforces as much as the running kernel supports and never fails
+// just because a stronger ABI version isn't available. Landlock has
+// no way to restrict network access for only this process's
+// children, so cfg.AllowNetwork never touches Landlock; see
+// ShouldRestrictChildNetwork for how it's enforced instead.
 func (LandlockSandbox) EnterSandbox(cfg Config) error {
 	cf := landlock.V10.BestEffort()
 
-	rules := make([]landlock.Rule, 0, 4)
+	rules := make([]landlock.Rule, 0, 6)
 	if len(cfg.ReadOnly) > 0 {
 		rules = append(rules, landlock.RODirs(cfg.ReadOnly...).IgnoreIfMissing())
 	}
 	if len(cfg.ReadWrite) > 0 {
 		rules = append(rules, landlock.RWDirs(cfg.ReadWrite...).IgnoreIfMissing())
+	}
+	if len(cfg.ReadOnlyFiles) > 0 {
+		rules = append(rules, landlock.ROFiles(cfg.ReadOnlyFiles...).IgnoreIfMissing())
+	}
+	if len(cfg.ReadWriteFiles) > 0 {
+		rules = append(rules, landlock.RWFiles(cfg.ReadWriteFiles...).IgnoreIfMissing())
 	}
 	if len(rules) > 0 {
 		// /dev/null, /dev/zero, /dev/full, /dev/random, and

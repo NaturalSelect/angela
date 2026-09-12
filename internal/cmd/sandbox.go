@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -55,9 +56,11 @@ func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, perm
 	cfg.ReadWrite = sandbox.DedupePaths(append(cfg.ReadWrite, rw...))
 	cfg.ReadOnly = sandbox.DedupePaths(append(cfg.ReadOnly, ro...))
 	if permissions != nil {
-		ruleReadOnly, ruleReadWrite := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
-		cfg.ReadOnly = sandbox.DedupePaths(append(cfg.ReadOnly, ruleReadOnly...))
-		cfg.ReadWrite = sandbox.DedupePaths(append(cfg.ReadWrite, ruleReadWrite...))
+		ruleReadOnlyDirs, ruleReadWriteDirs, ruleReadOnlyFiles, ruleReadWriteFiles := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
+		cfg.ReadOnly = sandbox.DedupePaths(append(cfg.ReadOnly, ruleReadOnlyDirs...))
+		cfg.ReadWrite = sandbox.DedupePaths(append(cfg.ReadWrite, ruleReadWriteDirs...))
+		cfg.ReadOnlyFiles = sandbox.DedupePaths(append(cfg.ReadOnlyFiles, ruleReadOnlyFiles...))
+		cfg.ReadWriteFiles = sandbox.DedupePaths(append(cfg.ReadWriteFiles, ruleReadWriteFiles...))
 	}
 	if noNetwork {
 		cfg.AllowNetwork = false
@@ -70,16 +73,11 @@ func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, perm
 
 // warnMissingSandboxPaths logs a warning for every path in cfg that
 // doesn't exist. Landlock's IgnoreIfMissing mode, and Seatbelt's
-// subpath rules on macOS, both silently drop rules for missing paths,
-// so entering the sandbox would otherwise succeed without actually
-// restricting (or granting access to) them.
+// subpath/literal rules on macOS, both silently drop rules for
+// missing paths, so entering the sandbox would otherwise succeed
+// without actually restricting (or granting access to) them.
 func warnMissingSandboxPaths(cfg sandbox.Config) {
-	for _, p := range cfg.ReadWrite {
-		if _, err := os.Stat(p); err != nil {
-			slog.Warn("Sandbox path does not exist, restriction will not apply to it", "path", p)
-		}
-	}
-	for _, p := range cfg.ReadOnly {
+	for _, p := range slices.Concat(cfg.ReadWrite, cfg.ReadOnly, cfg.ReadWriteFiles, cfg.ReadOnlyFiles) {
 		if _, err := os.Stat(p); err != nil {
 			slog.Warn("Sandbox path does not exist, restriction will not apply to it", "path", p)
 		}

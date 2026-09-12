@@ -51,8 +51,8 @@ func TestSeatbeltPathForms_ResolvesSymlinks(t *testing.T) {
 	require.NoError(t, err)
 
 	forms := seatbeltPathForms(link)
-	require.Contains(t, forms, link)
-	require.Contains(t, forms, resolvedReal)
+	require.Contains(t, forms, filepath.ToSlash(link))
+	require.Contains(t, forms, filepath.ToSlash(resolvedReal))
 }
 
 func TestSeatbeltProfile_EmptyConfig(t *testing.T) {
@@ -77,6 +77,25 @@ func TestSeatbeltProfile_WithRules(t *testing.T) {
 	require.Contains(t, profile, `(subpath "/System")`)
 	require.Contains(t, profile, `(allow file-write* (literal "/dev/null"))`)
 	require.Contains(t, profile, `(literal "/dev/urandom")`)
+}
+
+// TestSeatbeltProfile_WithFileRules verifies ReadOnlyFiles and
+// ReadWriteFiles get "literal" rules, not "subpath" rules: granting a
+// single file must not also grant every other file in its parent
+// directory, which is what a "subpath" rule for that directory would
+// do.
+func TestSeatbeltProfile_WithFileRules(t *testing.T) {
+	t.Parallel()
+
+	profile, err := seatbeltProfile(Config{
+		ReadOnlyFiles:  []string{"/data/ro-file.txt"},
+		ReadWriteFiles: []string{"/work/secrets/key.txt"},
+	}, "/opt/angela/angela")
+	require.NoError(t, err)
+	require.Contains(t, profile, `(allow file-read* (literal "/data/ro-file.txt") (literal "/work/secrets/key.txt"))`)
+	require.Contains(t, profile, `(allow file-write* (literal "/work/secrets/key.txt"))`)
+	require.NotContains(t, profile, `(subpath "/work/secrets")`)
+	require.NotContains(t, profile, `(subpath "/data")`)
 }
 
 func TestSeatbeltProfile_RejectsControlCharacters(t *testing.T) {

@@ -3,11 +3,13 @@
 package sandbox
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,26 +212,92 @@ func requireSandboxExec(t *testing.T) {
 	}
 }
 
-// dumpSandboxDiagnosticLog logs recent macOS unified log entries
-// mentioning the sandbox or dyld, best-effort, via t.Logf. A Seatbelt
-// helper subprocess that dies during dyld/process startup (e.g. a
-// dyld abort under a too-narrow profile) leaves nothing on its own
-// stdout/stderr explaining why, since Go code never got control back
-// to print anything; the unified log is the only remaining source
-// for that. It never fails the test itself: if "log show" errors
-// (e.g. unavailable, or needs a permission this process doesn't
-// have), it just logs that and returns.
-func dumpSandboxDiagnosticLog(t *testing.T) {
+// dumpSandboxDiagnosticLog logs recent macOS unified log entries and
+// crash reports for the given helper subprocess pid, best-effort, via
+// t.Logf. A Seatbelt helper subprocess that dies during dyld/process
+// startup (e.g. a dyld abort under a too-narrow profile) leaves
+// nothing on its own stdout/stderr explaining why, since Go code
+// never got control back to print anything: dyld reports fatal
+// startup errors through abort_with_reason, which hands the message
+// to the system crash reporter instead of writing it to the
+// process's own stderr. The unified log and crash reports are the
+// only remaining sources for that.
+//
+// syscall.Exec keeps the same pid across both the relaunch into
+// sandbox-exec and sandbox-exec's own exec into the sandboxed target,
+// so pid identifies this helper uniquely. Kernel-reported sandbox
+// violations are logged under the "kernel" process, with the denied
+// process's name and pid only appearing inside the message text (e.g.
+// "Sandbox: sandbox.test(1234) deny(1) ..."), so filtering on
+// processID alone would miss them; matching "(pid)" in the message
+// text catches those, while processID still catches anything the
+// helper's own dyld instance logs under its own identity.
+//
+// It never fails the test itself: if a step errors (e.g. "log show"
+// unavailable, or a permission this process doesn't have), it just
+// logs that and moves on.
+func dumpSandboxDiagnosticLog(t *testing.T, pid int, since time.Time) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	// The unified log can lag well behind the events it records;
+	// querying immediately after the crash routinely misses the entry
+	// it just produced.
+	time.Sleep(3 * time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "log", "show", "--last", "2m", "--style", "compact",
-		"--predicate", `process == "sandboxd" OR sender == "dyld" OR eventMessage CONTAINS "Sandbox"`).CombinedOutput()
+	predicate := fmt.Sprintf(`processID == %d OR eventMessage CONTAINS "(%d)"`, pid, pid)
+	out, err := exec.CommandContext(ctx, "log", "show", "--last", "3m", "--style", "compact",
+		"--predicate", predicate).CombinedOutput()
 	if err != nil {
 		t.Logf("could not capture macOS unified log (non-fatal): %v", err)
-		return
+	} else {
+		t.Logf("macOS unified log for helper pid %d:\n%s", pid, out)
 	}
-	t.Logf("macOS unified log, last 2m, sandboxd/dyld/Sandbox entries:\n%s", out)
+
+	dumpSandboxCrashReports(t, since)
+}
+
+// dumpSandboxCrashReports scans the standard macOS crash report
+// directories for reports written since the given time and logs
+// their contents via t.Logf. A dyld abort under a too-narrow Seatbelt
+// profile normally produces one of these, and unlike the unified log
+// it spells out the exact termination reason (e.g. the specific path
+// and operation Seatbelt denied) in one place.
+func dumpSandboxCrashReports(t *testing.T, since time.Time) {
+	t.Helper()
+
+	dirs := []string{"/Library/Logs/DiagnosticReports"}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, "Library/Logs/DiagnosticReports"))
+	}
+
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if !strings.HasSuffix(name, ".ips") && !strings.HasSuffix(name, ".crash") {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil || info.ModTime().Before(since) {
+				continue
+			}
+			path := filepath.Join(dir, name)
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Logf("could not read crash report %s (non-fatal): %v", path, err)
+				continue
+			}
+			t.Logf("crash report %s:\n%s", path, content)
+		}
+	}
 }
 
 // TestSeatbeltSandbox_EnterSandbox_RestrictsFilesystem exercises the
@@ -270,15 +338,21 @@ func TestSeatbeltSandbox_EnterSandbox_FileGrantDoesNotCoverSiblings(t *testing.T
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "key.txt"), []byte("secret"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "other.txt"), []byte("sibling"), 0o644))
 
+	start := time.Now()
 	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
 	cmd.Env = append(os.Environ(), seatbeltFileGrantHelperEnv+"=1", seatbeltFileGrantHelperDirEnv+"="+dir)
-	output, err := cmd.CombinedOutput()
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	require.NoError(t, cmd.Start(), "starting helper subprocess")
+	pid := cmd.Process.Pid
+	err := cmd.Wait()
 	if err != nil {
-		dumpSandboxDiagnosticLog(t)
+		dumpSandboxDiagnosticLog(t, pid, start)
 	}
-	require.NoError(t, err, "helper subprocess output: %s", output)
+	require.NoError(t, err, "helper subprocess output: %s", output.String())
 
-	out := string(output)
+	out := output.String()
 	require.Contains(t, out, "KEY_WRITE_OK")
 	require.Contains(t, out, "OTHER_WRITE_BLOCKED")
 }

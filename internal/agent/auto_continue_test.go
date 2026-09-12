@@ -263,6 +263,253 @@ func TestRun_RepeatedAutoCompactionsDoNotNestTheResumePrompt(t *testing.T) {
 		"the wrapper text must appear exactly once no matter how many compactions the turn goes through")
 }
 
+// textThenFinish streams a single plain-text reply with an explicit
+// finish reason and usage, so a StopWhen condition evaluated right
+// after this step can be pushed over the compaction threshold on a
+// turn with no tool calls of its own, instead of depending on
+// streamOf's approximate token estimate.
+func textThenFinish(text string, finish fantasy.FinishReason, usage fantasy.Usage) fantasy.StreamResponse {
+	return func(yield func(fantasy.StreamPart) bool) {
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextStart, ID: "1"}) {
+			return
+		}
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, ID: "1", Delta: text}) {
+			return
+		}
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextEnd, ID: "1"}) {
+			return
+		}
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: finish, Usage: usage})
+	}
+}
+
+// TestRun_SubAgentSkipsSummarizeWhenAlreadyDone is the regression for a
+// reported bug where a sub-agent's session happened to cross the
+// compaction threshold on the very step that already produced its
+// final answer (no pending tool calls). A Task/Agent tool session is
+// created fresh per call and never resumed, so compacting it right
+// before returning serves no purpose: this must return the answer
+// directly instead of spending an extra round trip compacting a
+// session that is about to be discarded.
+func TestRun_SubAgentSkipsSummarizeWhenAlreadyDone(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	// A small context window with heavily-reported usage forces the
+	// StopWhen condition to fire on this step, the same way a real
+	// sub-agent's finished answer can happen to land right at the
+	// compaction threshold.
+	model := newMockLanguageModel(t)
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(textThenFinish("the answer is 42", fantasy.FinishReasonStop, fantasy.Usage{InputTokens: 900}), nil)
+
+	// No Stream expectation is set on the compact model: if the fix
+	// regresses, Summarize would call it and gomock fails the test for
+	// an unexpected call.
+	compactModel := newMockLanguageModel(t)
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	res, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        "task",
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:        compact,
+		SessionID:      sess.ID,
+		RunID:          "run-1",
+		Prompt:         "do the thing",
+		NonInteractive: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2, "user prompt and the final reply, with no summary message and no resumed prompt")
+
+	require.Equal(t, message.User, msgs[0].Role)
+	require.Equal(t, "do the thing", msgs[0].Content().Text)
+
+	require.Equal(t, message.Assistant, msgs[1].Role)
+	require.Equal(t, message.FinishReasonEndTurn, msgs[1].FinishReason())
+	require.Contains(t, msgs[1].Content().Text, "the answer is 42")
+	require.False(t, msgs[1].IsSummaryMessage, "the returned answer must not be replaced by a compaction summary")
+
+	updated, err := env.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Empty(t, updated.SummaryMessageID, "a one-shot sub-agent session that already finished must not be compacted")
+
+	_, queued := sa.messageQueue.Get(sess.ID)
+	require.False(t, queued, "a finished sub-agent turn must not be requeued for a resume that will never come")
+}
+
+// TestRun_InteractiveSessionStillSummarizesWhenAlreadyDone guards the
+// fix above against being too broad. Unlike a sub-agent session, an
+// interactive session is reused across turns, so compacting it as
+// soon as it crosses the threshold is still worthwhile even when the
+// turn that crossed it produced no tool calls of its own.
+func TestRun_InteractiveSessionStillSummarizesWhenAlreadyDone(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(textThenFinish("here is your answer", fantasy.FinishReasonStop, fantasy.Usage{InputTokens: 900}), nil)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"summary"}, fantasy.FinishReasonStop), nil).
+		Times(1)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        config.AgentCoder,
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:   compact,
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "hello",
+	})
+	require.NoError(t, err)
+
+	updated, err := env.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, updated.SummaryMessageID, "an interactive session must still be compacted once it crosses the threshold")
+}
+
+// TestRun_SubAgentStillResumesWhenNotDone guards the same fix from the
+// other direction: a sub-agent that still has a pending tool call when
+// it crosses the compaction threshold has not actually finished, so it
+// must still be summarized and resumed exactly like the interactive
+// case.
+func TestRun_SubAgentStillResumesWhenNotDone(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"summary"}, fantasy.FinishReasonStop), nil).
+		Times(1)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	res, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        "task",
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:        compact,
+		SessionID:      sess.ID,
+		RunID:          "run-1",
+		Prompt:         "do the thing",
+		NonInteractive: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	updated, err := env.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, updated.SummaryMessageID, "a sub-agent turn interrupted mid-tool-use must still be compacted")
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	var userPrompts []string
+	for _, m := range msgs {
+		if m.Role == message.User {
+			userPrompts = append(userPrompts, m.Content().Text)
+		}
+	}
+	require.Len(t, userPrompts, 2, "the original prompt plus the resumed prompt after compaction")
+	require.Contains(t, userPrompts[1], "do the thing", "the resumed prompt must still carry the original request")
+}
+
+// TestRun_SubAgentSummarizesOnMaxTokensWithNoToolCalls guards the fix
+// against treating a response merely truncated by the output-token
+// limit as "done": with no tool calls of its own it looks the same as
+// a natural finish, but the turn is not actually complete, so it must
+// still go through the compact-and-resume path instead of being
+// silently skipped.
+func TestRun_SubAgentSummarizesOnMaxTokensWithNoToolCalls(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(textThenFinish("partial answer, cut off", fantasy.FinishReasonLength, fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"...rest of the answer."}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"summary"}, fantasy.FinishReasonStop), nil).
+		Times(1)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	res, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        "task",
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:        compact,
+		SessionID:      sess.ID,
+		RunID:          "run-1",
+		Prompt:         "do the thing",
+		NonInteractive: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	updated, err := env.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, updated.SummaryMessageID, "a max-tokens cutoff must still be compacted even with no tool calls of its own")
+}
+
 // pendingToolCallThenMaxTokens streams a tool call whose input starts
 // but never receives its closing event before the step hits the
 // output token limit, the same way Anthropic ends a stream when

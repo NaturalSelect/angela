@@ -1207,7 +1207,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// too-long-resume path instead, so the two continuations never
 	// both fire for the same turn.
 	hitMaxTokens := currentAssistant.FinishReason() == message.FinishReasonMaxTokens
-	if shouldSummarize {
+	// A non-interactive (sub-agent) session is created fresh for every
+	// Task/Agent tool call and is never resumed later (see
+	// CreateAgentToolSessionID), so when this turn already ended with no
+	// pending tool calls and wasn't merely cut off by the output-token
+	// limit, the sub-agent is genuinely done. There is no future turn
+	// left that a compacted history could ever help, so summarizing now
+	// would only add a wasted round trip in front of a result that is
+	// about to be returned anyway.
+	subAgentAlreadyDone := call.NonInteractive && !hitMaxTokens && len(currentAssistant.ToolCalls()) == 0
+	if shouldSummarize && !subAgentAlreadyDone {
 		// Release only our own entry, for the same reason the deferred
 		// cleanup above is conditional: a plain Del here would drop
 		// whatever a concurrent run has since registered.

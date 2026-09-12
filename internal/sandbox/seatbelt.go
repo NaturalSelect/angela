@@ -160,8 +160,17 @@ func seatbeltProfile(cfg Config, exe string) (string, error) {
 	// Angela itself is a static Go binary and needs none of this, but
 	// a dynamically linked command the shell tool spawns (git, sh,
 	// ...) does, for the dynamic linker, its shared caches, and the
-	// system libraries it links against.
-	b.WriteString(`(allow file-read* (subpath "/System") (subpath "/usr/lib") (subpath "/usr/share") (subpath "/Library/Apple/usr/lib") (subpath "/private/var/db/dyld") (subpath "/private/var/db/timezone") (literal "/private/etc/localtime"))` + "\n")
+	// system libraries it links against. macOS has no truly static
+	// binaries either: even a CGO_ENABLED=0 Go binary dynamically
+	// links libSystem, so dyld re-bootstraps this very process on
+	// every relaunch under sandbox-exec. A profile that only opened
+	// narrow subpaths here (e.g. just /Library/Apple/usr/lib and a
+	// couple of /private/var/db entries) let dyld abort with SIGABRT
+	// before Go code ever ran again, because its shared cache and
+	// code-signature checks reach more broadly into /Library and
+	// /private than any fixed list of subpaths anticipates. Granting
+	// both trees in full keeps that from being a moving target.
+	b.WriteString(`(allow file-read* (subpath "/System") (subpath "/usr/lib") (subpath "/usr/share") (subpath "/Library") (subpath "/private"))` + "\n")
 
 	// /dev/null, /dev/zero, /dev/full, /dev/random, and /dev/urandom
 	// are safe regardless of the rest of the sandbox (they don't

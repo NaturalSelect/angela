@@ -89,7 +89,7 @@ func enforceScenarios() []enforceScenario {
 		{
 			name: "workspace",
 			config: func(dir, _ string) Config {
-				return Config{ReadOnly: []string{"/"}, ReadWrite: []string{dir}}
+				return Config{ReadOnly: []string{"/"}, ReadWrite: []string{dir}, AllowNetwork: true}
 			},
 			setup: func(t *testing.T, _, dir2 string) {
 				require.NoError(t, os.WriteFile(filepath.Join(dir2, "probe.txt"), []byte("x"), 0o644))
@@ -115,7 +115,7 @@ func enforceScenarios() []enforceScenario {
 		{
 			name: "file_grant_rw",
 			config: func(dir, _ string) Config {
-				return Config{ReadWriteFiles: []string{filepath.Join(dir, "key.txt")}}
+				return Config{ReadWriteFiles: []string{filepath.Join(dir, "key.txt")}, AllowNetwork: true}
 			},
 			setup: func(t *testing.T, dir, _ string) {
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "key.txt"), []byte("secret"), 0o644))
@@ -142,7 +142,7 @@ func enforceScenarios() []enforceScenario {
 		{
 			name: "file_grant_ro",
 			config: func(dir, _ string) Config {
-				return Config{ReadOnlyFiles: []string{filepath.Join(dir, "key.txt")}}
+				return Config{ReadOnlyFiles: []string{filepath.Join(dir, "key.txt")}, AllowNetwork: true}
 			},
 			setup: func(t *testing.T, dir, _ string) {
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "key.txt"), []byte("secret"), 0o644))
@@ -159,7 +159,7 @@ func enforceScenarios() []enforceScenario {
 		{
 			name: "dev_files",
 			config: func(_, _ string) Config {
-				return Config{ReadOnly: []string{"/"}}
+				return Config{ReadOnly: []string{"/"}, AllowNetwork: true}
 			},
 			probes: []enforceProbe{
 				{name: "write_devnull", want: true, run: func(_, _ string) bool {
@@ -185,7 +185,7 @@ func enforceScenarios() []enforceScenario {
 		{
 			name: "missing_file_grant",
 			config: func(dir, _ string) Config {
-				return Config{ReadOnly: []string{"/"}, ReadWriteFiles: []string{filepath.Join(dir, "does-not-exist.txt")}}
+				return Config{ReadOnly: []string{"/"}, ReadWriteFiles: []string{filepath.Join(dir, "does-not-exist.txt")}, AllowNetwork: true}
 			},
 			probes: []enforceProbe{
 				{name: "create_missing", want: false, run: func(dir, _ string) bool {

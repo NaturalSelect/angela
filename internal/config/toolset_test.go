@@ -266,3 +266,26 @@ func TestAllowedSets_RejectUnknownLiterals(t *testing.T) {
 	require.Error(t, json.Unmarshal([]byte(`["github"]`), &mcp),
 		"an array is not a valid allowed_mcp shape")
 }
+
+// TestAllowedToolSet_JSONSchema pins the three accepted shapes: the
+// scoped tool-name array plus the "all" and "inherited" literals.
+func TestAllowedToolSet_JSONSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := AllowedToolSet{}.JSONSchema()
+	require.NotNil(t, schema)
+	require.Len(t, schema.OneOf, 3, "the scoped array shape plus the \"all\" and \"inherited\" literals")
+	require.Equal(t, "array", schema.OneOf[0].Type)
+}
+
+// TestAllowedMCPSet_JSONSchema mirrors TestAllowedToolSet_JSONSchema
+// for the MCP set, whose scoped shape is an object rather than an
+// array.
+func TestAllowedMCPSet_JSONSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := AllowedMCPSet{}.JSONSchema()
+	require.NotNil(t, schema)
+	require.Len(t, schema.OneOf, 3, "the scoped server-map shape plus the \"all\" and \"inherited\" literals")
+	require.Equal(t, "object", schema.OneOf[0].Type)
+}

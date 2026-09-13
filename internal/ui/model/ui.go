@@ -217,7 +217,11 @@ type UI struct {
 	keyenh tea.KeyboardEnhancementsMsg
 
 	dialog *dialog.Overlay
-	status *Status
+	// pendingPermissions holds PermissionRequests that arrived while a
+	// permission dialog was already open, in FIFO order, so a sibling
+	// sub-agent's request is queued instead of silently discarded.
+	pendingPermissions []permission.PermissionRequest
+	status             *Status
 
 	// isCanceling tracks whether the user has pressed escape once to cancel.
 	isCanceling bool
@@ -1050,7 +1054,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, handleMCPResourcesEvent(m.com.Workspace, msg.Payload.Name)
 		}
 	case pubsub.Event[permission.PermissionRequest]:
-		if cmd := m.openPermissionsDialog(msg.Payload); cmd != nil {
+		if cmd := m.queuePermissionRequest(msg.Payload); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		if cmd := m.sendNotification(notification.Notification{
@@ -1060,7 +1064,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	case pubsub.Event[permission.PermissionNotification]:
-		m.handlePermissionNotification(msg.Payload)
+		if cmd := m.handlePermissionNotification(msg.Payload); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case pubsub.Event[question.Request]:
 		m.openBatchFormDialog(msg.Payload)
 		if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
@@ -2406,6 +2412,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			m.com.Workspace.PermissionGrantPersistent(msg.Permission)
 		case dialog.PermissionDeny:
 			m.com.Workspace.PermissionDeny(msg.Permission)
+		}
+		if cmd := m.nextPermissionRequest(); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 
 	case dialog.ActionFilePickerSelected:
@@ -5123,6 +5132,29 @@ func (m *UI) openPermissionsDialog(perm permission.PermissionRequest) tea.Cmd {
 	return nil
 }
 
+// queuePermissionRequest shows perm immediately if no permission
+// dialog is currently open, or queues it otherwise. Concurrent
+// sub-agents can each raise a request; none may be silently replaced
+// and lost while the user is still looking at an earlier one.
+func (m *UI) queuePermissionRequest(perm permission.PermissionRequest) tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.PermissionsID) {
+		m.pendingPermissions = append(m.pendingPermissions, perm)
+		return nil
+	}
+	return m.openPermissionsDialog(perm)
+}
+
+// nextPermissionRequest opens the next queued permission request, if
+// any, once the current one has been answered or otherwise dismissed.
+func (m *UI) nextPermissionRequest() tea.Cmd {
+	if len(m.pendingPermissions) == 0 {
+		return nil
+	}
+	next := m.pendingPermissions[0]
+	m.pendingPermissions = m.pendingPermissions[1:]
+	return m.openPermissionsDialog(next)
+}
+
 // openBatchFormDialog activates a tabbed multi-question form in
 // the editor area. Single questions render without tabs or confirm.
 func (m *UI) openBatchFormDialog(batch question.Request) {
@@ -5175,7 +5207,7 @@ func (m *UI) shouldCollapseQuestion(qf *dialog.QuestionForm) bool {
 }
 
 // handlePermissionNotification updates tool items when permission state changes.
-func (m *UI) handlePermissionNotification(notification permission.PermissionNotification) {
+func (m *UI) handlePermissionNotification(notification permission.PermissionNotification) tea.Cmd {
 	if toolItem := m.chat.MessageItem(notification.ToolCallID); toolItem != nil {
 		if permItem, ok := toolItem.(chat.ToolMessageItem); ok {
 			if notification.Granted {
@@ -5188,15 +5220,29 @@ func (m *UI) handlePermissionNotification(notification permission.PermissionNoti
 
 	// If this notification reflects a final resolution (granted or denied),
 	// dismiss any open permissions dialog whose tool call ID matches. This
-	// covers the case where another client resolved the request remotely.
+	// covers the case where another client resolved the request remotely,
+	// and also drops it from the pending queue if it was still sitting
+	// there unseen (e.g. a sibling sub-agent swept by GrantPersistent) so
+	// it never surfaces later as a stale, already-resolved prompt.
 	if !notification.Granted && !notification.Denied {
-		return
+		return nil
 	}
+	m.removeQueuedPermission(notification.ToolCallID)
 	if d := m.dialog.Dialog(dialog.PermissionsID); d != nil {
 		if perm, ok := d.(*dialog.Permissions); ok && perm.ToolCallID() == notification.ToolCallID {
 			m.dialog.CloseDialog(dialog.PermissionsID)
+			return m.nextPermissionRequest()
 		}
 	}
+	return nil
+}
+
+// removeQueuedPermission drops a request from the pending queue by tool
+// call ID without ever displaying it.
+func (m *UI) removeQueuedPermission(toolCallID string) {
+	m.pendingPermissions = slices.DeleteFunc(m.pendingPermissions, func(p permission.PermissionRequest) bool {
+		return p.ToolCallID == toolCallID
+	})
 }
 
 // handleAgentNotification translates domain agent events into desktop

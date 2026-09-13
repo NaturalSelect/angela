@@ -167,3 +167,21 @@ func TestCompactForFallsBackWhenHostsCompactAgentIsInvalid(t *testing.T) {
 	require.True(t, compact.ready)
 	require.Equal(t, config.AgentCompact, compact.agent.ID)
 }
+
+// TestBuildCompactAgentRebuildModelResolvesAgain pins that the
+// RebuildModel closure buildCompactAgent attaches to its result
+// actually re-resolves the same compact agent it was built from: it
+// is the callback a 401 mid-compaction uses to get a fresh model
+// after a credential refresh, so it must not be a dead field nobody
+// ever calls.
+func TestBuildCompactAgentRebuildModelResolvesAgain(t *testing.T) {
+	coord := newSplitProviderCoordinator(t)
+	host := instantiate(t, coord, config.AgentCoder)
+
+	compact := coord.compactFor(t.Context(), "session", host)
+	require.True(t, compact.ready)
+
+	model, err := compact.agent.RebuildModel(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, model)
+}

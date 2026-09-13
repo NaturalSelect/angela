@@ -270,6 +270,49 @@ func TestBackend_AskSideQuestion(t *testing.T) {
 	})
 }
 
+func TestBackend_GenerateCommitMessage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil coordinator", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		ws := insertAgentWorkspace(t, b, nil)
+
+		_, err := b.GenerateCommitMessage(t.Context(), ws.ID, proto.CommitMessageRequest{SessionID: "s1", Diff: "diff --git a/x b/x"})
+		require.ErrorIs(t, err, ErrAgentNotInitialized)
+	})
+
+	t.Run("delegates to coordinator", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		coord := &fakeCoordinator{commitMessage: "fix: correct the bug"}
+		ws := insertAgentWorkspace(t, b, coord)
+
+		resp, err := b.GenerateCommitMessage(t.Context(), ws.ID, proto.CommitMessageRequest{SessionID: "s1", Diff: "diff --git a/x b/x"})
+		require.NoError(t, err)
+		require.Equal(t, proto.CommitMessageResponse{Message: "fix: correct the bug"}, resp)
+		require.Equal(t, []string{"s1"}, coord.commitMessageCalls)
+	})
+
+	t.Run("propagates coordinator error", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		wantErr := errors.New("commit message failed")
+		coord := &fakeCoordinator{commitMessageErr: wantErr}
+		ws := insertAgentWorkspace(t, b, coord)
+
+		_, err := b.GenerateCommitMessage(t.Context(), ws.ID, proto.CommitMessageRequest{SessionID: "s1", Diff: "diff --git a/x b/x"})
+		require.ErrorIs(t, err, wantErr)
+	})
+
+	t.Run("workspace not found", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		_, err := b.GenerateCommitMessage(t.Context(), "nope", proto.CommitMessageRequest{SessionID: "s1", Diff: "diff --git a/x b/x"})
+		require.ErrorIs(t, err, ErrWorkspaceNotFound)
+	})
+}
+
 // TestBackend_InitAgent drives the real agent.NewCoordinator
 // construction path (both interactive and non-interactive) against a
 // freshly created, unconfigured workspace. Coordinator construction

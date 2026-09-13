@@ -181,6 +181,11 @@ type Workspace interface {
 	// already running on it, without adding the question or its
 	// answer to the session's message history.
 	AgentAskSideQuestion(ctx context.Context, sessionID, question string) (string, error)
+	// AgentGenerateCommitMessage writes a commit message describing
+	// diff (expected to be the output of `git diff --cached`) using a
+	// tool-free internal agent, without reading or writing the
+	// session's message history.
+	AgentGenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error)
 
 	// AgentActive reports what a session is running, with its
 	// parameter preset already folded into the model. An empty

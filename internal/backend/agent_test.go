@@ -84,6 +84,10 @@ func (c *blockingCoordinator) AskSideQuestion(context.Context, string, string) (
 	return "", nil
 }
 
+func (c *blockingCoordinator) GenerateCommitMessage(context.Context, string, string) (string, error) {
+	return "", nil
+}
+
 // insertAgentWorkspace installs a synthetic workspace with the given
 // coordinator (or none) and a workspace run context, mirroring the
 // fields CreateWorkspace initializes.

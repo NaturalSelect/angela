@@ -270,6 +270,13 @@ func (w *AppWorkspace) AgentAskSideQuestion(ctx context.Context, sessionID, ques
 	return w.app.AgentCoordinator.AskSideQuestion(ctx, sessionID, question)
 }
 
+func (w *AppWorkspace) AgentGenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error) {
+	if w.app.AgentCoordinator == nil {
+		return "", errors.New("agent coordinator not initialized")
+	}
+	return w.app.AgentCoordinator.GenerateCommitMessage(ctx, sessionID, diff)
+}
+
 func (w *AppWorkspace) UpdateAgentModel(ctx context.Context) error {
 	return w.app.UpdateAgentModel(ctx)
 }

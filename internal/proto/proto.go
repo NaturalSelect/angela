@@ -183,6 +183,18 @@ type SideQuestionResponse struct {
 	Answer string `json:"answer"`
 }
 
+// CommitMessageRequest represents a request to write a commit
+// message describing a staged diff.
+type CommitMessageRequest struct {
+	SessionID string `json:"session_id"`
+	Diff      string `json:"diff"`
+}
+
+// CommitMessageResponse carries the generated commit message.
+type CommitMessageResponse struct {
+	Message string `json:"message"`
+}
+
 // AgentSession represents a session with its busy status.
 type AgentSession struct {
 	Session

@@ -505,6 +505,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "commit", "Commit Staged Changes", "", ActionCommit{SessionID: c.sessionID}))
+	}
+
+	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "undo", "Undo Last Turn", "", ActionUndo{SessionID: c.sessionID}).WithAliases("revert"))
 	}
 

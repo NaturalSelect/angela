@@ -26,6 +26,9 @@ var deepResearchPromptTmpl []byte
 //go:embed templates/initialize.md.tpl
 var initializePromptTmpl []byte
 
+//go:embed templates/commit.md
+var commitPromptTmpl []byte
+
 //go:embed templates/title.md
 var titlePromptTmpl []byte
 
@@ -99,6 +102,10 @@ func initializePrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return prompt.NewPrompt(config.AgentInitialize, string(initializePromptTmpl), opts...)
 }
 
+func commitPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	return prompt.NewPrompt(config.AgentCommit, string(commitPromptTmpl), opts...)
+}
+
 // builtinPromptForAgent returns the built-in prompt for a known agent
 // ID. Returns nil for unknown IDs — the caller falls back to the
 // general template.
@@ -113,6 +120,7 @@ var builtinPromptForAgent = map[string]func(...prompt.Option) (*prompt.Prompt, e
 	config.AgentWebFetch:      webFetchPrompt,
 	config.AgentGenerateAgent: generateAgentPrompt,
 	config.AgentInitialize:    initializePrompt,
+	config.AgentCommit:        commitPrompt,
 }
 
 // builtinPromptTemplateFile names the template each built-in prompt is
@@ -131,6 +139,7 @@ var builtinPromptTemplateFile = map[string]string{
 	config.AgentWebFetch:      "web_fetch_prompt.md.tpl",
 	config.AgentGenerateAgent: "generate_agent.md.tpl",
 	config.AgentInitialize:    "initialize.md.tpl",
+	config.AgentCommit:        "commit.md",
 }
 
 // agentPrompt resolves the system prompt for an agent. If the agent

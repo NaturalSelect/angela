@@ -286,6 +286,26 @@ func (b *Backend) AskSideQuestion(ctx context.Context, workspaceID string, req p
 	return proto.SideQuestionResponse{Answer: answer}, nil
 }
 
+// GenerateCommitMessage writes a commit message describing a staged
+// diff, without joining the turn queue or touching the session's
+// message history.
+func (b *Backend) GenerateCommitMessage(ctx context.Context, workspaceID string, req proto.CommitMessageRequest) (proto.CommitMessageResponse, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return proto.CommitMessageResponse{}, err
+	}
+
+	if ws.AgentCoordinator == nil {
+		return proto.CommitMessageResponse{}, ErrAgentNotInitialized
+	}
+
+	message, err := ws.AgentCoordinator.GenerateCommitMessage(ctx, req.SessionID, req.Diff)
+	if err != nil {
+		return proto.CommitMessageResponse{}, err
+	}
+	return proto.CommitMessageResponse{Message: message}, nil
+}
+
 // QueuedPrompts returns the number of queued prompts for the session.
 func (b *Backend) QueuedPrompts(workspaceID, sessionID string) (int, error) {
 	ws, err := b.GetWorkspace(workspaceID)

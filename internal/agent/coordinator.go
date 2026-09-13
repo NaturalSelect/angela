@@ -163,6 +163,10 @@ type Coordinator interface {
 	// it, without adding the question or its answer to the session's
 	// message history.
 	AskSideQuestion(ctx context.Context, sessionID, question string) (string, error)
+	// GenerateCommitMessage writes a commit message describing diff
+	// (the output of `git diff --cached`), using a tool-free internal
+	// agent. It never reads or writes sessionID's message history.
+	GenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error)
 
 	// DefaultModel reports what a brand new session would run on.
 	// Callers asking what a specific session runs want ActiveAgent.

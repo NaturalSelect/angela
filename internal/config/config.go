@@ -116,6 +116,13 @@ const (
 	// The dispatching tool call stays suspended until the branch merges
 	// or the user abandons it.
 	AgentModeBranch AgentMode = "branch"
+	// AgentModeCompact means the agent only ever summarizes another
+	// agent's session — it is never dispatched via the agent tool and
+	// never drives a session itself. It is resolved through a host
+	// agent's CompactAgent field (or the built-in "compact" agent when
+	// unset), the same way titling or agent generation resolve through
+	// their own internal agent IDs.
+	AgentModeCompact AgentMode = "compact"
 )
 
 // SelectedModel is a slot's model reference: which model, from which
@@ -755,8 +762,10 @@ type Agent struct {
 	// Mode controls how the agent can be used. Primary agents are
 	// top-level; subagents are launched via the agent tool; a branch is
 	// dispatched like a subagent but forks the caller's transcript and
-	// hands the conversation to the user.
-	Mode AgentMode `json:"mode,omitempty" jsonschema:"description=Agent mode: primary or subagent or branch,enum=primary,enum=subagent,enum=branch"`
+	// hands the conversation to the user; compact only ever summarizes
+	// another agent's session and is never dispatched or driven
+	// directly.
+	Mode AgentMode `json:"mode,omitempty" jsonschema:"description=Agent mode: primary or subagent or branch or compact,enum=primary,enum=subagent,enum=branch,enum=compact"`
 
 	Slot SlotName `json:"slot,omitempty" jsonschema:"description=Name of the model config to use,default=main"`
 
@@ -803,6 +812,12 @@ type Agent struct {
 	// empty (non-nil) list means none are, which is equivalent to
 	// dropping the agent tool entirely.
 	AllowedAgents []string `json:"allowed_agents,omitempty" jsonschema:"description=Agent IDs this agent may dispatch through the agent tool. Unset means every dispatchable agent is available."`
+
+	// CompactAgent names the compact-mode agent that summarizes
+	// sessions this agent drives. Empty, an unknown ID, or an ID that
+	// does not resolve to a compact-mode agent all fall back to the
+	// built-in "compact" agent.
+	CompactAgent string `json:"compact_agent,omitempty" jsonschema:"description=ID of the compact-mode agent used to summarize this agent's sessions; unset or invalid falls back to the built-in compact agent"`
 }
 
 // IsHidden reports whether the agent should stay out of dispatch lists
@@ -1188,6 +1203,34 @@ func warnUnknownAgents(agentID string, allowed []string, known map[string]Agent)
 	}
 }
 
+// warnUnknownCompactAgent logs a warning when compactAgent is set but
+// either names an agent that doesn't exist, names one that isn't
+// compact-mode, or is set on a compact-mode agent itself — a compact
+// agent never drives a session, so it has nothing of its own to
+// summarize. None of these reject the config: CompactAgentIDFor falls
+// back to the built-in compact agent in every case, so this only
+// surfaces what would otherwise be a silent typo.
+func warnUnknownCompactAgent(agentID string, mode AgentMode, compactAgent string, known map[string]Agent) {
+	if compactAgent == "" {
+		return
+	}
+	if mode == AgentModeCompact {
+		slog.Warn("A compact agent cannot itself use compact_agent; falling back to the built-in compact agent",
+			"agent", agentID, "field", "compact_agent", "id", compactAgent)
+		return
+	}
+	target, ok := known[compactAgent]
+	if !ok {
+		slog.Warn("Agent references an unknown compact_agent id; falling back to the built-in compact agent",
+			"agent", agentID, "field", "compact_agent", "id", compactAgent)
+		return
+	}
+	if target.Mode != AgentModeCompact {
+		slog.Warn("Agent's compact_agent does not resolve to a compact-mode agent; falling back to the built-in compact agent",
+			"agent", agentID, "field", "compact_agent", "id", compactAgent)
+	}
+}
+
 // builtinAgents returns the default agent definitions. The base tool set
 // has already had the global DisabledTools removed.
 func builtinAgents(base []string, contextPaths []string) map[string]Agent {
@@ -1294,7 +1337,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			ID:          AgentCompact,
 			Name:        "Compact",
 			Description: "Summarizes a conversation so work can continue in a fresh context.",
-			Mode:        AgentModeSubagent,
+			Mode:        AgentModeCompact,
 			Hidden:      ptr(true),
 			// Compaction borrows the workhorse model on purpose:
 			// summarizing on the cheap model silently degrades the only
@@ -1402,6 +1445,9 @@ func mergeAgent(base, override Agent) Agent {
 	if override.AllowedAgents != nil {
 		base.AllowedAgents = override.AllowedAgents
 	}
+	if override.CompactAgent != "" {
+		base.CompactAgent = override.CompactAgent
+	}
 	if override.Disabled != nil {
 		base.Disabled = override.Disabled
 	}
@@ -1472,6 +1518,16 @@ func (c *Config) ResolveAgents() map[string]Agent {
 		if key == AgentCoder {
 			continue
 		}
+		if a.Mode == AgentModeCompact {
+			// A compact agent only ever generates a summary: force it
+			// out of dispatch lists and strip tools and delegation
+			// regardless of what any layer configured, the same way
+			// the built-in compact agent has always been shaped.
+			a.Hidden = ptr(true)
+			a.AllowedTools = &AllowedToolSet{Kind: ToolSetScope}
+			a.AllowedMCP = &AllowedMCPSet{Kind: ToolSetScope}
+			a.AllowedAgents = []string{}
+		}
 		resolvedTools := a.AllowedTools.Materialize(allToolNames(), coderTools.Tools, c.Options.DisabledTools, a.DisabledTools)
 		warnUnknownTools(key, "allowed_tools", resolvedTools.Tools)
 		warnUnknownTools(key, "disabled_tools", a.DisabledTools)
@@ -1484,6 +1540,7 @@ func (c *Config) ResolveAgents() map[string]Agent {
 	// Remove disabled agents, but never disable coder.
 	for key, a := range agents {
 		warnUnknownAgents(key, a.AllowedAgents, agents)
+		warnUnknownCompactAgent(key, a.Mode, a.CompactAgent, agents)
 		if a.Disabled != nil && *a.Disabled && key != AgentCoder {
 			delete(agents, key)
 		}

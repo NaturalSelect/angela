@@ -535,10 +535,13 @@ func (c *coordinator) compactFor(ctx context.Context, sessionID string, host con
 		return call
 	}
 	call.provider = providerCfg
-	// The prompt cache key says "compact" rather than the running
-	// agent's own name: summarize sends a different system prompt
-	// than a normal turn, so it must not share a cache route with it.
-	call.options = getProviderOptions(call.agent.Model, providerCfg, buildPromptCacheKey(sessionID, "compact"))
+	// The prompt cache key uses the resolved compact agent's own ID
+	// rather than the running agent's name: summarize sends a
+	// different system prompt than a normal turn, and two different
+	// compact agents (a custom one and the built-in one) send
+	// different prompts from each other too, so neither may share a
+	// cache route with the other.
+	call.options = getProviderOptions(call.agent.Model, providerCfg, buildPromptCacheKey(sessionID, call.agent.ID))
 	call.onAuthRefresh = c.makeAuthRefreshCallback(providerCfg)
 	call.ready = true
 	return call

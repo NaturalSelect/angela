@@ -119,3 +119,51 @@ func TestCompactSettingsAreAbsentWhenCompactionCannotResolve(t *testing.T) {
 	require.Nil(t, compact.onAuthRefresh,
 		"no provider was resolved, so there is nothing to refresh credentials for")
 }
+
+// TestCompactForUsesHostsCustomCompactAgent pins that an agent naming
+// its own compact_agent is summarized by that agent — its model, slot
+// and prompt — instead of always going through the built-in compact
+// agent.
+func TestCompactForUsesHostsCustomCompactAgent(t *testing.T) {
+	coord := newSplitProviderCoordinator(t)
+
+	// Clone the (already fully resolved) built-in compact agent so the
+	// custom one starts from a valid shape, then point it at its own
+	// id, slot and prompt.
+	myCompact := coord.cfg.Config().Agents[config.AgentCompact]
+	myCompact.ID = "my-compact"
+	myCompact.Slot = config.SlotChore
+	myCompact.Prompt = "CUSTOM SUMMARY PROMPT"
+	coord.cfg.Config().Agents["my-compact"] = myCompact
+
+	coderCfg := coord.cfg.Config().Agents[config.AgentCoder]
+	coderCfg.CompactAgent = "my-compact"
+	coord.cfg.Config().Agents[config.AgentCoder] = coderCfg
+
+	host := instantiate(t, coord, config.AgentCoder)
+	compact := coord.compactFor(t.Context(), "session", host)
+
+	require.True(t, compact.ready)
+	require.Equal(t, "my-compact", compact.agent.ID)
+	require.Contains(t, compact.agent.SystemPrompt, "CUSTOM SUMMARY PROMPT")
+	require.Equal(t, "other", compact.provider.ID,
+		"the custom compact agent's own slot must decide its provider, not the coder's")
+}
+
+// TestCompactForFallsBackWhenHostsCompactAgentIsInvalid pins that an
+// unresolvable compact_agent reference does not take compaction down
+// with it: CompactAgentIDFor falls back to the built-in compact agent
+// rather than leaving the turn without a recovery path.
+func TestCompactForFallsBackWhenHostsCompactAgentIsInvalid(t *testing.T) {
+	coord := newSplitProviderCoordinator(t)
+
+	coderCfg := coord.cfg.Config().Agents[config.AgentCoder]
+	coderCfg.CompactAgent = "does-not-exist"
+	coord.cfg.Config().Agents[config.AgentCoder] = coderCfg
+
+	host := instantiate(t, coord, config.AgentCoder)
+	compact := coord.compactFor(t.Context(), "session", host)
+
+	require.True(t, compact.ready)
+	require.Equal(t, config.AgentCompact, compact.agent.ID)
+}

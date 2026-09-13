@@ -43,6 +43,20 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 		require.Equal(t, []string{"view"}, agent.AllowedTools.Tools)
 	})
 
+	t.Run("compact_agent is a recognized field and does not drop the agent", func(t *testing.T) {
+		t.Parallel()
+
+		paths := writeLayers(t,
+			`{"agents": {"reviewer": {"id": "reviewer", "compact_agent": "my-compact"}}}`,
+		)
+		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		require.NoError(t, err)
+
+		agent, ok := cfg.AgentConfigs["reviewer"]
+		require.True(t, ok)
+		require.Equal(t, "my-compact", agent.CompactAgent)
+	})
+
 	t.Run("one broken agent does not take down its neighbours", func(t *testing.T) {
 		t.Parallel()
 

@@ -269,7 +269,7 @@ adjust frontmatter:
 | --- | --- |
 | `name` | `name` |
 | `description` | `description` |
-| `mode` | `mode` (`primary`, `subagent`, `branch`) |
+| `mode` | `mode` (`primary`, `subagent`, `branch`, `compact`) |
 | `color` | Not supported — remove |
 | `permission` | Convert to `allowed_tools` / `disabled_tools` |
 

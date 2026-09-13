@@ -35,6 +35,7 @@ type AgentFrontmatter struct {
 	Disabled      *bool           `yaml:"disabled,omitempty"`
 	Hidden        *bool           `yaml:"hidden,omitempty"`
 	MaxTokens     *int64          `yaml:"max_tokens,omitempty"`
+	CompactAgent  string          `yaml:"compact_agent,omitempty"`
 }
 
 // agentIDPattern is a strict allowlist: lowercase alphanumeric
@@ -259,6 +260,7 @@ func ParseAgentContent(content string) (Agent, error) {
 		agent.Disabled = fm.Disabled
 		agent.Hidden = fm.Hidden
 		agent.MaxTokens = fm.MaxTokens
+		agent.CompactAgent = fm.CompactAgent
 		if err := validateAgentFields(agent); err != nil {
 			return Agent{}, err
 		}
@@ -309,9 +311,9 @@ func ValidateAgent(id string, a Agent) error {
 // DiscoverAgentFiles has already validated.
 func validateAgentFields(a Agent) error {
 	switch a.Mode {
-	case "", AgentModePrimary, AgentModeSubagent, AgentModeBranch:
+	case "", AgentModePrimary, AgentModeSubagent, AgentModeBranch, AgentModeCompact:
 	default:
-		return fmt.Errorf("invalid mode %q: must be one of %s, %s, %s", a.Mode, AgentModePrimary, AgentModeSubagent, AgentModeBranch)
+		return fmt.Errorf("invalid mode %q: must be one of %s, %s, %s, %s", a.Mode, AgentModePrimary, AgentModeSubagent, AgentModeBranch, AgentModeCompact)
 	}
 	// Agent.Slot is an open value domain: any model config name is
 	// accepted here, and an unknown one is warned about and falls back

@@ -72,6 +72,13 @@ definitions:
           ToolSetScope grants only Tools. ResolveAgents' output is always
           non-nil with Kind == ToolSetScope: a fully materialized
           whitelist with every deny list already applied.
+      compact_agent:
+        description: |-
+          CompactAgent names the compact-mode agent that summarizes
+          sessions this agent drives. Empty, an unknown ID, or an ID that
+          does not resolve to a compact-mode agent all fall back to the
+          built-in "compact" agent.
+        type: string
       context_paths:
         description: ContextPaths overrides the context paths for this agent.
         items:
@@ -115,7 +122,9 @@ definitions:
           Mode controls how the agent can be used. Primary agents are
           top-level; subagents are launched via the agent tool; a branch is
           dispatched like a subagent but forks the caller's transcript and
-          hands the conversation to the user.
+          hands the conversation to the user; compact only ever summarizes
+          another agent's session and is never dispatched or driven
+          directly.
       name:
         type: string
       prompt:
@@ -140,11 +149,13 @@ definitions:
     - primary
     - subagent
     - branch
+    - compact
     type: string
     x-enum-varnames:
     - AgentModePrimary
     - AgentModeSubagent
     - AgentModeBranch
+    - AgentModeCompact
   config.AllowedMCPSet:
     properties:
       kind:
@@ -874,6 +885,18 @@ definitions:
       file_path:
         type: string
       mime_type:
+        type: string
+    type: object
+  proto.CommitMessageRequest:
+    properties:
+      diff:
+        type: string
+      session_id:
+        type: string
+    type: object
+  proto.CommitMessageResponse:
+    properties:
+      message:
         type: string
     type: object
   proto.ConfigAgentVariantRequest:
@@ -1980,6 +2003,49 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Cancel agent session
+      tags:
+      - agent
+  /workspaces/{id}/agent/sessions/{sid}/commit-message:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: Staged diff
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.CommitMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.CommitMessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Generate commit message
       tags:
       - agent
   /workspaces/{id}/agent/sessions/{sid}/prompts/clear:

@@ -1493,7 +1493,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 		Role:             message.Assistant,
 		Model:            compact.Model.ModelCfg.Model,
 		Provider:         compact.Model.ModelCfg.Provider,
-		Agent:            config.AgentCompact,
+		Agent:            compact.ID,
 		IsSummaryMessage: true,
 	})
 	if err != nil {

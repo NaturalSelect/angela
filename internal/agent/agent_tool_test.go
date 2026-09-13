@@ -19,7 +19,7 @@ import (
 func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, false)
+	tool, err := coord.agentTool(0, nil)
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -38,7 +38,7 @@ func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
 func TestAgentToolRequiresAgentMessageID(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, false)
+	tool, err := coord.agentTool(0, nil)
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
@@ -63,7 +63,7 @@ func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
 		"ghost": {ID: "ghost", Mode: config.AgentModeSubagent, Description: "no longer configured"},
 	}, nil)
 
-	tool, err := coord.agentTool(0, false)
+	tool, err := coord.agentTool(0, nil)
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
@@ -88,7 +88,7 @@ func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
 func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, false)
+	tool, err := coord.agentTool(0, nil)
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -107,7 +107,7 @@ func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 func TestAgentToolUnknownSubagentTypeListsAvailable(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, false)
+	tool, err := coord.agentTool(0, nil)
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -154,9 +154,9 @@ func TestSubagentRegistryMetadataIsStable(t *testing.T) {
 
 	require.Equal(t, []string{"alpha", "mid", "zeta"}, reg.IDs())
 
-	first, err := renderAgentToolDescription(reg.Metadata(), false)
+	first, err := renderAgentToolDescription(reg.Metadata())
 	require.NoError(t, err)
-	second, err := renderAgentToolDescription(reg.Metadata(), false)
+	second, err := renderAgentToolDescription(reg.Metadata())
 	require.NoError(t, err)
 
 	require.Equal(t, first, second)
@@ -183,7 +183,7 @@ func TestAgentToolDescriptionSeparatesBranches(t *testing.T) {
 		"pairing":  {Description: "thinks it through with you", Mode: config.AgentModeBranch},
 	}, nil)
 
-	desc, err := renderAgentToolDescription(reg.Metadata(), false)
+	desc, err := renderAgentToolDescription(reg.Metadata())
 	require.NoError(t, err)
 
 	branchAt := strings.Index(desc, "Branch agents:")
@@ -211,11 +211,92 @@ func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
 		"research": {Description: "reads code", Mode: config.AgentModeSubagent},
 	}, nil)
 
-	desc, err := renderAgentToolDescription(reg.Metadata(), false)
+	desc, err := renderAgentToolDescription(reg.Metadata())
 	require.NoError(t, err)
 
 	require.NotContains(t, desc, "Branch agents:")
 	require.Contains(t, desc, "research")
+}
+
+// TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch pins the
+// allowed_agents restriction at the tool level: a caller whose
+// AllowedAgents narrows the dispatch table must see only those IDs in
+// its own description, and dispatching anything else must be refused
+// rather than silently falling through to the full registry.
+func TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch(t *testing.T) {
+	coord := newGateTestCoordinator(t, false)
+
+	tool, err := coord.agentTool(0, []string{config.AgentExplore})
+	require.NoError(t, err)
+	require.Contains(t, tool.Info().Description, config.AgentExplore)
+	require.NotContains(t, tool.Info().Description, config.AgentGeneral)
+
+	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
+	ctx = context.WithValue(ctx, tools.MessageIDContextKey, "msg-1")
+	resp, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-1",
+		Name:  toolnames.Agent,
+		Input: `{"prompt":"look into this","subagent_type":"general"}`,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.IsError, "a subagent_type outside allowed_agents must be refused")
+	require.Contains(t, resp.Content, "not available")
+	require.Contains(t, resp.Content, config.AgentExplore, "the refusal must name what is available instead")
+}
+
+// TestAgentToolAllowedAgentsEmptyOmitsTheTool pins the degenerate case:
+// an agent whose allowed_agents resolves to nothing dispatchable gets no
+// agent tool at all, the same as an agent with no subagents configured.
+func TestAgentToolAllowedAgentsEmptyOmitsTheTool(t *testing.T) {
+	coord := newGateTestCoordinator(t, false)
+
+	tool, err := coord.agentTool(0, []string{})
+	require.NoError(t, err)
+	require.Nil(t, tool)
+}
+
+// TestBuiltinPlanAndDeepResearchOnlyDispatchExplore pins the
+// allowed_agents restriction on the two built-in branch agents: a plan
+// or a root-cause finding is only as trustworthy as the read-only
+// legwork behind it, so neither should be able to reach general, or
+// hand the decision off to the other, through its own agent tool.
+func TestBuiltinPlanAndDeepResearchOnlyDispatchExplore(t *testing.T) {
+	coord := newGateTestCoordinator(t, true)
+
+	for _, id := range []string{config.AgentPlan, config.AgentDeepResearch} {
+		t.Run(id, func(t *testing.T) {
+			agentCfg := coord.cfg.Config().Agents[id]
+			toolList, err := coord.buildTools(agentCfg, "", 0)
+			require.NoError(t, err)
+
+			var agentTool fantasy.AgentTool
+			for _, tool := range toolList {
+				if tool.Info().Name == toolnames.Agent {
+					agentTool = tool
+				}
+			}
+			require.NotNil(t, agentTool, "%s must still hold the agent tool", id)
+			require.Contains(t, agentTool.Info().Description, "- "+config.AgentExplore+":")
+			// Substring checks on the bare IDs would false-positive:
+			// explore's own description mentions "plan" and
+			// "deep_research" in prose. Check for the rendered list
+			// item instead, which is what dispatchability looks like.
+			require.NotContains(t, agentTool.Info().Description, "- "+config.AgentGeneral+":")
+			require.NotContains(t, agentTool.Info().Description, "- "+config.AgentPlan+":")
+			require.NotContains(t, agentTool.Info().Description, "- "+config.AgentDeepResearch+":")
+
+			ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
+			ctx = context.WithValue(ctx, tools.MessageIDContextKey, "msg-1")
+			resp, err := agentTool.Run(ctx, fantasy.ToolCall{
+				ID:    "call-1",
+				Name:  toolnames.Agent,
+				Input: `{"prompt":"look into this","subagent_type":"general"}`,
+			})
+			require.NoError(t, err)
+			require.True(t, resp.IsError, "dispatching general must be refused")
+			require.Contains(t, resp.Content, "not available")
+		})
+	}
 }
 
 // TestReportHeaderFrontsSuccessfulOutput pins the banner shape: the id

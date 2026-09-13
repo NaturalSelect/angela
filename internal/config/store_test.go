@@ -956,18 +956,19 @@ func TestValidateOptions_RejectsNegativeSubagentDepth(t *testing.T) {
 	require.NoError(t, cfg.ValidateOptions())
 }
 
-// TestOptions_SubagentMaxDepthDefaultsToOne pins the depth an unconfigured
-// Angela allows. The value decides whether the coder can delegate at all, so
-// a silent drift to 0 would disable subagents everywhere without any config
-// change to point at.
-func TestOptions_SubagentMaxDepthDefaultsToOne(t *testing.T) {
+// TestOptions_SubagentMaxDepthDefaultsToTwo pins the depth an unconfigured
+// Angela allows. The value decides how many hops the coder can delegate
+// through by default, so a silent drift would either disable subagents
+// everywhere or quietly widen the default budget, without any config change
+// to point at.
+func TestOptions_SubagentMaxDepthDefaultsToTwo(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, 1, (&Options{}).SubagentMaxDepth(), "unset means one level of delegation")
-	require.Equal(t, 1, (*Options)(nil).SubagentMaxDepth(), "a nil Options must not panic")
+	require.Equal(t, 2, (&Options{}).SubagentMaxDepth(), "unset means two levels of delegation")
+	require.Equal(t, 2, (*Options)(nil).SubagentMaxDepth(), "a nil Options must not panic")
 
-	two := 2
-	require.Equal(t, 2, (&Options{SubagentDepth: &two}).SubagentMaxDepth())
+	three := 3
+	require.Equal(t, 3, (&Options{SubagentDepth: &three}).SubagentMaxDepth())
 }
 
 // TestReloadFromDisk_InvalidJSONKeepsOldConfig is the safety net around the

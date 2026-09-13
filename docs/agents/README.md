@@ -18,11 +18,13 @@ Every sub-agent additionally loses the interactive `question` tool at run
 time, whatever its configuration says — it has no user to ask, only the agent
 that dispatched it. Branch agents keep it, because a branch hands the
 conversation to you and asking is the point. It also loses the `agent` tool
-once its dispatch depth reaches the `options.subagent_depth` budget — 1 by
-default, which means a sub-agent cannot dispatch further sub-agents (`web-fetch`
-included; dispatching it is just another `agent` call) unless the budget is
-raised. Branch agents do not consume a dispatch-depth hop — they can
-delegate sub-agents as freely as the session they forked from.
+once its dispatch depth reaches the `options.subagent_depth` budget — 2 by
+default, which means a sub-agent one level down can still dispatch one
+further sub-agent (`web-fetch` included; dispatching it is just another
+`agent` call), but that one cannot delegate again unless the budget is
+raised. A branch hop counts against the same budget as a sub-agent hop, so
+forking a branch from deep in a dispatch chain leaves it — and anything it
+forks in turn — with that much less room to delegate further.
 See [Configuring `subagent_depth`](#configuring-subagent_depth)
 below.
 
@@ -33,7 +35,8 @@ below.
   keep that mode — multiple primary agents are supported.
 - **subagent** — Only launched via the `agent` tool. Whether it can dispatch
   further sub-agents depends on `options.subagent_depth`; by default the
-  budget is 1, so a sub-agent cannot delegate further.
+  budget is 2, so a sub-agent can delegate one further level before running
+  out of room.
 - **branch** — Launched via the `agent` tool like a sub-agent, but instead of
   working on its own it forks the conversation and hands it to you. See
   [Branch Agents](#branch-agents).
@@ -58,15 +61,15 @@ The `agent` tool accepts three parameters:
 ## Configuring `subagent_depth`
 
 `options.subagent_depth` caps how many levels deep the `agent` tool may
-recursively dispatch: `1` (the default) lets a primary agent dispatch a
-sub-agent that cannot itself dispatch further, `0` disables delegation
-entirely, and higher values allow deeper dispatch chains. Raising it
-multiplies token and time cost per chain, since each additional level is a
-full agent turn.
+recursively dispatch, counting a branch hop the same as a sub-agent hop: `2`
+(the default) lets a primary agent dispatch a sub-agent or branch that may
+itself dispatch one further level, `0` disables delegation entirely, and
+higher values allow deeper dispatch chains. Raising it multiplies token and
+time cost per chain, since each additional level is a full agent turn.
 
 ```json
 {
-  "options": { "subagent_depth": 2 }
+  "options": { "subagent_depth": 3 }
 }
 ```
 
@@ -211,19 +214,21 @@ resolved, so an abandoned branch still has to be abandoned explicitly.
 ### Limits
 
 - Only the top-level conversation can open a branch by default: a sub-agent
-  cannot, since there is no user attached to its turn. Setting
-  `options.subagent_branches` (or passing `--subagent-branches`) lifts this
-  for sub-agents at any depth, including one that has already spent its own
-  `subagent_depth` budget — its `agent` tool then lists only branch agents,
-  rather than disappearing once delegation is no longer possible. The branch
-  continues that sub-agent's own transcript, and you get a toast plus a
+  or an existing branch cannot, since there is no user attached to its turn.
+  Setting `options.subagent_branches` (or passing `--subagent-branches`)
+  lifts this for a sub-agent or branch at any depth, within the same
+  `subagent_depth` budget as everything else it dispatches — a branch forked
+  this way still needs its own leftover budget to delegate any further. The
+  branch continues that session's own transcript, and you get a toast plus a
   desktop notification when one is forked from a session you are not
   currently looking at.
 - Branches are unavailable in non-interactive runs (`angela run`) no matter
   how `subagent_branches` is set: there is nobody to hand the conversation
   to.
-- A branch does not consume the `options.subagent_depth` budget, and it can
-  dispatch sub-agents of its own exactly like the coder can.
+- A branch consumes a `subagent_depth` hop exactly like a sub-agent dispatch
+  does. Once a session is out of budget, its `agent` tool disappears
+  entirely — there is no branch-only fallback — so it can neither dispatch a
+  further sub-agent nor fork a branch of its own.
 
 ## Configuration
 
@@ -263,6 +268,38 @@ with a warning.
 
 Above, `my-reviewer` says nothing about tools and so gets exactly
 `view`, `grep`, `edit`.
+
+### Restricting Delegation (`allowed_agents`)
+
+`allowed_agents` narrows which agents an agent may reach through its own
+`agent` tool, independently of `allowed_tools`: having the `agent` tool at
+all still depends on `allowed_tools` and the `subagent_depth` budget, and
+`allowed_agents` only filters which `subagent_type` values are valid once it
+does.
+
+- Unset (the default) — every agent that dispatch depth and
+  `subagent_branches` would otherwise allow is reachable.
+- A list of agent IDs — the `agent` tool's description and its dispatch are
+  both narrowed to exactly those IDs; asking for anything else is refused
+  with the list of what is actually available. An empty list removes the
+  `agent` tool entirely, the same as having no dispatchable agents at all.
+
+The built-in `plan` and `deep-research` agents both set
+`"allowed_agents": ["explore"]`: a plan or a root-cause finding is only as
+trustworthy as the read-only legwork behind it, so neither can hand the
+decision off to `general` or to each other — they can only delegate the
+read-only search `explore` provides.
+
+```json
+{
+  "agents": {
+    "my-reviewer": {
+      "description": "Reviews code for bugs",
+      "allowed_agents": ["explore"]
+    }
+  }
+}
+```
 
 ### JSON Configuration (`angela.json`)
 
@@ -334,6 +371,7 @@ The body becomes the agent's system prompt. Frontmatter fields:
 | `allowed_tools` | []string, `"all"`, or `"inherited"` | Tool whitelist (see Permission Inheritance) |
 | `disabled_tools`| []string   | Tools to remove                  |
 | `allowed_mcp`   | object, `"all"`, or `"inherited"` | MCP server access (see Permission Inheritance) |
+| `allowed_agents`| []string   | Agent IDs this agent may dispatch (see Restricting Delegation) |
 | `disabled`      | bool       | Disable this agent               |
 
 Unknown frontmatter fields are a hard error and the file is skipped with a
@@ -387,6 +425,7 @@ is published atomically so a failed write cannot leave a partial agent behind.
 | `allowed_tools` | array, `"all"`, or `"inherited"` | `"inherited"` | Tool whitelist. `"inherited"` takes the coder's resolved set; `"all"` grants every tool; `[]` denies all tools; an array grants exactly those names. `coder` itself cannot inherit. |
 | `disabled_tools`| []string        | nil          | Tools to remove from the allowed set             |
 | `allowed_mcp`   | object, `"all"`, or `"inherited"` | `"inherited"` | MCP server access. `{}` denies every MCP tool; a server mapped to `[]` grants all of that server's tools. |
+| `allowed_agents`| []string        | nil (unrestricted) | Agent IDs this agent may reach through the `agent` tool. Unset means every dispatchable agent is available; a list — including an empty one — narrows the tool's description and its dispatch to exactly those IDs. |
 | `context_paths` | []string        | nil          | Context file paths                               |
 | `disabled`      | bool            | unset        | Unset inherits from lower layers; `true` disables the agent; an explicit `false` re-enables it even over a lower layer's `true`. |
 

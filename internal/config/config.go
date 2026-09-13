@@ -486,14 +486,15 @@ type Options struct {
 	Notifications             string       `json:"notifications,omitempty" jsonschema:"description=Notification style to use. Options: auto (default)\\, native\\, osc\\, bell\\, disabled. Auto selects based on environment: native for local sessions\\, osc for SSH (with automatic OSC 99/777 detection).,enum=auto,enum=native,enum=osc,enum=bell,enum=disabled,default=auto"`
 	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=angela-config"`
 	AgentPaths                []string     `json:"agent_paths,omitempty" jsonschema:"description=Paths to directories containing agent markdown files,example=~/.config/angela/agents,example=./agents"`
-	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool. 1 (the default) lets a primary agent dispatch a subagent that cannot itself dispatch further subagents\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=1,example=2"`
-	SubagentBranches          bool         `json:"subagent_branches,omitempty" jsonschema:"description=Let sub-agents dispatch branch agents\\, not just the top-level session. Off by default: a branch hands the conversation to the user directly\\, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.,default=false"`
+	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
+	SubagentBranches          bool         `json:"subagent_branches,omitempty" jsonschema:"description=Let a session other than the top-level one — a sub-agent or an existing branch — fork a branch agent of its own\\, within the same subagent_depth budget. Off by default: a branch hands the conversation to the user directly\\, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.,default=false"`
 }
 
 // DefaultSubagentDepth is the effective subagent dispatch depth when
 // Options.SubagentDepth is unset: a primary agent may dispatch a
-// subagent, but that subagent may not dispatch a further one.
-const DefaultSubagentDepth = 1
+// subagent or branch, and that dispatch may make one further dispatch
+// of its own.
+const DefaultSubagentDepth = 2
 
 // SubagentMaxDepth returns how many levels of subagent nesting are
 // permitted. A nil receiver or unset field means "not configured",
@@ -794,6 +795,13 @@ type Agent struct {
 
 	// ContextPaths overrides the context paths for this agent.
 	ContextPaths []string `json:"context_paths,omitempty" jsonschema:"description=Context file paths for this agent"`
+
+	// AllowedAgents restricts which agent IDs this agent may dispatch
+	// through the agent tool. nil means every dispatchable agent is
+	// available, matching the behavior before this field existed; an
+	// empty (non-nil) list means none are, which is equivalent to
+	// dropping the agent tool entirely.
+	AllowedAgents []string `json:"allowed_agents,omitempty" jsonschema:"description=Agent IDs this agent may dispatch through the agent tool. Unset means every dispatchable agent is available."`
 }
 
 // IsHidden reports whether the agent should stay out of dispatch lists
@@ -1166,6 +1174,19 @@ func warnUnknownTools(agentID, field string, names []string) {
 	}
 }
 
+// warnUnknownAgents logs a warning for any ID in allowed that isn't a
+// known agent, catching a typo in allowed_agents without rejecting the
+// config: an unrecognized ID is inert, it just can never be dispatched —
+// but silently, since the agent tool only reports the IDs it does
+// recognize.
+func warnUnknownAgents(agentID string, allowed []string, known map[string]Agent) {
+	for _, id := range allowed {
+		if _, ok := known[id]; !ok {
+			slog.Warn("Agent references an unknown agent id", "agent", agentID, "field", "allowed_agents", "id", id)
+		}
+	}
+}
+
 // builtinAgents returns the default agent definitions. The base tool set
 // has already had the global DisabledTools removed.
 func builtinAgents(base []string, contextPaths []string) map[string]Agent {
@@ -1221,6 +1242,10 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, deepResearchToolNames(), true)},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
+			// A root cause is a finding, not a plan, so deep-research is
+			// limited to reading the code rather than being able to reach
+			// for plan or dispatch itself again through general.
+			AllowedAgents: []string{AgentExplore},
 		},
 		AgentPlan: {
 			ID:          AgentPlan,
@@ -1234,6 +1259,10 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
+			// A plan is a proposal to settle with the user, not a
+			// license to hand the decision off again, so plan can only
+			// delegate the read-only legwork behind it.
+			AllowedAgents: []string{AgentExplore},
 		},
 		AgentWebFetch: {
 			ID:           AgentWebFetch,
@@ -1357,6 +1386,9 @@ func mergeAgent(base, override Agent) Agent {
 	if override.ContextPaths != nil {
 		base.ContextPaths = override.ContextPaths
 	}
+	if override.AllowedAgents != nil {
+		base.AllowedAgents = override.AllowedAgents
+	}
 	if override.Disabled != nil {
 		base.Disabled = override.Disabled
 	}
@@ -1438,6 +1470,7 @@ func (c *Config) ResolveAgents() map[string]Agent {
 
 	// Remove disabled agents, but never disable coder.
 	for key, a := range agents {
+		warnUnknownAgents(key, a.AllowedAgents, agents)
 		if a.Disabled != nil && *a.Disabled && key != AgentCoder {
 			delete(agents, key)
 		}

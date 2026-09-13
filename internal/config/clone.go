@@ -128,6 +128,7 @@ func (a Agent) clone() Agent {
 	a.Temperature = clonePtr(a.Temperature)
 	a.DisabledTools = cloneSlice(a.DisabledTools)
 	a.ContextPaths = cloneSlice(a.ContextPaths)
+	a.AllowedAgents = cloneSlice(a.AllowedAgents)
 	a.AllowedTools = a.AllowedTools.clone()
 	a.AllowedMCP = a.AllowedMCP.clone()
 	return a

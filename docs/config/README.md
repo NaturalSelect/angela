@@ -287,7 +287,7 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
     "disable_provider_auto_update": false,
     "disable_default_providers": false,
     "notifications": "auto",          // auto, native, osc, bell, or disabled
-    "subagent_depth": 1,              // max nesting for agent tool dispatches
+    "subagent_depth": 2,              // max nesting for agent tool dispatches
     "subagent_branches": false,       // let sub-agents fork branch agents too
 
     // Attribution

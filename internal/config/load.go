@@ -971,7 +971,7 @@ func dropAgentsWithUnknownFields(cfg *Config, merged []byte) {
 
 // agentPermissionFields are the agent fields whose contract is whole
 // field replacement by the highest-priority layer that names them.
-var agentPermissionFields = []string{"allowed_tools", "disabled_tools", "allowed_mcp"}
+var agentPermissionFields = []string{"allowed_tools", "disabled_tools", "allowed_mcp", "allowed_agents"}
 
 // applyAgentPermissions writes the per-layer winners onto the merged
 // config. Without this a layer narrowing allowed_tools would be
@@ -995,6 +995,9 @@ func applyAgentPermissions(cfg *Config, winners map[string]map[string]json.RawMe
 			case "allowed_mcp":
 				agent.AllowedMCP = nil
 				err = json.Unmarshal(raw, &agent.AllowedMCP)
+			case "allowed_agents":
+				agent.AllowedAgents = nil
+				err = json.Unmarshal(raw, &agent.AllowedAgents)
 			}
 			if err != nil {
 				return fmt.Errorf("agent %q: invalid %s: %w", id, field, err)

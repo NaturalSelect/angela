@@ -49,9 +49,9 @@ Within the project layer:
 
 Merge semantics: objects merge key by key, scalars are replaced by the
 higher-priority layer, and **arrays are concatenated** rather than replaced.
-The one exception is an agent's `allowed_tools` / `allowed_mcp` / `disabled_tools`,
-which are taken whole from the highest-priority layer that mentions them —
-concatenating a list with `"inherited"` would be meaningless.
+The one exception is an agent's `allowed_tools` / `allowed_mcp` / `disabled_tools` /
+`allowed_agents`, which are taken whole from the highest-priority layer that
+mentions them — concatenating a list with `"inherited"` would be meaningless.
 
 ## Shell expansion
 
@@ -259,6 +259,7 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 | `allowed_tools`  | array \| string | Array of tool names, or `"all"`, or `"inherited"` (mirror the coder's resolved set) |
 | `disabled_tools` | array  | Removed from the resolved allow list                                |
 | `allowed_mcp`    | object \| string | Object mapping server name to allowed tool names (empty array = the whole server), or `"all"`, or `"inherited"` |
+| `allowed_agents` | array  | Agent IDs this agent may dispatch via the Agent tool. Unset = every dispatchable agent is available |
 | `context_paths`  | array  | Context files for this agent                                        |
 
 `disabled` and `hidden` are tri-state: omitting them inherits the lower layer,
@@ -569,7 +570,7 @@ governs whether a call is approved.
 | `auto_lsp`                     | bool   | `true`             | Auto-configure LSPs from root markers                           |
 | `progress`                     | bool   | `true`             | Indeterminate progress updates during long operations           |
 | `notifications`                | string | `auto`             | `auto` (native locally, an OSC escape sequence over SSH), `native`, `osc`, `bell`, `disabled` |
-| `subagent_depth`               | int    | `1`                | Levels of subagent nesting via the Agent tool. `0` disables delegation; must be non-negative. Raising it multiplies token and time cost per dispatch chain |
+| `subagent_depth`               | int    | `2`                | Levels of subagent nesting via the Agent tool, counting a branch hop the same as a subagent hop. `0` disables delegation; must be non-negative. Raising it multiplies token and time cost per dispatch chain |
 | `disable_metrics`              | bool   | `false`            | Stop sending metrics                                            |
 | `disable_provider_auto_update` | bool   | `false`            | Stop auto-updating the provider catalog                         |
 | `disable_default_providers`    | bool   | `false`            | Ignore all embedded providers. Every provider must then be fully specified with `base_url`, `models`, and `api_key` — no merging with defaults |

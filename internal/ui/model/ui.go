@@ -2186,6 +2186,15 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			return nil
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionCommit:
+		// Session-scoped, matching ActionSummarize: committing while a
+		// turn is running risks capturing a half-finished edit.
+		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
+			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before committing..."))
+			break
+		}
+		cmds = append(cmds, m.commitStagedChanges(msg.SessionID))
+		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionExportSession:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		sessionID := msg.SessionID

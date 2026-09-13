@@ -95,6 +95,7 @@ const (
 	AgentCompact       string = "compact"
 	AgentGenerateAgent string = "generate-agent"
 	AgentInitialize    string = "initialize"
+	AgentCommit        string = "commit"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -1323,6 +1324,18 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// Model is deliberately unset: initialize never makes an LLM
 			// call of its own. Its rendered prompt is injected into an
 			// ordinary session and runs on whatever agent is primary.
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
+		},
+		AgentCommit: {
+			ID:           AgentCommit,
+			Name:         "Commit",
+			Description:  "Writes a commit message for the currently staged changes.",
+			Mode:         AgentModeSubagent,
+			Hidden:       ptr(true),
+			Slot:         SlotChore,
+			MaxTokens:    ptr(int64(150)),
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},

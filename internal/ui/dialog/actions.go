@@ -116,6 +116,13 @@ type (
 		SessionID string
 		Question  string
 	}
+	// ActionCommit generates a commit message from the workspace's
+	// currently staged changes and commits them with a sign-off in
+	// one step, without adding anything to the session's message
+	// history.
+	ActionCommit struct {
+		SessionID string
+	}
 	// ActionUndo asks for a preview of undoing sessionID's last turn,
 	// to be shown in a confirmation dialog before anything is reverted.
 	ActionUndo struct {

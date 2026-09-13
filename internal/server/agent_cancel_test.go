@@ -104,6 +104,10 @@ func (s *runCoordinator) AskSideQuestion(context.Context, string, string) (strin
 	return "", nil
 }
 
+func (s *runCoordinator) GenerateCommitMessage(context.Context, string, string) (string, error) {
+	return "", nil
+}
+
 func (s *runCoordinator) capturedCtx() context.Context {
 	s.mu.Lock()
 	defer s.mu.Unlock()

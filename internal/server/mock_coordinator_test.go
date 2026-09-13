@@ -184,6 +184,21 @@ func (mr *MockCoordinatorMockRecorder) GenerateAgent(ctx, description any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateAgent", reflect.TypeOf((*MockCoordinator)(nil).GenerateAgent), ctx, description)
 }
 
+// GenerateCommitMessage mocks base method.
+func (m *MockCoordinator) GenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GenerateCommitMessage", ctx, sessionID, diff)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GenerateCommitMessage indicates an expected call of GenerateCommitMessage.
+func (mr *MockCoordinatorMockRecorder) GenerateCommitMessage(ctx, sessionID, diff any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateCommitMessage", reflect.TypeOf((*MockCoordinator)(nil).GenerateCommitMessage), ctx, sessionID, diff)
+}
+
 // GenerateTitle mocks base method.
 func (m *MockCoordinator) GenerateTitle(ctx context.Context, sessionID, prompt string) {
 	m.ctrl.T.Helper()

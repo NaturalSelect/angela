@@ -138,6 +138,21 @@ func (mr *MockWorkspaceMockRecorder) AgentEditActive(ctx, sessionID, edit any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentEditActive", reflect.TypeOf((*MockWorkspace)(nil).AgentEditActive), ctx, sessionID, edit)
 }
 
+// AgentGenerateCommitMessage mocks base method.
+func (m *MockWorkspace) AgentGenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AgentGenerateCommitMessage", ctx, sessionID, diff)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AgentGenerateCommitMessage indicates an expected call of AgentGenerateCommitMessage.
+func (mr *MockWorkspaceMockRecorder) AgentGenerateCommitMessage(ctx, sessionID, diff any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentGenerateCommitMessage", reflect.TypeOf((*MockWorkspace)(nil).AgentGenerateCommitMessage), ctx, sessionID, diff)
+}
+
 // AgentIsBusy mocks base method.
 func (m *MockWorkspace) AgentIsBusy() bool {
 	m.ctrl.T.Helper()

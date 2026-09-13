@@ -370,6 +370,14 @@ func (w *ClientWorkspace) AgentAskSideQuestion(ctx context.Context, sessionID, q
 	return resp.Answer, nil
 }
 
+func (w *ClientWorkspace) AgentGenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error) {
+	resp, err := w.client.AgentGenerateCommitMessage(ctx, w.workspaceID(), sessionID, diff)
+	if err != nil {
+		return "", err
+	}
+	return resp.Message, nil
+}
+
 func (w *ClientWorkspace) UpdateAgentModel(ctx context.Context) error {
 	return w.client.UpdateAgent(ctx, w.workspaceID())
 }

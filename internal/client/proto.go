@@ -597,6 +597,26 @@ func (c *Client) AgentAskSideQuestion(ctx context.Context, id, sessionID, questi
 	return resp, nil
 }
 
+// AgentGenerateCommitMessage asks the workspace to write a commit
+// message describing diff, the output of `git diff --cached`.
+func (c *Client) AgentGenerateCommitMessage(ctx context.Context, id, sessionID, diff string) (proto.CommitMessageResponse, error) {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/commit-message", id, sessionID), nil, jsonBody(proto.CommitMessageRequest{
+		Diff: diff,
+	}), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return proto.CommitMessageResponse{}, fmt.Errorf("failed to generate commit message: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return proto.CommitMessageResponse{}, fmt.Errorf("failed to generate commit message: status code %d", rsp.StatusCode)
+	}
+	var resp proto.CommitMessageResponse
+	if err := json.NewDecoder(rsp.Body).Decode(&resp); err != nil {
+		return proto.CommitMessageResponse{}, fmt.Errorf("failed to decode commit message response: %w", err)
+	}
+	return resp, nil
+}
+
 // GetAgentSessionInfo retrieves the agent session info for a workspace.
 func (c *Client) GetAgentSessionInfo(ctx context.Context, id string, sessionID string) (*proto.AgentSession, error) {
 	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s", id, sessionID), nil, nil)

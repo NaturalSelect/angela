@@ -1183,6 +1183,42 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionSideQuestion(w http.Respon
 	jsonEncode(w, resp)
 }
 
+// handlePostWorkspaceAgentSessionCommitMessage writes a commit
+// message for a staged diff without joining the turn queue or
+// writing to the session's message history.
+//
+//	@Summary		Generate commit message
+//	@Tags			agent
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string						true	"Workspace ID"
+//	@Param			sid		path		string						true	"Session ID"
+//	@Param			request	body		proto.CommitMessageRequest	true	"Staged diff"
+//	@Success		200		{object}	proto.CommitMessageResponse
+//	@Failure		400		{object}	proto.Error
+//	@Failure		404		{object}	proto.Error
+//	@Failure		500		{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/commit-message [post]
+func (c *controllerV1) handlePostWorkspaceAgentSessionCommitMessage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+
+	var req proto.CommitMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+	req.SessionID = sid
+
+	resp, err := c.backend.GenerateCommitMessage(r.Context(), id, req)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, resp)
+}
+
 // handleGetWorkspaceAgentSessionPromptList returns the list of queued prompts.
 //
 //	@Summary		List queued prompts

@@ -7,9 +7,6 @@ import (
 	"log/slog"
 
 	"charm.land/fantasy"
-
-	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/session"
 )
 
 // ErrSubSessionNotResumable is returned when a child session cannot be tied
@@ -189,12 +186,14 @@ func (c *coordinator) resolveSubagent(ctx context.Context, agentID string, sessi
 }
 
 // dispatchDepth counts how many parent_session_id hops separate sessionID
-// from the root. A top-level session has depth 0; a direct child has 1.
+// from the root, including branch hops. A top-level session has depth 0; a
+// direct child (subagent or branch) has 1.
 //
-// A branch does not count as a hop. It continues the conversation it forked
-// from rather than nesting under it, so charging it delegation budget would
-// leave a branch of a top-level session unable to delegate as freely as the
-// session it stands in for.
+// A branch hop counts like any other. Forking a branch is gated separately,
+// by branchDispatchRefusal, not by budget; but once forked, the branch
+// shares its parent's budget rather than resetting it, so a chain that
+// mixes subagent and branch hops still cannot grow past
+// options.subagent_depth regardless of how those hops are ordered.
 func (c *coordinator) dispatchDepth(ctx context.Context, sessionID string) int {
 	depth := 0
 	for {
@@ -202,20 +201,9 @@ func (c *coordinator) dispatchDepth(ctx context.Context, sessionID string) int {
 		if err != nil || sess.ParentSessionID == "" {
 			return depth
 		}
-		if !c.isBranchSession(sess) {
-			depth++
-		}
+		depth++
 		sessionID = sess.ParentSessionID
 	}
-}
-
-// isBranchSession reports whether a session runs a branch-mode agent.
-func (c *coordinator) isBranchSession(sess session.Session) bool {
-	if sess.Agent == "" {
-		return false
-	}
-	agent, ok := c.cfg.Config().Agents[sess.Agent]
-	return ok && agent.Mode == config.AgentModeBranch
 }
 
 // routeFor looks up a child session's route, rebuilding it from the agent

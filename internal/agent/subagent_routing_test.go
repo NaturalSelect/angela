@@ -365,6 +365,9 @@ func TestTurnOnAChildSessionRunsAsTheSubAgent(t *testing.T) {
 func TestAskSideQuestionOnAChildSessionUsesTheSubAgentIdentity(t *testing.T) {
 	t.Parallel()
 	coord := newGateTestCoordinator(t, false)
+	// Pinned explicitly rather than relying on the default budget, so
+	// this test's premise holds regardless of what that default is.
+	coord.cfg.Config().Options.SubagentDepth = ptrTo(1)
 	childID := persistedChildSession(t, coord, config.AgentGeneral)
 
 	// Route the child session to a mock executor so the assertion is

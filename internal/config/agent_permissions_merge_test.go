@@ -110,4 +110,32 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 		require.Equal(t, []string{"write"}, coder.DisabledTools,
 			"a field the high layer never mentions must keep the low layer's value")
 	})
+
+	t.Run("a narrower allowed_agents replaces the broader one", func(t *testing.T) {
+		t.Parallel()
+		paths := writeLayers(t,
+			`{"agents": {"plan": {"allowed_agents": ["explore", "general"]}}}`,
+			`{"agents": {"plan": {"allowed_agents": ["explore"]}}}`,
+		)
+
+		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		require.NoError(t, err)
+
+		require.Equal(t, []string{"explore"}, cfg.AgentConfigs["plan"].AllowedAgents,
+			"the high-priority layer must replace, not union")
+	})
+
+	t.Run("an empty allowed_agents clears the lower layer", func(t *testing.T) {
+		t.Parallel()
+		paths := writeLayers(t,
+			`{"agents": {"plan": {"allowed_agents": ["explore", "general"]}}}`,
+			`{"agents": {"plan": {"allowed_agents": []}}}`,
+		)
+
+		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		require.NoError(t, err)
+
+		require.NotNil(t, cfg.AgentConfigs["plan"].AllowedAgents)
+		require.Empty(t, cfg.AgentConfigs["plan"].AllowedAgents, "an explicit empty list must grant nothing")
+	})
 }

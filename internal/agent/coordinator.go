@@ -911,16 +911,9 @@ func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int
 	var allTools []fantasy.AgentTool
 	isSubAgent := depth > 0
 	canDelegate := depth < c.cfg.Config().Options.SubagentMaxDepth()
-	// A sub-agent that has spent its regular delegation budget may still
-	// fork a branch once the caller has opted into deeper branch
-	// nesting: a branch does not spend that budget (dispatchDepth skips
-	// the branch hop), so it is the one dispatch left for a sub-agent
-	// stuck at the bottom of its budget to hand a decision to the user
-	// instead of guessing at it.
-	forkOnly := !canDelegate && isSubAgent && c.interactive && c.subagentBranchesEnabled()
 
-	if (canDelegate || forkOnly) && agent.AllowedTools.Allows(toolnames.Agent) {
-		agentTool, err := c.agentTool(depth, forkOnly)
+	if canDelegate && agent.AllowedTools.Allows(toolnames.Agent) {
+		agentTool, err := c.agentTool(depth, agent.AllowedAgents)
 		if err != nil {
 			return nil, err
 		}
@@ -1863,12 +1856,12 @@ func (c *coordinator) interruptBranchTree(sessionID string) {
 // first turn report "could not be started" through the same rendezvous and
 // win, leaving the parent with an outcome the user never chose.
 //
-// It also cascades. A branch can fork branches of its own — it does not
-// consume the delegation budget, so it may do this many times over — and
-// once this one is gone nothing else is left to resolve them. Its children
-// are read before it is touched, because cancelling it can race with its
-// own dispatch unwinding and forgetting them first; losing that race would
-// leave a nested branch waiting on a parent that no longer exists.
+// It also cascades. A branch can fork branches of its own, within the same
+// delegation budget as any other dispatch, and once this one is gone
+// nothing else is left to resolve them. Its children are read before it is
+// touched, because cancelling it can race with its own dispatch unwinding
+// and forgetting them first; losing that race would leave a nested branch
+// waiting on a parent that no longer exists.
 func (c *coordinator) AbandonBranch(sessionID string) bool {
 	children := c.branches.branchesOf(sessionID)
 	if !c.branches.Signal(sessionID, branchOutcome{Payload: branchAbandonedMessage}) {
@@ -2401,10 +2394,11 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 	return err
 }
 
-// subagentBranchesEnabled reports whether a sub-agent may fork a branch of
-// its own, rather than only the top-level session. It is off by default: a
-// branch forked from a background sub-agent is easy for the user to miss,
-// since nothing about the primary conversation changes when it happens.
+// subagentBranchesEnabled reports whether a session other than the
+// top-level one — a sub-agent or an existing branch — may fork a branch
+// of its own. It is off by default: a branch forked from a background
+// sub-agent is easy for the user to miss, since nothing about the
+// primary conversation changes when it happens.
 //
 // The runtime override (--subagent-branches) is OR'd with the config option
 // rather than replacing it, matching every other override in
@@ -2426,17 +2420,21 @@ func (c *coordinator) subagentBranchesEnabled() bool {
 //
 // Only a top-level conversation can fork by default, because the user has
 // to be able to take a branch over and a sub-agent's turn usually runs in
-// the background where a forked branch would go unnoticed. subagentBranchesEnabled
-// lifts that for callers who have decided their sub-agents are supervised
-// closely enough for this to be safe.
+// the background where a forked branch would go unnoticed.
+// subagentBranchesEnabled lifts that for callers who have decided their
+// sub-agents are supervised closely enough for this to be safe. Because
+// dispatchDepth counts a branch hop like any other, this same check also
+// gates a branch forking a second branch of its own: it sits at depth 1 or
+// deeper, exactly like a sub-agent would, so the same option and the same
+// options.subagent_depth budget bound how far a chain of branches can nest.
 func (c *coordinator) branchDispatchRefusal(ctx context.Context, sessionID string) string {
 	if !c.interactive {
 		return "A branch hands the conversation to the user, so it needs an interactive session. " +
 			"Dispatch a regular subagent instead."
 	}
 	if c.dispatchDepth(ctx, sessionID) != 0 && !c.subagentBranchesEnabled() {
-		return "Only a top-level conversation can fork a branch, because the user has to be able to take it over. " +
-			"Dispatch a regular subagent instead, or enable options.subagent_branches to allow this."
+		return "Only a top-level conversation can fork a branch by default, because the user has to be able to take it over. " +
+			"Dispatch a regular subagent instead, or enable options.subagent_branches to let a sub-agent or branch fork one."
 	}
 	return ""
 }

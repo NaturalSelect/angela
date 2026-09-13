@@ -43,6 +43,16 @@ definitions:
     type: object
   config.Agent:
     properties:
+      allowed_agents:
+        description: |-
+          AllowedAgents restricts which agent IDs this agent may dispatch
+          through the agent tool. nil means every dispatchable agent is
+          available, matching the behavior before this field existed; an
+          empty (non-nil) list means none are, which is equivalent to
+          dropping the agent tool entirely.
+        items:
+          type: string
+        type: array
       allowed_mcp:
         allOf:
         - $ref: '#/definitions/config.AllowedMCPSet'

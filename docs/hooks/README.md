@@ -213,7 +213,7 @@ the payload (or `ANGELA_AGENT_ID` / `ANGELA_AGENT_DEPTH`) to tell them apart —
 ```
 
 Prefer `-gt 0` over `= 1` if you mean "any delegated call" — `subagent_depth`
-can be raised past its default of 1, so a delegated call is not always at
+can be raised past its default of 2, so a delegated call is not always at
 depth exactly 1.
 
 Hooks are keyed by event name. Only `command` is required, and you can omit

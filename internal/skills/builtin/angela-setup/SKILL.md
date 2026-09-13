@@ -273,12 +273,12 @@ resumed session keeps.
 }
 ```
 
-- Adjust subagent nesting depth (default is 1):
+- Adjust subagent nesting depth (default is 2):
 
 ```json
 {
   "options": {
-    "subagent_depth": 2
+    "subagent_depth": 3
   }
 }
 ```

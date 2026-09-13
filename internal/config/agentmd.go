@@ -31,6 +31,7 @@ type AgentFrontmatter struct {
 	AllowedTools  *AllowedToolSet `yaml:"allowed_tools,omitempty"`
 	DisabledTools []string        `yaml:"disabled_tools,omitempty"`
 	AllowedMCP    *AllowedMCPSet  `yaml:"allowed_mcp,omitempty"`
+	AllowedAgents []string        `yaml:"allowed_agents,omitempty"`
 	Disabled      *bool           `yaml:"disabled,omitempty"`
 	Hidden        *bool           `yaml:"hidden,omitempty"`
 	MaxTokens     *int64          `yaml:"max_tokens,omitempty"`
@@ -254,6 +255,7 @@ func ParseAgentContent(content string) (Agent, error) {
 		agent.AllowedTools = fm.AllowedTools
 		agent.DisabledTools = fm.DisabledTools
 		agent.AllowedMCP = fm.AllowedMCP
+		agent.AllowedAgents = fm.AllowedAgents
 		agent.Disabled = fm.Disabled
 		agent.Hidden = fm.Hidden
 		agent.MaxTokens = fm.MaxTokens

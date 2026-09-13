@@ -78,6 +78,13 @@
           },
           "type": "array",
           "description": "Context file paths for this agent"
+        },
+        "allowed_agents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Agent IDs this agent may dispatch through the agent tool. Unset means every dispatchable agent is available."
         }
       },
       "additionalProperties": false,
@@ -683,15 +690,15 @@
         "subagent_depth": {
           "type": "integer",
           "minimum": 0,
-          "description": "Maximum levels of subagent nesting allowed through the agent tool. 1 (the default) lets a primary agent dispatch a subagent that cannot itself dispatch further subagents, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.",
-          "default": 1,
+          "description": "Maximum levels of subagent nesting allowed through the agent tool, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.",
+          "default": 2,
           "examples": [
-            2
+            3
           ]
         },
         "subagent_branches": {
           "type": "boolean",
-          "description": "Let sub-agents dispatch branch agents, not just the top-level session. Off by default: a branch hands the conversation to the user directly, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.",
+          "description": "Let a session other than the top-level one — a sub-agent or an existing branch — fork a branch agent of its own, within the same subagent_depth budget. Off by default: a branch hands the conversation to the user directly, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.",
           "default": false
         }
       },

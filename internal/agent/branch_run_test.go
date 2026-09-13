@@ -946,6 +946,47 @@ func TestBranchDispatchRefusals(t *testing.T) {
 
 		require.Empty(t, c.branchDispatchRefusal(t.Context(), parent.ID))
 	})
+
+	t.Run("a branch cannot fork another branch without the option", func(t *testing.T) {
+		t.Parallel()
+
+		env := testEnv(t)
+		c := branchCoordinator(t, env)
+		c.cfg.Config().Agents = map[string]config.Agent{
+			"pairing": {ID: "pairing", Mode: config.AgentModeBranch},
+		}
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		branch, err := env.sessions.CreateTaskSession(t.Context(), "branch-1", parent.ID, "Branch")
+		require.NoError(t, err)
+		require.NoError(t, env.sessions.UpdateActiveAgent(t.Context(), branch.ID, config.ActiveAgentState{Agent: "pairing"}))
+
+		// dispatchDepth counts the branch hop like any other, so a branch
+		// sits at depth 1 and faces the same refusal a sub-agent would.
+		refusal := c.branchDispatchRefusal(t.Context(), branch.ID)
+		require.Contains(t, refusal, "top-level")
+		require.Contains(t, strings.ToLower(refusal), "subagent instead")
+	})
+
+	t.Run("a branch may fork another branch once options.subagent_branches is on", func(t *testing.T) {
+		t.Parallel()
+
+		env := testEnv(t)
+		c := branchCoordinator(t, env)
+		c.cfg.Config().Options.SubagentBranches = true
+		c.cfg.Config().Agents = map[string]config.Agent{
+			"pairing": {ID: "pairing", Mode: config.AgentModeBranch},
+		}
+
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		branch, err := env.sessions.CreateTaskSession(t.Context(), "branch-1", parent.ID, "Branch")
+		require.NoError(t, err)
+		require.NoError(t, env.sessions.UpdateActiveAgent(t.Context(), branch.ID, config.ActiveAgentState{Agent: "pairing"}))
+
+		require.Empty(t, c.branchDispatchRefusal(t.Context(), branch.ID))
+	})
 }
 
 // A branch forked by a sub-agent must still be able to prompt the user.
@@ -985,9 +1026,10 @@ func TestBranchForkedBySubagentStaysAttended(t *testing.T) {
 	wg.Wait()
 }
 
-// A branch stands in for the conversation it forked, so it must keep that
-// conversation's delegation budget rather than spending a level on the hop.
-func TestDispatchDepthSkipsTheBranchHop(t *testing.T) {
+// A branch hop now counts toward the delegation budget like any other hop,
+// so a chain that mixes subagent and branch dispatches is bounded the same
+// way a chain of only subagents would be.
+func TestDispatchDepthCountsTheBranchHop(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
 	c.cfg.Config().Agents = map[string]config.Agent{
@@ -1007,8 +1049,8 @@ func TestDispatchDepthSkipsTheBranchHop(t *testing.T) {
 	require.NoError(t, env.sessions.UpdateActiveAgent(t.Context(), sub.ID, config.ActiveAgentState{Agent: "general"}))
 
 	require.Equal(t, 0, c.dispatchDepth(t.Context(), parent.ID))
-	require.Equal(t, 0, c.dispatchDepth(t.Context(), branch.ID),
-		"a branch continues its parent rather than nesting under it")
-	require.Equal(t, 1, c.dispatchDepth(t.Context(), sub.ID),
-		"a real delegation under a branch still costs a level")
+	require.Equal(t, 1, c.dispatchDepth(t.Context(), branch.ID),
+		"a branch hop costs a level like any other dispatch")
+	require.Equal(t, 2, c.dispatchDepth(t.Context(), sub.ID),
+		"a delegation under a branch stacks on top of the branch's own depth")
 }

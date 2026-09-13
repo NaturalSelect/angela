@@ -4117,6 +4117,13 @@ const docTemplate = `{
         "config.Agent": {
             "type": "object",
             "properties": {
+                "allowed_agents": {
+                    "description": "AllowedAgents restricts which agent IDs this agent may dispatch\nthrough the agent tool. nil means every dispatchable agent is\navailable, matching the behavior before this field existed; an\nempty (non-nil) list means none are, which is equivalent to\ndropping the agent tool entirely.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "allowed_mcp": {
                     "description": "AllowedMCP controls which MCP servers and tools are available,\nwith the same tri-state semantics as AllowedTools. nil means\nthis layer did not mention allowed_mcp.",
                     "allOf": [

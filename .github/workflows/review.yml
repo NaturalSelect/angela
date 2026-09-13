@@ -417,6 +417,7 @@ jobs:
           REVIEW_MODEL: ${{ secrets.ANGELA_REVIEW_MODEL }}
         run: |
           "${RUNNER_TEMP}/bin/angela" run \
+            --yolo \
             --quiet \
             --verbose \
             --cwd "${GITHUB_WORKSPACE}/pr" \

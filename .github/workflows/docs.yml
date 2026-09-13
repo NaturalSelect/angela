@@ -398,6 +398,7 @@ jobs:
           DOCS_MODEL: ${{ secrets.ANGELA_DOCS_MODEL }}
         run: |
           "${RUNNER_TEMP}/bin/angela" run \
+            --yolo \
             --quiet \
             --verbose \
             --cwd "${GITHUB_WORKSPACE}/pr" \

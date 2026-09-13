@@ -788,7 +788,22 @@ func (s *permissionService) GrantPersistent(permission PermissionRequest) bool {
 			return
 		}
 		s.sessionPermissions.Set(ticket.grant, true)
+		s.releasePendingSiblings(permission.ID, ticket.grant)
 	})
+}
+
+// releasePendingSiblings grants every other still-pending request that
+// shares grant's key. Without this, a sibling sub-agent whose identical
+// access was already parked in prompt() before this session-wide grant
+// landed would stay blocked forever, even though the exact same access
+// would now auto-allow on a fresh Gate call.
+func (s *permissionService) releasePendingSiblings(exclude string, grant GrantKey) {
+	for id, ticket := range s.pendingGrants.Seq2() {
+		if id == exclude || ticket.forced || ticket.grant != grant {
+			continue
+		}
+		s.resolve(PermissionRequest{ID: id, ToolCallID: ticket.toolCallID}, true, false, nil)
+	}
 }
 
 func (s *permissionService) Grant(permission PermissionRequest) bool {

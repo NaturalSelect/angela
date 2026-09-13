@@ -56,3 +56,36 @@ func TestBranchForkedStaysQuietWhenOnScreen(t *testing.T) {
 
 	require.Nil(t, cmd, "a fork already visible on screen needs no extra notification")
 }
+
+// TestBranchForkedNotifiesWhenSessionIDDoesNotParse pins that a branch
+// session ID which fails to parse is treated the same as one that
+// simply isn't on screen: branchForkVisible has nothing to look up,
+// so it must fail closed to "not visible" rather than silently
+// swallowing the notification.
+func TestBranchForkedNotifiesWhenSessionIDDoesNotParse(t *testing.T) {
+	pinTTLs(t)
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, false)
+	ws.EXPECT().ParseAgentToolSessionID("not-a-real-session-id").Return("", "", false)
+
+	cmd := m.handleBranchForked(notify.Notification{
+		Type:         notify.TypeBranchForked,
+		SessionID:    "not-a-real-session-id",
+		SessionTitle: "fix the flaky test",
+	})
+
+	require.NotNil(t, cmd, "an unparseable session id must not be treated as already visible")
+	info, ok := cmd().(util.InfoMsg)
+	require.True(t, ok, "expected a util.InfoMsg toast, got %T", cmd())
+	require.Contains(t, info.Msg, "fix the flaky test")
+}
+
+// TestBranchForkVisibleFalseWhenDependenciesMissing pins the guard
+// clause ahead of the session-ID lookup: a UI missing its chat model
+// or workspace (as happens before either finishes wiring up) must
+// report "not visible" instead of dereferencing them.
+func TestBranchForkVisibleFalseWhenDependenciesMissing(t *testing.T) {
+	var m UI
+	require.False(t, m.branchForkVisible("anything"),
+		"a zero-value UI has no chat or workspace to check against")
+}

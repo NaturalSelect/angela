@@ -216,3 +216,22 @@ func TestOutOfBudgetSubagentGetsNoToolWithoutTheOption(t *testing.T) {
 	}
 	require.NotContains(t, names, toolnames.Agent)
 }
+
+// TestBuildToolsPropagatesAgentToolRenderError pins that a failure
+// building the agent tool's description fails buildTools outright
+// instead of being swallowed: an agent whose delegation tool
+// silently vanished would look identical to one that was never
+// configured to delegate at all. agentToolDescriptionTmpl is a
+// package-level var (populated via go:embed) specifically so this
+// otherwise-unreachable error path can be forced in a test.
+func TestBuildToolsPropagatesAgentToolRenderError(t *testing.T) {
+	coord := newGateTestCoordinator(t, false)
+
+	original := agentToolDescriptionTmpl
+	agentToolDescriptionTmpl = "{{if .Bogus"
+	t.Cleanup(func() { agentToolDescriptionTmpl = original })
+
+	agents := coord.cfg.Config().Agents
+	_, err := coord.buildTools(agents[config.AgentCoder], "", 0)
+	require.Error(t, err)
+}

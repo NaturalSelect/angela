@@ -346,3 +346,25 @@ func TestReportHeaderLeavesFailuresAlone(t *testing.T) {
 	empty := withReportHeader(fantasy.NewTextResponse(""), "rpt_1a2b3c4d", "explore", "find it")
 	require.Empty(t, empty.Content)
 }
+
+// TestAgentToolDescriptionHasSubagent pins HasSubagent, the
+// counterpart check to HasBranch: it must report false when every
+// configured agent is a branch, since the template then has nothing
+// to list under the "Available agent types:" section.
+func TestAgentToolDescriptionHasSubagent(t *testing.T) {
+	t.Parallel()
+
+	allBranch := agentToolDescription{Agents: []agentToolDescriptionAgent{
+		{ID: "plan", Branch: true},
+		{ID: "deep-research", Branch: true},
+	}}
+	require.False(t, allBranch.HasSubagent(), "an all-branch registry has no plain dispatch target")
+
+	mixed := agentToolDescription{Agents: []agentToolDescriptionAgent{
+		{ID: "plan", Branch: true},
+		{ID: "explore", Branch: false},
+	}}
+	require.True(t, mixed.HasSubagent())
+
+	require.False(t, agentToolDescription{}.HasSubagent(), "an empty registry has no plain dispatch target")
+}

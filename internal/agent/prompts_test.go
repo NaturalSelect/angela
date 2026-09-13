@@ -248,3 +248,31 @@ func TestAgentPrompt_BranchPreamble(t *testing.T) {
 		require.Contains(t, out, customMarker)
 	})
 }
+
+// TestCommitPrompt_Builds pins that the commit agent's built-in
+// template resolves and renders like any other internal-agent prompt,
+// the same way compactPrompt and webFetchPrompt are exercised only
+// through their own constructors elsewhere.
+func TestCommitPrompt_Builds(t *testing.T) {
+	dir := t.TempDir()
+	globalDir := t.TempDir()
+	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
+	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
+		[]byte(`{
+			"options": {"disable_default_providers": true},
+			"providers": {"test": {"base_url": "http://127.0.0.1:0/v1", "api_key": "test",
+				"models": [{"id": "test-model", "name": "Test"}]}}
+		}`), 0o644))
+
+	store, err := config.Init(dir, "", false)
+	require.NoError(t, err)
+
+	p, err := commitPrompt()
+	require.NoError(t, err)
+
+	out, err := p.Build(context.Background(), "", "", store)
+	require.NoError(t, err)
+	require.NotEmpty(t, out)
+}

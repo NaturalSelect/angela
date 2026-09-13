@@ -42,6 +42,9 @@ func TestAppWorkspace_Agent_NilCoordinator(t *testing.T) {
 	_, err := fx.ws.AgentAskSideQuestion(t.Context(), "sess-1", "hi")
 	require.Error(t, err)
 
+	_, err = fx.ws.AgentGenerateCommitMessage(t.Context(), "sess-1", "diff --git a/x b/x")
+	require.Error(t, err)
+
 	_, err = fx.ws.AgentActive(t.Context(), "sess-1")
 	require.Error(t, err)
 
@@ -179,6 +182,30 @@ func TestAppWorkspace_AgentAskSideQuestion(t *testing.T) {
 		fx.coord.EXPECT().AskSideQuestion(gomock.Any(), "sess-1", "what now?").Return("", boom)
 
 		_, err := fx.ws.AgentAskSideQuestion(t.Context(), "sess-1", "what now?")
+		require.ErrorIs(t, err, boom)
+	})
+}
+
+func TestAppWorkspace_AgentGenerateCommitMessage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		fx.coord.EXPECT().GenerateCommitMessage(gomock.Any(), "sess-1", "diff --git a/x b/x").Return("fix: correct the bug", nil)
+
+		got, err := fx.ws.AgentGenerateCommitMessage(t.Context(), "sess-1", "diff --git a/x b/x")
+		require.NoError(t, err)
+		require.Equal(t, "fix: correct the bug", got)
+	})
+
+	t.Run("propagates coordinator error", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		boom := errors.New("commit message failed")
+		fx.coord.EXPECT().GenerateCommitMessage(gomock.Any(), "sess-1", "diff --git a/x b/x").Return("", boom)
+
+		_, err := fx.ws.AgentGenerateCommitMessage(t.Context(), "sess-1", "diff --git a/x b/x")
 		require.ErrorIs(t, err, boom)
 	})
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // TestWorkspaceScopedHandlers_SuccessPaths drives the handlers whose
@@ -132,4 +134,75 @@ func TestWorkspaceScopedHandlers_SuccessPaths(t *testing.T) {
 		c.handlePostWorkspaceSandboxEnter(rec, req)
 		require.Equal(t, http.StatusNotImplemented, rec.Code)
 	})
+}
+
+// TestPostWorkspaceAgentSessionCommitMessage_Success drives the
+// commit-message handler's success path: neither wsHandlerCases (the
+// shared not-found/malformed-body table) nor
+// TestWorkspaceScopedHandlers_SuccessPaths registers this route, since
+// both are keyed off a workspace-lookup or config failure that this
+// handler's remaining behavior — decoding the request, delegating to
+// the coordinator, and encoding its answer — doesn't exercise. This
+// mirrors the closest POST-with-body agent route (active-agent) by
+// wiring a mock coordinator directly, the same way
+// TestActiveAgentErrorsCarryTheRightStatus does for its error paths.
+func TestPostWorkspaceAgentSessionCommitMessage_Success(t *testing.T) {
+	t.Parallel()
+
+	coord := NewMockCoordinator(gomock.NewController(t))
+	coord.EXPECT().GenerateCommitMessage(gomock.Any(), "sess1", "diff --git a/x b/x").Return("fix: correct the bug", nil)
+
+	c, wsID := buildAgentWorkspace(t, coord)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/",
+		strings.NewReader(`{"diff":"diff --git a/x b/x"}`))
+	req.SetPathValue("id", wsID)
+	req.SetPathValue("sid", "sess1")
+	rec := httptest.NewRecorder()
+	c.handlePostWorkspaceAgentSessionCommitMessage(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp proto.CommitMessageResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "fix: correct the bug", resp.Message)
+}
+
+// TestPostWorkspaceAgentSessionCommitMessage_DecodeError pins that a
+// malformed request body is rejected before the coordinator is ever
+// consulted — the mock has no expectation set, so an unwanted call
+// to GenerateCommitMessage would fail the test on its own.
+func TestPostWorkspaceAgentSessionCommitMessage_DecodeError(t *testing.T) {
+	t.Parallel()
+
+	coord := NewMockCoordinator(gomock.NewController(t))
+	c, wsID := buildAgentWorkspace(t, coord)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", strings.NewReader("not json"))
+	req.SetPathValue("id", wsID)
+	req.SetPathValue("sid", "sess1")
+	rec := httptest.NewRecorder()
+	c.handlePostWorkspaceAgentSessionCommitMessage(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// TestPostWorkspaceAgentSessionCommitMessage_BackendError pins that a
+// coordinator failure is translated through the shared handleError
+// path, distinctly from the decode-error and success paths above.
+func TestPostWorkspaceAgentSessionCommitMessage_BackendError(t *testing.T) {
+	t.Parallel()
+
+	coord := NewMockCoordinator(gomock.NewController(t))
+	coord.EXPECT().GenerateCommitMessage(gomock.Any(), "sess1", "diff --git a/x b/x").Return("", errors.New("boom"))
+
+	c, wsID := buildAgentWorkspace(t, coord)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/",
+		strings.NewReader(`{"diff":"diff --git a/x b/x"}`))
+	req.SetPathValue("id", wsID)
+	req.SetPathValue("sid", "sess1")
+	rec := httptest.NewRecorder()
+	c.handlePostWorkspaceAgentSessionCommitMessage(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
 }

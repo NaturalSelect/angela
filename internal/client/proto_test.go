@@ -321,6 +321,43 @@ func TestListWorkspacesMalformedBody(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to decode workspaces")
 }
 
+// TestAgentGenerateCommitMessageTransportError pins the branch a
+// non-OK status can never reach: a request that fails before any
+// response comes back (here, an already-canceled context) must
+// surface as-is instead of being read as a decode or status error.
+func TestAgentGenerateCommitMessageTransportError(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := captureClient(t, srv).AgentGenerateCommitMessage(ctx, "ws1", "sess1", "diff")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to generate commit message")
+}
+
+// TestAgentGenerateCommitMessageMalformedBody mirrors
+// TestListWorkspacesMalformedBody for the commit-message response: a
+// 200 status with a body that isn't valid JSON must fail at decode,
+// distinctly from a non-OK status.
+func TestAgentGenerateCommitMessageMalformedBody(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	_, err := captureClient(t, srv).AgentGenerateCommitMessage(context.Background(), "ws1", "sess1", "diff")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to decode commit message response")
+}
+
 func TestGetSessionSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -794,6 +831,17 @@ func TestProtoMethodsSuccessPaths(t *testing.T) {
 			},
 		},
 		{
+			name:       "AgentGenerateCommitMessage",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/agent/sessions/sess1/commit-message",
+			body:       mustJSON(t, proto.CommitMessageResponse{Message: "fix: correct the bug"}),
+			call: func(t *testing.T, c *Client) {
+				got, err := c.AgentGenerateCommitMessage(context.Background(), "ws1", "sess1", "diff --git a/x b/x")
+				require.NoError(t, err)
+				require.Equal(t, "fix: correct the bug", got.Message)
+			},
+		},
+		{
 			name:       "InitiateAgentProcessing",
 			wantMethod: http.MethodPost,
 			wantPath:   "/v1/workspaces/ws1/agent/init",
@@ -1094,6 +1142,13 @@ func TestProtoMethodsErrorPaths(t *testing.T) {
 		{
 			name: "UpdateAgent server error", status: http.StatusInternalServerError,
 			call: func(c *Client) error { return c.UpdateAgent(context.Background(), "ws1") },
+		},
+		{
+			name: "AgentGenerateCommitMessage server error", status: http.StatusInternalServerError,
+			call: func(c *Client) error {
+				_, err := c.AgentGenerateCommitMessage(context.Background(), "ws1", "sess1", "diff")
+				return err
+			},
 		},
 		{
 			name: "Undo not found", status: http.StatusNotFound, message: "session gone",

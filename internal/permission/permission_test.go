@@ -1437,6 +1437,45 @@ func TestGrantsAreSharedAcrossTheTree(t *testing.T) {
 	})
 }
 
+// TestPermissionService_GrantPersistentReleasesPendingSiblings pins
+// the concurrent sub-agent bug this rework fixes: GrantPersistent
+// must not only record the session-wide grant for future callers, it
+// must also release every other request already parked in prompt()
+// that shares the same GrantKey. Two sibling sub-agents dispatched
+// from the same root each ask for the identical access; approving
+// only the first must not leave the second blocked forever, since a
+// fresh Gate call for the same access would now auto-allow anyway.
+func TestPermissionService_GrantPersistentReleasesPendingSiblings(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	service := NewPermissionService(dir, ModeManual, nil)
+	service.RegisterChild("agent-a", "root")
+	service.RegisterChild("agent-b", "root")
+
+	path := filepath.Join(dir, "shared.go")
+	events := service.Subscribe(t.Context())
+	waitA := gateAsync(t.Context(), service, "agent-a", "call-a", editAccess(path))
+	waitB := gateAsync(t.Context(), service, "agent-b", "call-b", editAccess(path))
+
+	pending := map[string]PermissionRequest{}
+	for range 2 {
+		select {
+		case ev := <-events:
+			pending[ev.Payload.ToolCallID] = ev.Payload
+		case <-time.After(2 * time.Second):
+			t.Fatal("both sibling sub-agents should reach the prompt")
+		}
+	}
+	require.Len(t, pending, 2, "each sibling must get its own prompt")
+
+	service.GrantPersistent(pending["call-a"])
+
+	assert.True(t, waitA().Allowed(), "the request granted directly must be allowed")
+	assert.True(t, waitB().Allowed(),
+		"a sibling sharing the same GrantKey must be released too, not left blocked forever")
+}
+
 // TestChildNeverWiderThanRoot is the hard constraint this rework
 // exists to guarantee: a session registered as a child of a root that
 // cannot answer a prompt must reach exactly the same outcome as the

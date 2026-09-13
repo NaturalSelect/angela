@@ -254,6 +254,44 @@ func TestClientWorkspace_AgentAskSideQuestion(t *testing.T) {
 	}
 }
 
+func TestClientWorkspace_AgentGenerateCommitMessage(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "success"},
+		{name: "server error", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/v1/workspaces/ws-1/agent/sessions/s1/commit-message", r.URL.Path)
+				if tc.wantErr {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				var req proto.CommitMessageRequest
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+				require.Equal(t, "diff --git a/x b/x", req.Diff)
+				require.NoError(t, json.NewEncoder(w).Encode(proto.CommitMessageResponse{Message: "fix: correct the bug"}))
+			})
+
+			got, err := ws.AgentGenerateCommitMessage(t.Context(), "s1", "diff --git a/x b/x")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "fix: correct the bug", got)
+		})
+	}
+}
+
 func TestClientWorkspace_AgentActive_ServerError(t *testing.T) {
 	t.Parallel()
 

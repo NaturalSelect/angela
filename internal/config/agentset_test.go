@@ -95,3 +95,61 @@ func TestAllowedAgentSet_Clone(t *testing.T) {
 	cloned.Agents[0] = "general"
 	require.Equal(t, "explore", original.Agents[0], "the clone must not share the backing array")
 }
+
+// TestAllowedAgentSet_MarshalJSON_NilReceiver pins the one branch
+// encoding/json can never reach through a struct field: the
+// marshalerEncoder special-cases a nil pointer implementing
+// json.Marshaler and writes "null" directly without calling
+// MarshalJSON, so the nil check inside the method is only exercised
+// by calling it directly.
+func TestAllowedAgentSet_MarshalJSON_NilReceiver(t *testing.T) {
+	var s *AllowedAgentSet
+	b, err := s.MarshalJSON()
+	require.NoError(t, err)
+	require.Equal(t, "null", string(b))
+}
+
+// TestAllowedAgentSet_MarshalYAML exercises all three MarshalYAML
+// branches directly: none of them are reached by
+// TestAllowedAgentSet_YAMLRoundTrip, which only calls
+// yaml.Unmarshal.
+func TestAllowedAgentSet_MarshalYAML(t *testing.T) {
+	var nilSet *AllowedAgentSet
+	out, err := nilSet.MarshalYAML()
+	require.NoError(t, err)
+	require.Nil(t, out)
+
+	all := &AllowedAgentSet{Kind: ToolSetAll}
+	out, err = all.MarshalYAML()
+	require.NoError(t, err)
+	require.Equal(t, "all", out)
+
+	scoped := &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{"explore"}}
+	out, err = scoped.MarshalYAML()
+	require.NoError(t, err)
+	require.Equal(t, []string{"explore"}, out)
+}
+
+func TestAllowedAgentSet_UnmarshalYAML_RejectsInvalidShape(t *testing.T) {
+	type wrapper struct {
+		AllowedAgents *AllowedAgentSet `yaml:"allowed_agents"`
+	}
+	var w wrapper
+	err := yaml.Unmarshal([]byte("allowed_agents: 42\n"), &w)
+	require.Error(t, err)
+
+	// "42" decodes cleanly as a string literal (just not one of the
+	// accepted keywords), so it never reaches the array-decode
+	// branch below. Only a shape that fails both decodes, like a
+	// mapping, does.
+	var w2 wrapper
+	err = yaml.Unmarshal([]byte("allowed_agents:\n  foo: bar\n"), &w2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expected an array of agent IDs")
+}
+
+func TestAllowedAgentSet_JSONSchema(t *testing.T) {
+	schema := AllowedAgentSet{}.JSONSchema()
+	require.NotNil(t, schema)
+	require.Len(t, schema.OneOf, 2, "the scoped array shape plus the \"all\" literal")
+}

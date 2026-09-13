@@ -6,16 +6,10 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/NaturalSelect/angela/internal/ui/util"
 )
-
-// commitMessageDelimiter is the heredoc terminator used to pass a
-// generated commit message to git without any shell interpretation
-// of its content: a single-quoted heredoc disables variable,
-// command-substitution, and glob expansion inside it, so quotes,
-// backticks, and "$" in the message are all passed through literally.
-const commitMessageDelimiter = "ANGELA_COMMIT_EOF"
 
 // commitStagedChanges generates a commit message from the workspace's
 // currently staged changes and commits them with a sign-off, with no
@@ -48,7 +42,12 @@ func (m *UI) commitStagedChanges(sessionID string) tea.Cmd {
 				return util.ReportError(fmt.Errorf("failed to generate commit message: %w", err))()
 			}
 
-			commitResp, err := m.com.Workspace.AgentRunShellCommand(ctx, "", signedCommitCommand(message), 0, nil, false)
+			command, err := signedCommitCommand(message)
+			if err != nil {
+				return util.ReportError(fmt.Errorf("failed to build commit command: %w", err))()
+			}
+
+			commitResp, err := m.com.Workspace.AgentRunShellCommand(ctx, "", command, 0, nil, false)
 			if err != nil {
 				return util.ReportError(fmt.Errorf("failed to run git commit: %w", err))()
 			}
@@ -61,11 +60,20 @@ func (m *UI) commitStagedChanges(sessionID string) tea.Cmd {
 	)
 }
 
-// signedCommitCommand builds a `git commit -s` invocation that passes
-// message through a quoted heredoc so it reaches git exactly as
-// generated, regardless of quotes, backticks, or "$" it contains —
-// the same heredoc pattern the coder agent itself is instructed to
-// use for a commit message with a body (see bash.md.tpl).
-func signedCommitCommand(message string) string {
-	return fmt.Sprintf("git commit -s -m \"$(cat <<'%s'\n%s\n%s\n)\"", commitMessageDelimiter, message, commitMessageDelimiter)
+// signedCommitCommand builds a `git commit -s` invocation with message
+// quoted as a single shell word via syntax.Quote, so it reaches git
+// exactly as generated no matter what it contains: quotes, backticks,
+// "$", newlines, and any other shell metacharacter are inert inside
+// the quoting Quote picks. LangBash matches the variant mvdan's
+// interpreter defaults to when it later parses this command (see
+// internal/shell), so the quoted form round-trips exactly. Quoting
+// the whole message as one word, rather than delimiting it between
+// two copies of a fixed token, leaves no token for the message to
+// collide with.
+func signedCommitCommand(message string) (string, error) {
+	quoted, err := syntax.Quote(message, syntax.LangBash)
+	if err != nil {
+		return "", fmt.Errorf("cannot quote commit message for shell: %w", err)
+	}
+	return "git commit -s -m " + quoted, nil
 }

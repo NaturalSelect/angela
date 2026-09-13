@@ -166,6 +166,11 @@ func TestParseAgentFile_Validation(t *testing.T) {
 			wantErr: "",
 		},
 		{
+			name:    "compact is a valid mode",
+			content: "---\nname: Reviewer Compact\ndescription: x\nmode: compact\n---\nbody",
+			wantErr: "",
+		},
+		{
 			name:    "temperature out of range",
 			content: "---\ntemperature: 1.5\n---\nbody",
 			wantErr: "invalid temperature",
@@ -369,6 +374,18 @@ func TestParseAgentContent_ReadsAllowedMCP(t *testing.T) {
 	require.Equal(t, &AllowedMCPSet{Kind: ToolSetInherited}, inherited.AllowedMCP)
 }
 
+// TestParseAgentContent_ReadsCompactAgent pins that compact_agent
+// reaches the Agent struct through the same frontmatter path as every
+// other field, so a markdown-defined agent can name its own
+// summarizer without going through JSON config.
+func TestParseAgentContent_ReadsCompactAgent(t *testing.T) {
+	t.Parallel()
+
+	agent, err := ParseAgentContent("---\ndescription: x\ncompact_agent: my-compact\n---\nbody")
+	require.NoError(t, err)
+	require.Equal(t, "my-compact", agent.CompactAgent)
+}
+
 func TestValidateAgent_RejectsInvalidValues(t *testing.T) {
 	t.Parallel()
 
@@ -378,6 +395,7 @@ func TestValidateAgent_RejectsInvalidValues(t *testing.T) {
 	ok := 0.5
 
 	require.NoError(t, ValidateAgent("reviewer", Agent{Temperature: &ok, Mode: AgentModeSubagent}))
+	require.NoError(t, ValidateAgent("reviewer-compact", Agent{Mode: AgentModeCompact}))
 	require.Error(t, ValidateAgent("Reviewer!", Agent{}), "an invalid id must be rejected")
 	require.Error(t, ValidateAgent("reviewer", Agent{Temperature: &nan}))
 	require.Error(t, ValidateAgent("reviewer", Agent{Temperature: &inf}))

@@ -680,6 +680,71 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/agent/sessions/{sid}/commit-message": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent"
+                ],
+                "summary": "Generate commit message",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Staged diff",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.CommitMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/proto.CommitMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/agent/sessions/{sid}/prompts/clear": {
             "post": {
                 "tags": [
@@ -4140,6 +4205,10 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "compact_agent": {
+                    "description": "CompactAgent names the compact-mode agent that summarizes\nsessions this agent drives. Empty, an unknown ID, or an ID that\ndoes not resolve to a compact-mode agent all fall back to the\nbuilt-in \"compact\" agent.",
+                    "type": "string"
+                },
                 "context_paths": {
                     "description": "ContextPaths overrides the context paths for this agent.",
                     "type": "array",
@@ -4173,7 +4242,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "mode": {
-                    "description": "Mode controls how the agent can be used. Primary agents are\ntop-level; subagents are launched via the agent tool; a branch is\ndispatched like a subagent but forks the caller's transcript and\nhands the conversation to the user.",
+                    "description": "Mode controls how the agent can be used. Primary agents are\ntop-level; subagents are launched via the agent tool; a branch is\ndispatched like a subagent but forks the caller's transcript and\nhands the conversation to the user; compact only ever summarizes\nanother agent's session and is never dispatched or driven\ndirectly.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/config.AgentMode"
@@ -4205,12 +4274,14 @@ const docTemplate = `{
             "enum": [
                 "primary",
                 "subagent",
-                "branch"
+                "branch",
+                "compact"
             ],
             "x-enum-varnames": [
                 "AgentModePrimary",
                 "AgentModeSubagent",
-                "AgentModeBranch"
+                "AgentModeBranch",
+                "AgentModeCompact"
             ]
         },
         "config.AllowedMCPSet": {
@@ -5187,6 +5258,25 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "mime_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "proto.CommitMessageRequest": {
+            "type": "object",
+            "properties": {
+                "diff": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "proto.CommitMessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
                     "type": "string"
                 }
             }

@@ -40,6 +40,10 @@ below.
 - **branch** — Launched via the `agent` tool like a sub-agent, but instead of
   working on its own it forks the conversation and hands it to you. See
   [Branch Agents](#branch-agents).
+- **compact** — Never dispatched via the `agent` tool and never drives a
+  session; only used to generate a session summary. An agent picks its own
+  by setting `compact_agent`; the built-in `compact` agent is the default.
+  See [Custom Compact Agents](#custom-compact-agents-compact_agent).
 
 ## Using the `agent` Tool
 
@@ -301,6 +305,37 @@ read-only search `explore` provides.
 }
 ```
 
+### Custom Compact Agents (`compact_agent`)
+
+Every agent's session is summarized by a compact-mode agent, either when
+context fills up or on an explicit `/compact`. By default that is the
+built-in `compact` agent, but an agent can name its own summarizer via
+`compact_agent`, pointing at another agent whose `mode` is `compact`.
+
+A `compact`-mode agent is always hidden and stripped of tools, MCP access,
+and delegation — regardless of what its own config says — since it exists
+only to produce a summary, never to be dispatched or to drive a session.
+
+```json
+{
+  "agents": {
+    "reviewer-compact": {
+      "mode": "compact",
+      "slot": "chore",
+      "prompt": "Summarize the review discussion as a checklist of open and resolved issues."
+    },
+    "reviewer": {
+      "mode": "primary",
+      "compact_agent": "reviewer-compact"
+    }
+  }
+}
+```
+
+An unset, unknown, or non-`compact`-mode `compact_agent` all fall back to
+the built-in `compact` agent; an unknown or invalid reference also logs a
+warning at startup so the typo doesn't go unnoticed.
+
 ### JSON Configuration (`angela.json`)
 
 ```json
@@ -365,13 +400,14 @@ The body becomes the agent's system prompt. Frontmatter fields:
 |-----------------|------------|----------------------------------|
 | `name`          | string     | Display name                     |
 | `description`   | string     | What the agent does              |
-| `mode`          | string     | `primary`, `subagent`, or `branch` (see Agent Modes) |
+| `mode`          | string     | `primary`, `subagent`, `branch`, or `compact` (see Agent Modes) |
 | `slot`          | string     | `main` or `chore`                |
 | `temperature`   | float      | Sampling temperature (0-1)       |
 | `allowed_tools` | []string, `"all"`, or `"inherited"` | Tool whitelist (see Permission Inheritance) |
 | `disabled_tools`| []string   | Tools to remove                  |
 | `allowed_mcp`   | object, `"all"`, or `"inherited"` | MCP server access (see Permission Inheritance) |
 | `allowed_agents`| []string   | Agent IDs this agent may dispatch (see Restricting Delegation) |
+| `compact_agent` | string     | ID of the compact-mode agent that summarizes this agent's sessions (see Custom Compact Agents) |
 | `disabled`      | bool       | Disable this agent               |
 
 Unknown frontmatter fields are a hard error and the file is skipped with a
@@ -426,6 +462,7 @@ is published atomically so a failed write cannot leave a partial agent behind.
 | `disabled_tools`| []string        | nil          | Tools to remove from the allowed set             |
 | `allowed_mcp`   | object, `"all"`, or `"inherited"` | `"inherited"` | MCP server access. `{}` denies every MCP tool; a server mapped to `[]` grants all of that server's tools. |
 | `allowed_agents`| []string        | nil (unrestricted) | Agent IDs this agent may reach through the `agent` tool. Unset means every dispatchable agent is available; a list — including an empty one — narrows the tool's description and its dispatch to exactly those IDs. |
+| `compact_agent` | string          | ""           | ID of the compact-mode agent that summarizes this agent's sessions. Unset, unknown, or non-`compact`-mode IDs fall back to the built-in `compact` agent. |
 | `context_paths` | []string        | nil          | Context file paths                               |
 | `disabled`      | bool            | unset        | Unset inherits from lower layers; `true` disables the agent; an explicit `false` re-enables it even over a lower layer's `true`. |
 

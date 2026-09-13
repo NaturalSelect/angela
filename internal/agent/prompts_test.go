@@ -101,6 +101,42 @@ func TestAgentPrompt_UnknownAgentRendersContextFiles(t *testing.T) {
 	require.Contains(t, out, marker)
 }
 
+// TestAgentPrompt_CompactModeFallsBackToSummaryTemplate pins that a
+// custom compact-mode agent without its own Prompt gets the
+// summarization template rather than the general one. Such an agent
+// typically exists only to run compaction on a different model or
+// slot, and falling through to the general-assistant template would
+// silently change what it does.
+func TestAgentPrompt_CompactModeFallsBackToSummaryTemplate(t *testing.T) {
+	dir := t.TempDir()
+	globalDir := t.TempDir()
+	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
+	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
+		[]byte(`{
+			"options": {"disable_default_providers": true},
+			"providers": {
+				"test": {
+					"base_url": "http://127.0.0.1:0/v1",
+					"api_key": "test",
+					"models": [{"id": "test-model", "name": "Test"}]
+				}
+			}
+		}`), 0o644))
+
+	store, err := config.Init(dir, "", false)
+	require.NoError(t, err)
+
+	p, err := agentPrompt(config.Agent{ID: "my-compact", Mode: config.AgentModeCompact}, prompt.WithWorkingDir(dir))
+	require.NoError(t, err)
+
+	out, err := p.Build(context.Background(), "", "", store)
+	require.NoError(t, err)
+	require.Contains(t, out, "You are summarizing a conversation to preserve context for continuing work later.")
+	require.NotContains(t, out, "You are a general-purpose agent for Angela.")
+}
+
 // TestInitializePrompt_OverridableViaConfig pins step 2.8's whole
 // point: initialize makes no LLM call of its own, so its prompt is the
 // only thing it owns — and that prompt must be reachable through the

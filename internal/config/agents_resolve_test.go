@@ -533,3 +533,92 @@ func TestResolveAgents_InvalidJSONAgentDoesNotDropBuiltins(t *testing.T) {
 		"a rejected override must leave the built-in definition intact")
 	require.Equal(t, AgentModeSubagent, agents[AgentExplore].Mode)
 }
+
+// TestResolveAgents_CompactModeIsForcedHiddenAndToolless pins that a
+// custom compact-mode agent gets the same shape as the built-in
+// compact agent regardless of what it asks for: it must never show up
+// as a dispatch target and must never hold tools, MCP access or its
+// own delegation, since its only job is to summarize another agent's
+// session.
+func TestResolveAgents_CompactModeIsForcedHiddenAndToolless(t *testing.T) {
+	t.Parallel()
+
+	visible := false
+	cfg := &Config{
+		Options: &Options{},
+		AgentConfigs: map[string]Agent{
+			"my-compact": {
+				Description:   "x",
+				Mode:          AgentModeCompact,
+				Hidden:        &visible,
+				AllowedTools:  &AllowedToolSet{Kind: ToolSetAll},
+				AllowedMCP:    &AllowedMCPSet{Kind: ToolSetAll},
+				AllowedAgents: []string{AgentExplore},
+			},
+		},
+	}
+
+	agents := cfg.ResolveAgents()
+	got, ok := agents["my-compact"]
+	require.True(t, ok)
+	require.True(t, got.IsHidden(), "a compact agent must be hidden even if configured visible")
+	require.Empty(t, got.AllowedTools.Tools, "a compact agent must never hold tools")
+	require.Empty(t, got.AllowedAgents, "a compact agent must never delegate")
+}
+
+// TestResolveAgents_CompactAgentField pins that compact_agent survives
+// the three-layer merge like any other string field: a higher layer's
+// non-empty value wins over a lower layer's.
+func TestResolveAgents_CompactAgentField(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Options: &Options{},
+		AgentConfigs: map[string]Agent{
+			"my-compact":    {Description: "x", Mode: AgentModeCompact},
+			"other-compact": {Description: "x", Mode: AgentModeCompact},
+			"reviewer":      {Description: "x", CompactAgent: "my-compact"},
+		},
+	}
+
+	agents := cfg.ResolveAgents()
+	require.Equal(t, "my-compact", agents["reviewer"].CompactAgent)
+
+	// A markdown layer's value is overridden by a higher-priority JSON
+	// layer, the same way every other agent field merges.
+	mdCfg := newAgentTestConfig(t, map[string]string{
+		"reviewer": "---\ndescription: x\ncompact_agent: other-compact\n---\nbody",
+	})
+	mdCfg.AgentConfigs = map[string]Agent{
+		"other-compact": {Description: "x", Mode: AgentModeCompact},
+		"my-compact":    {Description: "x", Mode: AgentModeCompact},
+		"reviewer":      {CompactAgent: "my-compact"},
+	}
+	merged := mdCfg.ResolveAgents()
+	require.Equal(t, "my-compact", merged["reviewer"].CompactAgent, "JSON layer must win over markdown for compact_agent")
+}
+
+// TestConfig_CompactAgentIDFor pins the fallback ladder: an unset,
+// unknown, or non-compact-mode reference all resolve to the built-in
+// compact agent, and only a real compact-mode agent is ever returned
+// in its place.
+func TestConfig_CompactAgentIDFor(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Options: &Options{},
+		AgentConfigs: map[string]Agent{
+			"my-compact": {Description: "x", Mode: AgentModeCompact},
+		},
+	}
+	cfg.Agents = cfg.ResolveAgents()
+
+	require.Equal(t, AgentCompact, cfg.CompactAgentIDFor(Agent{ID: "reviewer"}),
+		"an unset compact_agent must fall back to the built-in compact agent")
+	require.Equal(t, "my-compact", cfg.CompactAgentIDFor(Agent{ID: "reviewer", CompactAgent: "my-compact"}),
+		"a valid reference to a compact-mode agent must be honored")
+	require.Equal(t, AgentCompact, cfg.CompactAgentIDFor(Agent{ID: "reviewer", CompactAgent: "does-not-exist"}),
+		"an unknown compact_agent id must fall back to the built-in compact agent")
+	require.Equal(t, AgentCompact, cfg.CompactAgentIDFor(Agent{ID: "reviewer", CompactAgent: AgentExplore}),
+		"a compact_agent that does not resolve to a compact-mode agent must fall back")
+}

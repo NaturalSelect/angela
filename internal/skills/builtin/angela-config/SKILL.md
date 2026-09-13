@@ -248,7 +248,7 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 | ---------------- | ------ | ------------------------------------------------------------------ |
 | `name`           | string | Display name                                                        |
 | `description`    | string | What the agent does; shown to the dispatching model                 |
-| `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user) |
+| `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user), `compact` (only ever summarizes another agent's session) |
 | `slot`           | string | A slot name from `slots`. Default `main` for most agents — `title` and `web-fetch` default to `chore` instead, which is how a subagent is pointed at a cheaper model |
 | `variant`        | string | A variant name on that model slot                                   |
 | `max_tokens`     | int    | Output-token cap; omit for the model default                        |
@@ -260,6 +260,7 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 | `disabled_tools` | array  | Removed from the resolved allow list                                |
 | `allowed_mcp`    | object \| string | Object mapping server name to allowed tool names (empty array = the whole server), or `"all"`, or `"inherited"` |
 | `allowed_agents` | array  | Agent IDs this agent may dispatch via the Agent tool. Unset = every dispatchable agent is available |
+| `compact_agent`  | string | ID of a `mode: compact` agent that summarizes this agent's sessions. Unset, unknown, or non-compact IDs fall back to the built-in `compact` agent |
 | `context_paths`  | array  | Context files for this agent                                        |
 
 `disabled` and `hidden` are tri-state: omitting them inherits the lower layer,

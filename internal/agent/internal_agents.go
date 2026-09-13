@@ -52,7 +52,8 @@ func (c *coordinator) resolveInternalAgent(ctx context.Context, agentID string, 
 // because it could not be prepared would be worse than the turn
 // running without it. Callers check Available before using it.
 func (c *coordinator) buildCompactAgent(ctx context.Context, host config.ActiveAgent) resolvedAgent {
-	active, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentCompact, host)
+	compactID := c.cfg.Config().CompactAgentIDFor(host.Agent)
+	active, model, systemPrompt, err := c.resolveInternalAgent(ctx, compactID, host)
 	if err != nil {
 		slog.Error("Failed to resolve the compact agent", "error", err)
 		return resolvedAgent{Err: err}
@@ -67,7 +68,7 @@ func (c *coordinator) buildCompactAgent(ctx context.Context, host config.ActiveA
 		MaxTokens:          maxTokensFor(active.Agent, model),
 		Host:               active,
 		RebuildModel: func(ctx context.Context) (fantasy.LanguageModel, error) {
-			_, rebuilt, _, err := c.resolveInternalAgent(ctx, config.AgentCompact, host)
+			_, rebuilt, _, err := c.resolveInternalAgent(ctx, compactID, host)
 			if err != nil {
 				return nil, err
 			}

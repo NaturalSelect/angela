@@ -184,6 +184,25 @@ func (c *Config) InstantiateFor(agentID string, host ActiveAgent) (ActiveAgent, 
 	return active.Clone(), true
 }
 
+// CompactAgentIDFor returns the ID of the compact-mode agent that
+// summarizes sessions host drives. host naming no agent, an unknown
+// agent, or one that isn't compact-mode all fall back to the built-in
+// "compact" agent — ResolveAgents already warned about the two error
+// cases at load time, so this only needs to decide, quietly, which ID
+// a turn actually resolves against.
+func (c *Config) CompactAgentIDFor(host Agent) string {
+	if host.CompactAgent == "" {
+		return AgentCompact
+	}
+	target, ok := c.Agents[host.CompactAgent]
+	if !ok || target.Mode != AgentModeCompact {
+		slog.Debug("Host agent's compact_agent does not resolve; falling back to the built-in compact agent",
+			"host", host.ID, "compact_agent", host.CompactAgent)
+		return AgentCompact
+	}
+	return host.CompactAgent
+}
+
 // Clone returns a copy that shares no mutable state with a. Without
 // it a session editing its own model would reach into the maps the
 // published config still hands out to everyone else. The copy goes all

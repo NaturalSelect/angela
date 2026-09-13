@@ -30,9 +30,10 @@
           "enum": [
             "primary",
             "subagent",
-            "branch"
+            "branch",
+            "compact"
           ],
-          "description": "Agent mode: primary or subagent or branch"
+          "description": "Agent mode: primary or subagent or branch or compact"
         },
         "slot": {
           "type": "string",
@@ -85,6 +86,10 @@
           },
           "type": "array",
           "description": "Agent IDs this agent may dispatch through the agent tool. Unset means every dispatchable agent is available."
+        },
+        "compact_agent": {
+          "type": "string",
+          "description": "ID of the compact-mode agent used to summarize this agent's sessions; unset or invalid falls back to the built-in compact agent"
         }
       },
       "additionalProperties": false,

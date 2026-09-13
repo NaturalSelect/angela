@@ -166,6 +166,14 @@ func agentPrompt(agentCfg config.Agent, opts ...prompt.Option) (*prompt.Prompt, 
 		return fn(opts...)
 	}
 
+	// A custom compact-mode agent without its own Prompt should still
+	// get the summarization template rather than the general one: it
+	// exists to change the model or slot, not to become a general
+	// assistant.
+	if agentCfg.Mode == config.AgentModeCompact {
+		return compactPrompt(opts...)
+	}
+
 	// Unknown agent ID — use the general template.
 	return generalPrompt(opts...)
 }

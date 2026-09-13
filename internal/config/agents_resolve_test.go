@@ -553,7 +553,7 @@ func TestResolveAgents_CompactModeIsForcedHiddenAndToolless(t *testing.T) {
 				Hidden:        &visible,
 				AllowedTools:  &AllowedToolSet{Kind: ToolSetAll},
 				AllowedMCP:    &AllowedMCPSet{Kind: ToolSetAll},
-				AllowedAgents: []string{AgentExplore},
+				AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
 			},
 		},
 	}
@@ -563,7 +563,7 @@ func TestResolveAgents_CompactModeIsForcedHiddenAndToolless(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, got.IsHidden(), "a compact agent must be hidden even if configured visible")
 	require.Empty(t, got.AllowedTools.Tools, "a compact agent must never hold tools")
-	require.Empty(t, got.AllowedAgents, "a compact agent must never delegate")
+	require.False(t, got.AllowedAgents.Allows(AgentExplore), "a compact agent must never delegate")
 }
 
 // TestResolveAgents_CompactAgentField pins that compact_agent survives

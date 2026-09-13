@@ -287,6 +287,10 @@ does.
   both narrowed to exactly those IDs; asking for anything else is refused
   with the list of what is actually available. An empty list removes the
   `agent` tool entirely, the same as having no dispatchable agents at all.
+- The literal `"all"` — explicitly unrestricted, the same as leaving the
+  field unset. A higher-priority layer sets this to restore full dispatch
+  after a lower-priority layer narrowed it, since an unset field only ever
+  keeps whatever a lower layer decided rather than clearing it.
 
 The built-in `plan` and `deep-research` agents both set
 `"allowed_agents": ["explore"]`: a plan or a root-cause finding is only as
@@ -406,7 +410,7 @@ The body becomes the agent's system prompt. Frontmatter fields:
 | `allowed_tools` | []string, `"all"`, or `"inherited"` | Tool whitelist (see Permission Inheritance) |
 | `disabled_tools`| []string   | Tools to remove                  |
 | `allowed_mcp`   | object, `"all"`, or `"inherited"` | MCP server access (see Permission Inheritance) |
-| `allowed_agents`| []string   | Agent IDs this agent may dispatch (see Restricting Delegation) |
+| `allowed_agents`| []string, or `"all"` | Agent IDs this agent may dispatch (see Restricting Delegation) |
 | `compact_agent` | string     | ID of the compact-mode agent that summarizes this agent's sessions (see Custom Compact Agents) |
 | `disabled`      | bool       | Disable this agent               |
 
@@ -461,7 +465,7 @@ is published atomically so a failed write cannot leave a partial agent behind.
 | `allowed_tools` | array, `"all"`, or `"inherited"` | `"inherited"` | Tool whitelist. `"inherited"` takes the coder's resolved set; `"all"` grants every tool; `[]` denies all tools; an array grants exactly those names. `coder` itself cannot inherit. |
 | `disabled_tools`| []string        | nil          | Tools to remove from the allowed set             |
 | `allowed_mcp`   | object, `"all"`, or `"inherited"` | `"inherited"` | MCP server access. `{}` denies every MCP tool; a server mapped to `[]` grants all of that server's tools. |
-| `allowed_agents`| []string        | nil (unrestricted) | Agent IDs this agent may reach through the `agent` tool. Unset means every dispatchable agent is available; a list — including an empty one — narrows the tool's description and its dispatch to exactly those IDs. |
+| `allowed_agents`| []string, or `"all"` | nil (unrestricted) | Agent IDs this agent may reach through the `agent` tool. Unset or `"all"` means every dispatchable agent is available; a list — including an empty one — narrows the tool's description and its dispatch to exactly those IDs. |
 | `compact_agent` | string          | ""           | ID of the compact-mode agent that summarizes this agent's sessions. Unset, unknown, or non-`compact`-mode IDs fall back to the built-in `compact` agent. |
 | `context_paths` | []string        | nil          | Context file paths                               |
 | `disabled`      | bool            | unset        | Unset inherits from lower layers; `true` disables the agent; an explicit `false` re-enables it even over a lower layer's `true`. |

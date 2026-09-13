@@ -56,16 +56,14 @@ func literalFromKind(k ToolSetKind) string {
 	return allowedSetInheritedLiteral
 }
 
-// unionSchema builds the JSON schema for a tri-state set whose scoped
-// form has the given shape.
-func unionSchema(scoped *jsonschema.Schema) *jsonschema.Schema {
-	return &jsonschema.Schema{
-		OneOf: []*jsonschema.Schema{
-			scoped,
-			{Const: allowedSetAllLiteral},
-			{Const: allowedSetInheritedLiteral},
-		},
+// unionSchema builds the JSON schema for a set whose scoped form has
+// the given shape and whose keyword literals are the given consts.
+func unionSchema(scoped *jsonschema.Schema, literals ...string) *jsonschema.Schema {
+	schema := &jsonschema.Schema{OneOf: []*jsonschema.Schema{scoped}}
+	for _, literal := range literals {
+		schema.OneOf = append(schema.OneOf, &jsonschema.Schema{Const: literal})
 	}
+	return schema
 }
 
 // AllowedToolSet is the value of Agent.AllowedTools. A nil
@@ -198,7 +196,7 @@ func (AllowedToolSet) JSONSchema() *jsonschema.Schema {
 	return unionSchema(&jsonschema.Schema{
 		Type:  "array",
 		Items: &jsonschema.Schema{Type: "string"},
-	})
+	}, allowedSetAllLiteral, allowedSetInheritedLiteral)
 }
 
 // AllowedMCPSet is the value of Agent.AllowedMCP, the MCP counterpart
@@ -328,5 +326,5 @@ func (AllowedMCPSet) JSONSchema() *jsonschema.Schema {
 			Type:  "array",
 			Items: &jsonschema.Schema{Type: "string"},
 		},
-	})
+	}, allowedSetAllLiteral, allowedSetInheritedLiteral)
 }

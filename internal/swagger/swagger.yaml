@@ -44,15 +44,17 @@ definitions:
   config.Agent:
     properties:
       allowed_agents:
+        allOf:
+        - $ref: '#/definitions/config.AllowedAgentSet'
         description: |-
           AllowedAgents restricts which agent IDs this agent may dispatch
-          through the agent tool. nil means every dispatchable agent is
-          available, matching the behavior before this field existed; an
-          empty (non-nil) list means none are, which is equivalent to
-          dropping the agent tool entirely.
-        items:
-          type: string
-        type: array
+          through the agent tool, with the same tri-state shape as
+          AllowedTools. nil means this layer did not mention the field; a
+          resolved nil or ToolSetAll means every dispatchable agent is
+          available, matching the behavior before this field existed; and
+          ToolSetScope grants only its Agents, where an empty list means
+          none are, which is equivalent to dropping the agent tool
+          entirely.
       allowed_mcp:
         allOf:
         - $ref: '#/definitions/config.AllowedMCPSet'
@@ -156,6 +158,15 @@ definitions:
     - AgentModeSubagent
     - AgentModeBranch
     - AgentModeCompact
+  config.AllowedAgentSet:
+    properties:
+      agents:
+        items:
+          type: string
+        type: array
+      kind:
+        $ref: '#/definitions/config.ToolSetKind'
+    type: object
   config.AllowedMCPSet:
     properties:
       kind:

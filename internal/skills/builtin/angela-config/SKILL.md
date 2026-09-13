@@ -259,7 +259,7 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 | `allowed_tools`  | array \| string | Array of tool names, or `"all"`, or `"inherited"` (mirror the coder's resolved set) |
 | `disabled_tools` | array  | Removed from the resolved allow list                                |
 | `allowed_mcp`    | object \| string | Object mapping server name to allowed tool names (empty array = the whole server), or `"all"`, or `"inherited"` |
-| `allowed_agents` | array  | Agent IDs this agent may dispatch via the Agent tool. Unset = every dispatchable agent is available |
+| `allowed_agents` | array \| string | Array of agent IDs, or `"all"`. Unset = every dispatchable agent is available |
 | `compact_agent`  | string | ID of a `mode: compact` agent that summarizes this agent's sessions. Unset, unknown, or non-compact IDs fall back to the built-in `compact` agent |
 | `context_paths`  | array  | Context files for this agent                                        |
 

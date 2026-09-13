@@ -807,11 +807,14 @@ type Agent struct {
 	ContextPaths []string `json:"context_paths,omitempty" jsonschema:"description=Context file paths for this agent"`
 
 	// AllowedAgents restricts which agent IDs this agent may dispatch
-	// through the agent tool. nil means every dispatchable agent is
-	// available, matching the behavior before this field existed; an
-	// empty (non-nil) list means none are, which is equivalent to
-	// dropping the agent tool entirely.
-	AllowedAgents []string `json:"allowed_agents,omitempty" jsonschema:"description=Agent IDs this agent may dispatch through the agent tool. Unset means every dispatchable agent is available."`
+	// through the agent tool, with the same tri-state shape as
+	// AllowedTools. nil means this layer did not mention the field; a
+	// resolved nil or ToolSetAll means every dispatchable agent is
+	// available, matching the behavior before this field existed; and
+	// ToolSetScope grants only its Agents, where an empty list means
+	// none are, which is equivalent to dropping the agent tool
+	// entirely.
+	AllowedAgents *AllowedAgentSet `json:"allowed_agents,omitempty" jsonschema:"description=Agent IDs this agent may dispatch through the agent tool: an array of agent IDs\\, or \"all\". Unset means every dispatchable agent is available."`
 
 	// CompactAgent names the compact-mode agent that summarizes
 	// sessions this agent drives. Empty, an unknown ID, or an ID that
@@ -1195,8 +1198,11 @@ func warnUnknownTools(agentID, field string, names []string) {
 // config: an unrecognized ID is inert, it just can never be dispatched —
 // but silently, since the agent tool only reports the IDs it does
 // recognize.
-func warnUnknownAgents(agentID string, allowed []string, known map[string]Agent) {
-	for _, id := range allowed {
+func warnUnknownAgents(agentID string, allowed *AllowedAgentSet, known map[string]Agent) {
+	if allowed == nil {
+		return
+	}
+	for _, id := range allowed.Agents {
 		if _, ok := known[id]; !ok {
 			slog.Warn("Agent references an unknown agent id", "agent", agentID, "field", "allowed_agents", "id", id)
 		}
@@ -1289,7 +1295,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// A root cause is a finding, not a plan, so deep-research is
 			// limited to reading the code rather than being able to reach
 			// for plan or dispatch itself again through general.
-			AllowedAgents: []string{AgentExplore},
+			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
 		},
 		AgentPlan: {
 			ID:          AgentPlan,
@@ -1306,7 +1312,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// A plan is a proposal to settle with the user, not a
 			// license to hand the decision off again, so plan can only
 			// delegate the read-only legwork behind it.
-			AllowedAgents: []string{AgentExplore},
+			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
 		},
 		AgentWebFetch: {
 			ID:           AgentWebFetch,
@@ -1526,7 +1532,7 @@ func (c *Config) ResolveAgents() map[string]Agent {
 			a.Hidden = ptr(true)
 			a.AllowedTools = &AllowedToolSet{Kind: ToolSetScope}
 			a.AllowedMCP = &AllowedMCPSet{Kind: ToolSetScope}
-			a.AllowedAgents = []string{}
+			a.AllowedAgents = &AllowedAgentSet{Kind: ToolSetScope}
 		}
 		resolvedTools := a.AllowedTools.Materialize(allToolNames(), coderTools.Tools, c.Options.DisabledTools, a.DisabledTools)
 		warnUnknownTools(key, "allowed_tools", resolvedTools.Tools)

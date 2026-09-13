@@ -226,7 +226,7 @@ func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
 func TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, []string{config.AgentExplore})
+	tool, err := coord.agentTool(0, &config.AllowedAgentSet{Kind: config.ToolSetScope, Agents: []string{config.AgentExplore}})
 	require.NoError(t, err)
 	require.Contains(t, tool.Info().Description, config.AgentExplore)
 	require.NotContains(t, tool.Info().Description, config.AgentGeneral)
@@ -250,7 +250,7 @@ func TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch(t *testing.T) {
 func TestAgentToolAllowedAgentsEmptyOmitsTheTool(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, []string{})
+	tool, err := coord.agentTool(0, &config.AllowedAgentSet{Kind: config.ToolSetScope})
 	require.NoError(t, err)
 	require.Nil(t, tool)
 }

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"text/template"
 
@@ -37,16 +36,13 @@ type AgentParams struct {
 // to; a dispatch through it runs the new subagent at depth+1.
 //
 // allowed is the dispatching agent's own config.Agent.AllowedAgents:
-// nil means every dispatchable agent is available, and a non-nil list
-// (including an empty one) narrows both the description and the
-// dispatch itself to those IDs. Filtering the description here rather
-// than only refusing in the run closure keeps it honest about what a
-// call can actually reach.
-func (c *coordinator) agentTool(depth int, allowed []string) (fantasy.AgentTool, error) {
-	metadata := c.subagents.Metadata()
-	if allowed != nil {
-		metadata = allowedAgentsOnly(metadata, allowed)
-	}
+// nil or ToolSetAll means every dispatchable agent is available, and
+// ToolSetScope (including an empty Agents list) narrows both the
+// description and the dispatch itself to those IDs. Filtering the
+// description here rather than only refusing in the run closure keeps
+// it honest about what a call can actually reach.
+func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet) (fantasy.AgentTool, error) {
+	metadata := allowedAgentsOnly(c.subagents.Metadata(), allowed)
 	if len(metadata) == 0 {
 		return nil, nil
 	}
@@ -84,7 +80,7 @@ func (c *coordinator) agentTool(depth int, allowed []string) (fantasy.AgentTool,
 				), nil
 			}
 
-			if allowed != nil && !slices.Contains(allowed, agentType) {
+			if !allowed.Allows(agentType) {
 				return fantasy.NewTextErrorResponse(
 					fmt.Sprintf("Agent %q is not available from here. Available: %s",
 						agentType, strings.Join(availableIDs, ", ")),
@@ -219,12 +215,14 @@ func renderAgentToolDescription(agents []agentToolDescriptionAgent) (string, err
 	return buf.String(), nil
 }
 
-// allowedAgentsOnly filters a metadata list down to the IDs in allowed,
-// for a caller whose own AllowedAgents narrows what it may dispatch.
-func allowedAgentsOnly(agents []agentToolDescriptionAgent, allowed []string) []agentToolDescriptionAgent {
+// allowedAgentsOnly filters a metadata list down to the IDs allowed
+// permits, for a caller whose own AllowedAgents narrows what it may
+// dispatch. A nil allowed is a no-op copy, since Allows returns true
+// for every ID in that case.
+func allowedAgentsOnly(agents []agentToolDescriptionAgent, allowed *config.AllowedAgentSet) []agentToolDescriptionAgent {
 	filtered := make([]agentToolDescriptionAgent, 0, len(agents))
 	for _, a := range agents {
-		if slices.Contains(allowed, a.ID) {
+		if allowed.Allows(a.ID) {
 			filtered = append(filtered, a)
 		}
 	}

@@ -81,11 +81,8 @@
           "description": "Context file paths for this agent"
         },
         "allowed_agents": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Agent IDs this agent may dispatch through the agent tool. Unset means every dispatchable agent is available."
+          "$ref": "#/$defs/AllowedAgentSet",
+          "description": "Agent IDs this agent may dispatch through the agent tool: an array of agent IDs, or \"all\". Unset means every dispatchable agent is available."
         },
         "compact_agent": {
           "type": "string",
@@ -94,6 +91,19 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "AllowedAgentSet": {
+      "oneOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "const": "all"
+        }
+      ]
     },
     "AllowedMCPSet": {
       "oneOf": [

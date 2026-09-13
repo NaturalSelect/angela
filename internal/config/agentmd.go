@@ -22,20 +22,20 @@ import (
 // RenderAgentFile writes, so parsing and rendering share one
 // definition of what a markdown agent file looks like.
 type AgentFrontmatter struct {
-	Name          string          `yaml:"name,omitempty"`
-	Description   string          `yaml:"description,omitempty"`
-	Mode          string          `yaml:"mode,omitempty"`
-	Slot          string          `yaml:"slot,omitempty"`
-	Variant       string          `yaml:"variant,omitempty"`
-	Temperature   *float64        `yaml:"temperature,omitempty"`
-	AllowedTools  *AllowedToolSet `yaml:"allowed_tools,omitempty"`
-	DisabledTools []string        `yaml:"disabled_tools,omitempty"`
-	AllowedMCP    *AllowedMCPSet  `yaml:"allowed_mcp,omitempty"`
-	AllowedAgents []string        `yaml:"allowed_agents,omitempty"`
-	Disabled      *bool           `yaml:"disabled,omitempty"`
-	Hidden        *bool           `yaml:"hidden,omitempty"`
-	MaxTokens     *int64          `yaml:"max_tokens,omitempty"`
-	CompactAgent  string          `yaml:"compact_agent,omitempty"`
+	Name          string           `yaml:"name,omitempty"`
+	Description   string           `yaml:"description,omitempty"`
+	Mode          string           `yaml:"mode,omitempty"`
+	Slot          string           `yaml:"slot,omitempty"`
+	Variant       string           `yaml:"variant,omitempty"`
+	Temperature   *float64         `yaml:"temperature,omitempty"`
+	AllowedTools  *AllowedToolSet  `yaml:"allowed_tools,omitempty"`
+	DisabledTools []string         `yaml:"disabled_tools,omitempty"`
+	AllowedMCP    *AllowedMCPSet   `yaml:"allowed_mcp,omitempty"`
+	AllowedAgents *AllowedAgentSet `yaml:"allowed_agents,omitempty"`
+	Disabled      *bool            `yaml:"disabled,omitempty"`
+	Hidden        *bool            `yaml:"hidden,omitempty"`
+	MaxTokens     *int64           `yaml:"max_tokens,omitempty"`
+	CompactAgent  string           `yaml:"compact_agent,omitempty"`
 }
 
 // agentIDPattern is a strict allowlist: lowercase alphanumeric

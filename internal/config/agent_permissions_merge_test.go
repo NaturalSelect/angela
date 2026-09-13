@@ -121,7 +121,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
-		require.Equal(t, []string{"explore"}, cfg.AgentConfigs["plan"].AllowedAgents,
+		require.Equal(t, &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{"explore"}}, cfg.AgentConfigs["plan"].AllowedAgents,
 			"the high-priority layer must replace, not union")
 	})
 
@@ -136,6 +136,21 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotNil(t, cfg.AgentConfigs["plan"].AllowedAgents)
-		require.Empty(t, cfg.AgentConfigs["plan"].AllowedAgents, "an explicit empty list must grant nothing")
+		require.Empty(t, cfg.AgentConfigs["plan"].AllowedAgents.Agents, "an explicit empty list must grant nothing")
+		require.False(t, cfg.AgentConfigs["plan"].AllowedAgents.Allows("explore"), "an explicit empty list must grant nothing")
+	})
+
+	t.Run("an explicit \"all\" restores dispatch after a lower layer narrowed it", func(t *testing.T) {
+		t.Parallel()
+		paths := writeLayers(t,
+			`{"agents": {"plan": {"allowed_agents": ["explore"]}}}`,
+			`{"agents": {"plan": {"allowed_agents": "all"}}}`,
+		)
+
+		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		require.NoError(t, err)
+
+		require.Equal(t, &AllowedAgentSet{Kind: ToolSetAll}, cfg.AgentConfigs["plan"].AllowedAgents,
+			"the high-priority layer must be able to widen back to unrestricted")
 	})
 }

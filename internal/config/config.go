@@ -469,6 +469,44 @@ func (Attribution) JSONSchemaExtend(schema *jsonschema.Schema) {
 	}
 }
 
+// GeneratedWithNote renders the standalone "Generated with Angela"
+// paragraph used where a full commit trailer doesn't apply, such as a
+// pull request description. Like CommitTrailer, this is the single
+// source of truth for the text: the bash tool's prompt and the
+// Go-driven quick "commit" command both render through it. Returns
+// "" when disabled.
+func (a Attribution) GeneratedWithNote() string {
+	if !a.GeneratedWith {
+		return ""
+	}
+	return "\n\nGenerated with Angela"
+}
+
+// CommitTrailer renders the "Generated with Angela" line and/or the
+// attribution trailer as a suffix to append to a commit message body,
+// each on its own blank-line-separated paragraph. modelName is used
+// for the assisted-by style; coAuthoredByEmail, if set, is appended
+// to the co-authored-by style as "<email>". This is the single
+// source of truth for the format: both the bash tool's prompt (which
+// tells the model to type the same text by hand in a HEREDOC) and the
+// Go-driven quick "commit" command render through it, so the two
+// paths can't drift apart the way they once did. Returns "" when
+// neither is configured.
+func (a Attribution) CommitTrailer(modelName, coAuthoredByEmail string) string {
+	var b strings.Builder
+	b.WriteString(a.GeneratedWithNote())
+	switch a.TrailerStyle {
+	case TrailerStyleAssistedBy:
+		b.WriteString("\n\nAssisted-by: Angela:" + modelName)
+	case TrailerStyleCoAuthoredBy:
+		b.WriteString("\n\nCo-Authored-By: Angela")
+		if coAuthoredByEmail != "" {
+			b.WriteString(" <" + coAuthoredByEmail + ">")
+		}
+	}
+	return b.String()
+}
+
 type Options struct {
 	ContextPaths       []string           `json:"context_paths,omitempty" jsonschema:"description=Paths to files containing context information for the AI,example=.cursorrules,example=ANGELA.md"`
 	GlobalContextPaths []string           `json:"global_context_paths,omitempty" jsonschema:"description=Paths to files containing global context information for the AI,default=~/.config/angela/ANGELA.md,default=~/.config/AGENTS.md"`

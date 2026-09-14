@@ -70,5 +70,11 @@ func (c *coordinator) GenerateCommitMessage(ctx context.Context, sessionID, diff
 	if message == "" {
 		return "", errors.New("commit message generation returned an empty message")
 	}
+
+	attribution := c.cfg.Config().Options.Attribution
+	if attribution == nil {
+		attribution = &config.Attribution{}
+	}
+	message += attribution.CommitTrailer(modelDisplayName(model), "")
 	return message, nil
 }

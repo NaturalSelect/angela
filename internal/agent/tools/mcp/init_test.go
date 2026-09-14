@@ -1072,10 +1072,14 @@ func TestIsOAuthInitErr(t *testing.T) {
 func TestMcpTimeout(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, 10*time.Second, mcpTimeout(config.MCPConfig{}), "default with no OAuth is 10s")
-	require.Equal(t, 30*time.Second, mcpTimeout(config.MCPConfig{OAuth: true}), "default with OAuth is 30s")
-	require.Equal(t, 5*time.Second, mcpTimeout(config.MCPConfig{Timeout: 5}), "explicit timeout wins")
-	require.Equal(t, 5*time.Second, mcpTimeout(config.MCPConfig{Timeout: 5, OAuth: true}), "explicit timeout wins over OAuth default")
+	ctx := context.Background()
+	interactiveCtx := mcpoauth.WithInteractive(ctx)
+
+	require.Equal(t, 10*time.Second, mcpTimeout(ctx, config.MCPConfig{}), "default with no OAuth is 10s")
+	require.Equal(t, 30*time.Second, mcpTimeout(ctx, config.MCPConfig{OAuth: true}), "background OAuth default is 30s")
+	require.Equal(t, 5*time.Minute, mcpTimeout(interactiveCtx, config.MCPConfig{OAuth: true}), "interactive OAuth gets a generous default so a human has time to log in")
+	require.Equal(t, 5*time.Second, mcpTimeout(ctx, config.MCPConfig{Timeout: 5}), "explicit timeout wins")
+	require.Equal(t, 5*time.Second, mcpTimeout(interactiveCtx, config.MCPConfig{Timeout: 5, OAuth: true}), "explicit timeout wins over OAuth default")
 }
 
 func TestHeaderRoundTripper(t *testing.T) {

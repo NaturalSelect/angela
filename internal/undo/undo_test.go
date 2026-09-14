@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -424,8 +423,23 @@ func TestUndoRefusesWhenASubagentSessionIsAnActiveBranch(t *testing.T) {
 // and message mutations. It verifies that once Undo has acquired its
 // reservation, a second LockSession attempt for the same session — the
 // same call a dispatched Run's own dispatch step makes — cannot
-// succeed until Undo has fully returned, not merely until its busy
-// check has passed.
+// proceed until Undo's file and message mutations are already done,
+// not merely until its busy check has passed.
+//
+// The competing goroutine proves this by reading the mutations
+// themselves (the reverted file, and the session's next undoable
+// turn) right after it acquires the lock, rather than checking a flag
+// the Undo goroutine would set after Undo itself returns. That flag
+// can only be set from the calling goroutine after Undo's own
+// reservation-release defer has already run, which unlocks the very
+// mutex the competing goroutine is waiting on — leaving a real,
+// unsynchronized gap that goroutine can win before the flag is ever
+// set, regardless of whether the reservation logic is correct. Undo's
+// mutations, in contrast, happen inside the critical section itself,
+// so the mutex's own happens-before guarantee (an Unlock happens
+// before the next Lock returns) makes them visible to whichever
+// goroutine acquires the lock next, deterministically rather than by
+// scheduling luck.
 func TestUndoHoldsTheSessionReservedForTheWholeOperation(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -453,13 +467,11 @@ func TestUndoHoldsTheSessionReservedForTheWholeOperation(t *testing.T) {
 		}
 	}
 
-	var undoReturned atomic.Bool
 	undoDone := make(chan struct{})
 	go func() {
 		defer close(undoDone)
 		_, err := f.svc.Undo(t.Context(), sessionID, preview.CutMessageID)
 		require.NoError(t, err)
-		undoReturned.Store(true)
 	}()
 
 	select {
@@ -470,21 +482,38 @@ func TestUndoHoldsTheSessionReservedForTheWholeOperation(t *testing.T) {
 
 	// Simulate a concurrent turn start racing in right after undo's
 	// reservation was taken: the same LockSession call a dispatched Run
-	// would make for this session. It must not return until Undo has
-	// released its reservation at the very end of the operation.
-	raceObservedUndoDone := make(chan bool, 1)
+	// would make for this session. It must not proceed until Undo has
+	// released its reservation at the very end of the operation, by
+	// which point the file revert and the "second turn" message
+	// deletion below are already complete.
+	type raceObservation struct {
+		ok          bool
+		fileContent string
+		poppedText  string
+	}
+	raceObserved := make(chan raceObservation, 1)
 	go func() {
 		release, ok := f.busy.LockSession(t.Context(), sessionID)
-		raceObservedUndoDone <- ok && undoReturned.Load()
+		obs := raceObservation{ok: ok}
 		if ok {
+			if b, err := os.ReadFile(path); err == nil {
+				obs.fileContent = string(b)
+			}
+			if p, err := f.svc.Preview(t.Context(), sessionID); err == nil {
+				obs.poppedText = p.PoppedText
+			}
 			release()
 		}
+		raceObserved <- obs
 	}()
 
 	select {
-	case observed := <-raceObservedUndoDone:
-		require.True(t, observed,
-			"a concurrent turn start must not acquire the session until undo has fully finished")
+	case observed := <-raceObserved:
+		require.True(t, observed.ok, "the concurrent LockSession attempt must succeed once undo releases its reservation")
+		require.Equal(t, "first\n", observed.fileContent,
+			"a concurrent turn start must not see the file until undo has reverted it")
+		require.Equal(t, "first turn", observed.poppedText,
+			"a concurrent turn start must not see the session until undo has removed the second turn")
 	case <-time.After(2 * time.Second):
 		t.Fatal("the concurrent LockSession attempt never completed")
 	}

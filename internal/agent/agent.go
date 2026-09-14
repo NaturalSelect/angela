@@ -82,6 +82,26 @@ const (
 	// same queued turn from nesting the wrapper deeper each time.
 	interruptedPromptPrefix = "The previous session was interrupted because it got too long, the initial user request was: `"
 	interruptedPromptSuffix = "`"
+
+	// summaryTagOpen and summaryTagClose delimit the compact agent's
+	// actual answer. Summarize rejects any response that doesn't
+	// contain them (see extractSummaryTag) instead of trusting that
+	// end_turn means the model did what it was asked — a model that
+	// ignores the compact prompt and just continues the task in
+	// plain prose still finishes cleanly, and accepting that as the
+	// summary would silently discard everything before it.
+	summaryTagOpen  = "<summary>"
+	summaryTagClose = "</summary>"
+
+	// compactSummaryFormatInstruction is appended to every compact
+	// agent's system prompt by Summarize itself, rather than relying
+	// on summary.md alone: a host agent can point CompactAgent at any
+	// agent ID (built-in or custom), whose own prompt knows nothing
+	// about summaryTagOpen/summaryTagClose. Appending it here keeps
+	// the sentinel enforced no matter which agent ends up resolved
+	// for the compact role.
+	compactSummaryFormatInstruction = "\n\nStrict output format requirement, independent of anything else above: wrap your entire response in " +
+		summaryTagOpen + " and " + summaryTagClose + " tags, with nothing before the opening tag or after the closing tag."
 )
 
 var userAgent = fmt.Sprintf("Angela/%s (https://github.com/NaturalSelect/angela)", version.Version)
@@ -1377,6 +1397,25 @@ func wrapInterruptedPrompt(prompt string) string {
 	return interruptedPromptPrefix + prompt + interruptedPromptSuffix
 }
 
+// extractSummaryTag pulls the content out of the first
+// summaryTagOpen/summaryTagClose pair in text, trimmed of surrounding
+// whitespace. It reports false when either tag is missing or the
+// close tag doesn't come after the open one, which is what lets
+// Summarize tell an actual summary apart from a model that answered
+// in plain prose instead of following the compact prompt.
+func extractSummaryTag(text string) (string, bool) {
+	start := strings.Index(text, summaryTagOpen)
+	if start == -1 {
+		return "", false
+	}
+	start += len(summaryTagOpen)
+	end := strings.Index(text[start:], summaryTagClose)
+	if end == -1 {
+		return "", false
+	}
+	return strings.TrimSpace(text[start : start+end]), true
+}
+
 // finalizeTruncatedToolCalls closes out any tool call whose input was
 // still streaming when the step hit the output token limit. The
 // provider only reports a tool call once it closes that call's
@@ -1482,7 +1521,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 	}()
 
 	agentOpts := []fantasy.AgentOption{
-		fantasy.WithSystemPrompt(compact.SystemPrompt),
+		fantasy.WithSystemPrompt(compact.SystemPrompt + compactSummaryFormatInstruction),
 		fantasy.WithUserAgent(userAgent),
 	}
 	if compact.MaxTokens > 0 {
@@ -1566,6 +1605,24 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 		}
 		return errors.New("summarization hit the output token limit")
 	}
+
+	extracted, ok := extractSummaryTag(summaryMessage.Content().Text)
+	if !ok {
+		// A model can ignore the compact prompt entirely and just keep
+		// doing the task in plain prose, still finishing with a clean
+		// end_turn. Nothing above would catch that: it isn't a length
+		// cutoff, and fantasy reports the same finish reason either
+		// way. The <summary> sentinel is what lets us tell the two
+		// apart, and reject the ones that aren't a summary — instead
+		// of adopting arbitrary task output as SummaryMessageID and
+		// permanently discarding everything before it.
+		summaryMessage.AddFinish(message.FinishReasonError, "Summarization Error", "the model's response was not wrapped in "+summaryTagOpen+" tags")
+		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
+			return updateErr
+		}
+		return errors.New("summarization output missing " + summaryTagOpen + " tags")
+	}
+	summaryMessage.SetContent(extracted)
 
 	summaryMessage.AddFinish(message.FinishReasonEndTurn, "", "")
 	err = a.messages.Update(genCtx, summaryMessage)

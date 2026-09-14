@@ -223,7 +223,7 @@ func TestRun_RepeatedAutoCompactionsDoNotNestTheResumePrompt(t *testing.T) {
 
 	compactModel := newMockLanguageModel(t)
 	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"summary"}, fantasy.FinishReasonStop), nil).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
 		Times(2)
 
 	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
@@ -369,7 +369,7 @@ func TestRun_InteractiveSessionStillSummarizesWhenAlreadyDone(t *testing.T) {
 
 	compactModel := newMockLanguageModel(t)
 	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"summary"}, fantasy.FinishReasonStop), nil).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
 		Times(1)
 
 	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
@@ -418,7 +418,7 @@ func TestRun_SubAgentStillResumesWhenNotDone(t *testing.T) {
 
 	compactModel := newMockLanguageModel(t)
 	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"summary"}, fantasy.FinishReasonStop), nil).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
 		Times(1)
 
 	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
@@ -481,7 +481,7 @@ func TestRun_SubAgentSummarizesOnMaxTokensWithNoToolCalls(t *testing.T) {
 
 	compactModel := newMockLanguageModel(t)
 	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"summary"}, fantasy.FinishReasonStop), nil).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
 		Times(1)
 
 	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}

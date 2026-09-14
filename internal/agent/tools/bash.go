@@ -69,8 +69,8 @@ type bashDescriptionData struct {
 	BannedCommands    string
 	MaxOutputLength   int
 	Attribution       config.Attribution
-	ModelName         string
-	CoAuthoredByEmail string
+	CommitTrailer     string
+	GeneratedWithNote string
 	RgAvailable       bool
 	GhAvailable       bool
 }
@@ -155,8 +155,8 @@ func bashDescription(attribution *config.Attribution, modelName string) string {
 		BannedCommands:    bannedCommandsStr,
 		MaxOutputLength:   MaxOutputLength,
 		Attribution:       *attribution,
-		ModelName:         modelName,
-		CoAuthoredByEmail: coAuthoredByEmail,
+		CommitTrailer:     attribution.CommitTrailer(modelName, coAuthoredByEmail),
+		GeneratedWithNote: attribution.GeneratedWithNote(),
 		RgAvailable:       getRg() != "",
 		GhAvailable:       ghAvailable,
 	}); err != nil {

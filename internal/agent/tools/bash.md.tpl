@@ -133,18 +133,7 @@ Follow <git_safety> throughout.
    - Add relevant untracked files to the staging area. Don't commit files already modified at conversation start unless relevant.
    - Create the commit{{ if or (eq .Attribution.TrailerStyle "assisted-by") (eq .Attribution.TrailerStyle "co-authored-by")}} with attribution{{ end }}. In order to ensure good formatting, ALWAYS pass the commit message via a HEREDOC:
      git commit -m "$(cat <<'EOF'
-Commit message here.
-
-{{ if .Attribution.GeneratedWith }}
-Generated with Angela
-{{ end}}
-{{if eq .Attribution.TrailerStyle "assisted-by" }}
-
-Assisted-by: Angela:{{ .ModelName }}
-{{ else if eq .Attribution.TrailerStyle "co-authored-by" }}
-
-Co-Authored-By: Angela{{ if .CoAuthoredByEmail }} <{{ .CoAuthoredByEmail }}>{{ end }}
-{{ end }}
+Commit message here.{{ .CommitTrailer }}
 EOF
 )"
    - Run git status after the commit completes to verify success. Note: git status depends on the commit completing, so run it sequentially after the commit.
@@ -183,10 +172,7 @@ IMPORTANT: When the user asks you to create a pull request, follow these steps c
 <1-3 bullet points>
 
 ## Test plan
-<checklist of TODOs for verifying the pull request>
-{{ if .Attribution.GeneratedWith }}
-Generated with Angela
-{{- end }}
+<checklist of TODOs for verifying the pull request>{{ .GeneratedWithNote }}
 EOF
 )"
 

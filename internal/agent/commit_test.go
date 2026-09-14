@@ -140,8 +140,8 @@ func TestGenerateCommitMessageTruncatesLongDiffsAndStripsBackticks(t *testing.T)
 
 	msg, err := coord.GenerateCommitMessage(t.Context(), "", diff)
 	require.NoError(t, err)
-	require.Equal(t, "fix: prevent crash on empty input", msg,
-		"surrounding backticks must be stripped from the model's response")
+	require.Equal(t, "fix: prevent crash on empty input\n\nGenerated with Angela\n\nAssisted-by: Angela:Small", msg,
+		"surrounding backticks must be stripped from the model's response, and the default attribution trailer must be appended")
 
 	require.Contains(t, string(gotBody), "(diff truncated)",
 		"an over-limit diff must be truncated before being sent to the model")
@@ -170,7 +170,7 @@ func TestGenerateCommitMessageAppliesProviderSystemPromptPrefix(t *testing.T) {
 
 	msg, err := coord.GenerateCommitMessage(t.Context(), "", "diff --git a/x b/x\n+y")
 	require.NoError(t, err)
-	require.Equal(t, "fix: add y", msg)
+	require.Equal(t, "fix: add y\n\nGenerated with Angela\n\nAssisted-by: Angela:Small", msg)
 	require.Contains(t, string(gotBody), "ALWAYS ANSWER IN ENGLISH.",
 		"the provider's system prompt prefix must be prepended to the request")
 }

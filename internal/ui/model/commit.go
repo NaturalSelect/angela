@@ -4,12 +4,20 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/NaturalSelect/angela/internal/ui/util"
 )
+
+// commitStatusTTL keeps the "still working" toast on screen for as
+// long as a bash command is allowed to run in the foreground before
+// Angela would auto-background it (see DefaultAutoBackgroundAfter):
+// long enough to cover a slow pre-commit hook without the status bar
+// going blank while git commit is still running.
+const commitStatusTTL = 60 * time.Second
 
 // commitStagedChanges generates a commit message from the workspace's
 // currently staged changes and commits them with a sign-off, with no
@@ -21,7 +29,11 @@ import (
 // matching how AgentRunShellCommand is used outside of bang mode.
 func (m *UI) commitStagedChanges(sessionID string) tea.Cmd {
 	return tea.Batch(
-		util.ReportInfo("Generating commit message from staged changes…"),
+		util.CmdHandler(util.InfoMsg{
+			Type: util.InfoTypeInfo,
+			Msg:  "Committing staged changes…",
+			TTL:  commitStatusTTL,
+		}),
 		func() tea.Msg {
 			ctx := context.Background()
 
@@ -55,7 +67,8 @@ func (m *UI) commitStagedChanges(sessionID string) tea.Cmd {
 				return util.ReportError(fmt.Errorf("git commit failed: %s", strings.TrimSpace(commitResp.Output)))()
 			}
 
-			return util.ReportInfo("Committed: " + message)()
+			subject, _, _ := strings.Cut(message, "\n")
+			return util.ReportInfo("Committed: " + subject)()
 		},
 	)
 }

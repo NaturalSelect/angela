@@ -478,12 +478,6 @@ func TestList_ItemAt(t *testing.T) {
 func TestList_ItemIndexAtPosition(t *testing.T) {
 	t.Parallel()
 
-	a := newMultiLineItem("a", 3)
-	b := newMultiLineItem("b", 2)
-	l := NewList(a, b)
-	l.SetSize(40, 10)
-	l.SetGap(2)
-
 	tests := []struct {
 		name      string
 		y         int
@@ -503,6 +497,12 @@ func TestList_ItemIndexAtPosition(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+
+			a := newMultiLineItem("a", 3)
+			b := newMultiLineItem("b", 2)
+			l := NewList(a, b)
+			l.SetSize(40, 10)
+			l.SetGap(2)
 
 			idx, y := l.ItemIndexAtPosition(0, tt.y)
 			require.Equal(t, tt.wantIdx, idx)

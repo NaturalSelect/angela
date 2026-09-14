@@ -1358,6 +1358,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		if cmd := m.status.Animate(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case scrollbarHideMsg:
 		if m.state == uiChat {
 			m.chat.HideScrollbar(msg.seq)
@@ -1479,7 +1482,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Type == util.InfoTypeError {
 			slog.Error("Error reported", "error", msg.Msg)
 		}
-		m.status.SetInfoMsg(msg)
+		if cmd := m.status.SetInfoMsg(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		ttl := msg.TTL
 		if ttl <= 0 {
 			ttl = DefaultStatusTTL

@@ -69,6 +69,11 @@ type (
 		Type InfoType
 		Msg  string
 		TTL  time.Duration
+		// Animated marks a message whose text the status bar should
+		// render as a running animation (see anim.Anim) instead of
+		// static text, for actions long enough that a frozen toast
+		// would read as stuck.
+		Animated bool
 	}
 	ClearStatusMsg struct{}
 )

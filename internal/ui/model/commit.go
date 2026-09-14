@@ -30,9 +30,10 @@ const commitStatusTTL = 60 * time.Second
 func (m *UI) commitStagedChanges(sessionID string) tea.Cmd {
 	return tea.Batch(
 		util.CmdHandler(util.InfoMsg{
-			Type: util.InfoTypeInfo,
-			Msg:  "Committing staged changes…",
-			TTL:  commitStatusTTL,
+			Type:     util.InfoTypeInfo,
+			Msg:      "Committing staged changes",
+			TTL:      commitStatusTTL,
+			Animated: true,
 		}),
 		func() tea.Msg {
 			ctx := context.Background()

@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/help"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/NaturalSelect/angela/internal/ui/anim"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/ui/util"
@@ -24,6 +25,7 @@ type Status struct {
 	help     help.Model
 	helpKm   help.KeyMap
 	msg      util.InfoMsg
+	msgAnim  *anim.Anim // non-nil while msg is animating; nil for static messages
 }
 
 // NewStatus creates a new status bar and help model.
@@ -37,14 +39,40 @@ func NewStatus(com *common.Common, km help.KeyMap) *Status {
 	return s
 }
 
-// SetInfoMsg sets the status info message.
-func (s *Status) SetInfoMsg(msg util.InfoMsg) {
+// SetInfoMsg sets the status info message, arming its animation when it
+// opts in. The returned command starts that animation's tick chain; it is
+// nil for a static message.
+func (s *Status) SetInfoMsg(msg util.InfoMsg) tea.Cmd {
 	s.msg = msg
+	if !msg.Animated {
+		s.msgAnim = nil
+		return nil
+	}
+	s.msgAnim = anim.New(anim.Settings{
+		Label:      msg.Msg,
+		LabelColor: s.com.Styles.WorkingLabelColor,
+		// Non-LLM context: a scrambled glyph region would read as
+		// "thinking" rather than "running" a fixed action.
+		NoScramble: true,
+	})
+	return s.msgAnim.Start()
 }
 
 // ClearInfoMsg clears the status info message.
 func (s *Status) ClearInfoMsg() {
 	s.msg = util.InfoMsg{}
+	s.msgAnim = nil
+}
+
+// Animate advances the status message's animation, if any. A tick whose ID
+// no longer matches the active animation — because the message was cleared
+// or replaced since the tick was scheduled — is dropped, which ends that
+// tick chain instead of reviving a superseded one.
+func (s *Status) Animate(msg anim.StepMsg) tea.Cmd {
+	if s.msgAnim == nil {
+		return nil
+	}
+	return s.msgAnim.Animate(msg)
 }
 
 // SetWidth sets the width of the status bar and help view.
@@ -105,7 +133,11 @@ func (s *Status) Draw(scr uv.Screen, area uv.Rectangle) {
 	indWidth := lipgloss.Width(ind)
 	msgPad := msgStyle.GetPaddingLeft() + msgStyle.GetPaddingRight()
 	avail := max(0, area.Dx()-indWidth-msgPad)
-	msg := strings.Join(strings.Split(s.msg.Msg, "\n"), " ")
+	msgText := s.msg.Msg
+	if s.msgAnim != nil {
+		msgText = s.msgAnim.Render()
+	}
+	msg := strings.Join(strings.Split(msgText, "\n"), " ")
 	msg = ansi.Truncate(msg, avail, "…")
 	if w := lipgloss.Width(msg); w < avail {
 		msg += strings.Repeat(" ", avail-w)

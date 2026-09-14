@@ -322,6 +322,20 @@ func (m *Message) AppendContent(delta string) {
 	}
 }
 
+// SetContent replaces the message's text content outright, discarding
+// whatever was accumulated before it. Used to swap streamed raw output
+// for just the part extracted out of a required wrapper (e.g. compact's
+// <summary> tags) once the stream has finished.
+func (m *Message) SetContent(text string) {
+	for i, part := range m.Parts {
+		if _, ok := part.(TextContent); ok {
+			m.Parts[i] = TextContent{Text: text}
+			return
+		}
+	}
+	m.Parts = append(m.Parts, TextContent{Text: text})
+}
+
 func (m *Message) AppendReasoningContent(delta string) {
 	found := false
 	for i, part := range m.Parts {

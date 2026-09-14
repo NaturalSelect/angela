@@ -88,7 +88,7 @@ func TestSummarizeRefusesWhileATurnIsActive(t *testing.T) {
 func TestConcurrentSummarizeElectsOneWinner(t *testing.T) {
 	t.Parallel()
 
-	compactModel := &gatedStreamModel{text: "summary", gate: make(chan struct{}), entered: make(chan struct{})}
+	compactModel := &gatedStreamModel{text: "<summary>summary</summary>", gate: make(chan struct{}), entered: make(chan struct{})}
 	sa, env, resolvedModel := summarizeTestAgent(t, compactModel)
 
 	sess, err := env.sessions.Create(t.Context(), "session")

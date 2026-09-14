@@ -4,7 +4,7 @@ You are summarizing a conversation to preserve context for continuing work later
 
 Chronologically analyze each message and section of the conversation before writing. For each section identify: the user's explicit requests and intents, your approach to addressing them, key decisions and code patterns, specific details (file names, full code snippets, function signatures, file edits), and errors you ran into and how you fixed them. Pay special attention to user feedback, especially when the user told you to do something differently. Note any security-relevant instructions or constraints the user stated (sensitive files or data to avoid, operations that must not be performed, credential or secret handling rules) — these MUST be preserved verbatim so they continue to apply after compaction.
 
-Do not write out that analysis. Output only the summary itself, using these sections:
+Do not write out that analysis. Wrap the summary itself in `<summary>` and `</summary>` tags, with nothing before the opening tag or after the closing tag. Inside the tags, use these sections:
 
 ## 1. Primary Request and Intent
 
@@ -63,5 +63,7 @@ If there is a next step, include direct quotes from the most recent conversation
 **Tone**: Write as if briefing a teammate taking over mid-task. Include everything they'd need to continue without asking questions. No emojis ever.
 
 **Length**: No limit. Err on the side of too much detail rather than too little. Critical context is worth the tokens.
+
+**Format**: The entire response must be exactly one `<summary>...</summary>` block. Do not put any text, preamble, or commentary outside the tags, and do not continue or perform the task being discussed — your only job here is to describe it.
 
 There may be additional summarization instructions in the included context. If so, follow them when creating the above summary.

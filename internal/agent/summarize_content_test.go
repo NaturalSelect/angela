@@ -100,9 +100,10 @@ func seedSession(t *testing.T, sa *sessionAgent, env fakeEnv) string {
 }
 
 // longMultiSectionSummary builds a summary shaped like the real compact
-// prompt output (see internal/agent/templates/summary.md): numbered
-// "## N. ..." sections, split into hundreds of small chunks so a test
-// exercises the debounce/coalescing write path realistically.
+// prompt output (see internal/agent/templates/summary.md): wrapped in
+// <summary> tags, with numbered "## N. ..." sections split into
+// hundreds of small chunks so a test exercises the debounce/coalescing
+// write path realistically.
 func longMultiSectionSummary() (chunks []string, want string) {
 	var sections []string
 	sections = append(sections, "## 1. Primary Request and Intent\n")
@@ -118,7 +119,9 @@ func longMultiSectionSummary() (chunks []string, want string) {
 		sections = append(sections, fmt.Sprintf("file%d.go ", i))
 	}
 	sections = append(sections, "\n## 4. Errors and Fixes\nnone.\n")
-	return sections, strings.Join(sections, "")
+	chunks = append([]string{summaryTagOpen}, sections...)
+	chunks = append(chunks, summaryTagClose)
+	return chunks, strings.TrimSpace(strings.Join(sections, ""))
 }
 
 // TestSummarizePreservesFullContentOnCleanFinish reproduces the "compact
@@ -212,7 +215,7 @@ func TestSummarizeSendsAnExplicitOutputCap(t *testing.T) {
 	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
 			gotMaxTokens = call.MaxOutputTokens
-			return streamOf([]string{"a short summary"}, fantasy.FinishReasonStop), nil
+			return streamOf([]string{"<summary>a short summary</summary>"}, fantasy.FinishReasonStop), nil
 		})
 
 	compact := resolvedAgent{
@@ -224,4 +227,120 @@ func TestSummarizeSendsAnExplicitOutputCap(t *testing.T) {
 
 	require.NotNil(t, gotMaxTokens, "Summarize must set an explicit output cap rather than leaving the provider default")
 	require.EqualValues(t, 9000, *gotMaxTokens)
+}
+
+// TestSummarizeRejectsOutputMissingSummaryTags is the regression for a
+// second, distinct failure mode from the token-limit one above: a
+// model can ignore the compact prompt entirely and just keep doing the
+// task in plain prose, still finishing with a clean FinishReasonStop.
+// Nothing about the finish reason distinguishes that from an actual
+// summary, so Summarize must inspect the content itself for the
+// <summary> wrapper it demanded and refuse to adopt anything else as
+// SummaryMessageID.
+func TestSummarizeRejectsOutputMissingSummaryTags(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sessID := seedSession(t, sa, env)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{
+			"The article content was fetched successfully. ",
+			"Now adding it to the mcp configuration in angela.json.",
+		}, fantasy.FinishReasonStop), nil)
+
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
+		SystemPrompt: "summarize",
+	}
+	err := sa.Summarize(t.Context(), sessID, compact, nil, nil)
+	require.Error(t, err, "output that was never wrapped in <summary> tags must not be accepted as a summary")
+
+	updated, getErr := env.sessions.Get(t.Context(), sessID)
+	require.NoError(t, getErr)
+	require.Empty(t, updated.SummaryMessageID,
+		"a rejected summary must never become the session's SummaryMessageID — that would discard everything before it")
+}
+
+// TestSummarizeExtractsContentBetweenSummaryTags pins that a compliant
+// answer has its wrapper tags (and anything a model added outside
+// them) stripped before being persisted: the tags are a detection
+// sentinel for Summarize, not part of the conversation memory the
+// resumed turn, or a later compaction, should see.
+func TestSummarizeExtractsContentBetweenSummaryTags(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sessID := seedSession(t, sa, env)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{
+			"Sure, here it is.\n", summaryTagOpen, "the actual summary content", summaryTagClose, "\nHope that helps!",
+		}, fantasy.FinishReasonStop), nil)
+
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
+		SystemPrompt: "summarize",
+	}
+	require.NoError(t, sa.Summarize(t.Context(), sessID, compact, nil, nil))
+
+	updated, err := env.sessions.Get(t.Context(), sessID)
+	require.NoError(t, err)
+	summaryMsg, err := env.messages.Get(t.Context(), updated.SummaryMessageID)
+	require.NoError(t, err)
+	require.Equal(t, "the actual summary content", summaryMsg.Content().Text,
+		"only the content between the tags must survive, not any preamble or trailing chatter around them")
+}
+
+// TestSummarizeAppendsSummaryTagInstructionForAnyCompactAgent pins that
+// the <summary> requirement is enforced by Summarize itself, not left
+// to summary.md alone: a host agent's CompactAgent can point at any
+// agent ID, built-in or custom, whose own system prompt knows nothing
+// about the sentinel. Both the instruction and the rejection must
+// still apply to it.
+func TestSummarizeAppendsSummaryTagInstructionForAnyCompactAgent(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sessID := seedSession(t, sa, env)
+
+	var gotSystemPrompt string
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+			for _, m := range call.Prompt {
+				if m.Role != fantasy.MessageRoleSystem {
+					continue
+				}
+				for _, part := range m.Content {
+					if text, ok := part.(fantasy.TextPart); ok {
+						gotSystemPrompt += text.Text
+					}
+				}
+			}
+			// This agent ignores the instruction and just keeps
+			// doing the task instead of summarizing it.
+			return streamOf([]string{"done installing the thing, no summary here"}, fantasy.FinishReasonStop), nil
+		})
+
+	// A custom compact agent unrelated to the built-in summary.md
+	// template, standing in for a host agent whose CompactAgent points
+	// at some other agent ID entirely.
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
+		SystemPrompt: "You are a pirate. Translate everything into pirate speak.",
+	}
+	err := sa.Summarize(t.Context(), sessID, compact, nil, nil)
+	require.Error(t, err, "a custom compact agent's output must be held to the same <summary> requirement")
+
+	require.Contains(t, gotSystemPrompt, "You are a pirate.",
+		"the custom agent's own system prompt must still be sent")
+	require.Contains(t, gotSystemPrompt, summaryTagOpen,
+		"Summarize must append the <summary> requirement regardless of which agent supplies the base system prompt")
+
+	updated, getErr := env.sessions.Get(t.Context(), sessID)
+	require.NoError(t, getErr)
+	require.Empty(t, updated.SummaryMessageID)
 }

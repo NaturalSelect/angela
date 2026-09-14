@@ -61,9 +61,11 @@ func TestCommitStagedChanges_Success(t *testing.T) {
 	m := newBusyUIWithWorkspace(ws)
 	msgs := collectInfoMsgs(m.commitStagedChanges("s1"))
 
-	require.Len(t, msgs, 2, "expected the initial \"Generating…\" toast plus the final outcome")
+	require.Len(t, msgs, 2, "expected the initial \"Committing…\" toast plus the final outcome")
+	require.True(t, msgs[0].Animated, "the in-progress toast must animate instead of sitting frozen")
 	require.Equal(t, util.InfoTypeInfo, msgs[1].Type)
 	require.Equal(t, "Committed: fix: add y", msgs[1].Msg)
+	require.False(t, msgs[1].Animated, "the final outcome toast must be static")
 }
 
 // TestCommitStagedChanges_DiffReadError pins that a transport failure

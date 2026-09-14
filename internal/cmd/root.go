@@ -50,6 +50,7 @@ import (
 	"github.com/charmbracelet/x/exp/charmtone"
 	xstrings "github.com/charmbracelet/x/exp/strings"
 	"github.com/charmbracelet/x/term"
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 )
 
@@ -161,6 +162,12 @@ angela --continue
 
 		com := common.DefaultCommon(ws)
 		model := ui.New(com, sessionID, continueLast)
+
+		// Chrome/xdg-open inherit our stdout/stderr by default; without this,
+		// their diagnostic output (e.g. from an MCP OAuth browser flow)
+		// prints straight into the TUI's alt-screen and corrupts it.
+		browser.Stdout = io.Discard
+		browser.Stderr = io.Discard
 
 		inputFilter := ui.NewFilter()
 		var env uv.Environ = os.Environ()

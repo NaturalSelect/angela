@@ -198,17 +198,12 @@ h1 {
 .brand a {
   display: inline-block;
   color: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   text-decoration: none;
 }
 
 .brand a:hover {
   opacity: 0.8;
-}
-
-.brand svg {
-  display: block;
-  height: 1.5rem;
-  width: auto;
-  /* viewBox-only SVGs collapse to 0 width under height + width:auto. */
-  aspect-ratio: 153 / 47;
 }

@@ -654,7 +654,7 @@ func teardown(name string) {
 
 func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string) (*ClientSession, error) {
 	m := cfg.Config().MCP[name]
-	timeout := mcpTimeout(m)
+	timeout := mcpTimeout(ctx, m)
 
 	// Fast path: reuse a healthy session without taking the renewal lock.
 	if sess, ok := sessions.Get(name); ok {
@@ -866,7 +866,7 @@ func updateState(name string, state State, err error, client *ClientSession, cou
 }
 
 func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, resolver config.VariableResolver, channelOptIn bool) (*ClientSession, error) {
-	timeout := mcpTimeout(m)
+	timeout := mcpTimeout(ctx, m)
 	mcpCtx, cancel := context.WithCancel(ctx)
 	cancelTimer := time.AfterFunc(timeout, cancel)
 
@@ -1209,12 +1209,18 @@ func (rt *oauthRoundTripper) doRequestWithToken(req *http.Request) (*http.Respon
 	return rt.base.RoundTrip(req)
 }
 
-func mcpTimeout(m config.MCPConfig) time.Duration {
+func mcpTimeout(ctx context.Context, m config.MCPConfig) time.Duration {
 	if m.Timeout > 0 {
 		return time.Duration(m.Timeout) * time.Second
 	}
-	// OAuth flows require user interaction in a browser, so use a
-	// generous default to avoid timing out mid-auth.
+	// The interactive, user-initiated flow waits on a human: opening the
+	// browser, logging in, and clicking through MFA or consent screens.
+	// 30s is routinely not enough, so give it minutes instead. Background
+	// connections never reach the browser step — they fail fast with
+	// ErrInteractiveAuthRequired — so they keep the short default.
+	if m.OAuth && mcpoauth.IsInteractive(ctx) {
+		return 5 * time.Minute
+	}
 	if m.OAuth {
 		return 30 * time.Second
 	}

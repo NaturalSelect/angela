@@ -74,9 +74,9 @@ type sandboxHitTarget struct {
 }
 
 // Sandbox is the /sandbox command's dialog: a form for the filesystem
-// and network permissions a Landlock sandbox will be entered with,
-// followed by a confirmation step before the (irreversible, for the
-// process lifetime) restriction is applied.
+// and network permissions a sandbox will be entered with, followed by
+// a confirmation step before the (irreversible, for the process
+// lifetime) restriction is applied.
 type Sandbox struct {
 	com   *common.Common
 	stage sandboxStage
@@ -454,7 +454,7 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	helpView := m.frame.RenderHelp(&m.help, m, m.metrics.ContentWidth)
 
 	preamble := m.headerView() + "\n" +
-		t.Dialog.SecondaryText.Render("Limits filesystem via Landlock; blocks commands' network.")
+		t.Dialog.SecondaryText.Render("Limits filesystem access; blocks commands' network.")
 	sectionLabel := t.Dialog.Arguments.InputLabelBlurred.PaddingLeft(rowLeftPad).Render("FileSystem Access")
 	networkBlock, networkTarget := m.networkView(rowLeftPad)
 

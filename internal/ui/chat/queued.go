@@ -11,8 +11,9 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 )
 
-// queuedMarker labels a prompt that has been accepted but not yet sent.
-const queuedMarker = "⋯ queued"
+// queuedMarker labels a prompt that has been accepted but not yet sent,
+// and hints that esc pops it back into the editor for further edits.
+const queuedMarker = "⋯ queued · esc to edit"
 
 // QueuedMessageItem renders a prompt that is waiting for the agent to
 // finish the current turn. It is not backed by a stored message: the

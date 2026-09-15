@@ -80,7 +80,7 @@ func TestTurnStatusHintTracksCancelState(t *testing.T) {
 	require.Contains(t, m.renderTurnStatus(200), "stop")
 
 	m.promptQueue = 3
-	require.Contains(t, m.renderTurnStatus(200), "clear queue")
+	require.Contains(t, m.renderTurnStatus(200), "pop queue")
 
 	m.isCanceling = true
 	require.Contains(t, m.renderTurnStatus(200), "again to cancel")

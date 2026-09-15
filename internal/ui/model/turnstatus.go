@@ -190,7 +190,7 @@ func (m *UI) renderTurnHint() string {
 	case m.isCanceling:
 		desc = "again to cancel"
 	case m.promptQueue > 0:
-		desc = "clear queue"
+		desc = "pop queue"
 	}
 	t := m.com.Styles
 	return t.TurnStatus.HintKey.Render("esc") + t.TurnStatus.HintDesc.Render(" "+desc)

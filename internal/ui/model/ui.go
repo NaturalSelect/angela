@@ -3631,14 +3631,14 @@ func (m *UI) View() tea.View {
 }
 
 // cancelHint returns the esc binding with the wording the current turn state
-// calls for: clearing a queue, confirming a second press, or plain cancel.
+// calls for: popping the queue, confirming a second press, or plain cancel.
 func (m *UI) cancelHint() key.Binding {
 	b := m.keyMap.Chat.Cancel
 	switch {
 	case m.isCanceling:
 		b.SetHelp("esc", "press again to cancel")
 	case m.promptQueue > 0:
-		b.SetHelp("esc", "clear queue")
+		b.SetHelp("esc", "pop queue")
 	}
 	return b
 }

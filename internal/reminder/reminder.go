@@ -63,6 +63,7 @@ func DefaultSources() []Source {
 		user{},
 		todoRecency{},
 		mcpUnavailable{},
+		resumeAfterCompaction{},
 		skillsAfterCompaction{},
 		dispatch{},
 	}

@@ -794,6 +794,15 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewUndo(m.com, msg.sessionID, msg.preview))
+	case tpsComputedMsg:
+		// Drop a result for a session the user has already navigated
+		// away from while the fetch was in flight.
+		if msg.sessionID != m.currentSessionID() {
+			break
+		}
+		if cmd := m.appendTPSNotice(msg.dist, msg.ok); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case undoResultMsg:
 		if msg.result.PoppedText != "" {
 			if cmd := m.prependToEditor(msg.result.PoppedText); cmd != nil {
@@ -2337,6 +2346,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionShowTodos:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if cmd := m.showTodos(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionShowTPS:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if cmd := m.showTPS(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case dialog.ActionSuspend:

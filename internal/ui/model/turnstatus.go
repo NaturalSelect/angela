@@ -239,6 +239,15 @@ func (m *UI) tokenUsageField() string {
 			usage = pct + " " + usage
 		}
 	}
+	// The rate is a "last known" figure, not live-updating every
+	// frame: it comes from the most recently finished step that
+	// qualified (see common.StepTPS), same as the token counts above
+	// only move at step boundaries.
+	if msg, ok := m.chat.LastAssistantMessageWithRate(); ok {
+		if tps, ok := common.StepTPS(msg); ok {
+			usage += turnStatusSeparator + fmt.Sprintf("%d tok/s", tps)
+		}
+	}
 	return usage
 }
 

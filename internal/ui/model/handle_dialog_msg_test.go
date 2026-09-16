@@ -443,6 +443,53 @@ func TestHandleDialogMsg_ActionShowTodos(t *testing.T) {
 	})
 }
 
+// TestHandleDialogMsg_ActionShowTPS verifies the /tps command fetches
+// the session's messages off the Update goroutine and, once the
+// result lands back through tpsComputedMsg, appends a single
+// distribution notice to the chat.
+func TestHandleDialogMsg_ActionShowTPS(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with a session it fetches, appends a distribution notice, and closes the palette", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := gomock.NewController(t)
+		ws := NewMockWorkspace(ctrl)
+		ws.EXPECT().ListMessages(gomock.Any(), "s1").Return([]message.Message{
+			{
+				ID:        "a1",
+				Role:      message.Assistant,
+				CreatedAt: 0,
+				Parts: []message.ContentPart{
+					message.TextContent{Text: "hi"},
+					message.Finish{Reason: message.FinishReasonEndTurn, Time: 10, OutputTokens: 100},
+				},
+			},
+		}, nil)
+
+		m := newHandleDialogUI(t, ws)
+		m.session = &session.Session{ID: "s1"}
+
+		cmd := m.handleDialogMsg(dialog.ActionShowTPS{})
+		require.False(t, m.dialog.HasDialogs())
+		require.NotNil(t, cmd)
+
+		m.Update(cmd())
+		require.Equal(t, 1, m.chat.Len())
+	})
+
+	t.Run("without a session nothing is fetched but the palette still closes", func(t *testing.T) {
+		t.Parallel()
+
+		m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+		m.session = nil
+
+		m.handleDialogMsg(dialog.ActionShowTPS{})
+		require.Equal(t, 0, m.chat.Len())
+		require.False(t, m.dialog.HasDialogs())
+	})
+}
+
 func TestHandleDialogMsg_ActionSuspend(t *testing.T) {
 	t.Parallel()
 

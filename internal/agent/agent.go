@@ -1065,6 +1065,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				return getSessionErr
 			}
 			usage, estimated := fallbackStepUsage(stepMessages, stepResult)
+			// NOTE: set after the fact rather than passed to AddFinish
+			// above, since usage is only known once fallbackStepUsage
+			// runs; see SetFinishOutputTokens.
+			currentAssistant.SetFinishOutputTokens(usage.OutputTokens)
 			a.updateSessionUsage(runModel, &updatedSession, usage, openrouterCost(stepResult.ProviderMetadata), estimated)
 			slog.Info("Model response received",
 				"session_id", call.SessionID,

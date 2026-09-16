@@ -132,6 +132,11 @@ type Finish struct {
 	Time    int64        `json:"time"`
 	Message string       `json:"message,omitempty"`
 	Details string       `json:"details,omitempty"`
+	// OutputTokens is the step's completion token count, recorded via
+	// SetFinishOutputTokens once usage is known. Zero means the count
+	// is unknown (e.g. messages persisted before this field existed),
+	// not that the step produced no output.
+	OutputTokens int64 `json:"output_tokens,omitempty"`
 }
 
 func (Finish) isPart() {}
@@ -537,6 +542,25 @@ func (m *Message) AddFinish(reason FinishReason, message, details string) {
 		}
 	}
 	m.Parts = append(m.Parts, Finish{Reason: reason, Time: time.Now().Unix(), Message: message, Details: details})
+}
+
+// SetFinishOutputTokens records the step's output token count on its
+// existing Finish part. It is a no-op if the message has no Finish
+// part yet (AddFinish must run first).
+//
+// NOTE: kept separate from AddFinish instead of adding a parameter to
+// it: AddFinish has a dozen call sites across cancellation, error, and
+// summarization paths that have no token count to give it, and only
+// OnStepFinish (which computes usage after calling AddFinish) has this
+// value.
+func (m *Message) SetFinishOutputTokens(tokens int64) {
+	for i, part := range m.Parts {
+		if c, ok := part.(Finish); ok {
+			c.OutputTokens = tokens
+			m.Parts[i] = c
+			return
+		}
+	}
 }
 
 func (m *Message) AddImageURL(url, detail string) {

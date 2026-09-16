@@ -1376,6 +1376,16 @@ func modelDisplayName(model Model) string {
 	return cmp.Or(model.CatwalkCfg.Name, model.ModelCfg.Model)
 }
 
+// selectedModelDisplayName mirrors modelDisplayName for a model that
+// was never built into a live agent.Model — such as a session's host
+// agent, which the commit trailer credits without invoking it.
+func (c *coordinator) selectedModelDisplayName(sel config.SelectedModel) string {
+	if catalog := c.cfg.Config().GetModel(sel.Provider, sel.Model); catalog != nil {
+		return cmp.Or(catalog.Name, sel.Model)
+	}
+	return sel.Model
+}
+
 // variantSwitchedText renders the transcript line for a preset change.
 func variantSwitchedText(from, to, modelName string) string {
 	switch {

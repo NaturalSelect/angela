@@ -21,7 +21,10 @@ const maxCommitDiffChars = 12000
 // output of `git diff --cached`), using a tool-free internal agent.
 // It never reads or writes sessionID's message history — sessionID
 // only lets the internal agent inherit that session's model where
-// the two share a slot, matching generateSessionTitle.
+// the two share a slot, matching generateSessionTitle. The
+// attribution trailer always credits sessionID's own agent, since
+// that is what actually wrote the staged changes — not the cheap
+// internal agent drafting the message text.
 func (c *coordinator) GenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error) {
 	diff = strings.TrimSpace(diff)
 	if diff == "" {
@@ -75,6 +78,14 @@ func (c *coordinator) GenerateCommitMessage(ctx context.Context, sessionID, diff
 	if attribution == nil {
 		attribution = &config.Attribution{}
 	}
-	message += attribution.CommitTrailer(modelDisplayName(model), "")
+	// The trailer credits host, the agent that actually wrote the
+	// staged changes, not model, which only drafted the message text.
+	// Fall back to model when host failed to resolve above or names
+	// no model of its own.
+	attributionModel := modelDisplayName(model)
+	if host.Model.Provider != "" && host.Model.Model != "" {
+		attributionModel = c.selectedModelDisplayName(host.Model)
+	}
+	message += attribution.CommitTrailer(attributionModel, "")
 	return message, nil
 }

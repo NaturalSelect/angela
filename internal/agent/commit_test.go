@@ -149,6 +149,37 @@ func TestGenerateCommitMessageTruncatesLongDiffsAndStripsBackticks(t *testing.T)
 		"the full untruncated diff must never reach the model")
 }
 
+// TestGenerateCommitMessageAttributionCreditsTheHostAgent pins that
+// the commit trailer names the model that actually wrote the staged
+// changes (sessionID's own agent), not the cheap internal agent that
+// only drafted the message text — the same bug bash_attribution_test.go
+// pins for the bash tool's identical trailer.
+func TestGenerateCommitMessageAttributionCreditsTheHostAgent(t *testing.T) {
+	server := commitCompletionServer(t, "fix: add y", nil)
+	defer server.Close()
+
+	coord := newModelPrefTestCoordinator(t, nil)
+	setMockProviderBaseURL(t, coord, server.URL)
+
+	// newModelPrefTestCoordinator pins "coder" to the chore slot for
+	// its own model-preference tests; put it back on the main slot so
+	// the session's host agent (large-model) disagrees with the
+	// commit agent's own chore-slot model (small-model).
+	agentCfg := coord.cfg.Config().Agents[config.AgentCoder]
+	agentCfg.Slot = config.SlotMain
+	coord.cfg.Config().Agents[config.AgentCoder] = agentCfg
+
+	sess, err := coord.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	msg, err := coord.GenerateCommitMessage(t.Context(), sess.ID, "diff --git a/x b/x\n+y")
+	require.NoError(t, err)
+	require.Contains(t, msg, "Assisted-by: Angela:Large",
+		"the trailer must credit the model that wrote the staged changes")
+	require.NotContains(t, msg, "Assisted-by: Angela:Small",
+		"the commit-drafting agent's own model must not be credited for code it did not write")
+}
+
 // TestGenerateCommitMessageAppliesProviderSystemPromptPrefix pins
 // that a provider configured with a system prompt prefix (some
 // OpenAI-compatible gateways require one ahead of every request) has

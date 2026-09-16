@@ -254,12 +254,20 @@ func TestRun_RepeatedAutoCompactionsDoNotNestTheResumePrompt(t *testing.T) {
 			userPrompts = append(userPrompts, m.Content().Text)
 		}
 	}
-	require.Len(t, userPrompts, 3, "the original prompt plus one resumed prompt per compaction")
+	require.Len(t, userPrompts, 5, "the original prompt, plus a resume reminder and a resumed prompt per compaction")
 	require.Equal(t, "hello", userPrompts[0])
-	require.Contains(t, userPrompts[1], "hello", "the resumed prompt must still carry the original request")
-	require.Equal(t, userPrompts[1], userPrompts[2],
+
+	var wrapped []string
+	for _, p := range userPrompts {
+		if strings.Contains(p, "The previous session was interrupted") {
+			wrapped = append(wrapped, p)
+		}
+	}
+	require.Len(t, wrapped, 2, "one resumed prompt per compaction")
+	require.Contains(t, wrapped[0], "hello", "the resumed prompt must still carry the original request")
+	require.Equal(t, wrapped[0], wrapped[1],
 		"a second compaction of the same queued turn must not wrap the resume prompt again")
-	require.Equal(t, 1, strings.Count(userPrompts[2], "The previous session was interrupted"),
+	require.Equal(t, 1, strings.Count(wrapped[1], "The previous session was interrupted"),
 		"the wrapper text must appear exactly once no matter how many compactions the turn goes through")
 }
 
@@ -454,8 +462,8 @@ func TestRun_SubAgentStillResumesWhenNotDone(t *testing.T) {
 			userPrompts = append(userPrompts, m.Content().Text)
 		}
 	}
-	require.Len(t, userPrompts, 2, "the original prompt plus the resumed prompt after compaction")
-	require.Contains(t, userPrompts[1], "do the thing", "the resumed prompt must still carry the original request")
+	require.Len(t, userPrompts, 3, "the original prompt, a resume reminder, and the resumed prompt after compaction")
+	require.Contains(t, userPrompts[2], "do the thing", "the resumed prompt must still carry the original request")
 }
 
 // TestRun_SubAgentSummarizesOnMaxTokensWithNoToolCalls guards the fix

@@ -267,6 +267,54 @@ func TestSkillsAfterCompactionEscapesSkillNames(t *testing.T) {
 	require.Contains(t, got, "&lt;/system-reminder&gt;")
 }
 
+func TestResumeAfterCompactionRendered(t *testing.T) {
+	t.Parallel()
+
+	requireGolden(t, Wrap(resumeAfterCompaction{}.Collect(State{Compacted: true})))
+}
+
+func TestResumeAfterCompactionFiresOnceAfterTheSummary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		state     State
+		wantFired bool
+	}{
+		{
+			name:      "the first turn after a summary gets the notice",
+			state:     State{Compacted: true},
+			wantFired: true,
+		},
+		{
+			name:      "later turns stay quiet, the notice is in history now",
+			state:     State{Compacted: true, TurnsSinceCompaction: 1},
+			wantFired: false,
+		},
+		{
+			name:      "an uncompacted session was never at risk of this confusion",
+			state:     State{},
+			wantFired: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := resumeAfterCompaction{}.Collect(tt.state)
+			if !tt.wantFired {
+				require.Empty(t, got)
+				return
+			}
+			require.Contains(t, got, "Provide a detailed summary of our conversation above",
+				"the notice must name the exact compaction-trigger text a model could mistake for a live request")
+			require.Contains(t, got, "Next Step",
+				"the notice must point the model back at the summary's own continuation section")
+		})
+	}
+}
+
 func TestUserRemindersRendered(t *testing.T) {
 	t.Parallel()
 

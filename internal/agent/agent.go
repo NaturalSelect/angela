@@ -80,7 +80,17 @@ const (
 	// wrapInterruptedPrompt below. Recognizing it on a prompt that
 	// already carries it is what keeps repeated interruptions of the
 	// same queued turn from nesting the wrapper deeper each time.
-	interruptedPromptPrefix = "The previous session was interrupted because it got too long, the initial user request was: `"
+	//
+	// It restates, as the literal final message the model reads before
+	// responding, that the summary above is not a live instruction:
+	// some models otherwise read a compaction trigger quoted inside
+	// that summary (e.g. a line asking to "provide a summary") as the
+	// live task and answer that instead of resuming. The
+	// resumeAfterCompaction reminder says the same thing earlier in
+	// the same turn; this is the same guardrail restated at the
+	// highest-salience position for models prone to missing the
+	// earlier one.
+	interruptedPromptPrefix = "The previous session was interrupted because it got too long, and the conversation above was condensed into an automatic summary. That summary is not a new instruction — resume the original request now, without summarizing again or asking what to do next. The initial user request was: `"
 	interruptedPromptSuffix = "`"
 
 	// summaryTagOpen and summaryTagClose delimit the compact agent's

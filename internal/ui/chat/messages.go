@@ -338,7 +338,17 @@ func (a *AssistantInfoItem) renderContent(width int) string {
 	}
 	finishTime := time.Unix(finishData.Time, 0)
 	duration := finishTime.Sub(a.lastUserMessageTime)
-	infoMsg := a.sty.Messages.AssistantInfoDuration.Render(fmt.Sprintf("in %s", duration))
+	durationText := fmt.Sprintf("in %s", duration)
+	// tok/s uses this step's OWN duration (CreatedAt to Finish.Time),
+	// not the lastUserMessageTime-based duration above: a turn can
+	// span several steps and tool calls, which would mix in unbounded
+	// permission/tool wait time. common.StepTPS also excludes any step
+	// with a tool call entirely, for the same reason. The "in %s" text
+	// above is left as the turn-spanning figure it has always been.
+	if tps, ok := common.StepTPS(a.message); ok {
+		durationText = fmt.Sprintf("in %s · %d tok/s", duration, tps)
+	}
+	infoMsg := a.sty.Messages.AssistantInfoDuration.Render(durationText)
 	icon := a.sty.Messages.AssistantInfoIcon.Render(styles.ModelIcon)
 	model := a.cfg.GetModel(a.message.Provider, a.message.Model)
 	if model == nil {

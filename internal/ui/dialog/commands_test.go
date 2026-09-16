@@ -104,6 +104,7 @@ func TestNewCommands_DefaultSystemCommands(t *testing.T) {
 	require.Contains(t, ids, "quit")
 	require.NotContains(t, ids, "session_details", "no session is open yet")
 	require.NotContains(t, ids, "show_todos", "no session is open yet")
+	require.NotContains(t, ids, "show_tps", "no session is open yet")
 	require.NotContains(t, ids, "scroll_to_top", "no session is open yet")
 	require.NotContains(t, ids, "scroll_to_latest_user", "no session is open yet")
 }
@@ -123,6 +124,7 @@ func TestNewCommands_SessionGatedCommands(t *testing.T) {
 	require.Contains(t, ids, "scroll_to_latest_user")
 	require.Contains(t, ids, "toggle_compact")
 	require.Contains(t, ids, "show_todos")
+	require.Contains(t, ids, "show_tps")
 }
 
 // TestDefaultCommands_ActiveAgentGating pins which of the thinking
@@ -387,6 +389,20 @@ func TestCommands_HandleMsg_TypingTodoFiltersToShowTodos(t *testing.T) {
 	}
 
 	require.Contains(t, visibleCommandIDs(c), "show_todos")
+}
+
+// TestCommands_HandleMsg_TypingTpsFiltersToShowTPS verifies the "tps"
+// alias makes the show_tps command reachable by typing "/tps", the
+// way a user would invoke it.
+func TestCommands_HandleMsg_TypingTpsFiltersToShowTPS(t *testing.T) {
+	t.Parallel()
+
+	c := newTestCommands(t, nil, "sess-1", true, nil, nil, nil)
+	for _, r := range "tps" {
+		c.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	require.Contains(t, visibleCommandIDs(c), "show_tps")
 }
 
 // TestCommands_HandleMsg_TabCycling verifies tab is inert with only

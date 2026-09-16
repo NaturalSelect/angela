@@ -491,6 +491,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "show_todos", "Show Todos", "", ActionShowTodos{}).WithAliases("todo", "todos"))
 	}
 
+	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "show_tps", "TPS Distribution", "", ActionShowTPS{}).WithAliases("tps"))
+	}
+
 	// Only show compact command if there's an active session
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}).WithAliases("compact"))

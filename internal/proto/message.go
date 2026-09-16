@@ -170,6 +170,9 @@ type Finish struct {
 	Time    int64        `json:"time"`
 	Message string       `json:"message,omitempty"`
 	Details string       `json:"details,omitempty"`
+	// OutputTokens is the step's completion token count. Zero means
+	// unknown, not that the step produced no output.
+	OutputTokens int64 `json:"output_tokens,omitempty"`
 }
 
 func (Finish) isPart() {}

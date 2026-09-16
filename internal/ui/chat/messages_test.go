@@ -161,6 +161,76 @@ func TestAssistantInfoItemRenderShowsConfiguredModelAndProvider(t *testing.T) {
 	require.Contains(t, out, "2s")
 }
 
+// TestAssistantInfoItemRenderShowsTokensPerSecondForQualifyingStep covers
+// the one case tok/s is shown: no tool calls, some output tokens, and a
+// step duration of at least a second.
+func TestAssistantInfoItemRenderShowsTokensPerSecondForQualifyingStep(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
+	start := time.Unix(1000, 0)
+	msg := &message.Message{
+		ID:        "m1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, OutputTokens: 100},
+		},
+	}
+
+	item := NewAssistantInfoItem(&sty, msg, cfg, start)
+
+	out := ansi.Strip(item.Render(80))
+	require.Contains(t, out, "20 tok/s")
+}
+
+// TestAssistantInfoItemRenderOmitsTokensPerSecondWhenStepHasToolCalls pins
+// the critical exclusion: a step with any tool call never shows a rate,
+// no matter how many tokens or how long it ran, because tool/permission
+// wait time is baked into its wall-clock duration.
+func TestAssistantInfoItemRenderOmitsTokensPerSecondWhenStepHasToolCalls(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
+	start := time.Unix(1000, 0)
+	msg := &message.Message{
+		ID:        "m1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
+			message.Finish{Reason: message.FinishReasonToolUse, Time: 1005, OutputTokens: 1000},
+		},
+	}
+
+	item := NewAssistantInfoItem(&sty, msg, cfg, start)
+
+	out := ansi.Strip(item.Render(80))
+	require.NotContains(t, out, "tok/s")
+}
+
+// TestAssistantInfoItemRenderOmitsTokensPerSecondUnderOneSecond avoids
+// divide-by-zero/near-zero noise from second-granularity Unix timestamps.
+func TestAssistantInfoItemRenderOmitsTokensPerSecondUnderOneSecond(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
+	start := time.Unix(1000, 0)
+	msg := &message.Message{
+		ID:        "m1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1000, OutputTokens: 5},
+		},
+	}
+
+	item := NewAssistantInfoItem(&sty, msg, cfg, start)
+
+	out := ansi.Strip(item.Render(80))
+	require.NotContains(t, out, "tok/s")
+}
+
 // -----------------------------------------------------------------------------
 // ExtractMessageItems
 // -----------------------------------------------------------------------------

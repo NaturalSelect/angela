@@ -127,6 +127,113 @@ func TestTurnStatusTokenUsageWithoutContextWindow(t *testing.T) {
 	require.NotContains(t, idle, "%")
 }
 
+// The tok/s figure is a "last known rate", so it must show up both while
+// the agent is busy and once it has gone idle, exactly like the token and
+// context-window figures next to it.
+func TestTurnStatusShowsTokensPerSecondForQualifyingStep(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
+		ID:        "a1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "hello"},
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, OutputTokens: 100},
+		},
+	}))
+
+	busy := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, busy, "20 tok/s")
+
+	m.agentBusyCache.set(false)
+	idle := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, idle, "20 tok/s")
+}
+
+// A step with any tool call must never contribute a rate, even though it
+// is the most recent assistant step: permission/tool wait time is baked
+// into its wall-clock duration.
+func TestTurnStatusOmitsTokensPerSecondWhenLastStepHasToolCalls(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
+		ID:        "a1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
+			message.Finish{Reason: message.FinishReasonToolUse, Time: 1005, OutputTokens: 1000},
+		},
+	}))
+
+	out := ansi.Strip(m.renderTurnStatus(200))
+	require.NotContains(t, out, "tok/s")
+}
+
+// The scan must skip back past a disqualified trailing step to find an
+// earlier one that does qualify, rather than giving up at the first miss.
+func TestTurnStatusUsesLastQualifyingStepNotLastStep(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(
+		chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
+			ID:        "a1",
+			Role:      message.Assistant,
+			CreatedAt: 1000,
+			Parts: []message.ContentPart{
+				message.TextContent{Text: "hello"},
+				message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, OutputTokens: 100},
+			},
+		}),
+		chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
+			ID:        "a2",
+			Role:      message.Assistant,
+			CreatedAt: 1010,
+			Parts: []message.ContentPart{
+				message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
+				message.Finish{Reason: message.FinishReasonToolUse, Time: 1011, OutputTokens: 5},
+			},
+		}),
+	)
+
+	out := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, out, "20 tok/s")
+}
+
+// Below a second of step duration the rate is too noisy to trust, so it
+// must not appear at all.
+func TestTurnStatusOmitsTokensPerSecondUnderOneSecond(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.chat.SetMessages(chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
+		ID:        "a1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1000, OutputTokens: 5},
+		},
+	}))
+
+	out := ansi.Strip(m.renderTurnStatus(200))
+	require.NotContains(t, out, "tok/s")
+}
+
+// With no qualifying step at all (e.g. session start), tokenUsageField
+// behaves exactly as it did before tok/s existed.
+func TestTurnStatusOmitsTokensPerSecondWithoutQualifyingStep(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+
+	out := ansi.Strip(m.renderTurnStatus(200))
+	require.NotContains(t, out, "tok/s")
+}
+
 // A sub-cent turn must not read as free.
 func TestFormatCostCollapsesSubCent(t *testing.T) {
 	t.Parallel()

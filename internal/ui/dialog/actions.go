@@ -83,11 +83,14 @@ type ActionSelectAgent struct {
 
 // Messages for commands
 type (
-	ActionNewSession              struct{}
-	ActionToggleHelp              struct{}
-	ActionToggleCompactMode       struct{}
-	ActionToggleDetails           struct{}
-	ActionShowTodos               struct{}
+	ActionNewSession        struct{}
+	ActionToggleHelp        struct{}
+	ActionToggleCompactMode struct{}
+	ActionToggleDetails     struct{}
+	ActionShowTodos         struct{}
+	// ActionShowTPS reports the current session's tokens/sec
+	// distribution across its qualifying assistant steps.
+	ActionShowTPS                 struct{}
 	ActionSuspend                 struct{}
 	ActionToggleThinking          struct{}
 	ActionExternalEditor          struct{}

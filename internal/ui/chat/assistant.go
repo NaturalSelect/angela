@@ -290,6 +290,15 @@ func (a *AssistantMessageItem) ID() string {
 	return a.message.ID
 }
 
+// Message returns the underlying message this item renders, letting
+// callers inspect step-level details (tool calls, finish state, token
+// counts) the rendered view does not expose directly. Used by the
+// turn status line to find the most recently finished assistant step
+// that qualifies for a tokens/sec rate; see common.StepTPS.
+func (a *AssistantMessageItem) Message() *message.Message {
+	return a.message
+}
+
 // RawRender implements [MessageItem].
 func (a *AssistantMessageItem) RawRender(width int) string {
 	cappedWidth := cappedMessageWidth(width)

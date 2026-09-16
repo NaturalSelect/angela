@@ -905,6 +905,26 @@ func (m *Chat) LastPendingTool() (message.ToolCall, bool) {
 	return message.ToolCall{}, false
 }
 
+// LastAssistantMessageWithRate returns the most recently finished
+// assistant step that qualifies for a tokens/sec rate (see
+// common.StepTPS: no tool calls, some output tokens, a step duration
+// of at least a second), skipping back over any step that does not.
+// It backs the turn status line's tokens/sec figure, mirroring how
+// LastPendingTool backs the activity label.
+func (m *Chat) LastAssistantMessageWithRate() (*message.Message, bool) {
+	for i := m.list.Len() - 1; i >= 0; i-- {
+		item, ok := m.list.ItemAt(i).(*chat.AssistantMessageItem)
+		if !ok {
+			continue
+		}
+		msg := item.Message()
+		if _, ok := common.StepTPS(msg); ok {
+			return msg, true
+		}
+	}
+	return nil, false
+}
+
 // ToggleExpandedSelectedItem expands the selected message item if it is expandable.
 func (m *Chat) ToggleExpandedSelectedItem() {
 	if expandable, ok := m.list.SelectedItem().(chat.Expandable); ok {

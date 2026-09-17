@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -487,6 +488,31 @@ func TestDiscoverBuiltin(t *testing.T) {
 		}
 	}
 	require.True(t, foundMigrate, "angela-migrate builtin skill not found")
+
+	// angela-config's field reference lives alongside its SKILL.md as
+	// separate files the agent loads on demand (see angela-config's
+	// "Reference index"). DiscoverBuiltinWithStates's fs.WalkDir only
+	// treats files named SkillFileName as skills, so these must be
+	// embedded and readable without being discovered as skills of their
+	// own — confirmed below by re-checking the "angela-config" count.
+	referenceTopics := []string{
+		"discovery", "providers", "slots", "agents",
+		"mcp", "lsp", "hooks", "permissions", "options",
+	}
+	for _, topic := range referenceTopics {
+		path := "builtin/angela-config/reference/" + topic + ".md"
+		info, err := fs.Stat(BuiltinFS(), path)
+		require.NoError(t, err, "reference file %s not embedded", path)
+		require.False(t, info.IsDir())
+	}
+
+	var angelaConfigCount int
+	for _, s := range discovered {
+		if s.Name == "angela-config" {
+			angelaConfigCount++
+		}
+	}
+	require.Equal(t, 1, angelaConfigCount, "reference/*.md files must not be discovered as their own skills")
 }
 
 func TestDeduplicate(t *testing.T) {

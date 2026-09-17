@@ -1,706 +1,236 @@
 ---
 name: angela-config
-description: Use when the user needs help configuring Angela — writing angela.json, setting up providers, models, agents, LSPs, MCP servers, hooks, skills, permissions, or changing Angela behavior.
+description: Use when the user wants to change how Angela is configured — add or switch a provider or model, add an MCP server or LSP, adjust permissions, add a hook, disable a tool/skill/agent, or tune options — or asks what a config field does. Make the edit for them and validate it; don't just explain the field and stop.
 ---
 
 # Angela Configuration
 
-Angela is configured with **`angela.json`** — a single JSON format, used at
-every layer. Several files are discovered and deep-merged into one effective
-config at startup.
+Angela is configured with `angela.json` — a single JSON format used at every
+layer (system, global, project, workspace) and deep-merged at startup (exact
+precedence in `reference/discovery.md`). When the user wants something
+changed, make the change: locate the right file, write the minimal edit, and
+validate it. Don't just describe the field and leave the edit to them —
+that's the part they came to you to avoid.
 
-Add `$schema` for IDE autocomplete (optional):
+## Principles
 
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json"
-}
-```
+- You make the edit. Read the current file, write the smallest diff that
+  gets the request done, validate it.
+- Never write a secret literally — reference it with `$VAR` or
+  `${VAR:?message}` (`reference/discovery.md`).
+- Ask only what you can't infer, in one batch, before you write.
+- Every edit ends with `angela config validate` passing clean and a note on
+  whether the user needs to restart Angela.
 
-## Config discovery and precedence
+## Procedure
 
-Files are loaded in this order and merged, with **later files winning** on
-conflict. Missing or empty files are skipped; a file with invalid JSON is a
-hard error.
+Follow this every time, regardless of what's being changed:
 
-1. `/etc/angela/angela.json` — system-wide (Unix only; not read on Windows).
-2. **Global user config** — `$ANGELA_GLOBAL_CONFIG/angela.json` when that
-   variable is set, otherwise `~/.config/angela/angela.json`
-   (`%USERPROFILE%\.config\angela\angela.json` on Windows).
-3. **Project configs** — Angela walks up from the working directory looking
-   for `.angela.json` and `angela.json` in each directory.
-4. **Workspace config** — `<data_directory>/angela.json` (default
-   `.angela/angela.json`; see `options.data_directory`). Loaded last, so it
-   outranks every layer above, including the closest project config.
+1. **Pick a recipe** from the list below. If none fits, or you need a field
+   a recipe doesn't cover, View
+   `angela://skills/angela-config/reference/<topic>.md` for that one topic —
+   don't read the whole reference tree speculatively.
+2. **Locate the file to edit.** Run `angela dirs` to see the config files
+   that apply here, then use the scope table below to pick one. If it
+   doesn't exist yet, start it from `{}`.
+3. **Read it first.** View the target file's current contents before
+   editing. Config files deep-merge rather than get overwritten, but you can
+   still clobber a sibling key by pasting a whole block carelessly.
+4. **Ask only what you can't infer** — which model/provider, global vs.
+   project scope, names of environment variables for secrets — in one
+   batch. Skip anything the conversation, the current config, or a recipe
+   default already answers.
+5. **Make the minimal edit.** Add or change only the keys the request
+   needs; leave the rest of the file untouched. Use Write only for a
+   brand-new file.
+6. **Validate.** Run `angela config validate`. A non-zero exit is a hard
+   error — fix it and rerun. Treat every `warning:` line the same way,
+   especially "Ignoring agent with unrecognized configuration" (it means the
+   override you just wrote was silently dropped). Repeat until it exits
+   clean and no warning traces back to what you just wrote — a pre-existing
+   warning unrelated to your edit (e.g. no git repo in a scratch directory)
+   isn't yours to fix.
+7. **Report back.** Say which file and which keys changed, and **tell the
+   user whether they need to restart Angela** — editing a config file from
+   outside Angela never hot-reloads; only Angela's own writes do (e.g. a
+   model switch from the TUI). `AngelaInfo`'s `[config] dirty` flag confirms
+   the file changed on disk if you need to double-check.
 
-Angela writes to the global and workspace files itself — model selection,
-recent models, OAuth tokens — so both are hand-editable and machine-updated.
-If a setting seems to override your project config for no visible reason,
-check `.angela/angela.json` first.
+## Where to write it
 
-The upward walk in step 3 stops at the **git working tree root** when one can be
-detected, otherwise at the working directory itself. An unrelated
-`angela.json` sitting above the project is therefore never picked up.
+| Change | Write to |
+| --- | --- |
+| Providers, API keys, slots, TUI/attribution/notification preferences — anything personal | Global: `~/.config/angela/angela.json` (or `$ANGELA_GLOBAL_CONFIG`) |
+| MCP servers, LSPs, permission rules, hooks, `context_paths`, `skills_paths` specific to this repo | Project: `angela.json` at the repo root (`.angela.json` instead if the user wants it untracked by git) |
+| Anything written to `<data_directory>/angela.json` (default `.angela/angela.json`) | Only when the user explicitly asks — it's Angela's own highest-priority layer and overrides every other file |
 
-Within the project layer:
+If it's genuinely ambiguous, ask — don't guess between global and project.
 
-- A directory **closer to the working directory wins** over one further up.
-- In the same directory, **`.angela.json` wins over `angela.json`**.
+## Recipes
 
-Merge semantics: objects merge key by key, scalars are replaced by the
-higher-priority layer, and **arrays are concatenated** rather than replaced.
-The one exception is an agent's `allowed_tools` / `allowed_mcp` / `disabled_tools` /
-`allowed_agents`, which are taken whole from the highest-priority layer that
-mentions them — concatenating a list with `"inherited"` would be meaningless.
+### Add or change a provider
 
-## Shell expansion
-
-Selected string fields run through Angela's embedded shell at load time, so
-secrets never have to be written into the file:
-
-| Surface                                                   | Expanded                           |
-| --------------------------------------------------------- | ---------------------------------- |
-| Provider `api_key`, `base_url`, `extra_headers`            | yes                                |
-| Provider `extra_body`                                      | **no** (JSON passthrough)          |
-| MCP `command`, `args`, `env`, `url`, `headers`             | yes                                |
-| MCP `oauth_client_id`, `oauth_client_secret`               | yes                                |
-| LSP `command`, `args`, `env`                               | yes                                |
-| Top-level `env` values                                     | yes                                |
-| Hook `command`                                             | runs via the shell at fire time    |
-
-Supported constructs: `$VAR`, `${VAR}`, `${VAR:-default}`, `${VAR:+alt}`,
-`${VAR:?message}`, `$(command)`. An unset variable expands to empty; a failing
-`$(command)` is an error. A **header that resolves to empty is dropped** from
-the request rather than sent as `Header:`. A literal `$` in a URL (e.g. OData
-`$filter`) must be escaped as `\$`.
-
-An `ANGELA_`-prefixed variable shadows its bare name in every expansion here
-— set `ANGELA_OPENAI_API_KEY` to override `$OPENAI_API_KEY` for Angela alone,
-leaving the plain variable untouched for your shell and other programs. A
-`$(command)` has a 5-minute timeout; a slower command fails config loading
-instead of hanging.
-
-> [!WARNING]
-> `angela.json` is trusted code: any `$(...)` in it runs at load time with your
-> shell privileges, before the UI appears. Don't launch Angela in a directory
-> whose config you haven't reviewed.
-
-## providers
-
-`providers` maps a provider ID to its configuration. The ID is what a
-slot's `provider` field references.
-
-| Field                  | Type              | Notes                                                          |
-| ---------------------- | ----------------- | -------------------------------------------------------------- |
-| `id`                   | string            | Provider identifier                                             |
-| `name`                 | string            | Display name                                                    |
-| `type`                 | string            | API format: `openai`, `openai-compat`, `openrouter`, `vercel`, `anthropic`, `google`, `azure`, `bedrock`, `google-vertex`, `litellm`, `llamacpp`, `lmstudio`, `ollama`, `omlx`. Defaults to `openai` |
-| `use_responses`        | bool              | Force the OpenAI Responses API on or off for this provider; unset picks per model from its ID |
-| `base_url`             | string            | API base URL                                                    |
-| `api_key`              | string            | Shell-expanded                                                  |
-| `disable`              | bool              | Default `false`                                                 |
-| `flat_rate`            | bool              | Skip cost accumulation for subscription/flat-rate billing       |
-| `discover_models`      | bool              | Default `true`. Fetches `/v1/models`; when `models` is also set the discovered ones are merged in and yours win. Set `false` to use only what you list |
-| `system_prompt_prefix` | string            | Prefix prepended to system prompts for this provider            |
-| `extra_headers`        | object            | Extra HTTP headers; values shell-expanded, empty ones dropped   |
-| `extra_body`           | object            | Merged verbatim into OpenAI-compatible request bodies; **not** shell-expanded |
-| `provider_options`     | object            | Provider-specific options                                       |
-| `aws_auth_refresh`     | string            | Shell command run when Bedrock credentials expire               |
-| `oauth`                | object            | OAuth2 token Angela persists after an interactive login (e.g. Copilot); not meant to be hand-written |
-| `models`               | array             | Model catalog, see below                                        |
-
+**Ask:** which provider (or is it a custom OpenAI-compatible endpoint), and
+the name of the environment variable holding the API key.
+**Write** (global config, usually):
 ```json
 {
   "providers": {
-    "deepseek": {
+    "<id>": {
       "type": "openai-compat",
-      "base_url": "https://api.deepseek.com/v1",
-      "api_key": "${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}",
-      "models": [
-        {
-          "id": "deepseek-chat",
-          "name": "DeepSeek Chat",
-          "context_window": 128000,
-          "default_max_tokens": 8192,
-          "cost_per_1m_in": 0.27,
-          "cost_per_1m_out": 1.1,
-          "cost_per_1m_in_cached": 0.27,
-          "cost_per_1m_out_cached": 0.07,
-          "can_reason": false,
-          "supports_attachments": false
-        }
-      ]
+      "base_url": "https://.../v1",
+      "api_key": "${MY_KEY_VAR:?set MY_KEY_VAR}"
     }
   }
 }
 ```
+**Watch out:** `base_url` conventions differ by `type` — `anthropic` wants
+the bare host (no `/v1`); `openai`/`openai-compat`/`openrouter` want the
+full path including `/v1`. GitHub Copilot doesn't take an `api_key` at all —
+send the user to `angela login copilot` instead.
+**Reference:** `reference/providers.md`
 
-### `base_url` conventions differ by `type`
+### Switch the main or chore model
 
-- **`anthropic`** wants the bare host (`https://api.anthropic.com`, no `/v1`)
-  because the SDK appends `v1/messages` itself. A stray `/v1` or
-  `/v1/messages` suffix is stripped automatically.
-- **`openai`, `openai-compat`, `openrouter`** never add a version segment, so
-  `base_url` must be exactly what the vendor's docs show, `/v1` included. It
-  is never guessed or appended. An accidentally copied `/chat/completions` or
-  `/responses` suffix is stripped.
-
-### Entries in `models`
-
-| Field                                             | Type   | Notes                                       |
-| ------------------------------------------------- | ------ | ------------------------------------------- |
-| `id`, `name`                                      | string | Required; `id` is the provider's model ID   |
-| `context_window`, `default_max_tokens`            | int    | Required                                    |
-| `cost_per_1m_in`, `cost_per_1m_out`               | number | Required; USD per 1M tokens                 |
-| `cost_per_1m_in_cached`, `cost_per_1m_out_cached` | number | Required                                    |
-| `can_reason`                                      | bool   | Required                                    |
-| `supports_attachments`                            | bool   | Required                                    |
-| `reasoning_levels`                                | array  | Effort levels the model accepts. A `reasoning_effort` outside this list is not sent |
-| `default_reasoning_effort`                        | string | Default effort for this model               |
-| `options`                                         | object | `temperature`, `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options` |
-| `think`                                           | bool   | Default thinking mode for Anthropic reasoners |
-| `variants`                                        | object | Named parameter presets, see below           |
-
-### variants
-
-A variant is a named preset layered over a model's own parameters. It carries
-no provider or model ID — it is a different way to call the *same* model, so N
-models with M presets stays N+M configs instead of N×M. Every field is
-optional and overrides only the keys it names; `provider_options` merges key by
-key. An agent selects one via its `variant` field; an unknown name silently
-degrades to the baseline. A model's own `reasoning_levels` are seeded as
-variants automatically, named after each level; a user-defined variant that
-reuses one of those names replaces its behavior instead of adding a duplicate.
-
-Variant fields: `think`, `reasoning_effort`, `max_tokens`, `temperature`,
-`top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options`.
-Values are validated at load time — `temperature`/`top_p` must be finite and
-in `0`–`1`, `max_tokens` must be `0`–`200000`, and the penalties must be
-finite — and a variant that fails is dropped with a warning rather than
-failing the whole config load.
-
+**Ask:** which slot (`main` or `chore`) and which provider/model — or just
+do it directly if the user already named a model.
+**Write:**
 ```json
-{
-  "providers": {
-    "anthropic": {
-      "models": [
-        {
-          "id": "claude-sonnet-4-20250514",
-          "name": "Claude Sonnet 4",
-          "context_window": 200000,
-          "default_max_tokens": 16384,
-          "cost_per_1m_in": 3,
-          "cost_per_1m_out": 15,
-          "cost_per_1m_in_cached": 0.3,
-          "cost_per_1m_out_cached": 0.3,
-          "can_reason": true,
-          "supports_attachments": true,
-          "variants": {
-            "deep": { "think": true, "max_tokens": 32768 },
-            "fast": { "think": false, "temperature": 0 }
-          }
-        }
-      ]
-    }
-  }
-}
+{ "slots": { "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" } } }
 ```
+**Watch out:** the TUI's model picker changes this live with no restart —
+mention that as the faster path if the user is at the keyboard. A
+config-file edit needs a restart either way.
+**Reference:** `reference/slots.md`
 
-## slots
+### Add an MCP server
 
-`slots` maps a **slot name** to the model that fills it. Two slots ship with
-Angela:
-
-- **`main`** — the workhorse, used by `coder` and most agents.
-- **`chore`** — the cheap model for auxiliary work such as titles and
-  summaries.
-
-Any other slot name may be defined; it takes effect only when an agent's
-`slot` field names it. A slot is mostly a pure reference — thinking mode,
-sampling parameters, and the variant presets themselves all live on the
-model's catalog entry under `providers.<id>.models[]` (see above), not on
-the slot. The one exception is `variant`, which only *names* one of those
-presets as this slot's own default.
-
-| Field      | Type   | Notes                                                                |
-| ---------- | ------ | ----------------------------------------------------------------------- |
-| `provider` | string | **Required**; a key in `providers`                                      |
-| `model`    | string | **Required**; the provider's model ID                                   |
-| `variant`  | string | Default variant for this slot; an agent's own `variant` always wins     |
-
-A slot that no agent's `slot` field ever names still loads fine, but logs a
-startup warning since it has no effect.
-
+**Ask:** stdio (local command) or http/sse (remote URL), and any auth
+(bearer token env var, or `oauth: true`).
+**Write:**
 ```json
-{
-  "slots": {
-    "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
-    "chore": { "provider": "anthropic", "model": "claude-haiku-4-20250514", "variant": "fast" }
-  }
-}
+{ "mcp": { "<name>": { "type": "stdio", "command": "npx", "args": ["-y", "pkg"] } } }
 ```
+**Watch out:** `type` is required, never inferred. `docker` is a reserved
+name with a one-line built-in config. `oauth: true` only works over `http`.
+**Reference:** `reference/mcp.md`
 
-## agents
+### Add or override an LSP
 
-`agents` maps an agent ID to overrides for a built-in agent, or to a brand new
-agent. Built-in agents you can override: `coder`, `explore`, `general`,
-`plan`, `deep-research`, `web-fetch`, plus the hidden internal ones `title`,
-`compact`, `generate-agent`, and `initialize`.
-
-| Field            | Type   | Notes                                                              |
-| ---------------- | ------ | ------------------------------------------------------------------ |
-| `name`           | string | Display name                                                        |
-| `description`    | string | What the agent does; shown to the dispatching model                 |
-| `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user), `compact` (only ever summarizes another agent's session) |
-| `slot`           | string | A slot name from `slots`. Default `main` for most agents — `title` and `web-fetch` default to `chore` instead, which is how a subagent is pointed at a cheaper model |
-| `variant`        | string | A variant name on that model slot; takes priority over the slot's own `variant` |
-| `max_tokens`     | int    | Output-token cap; omit for the model default                        |
-| `prompt`         | string | Replaces the built-in system prompt. Parsed as a Go template        |
-| `temperature`    | number | 0–1                                                                 |
-| `disabled`       | bool   | Turn the agent off                                                  |
-| `hidden`         | bool   | Keep it out of dispatch lists and UI completion while still resolvable by ID |
-| `allowed_tools`  | array \| string | Array of tool names, or `"all"`, or `"inherited"` (mirror the coder's resolved set) |
-| `disabled_tools` | array  | Removed from the resolved allow list                                |
-| `allowed_mcp`    | object \| string | Object mapping server name to allowed tool names (empty array = the whole server), or `"all"`, or `"inherited"` |
-| `allowed_agents` | array \| string | Array of agent IDs, or `"all"`. Unset = every dispatchable agent is available |
-| `compact_agent`  | string | ID of a `mode: compact` agent that summarizes this agent's sessions. Unset, unknown, or non-compact IDs fall back to the built-in `compact` agent |
-| `context_paths`  | array  | Context files for this agent                                        |
-
-`disabled` and `hidden` are tri-state: omitting them inherits the lower layer,
-and an explicit `false` can re-enable or un-hide something a lower-priority
-layer turned off.
-
-> [!IMPORTANT]
-> An unrecognized field inside one `agents.<id>` entry drops that entire
-> override at load time, with a warning, rather than silently keeping the
-> built-in default or ignoring just the bad field — this catches a typo like
-> `allowed_tool` before it grants full tool access by accident. `coder` is
-> also special: it can never be `disabled`, and `allowed_tools: "inherited"`
-> or `allowed_mcp: "inherited"` on it degrades to `"all"` with a warning,
-> since it's the root of the inheritance tree and has nothing to inherit
-> from. A global `options.disabled_tools` always wins over a per-agent
-> `allowed_tools` — an agent can't re-enable a tool removed at the top level.
-
+**Ask:** usually nothing — for a name Angela already recognizes (`gopls`,
+`typescript-language-server`, ...), `{}` is enough.
+**Write:**
 ```json
-{
-  "agents": {
-    "explore": { "slot": "chore" },
-    "general": { "disabled": true },
-    "reviewer": {
-      "name": "Reviewer",
-      "description": "Reviews a diff for correctness and safety.",
-      "mode": "subagent",
-      "slot": "main",
-      "variant": "deep",
-      "allowed_tools": ["Read", "Grep", "Glob", "LS"],
-      "allowed_mcp": { "github": ["create_issue"] }
-    }
-  }
-}
+{ "lsp": { "gopls": {} } }
 ```
+**Watch out:** only needed when `options.auto_lsp` (on by default) doesn't
+already find the server from root markers, or to override its defaults.
+**Reference:** `reference/lsp.md`
 
-## mcp
+### Tune permissions
 
-`mcp` maps a server name to its connection config.
-
-| Field                  | Type   | Notes                                                     |
-| ---------------------- | ------ | --------------------------------------------------------- |
-| `type`                 | string | **Required**: `stdio`, `sse`, or `http`. Default `stdio`   |
-| `command`              | string | stdio only; shell-expanded                                 |
-| `args`                 | array  | stdio only; shell-expanded                                 |
-| `env`                  | object | stdio only; shell-expanded                                 |
-| `url`                  | string | http/sse only; shell-expanded                              |
-| `headers`              | object | http/sse only; shell-expanded, empty values dropped        |
-| `timeout`              | int    | Seconds. Default `10`                                      |
-| `disabled`             | bool   | Default `false`                                            |
-| `enabled_tools`        | array  | Allow list of tool names from this server                  |
-| `disabled_tools`       | array  | Deny list of tool names from this server                   |
-| `oauth`                | bool   | OAuth 2.1 flow, **http transport only**. Opens a browser and persists the token |
-| `oauth_client_id`      | string | Pre-registered client ID for servers without dynamic client registration (GitHub, Slack) |
-| `oauth_client_secret`  | string | Secret paired with `oauth_client_id`                       |
-| `oauth_callback_port`  | int    | Pin the localhost redirect port when the provider enforces exact-match redirect URIs |
-
-The token from an `oauth` login is persisted to `oauth_token` by Angela
-itself — it isn't meant to be hand-written. The server name `docker` is
-reserved: enabling Docker MCP support configures it automatically as
-`docker mcp gateway run`.
-
-```json
-{
-  "mcp": {
-    "github": {
-      "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/",
-      "headers": { "Authorization": "Bearer $GH_PAT" }
-    },
-    "filesystem": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["/path/to/mcp-server.js"],
-      "timeout": 30
-    }
-  }
-}
-```
-
-## lsp
-
-`lsp` maps a language-server name to its config. With `options.auto_lsp` on
-(the default), Angela also discovers servers from root markers, so most
-projects need no `lsp` block at all.
-
-For a name Angela recognizes (e.g. `gopls`, `typescript-language-server`), it
-fills in any of `command`, `args`, `env`, `filetypes`, `root_markers`,
-`options`, and `init_options` you leave unset from its built-in defaults, so
-`{"lsp": {"gopls": {}}}` alone is often enough to turn one on explicitly.
-
-| Field          | Type   | Notes                                                |
-| -------------- | ------ | ---------------------------------------------------- |
-| `command`      | string | Shell-expanded                                       |
-| `args`         | array  | Shell-expanded                                       |
-| `env`          | object | Shell-expanded                                       |
-| `filetypes`    | array  | Extensions this server handles, e.g. `["go", "mod"]` |
-| `root_markers` | array  | Files that mark the project root, e.g. `["go.mod"]`  |
-| `init_options` | object | Sent in the LSP `initialize` request                 |
-| `options`      | object | Server-specific settings sent at initialization      |
-| `timeout`      | int    | Seconds for initialization. Default `30`             |
-| `disabled`     | bool   | Default `false`                                      |
-
-```json
-{
-  "lsp": {
-    "go": {
-      "command": "gopls",
-      "filetypes": ["go", "mod"],
-      "root_markers": ["go.mod"],
-      "env": { "GOPATH": "$HOME/go" }
-    },
-    "typescript": {
-      "command": "typescript-language-server",
-      "args": ["--stdio"]
-    }
-  }
-}
-```
-
-## hooks
-
-> **Experimental.** No compatibility guarantee — the config format and
-> supported events may change or be removed in a future release.
-
-`hooks` maps an event name to a list of shell commands that fire on it.
-Currently only **`PreToolUse`** is supported, which runs before a tool
-executes. Event keys are normalized, so `PreToolUse`, `pretooluse`,
-`pre_tool_use`, and `PRE_TOOL_USE` all land on the same event.
-
-| Field     | Type   | Notes                                                     |
-| --------- | ------ | --------------------------------------------------------- |
-| `command` | string | **Required**. Invalid or empty commands fail at load time  |
-| `name`    | string | Display name in the TUI; falls back to `command`           |
-| `matcher` | string | Regex tested against the tool name. Empty matches all tools. An invalid regex fails at load time |
-| `timeout` | int    | Seconds. Default `30`                                      |
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "name": "no-haskell",
-        "matcher": "^bash$",
-        "command": ".angela/hooks/no-haskell.sh",
-        "timeout": 10
-      }
-    ]
-  }
-}
-```
-
-### How hooks run
-
-1. When a tool is about to be called, every `PreToolUse` hook whose `matcher`
-   matches (or which has no matcher) runs **in parallel**.
-2. Duplicate commands are deduplicated — each unique command runs at most once.
-3. The hook receives JSON on **stdin** plus hook-specific **environment
-   variables**.
-
-Hooks run *before* permission checks, and they fire on every tool call,
-including those a dispatched subagent makes.
-
-### Hook input (stdin)
-
-```json
-{
-  "event": "PreToolUse",
-  "session_id": "abc-123",
-  "cwd": "/path/to/project",
-  "tool_name": "Bash",
-  "tool_input": { "command": "ls -la" },
-  "agent_id": "coder",
-  "depth": 0
-}
-```
-
-`depth` is `0` for the top-level agent and `1+` below it, so a hook that only
-wants top-level calls filters on `depth` or `agent_id`.
-
-### Hook environment variables
-
-| Variable                      | Description                                       |
-| ----------------------------- | ------------------------------------------------- |
-| `ANGELA_EVENT`                | Event name (e.g. `PreToolUse`)                    |
-| `ANGELA_TOOL_NAME`            | Name of the tool being called                     |
-| `ANGELA_SESSION_ID`           | Current session ID                                |
-| `ANGELA_CWD`                  | Current working directory                         |
-| `ANGELA_PROJECT_DIR`          | Project root directory                            |
-| `ANGELA_AGENT_ID`             | Agent making the call (e.g. `coder`)              |
-| `ANGELA_AGENT_DEPTH`          | `0` for the top-level agent, `1+` below it        |
-| `ANGELA_TOOL_INPUT_COMMAND`   | Value of `command` from tool input (if present)   |
-| `ANGELA_TOOL_INPUT_FILE_PATH` | Value of `file_path` from tool input (if present) |
-
-### Hook output
-
-**Exit code 0** — hook succeeded. Stdout is parsed as JSON:
-
-```json
-{ "decision": "allow", "context": "optional context appended to tool result" }
-```
-
-- `decision`: `allow` to explicitly allow, `deny` to block, `none` (or omit).
-- `reason`: explanation, used when denying or halting.
-- `context`: extra context appended to the tool result.
-- `updated_input`: a **shallow-merge patch** against the tool input, not a
-  replacement. Keys you include overwrite; keys you omit are preserved.
-- `halt`: `true` stops the whole agent turn, not just this tool call, and
-  hands control back to the user; `reason` becomes the halt message.
-
-**Exit code 2** — the tool call is blocked; stderr is the deny reason.
-
-**Exit code 49** — shorthand for `{"halt": true}`: stderr is the reason.
-
-**Any other exit code** — non-blocking error; the tool call proceeds.
-
-### Decision aggregation
-
-- **Deny wins over allow** — any deny blocks the call.
-- **Allow wins over none** — a lone allow lets it proceed.
-- Deny reasons and context strings are concatenated, newline-separated.
-- `updated_input` patches shallow-merge in config order; later patches win on
-  colliding keys.
-
-### Claude Code compatibility
-
-Angela also accepts the Claude Code hook output format, so existing hooks work
-unchanged:
-
-```json
-{
-  "hookSpecificOutput": {
-    "permissionDecision": "allow",
-    "permissionDecisionReason": "Auto-approved",
-    "updatedInput": { "command": "echo rewritten" }
-  }
-}
-```
-
-## permissions
-
-| Field           | Type   | Notes                                                     |
-| --------------- | ------ | --------------------------------------------------------- |
-| `allowed_tools` | array  | Tool names that skip permission prompts entirely           |
-| `rules`         | array  | Declarative rules, see below                               |
-| `prompt`        | string | `ask` (default) or `deny` — what happens when no rule settles a request |
-
-A rule matches on what a call actually touches, not just on the tool name:
-
-| Field     | Type   | Notes                                                                    |
-| --------- | ------ | ------------------------------------------------------------------------ |
-| `action`  | string | **Required**: `allow`, `ask`, or `deny`                                   |
-| `tool`    | string | An access category (`read`, `edit`, `execute`, `network`, `mcp`, `list`, `merge`) or a single tool name (`Bash`, `Read`, case-sensitive). Empty matches everything |
-| `pattern` | string | Narrows the match. Empty or `*` matches everything                        |
-| `mode`    | string | How `pattern` is compared: `auto` (picks by action), `path`, `free`, `domain` |
-
-`merge` is the access category for the `Merge` tool a `branch` agent uses to
-return its result to the conversation that forked it. That tool, plus the
-`ProposalWrite`/`ProposalEdit`/`ProposalRead` tools a branch drafts with, is
-appended to a branch agent's toolset *after* `allowed_tools`/`disabled_tools`
-filtering runs — neither field can take it away, since a branch that could
-draft a result but never return it would strand the conversation. `auto`
-resolves to `path` for `read`/`list`/`edit` and to `free` for everything
-else; `domain` applies only to `network` and matches subdomains too (a rule
-for `example.com` also covers `sub.example.com`). A shell command is judged
-segment by segment, so each command in a pipeline is checked on its own, and
-a network access that also writes to disk — a download — is checked as both
-`network` and `edit`.
-
-Rules are evaluated **deny > ask > allow** regardless of the order they are
-written in, so a deny always wins. `prompt` only decides the fallback when
-nothing matched; a deny rule and a dangerous or unreadable command outrank it
-either way.
-
-To hide a tool from the agent entirely rather than prompt for it, use
-`options.disabled_tools` — that removes the tool, while `permissions` only
-governs whether a call is approved.
-
+**Ask:** how much friction the user wants — every tool prompted, read-only
+tools free, or only dangerous commands blocked.
+**Write:**
 ```json
 {
   "permissions": {
-    "allowed_tools": ["Read", "LS", "Grep", "Edit"],
-    "prompt": "ask",
-    "rules": [
-      { "action": "deny", "tool": "Edit", "pattern": "**/.env", "mode": "path" },
-      { "action": "deny", "tool": "Edit", "pattern": "**/id_rsa", "mode": "path" },
-      { "action": "allow", "tool": "Bash", "pattern": "git status*" },
-      { "action": "deny", "pattern": "evil.example.com", "mode": "domain" }
-    ]
+    "allowed_tools": ["Read", "LS", "Grep", "Glob"],
+    "rules": [{ "action": "deny", "tool": "edit", "pattern": "**/.env*", "mode": "path" }]
   }
 }
 ```
+**Watch out:** deny always wins over allow regardless of rule order. Use
+`options.disabled_tools` instead if the goal is hiding a tool entirely
+rather than approving it faster.
+**Reference:** `reference/permissions.md`
 
-## options
+### Add a simple hook
 
-| Field                          | Type   | Default            | Notes                                                          |
-| ------------------------------ | ------ | ------------------ | -------------------------------------------------------------- |
-| `context_paths`                | array  | —                  | Extra project context files                                     |
-| `reminders`                    | array  | —                  | Short notices re-injected as a system reminder at the end of every turn, unlike context files which are sent once and fade as the conversation grows |
-| `global_context_paths`         | array  | `~/.config/angela/ANGELA.md`, `~/.config/AGENTS.md` | Global context files      |
-| `skills_paths`                 | array  | —                  | Extra Agent Skills directories                                  |
-| `agent_paths`                  | array  | —                  | Directories holding agent markdown files                        |
-| `disabled_skills`              | array  | —                  | Skill names to hide from the agent                              |
-| `disabled_tools`               | array  | —                  | Built-in tools to disable and hide from the agent               |
-| `data_directory`               | string | `.angela`          | Per-project state, including the workspace config layer (`<data_directory>/angela.json`). Relative paths resolve against the working directory |
-| `initialize_as`                | string | `AGENTS.md`        | Context file created/updated by project initialization          |
-| `debug`                        | bool   | `false`            | Debug logging                                                   |
-| `debug_lsp`                    | bool   | `false`            | Debug logging for LSP servers                                   |
-| `auto_lsp`                     | bool   | `true`             | Auto-configure LSPs from root markers                           |
-| `progress`                     | bool   | `true`             | Indeterminate progress updates during long operations           |
-| `notifications`                | string | `auto`             | `auto` (native locally, an OSC escape sequence over SSH), `native`, `osc`, `bell`, `disabled` |
-| `subagent_depth`               | int    | `2`                | Levels of subagent nesting via the Agent tool, counting a branch hop the same as a subagent hop. `0` disables delegation; must be non-negative. Raising it multiplies token and time cost per dispatch chain |
-| `disable_metrics`              | bool   | `false`            | Stop sending metrics                                            |
-| `disable_provider_auto_update` | bool   | `false`            | Stop auto-updating the provider catalog                         |
-| `disable_default_providers`    | bool   | `false`            | Ignore all embedded providers. Every provider must then be fully specified with `base_url`, `models`, and `api_key` — no merging with defaults |
-| `attribution`                  | object | —                  | See below                                                       |
-| `compaction`                   | object | —                  | See below                                                       |
-| `tui`                          | object | —                  | See below                                                       |
-
-Note the negative phrasing: `disable_metrics: true` turns metrics **off**.
-
-### `options.attribution`
-
-| Field            | Type   | Default        | Notes                                                |
-| ---------------- | ------ | -------------- | ---------------------------------------------------- |
-| `trailer_style`  | string | `assisted-by`  | `none`, `co-authored-by`, `assisted-by`               |
-| `generated_with` | bool   | `true`         | Add a "Generated with Angela" line to commits, issues, and PRs |
-| `co_authored_by` | bool   | —              | **Deprecated**; use `trailer_style`                   |
-
-### `options.compaction`
-
-| Field                     | Type   | Default   | Notes                                                        |
-| ------------------------- | ------ | --------- | ------------------------------------------------------------ |
-| `auto`                    | bool   | `true`    | Summarize automatically when the context fills up             |
-| `large_context_threshold` | int    | `200000`  | Above this window size, `reserved` is used                    |
-| `reserved`                | int    | `20000`   | Tokens kept free for the next turn on a large window          |
-| `small_context_ratio`     | number | `0.2`     | Proportion of a small window kept free — a fixed 20k reserve would swallow most of a 32k window |
-
-### `options.tui`
-
-| Field                    | Type   | Default   | Notes                            |
-| ------------------------ | ------ | --------- | -------------------------------- |
-| `compact_mode`           | bool   | `false`   |                                  |
-| `diff_mode`              | string | —         | `unified` or `split`             |
-| `transparent`            | bool   | `false`   | Transparent background           |
-| `scrollbar`              | string | `default` | `default` (auto-hide), `always`, `never` |
-| `completions.max_depth`  | int    | `0`       | Depth limit for completions      |
-| `completions.max_items`  | int    | `1000`    | Item limit for completions       |
-
+**Ask:** which tool to match (regex) and what decision to make. If the
+logic is more than a one-liner, hand off to the `angela-hooks` skill instead
+of improvising here.
+**Write:**
 ```json
-{
-  "options": {
-    "progress": false,
-    "skills_paths": ["./skills"],
-    "disabled_skills": ["angela-config"],
-    "disabled_tools": ["Sourcegraph"],
-    "subagent_depth": 2,
-    "attribution": { "trailer_style": "assisted-by", "generated_with": true },
-    "tui": { "compact_mode": true, "diff_mode": "unified" }
-  }
-}
+{ "hooks": { "PreToolUse": [{ "matcher": "^Bash$", "command": "./hooks/check.sh" }] } }
 ```
+**Watch out:** hooks are experimental — say so. `command` is required; an
+empty `matcher` means "every tool call".
+**Reference:** `reference/hooks.md`, or the `angela-hooks` skill for authoring.
 
-> [!IMPORTANT]
-> These project skill directories are scanned by default and do **not** need
-> `skills_paths`: `.agents/skills`, `.angela/skills`, `.claude/skills`,
-> `.cursor/skills` — both in the working directory and at the git repository
-> root.
+### Adjust an agent (model, tools, on/off)
 
-## env
-
-`env` sets environment variables for the Angela process at startup. Values are
-shell-expanded, and keys are applied in sorted order, so a later key may refer
-to an earlier one. A value that fails to resolve is skipped with a warning
-rather than aborting the load.
-
+**Ask:** which agent ID (`explore`, `general`, a custom one, ...) and what
+to change.
+**Write:**
 ```json
-{
-  "env": {
-    "AWS_PROFILE": "work",
-    "HTTPS_PROXY": "$CORP_PROXY"
-  }
-}
+{ "agents": { "explore": { "slot": "chore" } } }
 ```
+**Watch out:** an unrecognized field silently drops the *entire* override
+for that agent — never skip the validate step after touching `agents`.
+`coder` can never be `disabled`.
+**Reference:** `reference/agents.md`
 
-## tools
+### Disable a tool, skill, or agent
 
-`tools` tunes individual built-in tools.
-
-| Field           | Type | Default | Notes                                    |
-| --------------- | ---- | ------- | ---------------------------------------- |
-| `ls.max_depth`  | int  | `0`     | Directory-walk depth for the `ls` tool    |
-| `ls.max_items`  | int  | `1000`  | Entry cap for the `ls` tool               |
-| `grep.timeout`  | int  | 5s      | Timeout for a `grep` tool call            |
-| `glob.timeout`  | int  | 30s     | Timeout for a `glob` tool call            |
-
-The two timeouts are Go durations serialized as **integer nanoseconds** in
-JSON: `10000000000` is 10 seconds.
-
-Outside a git repository, unset `ls.max_depth`/`ls.max_items` (and the TUI's
-completion limits) default to `2`/`100` instead of unlimited, to avoid an
-unbounded walk of a non-project directory.
-
+**Ask:** nothing extra — just the name.
+**Write:**
 ```json
-{
-  "tools": {
-    "ls": { "max_depth": 10, "max_items": 500 },
-    "grep": { "timeout": 10000000000 }
-  }
-}
+{ "options": { "disabled_tools": ["Sourcegraph"], "disabled_skills": ["jq"] } }
 ```
+For an agent, use the `agents.<id>.disabled` recipe above instead.
+**Watch out:** `options.disabled_tools` always wins over a per-agent
+`allowed_tools` — an agent can't re-enable it.
+**Reference:** `reference/options.md`
 
-## User-invocable skills
+### Options grab-bag (context files, TUI, compaction, skills_paths, ...)
 
-Skills can be invoked as commands. Add `user-invocable: true` to the skill's
-YAML frontmatter:
-
-```yaml
----
-name: my-skill
-description: A skill that can be invoked as a command.
-user-invocable: true
----
+**Ask:** only what that specific field needs — these are independent knobs.
+**Write:** merge into the `options` object, e.g.:
+```json
+{ "options": { "tui": { "diff_mode": "unified" }, "skills_paths": ["./skills"] } }
 ```
+**Watch out:** `.agents/skills`, `.angela/skills`, `.claude/skills`,
+`.cursor/skills` are scanned by default — `skills_paths` is only for extra
+locations beyond those.
+**Reference:** `reference/options.md`
 
-- Global skills appear as `user:skill-name`; project skills as
-  `project:skill-name`; builtin skills (like this one) as `system:skill-name`.
-- Add `disable-model-invocation: true` to keep a skill user-only — hidden from
-  the model's available-skills list, but still manually invocable.
+### Remove or undo a setting
 
-## Environment variables
+**Ask:** nothing extra.
+**Do:** delete the key from the file that defines it. Deleting it from a
+*higher*-priority file doesn't work — arrays concatenate and objects merge
+key by key across layers, so the lower layer's value just resurfaces or
+stays merged in. If unsure which file defines it, check each candidate from
+`angela dirs`, in priority order.
+**Reference:** `reference/discovery.md`
 
-| Variable                               | Effect                                               |
-| --------------------------------------- | ----------------------------------------------------- |
-| `ANGELA_GLOBAL_CONFIG`                | Directory holding the global `angela.json`            |
-| `ANGELA_CACHE_DIR`                    | Override the cache directory                          |
-| `ANGELA_SKILLS_DIR`                   | Replace the default global skills directories         |
-| `ANGELA_AGENTS_DIR`                   | Replace the default global agent-markdown directory   |
-| `ANGELA_DISABLE_METRICS`              | Same as `options.disable_metrics`                      |
-| `ANGELA_DISABLE_PROVIDER_AUTO_UPDATE` | Same as `options.disable_provider_auto_update`         |
-| `ANGELA_DISABLE_DEFAULT_PROVIDERS`    | Same as `options.disable_default_providers`            |
+## Common pitfalls
+
+- Arrays **concatenate** across config layers — delete a value from the
+  file that defines it, not by adding an empty override.
+- An unrecognized field inside `agents.<id>` drops that whole override,
+  silently, until `angela config validate` catches it.
+- `coder` can never be `disabled`.
+- `tools.*.timeout` values are nanoseconds as an integer, not seconds.
+- An `ANGELA_`-prefixed variable (e.g. `ANGELA_OPENAI_API_KEY`) shadows the
+  bare one in every shell-expanded field.
+- A literal `$` in a URL must be escaped as `\$`.
+- `disable_*` options read backwards on purpose: `true` turns the thing
+  **off**.
+- Editing a config file on disk never hot-reloads; only Angela's own writes
+  do. Say so when you report back.
+
+## Reference index
+
+| File | Covers |
+| --- | --- |
+| `reference/discovery.md` | Config layering, merge rules, shell expansion, `$schema`, Angela's own env vars |
+| `reference/providers.md` | `providers`, `base_url` conventions, `models`, `variants` |
+| `reference/slots.md` | `slots` |
+| `reference/agents.md` | `agents` |
+| `reference/mcp.md` | `mcp` |
+| `reference/lsp.md` | `lsp` |
+| `reference/hooks.md` | `hooks` config shape (see the `angela-hooks` skill for authoring) |
+| `reference/permissions.md` | `permissions` |
+| `reference/options.md` | `options`, `env`, `tools`, user-invocable skills |

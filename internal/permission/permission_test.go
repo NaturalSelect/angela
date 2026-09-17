@@ -1616,15 +1616,18 @@ func TestPermissionService_EditorReviewer_ApproveSettlesWithoutTerminal(t *testi
 }
 
 // TestPermissionService_EditorReviewer_DenyReachesDecision pins that a
-// VS Code rejection carries its reason all the way to the caller, the
-// same way a terminal denial with a reason does.
+// editor reviewer denial carries its reason all the way to the caller,
+// the same way a terminal denial with a reason does. Real editor
+// reviewers (VS Code) send a bare denial with no reason so the turn
+// stops instead, but the plumbing must still forward a reason if one
+// is ever supplied.
 func TestPermissionService_EditorReviewer_DenyReachesDecision(t *testing.T) {
 	t.Parallel()
 
 	service := NewPermissionService("/work", ModeManual, nil)
 	service.SetEditorReviewer(&fakeEditor{
 		available: true,
-		decision:  editorapproval.Decision{Outcome: editorapproval.OutcomeDeny, Reason: "rejected in VS Code"},
+		decision:  editorapproval.Decision{Outcome: editorapproval.OutcomeDeny, Reason: "not the change I wanted"},
 	})
 
 	decision := service.Gate(t.Context(), GateRequest{
@@ -1634,7 +1637,7 @@ func TestPermissionService_EditorReviewer_DenyReachesDecision(t *testing.T) {
 		Preview:    diffPreviewOf("/work/main.go", "old", "new"),
 	})
 	assert.Equal(t, OutcomeUserDeny, decision.Outcome)
-	assert.Equal(t, "rejected in VS Code", decision.Reason)
+	assert.Equal(t, "not the change I wanted", decision.Reason)
 }
 
 // TestPermissionService_EditorReviewer_TerminalAnswerCancelsEditor pins

@@ -198,7 +198,7 @@ func TestVSCodeMCP_Review_Reject(t *testing.T) {
 
 	got, err := editor.Review(t.Context(), Request{FilePath: "foo.go", OldContent: "old\n", NewContent: "new\n"})
 	require.NoError(t, err)
-	require.Equal(t, Decision{Outcome: OutcomeDeny, Reason: "rejected in VS Code"}, got)
+	require.Equal(t, Decision{Outcome: OutcomeDeny}, got)
 }
 
 func TestVSCodeMCP_Review_ServerReportedError(t *testing.T) {

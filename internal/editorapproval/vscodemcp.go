@@ -221,7 +221,10 @@ func decodeOpenDiffResult(res *mcp.CallToolResult, req Request) (Decision, error
 	case "SAVED":
 		return Decision{Outcome: OutcomeApprove, Content: req.NewContent}, nil
 	case "REJECTED":
-		return Decision{Outcome: OutcomeDeny, Reason: "rejected in VS Code"}, nil
+		// No reason: this is a bare rejection, the same as clicking "Deny"
+		// with no explanation in the terminal, so it should end the turn
+		// instead of carrying a reason back for the model to route around.
+		return Decision{Outcome: OutcomeDeny}, nil
 	default:
 		return Decision{}, fmt.Errorf("unexpected open_diff result %q", parsed.Result)
 	}

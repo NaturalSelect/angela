@@ -99,10 +99,7 @@ func TestVSCode_Review_Deny(t *testing.T) {
 		NewContent: "new\n",
 	})
 	require.NoError(t, err)
-	require.Equal(t, Decision{
-		Outcome: OutcomeDeny,
-		Reason:  "reverted to the original content in the editor",
-	}, got)
+	require.Equal(t, Decision{Outcome: OutcomeDeny}, got)
 }
 
 func TestVSCode_Review_ProcessError(t *testing.T) {

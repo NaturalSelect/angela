@@ -192,3 +192,108 @@ func TestSwitchVariantToBaselineOutranksSlotVariant(t *testing.T) {
 	require.Equal(t, baseline, model.CatwalkCfg.DefaultMaxTokens,
 		"an explicit baseline pick must not fall back to the slot's variant")
 }
+
+// switchModelEdit builds the edit a session-scoped model pick from the
+// UI sends: same slot label, a different model underneath it.
+func switchModelEdit(model string) config.ActiveAgentEdit {
+	return config.ActiveAgentEdit{
+		Slot:  config.SlotChore,
+		Model: &config.SelectedModel{Provider: "mock", Model: model},
+	}
+}
+
+// TestModelSwitchDropsStaleVariantPick pins the fix for the model
+// switcher's worst failure mode: an explicit variant pick belongs to
+// the model it was made on, not to the agent, so moving to a model
+// that never offered it must not fail the switch or keep chasing a
+// preset that no longer applies to anything.
+func TestModelSwitchDropsStaleVariantPick(t *testing.T) {
+	coord := newVariantTestCoordinator(t)
+	sessionID := newVariantSession(t, coord)
+
+	require.NoError(t, coord.SwitchVariant(t.Context(), sessionID, "deep"))
+
+	// "large-model" never declared a "deep" preset. Before the fix this
+	// edit failed validation outright, blocking the switch entirely.
+	_, err := coord.EditActiveAgent(t.Context(), sessionID, switchModelEdit("large-model"))
+	require.NoError(t, err,
+		"a model switch must not fail merely because the old model's pick does not exist on the new one")
+
+	sess, err := coord.sessions.Get(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Equal(t, "large-model", sess.ActiveAgent.Model.Model)
+	require.Nil(t, sess.ActiveAgent.Variant,
+		"a model switch must drop the stale pick rather than persist it")
+
+	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Empty(t, agentCfg.EffectiveVariant(),
+		"with no agent-level default, the session must fall back to the baseline")
+}
+
+// TestModelSwitchDropsStaleVariantPickEvenWhenNameCoincides pins that
+// the drop is unconditional: even when the new model happens to define
+// a preset under the same name, a pick made for a different model must
+// never carry over onto it without the user choosing it again.
+func TestModelSwitchDropsStaleVariantPickEvenWhenNameCoincides(t *testing.T) {
+	coord := newVariantTestCoordinator(t)
+	sessionID := newVariantSession(t, coord)
+
+	require.NoError(t, coord.SwitchVariant(t.Context(), sessionID, "deep"))
+
+	cfg := coord.cfg.Config()
+	slot := cfg.Slots[config.SlotMain]
+	providerCfg, ok := cfg.Providers.Get(slot.Provider)
+	require.True(t, ok)
+	for i, m := range providerCfg.Models {
+		if m.ID == "large-model" {
+			providerCfg.Models[i].Variants = map[string]config.SelectedModelOverride{
+				"deep": {MaxTokens: ptrTo(int64(9999))},
+			}
+		}
+	}
+	cfg.Providers.Set(slot.Provider, providerCfg)
+
+	_, err := coord.EditActiveAgent(t.Context(), sessionID, switchModelEdit("large-model"))
+	require.NoError(t, err)
+
+	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Empty(t, agentCfg.EffectiveVariant(),
+		"a same-named preset on the new model must not be silently inherited from the old pick")
+}
+
+// TestModelSwitchFallsBackToTheAgentsCurrentConfiguredVariant pins that
+// dropping the pick restores the agent's own configured default, not
+// merely the baseline, matching what instantiating the agent fresh
+// would resolve to.
+func TestModelSwitchFallsBackToTheAgentsCurrentConfiguredVariant(t *testing.T) {
+	coord := newVariantTestCoordinator(t)
+	setCoderVariant(t, coord, "high")
+	sessionID := newVariantSession(t, coord)
+
+	require.NoError(t, coord.SwitchVariant(t.Context(), sessionID, "deep"))
+
+	// Give the target model its own "high" preset so the agent's
+	// configured default still resolves cleanly once it lands there.
+	cfg := coord.cfg.Config()
+	slot := cfg.Slots[config.SlotMain]
+	providerCfg, ok := cfg.Providers.Get(slot.Provider)
+	require.True(t, ok)
+	for i, m := range providerCfg.Models {
+		if m.ID == "large-model" {
+			providerCfg.Models[i].Variants = map[string]config.SelectedModelOverride{
+				"high": {MaxTokens: ptrTo(int64(9999))},
+			}
+		}
+	}
+	cfg.Providers.Set(slot.Provider, providerCfg)
+
+	_, err := coord.EditActiveAgent(t.Context(), sessionID, switchModelEdit("large-model"))
+	require.NoError(t, err)
+
+	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Equal(t, "high", agentCfg.EffectiveVariant(),
+		"dropping a stale pick must restore the agent's own configured default, not the baseline")
+}

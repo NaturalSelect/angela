@@ -1309,6 +1309,16 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 		}
 		next.Model = *edit.Model
 		change.modelMoved = true
+
+		// A preset is a different way to call the model it names, not
+		// a property of the agent: carrying a session's pick across to
+		// a model that never offered it either fails the validation
+		// below or silently applies a preset the user never chose for
+		// it there. Moving the model drops the pick and falls back to
+		// whatever the agent's config says today, exactly as
+		// instantiating it fresh would.
+		next.Agent.Variant = cfg.Agents[next.Agent.ID].Variant
+		next.VariantPick = nil
 	}
 
 	if edit.Variant != nil {

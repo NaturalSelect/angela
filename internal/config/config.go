@@ -493,14 +493,14 @@ func (a Attribution) GeneratedWithNote() string {
 
 // CommitTrailer renders the "Generated with Angela" line and/or the
 // attribution trailer as a suffix to append to a commit message body,
-// each on its own blank-line-separated paragraph. modelName is used
-// for the assisted-by style; coAuthoredByEmail, if set, is appended
-// to the co-authored-by style as "<email>". This is the single
-// source of truth for the format: both the bash tool's prompt (which
-// tells the model to type the same text by hand in a HEREDOC) and the
-// Go-driven quick "commit" command render through it, so the two
-// paths can't drift apart the way they once did. Returns "" when
-// neither is configured.
+// each on its own blank-line-separated paragraph. modelName is
+// credited on both the assisted-by and co-authored-by styles;
+// coAuthoredByEmail, if set, is appended to the co-authored-by style
+// as "<email>". This is the single source of truth for the format:
+// both the bash tool's prompt (which tells the model to type the
+// same text by hand in a HEREDOC) and the Go-driven quick "commit"
+// command render through it, so the two paths can't drift apart the
+// way they once did. Returns "" when neither is configured.
 func (a Attribution) CommitTrailer(modelName, coAuthoredByEmail string) string {
 	var b strings.Builder
 	b.WriteString(a.GeneratedWithNote())
@@ -508,7 +508,7 @@ func (a Attribution) CommitTrailer(modelName, coAuthoredByEmail string) string {
 	case TrailerStyleAssistedBy:
 		b.WriteString("\n\nAssisted-by: Angela:" + modelName)
 	case TrailerStyleCoAuthoredBy:
-		b.WriteString("\n\nCo-Authored-By: Angela")
+		b.WriteString("\n\nCo-Authored-By: Angela:" + modelName)
 		if coAuthoredByEmail != "" {
 			b.WriteString(" <" + coAuthoredByEmail + ">")
 		}

@@ -34,13 +34,14 @@ func TestAttribution_CommitTrailer(t *testing.T) {
 			name:        "generated_with and co-authored-by",
 			attribution: Attribution{GeneratedWith: true, TrailerStyle: TrailerStyleCoAuthoredBy},
 			modelName:   "Claude Sonnet 5",
-			want:        "\n\nGenerated with Angela\n\nCo-Authored-By: Angela",
+			want:        "\n\nGenerated with Angela\n\nCo-Authored-By: Angela:Claude Sonnet 5",
 		},
 		{
 			name:        "co-authored-by with email",
 			attribution: Attribution{TrailerStyle: TrailerStyleCoAuthoredBy},
+			modelName:   "Claude Sonnet 5",
 			email:       "angela@example.com",
-			want:        "\n\nCo-Authored-By: Angela <angela@example.com>",
+			want:        "\n\nCo-Authored-By: Angela:Claude Sonnet 5 <angela@example.com>",
 		},
 		{
 			name:        "generated_with only",

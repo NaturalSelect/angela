@@ -15,7 +15,10 @@ import (
 // without mutating that shared table.
 type ActiveAgent struct {
 	// Agent is the agent definition, copied from the global config.
-	// Its Variant field is the session's parameter preset.
+	// It is a read-only snapshot: editing never writes to it, even
+	// when the user picks a preset — that is what VariantPick is for.
+	// Its Variant field is therefore always the config's own default,
+	// never the session's choice.
 	Agent Agent
 
 	// Slot records which global model slot Model was instantiated
@@ -39,10 +42,11 @@ type ActiveAgent struct {
 	ThinkPick *bool
 
 	// VariantPick is the preset the user chose for this session, or
-	// nil when they never chose one and Agent.Variant is still
-	// whatever the config says. Only a pick is worth persisting: a
-	// session that never touched the preset has to keep following the
-	// config, the same way its prompt and tools do.
+	// nil when they never chose one, in which case EffectiveVariant
+	// falls back to Agent.Variant and then the model's own default.
+	// Only a pick is worth persisting: a session that never touched
+	// the preset has to keep following the config, the same way its
+	// prompt and tools do.
 	VariantPick *string
 }
 
@@ -219,20 +223,22 @@ func (a ActiveAgent) Clone() ActiveAgent {
 }
 
 // EffectiveVariant resolves the parameter preset that actually
-// governs this instance: the agent's own Variant when set, otherwise
-// the slot's, so a slot can carry a sensible default that an agent
-// leaves unset while an agent naming one of its own always wins.
+// governs this instance: the user's own pick when there is one,
+// otherwise the agent's configured Variant, otherwise the slot's, so
+// a slot can carry a sensible default that an agent leaves unset
+// while an agent naming one of its own always wins.
 //
 // An explicit pick of the baseline — VariantPick set to a pointer to
 // the empty string — is a deliberate opt-out and does not fall
-// through to the slot either: a user backing out of a preset means
-// to run with none, not with whatever the slot would have supplied.
+// through to the agent or the slot either: a user backing out of a
+// preset means to run with none, not with whatever those would have
+// supplied.
 func (a ActiveAgent) EffectiveVariant() string {
+	if a.VariantPick != nil {
+		return *a.VariantPick
+	}
 	if a.Agent.Variant != "" {
 		return a.Agent.Variant
-	}
-	if a.VariantPick != nil {
-		return ""
 	}
 	return a.Model.Variant
 }
@@ -265,7 +271,6 @@ func (c *Config) Restore(state ActiveAgentState) (ActiveAgent, bool) {
 	}
 	if state.Variant != nil {
 		pick := *state.Variant
-		active.Agent.Variant = pick
 		active.VariantPick = &pick
 	}
 	if state.Think != nil {

@@ -58,6 +58,7 @@ var wsHandlerCases = []wsHandlerCase{
 	{name: "PostWorkspaceAgentSessionPromptClear", invoke: (*controllerV1).handlePostWorkspaceAgentSessionPromptClear},
 	{name: "PostWorkspaceAgentSessionSummarize", invoke: (*controllerV1).handlePostWorkspaceAgentSessionSummarize},
 	{name: "GetWorkspaceAgentDefaultActiveAgent", invoke: (*controllerV1).handleGetWorkspaceAgentDefaultActiveAgent},
+	{name: "PostWorkspaceAgentDefaultActiveAgent", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceAgentDefaultActiveAgent},
 	{name: "PostWorkspaceAgentSessionShell", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceAgentSessionShell},
 	{name: "GetWorkspaceAgentSessionPromptList", invoke: (*controllerV1).handleGetWorkspaceAgentSessionPromptList},
 	{name: "PostWorkspacePermissionsGrant", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspacePermissionsGrant},
@@ -95,7 +96,6 @@ var wsHandlerCases = []wsHandlerCase{
 	{name: "PostWorkspaceMCPAuth", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceMCPAuth},
 	{name: "GetWorkspaceSandbox", invoke: (*controllerV1).handleGetWorkspaceSandbox},
 	{name: "PostWorkspaceSandboxEnter", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceSandboxEnter},
-	{name: "PostWorkspaceConfigAgentVariant", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceConfigAgentVariant},
 	{name: "PostWorkspaceMCPEnable", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceMCPEnable},
 	{name: "PostWorkspaceMCPDisable", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceMCPDisable},
 }

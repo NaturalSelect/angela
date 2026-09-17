@@ -191,6 +191,13 @@ type Coordinator interface {
 	// thinking flag in one atomic edit, and reports the instance the
 	// session ends up on.
 	EditActiveAgent(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (config.ActiveAgent, error)
+
+	// AdoptDraft copies the landing page's draft pick onto sessionID,
+	// a session that was just created, so a model or preset chosen
+	// before any session existed carries into the first one instead
+	// of being silently discarded. A no-op when the draft was never
+	// touched.
+	AdoptDraft(ctx context.Context, sessionID string) error
 }
 
 type coordinator struct {
@@ -1066,24 +1073,49 @@ func removeWebFetchScratch(dataDirectory, sessionID string) {
 	}
 }
 
+// draftSessionID names the landing page's draft instance: the one a
+// user edits before any session exists. It is never a real session
+// ID, so its delta lives only in activeAgentStore's cache and is
+// never read from or written to the session table — see
+// loadActiveAgent and saveActiveAgent.
+const draftSessionID = ""
+
 // activeIO wires the store to the session record and the config.
 func (c *coordinator) activeIO() activeAgentIO {
 	return activeAgentIO{
 		load:        c.loadActiveAgent,
 		materialize: c.materializeActiveAgent,
-		save:        c.sessions.UpdateActiveAgent,
+		save:        c.saveActiveAgent,
 	}
 }
 
 // loadActiveAgent reads a session's persisted delta. A session that
 // cannot be read at all is an error: running a turn on a guessed agent
 // would silently answer as something the user did not pick.
+//
+// The draft always "reads" as freshly unpicked: there is no session
+// row behind it, so its only record is whatever activeAgentStore has
+// cached from an earlier edit in this process.
 func (c *coordinator) loadActiveAgent(ctx context.Context, sessionID string) (config.ActiveAgentState, error) {
+	if sessionID == draftSessionID {
+		return config.ActiveAgentState{}, nil
+	}
 	sess, err := c.sessions.Get(ctx, sessionID)
 	if err != nil {
 		return config.ActiveAgentState{}, fmt.Errorf("read session %q: %w", sessionID, err)
 	}
 	return sess.ActiveAgent, nil
+}
+
+// saveActiveAgent persists a session's delta. The draft has no row to
+// write it to; activeAgentStore.edit caches the result regardless of
+// what save returns, which is what keeps the draft's edits visible
+// for the rest of the process.
+func (c *coordinator) saveActiveAgent(ctx context.Context, sessionID string, state config.ActiveAgentState) error {
+	if sessionID == draftSessionID {
+		return nil
+	}
+	return c.sessions.UpdateActiveAgent(ctx, sessionID, state)
 }
 
 // materializeActiveAgent turns a session's delta into a live instance.
@@ -1113,11 +1145,9 @@ func (c *coordinator) materializeActiveAgent(sessionID string, state config.Acti
 }
 
 // defaultAgentInstance builds the agent instance a session runs before
-// it has picked one of its own: the coder, unless the user pointed the
-// pre-session agent picker at a different primary agent (see
-// config.Config.DefaultAgentID).
+// it has picked one of its own: the built-in coder.
 func defaultAgentInstance(cfg *config.Config) (config.ActiveAgent, error) {
-	active, ok := cfg.InstantiateAgent(cfg.DefaultAgentID())
+	active, ok := cfg.InstantiateAgent(config.AgentCoder)
 	if !ok {
 		return config.ActiveAgent{}, errCoderAgentNotConfigured
 	}
@@ -1196,6 +1226,10 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 	if switched.Model == nil {
 		return result, nil
 	}
+	if sessionID == draftSessionID {
+		// The draft has no transcript to explain itself to.
+		return result, nil
+	}
 
 	for _, text := range change.trail(switched) {
 		if _, err := c.messages.Create(ctx, sessionID, message.CreateMessageParams{
@@ -1212,6 +1246,36 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 		}
 	}
 	return result, nil
+}
+
+// AdoptDraft copies the landing page's draft pick, if any, onto
+// sessionID, a session that was just created. Without this a model
+// or preset chosen before any session existed would be silently
+// discarded the moment the first session came into being, and the
+// session the user just watched get configured would open on
+// whatever the config's own defaults are instead.
+//
+// The draft itself is left in place rather than consumed, so
+// returning to the landing page after creating a session still shows
+// the same pick — the next session created from it starts the same
+// way, until something changes it.
+func (c *coordinator) AdoptDraft(ctx context.Context, sessionID string) error {
+	l := c.active.lockFor(draftSessionID)
+	l.mu.Lock()
+	draft, ok := c.active.cachedState(draftSessionID)
+	l.mu.Unlock()
+	c.active.release(draftSessionID, l)
+	if !ok || draft.IsZero() {
+		return nil
+	}
+
+	return c.active.edit(ctx, sessionID, c.activeIO(), func(config.ActiveAgent) (config.ActiveAgent, bool, error) {
+		active, err := c.materializeActiveAgent(sessionID, draft)
+		if err != nil {
+			return config.ActiveAgent{}, false, err
+		}
+		return active, true, nil
+	})
 }
 
 // SwitchAgent points a session at a different agent from the next turn
@@ -1314,10 +1378,9 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 		// a property of the agent: carrying a session's pick across to
 		// a model that never offered it either fails the validation
 		// below or silently applies a preset the user never chose for
-		// it there. Moving the model drops the pick and falls back to
-		// whatever the agent's config says today, exactly as
-		// instantiating it fresh would.
-		next.Agent.Variant = cfg.Agents[next.Agent.ID].Variant
+		// it there. Dropping the pick falls back to Agent.Variant,
+		// which already holds whatever the agent's config says today
+		// — it is never itself written by a pick.
 		next.VariantPick = nil
 	}
 
@@ -1329,7 +1392,6 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 		effective := next.EffectiveVariant()
 		if *edit.Variant != effective {
 			change.variantFrom, change.variantTo, change.variantMoved = effective, *edit.Variant, true
-			next.Agent.Variant = *edit.Variant
 		}
 		// Recorded even when it matches what the config says today:
 		// the user picked this preset, so later editing the config's
@@ -1959,16 +2021,10 @@ func (c *coordinator) DefaultModel() Model {
 // the model resolved from it. An empty sessionID answers with the
 // configured default, which is what the landing page shows before any
 // session exists.
+// ActiveAgent reports the agent instance a session runs on, along with
+// the model resolved from it. An empty sessionID reports the draft
+// instance the landing page edits before any session exists.
 func (c *coordinator) ActiveAgent(ctx context.Context, sessionID string) (config.ActiveAgent, Model, error) {
-	if sessionID == "" {
-		active, err := defaultAgentInstance(c.cfg.Config())
-		if err != nil {
-			return config.ActiveAgent{}, Model{}, err
-		}
-		model, err := c.buildModel(ctx, active, false)
-		return active, model, err
-	}
-
 	active, err := c.activeAgentFor(ctx, sessionID)
 	if err != nil {
 		return config.ActiveAgent{}, Model{}, err

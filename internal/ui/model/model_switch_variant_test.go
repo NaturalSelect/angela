@@ -66,3 +66,35 @@ func TestModelSwitchDoesNotOpenVariantsDialogWhenTheNewModelHasNone(t *testing.T
 	require.False(t, m.dialog.ContainsDialog(dialog.VariantsID),
 		"a model with no presets must not trigger the picker")
 }
+
+// TestLandingScreenModelSwitchOpensVariantsDialog pins that the landing
+// screen, which edits the workspace's draft rather than a session, gets
+// the same variant-picker follow-up a session-scoped switch does:
+// switching the slot the draft's agent runs on is an AgentEditActive
+// call with an empty session ID, not the global ephemeral pick a
+// different slot (the chore model) would still be.
+func TestLandingScreenModelSwitchOpensVariantsDialog(t *testing.T) {
+	pinTTLs(t)
+
+	ws := pickMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
+	m.session = nil
+	warmCaches(m, false)
+	m.agentActive = workspace.ActiveAgent{Slot: config.SlotMain}
+
+	ws.EXPECT().RecordRecentModel(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	ws.EXPECT().AgentEditActive(gomock.Any(), "", gomock.Any()).
+		Return(workspace.ActiveAgent{
+			Slot: config.SlotMain,
+			CatwalkCfg: config.ProviderModel{
+				Model: catwalk.Model{Name: "Picked", ReasoningLevels: []string{"low", "high"}},
+			},
+		}, nil)
+
+	cmd := m.handleSelectModel(pickAction(config.SlotMain))
+	require.NotNil(t, cmd)
+	runCmds(m, cmd)
+
+	require.True(t, m.dialog.ContainsDialog(dialog.VariantsID),
+		"switching to a model with presets must open the picker even before a session exists")
+}

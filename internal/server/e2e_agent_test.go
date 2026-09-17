@@ -230,6 +230,8 @@ func (c *scriptedCoordinator) EditActiveAgent(context.Context, string, config.Ac
 	return config.ActiveAgent{}, nil
 }
 
+func (c *scriptedCoordinator) AdoptDraft(context.Context, string) error { return nil }
+
 func (c *scriptedCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
 	return config.ActiveAgent{}, agent.Model{}, nil
 }

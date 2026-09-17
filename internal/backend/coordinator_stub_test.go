@@ -44,6 +44,9 @@ type fakeCoordinator struct {
 	commitMessage      string
 	commitMessageErr   error
 	commitMessageCalls []string
+
+	adoptDraftCalls []string
+	adoptDraftErr   error
 }
 
 func (c *fakeCoordinator) Run(context.Context, string, string, ...message.Attachment) (*fantasy.AgentResult, error) {
@@ -93,6 +96,11 @@ func (c *fakeCoordinator) DefaultModel() agent.Model { return c.model }
 func (c *fakeCoordinator) EditActiveAgent(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (config.ActiveAgent, error) {
 	c.editEdit = edit
 	return c.editResult, c.editErr
+}
+
+func (c *fakeCoordinator) AdoptDraft(ctx context.Context, sessionID string) error {
+	c.adoptDraftCalls = append(c.adoptDraftCalls, sessionID)
+	return c.adoptDraftErr
 }
 
 func (c *fakeCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {

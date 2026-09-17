@@ -28,20 +28,6 @@ type ConfigModelRequest struct {
 	Model config.SelectedModel `json:"model"`
 }
 
-// ConfigAgentVariantRequest represents a request to override an agent's
-// parameter preset in memory, for a pick made before any session exists.
-type ConfigAgentVariantRequest struct {
-	AgentID string `json:"agent_id"`
-	Variant string `json:"variant"`
-}
-
-// ConfigDefaultAgentRequest represents a request to override the
-// primary agent a new session starts on, in memory, for a pick made
-// before any session exists.
-type ConfigDefaultAgentRequest struct {
-	AgentID string `json:"agent_id"`
-}
-
 // ConfigPruneRecentModelsRequest represents a request to drop specific
 // recent-model entries. It names the entries to remove rather than the
 // list to keep, so a pick recorded concurrently is not erased.

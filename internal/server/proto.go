@@ -1053,6 +1053,42 @@ func (c *controllerV1) handleGetWorkspaceAgentDefaultActiveAgent(w http.Response
 	jsonEncode(w, active)
 }
 
+// handlePostWorkspaceAgentDefaultActiveAgent edits the agent instance
+// a new session would run: its agent, model, parameter preset or
+// thinking flag, in any combination. The landing screen has no
+// session yet to scope the edit to, so — exactly as the GET above —
+// an empty session ID lands the edit on the workspace's draft
+// instance instead.
+//
+//	@Summary		Edit the default active agent
+//	@Tags			agent
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string							true	"Workspace ID"
+//	@Param			request	body	proto.ActiveAgentEditRequest	true	"Active agent edit"
+//	@Success		200	{object}	proto.ActiveAgent
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/active-agent [post]
+func (c *controllerV1) handlePostWorkspaceAgentDefaultActiveAgent(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var req proto.ActiveAgentEditRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	active, err := c.backend.EditSessionActiveAgent(r.Context(), id, "", req)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, active)
+}
+
 // handleGetWorkspaceAgentSessionActiveAgent reports the agent instance
 // a session is running.
 //

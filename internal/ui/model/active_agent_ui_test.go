@@ -244,9 +244,10 @@ func TestAnUnprobedAgentIsNotAGlobalPick(t *testing.T) {
 	require.Equal(t, modelPickUnknown, m.modelPickScope(config.SlotMain))
 }
 
-// TestNoSessionMeansNoSessionScopedEdit pins that the landing screen,
-// which has no session to own an agent, cannot produce a session edit
-// and must not silently overwrite the saved default either.
+// TestNoSessionMeansNoSessionScopedEdit pins that a landing-screen pick
+// for a slot the draft's agent does not run on (the chore model, say)
+// is a global preference, not an instance edit — the same split
+// TestSelectingTheChoreModelStaysGlobal pins for an open session.
 func TestNoSessionMeansNoSessionScopedEdit(t *testing.T) {
 	pinTTLs(t)
 
@@ -255,18 +256,13 @@ func TestNoSessionMeansNoSessionScopedEdit(t *testing.T) {
 	warmCaches(m, false)
 
 	require.Equal(t, modelPickEphemeral, m.modelPickScope(config.SlotMain))
-	// AgentEditActive deliberately left unstubbed: no session means no
-	// edit, so a call here would fail the test.
-	require.NotNil(t, m.toggleThinkingCmd()(), "thinking must warn, not edit")
 }
 
-// TestVariantPickBeforeSessionAppliesEphemeralOverride is the variant
-// counterpart of modelPickEphemeral: with a resolved preview agent but
-// no session yet, a preset pick has no session instance to land on, so
-// it must go through OverrideAgentVariant instead of refusing outright.
-// AgentEditActive is deliberately left unstubbed on this mock, so a
-// call that still reached for it would fail the test.
-func TestVariantPickBeforeSessionAppliesEphemeralOverride(t *testing.T) {
+// TestTogglingThinkingBeforeSessionEditsTheDraft pins that the landing
+// screen, which has no session yet, still has an agent instance to
+// flip thinking on: the workspace's draft. AgentEditActive must be
+// called with an empty session ID rather than refusing outright.
+func TestTogglingThinkingBeforeSessionEditsTheDraft(t *testing.T) {
 	pinTTLs(t)
 
 	m, ws := newMockBusyUI(t)
@@ -274,28 +270,52 @@ func TestVariantPickBeforeSessionAppliesEphemeralOverride(t *testing.T) {
 	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
 	warmCaches(m, false)
 
-	var gotAgentID, gotVariant string
-	ws.EXPECT().OverrideAgentVariant(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(agentID, variant string) error {
-			gotAgentID, gotVariant = agentID, variant
-			return nil
-		})
+	active := workspace.ActiveAgent{AgentID: "coder", Think: false}
+	var edits []recordedEdit
+	stubAgentEditActive(ws, &active, &edits)
+
+	msg := m.toggleThinkingCmd()()
+	require.Contains(t, infoText(t, msg), "enabled")
+	require.Len(t, edits, 1)
+	require.Equal(t, "", edits[0].sessionID, "a pre-session toggle lands on the draft, not a session")
+	require.True(t, edits[0].edit.ToggleThink)
+}
+
+// TestVariantPickBeforeSessionEditsTheDraft is the variant counterpart
+// of TestSelectingTheChoreModelStaysGlobal's session-scoped case: with
+// a resolved preview agent but no session yet, a preset pick has no
+// session instance to land on, so it lands on the workspace's draft
+// instead — the same AgentEditActive path a session uses, just with an
+// empty session ID.
+func TestVariantPickBeforeSessionEditsTheDraft(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	m.session = nil
+	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
+	warmCaches(m, false)
+
+	active := workspace.ActiveAgent{AgentID: "coder"}
+	var edits []recordedEdit
+	stubAgentEditActive(ws, &active, &edits)
 
 	msg := m.handleSelectVariant("fast")()
 	// The edit is sequenced ahead of the cache re-probe (see infoText),
 	// so the side effect only happens once the first element runs.
 	text := infoText(t, msg)
 
-	require.Equal(t, "coder", gotAgentID)
-	require.Equal(t, "fast", gotVariant)
+	require.Len(t, edits, 1)
+	require.Equal(t, "", edits[0].sessionID, "a pre-session pick lands on the draft, not a session")
+	require.NotNil(t, edits[0].edit.Variant)
+	require.Equal(t, "fast", *edits[0].edit.Variant)
 	require.Contains(t, text, "fast")
 }
 
-// TestVariantPickBeforeSessionReportsOverrideError covers the error path
-// TestVariantPickBeforeSessionAppliesEphemeralOverride does not reach:
-// when OverrideAgentVariant itself fails, the failure must be reported
-// to the user rather than silently swallowed.
-func TestVariantPickBeforeSessionReportsOverrideError(t *testing.T) {
+// TestVariantPickBeforeSessionReportsTheDraftEditError covers the error
+// path TestVariantPickBeforeSessionEditsTheDraft does not reach: when
+// the draft edit itself fails, the failure must be reported to the
+// user rather than silently swallowed.
+func TestVariantPickBeforeSessionReportsTheDraftEditError(t *testing.T) {
 	pinTTLs(t)
 
 	m, ws := newMockBusyUI(t)
@@ -303,8 +323,9 @@ func TestVariantPickBeforeSessionReportsOverrideError(t *testing.T) {
 	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
 	warmCaches(m, false)
 
-	wantErr := errors.New("override boom")
-	ws.EXPECT().OverrideAgentVariant(gomock.Any(), gomock.Any()).Return(wantErr)
+	wantErr := errors.New("edit boom")
+	ws.EXPECT().AgentEditActive(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(workspace.ActiveAgent{}, wantErr)
 
 	msg := m.handleSelectVariant("fast")()
 	text := infoText(t, msg)
@@ -312,14 +333,12 @@ func TestVariantPickBeforeSessionReportsOverrideError(t *testing.T) {
 	require.Contains(t, text, wantErr.Error())
 }
 
-// TestAgentPickBeforeSessionAppliesEphemeralOverride is the primary-agent
-// counterpart of TestVariantPickBeforeSessionAppliesEphemeralOverride:
-// with a resolved preview agent but no session yet, picking a different
-// primary agent has no session instance to land on, so it must go
-// through OverrideDefaultAgent instead of refusing outright.
-// AgentEditActive is deliberately left unstubbed on this mock, so a
-// call that still reached for it would fail the test.
-func TestAgentPickBeforeSessionAppliesEphemeralOverride(t *testing.T) {
+// TestAgentPickBeforeSessionEditsTheDraft is the primary-agent
+// counterpart of TestVariantPickBeforeSessionEditsTheDraft: with a
+// resolved preview agent but no session yet, picking a different
+// primary agent lands on the workspace's draft instead of refusing
+// outright.
+func TestAgentPickBeforeSessionEditsTheDraft(t *testing.T) {
 	pinTTLs(t)
 
 	m, ws := newMockBusyUI(t)
@@ -327,27 +346,26 @@ func TestAgentPickBeforeSessionAppliesEphemeralOverride(t *testing.T) {
 	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
 	warmCaches(m, false)
 
-	var gotAgentID string
-	ws.EXPECT().OverrideDefaultAgent(gomock.Any()).
-		DoAndReturn(func(agentID string) error {
-			gotAgentID = agentID
-			return nil
-		})
+	active := workspace.ActiveAgent{AgentID: "reviewer"}
+	var edits []recordedEdit
+	stubAgentEditActive(ws, &active, &edits)
 
 	msg := m.handleSelectAgent(dialog.ActionSelectAgent{AgentID: "reviewer"})()
 	// The edit is sequenced ahead of the cache re-probe (see infoText),
 	// so the side effect only happens once the first element runs.
 	text := infoText(t, msg)
 
-	require.Equal(t, "reviewer", gotAgentID)
+	require.Len(t, edits, 1)
+	require.Equal(t, "", edits[0].sessionID, "a pre-session pick lands on the draft, not a session")
+	require.Equal(t, "reviewer", edits[0].edit.Agent)
 	require.Contains(t, text, "reviewer")
 }
 
-// TestAgentPickBeforeSessionReportsOverrideError covers the error path
-// TestAgentPickBeforeSessionAppliesEphemeralOverride does not reach: when
-// OverrideDefaultAgent itself fails, the failure must be reported to the
-// user rather than silently swallowed.
-func TestAgentPickBeforeSessionReportsOverrideError(t *testing.T) {
+// TestAgentPickBeforeSessionReportsTheDraftEditError covers the error
+// path TestAgentPickBeforeSessionEditsTheDraft does not reach: when the
+// draft edit itself fails, the failure must be reported to the user
+// rather than silently swallowed.
+func TestAgentPickBeforeSessionReportsTheDraftEditError(t *testing.T) {
 	pinTTLs(t)
 
 	m, ws := newMockBusyUI(t)
@@ -355,8 +373,9 @@ func TestAgentPickBeforeSessionReportsOverrideError(t *testing.T) {
 	m.agentActive = workspace.ActiveAgent{AgentID: "coder"}
 	warmCaches(m, false)
 
-	wantErr := errors.New("override boom")
-	ws.EXPECT().OverrideDefaultAgent(gomock.Any()).Return(wantErr)
+	wantErr := errors.New("edit boom")
+	ws.EXPECT().AgentEditActive(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(workspace.ActiveAgent{}, wantErr)
 
 	msg := m.handleSelectAgent(dialog.ActionSelectAgent{AgentID: "reviewer"})()
 	text := infoText(t, msg)
@@ -365,8 +384,8 @@ func TestAgentPickBeforeSessionReportsOverrideError(t *testing.T) {
 }
 
 // TestCycleVariantWorksBeforeSession pins that ctrl+e, which used to
-// warn "Start a session" unconditionally, now cycles the coder
-// default's preset the same as the dialog does.
+// warn "Start a session" unconditionally, now cycles the draft's
+// preset the same as the dialog does.
 func TestCycleVariantWorksBeforeSession(t *testing.T) {
 	pinTTLs(t)
 
@@ -378,19 +397,19 @@ func TestCycleVariantWorksBeforeSession(t *testing.T) {
 	}
 	warmCaches(m, false)
 
-	var gotVariant string
-	ws.EXPECT().OverrideAgentVariant(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_, variant string) error {
-			gotVariant = variant
-			return nil
-		})
+	active := workspace.ActiveAgent{AgentID: "coder"}
+	var edits []recordedEdit
+	stubAgentEditActive(ws, &active, &edits)
 
 	cmd := m.cycleVariant()
 	require.NotNil(t, cmd)
 	// The edit is sequenced ahead of the cache re-probe (see infoText),
 	// so the side effect only happens once the first element runs.
 	infoText(t, cmd())
-	require.Equal(t, "low", gotVariant, "cycling from the baseline lands on the first preset")
+	require.Len(t, edits, 1)
+	require.Equal(t, "", edits[0].sessionID, "a pre-session cycle lands on the draft, not a session")
+	require.NotNil(t, edits[0].edit.Variant)
+	require.Equal(t, "low", *edits[0].edit.Variant, "cycling from the baseline lands on the first preset")
 }
 
 // TestReAuthArrivingBeforeTheProbeIsNotDropped pins B3: a provider

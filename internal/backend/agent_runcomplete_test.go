@@ -57,6 +57,8 @@ func (c *errorCoordinator) EditActiveAgent(context.Context, string, config.Activ
 	return config.ActiveAgent{}, nil
 }
 
+func (c *errorCoordinator) AdoptDraft(context.Context, string) error { return nil }
+
 func (c *errorCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
 	return config.ActiveAgent{}, agent.Model{}, nil
 }

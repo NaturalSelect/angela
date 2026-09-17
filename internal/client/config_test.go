@@ -465,14 +465,6 @@ func TestConfigMethodsSuccessPaths(t *testing.T) {
 			},
 		},
 		{
-			name:       "OverrideAgentVariant",
-			wantMethod: http.MethodPost,
-			wantPath:   "/v1/workspaces/ws1/config/agent-variant",
-			call: func(t *testing.T, c *Client) {
-				require.NoError(t, c.OverrideAgentVariant(context.Background(), "ws1", "coder", "fast"))
-			},
-		},
-		{
 			name:       "MCPEnable",
 			wantMethod: http.MethodPost,
 			wantPath:   "/v1/workspaces/ws1/mcp/enable",
@@ -519,10 +511,6 @@ func TestConfigMethodsErrorPaths(t *testing.T) {
 		{
 			name: "EnterSandbox server error", status: http.StatusInternalServerError,
 			call: func(c *Client) error { return c.EnterSandbox(context.Background(), "ws1", sandbox.Config{}) },
-		},
-		{
-			name: "OverrideAgentVariant server error", status: http.StatusInternalServerError,
-			call: func(c *Client) error { return c.OverrideAgentVariant(context.Background(), "ws1", "coder", "fast") },
 		},
 		{
 			name: "MCPEnable server error", status: http.StatusInternalServerError,

@@ -74,6 +74,20 @@ func (mr *MockCoordinatorMockRecorder) ActiveAgent(ctx, sessionID any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ActiveAgent", reflect.TypeOf((*MockCoordinator)(nil).ActiveAgent), ctx, sessionID)
 }
 
+// AdoptDraft mocks base method.
+func (m *MockCoordinator) AdoptDraft(ctx context.Context, sessionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AdoptDraft", ctx, sessionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AdoptDraft indicates an expected call of AdoptDraft.
+func (mr *MockCoordinatorMockRecorder) AdoptDraft(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdoptDraft", reflect.TypeOf((*MockCoordinator)(nil).AdoptDraft), ctx, sessionID)
+}
+
 // AskSideQuestion mocks base method.
 func (m *MockCoordinator) AskSideQuestion(ctx context.Context, sessionID, question string) (string, error) {
 	m.ctrl.T.Helper()

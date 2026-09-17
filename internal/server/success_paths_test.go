@@ -23,8 +23,7 @@ import (
 // guards (see wsHandlerCases) through their success path, against one
 // real workspace created via the CreateWorkspace HTTP path. That
 // closes the "backend call succeeded" line each handler still needs:
-// the sandbox status GET, the agent-variant override, and both MCP
-// enable/disable handlers.
+// the sandbox status GET and both MCP enable/disable handlers.
 //
 // PostWorkspaceSandboxEnter is checked instead for the 501 mapping:
 // Backend.EnterSandbox always fails with sandbox.ErrNotSupported for
@@ -79,15 +78,6 @@ func TestWorkspaceScopedHandlers_SuccessPaths(t *testing.T) {
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	})
 
-	// These two run before PostWorkspaceConfigAgentVariant below on purpose:
-	// that subtest writes config through the real SetConfigField path,
-	// which fires an async mcptools.Reinitialize reconciliation pass over
-	// every workspace's MCP config. Since disabled-server was seeded above
-	// by mutating the live Config in place (bypassing the store's normal
-	// copy-on-write mutators), a Reinitialize racing with these subtests'
-	// own InitializeSingle/DisableSingle calls would compete to
-	// (re)connect the same server and could flip the outcome from under
-	// the assertions below.
 	t.Run("PostWorkspaceMCPEnable", func(t *testing.T) {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/",
 			strings.NewReader(`{"name":"disabled-server"}`))
@@ -115,16 +105,6 @@ func TestWorkspaceScopedHandlers_SuccessPaths(t *testing.T) {
 		info, ok := angelamcp.GetState("disabled-server")
 		require.True(t, ok)
 		require.Equal(t, angelamcp.StateDisabled, info.State)
-	})
-
-	t.Run("PostWorkspaceConfigAgentVariant", func(t *testing.T) {
-		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/",
-			strings.NewReader(`{"agent_id":"coder","variant":"fast"}`))
-		req.SetPathValue("id", ws.ID)
-		rec := httptest.NewRecorder()
-		c.handlePostWorkspaceConfigAgentVariant(rec, req)
-		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "fast", ws.Cfg.Config().Agents[config.AgentCoder].Variant)
 	})
 
 	t.Run("PostWorkspaceSandboxEnter_NotSupportedInDaemon", func(t *testing.T) {

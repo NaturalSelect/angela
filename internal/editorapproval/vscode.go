@@ -86,7 +86,10 @@ func (v VSCode) Review(ctx context.Context, req Request) (Decision, error) {
 	}
 
 	if string(after) == req.OldContent {
-		return Decision{Outcome: OutcomeDeny, Reason: "reverted to the original content in the editor"}, nil
+		// No reason: this is a bare rejection, the same as clicking "Deny"
+		// with no explanation in the terminal, so it should end the turn
+		// instead of carrying a reason back for the model to route around.
+		return Decision{Outcome: OutcomeDeny}, nil
 	}
 	return Decision{Outcome: OutcomeApprove, Content: string(after)}, nil
 }

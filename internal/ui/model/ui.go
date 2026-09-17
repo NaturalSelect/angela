@@ -1499,6 +1499,16 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ttl = DefaultStatusTTL
 		}
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
+	case modelSwitchedMsg:
+		cmds = append(cmds, util.CmdHandler(msg.toast))
+		if len(msg.variants) > 0 {
+			variantsDialog, err := dialog.NewVariants(m.com, msg.modelName, msg.variants, msg.current)
+			if err != nil {
+				cmds = append(cmds, util.ReportError(err))
+				break
+			}
+			m.dialog.OpenDialog(variantsDialog)
+		}
 	case app.UpdateAvailableMsg:
 		text := fmt.Sprintf("Angela update available: v%s → v%s.", msg.CurrentVersion, msg.LatestVersion)
 		if msg.IsDevelopment {
@@ -2754,6 +2764,20 @@ func (m *UI) openVariantsDialog() tea.Cmd {
 	return nil
 }
 
+// modelSwitchedMsg reports that a session-scoped model switch landed,
+// carrying what Update needs to show the toast and, when the new
+// model offers presets, follow up with the picker. The dialog opens
+// only from here, once the switch is confirmed durable: opening it
+// eagerly would let a pick race the edit and then get silently reset
+// by the edit's own arrival, since a real model move always drops
+// whatever preset was picked before it.
+type modelSwitchedMsg struct {
+	toast     tea.Msg
+	modelName string
+	variants  []string
+	current   string
+}
+
 func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	var cmds []tea.Cmd
 
@@ -2848,10 +2872,16 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	if scope == modelPickSession {
 		editCmd := func() tea.Msg {
 			edit := config.ActiveAgentEdit{Slot: msg.ModelType, Model: &msg.Model}
-			if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
+			active, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit)
+			if err != nil {
 				return util.ReportError(err)()
 			}
-			return modelChangedMsg()
+			return modelSwitchedMsg{
+				toast:     modelChangedMsg(),
+				modelName: active.CatwalkCfg.Name,
+				variants:  active.CatwalkCfg.VariantNames(),
+				current:   active.Variant,
+			}
 		}
 		cmds = append(cmds, m.refreshActiveAgentCmd(tea.Sequence(
 			m.recordRecentModelCmd(msg.ModelType, msg.Model),

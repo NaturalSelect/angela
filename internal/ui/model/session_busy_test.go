@@ -119,7 +119,7 @@ func runCmds(m *UI, cmd tea.Cmd) []tea.Msg {
 		for _, c := range msg {
 			msgs = append(msgs, runCmds(m, c)...)
 		}
-	case busyStateMsg, promptQueueMsg, agentRunSubmittedMsg, lspStatesMsg, agentModelChangedMsg, branchStatusMsg:
+	case busyStateMsg, promptQueueMsg, agentRunSubmittedMsg, lspStatesMsg, agentModelChangedMsg, branchStatusMsg, modelSwitchedMsg:
 		msgs = append(msgs, msg)
 		_, next := m.Update(msg)
 		msgs = append(msgs, runCmds(m, next)...)

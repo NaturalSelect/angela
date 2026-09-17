@@ -100,7 +100,6 @@ func TestConcurrentActiveAgentEditsDoNotLoseUpdates(t *testing.T) {
 				func(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
 					next := current
 					pick := "deep"
-					next.Agent.Variant = pick
 					next.VariantPick = &pick
 					return next, true, nil
 				})
@@ -110,7 +109,7 @@ func TestConcurrentActiveAgentEditsDoNotLoseUpdates(t *testing.T) {
 
 	active, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Equal(t, "deep", active.Agent.Variant)
+	require.Equal(t, "deep", active.EffectiveVariant())
 }
 
 // TestEditActiveAgentKeepsInstanceOnFailure pins that a rejected edit
@@ -129,14 +128,14 @@ func TestEditActiveAgentKeepsInstanceOnFailure(t *testing.T) {
 	err = coord.editActiveAgent(t.Context(), sess.ID,
 		func(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
 			next := current
-			next.Agent.Variant = "half-applied"
+			next.VariantPick = ptrTo("half-applied")
 			return next, true, boom
 		})
 	require.ErrorIs(t, err, boom)
 
 	after, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Equal(t, before.Agent.Variant, after.Agent.Variant,
+	require.Equal(t, before.EffectiveVariant(), after.EffectiveVariant(),
 		"a failed edit must not land")
 }
 

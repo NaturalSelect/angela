@@ -87,6 +87,7 @@ func TestAppWorkspace_CreateSession(t *testing.T) {
 		fx := newAWFixture(t)
 		want := session.Session{ID: "s1", Title: "hello"}
 		fx.sessions.EXPECT().Create(gomock.Any(), "hello").Return(want, nil)
+		fx.coord.EXPECT().AdoptDraft(gomock.Any(), "s1").Return(nil)
 
 		got, err := fx.ws.CreateSession(t.Context(), "hello")
 		require.NoError(t, err)
@@ -101,6 +102,32 @@ func TestAppWorkspace_CreateSession(t *testing.T) {
 
 		_, err := fx.ws.CreateSession(t.Context(), "hello")
 		require.ErrorIs(t, err, boom)
+	})
+
+	t.Run("propagates a failed draft adoption", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		want := session.Session{ID: "s1", Title: "hello"}
+		boom := errors.New("draft adoption failed")
+		fx.sessions.EXPECT().Create(gomock.Any(), "hello").Return(want, nil)
+		fx.coord.EXPECT().AdoptDraft(gomock.Any(), "s1").Return(boom)
+
+		_, err := fx.ws.CreateSession(t.Context(), "hello")
+		require.ErrorIs(t, err, boom,
+			"a session created before its draft pick lands must not look like a plain success")
+	})
+
+	t.Run("skips draft adoption mid-onboarding", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		fx.app.AgentCoordinator = nil
+		want := session.Session{ID: "s1", Title: "hello"}
+		fx.sessions.EXPECT().Create(gomock.Any(), "hello").Return(want, nil)
+
+		got, err := fx.ws.CreateSession(t.Context(), "hello")
+		require.NoError(t, err,
+			"onboarding creates a session before any coordinator exists to adopt a draft into it")
+		require.Equal(t, want, got)
 	})
 }
 

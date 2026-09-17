@@ -920,24 +920,12 @@ definitions:
       message:
         type: string
     type: object
-  proto.ConfigAgentVariantRequest:
-    properties:
-      agent_id:
-        type: string
-      variant:
-        type: string
-    type: object
   proto.ConfigCompactRequest:
     properties:
       enabled:
         type: boolean
       scope:
         $ref: '#/definitions/github_com_NaturalSelect_angela_internal_config.Scope'
-    type: object
-  proto.ConfigDefaultAgentRequest:
-    properties:
-      agent_id:
-        type: string
     type: object
   proto.ConfigModelRequest:
     properties:
@@ -1846,6 +1834,43 @@ paths:
       summary: Get the default active agent
       tags:
       - agent
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Active agent edit
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.ActiveAgentEditRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.ActiveAgent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Edit the default active agent
+      tags:
+      - agent
   /workspaces/{id}/agent/init:
     post:
       parameters:
@@ -2321,40 +2346,6 @@ paths:
       summary: Get workspace config
       tags:
       - workspaces
-  /workspaces/{id}/config/agent-variant:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Workspace ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Config agent variant request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/proto.ConfigAgentVariantRequest'
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/proto.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/proto.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/proto.Error'
-      summary: Override an agent's parameter preset
-      tags:
-      - config
   /workspaces/{id}/config/compact:
     post:
       consumes:
@@ -2387,40 +2378,6 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Set compact mode
-      tags:
-      - config
-  /workspaces/{id}/config/default-agent:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Workspace ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Config default agent request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/proto.ConfigDefaultAgentRequest'
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/proto.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/proto.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/proto.Error'
-      summary: Override the pre-session default agent
       tags:
       - config
   /workspaces/{id}/config/import-copilot:

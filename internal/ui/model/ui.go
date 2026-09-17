@@ -2535,21 +2535,23 @@ func substituteArgs(content string, args map[string]string) string {
 type modelPickTarget int
 
 const (
-	// modelPickGlobal edits the global default: there is an active
-	// session, but the slot is one its agent does not run on (the
-	// chore model, say). The pick has no session to live on, and one
-	// is already running on the config as it stands, so persisting is
-	// the only choice that means anything.
+	// modelPickGlobal edits the global default: the active agent (the
+	// session's, or the landing screen's draft) does not run on this
+	// slot (the chore model, say). The pick has no instance to live
+	// on, and one is already running on the config as it stands, so
+	// persisting is the only choice that means anything.
 	modelPickGlobal modelPickTarget = iota
-	// modelPickSession edits the session's own agent instance.
+	// modelPickSession edits the active agent's own instance: the
+	// session's, or — with no session yet — the landing screen's
+	// draft, which the first message turns into the session's.
 	modelPickSession
 	// modelPickEphemeral applies the pick in memory for this process
-	// only: there is no session yet to scope it to (the landing
-	// screen), so persisting it would silently overwrite the saved
-	// default the moment the user was only previewing a model before
-	// starting a chat.
+	// only: there is no session yet, and the slot is not the one the
+	// landing screen's draft runs on, so persisting it would silently
+	// overwrite the saved default for a slot the user was only
+	// previewing.
 	modelPickEphemeral
-	// modelPickUnknown means the session's agent has not been probed
+	// modelPickUnknown means the active agent has not been probed
 	// yet, so the other cases cannot be told apart. Falling back to
 	// global here would rewrite the default for every future session
 	// on the strength of a probe that simply had not landed.
@@ -2557,18 +2559,18 @@ const (
 )
 
 // modelPickScope reports where picking a model for this slot should
-// land. Only the slot the session's agent actually runs on is
-// session-scoped.
+// land. Only the slot the active agent — the session's, or the
+// landing screen's draft — actually runs on is instance-scoped.
 func (m *UI) modelPickScope(slot config.SlotName) modelPickTarget {
-	if m.currentSessionID() == "" {
-		return modelPickEphemeral
-	}
 	active := m.activeAgent()
 	if active == nil {
 		return modelPickUnknown
 	}
 	if active.Slot == slot {
 		return modelPickSession
+	}
+	if m.currentSessionID() == "" {
+		return modelPickEphemeral
 	}
 	return modelPickGlobal
 }
@@ -2596,17 +2598,15 @@ func (m *UI) toggleTransparentCmd() tea.Cmd {
 	}
 }
 
-// toggleThinkingCmd flips the thinking flag on the session's agent
-// instance. The flag lives on the session, so it takes effect from the
-// next turn and leaves every other session alone.
+// toggleThinkingCmd flips the thinking flag on the active agent
+// instance: the session's, or — with no session yet — the landing
+// screen's draft, which the first message turns into the session's.
+// The flag lives on that instance, so it takes effect from the next
+// turn and leaves every other session alone.
 func (m *UI) toggleThinkingCmd() tea.Cmd {
 	sessionID := m.currentSessionID()
-	if sessionID == "" {
-		return util.ReportWarn("Start a session before toggling thinking mode.")
-	}
-
 	return m.refreshActiveAgentCmd(func() tea.Msg {
-		// The flip happens under the session's lock rather than here:
+		// The flip happens under the instance's lock rather than here:
 		// two clients toggling from the same cached value would both
 		// write the same absolute result, and the second flip would
 		// not cancel the first.
@@ -2623,15 +2623,11 @@ func (m *UI) toggleThinkingCmd() tea.Cmd {
 	})
 }
 
-// handleSelectModel performs the model selection after any provider
-// pre-checks have completed.
-// handleSelectAgent points the current session at the chosen primary
-// agent. The switch lands on the session's agent instance, so it takes
-// effect from the next turn; a turn already streaming keeps the agent it
-// started on. With no session yet, there is no instance to edit, so the
-// pick lands on the config-level default instead — the same way a
-// pre-session variant pick does — and the session the first message
-// creates starts on it.
+// handleSelectAgent points the active agent at the chosen primary
+// agent: the session's instance, or — with no session yet — the
+// landing screen's draft, which the first message turns into the
+// session's. The switch takes effect from the next turn; a turn
+// already streaming keeps the agent it started on.
 func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
 	m.dialog.CloseDialog(dialog.AgentsID)
 	if active := m.activeAgent(); active != nil && active.AgentID == msg.AgentID {
@@ -2640,28 +2636,19 @@ func (m *UI) handleSelectAgent(msg dialog.ActionSelectAgent) tea.Cmd {
 
 	agentID := msg.AgentID
 	sessionID := m.currentSessionID()
-	if sessionID == "" {
-		return m.refreshActiveAgentCmd(func() tea.Msg {
-			if err := m.com.Workspace.OverrideDefaultAgent(agentID); err != nil {
-				return util.ReportError(err)()
-			}
-			return util.NewInfoMsg(agentSetMessage(m.com.Workspace.Config(), agentID))
-		})
-	}
-
 	return m.refreshActiveAgentCmd(func() tea.Msg {
 		edit := config.ActiveAgentEdit{Agent: agentID}
 		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
 			return util.ReportError(err)()
 		}
-		return nil
+		return util.NewInfoMsg(agentSetMessage(m.com.Workspace.Config(), agentID))
 	})
 }
 
-// agentSetMessage names the agent a pre-session pick just set, the
-// same way variantSetMessage does for a preset. cfg is nil in tests
-// that never stub Config(), so it is treated the same as an agent
-// with no configured display name.
+// agentSetMessage names the agent a pick just set, the same way
+// variantSetMessage does for a preset. cfg is nil in tests that never
+// stub Config(), so it is treated the same as an agent with no
+// configured display name.
 func agentSetMessage(cfg *config.Config, agentID string) string {
 	name := agentID
 	if cfg != nil {
@@ -2672,34 +2659,22 @@ func agentSetMessage(cfg *config.Config, agentID string) string {
 	return "Agent set to " + name
 }
 
-// handleSelectVariant points the session's model at a preset. With a
-// session, the variant lives on its agent instance, so it takes effect
-// from the next turn and leaves the global config untouched. With no
-// session yet — the landing screen, previewing a preset before the
-// first message — there is no instance to edit, so the pick lands on
-// the agent's own config-level default instead, the same way a
-// pre-session model pick lands on the slot's default.
+// handleSelectVariant points the active agent's model at a preset: the
+// session's instance, or — with no session yet — the landing screen's
+// draft, which the first message turns into the session's. Either way
+// the preset lives on that instance and takes effect from the next
+// turn, never touching the global config.
 func (m *UI) handleSelectVariant(variant string) tea.Cmd {
 	m.dialog.CloseDialog(dialog.VariantsID)
-	if active := m.activeAgent(); active != nil && active.Variant == variant {
+	active := m.activeAgent()
+	if active != nil && active.Variant == variant {
 		return nil
+	}
+	if active == nil {
+		return util.ReportWarn("The agent is still starting up.")
 	}
 
 	sessionID := m.currentSessionID()
-	if sessionID == "" {
-		active := m.activeAgent()
-		if active == nil {
-			return util.ReportWarn("The agent is still starting up.")
-		}
-		agentID := active.AgentID
-		return m.refreshActiveAgentCmd(func() tea.Msg {
-			if err := m.com.Workspace.OverrideAgentVariant(agentID, variant); err != nil {
-				return util.ReportError(err)()
-			}
-			return util.NewInfoMsg(variantSetMessage(variant))
-		})
-	}
-
 	return m.refreshActiveAgentCmd(func() tea.Msg {
 		edit := config.ActiveAgentEdit{Variant: &variant}
 		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
@@ -2737,9 +2712,10 @@ func (m *UI) cycleVariant() tea.Cmd {
 	return m.handleSelectVariant(choices[(current+1)%len(choices)])
 }
 
-// openVariantsDialog opens the preset picker for the session's model,
-// or for the coder default when there is no session yet — the same
-// pre-session preview handleSelectVariant applies the pick through.
+// openVariantsDialog opens the preset picker for the active agent's
+// model: the session's, or — with no session yet — the landing
+// screen's draft, the same instance handleSelectVariant applies the
+// pick through.
 func (m *UI) openVariantsDialog() tea.Cmd {
 	if m.dialog.ContainsDialog(dialog.VariantsID) {
 		m.dialog.BringToFront(dialog.VariantsID)
@@ -2778,6 +2754,8 @@ type modelSwitchedMsg struct {
 	current   string
 }
 
+// handleSelectModel performs the model selection after any provider
+// pre-checks have completed.
 func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 	var cmds []tea.Cmd
 
@@ -2833,10 +2811,11 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 		return m.openOnboardingStep(onboardingStepModelConfig)
 	}
 
-	// Picking a model for the role the session's agent runs on edits
-	// that session's instance and leaves the global default alone.
-	// Picking one for any other slot (the chore model, say) is a
-	// global preference. Picking one with no session yet is either
+	// Picking a model for the slot the active agent runs on edits that
+	// instance: the session's, or — with no session yet — the landing
+	// screen's draft, which the first message turns into the session's.
+	// Picking one for any other slot (the chore model, say) is a global
+	// preference — unless there is no session yet, in which case it is
 	// onboarding's first-run default, which persists, or the landing
 	// screen previewing a model before the first message, which must
 	// not silently overwrite the saved default.

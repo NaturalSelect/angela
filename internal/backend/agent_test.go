@@ -68,6 +68,8 @@ func (c *blockingCoordinator) EditActiveAgent(context.Context, string, config.Ac
 	return config.ActiveAgent{}, nil
 }
 
+func (c *blockingCoordinator) AdoptDraft(context.Context, string) error { return nil }
+
 func (c *blockingCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
 	return config.ActiveAgent{}, agent.Model{}, nil
 }

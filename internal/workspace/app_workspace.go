@@ -48,8 +48,22 @@ func NewAppWorkspace(a *app.App, store *config.ConfigStore) *AppWorkspace {
 
 // -- Sessions --
 
+// CreateSession creates a new session and, if the landing page ever
+// edited the process-wide draft instance, carries that pick onto it —
+// a model or preset chosen before this session existed must not be
+// silently discarded the moment it comes into being. AgentCoordinator
+// is nil only mid-onboarding, before any session can exist at all.
 func (w *AppWorkspace) CreateSession(ctx context.Context, title string) (session.Session, error) {
-	return w.app.Sessions.Create(ctx, title)
+	sess, err := w.app.Sessions.Create(ctx, title)
+	if err != nil {
+		return session.Session{}, err
+	}
+	if w.app.AgentCoordinator != nil {
+		if err := w.app.AgentCoordinator.AdoptDraft(ctx, sess.ID); err != nil {
+			return session.Session{}, err
+		}
+	}
+	return sess, nil
 }
 
 func (w *AppWorkspace) GetSession(ctx context.Context, sessionID string) (session.Session, error) {
@@ -416,14 +430,6 @@ func (w *AppWorkspace) IsInDocker() bool {
 
 func (w *AppWorkspace) UpdatePreferredModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {
 	return w.store.UpdatePreferredModel(scope, name, model)
-}
-
-func (w *AppWorkspace) OverrideAgentVariant(agentID, variant string) error {
-	return w.store.OverrideAgentVariant(agentID, variant)
-}
-
-func (w *AppWorkspace) OverrideDefaultAgent(agentID string) error {
-	return w.store.OverrideDefaultAgent(agentID)
 }
 
 func (w *AppWorkspace) RecordRecentModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error {

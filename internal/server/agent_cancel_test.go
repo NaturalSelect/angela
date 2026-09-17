@@ -88,6 +88,8 @@ func (s *runCoordinator) EditActiveAgent(context.Context, string, config.ActiveA
 	return config.ActiveAgent{}, nil
 }
 
+func (s *runCoordinator) AdoptDraft(context.Context, string) error { return nil }
+
 func (s *runCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgent, agent.Model, error) {
 	return config.ActiveAgent{}, agent.Model{}, nil
 }

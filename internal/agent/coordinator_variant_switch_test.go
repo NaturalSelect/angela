@@ -62,13 +62,13 @@ func TestSwitchVariantDrivesLaterTurns(t *testing.T) {
 	// Before switching, the agent's configured variant applies.
 	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
 	require.NoError(t, err)
-	require.Equal(t, "high", agentCfg.Agent.Variant)
+	require.Equal(t, "high", agentCfg.EffectiveVariant())
 
 	require.NoError(t, coord.SwitchVariant(t.Context(), sessionID, "deep"))
 
 	agentCfg, err = coord.activeAgentFor(t.Context(), sessionID)
 	require.NoError(t, err)
-	require.Equal(t, "deep", agentCfg.Agent.Variant,
+	require.Equal(t, "deep", agentCfg.EffectiveVariant(),
 		"the session's choice outranks the configured default")
 
 	model, err := coord.buildModel(context.Background(), agentCfg, false)

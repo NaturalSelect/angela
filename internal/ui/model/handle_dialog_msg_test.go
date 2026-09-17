@@ -18,6 +18,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
+	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -521,13 +522,16 @@ func TestHandleDialogMsg_ActionSuspend(t *testing.T) {
 func TestHandleDialogMsg_ActionToggleThinking(t *testing.T) {
 	t.Parallel()
 
-	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
-	m.session = nil // no session -> toggleThinkingCmd warns, but the palette still closes
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentEditActive(gomock.Any(), "", gomock.Any()).
+		Return(workspace.ActiveAgent{Think: true}, nil)
+	m := newHandleDialogUI(t, ws)
+	m.session = nil // no session -> toggleThinkingCmd edits the workspace's draft
 
 	cmd := m.handleDialogMsg(dialog.ActionToggleThinking{})
 	require.NotNil(t, cmd)
-	msg := cmd().(util.InfoMsg)
-	require.Equal(t, util.InfoTypeWarn, msg.Type)
+	require.Contains(t, infoText(t, cmd()), "enabled")
 	require.False(t, m.dialog.HasDialogs())
 }
 
@@ -622,12 +626,13 @@ func TestHandleDialogMsg_ActionSelectModel_MissingConfigReportsError(t *testing.
 func TestHandleDialogMsg_ActionSelectAgent(t *testing.T) {
 	t.Parallel()
 
-	t.Run("without a session it applies an ephemeral override and closes the agents dialog", func(t *testing.T) {
+	t.Run("without a session it edits the draft and closes the agents dialog", func(t *testing.T) {
 		t.Parallel()
 
 		ctrl := gomock.NewController(t)
 		ws := NewMockWorkspace(ctrl)
-		ws.EXPECT().OverrideDefaultAgent("coder").Return(nil)
+		ws.EXPECT().AgentEditActive(gomock.Any(), "", config.ActiveAgentEdit{Agent: "coder"}).
+			Return(workspace.ActiveAgent{AgentID: "coder"}, nil)
 		ws.EXPECT().Config().Return(&config.Config{
 			Agents: map[string]config.Agent{
 				"coder": {ID: "coder", Name: "Coder", Mode: config.AgentModePrimary},

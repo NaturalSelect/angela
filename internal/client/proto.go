@@ -652,9 +652,17 @@ func (c *Client) AgentSummarizeSession(ctx context.Context, id string, sessionID
 // combination. It answers with the instance the session ends up on, so
 // a relative edit (toggling thinking) reports the value it reached
 // rather than the caller's guess.
+//
+// An empty sessionID edits the agent a new session would run, which
+// has its own route for the same reason AgentGetSessionActive does:
+// joining an empty segment into the session-scoped path would
+// silently edit a session named "active-agent".
 func (c *Client) AgentEditSessionActive(ctx context.Context, id, sessionID string, edit proto.ActiveAgentEditRequest) (proto.ActiveAgent, error) {
-	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/active-agent", id, sessionID),
-		nil, jsonBody(edit),
+	path := fmt.Sprintf("/workspaces/%s/agent/active-agent", id)
+	if sessionID != "" {
+		path = fmt.Sprintf("/workspaces/%s/agent/sessions/%s/active-agent", id, sessionID)
+	}
+	rsp, err := c.post(ctx, path, nil, jsonBody(edit),
 		http.Header{"Content-Type": []string{"application/json"}})
 	if err != nil {
 		return proto.ActiveAgent{}, fmt.Errorf("failed to edit the active agent: %w", err)

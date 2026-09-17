@@ -8,14 +8,28 @@ import (
 	"github.com/NaturalSelect/angela/internal/session"
 )
 
-// CreateSession creates a new session in the given workspace.
+// CreateSession creates a new session in the given workspace, and
+// carries the landing page's draft pick onto it, if the workspace's
+// draft was ever edited — a model or preset chosen before this
+// session existed must not be silently discarded the moment it comes
+// into being. AgentCoordinator is nil only mid-onboarding, before any
+// session can exist at all.
 func (b *Backend) CreateSession(ctx context.Context, workspaceID, title string) (session.Session, error) {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
 		return session.Session{}, err
 	}
 
-	return ws.Sessions.Create(ctx, title)
+	sess, err := ws.Sessions.Create(ctx, title)
+	if err != nil {
+		return session.Session{}, err
+	}
+	if ws.AgentCoordinator != nil {
+		if err := ws.AgentCoordinator.AdoptDraft(ctx, sess.ID); err != nil {
+			return session.Session{}, err
+		}
+	}
+	return sess, nil
 }
 
 // GetSession retrieves a session by workspace and session ID.

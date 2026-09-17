@@ -80,7 +80,7 @@ func TestVariantSurvivesARestart(t *testing.T) {
 
 	restored, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Equal(t, "deep", restored.Agent.Variant)
+	require.Equal(t, "deep", restored.EffectiveVariant())
 }
 
 // TestClearingTheVariantSurvivesARestart is the other half: backing out
@@ -97,7 +97,7 @@ func TestClearingTheVariantSurvivesARestart(t *testing.T) {
 
 	restored, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Empty(t, restored.Agent.Variant)
+	require.Empty(t, restored.EffectiveVariant())
 }
 
 // TestAnUnpickedVariantKeepsFollowingTheConfig is the A1 regression.
@@ -132,7 +132,7 @@ func TestAnUnpickedVariantKeepsFollowingTheConfig(t *testing.T) {
 
 	restored, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Equal(t, "deep", restored.Agent.Variant,
+	require.Equal(t, "deep", restored.EffectiveVariant(),
 		"a preset the user never picked must follow the config")
 }
 
@@ -154,7 +154,7 @@ func TestAPickedVariantOutranksTheConfig(t *testing.T) {
 
 	restored, err := coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Equal(t, "deep", restored.Agent.Variant,
+	require.Equal(t, "deep", restored.EffectiveVariant(),
 		"a preset the user picked must survive a config change")
 }
 

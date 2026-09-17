@@ -349,14 +349,6 @@ func TestAppWorkspace_UpdatePreferredModel(t *testing.T) {
 	require.Equal(t, sel, store.Config().Slots[config.SlotMain])
 }
 
-func TestAppWorkspace_OverrideAgentVariant(t *testing.T) {
-	// Not parallel: newAWFixtureWithStore calls t.Setenv.
-	fx, store := newAWFixtureWithStore(t)
-
-	require.NoError(t, fx.ws.OverrideAgentVariant(config.AgentCoder, "fast"))
-	require.Equal(t, "fast", store.Config().Agents[config.AgentCoder].Variant)
-}
-
 func TestAppWorkspace_IsInSandbox(t *testing.T) {
 	t.Parallel()
 	fx := newAWFixture(t)

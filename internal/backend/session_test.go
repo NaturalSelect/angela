@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/message"
@@ -157,4 +158,31 @@ func TestBackendSession_MessagesAndHistory(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, allUser, 1)
 	require.Equal(t, message.User, allUser[0].Role)
+}
+
+// TestBackendSession_CreateSessionAdoptsDraft pins that a session
+// created through the backend carries the landing page's draft pick
+// with it, the same as AppWorkspace.CreateSession does for the
+// in-process path: the coordinator must be asked to adopt the draft
+// into exactly the session that was just created.
+func TestBackendSession_CreateSessionAdoptsDraft(t *testing.T) {
+	b, ws, _ := newPublishingWorkspace(t)
+	fake := &fakeCoordinator{}
+	ws.AgentCoordinator = fake
+
+	sess, err := b.CreateSession(t.Context(), ws.ID, "hello")
+	require.NoError(t, err)
+	require.Equal(t, []string{sess.ID}, fake.adoptDraftCalls)
+}
+
+// TestBackendSession_CreateSessionPropagatesFailedDraftAdoption pins
+// that a session whose draft failed to adopt is reported as a
+// failure, not as a plain success that silently dropped the pick.
+func TestBackendSession_CreateSessionPropagatesFailedDraftAdoption(t *testing.T) {
+	b, ws, _ := newPublishingWorkspace(t)
+	boom := errors.New("draft adoption failed")
+	ws.AgentCoordinator = &fakeCoordinator{adoptDraftErr: boom}
+
+	_, err := b.CreateSession(t.Context(), ws.ID, "hello")
+	require.ErrorIs(t, err, boom)
 }

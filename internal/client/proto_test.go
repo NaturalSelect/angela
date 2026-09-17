@@ -831,6 +831,17 @@ func TestProtoMethodsSuccessPaths(t *testing.T) {
 			},
 		},
 		{
+			name:       "AgentEditSessionActive without session",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/agent/active-agent",
+			body:       mustJSON(t, proto.ActiveAgent{AgentID: "a1", AgentName: "Agent One"}),
+			call: func(t *testing.T, c *Client) {
+				got, err := c.AgentEditSessionActive(context.Background(), "ws1", "", proto.ActiveAgentEditRequest{Agent: "a1"})
+				require.NoError(t, err)
+				require.Equal(t, "a1", got.AgentID)
+			},
+		},
+		{
 			name:       "AgentGenerateCommitMessage",
 			wantMethod: http.MethodPost,
 			wantPath:   "/v1/workspaces/ws1/agent/sessions/sess1/commit-message",

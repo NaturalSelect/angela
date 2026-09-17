@@ -40,13 +40,13 @@ func TestFilesystemAllowPaths_BuiltinToolNames(t *testing.T) {
 		{Action: RuleAllow, Tool: toolnames.Write, Pattern: "out/*"},
 		{Action: RuleAllow, Tool: toolnames.Edit, Pattern: "src/*"},
 		{Action: RuleAllow, Tool: toolnames.MultiEdit, Pattern: "gen/*"},
-		{Action: RuleAllow, Tool: toolnames.View, Pattern: "ro-view/*"},
+		{Action: RuleAllow, Tool: toolnames.Read, Pattern: "ro-read/*"},
 		{Action: RuleAllow, Tool: toolnames.Glob, Pattern: "ro-glob/*"},
 		{Action: RuleAllow, Tool: toolnames.Grep, Pattern: "ro-grep/*"},
 		{Action: RuleAllow, Tool: toolnames.LS, Pattern: "ro-ls/*"},
 	}, "/work")
 
-	require.Equal(t, []string{filepath.Join("/work", "ro-view"), filepath.Join("/work", "ro-glob"), filepath.Join("/work", "ro-grep"), filepath.Join("/work", "ro-ls")}, readOnlyDirs)
+	require.Equal(t, []string{filepath.Join("/work", "ro-read"), filepath.Join("/work", "ro-glob"), filepath.Join("/work", "ro-grep"), filepath.Join("/work", "ro-ls")}, readOnlyDirs)
 	require.Equal(t, []string{filepath.Join("/work", "out"), filepath.Join("/work", "src"), filepath.Join("/work", "gen")}, readWriteDirs)
 }
 

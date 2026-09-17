@@ -155,8 +155,8 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionEdit
 		access.Path = resolve(p.Path)
 
-	case toolnames.View:
-		p, ok := decodeInput[ViewParams](rawInput)
+	case toolnames.Read:
+		p, ok := decodeInput[ReadParams](rawInput)
 		if !ok {
 			return access, false
 		}
@@ -344,11 +344,11 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			}
 		}
 
-	case toolnames.View:
-		if p, ok := decodeInput[ViewParams](rawInput); ok {
+	case toolnames.Read:
+		if p, ok := decodeInput[ReadParams](rawInput); ok {
 			return permission.Preview{
 				Description: "Read file outside working directory: " + p.FilePath,
-				Params:      ViewPermissionsParams(p),
+				Params:      ReadPermissionsParams(p),
 			}
 		}
 

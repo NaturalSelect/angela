@@ -185,14 +185,14 @@ func TestConvertParts_Empty(t *testing.T) {
 func TestExtractSkillsFromMessages(t *testing.T) {
 	t.Parallel()
 
-	alphaMeta, err := json.Marshal(tools.ViewResponseMetadata{
-		ResourceType:        tools.ViewResourceSkill,
+	alphaMeta, err := json.Marshal(tools.ReadResponseMetadata{
+		ResourceType:        tools.ReadResourceSkill,
 		ResourceName:        "alpha",
 		ResourceDescription: "Alpha skill",
 	})
 	require.NoError(t, err)
-	betaMeta, err := json.Marshal(tools.ViewResponseMetadata{
-		ResourceType:        tools.ViewResourceSkill,
+	betaMeta, err := json.Marshal(tools.ReadResponseMetadata{
+		ResourceType:        tools.ReadResourceSkill,
 		ResourceName:        "beta",
 		ResourceDescription: "Beta skill",
 	})
@@ -603,8 +603,8 @@ func TestOutputSessionHuman_WritesExpectedFields(t *testing.T) {
 func TestOutputSessionHuman_RendersSkillsAndMultipleItems(t *testing.T) {
 	getOutput := swapStdoutPipe(t)
 
-	skillMeta, err := json.Marshal(tools.ViewResponseMetadata{
-		ResourceType:        tools.ViewResourceSkill,
+	skillMeta, err := json.Marshal(tools.ReadResponseMetadata{
+		ResourceType:        tools.ReadResourceSkill,
 		ResourceName:        "alpha",
 		ResourceDescription: "Alpha skill",
 	})

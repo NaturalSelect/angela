@@ -148,7 +148,7 @@ Read-only tools run freely; writes and commands are prompted.
 ```json
 {
   "permissions": {
-    "allowed_tools": ["View", "LS", "Grep", "Glob"],
+    "allowed_tools": ["Read", "LS", "Grep", "Glob"],
     "prompt": "ask"
   }
 }
@@ -161,7 +161,7 @@ Most things run freely; only dangerous commands are blocked.
 ```json
 {
   "permissions": {
-    "allowed_tools": ["View", "LS", "Grep", "Glob", "Edit", "MultiEdit", "Write", "Bash"],
+    "allowed_tools": ["Read", "LS", "Grep", "Glob", "Edit", "MultiEdit", "Write", "Bash"],
     "prompt": "ask",
     "rules": [
       { "action": "deny", "tool": "edit", "pattern": "**/.env*", "mode": "path" },
@@ -297,7 +297,7 @@ A simple example — auto-approve read-only tools:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(View|LS|Grep|Glob)$",
+        "matcher": "^(Read|LS|Grep|Glob)$",
         "command": "echo '{\"decision\":\"allow\"}'"
       }
     ]

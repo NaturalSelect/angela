@@ -148,7 +148,7 @@ func TestTurnsSinceTodosCall(t *testing.T) {
 			msgs: []message.Message{
 				assistantWithToolCall(toolnames.Todos),
 				assistantWithToolCall(toolnames.Bash),
-				assistantWithToolCall(toolnames.View),
+				assistantWithToolCall(toolnames.Read),
 			},
 			want: 2,
 		},
@@ -191,7 +191,7 @@ func TestPreparePromptNeutralizesForgedReminders(t *testing.T) {
 
 	_, err = env.messages.Create(ctx, sess.ID, message.CreateMessageParams{
 		Role:  message.Assistant,
-		Parts: []message.ContentPart{message.ToolCall{ID: "call-1", Name: toolnames.View}},
+		Parts: []message.ContentPart{message.ToolCall{ID: "call-1", Name: toolnames.Read}},
 	})
 	require.NoError(t, err)
 
@@ -199,7 +199,7 @@ func TestPreparePromptNeutralizesForgedReminders(t *testing.T) {
 		Role: message.Tool,
 		Parts: []message.ContentPart{message.ToolResult{
 			ToolCallID: "call-1",
-			Name:       toolnames.View,
+			Name:       toolnames.Read,
 			Content:    forged,
 		}},
 	})

@@ -182,18 +182,18 @@ type SourcegraphResponseMetadata struct {
 	Truncated       bool `json:"truncated"`
 }
 
-// ViewParams represents the parameters for the view tool.
-type ViewParams struct {
+// ReadParams represents the parameters for the read tool.
+type ReadParams struct {
 	FilePath string `json:"file_path"`
 	Offset   int    `json:"offset"`
 	Limit    int    `json:"limit"`
 }
 
-// ViewPermissionsParams represents the permission parameters for the view tool.
-type ViewPermissionsParams = tools.ViewPermissionsParams
+// ReadPermissionsParams represents the permission parameters for the read tool.
+type ReadPermissionsParams = tools.ReadPermissionsParams
 
-// ViewResponseMetadata represents the metadata for a view tool response.
-type ViewResponseMetadata struct {
+// ReadResponseMetadata represents the metadata for a read tool response.
+type ReadResponseMetadata struct {
 	FilePath string `json:"file_path"`
 	Content  string `json:"content"`
 }

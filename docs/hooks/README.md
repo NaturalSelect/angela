@@ -473,7 +473,7 @@ returns `decision: "allow"`, which tells Angela to pre-approve the call:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(view|ls|grep|glob)$",
+        "matcher": "^(read|ls|grep|glob)$",
         "command": "echo '{\"decision\":\"allow\"}'",
       },
     ],
@@ -481,7 +481,7 @@ returns `decision: "allow"`, which tells Angela to pre-approve the call:
 }
 ```
 
-No script file needed — the command is inline. Every `view`/`ls`/`grep`/`glob`
+No script file needed — the command is inline. Every `read`/`ls`/`grep`/`glob`
 call now runs without prompting. Add the `bash` tool to this list at your own
 risk; consider a more targeted allowlist instead:
 

@@ -22,9 +22,9 @@ func TestClearItemCachesBumpsVersionAndClearsCache(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true}
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true}
 	result := &message.ToolResult{ToolCallID: "v1", Content: "hi"}
-	item := NewViewToolMessageItem(&sty, toolCall, result, false)
+	item := NewReadToolMessageItem(&sty, toolCall, result, false)
 	_ = item.Render(80)
 
 	before := item.Version()
@@ -33,7 +33,7 @@ func TestClearItemCachesBumpsVersionAndClearsCache(t *testing.T) {
 
 	// A version bump forces a fresh render rather than a stale cache hit.
 	out := ansi.Strip(item.Render(80))
-	require.Contains(t, out, toolnames.View)
+	require.Contains(t, out, toolnames.Read)
 }
 
 // -----------------------------------------------------------------------------
@@ -284,7 +284,7 @@ func TestExtractMessageItemsAssistantWithTextAndToolCallsAddsBoth(t *testing.T) 
 		Role: message.Assistant,
 		Parts: []message.ContentPart{
 			message.TextContent{Text: "here you go"},
-			message.ToolCall{ID: "tc1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true},
+			message.ToolCall{ID: "tc1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true},
 		},
 	}
 	toolResults := map[string]message.ToolResult{
@@ -310,7 +310,7 @@ func TestExtractMessageItemsAssistantToolOnlySuppressesEmptyText(t *testing.T) {
 		ID:   "a1",
 		Role: message.Assistant,
 		Parts: []message.ContentPart{
-			message.ToolCall{ID: "tc1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true},
+			message.ToolCall{ID: "tc1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true},
 		},
 	}
 	toolResults := map[string]message.ToolResult{
@@ -339,7 +339,7 @@ func TestExtractMessageItemsAssistantCanceledFinishReasonMarksToolsCanceledRegar
 		ID:   "a1",
 		Role: message.Assistant,
 		Parts: []message.ContentPart{
-			message.ToolCall{ID: "tc1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true},
+			message.ToolCall{ID: "tc1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true},
 			message.Finish{Reason: message.FinishReasonCanceled},
 		},
 	}

@@ -21,7 +21,7 @@ const (
 	Bash      = "Bash"
 	Edit      = "Edit"
 	MultiEdit = "MultiEdit"
-	View      = "View"
+	Read      = "Read"
 	Write     = "Write"
 	Glob      = "Glob"
 	Grep      = "Grep"

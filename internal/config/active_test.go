@@ -104,7 +104,7 @@ func TestInstantiatedAgentsDoNotShareMutableState(t *testing.T) {
 
 	// Editing one session's instance must not reach the other, nor
 	// the published config every other reader still holds.
-	a.Agent.DisabledTools[0] = "view"
+	a.Agent.DisabledTools[0] = "read"
 
 	require.Equal(t, "bash", b.Agent.DisabledTools[0])
 	require.Equal(t, "bash", cfg.Agents["coder"].DisabledTools[0])

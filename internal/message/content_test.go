@@ -260,7 +260,7 @@ func TestMessage_AccessorsOnPopulatedMessage(t *testing.T) {
 			ImageURLContent{URL: "https://x/2.png"},
 			BinaryContent{Path: "a.bin", MIMEType: "application/octet-stream", Data: []byte{1, 2}},
 			ToolCall{ID: "tc1", Name: "bash"},
-			ToolCall{ID: "tc2", Name: "view"},
+			ToolCall{ID: "tc2", Name: "read"},
 			ToolResult{ToolCallID: "tc1", Content: "ok"},
 		},
 	}
@@ -466,7 +466,7 @@ func TestMessage_FinishToolCall(t *testing.T) {
 		t.Parallel()
 		m := &Message{Parts: []ContentPart{
 			ToolCall{ID: "tc1", Name: "bash", Input: `{"cmd":"ls"}`},
-			ToolCall{ID: "tc2", Name: "view"},
+			ToolCall{ID: "tc2", Name: "read"},
 		}}
 		m.FinishToolCall("tc1")
 		calls := m.ToolCalls()

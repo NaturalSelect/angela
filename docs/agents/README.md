@@ -9,10 +9,10 @@ tasks to specialized sub-agents via the `agent` tool.
 |-----------|-----------|------------------------------------------------------------------------|
 | `coder`   | primary   | Main agent for executing coding tasks. Has access to all tools.        |
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
-| `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, View, Fetch, Sourcegraph, AngelaInfo, LSP (read-only). |
+| `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
 | `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. Read-only. |
-| `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: Fetch, WebFetch, WebSearch, Glob, Grep, View, Sourcegraph. |
+| `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: Fetch, WebFetch, WebSearch, Glob, Grep, Read, Sourcegraph. |
 
 Every sub-agent additionally loses the interactive `question` tool at run
 time, whatever its configuration says — it has no user to ask, only the agent
@@ -116,7 +116,7 @@ prompt per command:
 {
   "agents": {
     "plan": {
-      "allowed_tools": ["Glob", "Grep", "LS", "View", "Fetch", "Sourcegraph", "AngelaInfo", "Bash"]
+      "allowed_tools": ["Glob", "Grep", "LS", "Read", "Fetch", "Sourcegraph", "AngelaInfo", "Bash"]
     }
   }
 }
@@ -264,14 +264,14 @@ with a warning.
 ```json
 {
   "agents": {
-    "coder": { "allowed_tools": ["View", "Grep", "Edit"] },
+    "coder": { "allowed_tools": ["Read", "Grep", "Edit"] },
     "my-reviewer": { "description": "Reviews code" }
   }
 }
 ```
 
 Above, `my-reviewer` says nothing about tools and so gets exactly
-`view`, `grep`, `edit`.
+`read`, `grep`, `edit`.
 
 ### Restricting Delegation (`allowed_agents`)
 

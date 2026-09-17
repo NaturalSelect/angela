@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Investigative tools (View, Grep, Glob, ...) can always be re-queried from
+// Investigative tools (Read, Grep, Glob, ...) can always be re-queried from
 // their source, so the transcript does not need to repeat their content by
 // default. Collapsed means header-only; the full result is one toggle away.
 func TestInvestigativeToolDefaultsToHeaderOnly(t *testing.T) {

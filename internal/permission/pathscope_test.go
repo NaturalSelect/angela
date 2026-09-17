@@ -44,7 +44,7 @@ func TestSymlinkEscapeFromWorkspaceBlocked(t *testing.T) {
 		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
-			Tool: "view", Action: ActionRead, Path: through,
+			Tool: "read", Action: ActionRead, Path: through,
 		})
 		require.False(t, ok, "reading outside the workspace through a link must ask")
 	})
@@ -57,7 +57,7 @@ func TestSymlinkEscapeFromWorkspaceBlocked(t *testing.T) {
 			Tool: "bash", Action: ActionExecute,
 			Command: "cat escape/id_rsa", Path: workspace,
 		})
-		require.False(t, ok, "cat through a link must ask, like view does")
+		require.False(t, ok, "cat through a link must ask, like read does")
 	})
 
 	t.Run("a genuine file inside the workspace still reads freely", func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestSymlinkEscapeFromWorkspaceBlocked(t *testing.T) {
 		require.NoError(t, os.WriteFile(inside, []byte("package main"), 0o644))
 
 		_, ok := svc.withinScope(Access{
-			Tool: "view", Action: ActionRead, Path: inside,
+			Tool: "read", Action: ActionRead, Path: inside,
 		})
 		require.True(t, ok, "the workspace is what Angela was pointed at")
 	})
@@ -92,7 +92,7 @@ func TestSymlinkEscapeReachesTheGate(t *testing.T) {
 		done <- svc.Gate(ctx, GateRequest{
 			SessionID: "s", ToolCallID: "c",
 			Access: Access{
-				Tool: "view", Action: ActionRead,
+				Tool: "read", Action: ActionRead,
 				Path: filepath.Join(workspace, "escape", "id_rsa"),
 			},
 		})
@@ -166,7 +166,7 @@ func TestScopeAgreesWithHowToolsOpenFiles(t *testing.T) {
 		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
-			Tool: "view", Action: ActionRead, Path: rooted,
+			Tool: "read", Action: ActionRead, Path: rooted,
 		})
 		require.False(t, ok, "reading a rooted path outside the workspace must ask")
 	})
@@ -191,7 +191,7 @@ func TestContainmentComparesWholeComponents(t *testing.T) {
 		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
-			Tool: "view", Action: ActionRead,
+			Tool: "read", Action: ActionRead,
 			Path: filepath.Join(sibling, "secret"),
 		})
 		require.False(t, ok, "workspace-copy is not inside workspace")
@@ -204,7 +204,7 @@ func TestContainmentComparesWholeComponents(t *testing.T) {
 		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
-			Tool: "view", Action: ActionRead,
+			Tool: "read", Action: ActionRead,
 			Path: filepath.Join(dotted, "main.go"),
 		})
 		require.True(t, ok,
@@ -216,7 +216,7 @@ func TestContainmentComparesWholeComponents(t *testing.T) {
 		svc := NewPermissionService(workspace, ModeManual, nil).(*permissionService)
 
 		_, ok := svc.withinScope(Access{
-			Tool: "view", Action: ActionRead,
+			Tool: "read", Action: ActionRead,
 			Path: filepath.Join(root, "secret"),
 		})
 		require.False(t, ok)

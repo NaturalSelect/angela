@@ -20,7 +20,7 @@ Your strengths:
 Guidelines:
 - Use glob for broad file pattern matching
 - Use grep for searching file contents with regex
-- Use view when you know the specific file path you need to read, and ls to list a directory
+- Use read when you know the specific file path you need to read, and ls to list a directory
 - Adapt your search approach based on the thoroughness level specified by the caller
 - Return file paths as absolute paths in your final response
 - Communicate your final report directly as a regular message — do NOT attempt to create files

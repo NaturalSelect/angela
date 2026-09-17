@@ -55,8 +55,8 @@ func TestAllowedToolSet_AllowsIsNilSafe(t *testing.T) {
 	empty := &AllowedToolSet{Kind: ToolSetScope}
 	require.False(t, empty.Allows("bash"))
 
-	scoped := &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view"}}
-	require.True(t, scoped.Allows("view"))
+	scoped := &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"read"}}
+	require.True(t, scoped.Allows("read"))
 	require.False(t, scoped.Allows("bash"))
 }
 
@@ -138,7 +138,7 @@ func TestAllowedToolSet_UnresolvedInheritedIsFailClosed(t *testing.T) {
 	// ResolveAgents, so it must not grant anything.
 	inherited := &AllowedToolSet{Kind: ToolSetInherited}
 	require.False(t, inherited.Allows("bash"))
-	require.False(t, inherited.Allows("view"))
+	require.False(t, inherited.Allows("read"))
 }
 
 func TestAllowedMCPSet_Allows(t *testing.T) {

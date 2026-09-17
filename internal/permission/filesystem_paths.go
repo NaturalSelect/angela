@@ -66,7 +66,7 @@ func filesystemRuleTool(tool string) (write, ok bool) {
 	switch tool {
 	case toolnames.Write, toolnames.Edit, toolnames.MultiEdit:
 		return true, true
-	case toolnames.View, toolnames.Glob, toolnames.Grep, toolnames.LS:
+	case toolnames.Read, toolnames.Glob, toolnames.Grep, toolnames.LS:
 		return false, true
 	}
 	action, matched := ParseAction(tool)

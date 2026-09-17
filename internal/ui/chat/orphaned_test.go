@@ -89,7 +89,7 @@ func TestExtractMessageItemsAppliesToEveryTool(t *testing.T) {
 	t.Parallel()
 
 	sty := styles.CharmtonePantera()
-	for _, name := range []string{"bash", "edit", "agent", "view", "mcp_something"} {
+	for _, name := range []string{"bash", "edit", "agent", "read", "mcp_something"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 

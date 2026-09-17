@@ -152,10 +152,10 @@ Config: `{"matcher": "^Bash$", "command": "./hooks/no-rm-rf.sh"}`
 ### Auto-approve read-only tools (inline, no script)
 
 ```jsonc
-{"matcher": "^(View|LS|Grep|Glob)$", "command": "echo '{\"decision\":\"allow\"}'"}
+{"matcher": "^(Read|LS|Grep|Glob)$", "command": "echo '{\"decision\":\"allow\"}'"}
 ```
 
-Every `View`/`LS`/`Grep`/`Glob` call now runs without prompting.
+Every `Read`/`LS`/`Grep`/`Glob` call now runs without prompting.
 
 ### Inject context without auto-approving
 

@@ -5079,7 +5079,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tool": {
-                    "description": "Tool narrows the rule. It matches either an access category\n(\"read\", \"edit\", \"execute\", \"network\", \"mcp\", \"list\") or a single\ntool name (\"Bash\", \"View\"). Empty matches everything.",
+                    "description": "Tool narrows the rule. It matches either an access category\n(\"read\", \"edit\", \"execute\", \"network\", \"mcp\", \"list\") or a single\ntool name (\"Bash\", \"Read\"). Empty matches everything.",
                     "type": "string"
                 }
             }

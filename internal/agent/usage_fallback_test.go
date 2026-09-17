@@ -96,7 +96,7 @@ func TestFallbackStepUsageEstimatesToolCalls(t *testing.T) {
 			Content: fantasy.ResponseContent{
 				fantasy.ToolCallContent{
 					ToolCallID: "tool-call-1",
-					ToolName:   toolnames.View,
+					ToolName:   toolnames.Read,
 					Input:      `{"file_path":"/tmp/example.go"}`,
 				},
 			},

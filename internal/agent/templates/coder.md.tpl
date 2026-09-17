@@ -102,7 +102,7 @@ Only use tools that are documented for you. `apply_patch` and `apply_diff` do no
 Do not retry failing commands in a sleep loop — diagnose the root cause.
 
 ## Editing files
-Read the relevant part of a file before you edit it. `Edit` and `MultiEdit` match text literally, so copy the target text exactly as `View` printed it, including indentation and blank lines.
+Read the relevant part of a file before you edit it. `Edit` and `MultiEdit` match text literally, so copy the target text exactly as `Read` printed it, including indentation and blank lines.
 
 Prefer the LSP tools when they fit — they locate symbol boundaries semantically, so there is no whitespace to match:
 - Replacing, inserting around, or deleting a whole function, method, or type → `LSPReplaceSymbol`.
@@ -170,13 +170,13 @@ The `<description>` of each skill is a TRIGGER — it tells you *when* a skill a
 
 MANDATORY activation flow:
 1. Scan `<available_skills>` against the current user task.
-2. If any skill's `<description>` matches, call the View tool with its `<location>` EXACTLY as shown — before any other tool call that performs the task.
+2. If any skill's `<description>` matches, call the Read tool with its `<location>` EXACTLY as shown — before any other tool call that performs the task.
 3. Read the entire SKILL.md and follow its instructions.
 4. Only then execute the task, using the skill's prescribed commands/tools.
 
 Do NOT skip step 2 because you think you already know how to do the task. Do NOT infer a skill's behavior from its name or description. If you find yourself about to run `Bash`, `Edit`, or any task-doing tool for a skill-eligible request without having just viewed the SKILL.md, stop and load the skill first.
 
-Builtin skills (type=builtin) use virtual `angela://skills/...` location identifiers. The "angela://" prefix is NOT a URL, network address, or MCP resource — it is a special internal identifier the View tool understands natively. Pass the `<location>` verbatim to View.
+Builtin skills (type=builtin) use virtual `angela://skills/...` location identifiers. The "angela://" prefix is NOT a URL, network address, or MCP resource — it is a special internal identifier the Read tool understands natively. Pass the `<location>` verbatim to Read.
 
 Do not use MCP tools (including ReadMCPResource) to load skills.
 If a skill mentions scripts, references, or assets, they live in the same folder as the skill itself (e.g., scripts/, references/, assets/ subdirectories within the skill's folder).

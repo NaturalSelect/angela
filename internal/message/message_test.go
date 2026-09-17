@@ -275,7 +275,7 @@ func TestUpdate_ToolCallStructuralChangeFlushes(t *testing.T) {
 	require.NoError(t, err)
 
 	// Adding a new tool call is a structural change → sync flush.
-	msg.AddToolCall(ToolCall{ID: "tc1", Name: "view", Finished: false})
+	msg.AddToolCall(ToolCall{ID: "tc1", Name: "read", Finished: false})
 	require.NoError(t, svc.Update(t.Context(), msg))
 
 	got, err := svc.Get(t.Context(), msg.ID)
@@ -284,7 +284,7 @@ func TestUpdate_ToolCallStructuralChangeFlushes(t *testing.T) {
 	require.Equal(t, "tc1", got.ToolCalls()[0].ID)
 
 	// Marking the tool call finished is also a structural change.
-	msg.AddToolCall(ToolCall{ID: "tc1", Name: "view", Input: "{}", Finished: true})
+	msg.AddToolCall(ToolCall{ID: "tc1", Name: "read", Input: "{}", Finished: true})
 	require.NoError(t, svc.Update(t.Context(), msg))
 
 	got, err = svc.Get(t.Context(), msg.ID)
@@ -713,13 +713,13 @@ func TestUpdate_StructuralFlushUsesMustDeliver(t *testing.T) {
 		{
 			name: "tool call add",
 			mut: func(m *Message) {
-				m.AddToolCall(ToolCall{ID: "tc1", Name: "view"})
+				m.AddToolCall(ToolCall{ID: "tc1", Name: "read"})
 			},
 		},
 		{
 			name: "tool call finish",
 			mut: func(m *Message) {
-				m.AddToolCall(ToolCall{ID: "tc1", Name: "view", Input: "{}", Finished: true})
+				m.AddToolCall(ToolCall{ID: "tc1", Name: "read", Input: "{}", Finished: true})
 			},
 		},
 		{

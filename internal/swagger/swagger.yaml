@@ -756,7 +756,7 @@ definitions:
         description: |-
           Tool narrows the rule. It matches either an access category
           ("read", "edit", "execute", "network", "mcp", "list") or a single
-          tool name ("Bash", "View"). Empty matches everything.
+          tool name ("Bash", "Read"). Empty matches everything.
         type: string
     type: object
   permission.RuleAction:

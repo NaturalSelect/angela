@@ -250,7 +250,7 @@ func TestSkillsAfterCompactionFiresOnceAfterTheSummary(t *testing.T) {
 				return
 			}
 			require.Contains(t, got, "builtin-skills")
-			require.Contains(t, got, toolnames.View, "the model needs to be told how to re-read them")
+			require.Contains(t, got, toolnames.Read, "the model needs to be told how to re-read them")
 		})
 	}
 }

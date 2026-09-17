@@ -17,7 +17,7 @@ func TestToolKindIconsDistinguishKinds(t *testing.T) {
 	byKind := map[string]string{
 		"shell":  toolKindIcon(toolnames.Bash),
 		"write":  toolKindIcon(toolnames.Edit),
-		"read":   toolKindIcon(toolnames.View),
+		"read":   toolKindIcon(toolnames.Read),
 		"search": toolKindIcon(toolnames.Grep),
 		"fetch":  toolKindIcon(toolnames.WebFetch),
 		"web":    toolKindIcon(toolnames.WebSearch),

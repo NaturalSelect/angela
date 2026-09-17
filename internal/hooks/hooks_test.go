@@ -416,7 +416,7 @@ func TestRunnerMatcherFiltering(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, DecisionDeny, deny.Decision)
 
-		noop, err := r.Run(context.Background(), EventPreToolUse, "sess", "view", `{}`)
+		noop, err := r.Run(context.Background(), EventPreToolUse, "sess", "read", `{}`)
 		require.NoError(t, err)
 		require.Equal(t, DecisionNone, noop.Decision)
 	})

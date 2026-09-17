@@ -71,7 +71,7 @@ func TestActiveAgentCloneSharesNothing(t *testing.T) {
 			Temperature:   &agentTemp,
 			DisabledTools: []string{"bash"},
 			ContextPaths:  []string{"AGENTS.md"},
-			AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view"}},
+			AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"read"}},
 			AllowedMCP: &AllowedMCPSet{
 				Kind:    ToolSetScope,
 				Servers: map[string][]string{"github": {"create_issue"}},
@@ -103,7 +103,7 @@ func TestActiveAgentCloneSharesNothing(t *testing.T) {
 	require.InDelta(t, 0.5, *orig.Agent.Temperature, 0.0001, "Agent.Temperature leaked")
 	require.Equal(t, []string{"bash"}, orig.Agent.DisabledTools, "Agent.DisabledTools leaked")
 	require.Equal(t, []string{"AGENTS.md"}, orig.Agent.ContextPaths, "Agent.ContextPaths leaked")
-	require.Equal(t, []string{"view"}, orig.Agent.AllowedTools.Tools, "AllowedTools.Tools leaked")
+	require.Equal(t, []string{"read"}, orig.Agent.AllowedTools.Tools, "AllowedTools.Tools leaked")
 	require.Equal(t, []string{"create_issue"}, orig.Agent.AllowedMCP.Servers["github"], "AllowedMCP tool list leaked")
 	require.NotContains(t, orig.Agent.AllowedMCP.Servers, "gitlab", "AllowedMCP.Servers leaked")
 

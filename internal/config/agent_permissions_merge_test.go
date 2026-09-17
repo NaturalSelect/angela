@@ -38,8 +38,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 	t.Run("a narrower allowed_tools replaces the broader one", func(t *testing.T) {
 		t.Parallel()
 		paths := writeLayers(t,
-			`{"agents": {"coder": {"allowed_tools": ["bash", "view", "edit"]}}}`,
-			`{"agents": {"coder": {"allowed_tools": ["view"]}}}`,
+			`{"agents": {"coder": {"allowed_tools": ["bash", "read", "edit"]}}}`,
+			`{"agents": {"coder": {"allowed_tools": ["read"]}}}`,
 		)
 
 		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
@@ -47,14 +47,14 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 		coder := cfg.AgentConfigs["coder"]
 		require.NotNil(t, coder.AllowedTools)
-		require.Equal(t, []string{"view"}, coder.AllowedTools.Tools,
+		require.Equal(t, []string{"read"}, coder.AllowedTools.Tools,
 			"the high-priority layer must replace, not union")
 	})
 
 	t.Run("an empty allowed_tools clears the lower layer", func(t *testing.T) {
 		t.Parallel()
 		paths := writeLayers(t,
-			`{"agents": {"coder": {"allowed_tools": ["bash", "view"]}}}`,
+			`{"agents": {"coder": {"allowed_tools": ["bash", "read"]}}}`,
 			`{"agents": {"coder": {"allowed_tools": []}}}`,
 		)
 
@@ -83,7 +83,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 	t.Run("a layer switching to inherited does not break the load", func(t *testing.T) {
 		t.Parallel()
 		paths := writeLayers(t,
-			`{"agents": {"coder": {"allowed_tools": ["bash", "view"]}}}`,
+			`{"agents": {"coder": {"allowed_tools": ["bash", "read"]}}}`,
 			`{"agents": {"coder": {"allowed_tools": "inherited"}}}`,
 		)
 
@@ -99,14 +99,14 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 		t.Parallel()
 		paths := writeLayers(t,
 			`{"agents": {"coder": {"allowed_tools": ["bash"], "disabled_tools": ["write"]}}}`,
-			`{"agents": {"coder": {"allowed_tools": ["view"]}}}`,
+			`{"agents": {"coder": {"allowed_tools": ["read"]}}}`,
 		)
 
 		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		coder := cfg.AgentConfigs["coder"]
-		require.Equal(t, []string{"view"}, coder.AllowedTools.Tools)
+		require.Equal(t, []string{"read"}, coder.AllowedTools.Tools)
 		require.Equal(t, []string{"write"}, coder.DisabledTools,
 			"a field the high layer never mentions must keep the low layer's value")
 	})

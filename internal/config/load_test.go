@@ -762,7 +762,7 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "Grep", "LS", "Sourcegraph", "View"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "Grep", "LS", "Sourcegraph", "Read"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
@@ -781,11 +781,11 @@ func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 
-	assert.Equal(t, []string{"Agent", "LoadReport", "Bash", "AngelaInfo", "AngelaLogs", "JobOutput", "JobKill", "MultiEdit", "LSPDiagnostics", "LSPReferences", "LSPRestart", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "LSPRename", "LSPReplaceSymbol", "Fetch", "Glob", "LS", "Question", "Sourcegraph", "Todos", "View", "Write", "ListMCPResources", "ReadMCPResource"}, coderAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"Agent", "LoadReport", "Bash", "AngelaInfo", "AngelaLogs", "JobOutput", "JobKill", "MultiEdit", "LSPDiagnostics", "LSPReferences", "LSPRestart", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "LSPRename", "LSPReplaceSymbol", "Fetch", "Glob", "LS", "Question", "Sourcegraph", "Todos", "Read", "Write", "ListMCPResources", "ReadMCPResource"}, coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "LS", "Sourcegraph", "View"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "LS", "Sourcegraph", "Read"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
@@ -799,7 +799,7 @@ func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 				"LSPDefinition",
 				"LSPSymbols",
 				"Sourcegraph",
-				"View",
+				"Read",
 			},
 		},
 		Providers: csync.NewMap[string, ProviderConfig](),

@@ -508,7 +508,7 @@ func TestChatLastPendingTool(t *testing.T) {
 			&testToolMessageItem{testMessageItem: testMessageItem{id: "t2", text: "t2"}, tc: message.ToolCall{ID: "t2", Name: "grep"}, status: chat.ToolStatusRunning},
 			testMessageItem{id: "m1", text: "not a tool"},
 			&testToolMessageItem{testMessageItem: testMessageItem{id: "t3", text: "t3"}, tc: message.ToolCall{ID: "t3", Name: "edit"}, status: chat.ToolStatusAwaitingPermission},
-			&testToolMessageItem{testMessageItem: testMessageItem{id: "t4", text: "t4"}, tc: message.ToolCall{ID: "t4", Name: "view"}, status: chat.ToolStatusSuccess},
+			&testToolMessageItem{testMessageItem: testMessageItem{id: "t4", text: "t4"}, tc: message.ToolCall{ID: "t4", Name: "read"}, status: chat.ToolStatusSuccess},
 		)
 
 		tc, ok := u.chat.LastPendingTool()

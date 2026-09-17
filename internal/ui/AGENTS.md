@@ -162,7 +162,7 @@ tool names to specific types:
 | File                  | Tools rendered                                 |
 | --------------------- | ---------------------------------------------- |
 | `chat/bash.go`        | Bash, JobOutput, JobKill                       |
-| `chat/file.go`        | View, Write, Edit, MultiEdit, Download         |
+| `chat/file.go`        | Read, Write, Edit, MultiEdit, Download         |
 | `chat/search.go`      | Glob, Grep, LS, Sourcegraph                    |
 | `chat/fetch.go`       | Fetch, WebFetch, WebSearch                     |
 | `chat/agent.go`       | Agent                                          |

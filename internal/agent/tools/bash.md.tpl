@@ -24,7 +24,7 @@ Common shell builtins and core utils available on Windows.
 - IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `ls`, `sed`, `awk` and similar commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Use the appropriate dedicated tool instead — it provides a much better experience for the user and makes tool calls easier to review and approve:
   - File search: Use Glob (NOT find or ls)
   - Content search: Use Grep (NOT grep or rg)
-  - Read files: Use View (NOT cat/head/tail)
+  - Read files: Use Read (NOT cat/head/tail)
   - Edit files: Use Edit or MultiEdit (NOT sed/awk)
   - Write files: Use Write (NOT echo >/cat <<EOF)
   - Communication: Output text directly (NOT echo/printf)

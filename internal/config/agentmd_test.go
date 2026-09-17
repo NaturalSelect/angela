@@ -183,7 +183,7 @@ func TestParseAgentFile_Validation(t *testing.T) {
 				"mode: subagent\n" +
 				"slot: chore\n" +
 				"temperature: 0.2\n" +
-				"allowed_tools: [view, grep]\n" +
+				"allowed_tools: [read, grep]\n" +
 				"disabled_tools: [bash]\n" +
 				"disabled: false\n" +
 				"---\n" +
@@ -216,7 +216,7 @@ func TestParseAgentFile_Validation(t *testing.T) {
 			require.Equal(t, SlotChore, agent.Slot)
 			require.NotNil(t, agent.Temperature)
 			require.InDelta(t, 0.2, *agent.Temperature, 0.0001)
-			require.Equal(t, &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view", "grep"}}, agent.AllowedTools)
+			require.Equal(t, &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"read", "grep"}}, agent.AllowedTools)
 			require.Equal(t, []string{"bash"}, agent.DisabledTools)
 			require.NotNil(t, agent.Disabled)
 			require.False(t, *agent.Disabled)
@@ -264,7 +264,7 @@ func TestRenderAgentFile_RoundTrip(t *testing.T) {
 		Mode:          "subagent",
 		Slot:          "chore",
 		Temperature:   &temp,
-		AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view", "grep"}},
+		AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"read", "grep"}},
 		DisabledTools: []string{"bash"},
 		Disabled:      &disabled,
 	}
@@ -273,7 +273,7 @@ func TestRenderAgentFile_RoundTrip(t *testing.T) {
 	rendered, err := RenderAgentFile(fm, body)
 	require.NoError(t, err)
 	require.Contains(t, string(rendered), "description: 'Use when: reviewing API changes'", "a colon in a value must be quoted, not corrupt the frontmatter")
-	require.Contains(t, string(rendered), "allowed_tools:\n    - view\n    - grep\n", "allowed_tools must render as a bare list, not the internal struct shape")
+	require.Contains(t, string(rendered), "allowed_tools:\n    - read\n    - grep\n", "allowed_tools must render as a bare list, not the internal struct shape")
 
 	agent, err := ParseAgentContent(string(rendered))
 	require.NoError(t, err)
@@ -282,7 +282,7 @@ func TestRenderAgentFile_RoundTrip(t *testing.T) {
 	require.Equal(t, AgentModeSubagent, agent.Mode)
 	require.Equal(t, SlotChore, agent.Slot)
 	require.InDelta(t, 0.3, *agent.Temperature, 0.0001)
-	require.Equal(t, &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"view", "grep"}}, agent.AllowedTools)
+	require.Equal(t, &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"read", "grep"}}, agent.AllowedTools)
 	require.Equal(t, []string{"bash"}, agent.DisabledTools)
 	require.False(t, *agent.Disabled)
 	require.Equal(t, body, agent.Prompt)
@@ -323,7 +323,7 @@ func TestParseAgentContent_RejectsUnknownFrontmatterField(t *testing.T) {
 		name    string
 		content string
 	}{
-		{"singular allowed_tool", "---\ndescription: x\nallowed_tool:\n  - view\n---\nbody"},
+		{"singular allowed_tool", "---\ndescription: x\nallowed_tool:\n  - read\n---\nbody"},
 		{"misspelled disabled_tools", "---\ndescription: x\ndisable_tools:\n  - bash\n---\nbody"},
 		{"unknown field entirely", "---\ndescription: x\nsuperuser: true\n---\nbody"},
 	}

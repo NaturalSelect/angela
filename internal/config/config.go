@@ -450,7 +450,7 @@ const (
 )
 
 type Permissions struct {
-	AllowedTools []string          `json:"allowed_tools,omitempty" jsonschema:"description=List of tools that don't require permission prompts,example=bash,example=view"`
+	AllowedTools []string          `json:"allowed_tools,omitempty" jsonschema:"description=List of tools that don't require permission prompts,example=bash,example=read"`
 	Rules        []permission.Rule `json:"rules,omitempty" jsonschema:"description=Declarative permission rules evaluated in deny > ask > allow order"`
 	Prompt       string            `json:"prompt,omitempty" jsonschema:"description=What to do when no rule settles a request,enum=ask,enum=deny"`
 }
@@ -1157,7 +1157,7 @@ func allToolNames() []string {
 		toolnames.Question,
 		toolnames.Sourcegraph,
 		toolnames.Todos,
-		toolnames.View,
+		toolnames.Read,
 		toolnames.Write,
 		toolnames.ListMCPResources,
 		toolnames.ReadMCPResource,
@@ -1189,7 +1189,7 @@ func exploreToolNames() []string {
 		toolnames.Fetch, toolnames.AngelaInfo,
 		toolnames.Glob, toolnames.Grep, toolnames.LS,
 		toolnames.LSPCallHierarchy, toolnames.LSPDefinition, toolnames.LSPSymbols,
-		toolnames.Sourcegraph, toolnames.View,
+		toolnames.Sourcegraph, toolnames.Read,
 	}
 }
 
@@ -1204,7 +1204,7 @@ func planToolNames() []string {
 		toolnames.Glob, toolnames.Grep, toolnames.LS,
 		toolnames.LSPCallHierarchy, toolnames.LSPDefinition, toolnames.LSPDiagnostics,
 		toolnames.LSPReferences, toolnames.LSPSymbols,
-		toolnames.Question, toolnames.Sourcegraph, toolnames.View,
+		toolnames.Question, toolnames.Sourcegraph, toolnames.Read,
 	}
 }
 
@@ -1225,7 +1225,7 @@ func deepResearchToolNames() []string {
 func webFetchToolNames() []string {
 	return []string{
 		toolnames.Fetch, toolnames.WebFetch, toolnames.WebSearch,
-		toolnames.Glob, toolnames.Grep, toolnames.View, toolnames.Sourcegraph,
+		toolnames.Glob, toolnames.Grep, toolnames.Read, toolnames.Sourcegraph,
 	}
 }
 

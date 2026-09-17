@@ -156,7 +156,7 @@ func TestMessageToProto_AllContentPartTypes(t *testing.T) {
 		Role: message.Assistant,
 		Parts: []message.ContentPart{
 			message.ReasoningContent{Thinking: "hmm", Signature: "sig", StartedAt: 1, FinishedAt: 2},
-			message.ToolCall{ID: "call-1", Name: "view", Input: `{"path":"a"}`, Finished: true},
+			message.ToolCall{ID: "call-1", Name: "read", Input: `{"path":"a"}`, Finished: true},
 			message.Finish{Reason: message.FinishReasonEndTurn, Time: 42, Message: "done", Details: "ok"},
 			message.ImageURLContent{URL: "https://example.com/x.png", Detail: "high"},
 			message.BinaryContent{Path: "/tmp/x.bin", MIMEType: "application/octet-stream", Data: []byte("data")},
@@ -177,7 +177,7 @@ func TestMessageToProto_AllContentPartTypes(t *testing.T) {
 	toolCall, ok := got.Parts[1].(proto.ToolCall)
 	require.True(t, ok, "expected proto.ToolCall, got %T", got.Parts[1])
 	require.Equal(t, "call-1", toolCall.ID)
-	require.Equal(t, "view", toolCall.Name)
+	require.Equal(t, "read", toolCall.Name)
 	require.Equal(t, `{"path":"a"}`, toolCall.Input)
 	require.True(t, toolCall.Finished)
 

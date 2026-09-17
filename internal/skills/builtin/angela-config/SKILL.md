@@ -292,7 +292,7 @@ layer turned off.
       "mode": "subagent",
       "slot": "main",
       "variant": "deep",
-      "allowed_tools": ["View", "Grep", "Glob", "LS"],
+      "allowed_tools": ["Read", "Grep", "Glob", "LS"],
       "allowed_mcp": { "github": ["create_issue"] }
     }
   }
@@ -515,7 +515,7 @@ A rule matches on what a call actually touches, not just on the tool name:
 | Field     | Type   | Notes                                                                    |
 | --------- | ------ | ------------------------------------------------------------------------ |
 | `action`  | string | **Required**: `allow`, `ask`, or `deny`                                   |
-| `tool`    | string | An access category (`read`, `edit`, `execute`, `network`, `mcp`, `list`, `merge`) or a single tool name (`Bash`, `View`, case-sensitive). Empty matches everything |
+| `tool`    | string | An access category (`read`, `edit`, `execute`, `network`, `mcp`, `list`, `merge`) or a single tool name (`Bash`, `Read`, case-sensitive). Empty matches everything |
 | `pattern` | string | Narrows the match. Empty or `*` matches everything                        |
 | `mode`    | string | How `pattern` is compared: `auto` (picks by action), `path`, `free`, `domain` |
 
@@ -544,7 +544,7 @@ governs whether a call is approved.
 ```json
 {
   "permissions": {
-    "allowed_tools": ["View", "LS", "Grep", "Edit"],
+    "allowed_tools": ["Read", "LS", "Grep", "Edit"],
     "prompt": "ask",
     "rules": [
       { "action": "deny", "tool": "Edit", "pattern": "**/.env", "mode": "path" },

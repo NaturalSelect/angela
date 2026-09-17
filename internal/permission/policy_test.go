@@ -21,7 +21,7 @@ func mustPolicy(t *testing.T, rules []Rule, legacy []string) *Policy {
 func TestPolicyPrecedence(t *testing.T) {
 	t.Parallel()
 
-	access := Access{Tool: "view", Action: ActionRead, Path: policyCwd + "/a.go"}
+	access := Access{Tool: "read", Action: ActionRead, Path: policyCwd + "/a.go"}
 
 	t.Run("deny outranks allow", func(t *testing.T) {
 		t.Parallel()
@@ -67,27 +67,27 @@ func TestPolicyPrecedence(t *testing.T) {
 func TestPolicyToolFilter(t *testing.T) {
 	t.Parallel()
 
-	view := Access{Tool: "view", Action: ActionRead, Path: policyCwd + "/a.go"}
+	read := Access{Tool: "Read", Action: ActionRead, Path: policyCwd + "/a.go"}
 	grep := Access{Tool: "grep", Action: ActionRead, Path: policyCwd}
 
 	t.Run("a category covers every tool in it", func(t *testing.T) {
 		t.Parallel()
 		p := mustPolicy(t, []Rule{{Action: RuleDeny, Tool: "read"}}, nil)
-		require.True(t, p.Evaluate(view, policyCwd).Matched)
+		require.True(t, p.Evaluate(read, policyCwd).Matched)
 		require.True(t, p.Evaluate(grep, policyCwd).Matched)
 	})
 
 	t.Run("a tool name singles one out", func(t *testing.T) {
 		t.Parallel()
-		p := mustPolicy(t, []Rule{{Action: RuleDeny, Tool: "view"}}, nil)
-		require.True(t, p.Evaluate(view, policyCwd).Matched)
+		p := mustPolicy(t, []Rule{{Action: RuleDeny, Tool: "Read"}}, nil)
+		require.True(t, p.Evaluate(read, policyCwd).Matched)
 		require.False(t, p.Evaluate(grep, policyCwd).Matched)
 	})
 
 	t.Run("an empty filter covers everything", func(t *testing.T) {
 		t.Parallel()
 		p := mustPolicy(t, []Rule{{Action: RuleDeny}}, nil)
-		require.True(t, p.Evaluate(view, policyCwd).Matched)
+		require.True(t, p.Evaluate(read, policyCwd).Matched)
 		require.True(t, p.Evaluate(grep, policyCwd).Matched)
 	})
 }
@@ -107,12 +107,12 @@ func TestPolicyPathPatternForms(t *testing.T) {
 		"/elsewhere/.env",
 	} {
 		require.True(t, p.Evaluate(
-			Access{Tool: "view", Action: ActionRead, Path: path}, policyCwd,
+			Access{Tool: "read", Action: ActionRead, Path: path}, policyCwd,
 		).Matched, "path %q should match", path)
 	}
 
 	require.False(t, p.Evaluate(
-		Access{Tool: "view", Action: ActionRead, Path: policyCwd + "/.env.example"}, policyCwd,
+		Access{Tool: "read", Action: ActionRead, Path: policyCwd + "/.env.example"}, policyCwd,
 	).Matched)
 }
 
@@ -367,7 +367,7 @@ func TestDenyPathRuleSeesThroughSymlinks(t *testing.T) {
 	t.Run("the deny rule matches the path taken through the link", func(t *testing.T) {
 		t.Parallel()
 		verdict := p.Evaluate(
-			Access{Tool: "view", Action: ActionRead, Path: through}, workspace)
+			Access{Tool: "read", Action: ActionRead, Path: through}, workspace)
 		require.True(t, verdict.Matched, "the rule must see where the link lands")
 		require.Equal(t, RuleDeny, verdict.Action)
 	})
@@ -378,7 +378,7 @@ func TestDenyPathRuleSeesThroughSymlinks(t *testing.T) {
 
 		decision := svc.Gate(t.Context(), GateRequest{
 			SessionID: "s", ToolCallID: "c",
-			Access: Access{Tool: "view", Action: ActionRead, Path: through},
+			Access: Access{Tool: "read", Action: ActionRead, Path: through},
 		})
 		require.Equal(t, OutcomePolicyDeny, decision.Outcome,
 			"a deny rule outranks skip mode, link or no link")
@@ -390,7 +390,7 @@ func TestDenyPathRuleSeesThroughSymlinks(t *testing.T) {
 		require.NoError(t, os.WriteFile(inside, []byte("package main"), 0o644))
 
 		require.False(t, p.Evaluate(
-			Access{Tool: "view", Action: ActionRead, Path: inside}, workspace,
+			Access{Tool: "read", Action: ActionRead, Path: inside}, workspace,
 		).Matched)
 	})
 }
@@ -416,11 +416,11 @@ func TestPolicyMCPPatterns(t *testing.T) {
 func TestPolicyLegacyAllowedTools(t *testing.T) {
 	t.Parallel()
 
-	access := Access{Tool: "view", Action: ActionRead, Path: policyCwd + "/.env"}
+	access := Access{Tool: "read", Action: ActionRead, Path: policyCwd + "/.env"}
 
 	t.Run("a legacy entry allows the tool", func(t *testing.T) {
 		t.Parallel()
-		p := mustPolicy(t, nil, []string{"view"})
+		p := mustPolicy(t, nil, []string{"read"})
 		v := p.Evaluate(access, policyCwd)
 		require.True(t, v.Matched)
 		require.Equal(t, RuleAllow, v.Action)
@@ -428,7 +428,7 @@ func TestPolicyLegacyAllowedTools(t *testing.T) {
 
 	t.Run("a tool:action entry allows the tool", func(t *testing.T) {
 		t.Parallel()
-		p := mustPolicy(t, nil, []string{"view:read"})
+		p := mustPolicy(t, nil, []string{"read:read"})
 		require.Equal(t, RuleAllow, p.Evaluate(access, policyCwd).Action)
 	})
 
@@ -436,7 +436,7 @@ func TestPolicyLegacyAllowedTools(t *testing.T) {
 		t.Parallel()
 		p := mustPolicy(t, []Rule{
 			{Action: RuleDeny, Tool: "read", Pattern: "**/.env"},
-		}, []string{"view"})
+		}, []string{"read"})
 		require.Equal(t, RuleDeny, p.Evaluate(access, policyCwd).Action)
 	})
 }
@@ -546,7 +546,7 @@ func TestActionRoundTrip(t *testing.T) {
 
 // TestPolicyJudgesCommandFileOperands pins that a path rule covers both
 // routes to a file. Without this, `deny read **/.env` would stop the
-// view tool and wave through `cat .env`, which is the same read.
+// read tool and wave through `cat .env`, which is the same read.
 func TestPolicyJudgesCommandFileOperands(t *testing.T) {
 	t.Parallel()
 

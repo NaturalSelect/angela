@@ -113,12 +113,12 @@ func TestViewToolAllowsSmallSectionsOfLargeFiles(t *testing.T) {
 
 	workingDir := t.TempDir()
 	filePath := filepath.Join(workingDir, "large.txt")
-	lines := []string{strings.Repeat("a", MaxViewSize+1), "target line", "after target"}
+	lines := []string{strings.Repeat("a", MaxReadSize+1), "target line", "after target"}
 	require.NoError(t, os.WriteFile(filePath, []byte(strings.Join(lines, "\n")), 0o644))
 
 	tool := newViewToolForTest(t, workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
-	resp := runViewTool(t, tool, ctx, ViewParams{
+	resp := runViewTool(t, tool, ctx, ReadParams{
 		FilePath: filePath,
 		Offset:   1,
 		Limit:    1,
@@ -128,7 +128,7 @@ func TestViewToolAllowsSmallSectionsOfLargeFiles(t *testing.T) {
 	require.Contains(t, resp.Content, "     2|target line")
 	require.NotContains(t, resp.Content, "File is too large")
 
-	var meta ViewResponseMetadata
+	var meta ReadResponseMetadata
 	require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
 	require.Equal(t, "target line", meta.Content)
 }
@@ -146,7 +146,7 @@ func TestViewToolBlocksOversizedReturnedSections(t *testing.T) {
 
 	tool := newViewToolForTest(t, workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
-	resp := runViewTool(t, tool, ctx, ViewParams{
+	resp := runViewTool(t, tool, ctx, ReadParams{
 		FilePath: filePath,
 	})
 
@@ -159,12 +159,12 @@ func TestViewToolBlocksOversizedImages(t *testing.T) {
 
 	workingDir := t.TempDir()
 	filePath := filepath.Join(workingDir, "large.png")
-	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", MaxViewSize+1)), 0o644))
+	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", MaxReadSize+1)), 0o644))
 
 	tool := newViewToolForTest(t, workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
 	ctx = context.WithValue(ctx, SupportsImagesContextKey, true)
-	resp := runViewTool(t, tool, ctx, ViewParams{
+	resp := runViewTool(t, tool, ctx, ReadParams{
 		FilePath: filePath,
 	})
 
@@ -275,10 +275,10 @@ func TestReadNoticesCombinesTruncationWithMoreLines(t *testing.T) {
 }
 
 func newViewToolForTest(t *testing.T, workingDir string) fantasy.AgentTool {
-	return NewViewTool(nil, newFileTracker(t, time.Time{}), nil, workingDir)
+	return NewReadTool(nil, newFileTracker(t, time.Time{}), nil, workingDir)
 }
 
-func runViewTool(t *testing.T, tool fantasy.AgentTool, ctx context.Context, params ViewParams) fantasy.ToolResponse {
+func runViewTool(t *testing.T, tool fantasy.AgentTool, ctx context.Context, params ReadParams) fantasy.ToolResponse {
 	t.Helper()
 
 	input, err := json.Marshal(params)
@@ -286,7 +286,7 @@ func runViewTool(t *testing.T, tool fantasy.AgentTool, ctx context.Context, para
 
 	call := fantasy.ToolCall{
 		ID:    "test-call",
-		Name:  toolnames.View,
+		Name:  toolnames.Read,
 		Input: string(input),
 	}
 
@@ -301,7 +301,7 @@ func TestReadBuiltinFile(t *testing.T) {
 	t.Run("reads angela-config skill", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := readBuiltinFile(ViewParams{
+		resp, err := readBuiltinFile(ReadParams{
 			FilePath: "angela://skills/angela-config/SKILL.md",
 		}, nil)
 		require.NoError(t, err)
@@ -312,7 +312,7 @@ func TestReadBuiltinFile(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := readBuiltinFile(ViewParams{
+		resp, err := readBuiltinFile(ReadParams{
 			FilePath: "angela://skills/nonexistent/SKILL.md",
 		}, nil)
 		require.NoError(t, err)
@@ -322,14 +322,14 @@ func TestReadBuiltinFile(t *testing.T) {
 	t.Run("metadata has skill info", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := readBuiltinFile(ViewParams{
+		resp, err := readBuiltinFile(ReadParams{
 			FilePath: "angela://skills/angela-config/SKILL.md",
 		}, nil)
 		require.NoError(t, err)
 
-		var meta ViewResponseMetadata
+		var meta ReadResponseMetadata
 		require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
-		require.Equal(t, ViewResourceSkill, meta.ResourceType)
+		require.Equal(t, ReadResourceSkill, meta.ResourceType)
 		require.Equal(t, "angela-config", meta.ResourceName)
 		require.NotEmpty(t, meta.ResourceDescription)
 	})
@@ -337,7 +337,7 @@ func TestReadBuiltinFile(t *testing.T) {
 	t.Run("respects offset", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := readBuiltinFile(ViewParams{
+		resp, err := readBuiltinFile(ReadParams{
 			FilePath: "angela://skills/angela-config/SKILL.md",
 			Offset:   5,
 		}, nil)

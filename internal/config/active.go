@@ -101,7 +101,8 @@ func (c *Config) InstantiateAgent(agentID string) (ActiveAgent, bool) {
 		model = c.Slots[name]
 	}
 
-	active := ActiveAgent{Agent: agent, Slot: name, Model: model, Think: c.EffectiveThink(model, agent.Variant)}
+	active := ActiveAgent{Agent: agent, Slot: name, Model: model}
+	active.Think = c.EffectiveThink(model, active.EffectiveVariant())
 	return active.Clone(), true
 }
 
@@ -217,6 +218,25 @@ func (a ActiveAgent) Clone() ActiveAgent {
 	return a
 }
 
+// EffectiveVariant resolves the parameter preset that actually
+// governs this instance: the agent's own Variant when set, otherwise
+// the slot's, so a slot can carry a sensible default that an agent
+// leaves unset while an agent naming one of its own always wins.
+//
+// An explicit pick of the baseline — VariantPick set to a pointer to
+// the empty string — is a deliberate opt-out and does not fall
+// through to the slot either: a user backing out of a preset means
+// to run with none, not with whatever the slot would have supplied.
+func (a ActiveAgent) EffectiveVariant() string {
+	if a.Agent.Variant != "" {
+		return a.Agent.Variant
+	}
+	if a.VariantPick != nil {
+		return ""
+	}
+	return a.Model.Variant
+}
+
 // State reduces the instance to the part worth persisting: what the
 // user chose, never what the config supplied.
 func (a ActiveAgent) State() ActiveAgentState {
@@ -259,7 +279,7 @@ func (c *Config) Restore(state ActiveAgentState) (ActiveAgent, bool) {
 	active.Slot = state.Slot
 	active.Model = state.Model
 	if active.ThinkPick == nil {
-		active.Think = c.EffectiveThink(active.Model, active.Agent.Variant)
+		active.Think = c.EffectiveThink(active.Model, active.EffectiveVariant())
 	}
 	return active.Clone(), true
 }

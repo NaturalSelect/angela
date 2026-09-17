@@ -240,7 +240,7 @@ func (w *AppWorkspace) AgentActive(ctx context.Context, sessionID string) (Activ
 		ModelCfg:   model.ModelCfg,
 		CatwalkCfg: model.CatwalkCfg,
 		Think:      model.Think,
-		Variant:    active.Agent.Variant,
+		Variant:    model.Variant,
 	}, nil
 }
 

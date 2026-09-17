@@ -42,7 +42,7 @@
         },
         "variant": {
           "type": "string",
-          "description": "Name of a variant on the model config"
+          "description": "Name of a variant on the model config; takes priority over the slot's own default variant"
         },
         "max_tokens": {
           "type": "integer",
@@ -986,6 +986,10 @@
           "examples": [
             "openai"
           ]
+        },
+        "variant": {
+          "type": "string",
+          "description": "Default variant for this slot, overridden by an agent's own variant"
         }
       },
       "additionalProperties": false,

@@ -161,3 +161,34 @@ func TestSwitchVariantToTheSameOneIsANoOp(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, msgs, 1)
 }
+
+// TestSwitchVariantToBaselineOutranksSlotVariant pins that an
+// explicit baseline pick is a hard opt-out even when the slot itself
+// names a default variant: without this, a user could never actually
+// reach the model's baseline parameters on such a slot, since the
+// empty pick would just keep resolving to the slot's own preset.
+func TestSwitchVariantToBaselineOutranksSlotVariant(t *testing.T) {
+	coord := newVariantTestCoordinator(t)
+	setChoreSlotVariant(t, coord, "deep")
+	sessionID := newVariantSession(t, coord)
+
+	baseline := coord.cfg.Config().GetModelForSlot(config.SlotChore).DefaultMaxTokens
+
+	// Before any explicit pick, the slot's own variant already
+	// applies.
+	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
+	require.NoError(t, err)
+	model, err := coord.buildModel(context.Background(), agentCfg, false)
+	require.NoError(t, err)
+	require.Equal(t, int64(32000), model.CatwalkCfg.DefaultMaxTokens,
+		"the slot's default variant must apply before any pick")
+
+	require.NoError(t, coord.SwitchVariant(t.Context(), sessionID, ""))
+
+	agentCfg, err = coord.activeAgentFor(t.Context(), sessionID)
+	require.NoError(t, err)
+	model, err = coord.buildModel(context.Background(), agentCfg, false)
+	require.NoError(t, err)
+	require.Equal(t, baseline, model.CatwalkCfg.DefaultMaxTokens,
+		"an explicit baseline pick must not fall back to the slot's variant")
+}

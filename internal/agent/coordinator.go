@@ -1184,7 +1184,7 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 		// An unknown preset is an error here, where the user is
 		// watching and can pick again; per-turn resolution stays
 		// lenient about the same name for the opposite reason.
-		if v := next.Agent.Variant; v != "" && !slices.Contains(model.CatwalkCfg.VariantNames(), v) {
+		if v := next.EffectiveVariant(); v != "" && !slices.Contains(model.CatwalkCfg.VariantNames(), v) {
 			return current, false, fmt.Errorf("%w: %q on %q", ErrVariantNotAvailable, v, model.ModelCfg.Model)
 		}
 		change, switched, agentID, result = moved, model, next.Agent.ID, next
@@ -1312,8 +1312,13 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 	}
 
 	if edit.Variant != nil {
-		if *edit.Variant != next.Agent.Variant {
-			change.variantFrom, change.variantTo, change.variantMoved = next.Agent.Variant, *edit.Variant, true
+		// Compared against the effective preset, not the agent's raw
+		// field: a slot can be supplying one while the field reads
+		// empty, and picking that same name (including the baseline)
+		// must still count as a move so the pick gets recorded.
+		effective := next.EffectiveVariant()
+		if *edit.Variant != effective {
+			change.variantFrom, change.variantTo, change.variantMoved = effective, *edit.Variant, true
 			next.Agent.Variant = *edit.Variant
 		}
 		// Recorded even when it matches what the config says today:
@@ -1425,11 +1430,14 @@ func (c *coordinator) buildModel(ctx context.Context, active config.ActiveAgent,
 	}
 
 	// The variant overlay lands before the provider is built so that
-	// provider options a variant sets reach buildProvider too.
-	resolvedCatwalk, variantApplied := catwalkModel.WithVariant(agent.Variant)
-	if agent.Variant != "" && !variantApplied {
+	// provider options a variant sets reach buildProvider too. The
+	// agent's own preset always wins; the slot's is only a fallback
+	// for whichever agent runs there and never names one of its own.
+	variant := active.EffectiveVariant()
+	resolvedCatwalk, variantApplied := catwalkModel.WithVariant(variant)
+	if variant != "" && !variantApplied {
 		slog.Warn("Unknown model variant; falling back to the model baseline",
-			"agent", agent.ID, "model", active.Slot, "variant", agent.Variant)
+			"agent", agent.ID, "model", active.Slot, "variant", variant)
 	}
 
 	think := active.Think
@@ -1457,7 +1465,7 @@ func (c *coordinator) buildModel(ctx context.Context, active config.ActiveAgent,
 		Think:      think,
 	}
 	if variantApplied {
-		resolved.Variant = agent.Variant
+		resolved.Variant = variant
 	}
 
 	// Baking the agent's temperature into the model's catalog options lets

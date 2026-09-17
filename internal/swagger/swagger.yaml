@@ -143,7 +143,9 @@ definitions:
       variant:
         description: |-
           Variant names a parameter preset on the model config above.
-          Unknown names degrade to the model's baseline parameters.
+          Unknown names degrade to the model's baseline parameters. Always
+          takes priority over the slot's own default Variant when both
+          are set.
         type: string
     type: object
   config.AgentMode:
@@ -424,6 +426,14 @@ definitions:
         description: |-
           The model provider, same as the key/id used in the providers config.
           Required.
+        type: string
+      variant:
+        description: |-
+          Variant names the parameter preset this slot defaults to. It
+          only applies when the agent pointed at this slot does not name
+          a variant of its own — Agent.Variant always wins when both are
+          set. Unknown names degrade to the model's baseline parameters,
+          the same way an unknown Agent.Variant does.
         type: string
     type: object
   config.SelectedModelOverride:

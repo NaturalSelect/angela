@@ -126,11 +126,13 @@ const (
 )
 
 // SelectedModel is a slot's model reference: which model, from which
-// provider. Every preset that shapes how the model is called —
-// reasoning effort, thinking, sampling parameters, token limits,
-// named variants — lives on the provider's catalog entry
-// ([ProviderModel]) instead, so a slot never duplicates config that
-// belongs to the model itself.
+// provider, and optionally which named variant to default to. Every
+// preset a variant can apply — reasoning effort, thinking, sampling
+// parameters, token limits — still lives on the provider's catalog
+// entry ([ProviderModel]) instead, so a slot never duplicates config
+// that belongs to the model itself; Variant only names one of those
+// presets, and an agent pointed at this slot may name a variant of
+// its own that always takes priority over this one.
 type SelectedModel struct {
 	// The model id as used by the provider API.
 	// Required.
@@ -138,6 +140,13 @@ type SelectedModel struct {
 	// The model provider, same as the key/id used in the providers config.
 	// Required.
 	Provider string `json:"provider" jsonschema:"required,description=The model provider ID that matches a key in the providers config,example=openai"`
+
+	// Variant names the parameter preset this slot defaults to. It
+	// only applies when the agent pointed at this slot does not name
+	// a variant of its own — Agent.Variant always wins when both are
+	// set. Unknown names degrade to the model's baseline parameters,
+	// the same way an unknown Agent.Variant does.
+	Variant string `json:"variant,omitempty" jsonschema:"description=Default variant for this slot\\, overridden by an agent's own variant"`
 }
 
 type ProviderConfig struct {
@@ -808,8 +817,10 @@ type Agent struct {
 	Slot SlotName `json:"slot,omitempty" jsonschema:"description=Name of the model config to use,default=main"`
 
 	// Variant names a parameter preset on the model config above.
-	// Unknown names degrade to the model's baseline parameters.
-	Variant string `json:"variant,omitempty" jsonschema:"description=Name of a variant on the model config"`
+	// Unknown names degrade to the model's baseline parameters. Always
+	// takes priority over the slot's own default Variant when both
+	// are set.
+	Variant string `json:"variant,omitempty" jsonschema:"description=Name of a variant on the model config; takes priority over the slot's own default variant"`
 
 	// MaxTokens caps the agent's output tokens. Zero means the model
 	// default applies.

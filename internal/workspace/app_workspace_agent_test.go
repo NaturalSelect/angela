@@ -226,6 +226,7 @@ func TestAppWorkspace_AgentActive(t *testing.T) {
 		model := agent.Model{
 			ModelCfg:   config.SelectedModel{Provider: "anthropic", Model: "claude"},
 			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "claude"}},
+			Variant:    "default",
 		}
 		fx.coord.EXPECT().ActiveAgent(gomock.Any(), "sess-1").Return(active, model, nil)
 
@@ -271,6 +272,7 @@ func TestAppWorkspace_AgentEditActive(t *testing.T) {
 		model := agent.Model{
 			ModelCfg:   config.SelectedModel{Provider: "anthropic", Model: "claude"},
 			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "claude"}},
+			Variant:    "v1",
 		}
 		fx.coord.EXPECT().EditActiveAgent(gomock.Any(), "sess-1", edit).Return(config.ActiveAgent{}, nil)
 		fx.coord.EXPECT().ActiveAgent(gomock.Any(), "sess-1").Return(active, model, nil)

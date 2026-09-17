@@ -254,3 +254,58 @@ func TestUnknownInternalAgentIsReported(t *testing.T) {
 	_, ok := activeTestConfig().InstantiateFor("nope", ActiveAgent{})
 	require.False(t, ok)
 }
+
+// TestInstantiateAgentFallsBackToSlotVariant pins the new fallback: a
+// slot's own Variant takes effect for an agent that names none of its
+// own, the same way its model and Think default already do.
+func TestInstantiateAgentFallsBackToSlotVariant(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	slot := cfg.Slots[SlotMain]
+	slot.Variant = "careful"
+	cfg.Slots[SlotMain] = slot
+
+	active, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	require.Empty(t, active.Agent.Variant, "the agent config itself still names nothing")
+	require.Equal(t, "careful", active.EffectiveVariant())
+}
+
+// TestInstantiateAgentVariantOutranksSlotVariant pins the priority
+// order: when both the agent and its slot name a variant, the
+// agent's own wins.
+func TestInstantiateAgentVariantOutranksSlotVariant(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	slot := cfg.Slots[SlotMain]
+	slot.Variant = "careful"
+	cfg.Slots[SlotMain] = slot
+	agent := cfg.Agents["coder"]
+	agent.Variant = "custom"
+	cfg.Agents["coder"] = agent
+
+	active, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	require.Equal(t, "custom", active.EffectiveVariant())
+}
+
+// TestRestoreExplicitBaselinePickOutranksSlotVariant pins that backing
+// out of a preset is a hard opt-out: it must not fall through to the
+// slot's own default, or a user could never actually reach baseline
+// on a slot that names one.
+func TestRestoreExplicitBaselinePickOutranksSlotVariant(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	slot := cfg.Slots[SlotMain]
+	slot.Variant = "careful"
+	cfg.Slots[SlotMain] = slot
+
+	pick := ""
+	active, ok := cfg.Restore(ActiveAgentState{Agent: "coder", Variant: &pick})
+	require.True(t, ok)
+	require.Empty(t, active.EffectiveVariant(),
+		"an explicit baseline pick must not fall back to the slot's variant")
+}

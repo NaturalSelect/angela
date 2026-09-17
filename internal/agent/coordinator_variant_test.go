@@ -56,6 +56,17 @@ func TestAgentVariantReachesTheResolvedModel(t *testing.T) {
 		"a variant keeps the model identity")
 }
 
+// setChoreSlotVariant points the chore slot's own SelectedModel at a
+// default variant, the fallback an agent with no Variant of its own
+// picks up.
+func setChoreSlotVariant(t *testing.T, coord *coordinator, variant string) {
+	t.Helper()
+	cfg := coord.cfg.Config()
+	slot := cfg.Slots[config.SlotChore]
+	slot.Variant = variant
+	cfg.Slots[config.SlotChore] = slot
+}
+
 // TestUnknownAgentVariantStillResolves pins the loose half of the
 // validation rule at the layer that matters: a turn must survive a
 // variant name that no longer exists.
@@ -69,4 +80,44 @@ func TestUnknownAgentVariantStillResolves(t *testing.T) {
 
 	require.Empty(t, model.Variant, "no variant was actually applied")
 	require.Equal(t, "small-model", model.ModelCfg.Model)
+}
+
+// TestSlotVariantAppliesWhenAgentVariantIsUnset pins the new
+// fallback: a slot's own Variant reaches the resolved model when the
+// agent running on it names none of its own.
+func TestSlotVariantAppliesWhenAgentVariantIsUnset(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	setChoreVariants(t, coord, map[string]config.SelectedModelOverride{
+		"deep": {MaxTokens: ptrTo(int64(32000)), ReasoningEffort: ptrTo("high")},
+	})
+	setChoreSlotVariant(t, coord, "deep")
+
+	model, err := coord.buildModel(context.Background(),
+		instantiate(t, coord, config.AgentCoder), false)
+	require.NoError(t, err)
+
+	require.Equal(t, "deep", model.Variant)
+	require.Equal(t, int64(32000), model.CatwalkCfg.DefaultMaxTokens)
+	require.Equal(t, "small-model", model.ModelCfg.Model,
+		"a variant keeps the model identity")
+}
+
+// TestAgentVariantOutranksSlotVariant pins the priority order: when
+// both the agent and its slot name a variant, the agent's own wins.
+func TestAgentVariantOutranksSlotVariant(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	setChoreVariants(t, coord, map[string]config.SelectedModelOverride{
+		"deep": {MaxTokens: ptrTo(int64(32000))},
+		"high": {MaxTokens: ptrTo(int64(16000))},
+	})
+	setChoreSlotVariant(t, coord, "deep")
+	setCoderVariant(t, coord, "high")
+
+	model, err := coord.buildModel(context.Background(),
+		instantiate(t, coord, config.AgentCoder), false)
+	require.NoError(t, err)
+
+	require.Equal(t, "high", model.Variant,
+		"the agent's own variant must outrank the slot's default")
+	require.Equal(t, int64(16000), model.CatwalkCfg.DefaultMaxTokens)
 }

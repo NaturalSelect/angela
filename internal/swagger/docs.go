@@ -4265,7 +4265,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "variant": {
-                    "description": "Variant names a parameter preset on the model config above.\nUnknown names degrade to the model's baseline parameters.",
+                    "description": "Variant names a parameter preset on the model config above.\nUnknown names degrade to the model's baseline parameters. Always\ntakes priority over the slot's own default Variant when both\nare set.",
                     "type": "string"
                 }
             }
@@ -4626,6 +4626,10 @@ const docTemplate = `{
                 },
                 "provider": {
                     "description": "The model provider, same as the key/id used in the providers config.\nRequired.",
+                    "type": "string"
+                },
+                "variant": {
+                    "description": "Variant names the parameter preset this slot defaults to. It\nonly applies when the agent pointed at this slot does not name\na variant of its own — Agent.Variant always wins when both are\nset. Unknown names degrade to the model's baseline parameters,\nthe same way an unknown Agent.Variant does.",
                     "type": "string"
                 }
             }

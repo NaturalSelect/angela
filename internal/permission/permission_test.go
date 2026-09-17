@@ -124,7 +124,7 @@ func TestPermissionService_AutoAcceptEditsMode(t *testing.T) {
 
 	events := service.Subscribe(t.Context())
 	wait := gateAsync(t.Context(), service, "s1", "call-2", Access{
-		Tool: "view", Action: ActionRead, Path: filepath.Join(outside, "secret"),
+		Tool: "read", Action: ActionRead, Path: filepath.Join(outside, "secret"),
 	})
 	select {
 	case ev := <-events:
@@ -247,18 +247,18 @@ func TestPermissionService_ReadScope(t *testing.T) {
 	service := NewPermissionService(dir, ModeManual, nil, skills)
 
 	inside := gate(t.Context(), service, "s1", "c1", Access{
-		Tool: "view", Action: ActionRead, Path: filepath.Join(dir, "main.go"),
+		Tool: "read", Action: ActionRead, Path: filepath.Join(dir, "main.go"),
 	})
 	assert.True(t, inside.Allowed(), "reads inside the working directory are free")
 
 	skill := gate(t.Context(), service, "s1", "c2", Access{
-		Tool: "view", Action: ActionRead, Path: filepath.Join(skills, "SKILL.md"),
+		Tool: "read", Action: ActionRead, Path: filepath.Join(skills, "SKILL.md"),
 	})
 	assert.True(t, skill.Allowed(), "reads inside a skills directory are free")
 
 	events := service.Subscribe(t.Context())
 	wait := gateAsync(t.Context(), service, "s1", "c3", Access{
-		Tool: "view", Action: ActionRead, Path: filepath.Join(outside, "secret"),
+		Tool: "read", Action: ActionRead, Path: filepath.Join(outside, "secret"),
 	})
 	select {
 	case ev := <-events:
@@ -1309,7 +1309,7 @@ func TestAskRuleReachesCommandOperands(t *testing.T) {
 	case ev := <-events:
 		service.Grant(ev.Payload)
 	case <-time.After(2 * time.Second):
-		t.Fatal("an ask rule on a path must stop a command that reaches it, not just the view tool")
+		t.Fatal("an ask rule on a path must stop a command that reaches it, not just the read tool")
 	}
 	assert.True(t, wait().Allowed())
 
@@ -1493,8 +1493,8 @@ func TestChildNeverWiderThanRoot(t *testing.T) {
 		name   string
 		access Access
 	}{
-		{"read inside workdir", Access{Tool: "view", Action: ActionRead, Path: filepath.Join(dir, "main.go")}},
-		{"read outside workdir", Access{Tool: "view", Action: ActionRead, Path: "/etc/passwd"}},
+		{"read inside workdir", Access{Tool: "read", Action: ActionRead, Path: filepath.Join(dir, "main.go")}},
+		{"read outside workdir", Access{Tool: "read", Action: ActionRead, Path: "/etc/passwd"}},
 		{"list inside workdir", Access{Tool: "ls", Action: ActionList, Path: dir}},
 		{"edit denied by rule", Access{Tool: "edit", Action: ActionEdit, Path: filepath.Join(dir, ".env")}},
 		{"edit not covered by any rule", Access{Tool: "edit", Action: ActionEdit, Path: filepath.Join(dir, "main.go")}},

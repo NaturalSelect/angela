@@ -62,9 +62,9 @@ func assertHookFilters(t *testing.T, store *config.ConfigStore) {
 
 	runner := hooks.NewRunner(preHooks, t.TempDir(), t.TempDir(), hooks.AgentIdentity{ID: "coder"})
 
-	nonMatch, err := runner.Run(context.Background(), hooks.EventPreToolUse, "sess", "view", `{}`)
+	nonMatch, err := runner.Run(context.Background(), hooks.EventPreToolUse, "sess", "read", `{}`)
 	require.NoError(t, err)
-	require.Equal(t, 0, nonMatch.HookCount, "view must not match ^bash$ matcher")
+	require.Equal(t, 0, nonMatch.HookCount, "read must not match ^bash$ matcher")
 
 	match, err := runner.Run(context.Background(), hooks.EventPreToolUse, "sess", "bash", `{}`)
 	require.NoError(t, err)

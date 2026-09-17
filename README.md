@@ -129,7 +129,7 @@ rules in `angela.json`:
 ```jsonc
 {
   "permissions": {
-    "allowed_tools": ["View", "LS", "Grep"],
+    "allowed_tools": ["Read", "LS", "Grep"],
     "rules": [
       { "action": "deny", "tool": "read", "path": "**/.env" },
       { "action": "allow", "tool": "bash", "pattern": "git status*" }

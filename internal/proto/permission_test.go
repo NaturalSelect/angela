@@ -104,16 +104,16 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 			},
 		},
 		{
-			name:     "view",
-			toolName: toolnames.View,
-			params: tools.ViewPermissionsParams{
+			name:     "read",
+			toolName: toolnames.Read,
+			params: tools.ReadPermissionsParams{
 				FilePath: "/tmp/x.go",
 				Offset:   10,
 				Limit:    100,
 			},
 			assert: func(t *testing.T, got any) {
-				v, ok := got.(tools.ViewPermissionsParams)
-				require.True(t, ok, "params must decode as tools.ViewPermissionsParams, got %T", got)
+				v, ok := got.(tools.ReadPermissionsParams)
+				require.True(t, ok, "params must decode as tools.ReadPermissionsParams, got %T", got)
 				require.Equal(t, "/tmp/x.go", v.FilePath)
 			},
 		},
@@ -445,7 +445,7 @@ func TestUnmarshalToolParamsFieldTypeMismatch(t *testing.T) {
 		{"fetch", toolnames.Fetch, "url"},
 		{"web_fetch", toolnames.WebFetch, "url"},
 		{"web_search", toolnames.WebSearch, "query"},
-		{"view", toolnames.View, "file_path"},
+		{"read", toolnames.Read, "file_path"},
 		{"ls", toolnames.LS, "path"},
 		{"lsp_replace_symbol", toolnames.LSPReplaceSymbol, "file_path"},
 		{"list_mcp_resources", toolnames.ListMCPResources, "mcp_name"},

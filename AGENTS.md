@@ -31,7 +31,7 @@ internal/
     notify/                        Agent lifecycle notification events (done, error, auth, SSO)
     prompt/                        System prompt template engine (Go templates + runtime data)
     templates/                     System prompt templates (coder.md.tpl, task.md.tpl, etc.)
-    tools/                         All built-in tools (bash, edit, view, grep, glob, etc.)
+    tools/                         All built-in tools (bash, edit, read, grep, glob, etc.)
       mcp/                         MCP client integration
   backend/                         Transport-agnostic backend: workspace, session, agent, events
   server/                          HTTP/REST + SSE daemon server (Unix socket / TCP)

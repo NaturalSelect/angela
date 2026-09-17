@@ -19,7 +19,7 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 		buf := captureWarnings(t)
 
 		paths := writeLayers(t,
-			`{"agents": {"restricted": {"id": "restricted", "allowed_tool": ["view"]}}}`,
+			`{"agents": {"restricted": {"id": "restricted", "allowed_tool": ["read"]}}}`,
 		)
 		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
@@ -33,14 +33,14 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 		t.Parallel()
 
 		paths := writeLayers(t,
-			`{"agents": {"restricted": {"id": "restricted", "allowed_tools": ["view"]}}}`,
+			`{"agents": {"restricted": {"id": "restricted", "allowed_tools": ["read"]}}}`,
 		)
 		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		agent, ok := cfg.AgentConfigs["restricted"]
 		require.True(t, ok)
-		require.Equal(t, []string{"view"}, agent.AllowedTools.Tools)
+		require.Equal(t, []string{"read"}, agent.AllowedTools.Tools)
 	})
 
 	t.Run("compact_agent is a recognized field and does not drop the agent", func(t *testing.T) {

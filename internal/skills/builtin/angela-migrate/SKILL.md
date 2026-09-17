@@ -186,7 +186,7 @@ OpenCode MCP format is similar to Angela's. Copy with minor adjustments.
 // Angela
 {
   "permissions": {
-    "allowed_tools": ["View", "Edit", "Bash"],
+    "allowed_tools": ["Read", "Edit", "Bash"],
     "rules": [
       { "action": "allow", "tool": "Bash", "pattern": "git status*" },
       { "action": "allow", "tool": "Bash", "pattern": "git diff*" },

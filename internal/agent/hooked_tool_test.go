@@ -56,11 +56,11 @@ func newRunner(t *testing.T, cmd string) *hooks.Runner {
 func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 	t.Parallel()
 
-	inner, rec := newFakeTool(t, toolnames.View, fantasy.NewTextResponse("ok"))
+	inner, rec := newFakeTool(t, toolnames.Read, fantasy.NewTextResponse("ok"))
 	runner := newRunner(t, `echo '{"decision":"allow"}'`)
 	tool := newHookedTool(inner, runner)
 
-	_, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-1", Name: "view"})
+	_, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-1", Name: "read"})
 	require.NoError(t, err)
 	require.True(t, rec.called, "inner tool should have run")
 
@@ -82,11 +82,11 @@ func TestHookedTool_AllowStampsHookApproval(t *testing.T) {
 func TestHookedTool_SilentDoesNotStampApproval(t *testing.T) {
 	t.Parallel()
 
-	inner, rec := newFakeTool(t, toolnames.View, fantasy.NewTextResponse("ok"))
+	inner, rec := newFakeTool(t, toolnames.Read, fantasy.NewTextResponse("ok"))
 	runner := newRunner(t, `exit 0`) // no stdout, no decision
 	tool := newHookedTool(inner, runner)
 
-	_, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-2", Name: "view"})
+	_, err := tool.Run(t.Context(), fantasy.ToolCall{ID: "call-2", Name: "read"})
 	require.NoError(t, err)
 	require.True(t, rec.called)
 

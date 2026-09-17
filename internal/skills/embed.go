@@ -8,7 +8,7 @@ import (
 )
 
 // BuiltinPrefix is the path prefix for builtin skill files. It is used by
-// the View tool to distinguish embedded files from disk files.
+// the Read tool to distinguish embedded files from disk files.
 const BuiltinPrefix = "angela://skills/"
 
 //go:embed builtin/*

@@ -239,7 +239,7 @@ func TestGetToolUsage(t *testing.T) {
 	}
 
 	create("m1", `[{"type":"tool_call","data":{"id":"1","name":"bash"}}]`)
-	create("m2", `[{"type":"tool_call","data":{"id":"2","name":"bash"}},{"type":"tool_call","data":{"id":"3","name":"view"}}]`)
+	create("m2", `[{"type":"tool_call","data":{"id":"2","name":"bash"}},{"type":"tool_call","data":{"id":"3","name":"read"}}]`)
 	create("m3", `[{"type":"text","data":{"text":"no tool call here"}}]`)
 
 	got, err := q.GetToolUsage(t.Context())
@@ -252,7 +252,7 @@ func TestGetToolUsage(t *testing.T) {
 		counts[name] = r.CallCount
 	}
 	require.EqualValues(t, 2, counts["bash"])
-	require.EqualValues(t, 1, counts["view"])
+	require.EqualValues(t, 1, counts["read"])
 }
 
 func TestGetAverageResponseTime(t *testing.T) {

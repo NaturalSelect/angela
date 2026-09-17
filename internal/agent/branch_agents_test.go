@@ -35,7 +35,7 @@ func TestBranchAgentsNeverWrite(t *testing.T) {
 			coord := newGateTestCoordinator(t, true)
 			names := toolNamesFor(t, coord, id, 1)
 
-			for _, tool := range []string{toolnames.View, toolnames.Grep, toolnames.Glob, toolnames.LS, toolnames.LSPDefinition, toolnames.LSPReferences} {
+			for _, tool := range []string{toolnames.Read, toolnames.Grep, toolnames.Glob, toolnames.LS, toolnames.LSPDefinition, toolnames.LSPReferences} {
 				require.Contains(t, names, tool, "a branch must be able to read the codebase")
 			}
 			for _, tool := range []string{toolnames.Edit, toolnames.MultiEdit, toolnames.Write, toolnames.Download, toolnames.LSPRename, toolnames.LSPReplaceSymbol, toolnames.Todos} {

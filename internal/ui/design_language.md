@@ -113,7 +113,7 @@ common case instead of the exception.
 
 | Tool | Current default | Target default | On expand | Location |
 |---|---|---|---|---|
-| View | header + 10-line code preview | header only | full file content, syntax highlighted | file.go:40 |
+| Read | header + 10-line code preview | header only | full file content, syntax highlighted | file.go:40 |
 | Grep | header + 10-line match preview | header only | full match list | search.go:97 |
 | Glob | same | header only | full file list | search.go:38 |
 | LS | same | header only | full directory tree | search.go:162 |
@@ -121,7 +121,7 @@ common case instead of the exception.
 | Fetch / WebFetch | header + 10-line content preview | header only | full fetched content | fetch.go:42, :117 |
 | WebSearch | same | header only | full search results | fetch.go:171 |
 | Download | header + one confirmation line | header only | full confirmation text | file.go:337 — the destination path is already in the header params (file.go:348-351); the body is just a confirmation line |
-| Diagnostics | header + 10-line diagnostic preview (`toolOutputPlainContent`) | header only | full diagnostic list | diagnostics.go:37-67 — diagnostics can be re-queried at any time, same reasoning as View; empty results already render header-only |
+| Diagnostics | header + 10-line diagnostic preview (`toolOutputPlainContent`) | header only | full diagnostic list | diagnostics.go:37-67 — diagnostics can be re-queried at any time, same reasoning as Read; empty results already render header-only |
 | References | header + 10-line preview | header only | full reference list | references.go:33-62 — pure query |
 | Definition | header + 10-line highlighted code preview (from metadata) | header only | full definition code | definition.go:32-64 — pure query |
 | CallHierarchy | header + 10-line preview | header only | full call hierarchy | call_hierarchy.go:32-60 — pure query |

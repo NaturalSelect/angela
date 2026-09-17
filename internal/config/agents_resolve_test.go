@@ -59,7 +59,7 @@ func TestResolveAgents_GlobalDisabledToolsOverridesExplicitWhitelist(t *testing.
 	cfg := &Config{
 		Options: &Options{DisabledTools: []string{"Bash"}},
 		AgentConfigs: map[string]Agent{
-			"reviewer": {Description: "x", AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"Bash", "View"}}},
+			"reviewer": {Description: "x", AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"Bash", "Read"}}},
 		},
 	}
 
@@ -67,7 +67,7 @@ func TestResolveAgents_GlobalDisabledToolsOverridesExplicitWhitelist(t *testing.
 	reviewer, ok := agents["reviewer"]
 	require.True(t, ok)
 	require.NotContains(t, reviewer.AllowedTools.Tools, "Bash", "global DisabledTools must win over an agent's explicit whitelist")
-	require.Contains(t, reviewer.AllowedTools.Tools, "View")
+	require.Contains(t, reviewer.AllowedTools.Tools, "Read")
 }
 
 func TestResolveAgents_CustomAgentDefaultsToBaseTools(t *testing.T) {
@@ -194,7 +194,7 @@ func TestResolveAgents_AlwaysMaterialized(t *testing.T) {
 		}},
 		{"every read-only tool disabled", func(t *testing.T) *Config {
 			return &Config{Options: &Options{DisabledTools: []string{
-				"Glob", "Grep", "LS", "LSPCallHierarchy", "LSPDefinition", "LSPSymbols", "Sourcegraph", "View",
+				"Glob", "Grep", "LS", "LSPCallHierarchy", "LSPDefinition", "LSPSymbols", "Sourcegraph", "Read",
 			}}}
 		}},
 		{"custom agent with explicit empty whitelist", func(t *testing.T) *Config {
@@ -362,17 +362,17 @@ func TestResolveAgents_InheritedFollowsCoderScope(t *testing.T) {
 	cfg := &Config{
 		Options: &Options{},
 		AgentConfigs: map[string]Agent{
-			AgentCoder: {AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"View", "Grep"}}},
+			AgentCoder: {AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: []string{"Read", "Grep"}}},
 			"reviewer": {Description: "Reviews code"},
 		},
 	}
 
 	agents := cfg.ResolveAgents()
 
-	require.ElementsMatch(t, []string{"View", "Grep"}, agents[AgentCoder].AllowedTools.Tools)
-	require.ElementsMatch(t, []string{"View", "Grep"}, agents["reviewer"].AllowedTools.Tools,
+	require.ElementsMatch(t, []string{"Read", "Grep"}, agents[AgentCoder].AllowedTools.Tools)
+	require.ElementsMatch(t, []string{"Read", "Grep"}, agents["reviewer"].AllowedTools.Tools,
 		"an agent that never mentions allowed_tools inherits the coder's resolved set")
-	require.ElementsMatch(t, []string{"View", "Grep"}, agents[AgentGeneral].AllowedTools.Tools,
+	require.ElementsMatch(t, []string{"Read", "Grep"}, agents[AgentGeneral].AllowedTools.Tools,
 		"the built-in general agent inherits too")
 }
 

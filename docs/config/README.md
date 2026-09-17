@@ -27,7 +27,7 @@ starts and configures the agent.
     }
   },
   "permissions": {
-    "allowed_tools": ["View", "Edit"]
+    "allowed_tools": ["Read", "Edit"]
   },
   "mcp": {
     "github": {
@@ -248,7 +248,7 @@ future release. See the [hooks docs](../hooks/) for the full guide.
 {
   "permissions": {
     // Tools that don't require permission prompts.
-    "allowed_tools": ["View", "LS", "Grep"],
+    "allowed_tools": ["Read", "LS", "Grep"],
 
     // Declarative permission rules. Precedence: deny > ask > allow. An
     // "ask" rule always reaches a real prompt, even where auto-accept
@@ -353,7 +353,7 @@ Layers are deep-merged, with the one closest to the project winning.
   "slots": {
     "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
   },
-  "permissions": { "allowed_tools": ["View", "LS", "Grep"] },
+  "permissions": { "allowed_tools": ["Read", "LS", "Grep"] },
 }
 ```
 

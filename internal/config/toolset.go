@@ -74,7 +74,7 @@ func unionSchema(scoped *jsonschema.Schema, literals ...string) *jsonschema.Sche
 // grants just Tools.
 //
 // On the wire (JSON/YAML) it round-trips through the shapes users
-// already write: a bare array (["bash","view"]) decodes to
+// already write: a bare array (["bash","read"]) decodes to
 // ToolSetScope, the strings "all" and "inherited" decode to their
 // kinds, and an absent field decodes to a nil pointer. ResolveAgents
 // is the only place allowed to produce a resolved value: its output

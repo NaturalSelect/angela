@@ -13,37 +13,37 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// View Tool
+// Read Tool
 // -----------------------------------------------------------------------------
 
-func TestViewToolPending(t *testing.T) {
+func TestReadToolPending(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go"}`}
-	item := NewViewToolMessageItem(&sty, toolCall, nil, false)
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`}
+	item := NewReadToolMessageItem(&sty, toolCall, nil, false)
 
 	out := ansi.Strip(item.Render(100))
-	require.Contains(t, out, toolnames.View)
+	require.Contains(t, out, toolnames.Read)
 }
 
-func TestViewToolInvalidParams(t *testing.T) {
+func TestReadToolInvalidParams(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `not-json`, Finished: true}
-	item := NewViewToolMessageItem(&sty, toolCall, nil, false)
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `not-json`, Finished: true}
+	item := NewReadToolMessageItem(&sty, toolCall, nil, false)
 
 	out := ansi.Strip(item.Render(100))
 	require.Contains(t, out, "Invalid parameters")
 }
 
-func TestViewToolHeaderShowsLimitAndOffset(t *testing.T) {
+func TestReadToolHeaderShowsLimitAndOffset(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go","offset":10,"limit":50}`, Finished: true}
-	item := NewViewToolMessageItem(&sty, toolCall, nil, false)
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go","offset":10,"limit":50}`, Finished: true}
+	item := NewReadToolMessageItem(&sty, toolCall, nil, false)
 
 	out := ansi.Strip(item.Render(100))
 	require.Contains(t, out, "a.go")
@@ -53,13 +53,13 @@ func TestViewToolHeaderShowsLimitAndOffset(t *testing.T) {
 	require.Contains(t, out, "10")
 }
 
-func TestViewToolCompactShowsHeaderOnly(t *testing.T) {
+func TestReadToolCompactShowsHeaderOnly(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true}
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true}
 	result := &message.ToolResult{ToolCallID: "v1", Content: "distinctive view body content"}
-	item := NewViewToolMessageItem(&sty, toolCall, result, false)
+	item := NewReadToolMessageItem(&sty, toolCall, result, false)
 
 	compactable, ok := item.(Compactable)
 	require.True(t, ok, "tool items must implement Compactable")
@@ -69,42 +69,42 @@ func TestViewToolCompactShowsHeaderOnly(t *testing.T) {
 	require.NotContains(t, out, "distinctive view body content")
 }
 
-func TestViewToolAwaitsResultAfterFinish(t *testing.T) {
+func TestReadToolAwaitsResultAfterFinish(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true}
-	item := NewViewToolMessageItem(&sty, toolCall, nil, false)
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true}
+	item := NewReadToolMessageItem(&sty, toolCall, nil, false)
 
 	out := ansi.Strip(item.Render(100))
 	require.Contains(t, out, "Waiting for tool response")
 }
 
-func TestViewToolCollapsedHidesBody(t *testing.T) {
+func TestReadToolCollapsedHidesBody(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true}
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true}
 	result := &message.ToolResult{ToolCallID: "v1", Content: "distinctive collapsed view content"}
-	item := NewViewToolMessageItem(&sty, toolCall, result, false)
+	item := NewReadToolMessageItem(&sty, toolCall, result, false)
 
 	out := ansi.Strip(item.Render(100))
 	require.NotContains(t, out, "distinctive collapsed view content")
 }
 
-func TestViewToolExpandedShowsCodeContentFromMetadata(t *testing.T) {
+func TestReadToolExpandedShowsCodeContentFromMetadata(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	metaJSON, err := json.Marshal(tools.ViewResponseMetadata{
+	metaJSON, err := json.Marshal(tools.ReadResponseMetadata{
 		FilePath: "a.go",
 		Content:  "package main\n\ndistinctive-metadata-content\n",
 	})
 	require.NoError(t, err)
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true}
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true}
 	result := &message.ToolResult{ToolCallID: "v1", Content: "fallback content", Metadata: string(metaJSON)}
-	item := NewViewToolMessageItem(&sty, toolCall, result, false)
+	item := NewReadToolMessageItem(&sty, toolCall, result, false)
 
 	expandable, ok := item.(Expandable)
 	require.True(t, ok, "tool items must implement Expandable")
@@ -114,13 +114,13 @@ func TestViewToolExpandedShowsCodeContentFromMetadata(t *testing.T) {
 	require.Contains(t, out, "distinctive-metadata-content")
 }
 
-func TestViewToolExpandedFallsBackToResultContent(t *testing.T) {
+func TestReadToolExpandedFallsBackToResultContent(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true}
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true}
 	result := &message.ToolResult{ToolCallID: "v1", Content: "distinctive-fallback-content"}
-	item := NewViewToolMessageItem(&sty, toolCall, result, false)
+	item := NewReadToolMessageItem(&sty, toolCall, result, false)
 
 	expandable, ok := item.(Expandable)
 	require.True(t, ok, "tool items must implement Expandable")
@@ -130,29 +130,29 @@ func TestViewToolExpandedFallsBackToResultContent(t *testing.T) {
 	require.Contains(t, out, "distinctive-fallback-content")
 }
 
-func TestViewToolExpandedNoContentShowsHeaderOnly(t *testing.T) {
+func TestReadToolExpandedNoContentShowsHeaderOnly(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.go"}`, Finished: true}
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.go"}`, Finished: true}
 	result := &message.ToolResult{ToolCallID: "v1", Content: ""}
-	item := NewViewToolMessageItem(&sty, toolCall, result, false)
+	item := NewReadToolMessageItem(&sty, toolCall, result, false)
 
 	expandable, ok := item.(Expandable)
 	require.True(t, ok, "tool items must implement Expandable")
 	require.True(t, expandable.ToggleExpanded())
 
 	out := ansi.Strip(item.Render(100))
-	require.Contains(t, out, toolnames.View)
+	require.Contains(t, out, toolnames.Read)
 }
 
-func TestViewToolExpandedShowsImageContent(t *testing.T) {
+func TestReadToolExpandedShowsImageContent(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"a.png"}`, Finished: true}
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"a.png"}`, Finished: true}
 	result := &message.ToolResult{ToolCallID: "v1", Data: "aGVsbG8=", MIMEType: "image/png"}
-	item := NewViewToolMessageItem(&sty, toolCall, result, false)
+	item := NewReadToolMessageItem(&sty, toolCall, result, false)
 
 	expandable, ok := item.(Expandable)
 	require.True(t, ok, "tool items must implement Expandable")
@@ -163,21 +163,21 @@ func TestViewToolExpandedShowsImageContent(t *testing.T) {
 	require.Contains(t, out, "image/png")
 }
 
-func TestViewToolExpandedShowsSkillContent(t *testing.T) {
+func TestReadToolExpandedShowsSkillContent(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
-	metaJSON, err := json.Marshal(tools.ViewResponseMetadata{
-		ResourceType:        tools.ViewResourceSkill,
+	metaJSON, err := json.Marshal(tools.ReadResponseMetadata{
+		ResourceType:        tools.ReadResourceSkill,
 		ResourceName:        "distinctive-skill-name",
 		ResourceDescription: "does distinctive things",
 		Content:             "skill body",
 	})
 	require.NoError(t, err)
 
-	toolCall := message.ToolCall{ID: "v1", Name: toolnames.View, Input: `{"file_path":"angela://skills/x"}`, Finished: true}
+	toolCall := message.ToolCall{ID: "v1", Name: toolnames.Read, Input: `{"file_path":"angela://skills/x"}`, Finished: true}
 	result := &message.ToolResult{ToolCallID: "v1", Metadata: string(metaJSON)}
-	item := NewViewToolMessageItem(&sty, toolCall, result, false)
+	item := NewReadToolMessageItem(&sty, toolCall, result, false)
 
 	expandable, ok := item.(Expandable)
 	require.True(t, ok, "tool items must implement Expandable")

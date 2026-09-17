@@ -137,16 +137,16 @@ func TestHookRunnerCarriesAgentIdentity(t *testing.T) {
 		toolList, err := coord.buildTools(cfg.Agents[agentID], "", depth)
 		require.NoError(t, err)
 		for _, tool := range toolList {
-			if tool.Info().Name != toolnames.View {
+			if tool.Info().Name != toolnames.Read {
 				continue
 			}
 			resp, err := tool.Run(t.Context(), fantasy.ToolCall{
-				ID: "call-1", Name: toolnames.View, Input: `{"file_path":"/tmp/x"}`,
+				ID: "call-1", Name: toolnames.Read, Input: `{"file_path":"/tmp/x"}`,
 			})
 			require.NoError(t, err)
 			return resp.Content
 		}
-		t.Fatal("view tool not found")
+		t.Fatal("read tool not found")
 		return ""
 	}
 

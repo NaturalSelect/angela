@@ -143,7 +143,7 @@ type Rule struct {
 	Action RuleAction `json:"action"`
 	// Tool narrows the rule. It matches either an access category
 	// ("read", "edit", "execute", "network", "mcp", "list") or a single
-	// tool name ("Bash", "View"). Empty matches everything.
+	// tool name ("Bash", "Read"). Empty matches everything.
 	Tool string `json:"tool,omitempty"`
 	// Pattern narrows the rule further. Empty or "*" matches everything.
 	Pattern string `json:"pattern,omitempty"`
@@ -327,7 +327,7 @@ func firstWithAction(verdicts []Verdict, action RuleAction) (Verdict, bool) {
 // its neighbour.
 //
 // Judging the file operands is what keeps a path rule honest. Without
-// it `deny read **/.env` would stop the view tool and wave through
+// it `deny read **/.env` would stop the Read tool and wave through
 // `cat .env`, which is the same read by another route.
 func (p *Policy) evaluateCommand(access Access, cwd string) Verdict {
 	scan := shellscan.Scan(access.Command, cwd)

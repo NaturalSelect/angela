@@ -7,9 +7,9 @@ When using the Agent tool, specify a subagent_type parameter to select which age
 Reach for this when the task matches an available agent type, when you have independent work to run in parallel, or when answering would mean reading across several files — delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.
 
 When NOT to use the Agent tool:
-- If you want to read a specific file path, use the View or Glob tool instead, to find the match more quickly
+- If you want to read a specific file path, use the Read or Glob tool instead, to find the match more quickly
 - If you are searching for a specific definition like "func Foo", use the Grep tool instead, to find the match more quickly
-- If you are searching for code within a specific file or set of 2-3 files, use the View tool instead, to find the match more quickly
+- If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead, to find the match more quickly
 - If no available agent is a good fit for the task, use other tools directly
 
 ## Usage notes

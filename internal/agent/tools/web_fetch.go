@@ -42,7 +42,7 @@ func WebFetchScratchDir(root, sessionID string) (string, error) {
 }
 
 // NewWebFetchTool creates a web fetch tool for sub-agents. scratchDir is
-// the root where large pages get saved for grep/view; each session gets
+// the root where large pages get saved for grep/read; each session gets
 // its own subdirectory under it, created on first use, so cleanup can
 // discard one session's pages without touching a concurrent session's.
 func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
@@ -96,7 +96,7 @@ func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 
 				fmt.Fprintf(&result, "Fetched content from %s (large page)\n\n", params.URL)
 				fmt.Fprintf(&result, "Content saved to: %s\n\n", tempFilePath)
-				result.WriteString("Use the view and grep tools to analyze this file.")
+				result.WriteString("Use the read and grep tools to analyze this file.")
 			} else {
 				fmt.Fprintf(&result, "Fetched content from %s:\n\n", params.URL)
 				result.WriteString(content)

@@ -26,7 +26,7 @@ func newTestBaseTool(sty *styles.Styles, toolCall message.ToolCall, result *mess
 }
 
 // fileLangExtensionCases enumerates the file-extension-to-language mapping
-// shared verbatim between formatViewResultForCopy and formatWriteResultForCopy.
+// shared verbatim between formatReadResultForCopy and formatWriteResultForCopy.
 var fileLangExtensionCases = []struct {
 	path string
 	lang string
@@ -77,7 +77,7 @@ func TestNewToolMessageItem_DispatchesByName(t *testing.T) {
 		{"bash", toolnames.Bash},
 		{"job_output", toolnames.JobOutput},
 		{"job_kill", toolnames.JobKill},
-		{"view", toolnames.View},
+		{"read", toolnames.Read},
 		{"write", toolnames.Write},
 		{"edit", toolnames.Edit},
 		{"multiedit", toolnames.MultiEdit},
@@ -376,7 +376,7 @@ func TestFormatParametersForCopy(t *testing.T) {
 		contains []string
 	}{
 		{"bash", toolnames.Bash, `{"command":"echo hi\nthere","description":"say hi"}`, []string{"**Command:** echo hi", "there"}},
-		{"view", toolnames.View, `{"file_path":"/tmp/a.go","limit":10,"offset":5}`, []string{"**File:**", "a.go", "**Limit:** 10", "**Offset:** 5"}},
+		{"read", toolnames.Read, `{"file_path":"/tmp/a.go","limit":10,"offset":5}`, []string{"**File:**", "a.go", "**Limit:** 10", "**Offset:** 5"}},
 		{"edit", toolnames.Edit, `{"file_path":"/tmp/a.go"}`, []string{"**File:**", "a.go"}},
 		{"multiedit", toolnames.MultiEdit, `{"file_path":"/tmp/a.go","edits":[{"old_string":"a","new_string":"b"}]}`, []string{"**File:**", "**Edits:** 1"}},
 		{"write", toolnames.Write, `{"file_path":"/tmp/a.go","content":"x"}`, []string{"**File:**", "a.go"}},
@@ -426,14 +426,14 @@ func TestFormatResultForCopy(t *testing.T) {
 	t.Run("image_data", func(t *testing.T) {
 		t.Parallel()
 		result := &message.ToolResult{ToolCallID: "x", Data: "abc", MIMEType: "image/png"}
-		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.View}, result)
+		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.Read}, result)
 		require.Equal(t, "[Image: image/png]", item.formatResultForCopy())
 	})
 
 	t.Run("other_media_data", func(t *testing.T) {
 		t.Parallel()
 		result := &message.ToolResult{ToolCallID: "x", Data: "abc", MIMEType: "audio/mpeg"}
-		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.View}, result)
+		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.Read}, result)
 		require.Equal(t, "[Media: audio/mpeg]", item.formatResultForCopy())
 	})
 
@@ -466,11 +466,11 @@ func TestFormatResultForCopy(t *testing.T) {
 		require.Equal(t, "```bash\nbash out\n```", item.formatResultForCopy())
 	})
 
-	t.Run("dispatches_view", func(t *testing.T) {
+	t.Run("dispatches_read", func(t *testing.T) {
 		t.Parallel()
-		result := &message.ToolResult{ToolCallID: "x", Content: "view out"}
-		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.View}, result)
-		require.Equal(t, "view out", item.formatResultForCopy())
+		result := &message.ToolResult{ToolCallID: "x", Content: "read out"}
+		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.Read}, result)
+		require.Equal(t, "read out", item.formatResultForCopy())
 	})
 
 	t.Run("dispatches_edit", func(t *testing.T) {
@@ -569,32 +569,32 @@ func TestFormatBashResultForCopy(t *testing.T) {
 	})
 }
 
-func TestFormatViewResultForCopy(t *testing.T) {
+func TestFormatReadResultForCopy(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 
 	t.Run("nil_result", func(t *testing.T) {
 		t.Parallel()
-		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.View}, nil)
-		require.Equal(t, "", item.formatViewResultForCopy())
+		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.Read}, nil)
+		require.Equal(t, "", item.formatReadResultForCopy())
 	})
 
 	t.Run("no_metadata_content_falls_back", func(t *testing.T) {
 		t.Parallel()
 		result := &message.ToolResult{ToolCallID: "x", Content: "raw text"}
-		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.View}, result)
-		require.Equal(t, "raw text", item.formatViewResultForCopy())
+		item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.Read}, result)
+		require.Equal(t, "raw text", item.formatReadResultForCopy())
 	})
 
 	for _, tt := range fileLangExtensionCases {
 		t.Run("lang_"+tt.path, func(t *testing.T) {
 			t.Parallel()
-			meta := tools.ViewResponseMetadata{FilePath: tt.path, Content: "body text"}
+			meta := tools.ReadResponseMetadata{FilePath: tt.path, Content: "body text"}
 			metaJSON, err := json.Marshal(meta)
 			require.NoError(t, err)
 			result := &message.ToolResult{ToolCallID: "x", Metadata: string(metaJSON)}
-			item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.View}, result)
-			out := item.formatViewResultForCopy()
+			item := newTestBaseTool(&sty, message.ToolCall{Name: toolnames.Read}, result)
+			out := item.formatReadResultForCopy()
 			if tt.lang != "" {
 				require.Contains(t, out, "```"+tt.lang)
 			} else {
@@ -902,7 +902,7 @@ func TestPrettifyToolName(t *testing.T) {
 		{toolnames.LS, "List"},
 		{toolnames.Sourcegraph, toolnames.Sourcegraph},
 		{toolnames.Todos, "To-Do"},
-		{toolnames.View, toolnames.View},
+		{toolnames.Read, toolnames.Read},
 		{toolnames.Write, toolnames.Write},
 		{"custom_tool_name", "Custom Tool Name"},
 	}

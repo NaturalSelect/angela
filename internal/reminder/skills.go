@@ -35,12 +35,12 @@ func (skillsAfterCompaction) Collect(s State) string {
 	var out strings.Builder
 	err := skillsAfterCompactionTmpl.Execute(&out, struct {
 		Skills   []string
-		ViewTool string
+		ReadTool string
 	}{
 		// Skill names come from files on disk, including ones a repository
 		// under review may control.
 		Skills:   escapeAll(s.LoadedSkills),
-		ViewTool: toolnames.View,
+		ReadTool: toolnames.Read,
 	})
 	if err != nil {
 		return ""

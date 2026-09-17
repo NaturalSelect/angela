@@ -224,8 +224,8 @@ func NewToolMessageItem(
 		item = NewJobOutputToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.JobKill:
 		item = NewJobKillToolMessageItem(sty, toolCall, result, canceled)
-	case toolnames.View:
-		item = NewViewToolMessageItem(sty, toolCall, result, canceled)
+	case toolnames.Read:
+		item = NewReadToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.Write:
 		item = NewWriteToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.Edit:
@@ -573,7 +573,7 @@ func toolKindIcon(name string) string {
 		return styles.ToolIconShell
 	case toolnames.Write, toolnames.Edit, toolnames.MultiEdit:
 		return styles.ToolIconWrite
-	case toolnames.View, toolnames.Download:
+	case toolnames.Read, toolnames.Download:
 		return styles.ToolIconRead
 	case toolnames.Glob, toolnames.Grep, toolnames.LS, toolnames.Sourcegraph:
 		return styles.ToolIconSearch
@@ -1196,8 +1196,8 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 			cmd = strings.ReplaceAll(cmd, "\t", "    ")
 			return fmt.Sprintf("**Command:** %s", cmd)
 		}
-	case toolnames.View:
-		var params tools.ViewParams
+	case toolnames.Read:
+		var params tools.ReadParams
 		if json.Unmarshal([]byte(t.toolCall.Input), &params) == nil {
 			var parts []string
 			parts = append(parts, fmt.Sprintf("**File:** %s", fsext.PrettyPath(params.FilePath)))
@@ -1345,8 +1345,8 @@ func (t *baseToolMessageItem) formatResultForCopy() string {
 	switch t.toolCall.Name {
 	case toolnames.Bash:
 		return t.formatBashResultForCopy()
-	case toolnames.View:
-		return t.formatViewResultForCopy()
+	case toolnames.Read:
+		return t.formatReadResultForCopy()
 	case toolnames.Edit:
 		return t.formatEditResultForCopy()
 	case toolnames.MultiEdit:
@@ -1389,13 +1389,13 @@ func (t *baseToolMessageItem) formatBashResultForCopy() string {
 	return fmt.Sprintf("```bash\n%s\n```", output)
 }
 
-// formatViewResultForCopy formats view tool results for clipboard.
-func (t *baseToolMessageItem) formatViewResultForCopy() string {
+// formatReadResultForCopy formats view tool results for clipboard.
+func (t *baseToolMessageItem) formatReadResultForCopy() string {
 	if t.result == nil {
 		return ""
 	}
 
-	var meta tools.ViewResponseMetadata
+	var meta tools.ReadResponseMetadata
 	if t.result.Metadata != "" {
 		json.Unmarshal([]byte(t.result.Metadata), &meta)
 	}
@@ -1679,8 +1679,8 @@ func prettifyToolName(name string) string {
 		return toolnames.Sourcegraph
 	case toolnames.Todos:
 		return "To-Do"
-	case toolnames.View:
-		return toolnames.View
+	case toolnames.Read:
+		return toolnames.Read
 	case toolnames.Write:
 		return toolnames.Write
 	default:

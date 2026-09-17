@@ -47,7 +47,7 @@ func TestUpdateModelsReconcilesSubagentsAfterConfigChange(t *testing.T) {
 
 	agents := coord.cfg.Config().Agents
 	narrowed := agents[config.AgentGeneral]
-	narrowed.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.View}}
+	narrowed.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.Read}}
 	agents[config.AgentGeneral] = narrowed
 
 	require.NoError(t, coord.UpdateModels(context.Background()))
@@ -118,7 +118,7 @@ func TestDispatchIsolatesExecuteTimeTemplateError(t *testing.T) {
 		Description:  "parses fine, fails at execute time",
 		Mode:         config.AgentModeSubagent,
 		Prompt:       "{{.NoSuchField}}",
-		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.View}},
+		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.Read}},
 		AllowedMCP:   &config.AllowedMCPSet{Kind: config.ToolSetScope},
 	}
 	coord.cfg.Config().Agents["broken"] = brokenCfg
@@ -201,7 +201,7 @@ func TestWebFetchSubagentIsRegistered(t *testing.T) {
 	names := dispatchTools(t, coord, entry)
 	require.Contains(t, names, toolnames.WebFetch)
 	require.Contains(t, names, toolnames.WebSearch)
-	require.Contains(t, names, toolnames.View)
+	require.Contains(t, names, toolnames.Read)
 	require.NotContains(t, names, toolnames.Bash)
 	require.NotContains(t, names, toolnames.Agent)
 }

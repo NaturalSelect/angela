@@ -87,8 +87,8 @@ func TestAccessOf(t *testing.T) {
 			want:  permission.Access{Action: permission.ActionEdit, Path: filepath.Join(workDir, "internal")},
 		},
 		{
-			name:  "view is a read",
-			tool:  toolnames.View,
+			name:  "read tool is a read",
+			tool:  toolnames.Read,
 			input: `{"file_path":"a.go"}`,
 			want:  permission.Access{Action: permission.ActionRead, Path: filepath.Join(workDir, "a.go")},
 		},
@@ -178,7 +178,7 @@ func TestAccessOfFailsClosed(t *testing.T) {
 	}{
 		{"unregistered tool", "brand_new_tool", `{}`},
 		{"malformed input", toolnames.Bash, `{"command":`},
-		{"wrongly typed field", toolnames.View, `{"file_path":42}`},
+		{"wrongly typed field", toolnames.Read, `{"file_path":42}`},
 		{"mcp prefix without a tool name", toolnames.MCPPrefix + "docker", `{}`},
 	}
 
@@ -229,7 +229,7 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 		toolnames.Sourcegraph,
 		toolnames.LSPSymbols,
 		toolnames.Todos,
-		toolnames.View,
+		toolnames.Read,
 		toolnames.WebFetch,
 		toolnames.WebSearch,
 		toolnames.Write,
@@ -249,7 +249,7 @@ func TestAccessOfResolvesPathsAbsolutely(t *testing.T) {
 	t.Parallel()
 
 	workDir := t.TempDir()
-	access, ok := AccessOf(toolnames.View, `{"file_path":"a/../b.go"}`, workDir)
+	access, ok := AccessOf(toolnames.Read, `{"file_path":"a/../b.go"}`, workDir)
 	require.True(t, ok)
 	require.True(t, filepath.IsAbs(access.Path))
 	require.Equal(t, filepath.Join(workDir, "b.go"), access.Path)
@@ -268,7 +268,7 @@ func TestAccessOfJudgesThePathTheToolWillTouch(t *testing.T) {
 	for _, input := range []string{"/etc/hosts", "sub/a.go", "a/../b.go", "."} {
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()
-			access, ok := AccessOf(toolnames.View,
+			access, ok := AccessOf(toolnames.Read,
 				fmt.Sprintf(`{"file_path":%q}`, input), workDir)
 			require.True(t, ok)
 			require.Equal(t,
@@ -293,7 +293,7 @@ func TestPreviewOfFeedsTheDialog(t *testing.T) {
 		want  any
 	}{
 		{toolnames.Bash, `{"command":"rm -rf x","description":"clean"}`, BashPermissionsParams{}},
-		{toolnames.View, `{"file_path":"/etc/hosts"}`, ViewPermissionsParams{}},
+		{toolnames.Read, `{"file_path":"/etc/hosts"}`, ReadPermissionsParams{}},
 		{toolnames.LS, `{"path":"/etc"}`, LSPermissionsParams{}},
 		{toolnames.Download, `{"url":"https://x/y","file_path":"y"}`, DownloadPermissionsParams{}},
 		{toolnames.Fetch, `{"url":"https://x"}`, FetchPermissionsParams{}},

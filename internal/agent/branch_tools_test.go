@@ -316,7 +316,7 @@ func TestBuildToolsGivesBranchesMerge(t *testing.T) {
 		}
 	}
 
-	narrow := &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.View}}
+	narrow := &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.Read}}
 
 	t.Run("branch gets them", func(t *testing.T) {
 		t.Parallel()

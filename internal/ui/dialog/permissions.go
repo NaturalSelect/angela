@@ -729,7 +729,7 @@ func (p *Permissions) renderHeader(contentWidth int) string {
 	// Show generic Path only for tools that don't render their own file/path line.
 	switch p.permission.ToolName {
 	case toolnames.Edit, toolnames.Write, toolnames.MultiEdit,
-		toolnames.View, toolnames.LSPReplaceSymbol,
+		toolnames.Read, toolnames.LSPReplaceSymbol,
 		toolnames.Download, toolnames.LS,
 		toolnames.Merge:
 		// These tools show their own File/Directory line below.
@@ -748,7 +748,7 @@ func (p *Permissions) renderHeader(contentWidth int) string {
 			lines = append(lines, p.renderKeyValue("URL", params.URL, contentWidth))
 			lines = append(lines, p.renderKeyValue("File", fsext.PrettyPath(params.FilePath), contentWidth))
 		}
-	case toolnames.Edit, toolnames.Write, toolnames.MultiEdit, toolnames.View, toolnames.LSPReplaceSymbol:
+	case toolnames.Edit, toolnames.Write, toolnames.MultiEdit, toolnames.Read, toolnames.LSPReplaceSymbol:
 		var filePath string
 		switch params := p.permission.Params.(type) {
 		case tools.EditPermissionsParams:
@@ -757,7 +757,7 @@ func (p *Permissions) renderHeader(contentWidth int) string {
 			filePath = params.FilePath
 		case tools.MultiEditPermissionsParams:
 			filePath = params.FilePath
-		case tools.ViewPermissionsParams:
+		case tools.ReadPermissionsParams:
 			filePath = params.FilePath
 		case tools.ReplaceSymbolPermissionsParams:
 			filePath = params.FilePath
@@ -838,8 +838,8 @@ func (p *Permissions) renderContent(width int) string {
 		return p.renderWebFetchContent(width)
 	case toolnames.WebSearch:
 		return p.renderWebSearchContent(width)
-	case toolnames.View:
-		return p.renderViewContent(width)
+	case toolnames.Read:
+		return p.renderReadContent(width)
 	case toolnames.LS:
 		return p.renderLSContent(width)
 	default:
@@ -992,8 +992,8 @@ func (p *Permissions) renderWebSearchContent(width int) string {
 	return p.renderContentPanel(params.Query, width)
 }
 
-func (p *Permissions) renderViewContent(width int) string {
-	params, ok := p.permission.Params.(tools.ViewPermissionsParams)
+func (p *Permissions) renderReadContent(width int) string {
+	params, ok := p.permission.Params.(tools.ReadPermissionsParams)
 	if !ok {
 		return ""
 	}

@@ -37,8 +37,9 @@ re-authentication) instead — it runs a device-code OAuth flow and writes the
 resulting token to the global config itself, so there's no key to type in.
 
 `type` also accepts `azure`, `google-vertex`, `litellm`, `llamacpp`,
-`lmstudio`, and `omlx` for less common setups — see the angela-config skill
-for the full provider field reference.
+`lmstudio`, and `omlx` for less common setups — see
+`angela://skills/angela-config/reference/providers.md` for the full provider
+field reference.
 
 ```json
 {
@@ -95,8 +96,8 @@ If the user wants different parameter presets for the same model (e.g. a
 `providers`, not under `slots` — a slot is only ever a `provider` + `model`
 reference. Overriding a known provider's model by `id` replaces its whole
 catalog entry, so copy the model's other fields (context window, costs,
-capabilities — see the angela-config skill) along with the variants, or the
-resolved model loses that data:
+capabilities — see `angela://skills/angela-config/reference/providers.md`)
+along with the variants, or the resolved model loses that data:
 
 ```json
 {
@@ -355,14 +356,17 @@ For global instructions that apply to all projects:
 
 After writing the config, verify it works:
 
-1. Run `angela` to start.
-2. Check that the model selector shows the configured models.
-3. Try a simple prompt to confirm the provider connection.
+1. Run `angela config validate`; fix every error and `warning:` line before
+   continuing.
+2. Run `angela` to start.
+3. Check that the model selector shows the configured models.
+4. Try a simple prompt to confirm the provider connection.
 
 If the user hits errors, check:
 - API key environment variables are set in the shell profile.
 - `base_url` follows the convention for the provider type.
 - JSON syntax is valid (use `$schema` for IDE help).
+- Re-run `angela config validate` after each fix.
 
 ## Checklist
 

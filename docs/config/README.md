@@ -5,9 +5,10 @@
 
 > [!TIP]
 >
-> Angela can configure itself via a builtin config skill. That is to say,
-> can generally just tell Angela want you want to configure using natural
-> language.
+> Angela can configure itself via a builtin config skill. That is to say, you
+> can generally just tell Angela what you want to configure using natural
+> language, and it will make the edit and check it with
+> `angela config validate` before reporting back.
 
 Angela is configured with JSON. By default, global config lives at
 `~/.config/angela/angela.json` on Unix-like systems and

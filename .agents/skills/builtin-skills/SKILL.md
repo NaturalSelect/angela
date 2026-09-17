@@ -21,6 +21,12 @@ These are always available without user configuration.
 - The View tool resolves `angela://` paths from the embedded FS, not disk.
 - User skills with the same name override builtins (last occurrence wins in
   `Deduplicate()`).
+- A skill directory may hold extra files beyond `SKILL.md` — `//go:embed
+  builtin/*` includes the whole tree, and the agent can View any of them at
+  `angela://skills/<name>/<file>`, but `DiscoverBuiltin()` only registers
+  files literally named `SKILL.md` as skills. `angela-config` uses this for
+  an on-demand field reference under `angela-config/reference/*.md`, kept
+  out of the main `SKILL.md` so the agent only loads the topic it needs.
 
 ## Adding a New Builtin Skill
 
@@ -37,7 +43,7 @@ These are always available without user configuration.
 
 | Skill            | Directory                 | Description                                       |
 | ---------------- | ------------------------- | ------------------------------------------------- |
-| `angela-config`  | `builtin/angela-config/`  | Angela configuration help                         |
+| `angela-config`  | `builtin/angela-config/`  | Agent-driven config changes, validated with `angela config validate`; field reference lives in `reference/*.md` |
 | `angela-hooks`   | `builtin/angela-hooks/`   | Authoring, configuring and debugging hooks        |
 | `angela-migrate` | `builtin/angela-migrate/` | Migrate config from Claude Code, OpenCode, Cursor |
 | `angela-setup`   | `builtin/angela-setup/`   | Interactive new-user onboarding and setup guide   |

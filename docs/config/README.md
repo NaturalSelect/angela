@@ -143,9 +143,20 @@ those names replaces its behavior instead of adding a duplicate.
 
 ### Slots
 
-Slots are pure `provider` + `model` references. Thinking mode, sampling
-parameters, and variants all live on the model's catalog entry under
-`providers` (see above), not on the slot itself.
+Slots are `provider` + `model` references, plus an optional default `variant`.
+Thinking mode, sampling parameters, and the variant presets themselves still
+live on the model's catalog entry under `providers` (see above), not on the
+slot — `variant` here only names one of those presets.
+
+| Field      | Type   | Notes                                                              |
+| ---------- | ------ | -------------------------------------------------------------------- |
+| `provider` | string | **Required**; a key in `providers`                                   |
+| `model`    | string | **Required**; the provider's model ID                                |
+| `variant`  | string | Default variant for this slot; an agent's own `variant` always wins  |
+
+A slot's `variant` only takes effect when an agent pointed at that slot names
+none of its own; an agent's `variant` field always takes priority (see the
+angela-config skill for the full agent field reference).
 
 ```jsonc
 {
@@ -156,7 +167,8 @@ parameters, and variants all live on the model's catalog entry under
     },
     "chore": {
       "provider": "anthropic",
-      "model": "claude-haiku-4-20250514"
+      "model": "claude-haiku-4-20250514",
+      "variant": "fast"
     }
   }
 }

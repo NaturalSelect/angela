@@ -216,14 +216,17 @@ Angela:
   summaries.
 
 Any other slot name may be defined; it takes effect only when an agent's
-`slot` field names it. A slot is a pure reference — thinking mode, sampling
-parameters, and variants all live on the model's catalog entry under
-`providers.<id>.models[]` (see above), not on the slot itself.
+`slot` field names it. A slot is mostly a pure reference — thinking mode,
+sampling parameters, and the variant presets themselves all live on the
+model's catalog entry under `providers.<id>.models[]` (see above), not on
+the slot. The one exception is `variant`, which only *names* one of those
+presets as this slot's own default.
 
-| Field      | Type   | Notes                                  |
-| ---------- | ------ | --------------------------------------- |
-| `provider` | string | **Required**; a key in `providers`      |
-| `model`    | string | **Required**; the provider's model ID   |
+| Field      | Type   | Notes                                                                |
+| ---------- | ------ | ----------------------------------------------------------------------- |
+| `provider` | string | **Required**; a key in `providers`                                      |
+| `model`    | string | **Required**; the provider's model ID                                   |
+| `variant`  | string | Default variant for this slot; an agent's own `variant` always wins     |
 
 A slot that no agent's `slot` field ever names still loads fine, but logs a
 startup warning since it has no effect.
@@ -232,7 +235,7 @@ startup warning since it has no effect.
 {
   "slots": {
     "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
-    "chore": { "provider": "anthropic", "model": "claude-haiku-4-20250514" }
+    "chore": { "provider": "anthropic", "model": "claude-haiku-4-20250514", "variant": "fast" }
   }
 }
 ```
@@ -250,7 +253,7 @@ agent. Built-in agents you can override: `coder`, `explore`, `general`,
 | `description`    | string | What the agent does; shown to the dispatching model                 |
 | `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user), `compact` (only ever summarizes another agent's session) |
 | `slot`           | string | A slot name from `slots`. Default `main` for most agents — `title` and `web-fetch` default to `chore` instead, which is how a subagent is pointed at a cheaper model |
-| `variant`        | string | A variant name on that model slot                                   |
+| `variant`        | string | A variant name on that model slot; takes priority over the slot's own `variant` |
 | `max_tokens`     | int    | Output-token cap; omit for the model default                        |
 | `prompt`         | string | Replaces the built-in system prompt. Parsed as a Go template        |
 | `temperature`    | number | 0–1                                                                 |

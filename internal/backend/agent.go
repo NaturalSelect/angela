@@ -247,7 +247,7 @@ func (b *Backend) GetSessionActiveAgent(ctx context.Context, workspaceID, sessio
 		ModelCfg:   model.ModelCfg,
 		CatwalkCfg: model.CatwalkCfg,
 		Think:      model.Think,
-		Variant:    active.Agent.Variant,
+		Variant:    model.Variant,
 	}, nil
 }
 

@@ -191,6 +191,7 @@ func TestBackend_GetSessionActiveAgent(t *testing.T) {
 			activeModel: agent.Model{
 				ModelCfg: config.SelectedModel{Provider: "anthropic", Model: "claude"},
 				Think:    true,
+				Variant:  "fast",
 			},
 		}
 		ws := insertAgentWorkspace(t, b, coord)

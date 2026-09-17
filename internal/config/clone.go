@@ -57,9 +57,10 @@ func (o SelectedModelOverride) clone() SelectedModelOverride {
 	return o
 }
 
-// clone returns a model config that shares nothing with m. SelectedModel
-// is a plain identity (model, provider), so there is nothing mutable to
-// copy; the method exists so callers do not need to special-case it.
+// clone returns a model config that shares nothing with m. Every
+// field on SelectedModel (model, provider, variant) is a plain value,
+// so there is nothing mutable to copy; the method exists so callers
+// do not need to special-case it.
 func (m SelectedModel) clone() SelectedModel {
 	return m
 }

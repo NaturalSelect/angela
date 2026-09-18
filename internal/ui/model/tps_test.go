@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,7 @@ func TestComputeTPSDistribution(t *testing.T) {
 		require.InDelta(t, 10, dist.Min, 0.0001)
 		require.InDelta(t, 20, dist.Max, 0.0001)
 		require.InDelta(t, 15, dist.Median, 0.0001)
+		require.InDelta(t, 10, dist.P10, 0.0001)
 		require.InDelta(t, 20, dist.P90, 0.0001)
 	})
 
@@ -106,6 +108,7 @@ func TestComputeTPSDistribution(t *testing.T) {
 		require.Equal(t, 1, dist.QualifyingSteps)
 		require.InDelta(t, 10, dist.Min, 0.0001)
 		require.InDelta(t, 10, dist.Median, 0.0001)
+		require.InDelta(t, 10, dist.P10, 0.0001)
 		require.InDelta(t, 10, dist.P90, 0.0001)
 		require.InDelta(t, 10, dist.Max, 0.0001)
 	})
@@ -151,6 +154,7 @@ func TestComputeTPSDistribution(t *testing.T) {
 		require.InDelta(t, 1, dist.Min, 0.0001)
 		require.InDelta(t, 4, dist.Max, 0.0001)
 		require.InDelta(t, 2.5, dist.Median, 0.0001)
+		require.InDelta(t, 1, dist.P10, 0.0001)
 		require.InDelta(t, 4, dist.P90, 0.0001)
 	})
 }
@@ -163,15 +167,16 @@ func TestFormatTPSDistribution(t *testing.T) {
 	t.Run("renders the full distribution when ok", func(t *testing.T) {
 		t.Parallel()
 
-		dist := TPSDistribution{QualifyingSteps: 7, TotalSteps: 19, Min: 41.6, Median: 58.4, P90: 70.5, Max: 80.2}
+		dist := TPSDistribution{QualifyingSteps: 7, TotalSteps: 19, Min: 41.6, P10: 45.3, Median: 58.4, P90: 70.5, Max: 80.2}
 		text := formatTPSDistribution(dist, true, 300, 10_000)
 		require.Contains(t, text, "avg 30 tok/s (300 output tokens over 10s)")
 		require.Contains(t, text, "Based on 7 of 19 assistant steps")
 		require.Contains(t, text, "steps without timing data excluded")
-		require.Contains(t, text, "min 42 tok/s")
-		require.Contains(t, text, "median 58 tok/s")
-		require.Contains(t, text, "p90 71 tok/s")
-		require.Contains(t, text, "max 80 tok/s")
+		require.Contains(t, text, "min:    ["+strings.Repeat("█", 10)+strings.Repeat("░", 10)+"] 42 tok/s")
+		require.Contains(t, text, "p10:    ["+strings.Repeat("█", 11)+strings.Repeat("░", 9)+"] 45 tok/s")
+		require.Contains(t, text, "median: ["+strings.Repeat("█", 15)+strings.Repeat("░", 5)+"] 58 tok/s")
+		require.Contains(t, text, "p90:    ["+strings.Repeat("█", 18)+strings.Repeat("░", 2)+"] 71 tok/s")
+		require.Contains(t, text, "max:    ["+strings.Repeat("█", 20)+"] 80 tok/s")
 	})
 
 	t.Run("reports not enough data with some steps seen", func(t *testing.T) {

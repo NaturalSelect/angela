@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -26,9 +27,13 @@ type TPSDistribution struct {
 	QualifyingSteps int
 	TotalSteps      int
 	Min             float64
-	Median          float64
-	P90             float64
-	Max             float64
+	// P10 sits near the slow end of the distribution (90% of steps ran
+	// at or above this rate), so it is the useful one for spotting a
+	// degraded tail; P90 sits near the fast end instead.
+	P10    float64
+	Median float64
+	P90    float64
+	Max    float64
 }
 
 // computeTPSDistribution reports the tok/s distribution across msgs'
@@ -55,6 +60,7 @@ func computeTPSDistribution(msgs []*message.Message) (dist TPSDistribution, ok b
 	dist.Min = rates[0]
 	dist.Max = rates[len(rates)-1]
 	dist.Median = tpsMedian(rates)
+	dist.P10 = rates[tpsPercentileIndex(len(rates), 0.1)]
 	dist.P90 = rates[tpsPercentileIndex(len(rates), 0.9)]
 	return dist, true
 }
@@ -145,12 +151,39 @@ func (m *UI) appendTPSNotice(dist TPSDistribution, ok bool, avgTokens, avgDurati
 	return m.chat.ScrollToBottomAndAnimate()
 }
 
+// tpsBarWidth is the number of block characters in each distribution
+// bar, chosen to stay readable in a narrow chat notice.
+const tpsBarWidth = 20
+
+// tpsBarLabelWidth pads every row's label (including its trailing
+// colon) to the width of the longest one ("median:"), so every bar's
+// opening bracket lines up in the monospace render.
+const tpsBarLabelWidth = 7
+
+// tpsBar renders value as a block bar scaled against maxRate, filling
+// 0 to tpsBarWidth characters, e.g. "████████░░░░░░░░░░░░" for a
+// value 40% of the way to maxRate. maxRate<=0 renders an empty bar,
+// since there is nothing meaningful to scale against.
+func tpsBar(value, maxRate float64) string {
+	filled := 0
+	if maxRate > 0 {
+		filled = min(tpsBarWidth, max(0, int(math.Round(value/maxRate*tpsBarWidth))))
+	}
+	return strings.Repeat("█", filled) + strings.Repeat("░", tpsBarWidth-filled)
+}
+
+// tpsBarLine renders one "label: [bar] N tok/s" distribution row.
+func tpsBarLine(label string, value, maxRate float64) string {
+	return fmt.Sprintf("%-*s [%s] %d tok/s", tpsBarLabelWidth, label+":", tpsBar(value, maxRate), int64(math.Round(value)))
+}
+
 // formatTPSDistribution renders a session-wide average tok/s line —
 // computed via common.AverageTPS from avgTokens/avgDurationMs, the
 // session's cumulative GenOutputTokens/GenDurationMs — followed by
-// dist as human-readable report text, or a "not enough data yet"
-// notice when ok is false. The average line reads "avg n/a" when the
-// session has no usable cumulative data yet.
+// dist as a row of bar charts (one per statistic, each scaled against
+// the session's max rate), or a "not enough data yet" notice when ok
+// is false. The average line reads "avg n/a" when the session has no
+// usable cumulative data yet.
 func formatTPSDistribution(dist TPSDistribution, ok bool, avgTokens, avgDurationMs int64) string {
 	avgLine := "avg n/a"
 	if avgTPS, avgOK := common.AverageTPS(avgTokens, avgDurationMs); avgOK {
@@ -167,9 +200,15 @@ func formatTPSDistribution(dist TPSDistribution, ok bool, avgTokens, avgDuration
 			avgLine, dist.TotalSteps,
 		)
 	}
+	rows := []string{
+		tpsBarLine("min", dist.Min, dist.Max),
+		tpsBarLine("p10", dist.P10, dist.Max),
+		tpsBarLine("median", dist.Median, dist.Max),
+		tpsBarLine("p90", dist.P90, dist.Max),
+		tpsBarLine("max", dist.Max, dist.Max),
+	}
 	return fmt.Sprintf(
-		"%s\nBased on %d of %d assistant steps (steps without timing data excluded)\nmin %d tok/s · median %d tok/s · p90 %d tok/s · max %d tok/s",
-		avgLine, dist.QualifyingSteps, dist.TotalSteps,
-		int64(math.Round(dist.Min)), int64(math.Round(dist.Median)), int64(math.Round(dist.P90)), int64(math.Round(dist.Max)),
+		"%s\nBased on %d of %d assistant steps (steps without timing data excluded)\n%s",
+		avgLine, dist.QualifyingSteps, dist.TotalSteps, strings.Join(rows, "\n"),
 	)
 }

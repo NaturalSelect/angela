@@ -141,6 +141,41 @@ func TestAddCostOnAMissingSessionReportsIt(t *testing.T) {
 	require.ErrorIs(t, err, ErrSessionNotFound)
 }
 
+// GenOutputTokens and GenDurationMs are lifetime generation-rate
+// counters, distinct from the context-window PromptTokens/
+// CompletionTokens pair. Save must write them through and a fresh
+// fetch must read back exactly what was written.
+func TestSaveAndFetchPersistGenStats(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Cleanup(func() {
+		require.NoError(t, db.Release(dataDir))
+		db.ResetPool()
+	})
+
+	conn, err := db.Connect(t.Context(), dataDir)
+	require.NoError(t, err)
+
+	sessions := NewService(db.New(conn), conn)
+
+	created, err := sessions.Create(t.Context(), "gen stats")
+	require.NoError(t, err)
+	require.Zero(t, created.GenOutputTokens)
+	require.Zero(t, created.GenDurationMs)
+
+	created.GenOutputTokens = 12345
+	created.GenDurationMs = 67890
+
+	saved, err := sessions.Save(t.Context(), created)
+	require.NoError(t, err)
+	require.EqualValues(t, 12345, saved.GenOutputTokens)
+	require.EqualValues(t, 67890, saved.GenDurationMs)
+
+	fetched, err := sessions.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.EqualValues(t, 12345, fetched.GenOutputTokens)
+	require.EqualValues(t, 67890, fetched.GenDurationMs)
+}
+
 // Sibling sub-sessions reach a shared ancestor concurrently. Every
 // increment has to survive; a read-add-write keeps only the last.
 func TestConcurrentAddCostKeepsEveryIncrement(t *testing.T) {

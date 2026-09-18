@@ -567,6 +567,29 @@ func TestMessage_AddFinishReplacesExisting(t *testing.T) {
 	require.Equal(t, "second", m.FinishPart().Message)
 }
 
+func TestMessage_SetFinishUsage(t *testing.T) {
+	t.Parallel()
+
+	m := &Message{}
+	m.AddFinish(FinishReasonEndTurn, "", "")
+	m.SetFinishUsage(42, 1500*time.Millisecond)
+
+	finish := m.FinishPart()
+	require.NotNil(t, finish)
+	require.Equal(t, int64(42), finish.OutputTokens)
+	require.Equal(t, int64(1500), finish.GenDurationMs)
+}
+
+func TestMessage_SetFinishUsageNoFinishPartIsNoop(t *testing.T) {
+	t.Parallel()
+
+	// Calling before AddFinish must not panic and must leave no Finish part.
+	m := &Message{}
+	m.SetFinishUsage(42, 1500*time.Millisecond)
+	require.Nil(t, m.FinishPart())
+	require.Empty(t, m.Parts)
+}
+
 func TestMessage_CloneIsIndependentOfOriginal(t *testing.T) {
 	t.Parallel()
 

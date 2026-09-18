@@ -1352,6 +1352,8 @@ func protoToSession(s proto.Session) session.Session {
 		PromptTokens:     s.PromptTokens,
 		CompletionTokens: s.CompletionTokens,
 		Cost:             s.Cost,
+		GenOutputTokens:  s.GenOutputTokens,
+		GenDurationMs:    s.GenDurationMs,
 		Todos:            protoToTodos(s.Todos),
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
@@ -1427,11 +1429,12 @@ func protoToMessage(m proto.Message) message.Message {
 			})
 		case proto.Finish:
 			msg.Parts = append(msg.Parts, message.Finish{
-				Reason:       message.FinishReason(v.Reason),
-				Time:         v.Time,
-				Message:      v.Message,
-				Details:      v.Details,
-				OutputTokens: v.OutputTokens,
+				Reason:        message.FinishReason(v.Reason),
+				Time:          v.Time,
+				Message:       v.Message,
+				Details:       v.Details,
+				OutputTokens:  v.OutputTokens,
+				GenDurationMs: v.GenDurationMs,
 			})
 		case proto.ImageURLContent:
 			msg.Parts = append(msg.Parts, message.ImageURLContent{URL: v.URL, Detail: v.Detail})
@@ -1509,6 +1512,8 @@ func sessionToProto(s session.Session) proto.Session {
 		PromptTokens:     s.PromptTokens,
 		CompletionTokens: s.CompletionTokens,
 		Cost:             s.Cost,
+		GenOutputTokens:  s.GenOutputTokens,
+		GenDurationMs:    s.GenDurationMs,
 		Todos:            todosToProto(s.Todos),
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,

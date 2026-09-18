@@ -78,9 +78,21 @@ type Session struct {
 	EstimatedUsage   bool
 	SummaryMessageID string
 	Cost             float64
-	Todos            []Todo
-	CreatedAt        int64
-	UpdatedAt        int64
+
+	// GenOutputTokens and GenDurationMs are cumulative totals accumulated
+	// across every model-generation step for the session's entire
+	// lifetime: every output token generated and every millisecond spent
+	// generating it. Unlike PromptTokens and CompletionTokens, which
+	// reflect current context-window usage and are reset when the
+	// conversation is compacted/summarized, these two never shrink. The
+	// UI derives an average tokens-per-second rate from them as
+	// GenOutputTokens / (GenDurationMs / 1000).
+	GenOutputTokens int64
+	GenDurationMs   int64
+
+	Todos     []Todo
+	CreatedAt int64
+	UpdatedAt int64
 }
 
 type Service interface {
@@ -240,7 +252,9 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 			String: session.SummaryMessageID,
 			Valid:  session.SummaryMessageID != "",
 		},
-		Cost: session.Cost,
+		Cost:            session.Cost,
+		GenOutputTokens: session.GenOutputTokens,
+		GenDurationMs:   session.GenDurationMs,
 		Todos: sql.NullString{
 			String: todosJSON,
 			Valid:  todosJSON != "",
@@ -418,6 +432,8 @@ func (s *service) sessionFromRow(item db.Session) Session {
 		CompletionTokens: item.CompletionTokens,
 		SummaryMessageID: item.SummaryMessageID.String,
 		Cost:             item.Cost,
+		GenOutputTokens:  item.GenOutputTokens,
+		GenDurationMs:    item.GenDurationMs,
 		Todos:            todos,
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,

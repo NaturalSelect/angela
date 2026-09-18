@@ -6,6 +6,7 @@ import (
 	"math"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -16,10 +17,9 @@ import (
 )
 
 // TPSDistribution summarizes the tokens/sec generation rate across a
-// session's qualifying assistant steps: those with no tool calls, a
-// Finish part reporting output tokens, and a step duration of at
-// least a second — the same eligibility guard common.StepTPS applies
-// to a single step.
+// session's qualifying assistant steps: those with a Finish part
+// reporting output tokens and a known generation duration — the same
+// eligibility guard common.StepTPS applies to a single step.
 type TPSDistribution struct {
 	// QualifyingSteps and TotalSteps let callers report how many of
 	// the session's assistant steps the distribution is based on.
@@ -87,9 +87,11 @@ var tpsNoticeSeq atomic.Int64
 // tpsComputedMsg carries the result of computing a session's TPS
 // distribution, fetched off the Update goroutine.
 type tpsComputedMsg struct {
-	sessionID string
-	dist      TPSDistribution
-	ok        bool
+	sessionID     string
+	dist          TPSDistribution
+	ok            bool
+	avgTokens     int64
+	avgDurationMs int64
 }
 
 // showTPS fetches the current session's messages and reports the
@@ -104,7 +106,7 @@ func (m *UI) showTPS() tea.Cmd {
 		return nil
 	}
 
-	sessionID := m.session.ID
+	sessionID, avgTokens, avgDurationMs := m.session.ID, m.session.GenOutputTokens, m.session.GenDurationMs
 	return func() tea.Msg {
 		msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
 		if err != nil {
@@ -115,7 +117,13 @@ func (m *UI) showTPS() tea.Cmd {
 			msgPtrs[i] = &msgs[i]
 		}
 		dist, ok := computeTPSDistribution(msgPtrs)
-		return tpsComputedMsg{sessionID: sessionID, dist: dist, ok: ok}
+		return tpsComputedMsg{
+			sessionID:     sessionID,
+			dist:          dist,
+			ok:            ok,
+			avgTokens:     avgTokens,
+			avgDurationMs: avgDurationMs,
+		}
 	}
 }
 
@@ -124,34 +132,44 @@ func (m *UI) showTPS() tea.Cmd {
 // the snapshot is never written to the session's message history, so
 // running the command again does not clutter the transcript on
 // reload.
-func (m *UI) appendTPSNotice(dist TPSDistribution, ok bool) tea.Cmd {
+func (m *UI) appendTPSNotice(dist TPSDistribution, ok bool, avgTokens, avgDurationMs int64) tea.Cmd {
 	t := m.com.Styles
 	item := chat.NewSystemNoticeItem(t, &message.Message{
 		ID:   fmt.Sprintf("tps-notice-%d", tpsNoticeSeq.Add(1)),
 		Role: message.System,
 		Parts: []message.ContentPart{
-			message.TextContent{Text: formatTPSDistribution(dist, ok)},
+			message.TextContent{Text: formatTPSDistribution(dist, ok, avgTokens, avgDurationMs)},
 		},
 	})
 	m.chat.AppendMessages(item)
 	return m.chat.ScrollToBottomAndAnimate()
 }
 
-// formatTPSDistribution renders dist as human-readable report text, or
-// a "not enough data yet" notice when ok is false.
-func formatTPSDistribution(dist TPSDistribution, ok bool) string {
+// formatTPSDistribution renders a session-wide average tok/s line —
+// computed via common.AverageTPS from avgTokens/avgDurationMs, the
+// session's cumulative GenOutputTokens/GenDurationMs — followed by
+// dist as human-readable report text, or a "not enough data yet"
+// notice when ok is false. The average line reads "avg n/a" when the
+// session has no usable cumulative data yet.
+func formatTPSDistribution(dist TPSDistribution, ok bool, avgTokens, avgDurationMs int64) string {
+	avgLine := "avg n/a"
+	if avgTPS, avgOK := common.AverageTPS(avgTokens, avgDurationMs); avgOK {
+		duration := common.FormatDuration(time.Duration(avgDurationMs) * time.Millisecond)
+		avgLine = fmt.Sprintf("avg %d tok/s (%d output tokens over %s)", avgTPS, avgTokens, duration)
+	}
+
 	if !ok {
 		if dist.TotalSteps == 0 {
-			return "No assistant steps in this session yet."
+			return avgLine + "\nNo assistant steps in this session yet."
 		}
 		return fmt.Sprintf(
-			"Not enough data yet: 0 of %d assistant step(s) qualify for a tok/s reading (steps with tool calls are excluded).",
-			dist.TotalSteps,
+			"%s\nNot enough data yet: 0 of %d assistant step(s) qualify for a tok/s reading (steps without timing data excluded).",
+			avgLine, dist.TotalSteps,
 		)
 	}
 	return fmt.Sprintf(
-		"Based on %d of %d assistant steps (steps with tool calls excluded)\nmin %d tok/s · median %d tok/s · p90 %d tok/s · max %d tok/s",
-		dist.QualifyingSteps, dist.TotalSteps,
+		"%s\nBased on %d of %d assistant steps (steps without timing data excluded)\nmin %d tok/s · median %d tok/s · p90 %d tok/s · max %d tok/s",
+		avgLine, dist.QualifyingSteps, dist.TotalSteps,
 		int64(math.Round(dist.Min)), int64(math.Round(dist.Median)), int64(math.Round(dist.P90)), int64(math.Round(dist.Max)),
 	)
 }

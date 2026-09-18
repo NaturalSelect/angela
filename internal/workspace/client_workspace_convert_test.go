@@ -62,7 +62,7 @@ func TestProtoToMessage_AllPartTypes(t *testing.T) {
 			proto.ReasoningContent{Thinking: "thinking...", Signature: "sig", StartedAt: 1, FinishedAt: 2},
 			proto.ToolCall{ID: "call-1", Name: "bash", Input: `{"cmd":"ls"}`, Type: "function", Finished: true},
 			proto.ToolResult{ToolCallID: "call-1", Name: "bash", Content: "out", Data: "d", MIMEType: "text/plain", Metadata: "{}", IsError: true},
-			proto.Finish{Reason: proto.FinishReasonEndTurn, Time: 3, Message: "done", Details: "detail"},
+			proto.Finish{Reason: proto.FinishReasonEndTurn, Time: 3, Message: "done", Details: "detail", OutputTokens: 77, GenDurationMs: 8899},
 			proto.ImageURLContent{URL: "http://x/img.png", Detail: "high"},
 			proto.BinaryContent{Path: "/tmp/f", MIMEType: "image/png", Data: []byte{1, 2, 3}},
 			proto.ShellCommand{Command: "ls", Output: "out", ExitCode: 1},
@@ -85,7 +85,7 @@ func TestProtoToMessage_AllPartTypes(t *testing.T) {
 	require.Equal(t, message.ReasoningContent{Thinking: "thinking...", Signature: "sig", StartedAt: 1, FinishedAt: 2}, got.Parts[1])
 	require.Equal(t, message.ToolCall{ID: "call-1", Name: "bash", Input: `{"cmd":"ls"}`, Finished: true}, got.Parts[2])
 	require.Equal(t, message.ToolResult{ToolCallID: "call-1", Name: "bash", Content: "out", Data: "d", MIMEType: "text/plain", Metadata: "{}", IsError: true}, got.Parts[3])
-	require.Equal(t, message.Finish{Reason: message.FinishReason(proto.FinishReasonEndTurn), Time: 3, Message: "done", Details: "detail"}, got.Parts[4])
+	require.Equal(t, message.Finish{Reason: message.FinishReason(proto.FinishReasonEndTurn), Time: 3, Message: "done", Details: "detail", OutputTokens: 77, GenDurationMs: 8899}, got.Parts[4])
 	require.Equal(t, message.ImageURLContent{URL: "http://x/img.png", Detail: "high"}, got.Parts[5])
 	require.Equal(t, message.BinaryContent{Path: "/tmp/f", MIMEType: "image/png", Data: []byte{1, 2, 3}}, got.Parts[6])
 	require.Equal(t, message.ShellCommand{Command: "ls", Output: "out", ExitCode: 1}, got.Parts[7])
@@ -129,6 +129,8 @@ func TestProtoToSession(t *testing.T) {
 		CompletionTokens: 20,
 		SummaryMessageID: "sm1",
 		Cost:             1.5,
+		GenOutputTokens:  30,
+		GenDurationMs:    4000,
 		Todos: []proto.Todo{
 			{Content: "do it", Status: "pending", ActiveForm: "doing it"},
 		},
@@ -150,6 +152,8 @@ func TestProtoToSession(t *testing.T) {
 		PromptTokens:     10,
 		CompletionTokens: 20,
 		Cost:             1.5,
+		GenOutputTokens:  30,
+		GenDurationMs:    4000,
 		Todos: []session.Todo{
 			{Content: "do it", Status: session.TodoStatusPending, ActiveForm: "doing it"},
 		},
@@ -299,6 +303,8 @@ func TestSessionToProto(t *testing.T) {
 		PromptTokens:     10,
 		CompletionTokens: 20,
 		Cost:             1.5,
+		GenOutputTokens:  30,
+		GenDurationMs:    4000,
 		Todos: []session.Todo{
 			{Content: "do it", Status: session.TodoStatusInProgress, ActiveForm: "doing it"},
 		},
@@ -317,6 +323,8 @@ func TestSessionToProto(t *testing.T) {
 		PromptTokens:     10,
 		CompletionTokens: 20,
 		Cost:             1.5,
+		GenOutputTokens:  30,
+		GenDurationMs:    4000,
 		Todos: []proto.Todo{
 			{Content: "do it", Status: "in_progress", ActiveForm: "doing it"},
 		},

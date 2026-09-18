@@ -133,10 +133,15 @@ type Finish struct {
 	Message string       `json:"message,omitempty"`
 	Details string       `json:"details,omitempty"`
 	// OutputTokens is the step's completion token count, recorded via
-	// SetFinishOutputTokens once usage is known. Zero means the count
+	// SetFinishUsage once usage is known. Zero means the count
 	// is unknown (e.g. messages persisted before this field existed),
 	// not that the step produced no output.
 	OutputTokens int64 `json:"output_tokens,omitempty"`
+	// GenDurationMs is the number of milliseconds from when the model
+	// request was sent to when the model's stream finished, excluding
+	// tool execution time. 0 means unknown (older messages, cancellations,
+	// errors, or summary messages that never went through OnStepFinish).
+	GenDurationMs int64 `json:"gen_duration_ms,omitempty"`
 }
 
 func (Finish) isPart() {}
@@ -544,19 +549,20 @@ func (m *Message) AddFinish(reason FinishReason, message, details string) {
 	m.Parts = append(m.Parts, Finish{Reason: reason, Time: time.Now().Unix(), Message: message, Details: details})
 }
 
-// SetFinishOutputTokens records the step's output token count on its
-// existing Finish part. It is a no-op if the message has no Finish
-// part yet (AddFinish must run first).
+// SetFinishUsage records the step's output token count and generation
+// duration on its existing Finish part. It is a no-op if the message
+// has no Finish part yet (AddFinish must run first).
 //
-// NOTE: kept separate from AddFinish instead of adding a parameter to
+// NOTE: kept separate from AddFinish instead of adding parameters to
 // it: AddFinish has a dozen call sites across cancellation, error, and
-// summarization paths that have no token count to give it, and only
+// summarization paths that have no usage data to give it, and only
 // OnStepFinish (which computes usage after calling AddFinish) has this
-// value.
-func (m *Message) SetFinishOutputTokens(tokens int64) {
+// data.
+func (m *Message) SetFinishUsage(outputTokens int64, genDuration time.Duration) {
 	for i, part := range m.Parts {
 		if c, ok := part.(Finish); ok {
-			c.OutputTokens = tokens
+			c.OutputTokens = outputTokens
+			c.GenDurationMs = genDuration.Milliseconds()
 			m.Parts[i] = c
 			return
 		}

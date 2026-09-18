@@ -52,4 +52,6 @@ type Session struct {
 	Todos            sql.NullString `json:"todos"`
 	Agent            sql.NullString `json:"agent"`
 	ActiveAgent      sql.NullString `json:"active_agent"`
+	GenOutputTokens  int64          `json:"gen_output_tokens"`
+	GenDurationMs    int64          `json:"gen_duration_ms"`
 }

@@ -127,22 +127,15 @@ func TestTurnStatusTokenUsageWithoutContextWindow(t *testing.T) {
 	require.NotContains(t, idle, "%")
 }
 
-// The tok/s figure is a "last known rate", so it must show up both while
-// the agent is busy and once it has gone idle, exactly like the token and
-// context-window figures next to it.
+// The tok/s figure is a session-wide average, so it must show up both
+// while the agent is busy and once it has gone idle, exactly like the
+// token and context-window figures next to it.
 func TestTurnStatusShowsTokensPerSecondForQualifyingStep(t *testing.T) {
 	t.Parallel()
 
 	m := busyStatusUI(t)
-	m.chat.SetMessages(chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
-		ID:        "a1",
-		Role:      message.Assistant,
-		CreatedAt: 1000,
-		Parts: []message.ContentPart{
-			message.TextContent{Text: "hello"},
-			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, OutputTokens: 100},
-		},
-	}))
+	m.session.GenOutputTokens = 100
+	m.session.GenDurationMs = 5000
 
 	busy := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, busy, "20 tok/s")
@@ -152,79 +145,33 @@ func TestTurnStatusShowsTokensPerSecondForQualifyingStep(t *testing.T) {
 	require.Contains(t, idle, "20 tok/s")
 }
 
-// A step with any tool call must never contribute a rate, even though it
-// is the most recent assistant step: permission/tool wait time is baked
-// into its wall-clock duration.
-func TestTurnStatusOmitsTokensPerSecondWhenLastStepHasToolCalls(t *testing.T) {
+// AverageTPS requires a positive duration: with output tokens recorded
+// but no generation-time duration yet known, the rate must not appear.
+func TestTurnStatusOmitsTokensPerSecondWhenDurationUnknown(t *testing.T) {
 	t.Parallel()
 
 	m := busyStatusUI(t)
-	m.chat.SetMessages(chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
-		ID:        "a1",
-		Role:      message.Assistant,
-		CreatedAt: 1000,
-		Parts: []message.ContentPart{
-			message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
-			message.Finish{Reason: message.FinishReasonToolUse, Time: 1005, OutputTokens: 1000},
-		},
-	}))
+	m.session.GenOutputTokens = 5
 
 	out := ansi.Strip(m.renderTurnStatus(200))
 	require.NotContains(t, out, "tok/s")
 }
 
-// The scan must skip back past a disqualified trailing step to find an
-// earlier one that does qualify, rather than giving up at the first miss.
-func TestTurnStatusUsesLastQualifyingStepNotLastStep(t *testing.T) {
+// The old one-second-minimum-duration floor is gone: any positive
+// duration, however short, now produces a rate.
+func TestTurnStatusShowsTokensPerSecondUnderOneSecond(t *testing.T) {
 	t.Parallel()
 
 	m := busyStatusUI(t)
-	m.chat.SetMessages(
-		chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
-			ID:        "a1",
-			Role:      message.Assistant,
-			CreatedAt: 1000,
-			Parts: []message.ContentPart{
-				message.TextContent{Text: "hello"},
-				message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, OutputTokens: 100},
-			},
-		}),
-		chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
-			ID:        "a2",
-			Role:      message.Assistant,
-			CreatedAt: 1010,
-			Parts: []message.ContentPart{
-				message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
-				message.Finish{Reason: message.FinishReasonToolUse, Time: 1011, OutputTokens: 5},
-			},
-		}),
-	)
+	m.session.GenOutputTokens = 5
+	m.session.GenDurationMs = 500
 
 	out := ansi.Strip(m.renderTurnStatus(200))
-	require.Contains(t, out, "20 tok/s")
+	require.Contains(t, out, "10 tok/s")
 }
 
-// Below a second of step duration the rate is too noisy to trust, so it
-// must not appear at all.
-func TestTurnStatusOmitsTokensPerSecondUnderOneSecond(t *testing.T) {
-	t.Parallel()
-
-	m := busyStatusUI(t)
-	m.chat.SetMessages(chat.NewAssistantMessageItem(m.com.Styles, &message.Message{
-		ID:        "a1",
-		Role:      message.Assistant,
-		CreatedAt: 1000,
-		Parts: []message.ContentPart{
-			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1000, OutputTokens: 5},
-		},
-	}))
-
-	out := ansi.Strip(m.renderTurnStatus(200))
-	require.NotContains(t, out, "tok/s")
-}
-
-// With no qualifying step at all (e.g. session start), tokenUsageField
-// behaves exactly as it did before tok/s existed.
+// With no generation stats recorded yet (e.g. session start),
+// tokenUsageField behaves exactly as it did before tok/s existed.
 func TestTurnStatusOmitsTokensPerSecondWithoutQualifyingStep(t *testing.T) {
 	t.Parallel()
 

@@ -194,7 +194,7 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 func searchFiles(ctx context.Context, pattern, rootPath, include string, limit int) ([]grepMatch, bool, error) {
 	matches, err := searchWithRipgrep(ctx, pattern, rootPath, include)
 	if err != nil {
-		matches, err = searchFilesWithRegex(pattern, rootPath, include)
+		matches, err = searchFilesWithRegex(ctx, pattern, rootPath, include)
 		if err != nil {
 			return nil, false, err
 		}
@@ -238,6 +238,9 @@ func searchWithRipgrep(ctx context.Context, pattern, path, include string) ([]gr
 	}
 
 	var matches []grepMatch
+	// Cache modtimes per file path so a file with many matches costs one
+	// stat call instead of one per match.
+	modTimes := make(map[string]time.Time)
 	for line := range bytes.SplitSeq(bytes.TrimSpace(output), []byte{'\n'}) {
 		if len(line) == 0 {
 			continue
@@ -249,21 +252,29 @@ func searchWithRipgrep(ctx context.Context, pattern, path, include string) ([]gr
 		if match.Type != "match" {
 			continue
 		}
-		for _, m := range match.Data.Submatches {
+		// only get the first match of each line
+		if len(match.Data.Submatches) == 0 {
+			continue
+		}
+		m := match.Data.Submatches[0]
+
+		modTime, ok := modTimes[match.Data.Path.Text]
+		if !ok {
 			fi, err := os.Stat(match.Data.Path.Text)
 			if err != nil {
 				continue // Skip files we can't access
 			}
-			matches = append(matches, grepMatch{
-				path:     match.Data.Path.Text,
-				modTime:  fi.ModTime(),
-				lineNum:  match.Data.LineNumber,
-				charNum:  m.Start + 1, // ensure 1-based
-				lineText: strings.TrimSpace(match.Data.Lines.Text),
-			})
-			// only get the first match of each line
-			break
+			modTime = fi.ModTime()
+			modTimes[match.Data.Path.Text] = modTime
 		}
+
+		matches = append(matches, grepMatch{
+			path:     match.Data.Path.Text,
+			modTime:  modTime,
+			lineNum:  match.Data.LineNumber,
+			charNum:  m.Start + 1, // ensure 1-based
+			lineText: strings.TrimSpace(match.Data.Lines.Text),
+		})
 	}
 	return matches, nil
 }
@@ -284,7 +295,7 @@ type ripgrepMatch struct {
 	} `json:"data"`
 }
 
-func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error) {
+func searchFilesWithRegex(ctx context.Context, pattern, rootPath, include string) ([]grepMatch, error) {
 	matches := []grepMatch{}
 
 	// Use cached regex compilation
@@ -306,13 +317,20 @@ func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error
 	walker := fsext.NewFastGlobWalker(rootPath)
 
 	err = filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+		// Bound the walk by the caller's timeout instead of an arbitrary
+		// match count: matches are sorted by modtime after the walk
+		// finishes, so cutting off collection early (by count) can drop
+		// matches from files that turn out to be the most recent.
+		if ctx.Err() != nil {
+			return filepath.SkipAll
+		}
 		if err != nil {
 			return nil // Skip errors
 		}
 
 		if info.IsDir() {
 			// Check if directory should be skipped
-			if walker.ShouldSkip(path) {
+			if walker.ShouldSkipDir(path) {
 				return filepath.SkipDir
 			}
 			return nil // Continue into directory
@@ -346,9 +364,6 @@ func searchFilesWithRegex(pattern, rootPath, include string) ([]grepMatch, error
 				charNum:  lm.charNum,
 				lineText: lm.lineText,
 			})
-			if len(matches) >= 200 {
-				return filepath.SkipAll
-			}
 		}
 
 		return nil
@@ -377,10 +392,6 @@ func fileMatches(filePath string, pattern *regexp.Regexp) ([]lineMatch, error) {
 	if pattern == nil {
 		return nil, nil
 	}
-	// Only search text files.
-	if !isTextFile(filePath) {
-		return nil, nil
-	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -388,8 +399,19 @@ func fileMatches(filePath string, pattern *regexp.Regexp) ([]lineMatch, error) {
 	}
 	defer file.Close()
 
-	var matches []lineMatch
 	reader := bufio.NewReader(file)
+
+	// Sniff the leading bytes through the same reader used for scanning,
+	// instead of opening the file a second time just to classify it.
+	peeked, err := reader.Peek(512)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	if !isTextFileContent(peeked) {
+		return nil, nil
+	}
+
+	var matches []lineMatch
 	lineNum := 0
 	for {
 		line, err := reader.ReadString('\n')
@@ -429,10 +451,13 @@ func isTextFile(filePath string) bool {
 		return false
 	}
 
-	// Detect content type.
-	contentType := http.DetectContentType(buffer[:n])
+	return isTextFileContent(buffer[:n])
+}
 
-	// Check if it's a text MIME type.
+// isTextFileContent reports whether sniffed leading bytes of a file look
+// like text, based on MIME type detection.
+func isTextFileContent(buffer []byte) bool {
+	contentType := http.DetectContentType(buffer)
 	return strings.HasPrefix(contentType, "text/") ||
 		contentType == "application/json" ||
 		contentType == "application/xml" ||

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -91,7 +92,9 @@ func TestGrepWithIgnoreFiles(t *testing.T) {
 
 	// Test both implementations
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
-		"regex": searchFilesWithRegex,
+		"regex": func(pattern, path, include string) ([]grepMatch, error) {
+			return searchFilesWithRegex(t.Context(), pattern, path, include)
+		},
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
 			return searchWithRipgrep(t.Context(), pattern, path, include)
 		},
@@ -151,7 +154,9 @@ func TestSearchImplementations(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, ".angelaignore"), []byte("file5.txt\n"), 0o644))
 
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
-		"regex": searchFilesWithRegex,
+		"regex": func(pattern, path, include string) ([]grepMatch, error) {
+			return searchFilesWithRegex(t.Context(), pattern, path, include)
+		},
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
 			return searchWithRipgrep(t.Context(), pattern, path, include)
 		},
@@ -407,7 +412,9 @@ func TestMultipleMatchesPerFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "file.txt"), []byte(content), 0o644))
 
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
-		"regex": searchFilesWithRegex,
+		"regex": func(pattern, path, include string) ([]grepMatch, error) {
+			return searchFilesWithRegex(t.Context(), pattern, path, include)
+		},
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
 			return searchWithRipgrep(t.Context(), pattern, path, include)
 		},
@@ -439,7 +446,9 @@ func TestColumnMatch(t *testing.T) {
 
 	// Test both implementations
 	for name, fn := range map[string]func(pattern, path, include string) ([]grepMatch, error){
-		"regex": searchFilesWithRegex,
+		"regex": func(pattern, path, include string) ([]grepMatch, error) {
+			return searchFilesWithRegex(t.Context(), pattern, path, include)
+		},
 		"rg": func(pattern, path, include string) ([]grepMatch, error) {
 			return searchWithRipgrep(t.Context(), pattern, path, include)
 		},
@@ -503,6 +512,34 @@ func TestSearchFilesTruncatesToLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, matches, 3, "must cap results at the requested limit")
 	require.True(t, truncated)
+}
+
+func TestSearchFilesSortsBeforeTruncatingFallback(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// More matching files than the fallback walker's old internal
+	// collection cap (200), so a regression of truncating mid-walk before
+	// sorting would drop the newest file before it ever reaches the sort
+	// step below.
+	const numOldFiles = 250
+	for i := range numOldFiles {
+		name := fmt.Sprintf("a%04d.txt", i)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("needle\n"), 0o644))
+	}
+
+	// Lexically last, so filepath.Walk visits it last, but the most
+	// recently modified file in the tree.
+	newestPath := filepath.Join(dir, "zzz_newest.txt")
+	require.NoError(t, os.WriteFile(newestPath, []byte("needle\n"), 0o644))
+	newestTime := time.Now().Add(time.Hour)
+	require.NoError(t, os.Chtimes(newestPath, newestTime, newestTime))
+
+	matches, truncated, err := searchFiles(context.Background(), "needle", dir, "", 5)
+	require.NoError(t, err)
+	require.True(t, truncated)
+	require.Len(t, matches, 5)
+	require.Equal(t, newestPath, matches[0].path, "the most recently modified match must survive collection and sort first")
 }
 
 func TestNewGrepToolRequiresPattern(t *testing.T) {

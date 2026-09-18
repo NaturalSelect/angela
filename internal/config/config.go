@@ -229,6 +229,11 @@ type ProviderModel struct {
 	// /think; Think only decides where a fresh session starts.
 	Think bool `json:"think,omitempty" jsonschema:"description=Default thinking mode for Anthropic models that support reasoning"`
 
+	// UseResponses overrides the provider-level use_responses for this
+	// model only. Left unset, the provider setting and ID-based
+	// defaults apply in the usual order.
+	UseResponses *bool `json:"use_responses,omitempty" jsonschema:"description=Force the OpenAI Responses API on or off for this model only"`
+
 	// Variants are named parameter presets over this model. They
 	// override only the keys they name, so N models by M presets
 	// stays N+M configs instead of N*M. Selecting one is how a

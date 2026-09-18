@@ -74,6 +74,7 @@ slot's `provider` field references.
 | `default_reasoning_effort`                        | string | Default effort for this model               |
 | `options`                                         | object | `temperature`, `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options` |
 | `think`                                           | bool   | Default thinking mode for Anthropic reasoners |
+| `use_responses`                                   | bool   | Force the OpenAI Responses API on or off for this model only; overrides the provider-level setting |
 | `variants`                                        | object | Named parameter presets, see below           |
 
 ## variants

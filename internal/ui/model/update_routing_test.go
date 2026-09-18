@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
@@ -1196,6 +1197,46 @@ func TestUpdate_InfoMsg_SetsStatusAndSchedulesClear(t *testing.T) {
 	_, cmd := m.Update(util.InfoMsg{Type: util.InfoTypeSuccess, Msg: "done"})
 
 	require.NotNil(t, cmd)
+}
+
+// TestUpdate_InfoMsg_Animated_DoesNotScheduleClear pins the fix for a
+// slow commit's "still working" toast disappearing before git actually
+// finished: an animated message marks an action of unknown duration,
+// so it must stay up until replaced by that action's own outcome
+// message instead of being wiped by a fixed TTL timer that has no way
+// of knowing when the action will actually complete.
+func TestUpdate_InfoMsg_Animated_DoesNotScheduleClear(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+	// Update also opportunistically batches in cache-refresh probes
+	// (busy state, LSP, prompt queue) alongside the InfoMsg handling.
+	// Warming the caches keeps those out of the returned command tree
+	// so walking it below only exercises the InfoMsg path this test
+	// actually cares about.
+	warmCaches(m, false)
+
+	_, cmd := m.Update(util.InfoMsg{Type: util.InfoTypeInfo, Msg: "Committing staged changes", TTL: time.Millisecond, Animated: true})
+	require.NotNil(t, cmd, "an animated message must still start its own animation tick")
+
+	var sawClear bool
+	var walk func(tea.Cmd)
+	walk = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		switch msg := c().(type) {
+		case util.ClearStatusMsg:
+			sawClear = true
+		case tea.BatchMsg:
+			for _, sub := range msg {
+				walk(sub)
+			}
+		}
+	}
+	walk(cmd)
+
+	require.False(t, sawClear, "an animated message must not arm a TTL-based clear")
 }
 
 func TestUpdate_UpdateAvailableMsg_SetsStatus(t *testing.T) {

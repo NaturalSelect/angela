@@ -475,6 +475,40 @@ func TestChatRemoveMessage(t *testing.T) {
 	})
 }
 
+func TestChatRemoveOrphanedToolCalls(t *testing.T) {
+	t.Parallel()
+
+	t.Run("removes only tool items the message no longer claims", func(t *testing.T) {
+		t.Parallel()
+		u := newTestUI()
+		u.chat.SetMessages(
+			&testToolMessageItem{testMessageItem: testMessageItem{id: "t1", text: "t1"}, tc: message.ToolCall{ID: "m1"}},
+			&testToolMessageItem{testMessageItem: testMessageItem{id: "t2", text: "t2"}, tc: message.ToolCall{ID: "m1"}},
+			&testToolMessageItem{testMessageItem: testMessageItem{id: "t3", text: "t3"}, tc: message.ToolCall{ID: "m2"}},
+		)
+
+		u.chat.RemoveOrphanedToolCalls("m1", map[string]struct{}{"t2": {}})
+
+		require.Nil(t, u.chat.MessageItem("t1"), "a tool call dropped from message m1 must be removed")
+		require.NotNil(t, u.chat.MessageItem("t2"), "a tool call m1 still claims must survive")
+		require.NotNil(t, u.chat.MessageItem("t3"), "tool items belonging to another message must not be touched")
+		require.Equal(t, 2, u.chat.Len())
+	})
+
+	t.Run("keeps every item when the message still claims all of them", func(t *testing.T) {
+		t.Parallel()
+		u := newTestUI()
+		u.chat.SetMessages(
+			&testToolMessageItem{testMessageItem: testMessageItem{id: "t1", text: "t1"}, tc: message.ToolCall{ID: "m1"}},
+		)
+
+		u.chat.RemoveOrphanedToolCalls("m1", map[string]struct{}{"t1": {}})
+
+		require.Equal(t, 1, u.chat.Len())
+		require.NotNil(t, u.chat.MessageItem("t1"))
+	})
+}
+
 func TestChatMessageItem(t *testing.T) {
 	t.Parallel()
 

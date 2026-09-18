@@ -2002,6 +2002,18 @@ func (m *UI) updateSessionMessage(msg message.Message) tea.Cmd {
 		}
 	}
 
+	// A provider-level retry can reset this message's streamed content
+	// mid-step (see message.Message.ResetStreamedContent), wiping tool
+	// calls the model had already started emitting. Drop any tool item
+	// this message no longer claims before reconciling the tool calls
+	// it currently has, so a retried call doesn't leave its predecessor
+	// stuck on screen next to the fresh one.
+	keepToolIDs := make(map[string]struct{}, len(msg.ToolCalls()))
+	for _, tc := range msg.ToolCalls() {
+		keepToolIDs[tc.ID] = struct{}{}
+	}
+	m.chat.RemoveOrphanedToolCalls(msg.ID, keepToolIDs)
+
 	var items []chat.MessageItem
 	for _, tc := range msg.ToolCalls() {
 		existingToolItem := m.chat.MessageItem(tc.ID)

@@ -1281,11 +1281,21 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 // the same pick — the next session created from it starts the same
 // way, until something changes it.
 func (c *coordinator) AdoptDraft(ctx context.Context, sessionID string) error {
+	// The draft's lock is held for the whole operation, not just the
+	// read below: releasing it early would let a concurrent edit on
+	// the draft land between the read and this call's own write,
+	// which this call would have no way to notice since it has
+	// already captured draft by value. Holding it throughout instead
+	// makes the two calls linearize: whichever reaches the lock first
+	// is the one the other observes. sessionID is a session nobody
+	// else can reference yet, so nothing ever holds its lock while
+	// waiting on the draft's, and this cannot deadlock.
 	l := c.active.lockFor(draftSessionID)
+	defer c.active.release(draftSessionID, l)
 	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	draft, ok := c.active.cachedState(draftSessionID)
-	l.mu.Unlock()
-	c.active.release(draftSessionID, l)
 	if !ok || draft.IsZero() {
 		return nil
 	}

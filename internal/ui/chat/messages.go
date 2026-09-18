@@ -339,12 +339,12 @@ func (a *AssistantInfoItem) renderContent(width int) string {
 	finishTime := time.Unix(finishData.Time, 0)
 	duration := finishTime.Sub(a.lastUserMessageTime)
 	durationText := fmt.Sprintf("in %s", duration)
-	// tok/s uses this step's OWN duration (CreatedAt to Finish.Time),
-	// not the lastUserMessageTime-based duration above: a turn can
-	// span several steps and tool calls, which would mix in unbounded
-	// permission/tool wait time. common.StepTPS also excludes any step
-	// with a tool call entirely, for the same reason. The "in %s" text
-	// above is left as the turn-spanning figure it has always been.
+	// tok/s uses this step's own GenDurationMs, an agent-measured
+	// duration covering only the model's own stream (request sent to
+	// stream finished), already excluding tool execution and
+	// permission wait time. That is why it can differ from the
+	// turn-spanning "in %s" duration above, which still reflects
+	// wall-clock time since the last user message.
 	if tps, ok := common.StepTPS(a.message); ok {
 		durationText = fmt.Sprintf("in %s · %d tok/s", duration, tps)
 	}

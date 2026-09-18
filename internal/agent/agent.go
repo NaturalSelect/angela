@@ -796,6 +796,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	var stepMessages []fantasy.Message
 	var shouldSummarize bool
+	var stepStart time.Time
+	var stepGenDuration time.Duration
 	sanitizedToolCalls := make(map[string]bool)
 	// Don't send MaxOutputTokens if 0 — some providers (e.g. LM Studio) reject it
 	var maxOutputTokens *int64
@@ -942,6 +944,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			return a.messages.Update(ctx, *currentAssistant)
 		},
 		MaxRetries: &maxRetries,
+		OnStepStart: func(stepNumber int) error {
+			stepStart = time.Now()
+			stepGenDuration = 0
+			return nil
+		},
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
 			retryAttempt++
 			slog.Warn("Provider request failed, retrying", providerRetryLogFields(err, delay)...)
@@ -972,6 +979,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 					Message:          reason,
 				})
 			}
+			// OnRetry fires before the backoff sleep, so push stepStart
+			// forward by the delay here. Otherwise the wait between
+			// attempts would be counted as generation time once the
+			// step's stream eventually finishes.
+			stepStart = time.Now().Add(delay)
 		},
 		OnAuthRefresh: a.authRefreshRebuilding(call, retryModel),
 		ModelProvider: func() fantasy.LanguageModel {
@@ -1014,6 +1026,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				},
 			})
 			return createMsgErr
+		},
+		OnStreamFinish: func(usage fantasy.Usage, _ fantasy.FinishReason, _ fantasy.ProviderMetadata) error {
+			if !stepStart.IsZero() {
+				stepGenDuration = time.Since(stepStart)
+			}
+			return nil
 		},
 		OnStepFinish: func(stepResult fantasy.StepResult) error {
 			for _, w := range stepResult.Warnings {
@@ -1067,9 +1085,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			usage, estimated := fallbackStepUsage(stepMessages, stepResult)
 			// NOTE: set after the fact rather than passed to AddFinish
 			// above, since usage is only known once fallbackStepUsage
-			// runs; see SetFinishOutputTokens.
-			currentAssistant.SetFinishOutputTokens(usage.OutputTokens)
+			// runs; see SetFinishUsage.
+			currentAssistant.SetFinishUsage(usage.OutputTokens, stepGenDuration)
 			a.updateSessionUsage(runModel, &updatedSession, usage, openrouterCost(stepResult.ProviderMetadata), estimated)
+			if stepGenDuration > 0 && usage.OutputTokens > 0 {
+				updatedSession.GenOutputTokens += usage.OutputTokens
+				updatedSession.GenDurationMs += stepGenDuration.Milliseconds()
+			}
 			slog.Info("Model response received",
 				"session_id", call.SessionID,
 				"finish_reason", string(finishReason),

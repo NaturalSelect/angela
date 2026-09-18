@@ -239,14 +239,13 @@ func (m *UI) tokenUsageField() string {
 			usage = pct + " " + usage
 		}
 	}
-	// The rate is a "last known" figure, not live-updating every
-	// frame: it comes from the most recently finished step that
-	// qualified (see common.StepTPS), same as the token counts above
-	// only move at step boundaries.
-	if msg, ok := m.chat.LastAssistantMessageWithRate(); ok {
-		if tps, ok := common.StepTPS(msg); ok {
-			usage += turnStatusSeparator + fmt.Sprintf("%d tok/s", tps)
-		}
+	// The rate is a session-wide average (total output tokens over
+	// total generation time), not a live per-frame figure: it moves
+	// only when a step finishes, since that is when OnStepFinish
+	// pushes the updated running totals through sessions.Save, same
+	// as the token counts above only move at step boundaries.
+	if tps, ok := common.AverageTPS(m.session.GenOutputTokens, m.session.GenDurationMs); ok {
+		usage += turnStatusSeparator + fmt.Sprintf("%d tok/s", tps)
 	}
 	return usage
 }

@@ -17,43 +17,50 @@ func TestStepTPS(t *testing.T) {
 		wantOK  bool
 	}{
 		{
-			name: "qualifies: no tool calls, output tokens, duration >= 1s",
+			name: "qualifies: output tokens, valid gen duration",
 			msg: &message.Message{
-				CreatedAt: 1000,
 				Parts: []message.ContentPart{
-					message.Finish{Time: 1005, OutputTokens: 100},
+					message.Finish{GenDurationMs: 5000, OutputTokens: 100},
 				},
 			},
 			wantTPS: 20,
 			wantOK:  true,
 		},
 		{
-			name: "excluded: has a tool call",
+			name: "qualifies: tool calls no longer excluded, GenDurationMs already excludes tool time",
 			msg: &message.Message{
-				CreatedAt: 1000,
 				Parts: []message.ContentPart{
 					message.ToolCall{ID: "tc1"},
-					message.Finish{Time: 1005, OutputTokens: 100},
+					message.Finish{GenDurationMs: 5000, OutputTokens: 100},
 				},
 			},
-			wantOK: false,
+			wantTPS: 20,
+			wantOK:  true,
 		},
 		{
 			name: "excluded: no output tokens",
 			msg: &message.Message{
-				CreatedAt: 1000,
 				Parts: []message.ContentPart{
-					message.Finish{Time: 1005, OutputTokens: 0},
+					message.Finish{GenDurationMs: 5000, OutputTokens: 0},
 				},
 			},
 			wantOK: false,
 		},
 		{
-			name: "excluded: duration under a second",
+			name: "qualifies: sub-second duration, no minimum duration floor anymore",
 			msg: &message.Message{
-				CreatedAt: 1000,
 				Parts: []message.ContentPart{
-					message.Finish{Time: 1000, OutputTokens: 5},
+					message.Finish{GenDurationMs: 500, OutputTokens: 5},
+				},
+			},
+			wantTPS: 10,
+			wantOK:  true,
+		},
+		{
+			name: "excluded: GenDurationMs unset (unknown duration)",
+			msg: &message.Message{
+				Parts: []message.ContentPart{
+					message.Finish{OutputTokens: 100},
 				},
 			},
 			wantOK: false,
@@ -61,8 +68,7 @@ func TestStepTPS(t *testing.T) {
 		{
 			name: "excluded: no finish part yet",
 			msg: &message.Message{
-				CreatedAt: 1000,
-				Parts:     []message.ContentPart{message.TextContent{Text: "partial"}},
+				Parts: []message.ContentPart{message.TextContent{Text: "partial"}},
 			},
 			wantOK: false,
 		},
@@ -74,9 +80,8 @@ func TestStepTPS(t *testing.T) {
 		{
 			name: "rounds to the nearest token/sec",
 			msg: &message.Message{
-				CreatedAt: 1000,
 				Parts: []message.ContentPart{
-					message.Finish{Time: 1003, OutputTokens: 10}, // 3.33.. -> 3
+					message.Finish{GenDurationMs: 3000, OutputTokens: 10}, // 3.33.. -> 3
 				},
 			},
 			wantTPS: 3,
@@ -100,9 +105,8 @@ func TestStepTPSRate(t *testing.T) {
 	t.Parallel()
 
 	msg := &message.Message{
-		CreatedAt: 1000,
 		Parts: []message.ContentPart{
-			message.Finish{Time: 1003, OutputTokens: 10},
+			message.Finish{GenDurationMs: 3000, OutputTokens: 10},
 		},
 	}
 	rate, ok := StepTPSRate(msg)
@@ -112,12 +116,81 @@ func TestStepTPSRate(t *testing.T) {
 	_, ok = StepTPSRate(nil)
 	require.False(t, ok)
 
-	_, ok = StepTPSRate(&message.Message{
-		CreatedAt: 1000,
+	rate, ok = StepTPSRate(&message.Message{
 		Parts: []message.ContentPart{
 			message.ToolCall{ID: "tc1"},
-			message.Finish{Time: 1010, OutputTokens: 500},
+			message.Finish{GenDurationMs: 10000, OutputTokens: 500},
 		},
 	})
-	require.False(t, ok, "a step with any tool call must never report a rate")
+	require.True(t, ok, "a step with a tool call now reports a rate: GenDurationMs already excludes tool execution time")
+	require.InDelta(t, 50.0, rate, 0.0001)
+}
+
+func TestAverageTPS(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		tokens     int64
+		durationMs int64
+		wantTPS    int64
+		wantOK     bool
+	}{
+		{
+			name:       "qualifies: normal case",
+			tokens:     1000,
+			durationMs: 4000,
+			wantTPS:    250,
+			wantOK:     true,
+		},
+		{
+			name:       "rounds down to the nearest token/sec",
+			tokens:     10,
+			durationMs: 3000, // 10 / 3 = 3.33.. -> 3
+			wantTPS:    3,
+			wantOK:     true,
+		},
+		{
+			name:       "rounds up to the nearest token/sec",
+			tokens:     10,
+			durationMs: 2800, // 10 / 2.8 = 3.57.. -> 4
+			wantTPS:    4,
+			wantOK:     true,
+		},
+		{
+			name:       "excluded: zero tokens",
+			tokens:     0,
+			durationMs: 4000,
+			wantOK:     false,
+		},
+		{
+			name:       "excluded: negative tokens",
+			tokens:     -5,
+			durationMs: 4000,
+			wantOK:     false,
+		},
+		{
+			name:       "excluded: zero duration",
+			tokens:     1000,
+			durationMs: 0,
+			wantOK:     false,
+		},
+		{
+			name:       "excluded: negative duration",
+			tokens:     1000,
+			durationMs: -1,
+			wantOK:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tps, ok := AverageTPS(tt.tokens, tt.durationMs)
+			require.Equal(t, tt.wantOK, ok)
+			if tt.wantOK {
+				require.Equal(t, tt.wantTPS, tps)
+			}
+		})
+	}
 }

@@ -12,8 +12,11 @@ import (
 )
 
 // qualifyingStepMsg builds an assistant message that qualifies for a
-// tok/s reading: no tool calls, a Finish part with output tokens, and
-// a step duration of at least a second.
+// tok/s reading: a Finish part with output tokens and a positive
+// GenDurationMs. GenDurationMs is derived here as (finishTime -
+// createdAt) seconds converted to milliseconds, so existing callers'
+// second-based arguments keep producing the same tok/s rates their
+// comments document.
 func qualifyingStepMsg(id string, createdAt, finishTime, outputTokens int64) *message.Message {
 	return &message.Message{
 		ID:        id,
@@ -21,7 +24,12 @@ func qualifyingStepMsg(id string, createdAt, finishTime, outputTokens int64) *me
 		CreatedAt: createdAt,
 		Parts: []message.ContentPart{
 			message.TextContent{Text: "hi"},
-			message.Finish{Reason: message.FinishReasonEndTurn, Time: finishTime, OutputTokens: outputTokens},
+			message.Finish{
+				Reason:        message.FinishReasonEndTurn,
+				Time:          finishTime,
+				OutputTokens:  outputTokens,
+				GenDurationMs: (finishTime - createdAt) * 1000,
+			},
 		},
 	}
 }
@@ -46,7 +54,7 @@ func TestComputeTPSDistribution(t *testing.T) {
 					message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
 					message.Finish{Reason: message.FinishReasonToolUse, Time: 5, OutputTokens: 50},
 				},
-			}, // excluded: has a tool call
+			}, // excluded: no GenDurationMs (tool calls no longer exclude a step on their own)
 			qualifyingStepMsg("a3", 0, 5, 100), // 20 tok/s
 		}
 
@@ -156,9 +164,10 @@ func TestFormatTPSDistribution(t *testing.T) {
 		t.Parallel()
 
 		dist := TPSDistribution{QualifyingSteps: 7, TotalSteps: 19, Min: 41.6, Median: 58.4, P90: 70.5, Max: 80.2}
-		text := formatTPSDistribution(dist, true)
+		text := formatTPSDistribution(dist, true, 300, 10_000)
+		require.Contains(t, text, "avg 30 tok/s (300 output tokens over 10s)")
 		require.Contains(t, text, "Based on 7 of 19 assistant steps")
-		require.Contains(t, text, "steps with tool calls excluded")
+		require.Contains(t, text, "steps without timing data excluded")
 		require.Contains(t, text, "min 42 tok/s")
 		require.Contains(t, text, "median 58 tok/s")
 		require.Contains(t, text, "p90 71 tok/s")
@@ -168,7 +177,8 @@ func TestFormatTPSDistribution(t *testing.T) {
 	t.Run("reports not enough data with some steps seen", func(t *testing.T) {
 		t.Parallel()
 
-		text := formatTPSDistribution(TPSDistribution{TotalSteps: 5}, false)
+		text := formatTPSDistribution(TPSDistribution{TotalSteps: 5}, false, 0, 0)
+		require.Contains(t, text, "avg n/a")
 		require.Contains(t, text, "Not enough data yet")
 		require.Contains(t, text, "0 of 5")
 	})
@@ -176,8 +186,22 @@ func TestFormatTPSDistribution(t *testing.T) {
 	t.Run("reports no steps at all when the session has none yet", func(t *testing.T) {
 		t.Parallel()
 
-		text := formatTPSDistribution(TPSDistribution{TotalSteps: 0}, false)
-		require.Equal(t, "No assistant steps in this session yet.", text)
+		text := formatTPSDistribution(TPSDistribution{TotalSteps: 0}, false, 0, 0)
+		require.Equal(t, "avg n/a\nNo assistant steps in this session yet.", text)
+	})
+
+	t.Run("includes the average tok/s line when cumulative session data is available", func(t *testing.T) {
+		t.Parallel()
+
+		text := formatTPSDistribution(TPSDistribution{TotalSteps: 5}, false, 300, 10_000)
+		require.Contains(t, text, "avg 30 tok/s (300 output tokens over 10s)")
+	})
+
+	t.Run("shows avg n/a when there is no cumulative session data", func(t *testing.T) {
+		t.Parallel()
+
+		text := formatTPSDistribution(TPSDistribution{TotalSteps: 5}, false, 0, 0)
+		require.Contains(t, text, "avg n/a")
 	})
 }
 
@@ -204,6 +228,8 @@ func TestShowTPS_FetchesAndComputesDistribution(t *testing.T) {
 	}, nil)
 
 	m := newBusyUIWithWorkspace(ws)
+	m.session.GenOutputTokens = 300
+	m.session.GenDurationMs = 10_000
 	cmd := m.showTPS()
 	require.NotNil(t, cmd)
 
@@ -215,6 +241,8 @@ func TestShowTPS_FetchesAndComputesDistribution(t *testing.T) {
 	require.Equal(t, 1, computed.dist.TotalSteps)
 	require.Equal(t, 1, computed.dist.QualifyingSteps)
 	require.InDelta(t, 10, computed.dist.Min, 0.0001)
+	require.Equal(t, int64(300), computed.avgTokens, "showTPS must capture the session's cumulative GenOutputTokens synchronously, before the fetch closure runs off the Update goroutine")
+	require.Equal(t, int64(10_000), computed.avgDurationMs, "showTPS must capture the session's cumulative GenDurationMs synchronously, before the fetch closure runs off the Update goroutine")
 }
 
 // TestShowTPS_ReportsFetchError verifies a failed fetch surfaces as an

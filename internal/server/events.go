@@ -213,6 +213,8 @@ func sessionToProto(s session.Session) proto.Session {
 		PromptTokens:     s.PromptTokens,
 		CompletionTokens: s.CompletionTokens,
 		Cost:             s.Cost,
+		GenOutputTokens:  s.GenOutputTokens,
+		GenDurationMs:    s.GenDurationMs,
 		Todos:            todosToProto(s.Todos),
 		CreatedAt:        s.CreatedAt,
 		UpdatedAt:        s.UpdatedAt,
@@ -343,11 +345,12 @@ func messageToProto(m message.Message) proto.Message {
 			})
 		case message.Finish:
 			msg.Parts = append(msg.Parts, proto.Finish{
-				Reason:       proto.FinishReason(v.Reason),
-				Time:         v.Time,
-				Message:      v.Message,
-				Details:      v.Details,
-				OutputTokens: v.OutputTokens,
+				Reason:        proto.FinishReason(v.Reason),
+				Time:          v.Time,
+				Message:       v.Message,
+				Details:       v.Details,
+				OutputTokens:  v.OutputTokens,
+				GenDurationMs: v.GenDurationMs,
 			})
 		case message.ImageURLContent:
 			msg.Parts = append(msg.Parts, proto.ImageURLContent{URL: v.URL, Detail: v.Detail})

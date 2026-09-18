@@ -800,7 +800,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.sessionID != m.currentSessionID() {
 			break
 		}
-		if cmd := m.appendTPSNotice(msg.dist, msg.ok); cmd != nil {
+		if cmd := m.appendTPSNotice(msg.dist, msg.ok, msg.avgTokens, msg.avgDurationMs); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case undoResultMsg:

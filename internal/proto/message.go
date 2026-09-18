@@ -173,6 +173,11 @@ type Finish struct {
 	// OutputTokens is the step's completion token count. Zero means
 	// unknown, not that the step produced no output.
 	OutputTokens int64 `json:"output_tokens,omitempty"`
+	// GenDurationMs is the number of milliseconds from when the model
+	// request was sent to when the model's stream finished, excluding
+	// tool execution time. 0 means unknown (older messages, cancellations,
+	// errors, or summary messages that never went through OnStepFinish).
+	GenDurationMs int64 `json:"gen_duration_ms,omitempty"`
 }
 
 func (Finish) isPart() {}

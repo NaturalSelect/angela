@@ -138,7 +138,7 @@ func TestMarshalUnmarshalPartsRoundTrip(t *testing.T) {
 		proto.BinaryContent{Path: "/tmp/a.bin", MIMEType: "application/octet-stream", Data: []byte{0x01, 0x02, 0xFF}},
 		proto.ToolCall{ID: "call-1", Name: "bash", Input: `{"command":"ls"}`, Type: "function", Finished: true},
 		proto.ToolResult{ToolCallID: "call-1", Name: "bash", Content: "file1\nfile2", Data: "extra", MIMEType: "text/plain", Metadata: `{"exit_code":0}`, IsError: false},
-		proto.Finish{Reason: proto.FinishReasonToolUse, Time: 5000, Message: "done", Details: "all good"},
+		proto.Finish{Reason: proto.FinishReasonToolUse, Time: 5000, Message: "done", Details: "all good", OutputTokens: 256, GenDurationMs: 7890},
 		proto.ShellCommand{Command: "ls -la", Output: "total 0", ExitCode: 0},
 	}
 

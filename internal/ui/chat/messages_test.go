@@ -162,8 +162,8 @@ func TestAssistantInfoItemRenderShowsConfiguredModelAndProvider(t *testing.T) {
 }
 
 // TestAssistantInfoItemRenderShowsTokensPerSecondForQualifyingStep covers
-// the one case tok/s is shown: no tool calls, some output tokens, and a
-// step duration of at least a second.
+// the one case tok/s is shown: no tool calls, positive output tokens,
+// and a positive GenDurationMs.
 func TestAssistantInfoItemRenderShowsTokensPerSecondForQualifyingStep(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
@@ -174,7 +174,7 @@ func TestAssistantInfoItemRenderShowsTokensPerSecondForQualifyingStep(t *testing
 		Role:      message.Assistant,
 		CreatedAt: 1000,
 		Parts: []message.ContentPart{
-			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, OutputTokens: 100},
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, GenDurationMs: 5000, OutputTokens: 100},
 		},
 	}
 
@@ -184,11 +184,12 @@ func TestAssistantInfoItemRenderShowsTokensPerSecondForQualifyingStep(t *testing
 	require.Contains(t, out, "20 tok/s")
 }
 
-// TestAssistantInfoItemRenderOmitsTokensPerSecondWhenStepHasToolCalls pins
-// the critical exclusion: a step with any tool call never shows a rate,
-// no matter how many tokens or how long it ran, because tool/permission
-// wait time is baked into its wall-clock duration.
-func TestAssistantInfoItemRenderOmitsTokensPerSecondWhenStepHasToolCalls(t *testing.T) {
+// TestAssistantInfoItemRenderShowsTokensPerSecondEvenWithToolCalls pins
+// the current behavior: GenDurationMs is an agent-measured duration
+// that already excludes tool execution and permission wait time at the
+// agent layer, so a step with a tool call is just as valid a source
+// for a rate as any other step.
+func TestAssistantInfoItemRenderShowsTokensPerSecondEvenWithToolCalls(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
@@ -199,19 +200,22 @@ func TestAssistantInfoItemRenderOmitsTokensPerSecondWhenStepHasToolCalls(t *test
 		CreatedAt: 1000,
 		Parts: []message.ContentPart{
 			message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
-			message.Finish{Reason: message.FinishReasonToolUse, Time: 1005, OutputTokens: 1000},
+			message.Finish{Reason: message.FinishReasonToolUse, Time: 1005, GenDurationMs: 5000, OutputTokens: 1000},
 		},
 	}
 
 	item := NewAssistantInfoItem(&sty, msg, cfg, start)
 
 	out := ansi.Strip(item.Render(80))
-	require.NotContains(t, out, "tok/s")
+	require.Contains(t, out, "200 tok/s")
 }
 
-// TestAssistantInfoItemRenderOmitsTokensPerSecondUnderOneSecond avoids
-// divide-by-zero/near-zero noise from second-granularity Unix timestamps.
-func TestAssistantInfoItemRenderOmitsTokensPerSecondUnderOneSecond(t *testing.T) {
+// TestAssistantInfoItemRenderOmitsTokensPerSecondWhenDurationUnknown
+// covers a step whose GenDurationMs was never recorded (e.g. an older
+// message, a cancellation, or one that never went through
+// OnStepFinish): common.StepTPS requires a positive duration, so no
+// rate must appear even though output tokens are present.
+func TestAssistantInfoItemRenderOmitsTokensPerSecondWhenDurationUnknown(t *testing.T) {
 	t.Parallel()
 	sty := styles.CharmtonePantera()
 	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
@@ -229,6 +233,29 @@ func TestAssistantInfoItemRenderOmitsTokensPerSecondUnderOneSecond(t *testing.T)
 
 	out := ansi.Strip(item.Render(80))
 	require.NotContains(t, out, "tok/s")
+}
+
+// TestAssistantInfoItemRenderShowsTokensPerSecondUnderOneSecond proves
+// the old one-second-minimum floor is gone: a sub-second GenDurationMs
+// now produces a rate just like any other positive duration.
+func TestAssistantInfoItemRenderShowsTokensPerSecondUnderOneSecond(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
+	start := time.Unix(1000, 0)
+	msg := &message.Message{
+		ID:        "m1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1000, GenDurationMs: 500, OutputTokens: 5},
+		},
+	}
+
+	item := NewAssistantInfoItem(&sty, msg, cfg, start)
+
+	out := ansi.Strip(item.Render(80))
+	require.Contains(t, out, "10 tok/s")
 }
 
 // -----------------------------------------------------------------------------

@@ -530,60 +530,6 @@ func TestChatLastPendingTool(t *testing.T) {
 	})
 }
 
-func TestChatLastAssistantMessageWithRate(t *testing.T) {
-	t.Parallel()
-
-	t.Run("returns the most recent qualifying step, skipping a disqualified trailing one", func(t *testing.T) {
-		t.Parallel()
-		u := newTestUI()
-		qualifying := &message.Message{
-			ID:        "a1",
-			Role:      message.Assistant,
-			CreatedAt: 1000,
-			Parts: []message.ContentPart{
-				message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, OutputTokens: 100},
-			},
-		}
-		u.chat.SetMessages(
-			chat.NewAssistantMessageItem(u.com.Styles, qualifying),
-			testMessageItem{id: "u1", text: "not an assistant message"},
-			chat.NewAssistantMessageItem(u.com.Styles, &message.Message{
-				ID:        "a2",
-				Role:      message.Assistant,
-				CreatedAt: 1010,
-				Parts: []message.ContentPart{
-					message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
-					message.Finish{Reason: message.FinishReasonToolUse, Time: 1011, OutputTokens: 5},
-				},
-			}),
-		)
-
-		msg, ok := u.chat.LastAssistantMessageWithRate()
-		require.True(t, ok)
-		require.Equal(t, "a1", msg.ID, "must scan from the end and skip the trailing step with a tool call")
-	})
-
-	t.Run("no qualifying step returns nil", func(t *testing.T) {
-		t.Parallel()
-		u := newTestUI()
-		u.chat.SetMessages(
-			chat.NewAssistantMessageItem(u.com.Styles, &message.Message{
-				ID:        "a1",
-				Role:      message.Assistant,
-				CreatedAt: 1000,
-				Parts: []message.ContentPart{
-					message.ToolCall{ID: "tc1", Name: "bash", Finished: true},
-					message.Finish{Reason: message.FinishReasonToolUse, Time: 1005, OutputTokens: 100},
-				},
-			}),
-		)
-
-		msg, ok := u.chat.LastAssistantMessageWithRate()
-		require.False(t, ok)
-		require.Nil(t, msg)
-	})
-}
-
 func TestChatUpdateNestedToolIDs(t *testing.T) {
 	t.Parallel()
 

@@ -22,7 +22,7 @@ var agentToolDescriptionTmpl string
 
 type AgentParams struct {
 	Description  string `json:"description,omitempty" description:"A short (3-5 words) description of the task"`
-	Prompt       string `json:"prompt" description:"The task for the agent to perform"`
+	Prompt       string `json:"prompt" description:"The task for the agent to perform. For a branch agent, keep it short — state the decision or question, not background it already has."`
 	SubagentType string `json:"subagent_type,omitempty" description:"The type of specialized agent to use for this task"`
 }
 

@@ -4,20 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/NaturalSelect/angela/internal/ui/util"
 )
-
-// commitStatusTTL keeps the "still working" toast on screen for as
-// long as a bash command is allowed to run in the foreground before
-// Angela would auto-background it (see DefaultAutoBackgroundAfter):
-// long enough to cover a slow pre-commit hook without the status bar
-// going blank while git commit is still running.
-const commitStatusTTL = 60 * time.Second
 
 // commitStagedChanges generates a commit message from the workspace's
 // currently staged changes and commits them with a sign-off, with no
@@ -32,7 +24,6 @@ func (m *UI) commitStagedChanges(sessionID string) tea.Cmd {
 		util.CmdHandler(util.InfoMsg{
 			Type:     util.InfoTypeInfo,
 			Msg:      "Committing staged changes",
-			TTL:      commitStatusTTL,
 			Animated: true,
 		}),
 		func() tea.Msg {
@@ -74,20 +65,23 @@ func (m *UI) commitStagedChanges(sessionID string) tea.Cmd {
 	)
 }
 
-// signedCommitCommand builds a `git commit -s` invocation with message
-// quoted as a single shell word via syntax.Quote, so it reaches git
-// exactly as generated no matter what it contains: quotes, backticks,
-// "$", newlines, and any other shell metacharacter are inert inside
-// the quoting Quote picks. LangBash matches the variant mvdan's
-// interpreter defaults to when it later parses this command (see
-// internal/shell), so the quoted form round-trips exactly. Quoting
-// the whole message as one word, rather than delimiting it between
-// two copies of a fixed token, leaves no token for the message to
-// collide with.
+// signedCommitCommand builds a `git commit -s --no-verify` invocation
+// with message quoted as a single shell word via syntax.Quote, so it
+// reaches git exactly as generated no matter what it contains: quotes,
+// backticks, "$", newlines, and any other shell metacharacter are
+// inert inside the quoting Quote picks. LangBash matches the variant
+// mvdan's interpreter defaults to when it later parses this command
+// (see internal/shell), so the quoted form round-trips exactly.
+// Quoting the whole message as one word, rather than delimiting it
+// between two copies of a fixed token, leaves no token for the
+// message to collide with. --no-verify skips the repo's pre-commit
+// and commit-msg hooks: /commit's job is to record the staged diff
+// exactly as it stands, on a predictable timeline, not to run
+// whatever checks the repo happens to have wired into git.
 func signedCommitCommand(message string) (string, error) {
 	quoted, err := syntax.Quote(message, syntax.LangBash)
 	if err != nil {
 		return "", fmt.Errorf("cannot quote commit message for shell: %w", err)
 	}
-	return "git commit -s -m " + quoted, nil
+	return "git commit -s --no-verify -m " + quoted, nil
 }

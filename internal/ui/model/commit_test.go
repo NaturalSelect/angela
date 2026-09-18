@@ -177,7 +177,7 @@ func TestCommitStagedChanges_CommitCommandError(t *testing.T) {
 }
 
 // TestCommitStagedChanges_CommitCommandNonZeroExit pins that a
-// non-zero exit from `git commit` itself (e.g. a rejected hook) is
+// non-zero exit from `git commit` itself (e.g. a signing failure) is
 // reported with its output.
 func TestCommitStagedChanges_CommitCommandNonZeroExit(t *testing.T) {
 	t.Parallel()
@@ -192,7 +192,7 @@ func TestCommitStagedChanges_CommitCommandNonZeroExit(t *testing.T) {
 	ws.EXPECT().AgentGenerateCommitMessage(gomock.Any(), "s1", "diff --git a/x b/x\n+y").
 		Return("fix: add y", nil)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", commitCmd, 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "pre-commit hook rejected", ExitCode: 1}, nil)
+		Return(proto.ShellCommandResponse{Output: "error: gpg failed to sign the data", ExitCode: 1}, nil)
 
 	m := newBusyUIWithWorkspace(ws)
 	msgs := collectInfoMsgs(m.commitStagedChanges("s1"))
@@ -200,7 +200,7 @@ func TestCommitStagedChanges_CommitCommandNonZeroExit(t *testing.T) {
 	require.Len(t, msgs, 2)
 	require.Equal(t, util.InfoTypeError, msgs[1].Type)
 	require.Contains(t, msgs[1].Msg, "git commit failed")
-	require.Contains(t, msgs[1].Msg, "pre-commit hook rejected")
+	require.Contains(t, msgs[1].Msg, "gpg failed to sign the data")
 }
 
 // TestSignedCommitCommand pins that the generated commit message is
@@ -211,7 +211,7 @@ func TestSignedCommitCommand(t *testing.T) {
 
 	got, err := signedCommitCommand("fix: handle `$HOME` and \"quotes\"")
 	require.NoError(t, err)
-	want := "git commit -s -m 'fix: handle `$HOME` and \"quotes\"'"
+	want := "git commit -s --no-verify -m 'fix: handle `$HOME` and \"quotes\"'"
 	require.Equal(t, want, got)
 }
 
@@ -235,9 +235,9 @@ func TestSignedCommitCommand_DelimiterInjection(t *testing.T) {
 
 	callExpr, ok := file.Stmts[0].Cmd.(*syntax.CallExpr)
 	require.True(t, ok, "expected a plain command, got %T", file.Stmts[0].Cmd)
-	require.Len(t, callExpr.Args, 5, "expected exactly: git, commit, -s, -m, <message>")
+	require.Len(t, callExpr.Args, 6, "expected exactly: git, commit, -s, --no-verify, -m, <message>")
 
-	literal, err := expand.Literal(nil, callExpr.Args[4])
+	literal, err := expand.Literal(nil, callExpr.Args[5])
 	require.NoError(t, err)
 	require.Equal(t, message, literal, "the embedded terminator and command must reach git as literal message text")
 }

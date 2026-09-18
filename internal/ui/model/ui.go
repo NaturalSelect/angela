@@ -1494,11 +1494,19 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.status.SetInfoMsg(msg); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		ttl := msg.TTL
-		if ttl <= 0 {
-			ttl = DefaultStatusTTL
+		// An animated message marks an action still in progress, of
+		// unknown duration: it must stay up until replaced by that
+		// action's outcome, not vanish on a fixed timer while the
+		// action itself may still be running (this is what let a
+		// slow commit's "still working" toast disappear before git
+		// actually finished).
+		if !msg.Animated {
+			ttl := msg.TTL
+			if ttl <= 0 {
+				ttl = DefaultStatusTTL
+			}
+			cmds = append(cmds, clearInfoMsgCmd(ttl))
 		}
-		cmds = append(cmds, clearInfoMsgCmd(ttl))
 	case modelSwitchedMsg:
 		cmds = append(cmds, util.CmdHandler(msg.toast))
 		if len(msg.variants) > 0 {

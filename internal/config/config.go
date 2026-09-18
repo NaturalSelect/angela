@@ -1301,7 +1301,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentGeneral: {
 			ID:           AgentGeneral,
 			Name:         "General",
-			Description:  "General-purpose agent that carries a whole task through and reports back — it inherits the coder's tools, so it can search, analyze, run commands, and edit. Use it for work that is genuinely independent and big enough to be worth a fresh context: a wide multi-file investigation, or several unrelated tracks dispatched as parallel calls. Prefer explore when you only need to locate and read code, and do the work yourself when it fits in a handful of tool calls. Brief it completely — it starts with no memory of this conversation and cannot come back to ask what you meant.",
+			Description:  "General-purpose agent that carries a whole task through and reports back — it inherits the coder's tools, so it can search, analyze, run commands, and edit. Reserve it for work that is independent and can run in parallel with other work, such as several unrelated tracks dispatched as concurrent calls. Brief it completely — it starts with no memory of this conversation and cannot come back to ask what you meant.",
 			Mode:         AgentModeSubagent,
 			Slot:         SlotMain,
 			ContextPaths: contextPaths,

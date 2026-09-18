@@ -1231,8 +1231,12 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 		// An unknown preset is an error here, where the user is
 		// watching and can pick again; per-turn resolution stays
 		// lenient about the same name for the opposite reason.
-		if v := next.EffectiveVariant(); v != "" && !slices.Contains(model.CatwalkCfg.VariantNames(), v) {
-			return current, false, fmt.Errorf("%w: %q on %q", ErrVariantNotAvailable, v, model.ModelCfg.Model)
+		// Only validate an explicit user pick: agent-config and slot
+		// defaults fall through leniently at turn time, so rejecting
+		// them here would block a model switch merely because the
+		// agent's configured default is absent from the new model.
+		if v := next.VariantPick; v != nil && *v != "" && !slices.Contains(model.CatwalkCfg.VariantNames(), *v) {
+			return current, false, fmt.Errorf("%w: %q on %q", ErrVariantNotAvailable, *v, model.ModelCfg.Model)
 		}
 		change, switched, agentID, result = moved, model, next.Agent.ID, next
 		return next, true, nil

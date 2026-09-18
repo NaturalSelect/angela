@@ -108,6 +108,41 @@ func TestAConfiguredEffortReachesTheRequest(t *testing.T) {
 	require.Equal(t, "max", string(*parsed.ReasoningEffort))
 }
 
+// TestModelUseResponsesOverridesProvider checks that a model-level
+// use_responses wins over the provider-level setting in both directions.
+func TestModelUseResponsesOverridesProvider(t *testing.T) {
+	t.Parallel()
+
+	for name, tc := range map[string]struct {
+		modelUseResponses    *bool
+		providerUseResponses *bool
+		wantResponses        bool
+	}{
+		"model true beats provider false":  {modelUseResponses: boolPtr(true), providerUseResponses: boolPtr(false), wantResponses: true},
+		"model false beats provider true":  {modelUseResponses: boolPtr(false), providerUseResponses: boolPtr(true), wantResponses: false},
+		"model false beats ID-based guess": {modelUseResponses: boolPtr(false), providerUseResponses: nil, wantResponses: false},
+		"model true beats ID-based miss":   {modelUseResponses: boolPtr(true), providerUseResponses: nil, wantResponses: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			model := Model{
+				CatwalkCfg: config.ProviderModel{
+					Model:        catwalk.Model{ID: "gpt-codex-sol"},
+					UseResponses: tc.modelUseResponses,
+				},
+				ModelCfg: config.SelectedModel{Provider: "openai"},
+			}
+			providerCfg := config.ProviderConfig{ID: "openai", Type: openai.Name, UseResponses: tc.providerUseResponses}
+
+			raw, ok := getProviderOptions(model, providerCfg, "")[openai.Name]
+			require.True(t, ok)
+			_, isResponses := raw.(*openai.ResponsesProviderOptions)
+			require.Equal(t, tc.wantResponses, isResponses)
+		})
+	}
+}
+
 // TestAnAbsentEffortStaysAbsent keeps the fix from turning reasoning on
 // for models nobody asked to reason.
 func TestAnAbsentEffortStaysAbsent(t *testing.T) {

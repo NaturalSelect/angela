@@ -918,6 +918,10 @@
           "type": "boolean",
           "description": "Default thinking mode for Anthropic models that support reasoning"
         },
+        "use_responses": {
+          "type": "boolean",
+          "description": "Force the OpenAI Responses API on or off for this model only"
+        },
         "variants": {
           "additionalProperties": {
             "$ref": "#/$defs/SelectedModelOverride"

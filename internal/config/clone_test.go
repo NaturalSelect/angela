@@ -120,6 +120,7 @@ func TestProviderModelCloneSharesNothing(t *testing.T) {
 
 	modelTemp, modelTopK := 0.5, int64(100)
 	variantEffort, variantTokens := "low", int64(100)
+	useResponses := true
 
 	orig := ProviderModel{
 		Model: catwalk.Model{
@@ -134,6 +135,7 @@ func TestProviderModelCloneSharesNothing(t *testing.T) {
 			},
 			ReasoningLevels: []string{"low", "high"},
 		},
+		UseResponses: &useResponses,
 		Variants: map[string]SelectedModelOverride{
 			"deep": {
 				ReasoningEffort: &variantEffort,
@@ -152,6 +154,7 @@ func TestProviderModelCloneSharesNothing(t *testing.T) {
 	clone.Options.ProviderOptions["stop"].([]any)[0] = "STOP"
 	clone.Options.ProviderOptions["added"] = true
 	clone.ReasoningLevels[0] = "medium"
+	*clone.UseResponses = false
 
 	deepVariant := clone.Variants["deep"]
 	*deepVariant.ReasoningEffort = "high"
@@ -168,6 +171,7 @@ func TestProviderModelCloneSharesNothing(t *testing.T) {
 		"nested ProviderOptions slice leaked")
 	require.NotContains(t, orig.Options.ProviderOptions, "added", "ProviderOptions leaked")
 	require.Equal(t, "low", orig.ReasoningLevels[0], "ReasoningLevels leaked")
+	require.True(t, *orig.UseResponses, "UseResponses leaked")
 
 	origVariant := orig.Variants["deep"]
 	require.Equal(t, "low", *origVariant.ReasoningEffort, "variant ReasoningEffort leaked")

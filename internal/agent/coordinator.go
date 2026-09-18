@@ -473,8 +473,12 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 // openaiCompatUsesResponses reports whether an openai-compat provider
 // dispatches this model to the Responses API. It mirrors the transport
 // choice made in buildOpenaiCompatProvider, where an explicit
-// use_responses setting replaces the per-provider table.
-func openaiCompatUsesResponses(providerCfg config.ProviderConfig, modelID string) bool {
+// use_responses setting replaces the per-provider table. Model-level
+// use_responses wins over the provider-level setting.
+func openaiCompatUsesResponses(providerCfg config.ProviderConfig, modelCfg config.ProviderModel, modelID string) bool {
+	if modelCfg.UseResponses != nil {
+		return *modelCfg.UseResponses
+	}
 	if providerCfg.UseResponses != nil {
 		return *providerCfg.UseResponses
 	}
@@ -486,11 +490,24 @@ func openaiCompatUsesResponses(providerCfg config.ProviderConfig, modelID string
 // OpenAI Responses API. An explicit use_responses setting decides
 // outright; left unset the choice falls back to recognizing the model ID,
 // which only knows OpenAI's own names and misses gateway aliases.
-func responsesAPIEnabled(providerCfg config.ProviderConfig, modelID string) bool {
+// Model-level use_responses wins over the provider-level setting.
+func responsesAPIEnabled(providerCfg config.ProviderConfig, modelCfg config.ProviderModel, modelID string) bool {
+	if modelCfg.UseResponses != nil {
+		return *modelCfg.UseResponses
+	}
 	if providerCfg.UseResponses != nil {
 		return *providerCfg.UseResponses
 	}
 	return openai.IsResponsesModel(modelID)
+}
+
+// effectiveUseResponses returns the resolved use_responses flag for a
+// model: model-level wins over provider-level, either may be unset.
+func effectiveUseResponses(providerCfg config.ProviderConfig, modelCfg config.ProviderModel) *bool {
+	if modelCfg.UseResponses != nil {
+		return modelCfg.UseResponses
+	}
+	return providerCfg.UseResponses
 }
 
 // effectiveReasoningEffort returns the reasoning effort to apply for provider calls.
@@ -607,7 +624,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 		if _, hasPromptCacheKey := mergedOptions["prompt_cache_key"]; !hasPromptCacheKey && promptCacheKey != "" {
 			mergedOptions["prompt_cache_key"] = promptCacheKey
 		}
-		if responsesAPIEnabled(providerCfg, model.CatwalkCfg.ID) {
+		if responsesAPIEnabled(providerCfg, model.CatwalkCfg, model.CatwalkCfg.ID) {
 			if openai.IsResponsesReasoningModel(model.CatwalkCfg.ID) || shouldSetEffort {
 				mergedOptions["reasoning_summary"] = "auto"
 				mergedOptions["include"] = []openai.IncludeType{openai.IncludeReasoningEncryptedContent}
@@ -807,7 +824,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 		// configured through it silently disappears from the request.
 		// Fields with no Responses equivalent are dropped by
 		// ParseResponsesOptions like any other unrecognized JSON key.
-		if openaiCompatUsesResponses(providerCfg, model.CatwalkCfg.ID) {
+		if openaiCompatUsesResponses(providerCfg, model.CatwalkCfg, model.CatwalkCfg.ID) {
 			if respParsed, err := openai.ParseResponsesOptions(extraBody); err == nil {
 				options[openai.Name] = respParsed
 			}
@@ -1813,7 +1830,7 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 
 	switch providerCfg.Type {
 	case openai.Name:
-		return c.buildOpenaiProvider(baseURL, apiKey, headers, providerCfg.UseResponses)
+		return c.buildOpenaiProvider(baseURL, apiKey, headers, effectiveUseResponses(providerCfg, model))
 	case anthropic.Name:
 		return c.buildAnthropicProvider(baseURL, apiKey, headers, providerCfg.ID)
 	case openrouter.Name:
@@ -1839,12 +1856,12 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 			}
 			providerCfg.ExtraBody["tool_stream"] = true
 		}
-		return c.buildOpenaiCompatProvider(baseURL, apiKey, headers, providerCfg.ExtraBody, providerCfg.ID, isSubAgent, providerCfg.UseResponses)
+		return c.buildOpenaiCompatProvider(baseURL, apiKey, headers, providerCfg.ExtraBody, providerCfg.ID, isSubAgent, effectiveUseResponses(providerCfg, model))
 	default:
 		// Known custom providers (litellm, ollama, omlx) are
 		// openai-compat under the hood.
 		if discover.IsKnownCustomProvider(string(providerCfg.Type)) {
-			return c.buildOpenaiCompatProvider(baseURL, apiKey, headers, providerCfg.ExtraBody, providerCfg.ID, isSubAgent, providerCfg.UseResponses)
+			return c.buildOpenaiCompatProvider(baseURL, apiKey, headers, providerCfg.ExtraBody, providerCfg.ID, isSubAgent, effectiveUseResponses(providerCfg, model))
 		}
 		return nil, fmt.Errorf("provider type not supported: %q", providerCfg.Type)
 	}

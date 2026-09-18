@@ -74,6 +74,7 @@ func (m ProviderModel) clone() ProviderModel {
 	m.Options.PresencePenalty = clonePtr(m.Options.PresencePenalty)
 	m.Options.ProviderOptions = cloneJSONMap(m.Options.ProviderOptions)
 	m.ReasoningLevels = cloneSlice(m.ReasoningLevels)
+	m.UseResponses = clonePtr(m.UseResponses)
 	if m.Variants != nil {
 		variants := make(map[string]SelectedModelOverride, len(m.Variants))
 		for name, override := range m.Variants {

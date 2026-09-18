@@ -24,53 +24,63 @@ interactions:
     proto_minor: 0
     content_length: -1
     body: |+
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "The"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "The"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " user just"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " user just"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " said \"Hello\"."}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " said \"Hello\"."}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " This is a simple"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " This is a simple"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " greeting."}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " greeting. I should"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " I should respond briefly"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " respond briefly"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " and naturally"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " and naturally"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "."}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": ", letting"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " No skills"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " them know I"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " are triggered"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "'m ready"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " by a simple"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " to help with software"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " greeting."}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " engineering tasks.\n\n"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " No"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "I shouldn"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " tools are"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "'t over"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " needed."}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "-ex"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "Hello"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "plain or narr"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "! I'm Angela"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "ate. Just"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": ", ready to help"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": " a friendly"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " with software"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": ", brief response"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " engineering tasks. What"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"reasoning_content": "."}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " would you like to"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "Hello!"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " work on?"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " I'm Angela"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-27118b5918498caf89f730ed", "object": "chat.completion.chunk", "created": 1789751971, "model": "glm-5.2", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"completion_tokens": 58, "prompt_tokens": 10553, "total_tokens": 10611, "completion_tokens_details": {"accepted_prediction_tokens": null, "audio_tokens": null, "reasoning_tokens": 33, "rejected_prediction_tokens": null}, "prompt_tokens_details": {"audio_tokens": null, "cached_tokens": 0}}}
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": ", ready to help"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " with software engineering tasks"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": ". What would"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " you like to"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " work on?"}, "finish_reason": null}]}
+
+      data: {"id": "chatcmpl-3bff4d75a05b69c7bcc6af37", "object": "chat.completion.chunk", "created": 1789758511, "model": "glm-5.2", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"completion_tokens": 74, "prompt_tokens": 10553, "total_tokens": 10627, "completion_tokens_details": {"accepted_prediction_tokens": null, "audio_tokens": null, "reasoning_tokens": 50, "rejected_prediction_tokens": null}, "prompt_tokens_details": {"audio_tokens": null, "cached_tokens": 0}}}
 
       data: [DONE]
 
@@ -79,4 +89,4 @@ interactions:
       - text/event-stream
     status: 200 OK
     code: 200
-    duration: 15.388744889s
+    duration: 8.443455552s

@@ -876,6 +876,30 @@ func (m *Chat) RemoveMessage(id string) {
 	delete(m.pausedAnimations, id)
 }
 
+// RemoveOrphanedToolCalls removes tool items belonging to messageID whose
+// tool call is no longer present in keepIDs. A provider-level retry can
+// reset an assistant message's streamed content mid-step (see
+// message.Message.ResetStreamedContent), which wipes tool calls the model
+// had already started emitting from the message. Without this, the item
+// already rendered for such a call would sit stuck forever with no
+// result while a fresh item appears for the retried call, making the
+// same tool call look like it rendered twice.
+func (m *Chat) RemoveOrphanedToolCalls(messageID string, keepIDs map[string]struct{}) {
+	var orphaned []string
+	for i := 0; i < m.list.Len(); i++ {
+		item, ok := m.list.ItemAt(i).(chat.ToolMessageItem)
+		if !ok || item.MessageID() != messageID {
+			continue
+		}
+		if _, ok := keepIDs[item.ID()]; !ok {
+			orphaned = append(orphaned, item.ID())
+		}
+	}
+	for _, id := range orphaned {
+		m.RemoveMessage(id)
+	}
+}
+
 // MessageItem returns the message item with the given ID, or nil if not found.
 func (m *Chat) MessageItem(id string) chat.MessageItem {
 	idx, ok := m.idInxMap[id]

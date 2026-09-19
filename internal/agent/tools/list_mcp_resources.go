@@ -26,26 +26,26 @@ type ListMCPResourcesPermissionsParams struct {
 var listMCPResourcesDescription string
 
 func NewListMCPResourcesTool(cfg *config.ConfigStore) fantasy.AgentTool {
-	return fantasy.NewParallelAgentTool(
+	return NewParallelTool(
 		toolnames.ListMCPResources,
 		listMCPResourcesDescription,
-		func(ctx context.Context, params ListMCPResourcesParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params ListMCPResourcesParams, call fantasy.ToolCall) Result {
 			params.MCPName = strings.TrimSpace(params.MCPName)
 			if params.MCPName == "" {
-				return fantasy.NewTextErrorResponse("mcp_name parameter is required"), nil
+				return Fail("mcp_name parameter is required")
 			}
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for listing MCP resources")
+				return Fail("session ID is required for listing MCP resources")
 			}
 
 			resources, err := mcp.ListResources(ctx, cfg, params.MCPName)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(err.Error()), nil
+				return Fail(err.Error())
 			}
 			if len(resources) == 0 {
-				return fantasy.NewTextResponse("No resources found"), nil
+				return Ok("No resources found")
 			}
 
 			lines := make([]string, 0, len(resources))
@@ -71,7 +71,7 @@ func NewListMCPResourcesTool(cfg *config.ConfigStore) fantasy.AgentTool {
 			}
 
 			sort.Strings(lines)
-			return fantasy.NewTextResponse(strings.Join(lines, "\n")), nil
+			return Ok(strings.Join(lines, "\n"))
 		},
 	)
 }

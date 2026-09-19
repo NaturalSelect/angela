@@ -25,13 +25,13 @@ type Plan struct {
 	// either because nothing needs doing or because it failed in a way
 	// the model should read rather than the user approve, so the gate
 	// returns this without prompting. Apply is nil when it is set.
-	Response *fantasy.ToolResponse
+	Response *Result
 	// Refusal is attached to the response when the call is refused. The
 	// chat renders a refused edit with its diff, so dropping this would
 	// leave the user with an error and no sight of what was declined.
 	Refusal any
 	// Apply carries the call out. It runs only after the gate approves.
-	Apply func(context.Context) (fantasy.ToolResponse, error)
+	Apply func(context.Context) Result
 }
 
 // Planner is a tool that works out its call before performing it.
@@ -48,8 +48,8 @@ type Planner interface {
 
 // settled wraps an answer planning already arrived at, so the call
 // returns it instead of asking the user to approve nothing.
-func settled(resp fantasy.ToolResponse) Plan {
-	return Plan{Response: &resp}
+func settled(result Result) Plan {
+	return Plan{Response: &result}
 }
 
 // recordFileVersions stores both sides of a change in the session's

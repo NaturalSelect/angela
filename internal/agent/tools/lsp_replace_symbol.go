@@ -62,17 +62,14 @@ func NewReplaceSymbolTool(
 		files:       files,
 		filetracker: filetracker,
 	}
-	t.AgentTool = fantasy.NewAgentTool(toolnames.LSPReplaceSymbol, replaceSymbolDescription, t.run)
+	t.AgentTool = NewTool(toolnames.LSPReplaceSymbol, replaceSymbolDescription, t.run)
 	return t
 }
 
-func (t *replaceSymbolTool) run(ctx context.Context, params ReplaceSymbolParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	plan, err := t.plan(ctx, params)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
+func (t *replaceSymbolTool) run(ctx context.Context, params ReplaceSymbolParams, call fantasy.ToolCall) Result {
+	plan := t.plan(ctx, params)
 	if plan.Response != nil {
-		return *plan.Response, nil
+		return *plan.Response
 	}
 	return plan.Apply(ctx)
 }
@@ -80,20 +77,20 @@ func (t *replaceSymbolTool) run(ctx context.Context, params ReplaceSymbolParams,
 func (t *replaceSymbolTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[ReplaceSymbolParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.LSPReplaceSymbol)
+		return settled(Fail(fmt.Sprintf("invalid input for %s", toolnames.LSPReplaceSymbol))), nil
 	}
-	return t.plan(ctx, params)
+	return t.plan(ctx, params), nil
 }
 
 // plan locates the symbol and works out the file's new content. Every
 // query it makes is read-only: the language server is only asked where
 // the symbol is, and the file is only read.
-func (t *replaceSymbolTool) plan(ctx context.Context, params ReplaceSymbolParams) (Plan, error) {
+func (t *replaceSymbolTool) plan(ctx context.Context, params ReplaceSymbolParams) Plan {
 	if params.Symbol == "" {
-		return settled(fantasy.NewTextErrorResponse("symbol is required")), nil
+		return settled(Fail("symbol is required"))
 	}
 	if params.FilePath == "" {
-		return settled(fantasy.NewTextErrorResponse("file_path is required")), nil
+		return settled(Fail("file_path is required"))
 	}
 
 	action := params.Action
@@ -103,41 +100,41 @@ func (t *replaceSymbolTool) plan(ctx context.Context, params ReplaceSymbolParams
 	switch action {
 	case "replace", "add_before", "add_after", "delete":
 	default:
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("invalid action %q: must be replace, add_before, add_after, or delete", action))), nil
+		return settled(Failf("invalid action %q: must be replace, add_before, add_after, or delete", action))
 	}
 	if action != "delete" && params.Replacement == "" {
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("replacement is required for action %q", action))), nil
+		return settled(Failf("replacement is required for action %q", action))
 	}
 
 	t.lspManager.Start(ctx, params.FilePath)
 
 	client := findLSPClient(t.lspManager, params.FilePath)
 	if client == nil {
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("no LSP client handles file: %s", params.FilePath))), nil
+		return settled(Failf("no LSP client handles file: %s", params.FilePath))
 	}
 
 	symbols, err := client.DocumentSymbols(ctx, params.FilePath)
 	if err != nil {
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("failed to get document symbols: %s", err))), nil
+		return settled(Failf("failed to get document symbols: %s", err))
 	}
 
 	target := findSymbolByName(symbols, params.Symbol)
 	if target == nil {
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("symbol '%s' not found in %s", params.Symbol, params.FilePath))), nil
+		return settled(Failf("symbol '%s' not found in %s", params.Symbol, params.FilePath))
 	}
 
 	rng := target.GetRange()
 
 	content, err := os.ReadFile(params.FilePath)
 	if err != nil {
-		return Plan{}, fmt.Errorf("failed to read file: %w", err)
+		return settled(FailErr("failed to read file", err))
 	}
 
 	lines := strings.Split(string(content), "\n")
 	startLine := int(rng.Start.Line)
 	endLine := int(rng.End.Line)
 	if startLine >= len(lines) || endLine >= len(lines) {
-		return settled(fantasy.NewTextErrorResponse("symbol range exceeds file length")), nil
+		return settled(Fail("symbol range exceeds file length"))
 	}
 
 	newContent := spliceSymbol(lines, action, params.Replacement, startLine, endLine)
@@ -153,10 +150,10 @@ func (t *replaceSymbolTool) plan(ctx context.Context, params ReplaceSymbolParams
 				NewContent: newContent,
 			},
 		},
-		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+		Apply: func(ctx context.Context) Result {
 			return t.apply(ctx, params, action, sessionID, oldContent, newContent, startLine, endLine)
 		},
-	}, nil
+	}
 }
 
 // spliceSymbol rebuilds the file's lines with the symbol's range
@@ -194,11 +191,11 @@ func (t *replaceSymbolTool) apply(
 	params ReplaceSymbolParams,
 	action, sessionID, oldContent, newContent string,
 	startLine, endLine int,
-) (fantasy.ToolResponse, error) {
+) Result {
 	recordFileVersions(ctx, t.files, sessionID, params.FilePath, oldContent, newContent)
 
 	if err := os.WriteFile(params.FilePath, []byte(newContent), 0o644); err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
+		return FailErr("failed to write file", err)
 	}
 
 	if t.filetracker != nil && sessionID != "" {
@@ -219,9 +216,8 @@ func (t *replaceSymbolTool) apply(
 		summary = fmt.Sprintf("Deleted symbol '%s' from %s (lines %d-%d)", params.Symbol, params.FilePath, startLine+1, endLine+1)
 	}
 
-	resp := fantasy.NewTextResponse(summary + "\n" + getDiagnostics(params.FilePath, t.lspManager))
 	_, additions, removals := diff.GenerateDiff(oldContent, newContent, params.FilePath)
-	resp = fantasy.WithResponseMetadata(resp, ReplaceSymbolResponseMetadata{
+	return Ok(summary + "\n" + getDiagnostics(params.FilePath, t.lspManager)).WithMetadata(ReplaceSymbolResponseMetadata{
 		FilePath:   params.FilePath,
 		OldContent: oldContent,
 		NewContent: newContent,
@@ -229,7 +225,6 @@ func (t *replaceSymbolTool) apply(
 		Additions:  additions,
 		Removals:   removals,
 	})
-	return resp, nil
 }
 
 // findSymbolByName searches for a symbol by name in the document symbol tree.

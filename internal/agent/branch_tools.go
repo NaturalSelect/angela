@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	_ "embed"
-	"errors"
 
 	"charm.land/fantasy"
 
@@ -41,29 +40,27 @@ type mergeTool struct {
 
 func (c *coordinator) mergeTool() fantasy.AgentTool {
 	t := &mergeTool{c: c}
-	t.AgentTool = fantasy.NewAgentTool(toolnames.Merge, mergeDescription, t.run)
+	t.AgentTool = tools.NewTool(toolnames.Merge, mergeDescription, t.run)
 	return t
 }
 
-func (t *mergeTool) run(ctx context.Context, params mergeParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	plan, err := t.plan(ctx)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
+func (t *mergeTool) run(ctx context.Context, params mergeParams, call fantasy.ToolCall) tools.Result {
+	plan := t.plan(ctx)
 	if plan.Response != nil {
-		return *plan.Response, nil
+		return *plan.Response
 	}
 	return plan.Apply(ctx)
 }
 
 func (t *mergeTool) Plan(ctx context.Context, call fantasy.ToolCall) (tools.Plan, error) {
-	return t.plan(ctx)
+	return t.plan(ctx), nil
 }
 
-func (t *mergeTool) plan(ctx context.Context) (tools.Plan, error) {
+func (t *mergeTool) plan(ctx context.Context) tools.Plan {
 	sessionID := tools.GetSessionFromContext(ctx)
 	if sessionID == "" {
-		return tools.Plan{}, errors.New("session id missing from context")
+		result := tools.Fail("session id missing from context")
+		return tools.Plan{Response: &result}
 	}
 
 	doc, ok := t.c.proposals.Get(sessionID)
@@ -71,10 +68,8 @@ func (t *mergeTool) plan(ctx context.Context) (tools.Plan, error) {
 		// Settled before the gate: an empty proposal is the model's
 		// mistake to fix, not a decision to put to the user, and
 		// leaving the branch unresolved lets it draft and try again.
-		resp := fantasy.NewTextErrorResponse(
-			"There is no proposal to merge. Draft it with " + toolnames.ProposalWrite + " first.",
-		)
-		return tools.Plan{Response: &resp}, nil
+		result := tools.Fail("There is no proposal to merge. Draft it with " + toolnames.ProposalWrite + " first.")
+		return tools.Plan{Response: &result}
 	}
 
 	return tools.Plan{
@@ -89,21 +84,19 @@ func (t *mergeTool) plan(ctx context.Context) (tools.Plan, error) {
 				NewContent: doc,
 			},
 		},
-		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+		Apply: func(ctx context.Context) tools.Result {
 			return t.apply(sessionID, doc)
 		},
-	}, nil
+	}
 }
 
-func (t *mergeTool) apply(sessionID, doc string) (fantasy.ToolResponse, error) {
+func (t *mergeTool) apply(sessionID, doc string) tools.Result {
 	// False means the rendezvous is already resolved — the user
 	// abandoned the branch while this call was being approved.
 	// Reporting it as a tool error rather than an error keeps the
 	// branch usable instead of tearing down its turn.
 	if !t.c.branches.Signal(sessionID, branchOutcome{Merged: true, Payload: doc}) {
-		return fantasy.NewTextErrorResponse(
-			"No conversation is waiting on this branch any more, so there is nothing to merge into.",
-		), nil
+		return tools.Fail("No conversation is waiting on this branch any more, so there is nothing to merge into.")
 	}
 
 	// A prompt queued behind this turn — sent while the merge sat at the
@@ -119,5 +112,5 @@ func (t *mergeTool) apply(sessionID, doc string) (fantasy.ToolResponse, error) {
 	// this is the only place it survives for the user to reopen later.
 	resp := fantasy.NewTextResponse(doc)
 	resp.StopTurn = true
-	return resp, nil
+	return tools.FromResponse(resp)
 }

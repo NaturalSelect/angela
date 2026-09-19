@@ -70,9 +70,10 @@ func TestFetchToolRequiresSessionID(t *testing.T) {
 	input, err := json.Marshal(FetchParams{URL: srv.URL, Format: "text"})
 	require.NoError(t, err)
 
-	_, err = tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.Fetch, Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "session ID is required")
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.Fetch, Input: string(input)})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "session ID is required")
 }
 
 func TestFetchToolNonOKStatus(t *testing.T) {
@@ -299,9 +300,10 @@ func TestFetchToolTimeoutCancelsSlowRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	start := time.Now()
-	_, err = tool.Run(fetchSessionCtx(), fantasy.ToolCall{ID: "1", Name: toolnames.Fetch, Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to fetch URL")
+	resp, err := tool.Run(fetchSessionCtx(), fantasy.ToolCall{ID: "1", Name: toolnames.Fetch, Input: string(input)})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "failed to fetch URL")
 	require.Less(t, time.Since(start), 10*time.Second)
 }
 
@@ -314,9 +316,10 @@ func TestFetchToolRequestCreationError(t *testing.T) {
 	input, err := json.Marshal(FetchParams{URL: "http://example.com/\x7f", Format: "text"})
 	require.NoError(t, err)
 
-	_, err = tool.Run(fetchSessionCtx(), fantasy.ToolCall{ID: "1", Name: toolnames.Fetch, Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to create request")
+	resp, err := tool.Run(fetchSessionCtx(), fantasy.ToolCall{ID: "1", Name: toolnames.Fetch, Input: string(input)})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "failed to create request")
 }
 
 func TestExtractTextFromHTML(t *testing.T) {

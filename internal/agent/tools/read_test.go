@@ -301,10 +301,9 @@ func TestReadBuiltinFile(t *testing.T) {
 	t.Run("reads angela-config skill", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := readBuiltinFile(ReadParams{
+		resp := readBuiltinFile(ReadParams{
 			FilePath: "angela://skills/angela-config/SKILL.md",
-		}, nil)
-		require.NoError(t, err)
+		}, nil).Response()
 		require.NotEmpty(t, resp.Content)
 		require.Contains(t, resp.Content, "Angela Configuration")
 	})
@@ -312,20 +311,18 @@ func TestReadBuiltinFile(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := readBuiltinFile(ReadParams{
+		resp := readBuiltinFile(ReadParams{
 			FilePath: "angela://skills/nonexistent/SKILL.md",
-		}, nil)
-		require.NoError(t, err)
+		}, nil).Response()
 		require.True(t, resp.IsError)
 	})
 
 	t.Run("metadata has skill info", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := readBuiltinFile(ReadParams{
+		resp := readBuiltinFile(ReadParams{
 			FilePath: "angela://skills/angela-config/SKILL.md",
-		}, nil)
-		require.NoError(t, err)
+		}, nil).Response()
 
 		var meta ReadResponseMetadata
 		require.NoError(t, json.Unmarshal([]byte(resp.Metadata), &meta))
@@ -337,11 +334,10 @@ func TestReadBuiltinFile(t *testing.T) {
 	t.Run("respects offset", func(t *testing.T) {
 		t.Parallel()
 
-		resp, err := readBuiltinFile(ReadParams{
+		resp := readBuiltinFile(ReadParams{
 			FilePath: "angela://skills/angela-config/SKILL.md",
 			Offset:   5,
-		}, nil)
-		require.NoError(t, err)
+		}, nil).Response()
 		require.NotContains(t, resp.Content, "     1|")
 	})
 }

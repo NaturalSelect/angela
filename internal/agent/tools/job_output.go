@@ -28,22 +28,22 @@ type JobOutputResponseMetadata struct {
 }
 
 func NewJobOutputTool() fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.JobOutput,
 		jobOutputDescription,
-		func(ctx context.Context, params JobOutputParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params JobOutputParams, call fantasy.ToolCall) Result {
 			if params.ShellID == "" {
-				return fantasy.NewTextErrorResponse("missing shell_id"), nil
+				return Fail("missing shell_id")
 			}
 
 			bgManager := shell.GetBackgroundShellManager()
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for reading background shell output")
+				return Fail("session ID is required for reading background shell output")
 			}
 			bgShell, ok := bgManager.Get(params.ShellID, sessionID)
 			if !ok {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("background shell not found: %s", params.ShellID)), nil
+				return Failf("background shell not found: %s", params.ShellID)
 			}
 
 			if params.Wait {
@@ -87,7 +87,7 @@ func NewJobOutputTool() fantasy.AgentTool {
 			}
 
 			result := fmt.Sprintf("Status: %s\n\n%s", status, output)
-			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(result), metadata), nil
+			return Ok(result).WithMetadata(metadata)
 		},
 	)
 }

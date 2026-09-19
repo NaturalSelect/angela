@@ -210,10 +210,12 @@ func TestLoadReportRequiresASession(t *testing.T) {
 	env := newReportEnv(t)
 	tool := NewLoadReportTool(env.sessions, env.messages)
 
-	_, err := tool.Run(t.Context(), fantasy.ToolCall{
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{
 		ID:    "load-1",
 		Name:  toolnames.LoadReport,
 		Input: `{"id":"rpt_deadbeef"}`,
 	})
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "session ID is required")
 }

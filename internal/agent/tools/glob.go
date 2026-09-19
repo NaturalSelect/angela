@@ -50,12 +50,12 @@ type GlobResponseMetadata struct {
 }
 
 func NewGlobTool(workingDir string, cfg config.ToolGlob) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.Glob,
 		globDescription(),
-		func(ctx context.Context, params GlobParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params GlobParams, call fantasy.ToolCall) Result {
 			if params.Pattern == "" {
-				return fantasy.NewTextErrorResponse("pattern is required"), nil
+				return Fail("pattern is required")
 			}
 
 			searchPath := cmp.Or(params.Path, workingDir)
@@ -68,7 +68,7 @@ func NewGlobTool(workingDir string, cfg config.ToolGlob) fantasy.AgentTool {
 
 			files, truncated, err := globFiles(searchCtx, params.Pattern, searchPath, 100)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("error finding files: %v", err)), nil
+				return Failf("error finding files: %v", err)
 			}
 
 			var output string
@@ -82,13 +82,12 @@ func NewGlobTool(workingDir string, cfg config.ToolGlob) fantasy.AgentTool {
 				}
 			}
 
-			return fantasy.WithResponseMetadata(
-				fantasy.NewTextResponse(output),
+			return Ok(output).WithMetadata(
 				GlobResponseMetadata{
 					NumberOfFiles: len(files),
 					Truncated:     truncated,
 				},
-			), nil
+			)
 		},
 	)
 }

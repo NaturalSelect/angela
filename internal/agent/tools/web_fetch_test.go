@@ -129,8 +129,9 @@ func TestWebFetchToolRejectsPathTraversalSessionID(t *testing.T) {
 			input, err := json.Marshal(WebFetchParams{URL: srv.URL})
 			require.NoError(t, err)
 
-			_, err = tool.Run(ctx, fantasy.ToolCall{ID: "call-1", Name: toolnames.WebFetch, Input: string(input)})
-			require.Error(t, err, "an unsafe session id must fail the call instead of writing somewhere unexpected")
+			resp, err := tool.Run(ctx, fantasy.ToolCall{ID: "call-1", Name: toolnames.WebFetch, Input: string(input)})
+			require.NoError(t, err)
+			require.True(t, resp.IsError, "an unsafe session id must fail the call instead of writing somewhere unexpected")
 
 			_, statErr := os.Stat(unsafeTarget)
 			require.True(t, os.IsNotExist(statErr), "must not have escaped scratchRoot")

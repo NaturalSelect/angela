@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	_ "embed"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"text/template"
@@ -26,12 +25,12 @@ func NewWebSearchTool(workingDir string, client *http.Client) fantasy.AgentTool 
 		client = newDefaultHTTPClient(defaultToolHTTPTimeout)
 	}
 
-	return fantasy.NewParallelAgentTool(
+	return NewParallelTool(
 		toolnames.WebSearch,
 		renderToolDescription(webSearchDescriptionTpl),
-		func(ctx context.Context, params WebSearchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params WebSearchParams, call fantasy.ToolCall) Result {
 			if params.Query == "" {
-				return fantasy.NewTextErrorResponse("query is required"), nil
+				return Fail("query is required")
 			}
 
 			maxResults := params.MaxResults
@@ -44,17 +43,17 @@ func NewWebSearchTool(workingDir string, client *http.Client) fantasy.AgentTool 
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
+				return Fail("session ID is required for creating a new file")
 			}
 
 			maybeDelaySearch()
 			results, err := searchDuckDuckGo(ctx, client, params.Query, maxResults)
 			slog.Debug("Web search completed", "query", params.Query, "results", len(results), "err", err)
 			if err != nil {
-				return fantasy.NewTextErrorResponse("Failed to search: " + err.Error()), nil
+				return Fail("Failed to search: " + err.Error())
 			}
 
-			return fantasy.NewTextResponse(formatSearchResults(results)), nil
+			return Ok(formatSearchResults(results))
 		},
 	)
 }

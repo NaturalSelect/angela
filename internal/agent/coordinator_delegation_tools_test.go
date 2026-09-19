@@ -109,7 +109,8 @@ func TestSubagentToolsAreHookWrapped(t *testing.T) {
 				}
 			}
 			require.NotNil(t, bash, "bash must be present to be wrapped")
-			require.IsType(t, &hookedTool{}, bash, "every tool must face PreToolUse hooks")
+			require.IsType(t, &safeTool{}, bash, "every tool must face the safety wrapper")
+			require.IsType(t, &hookedTool{}, bash.(*safeTool).inner, "every tool must face PreToolUse hooks")
 
 			resp, err := bash.Run(t.Context(), fantasy.ToolCall{
 				ID: "call-1", Name: toolnames.Bash, Input: `{"command":"echo hi"}`,

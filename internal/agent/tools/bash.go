@@ -199,12 +199,12 @@ func blockFuncs() []shell.BlockFunc {
 }
 
 func NewBashTool(workingDir string, attribution *config.Attribution, modelName string) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.Bash,
 		string(bashDescription(attribution, modelName)),
-		func(ctx context.Context, params BashParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params BashParams, call fantasy.ToolCall) Result {
 			if params.Command == "" {
-				return fantasy.NewTextErrorResponse("missing command"), nil
+				return Fail("missing command")
 			}
 
 			// Determine working directory
@@ -212,7 +212,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for executing shell command")
+				return Fail("session ID is required for executing shell command")
 			}
 
 			// If explicitly requested as background, start immediately with detached context
@@ -223,7 +223,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 				// Use background context so it continues after tool returns
 				bgShell, err := bgManager.Start(context.Background(), sessionID, execWorkingDir, blockFuncs(), params.Command, params.Description)
 				if err != nil {
-					return fantasy.ToolResponse{}, fmt.Errorf("error starting background shell: %w", err)
+					return FailErr("error starting background shell", err)
 				}
 
 				// Wait a short time to detect fast failures (blocked commands, syntax errors, etc.)
@@ -237,7 +237,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 					interrupted := shell.IsInterrupt(execErr)
 					exitCode := shell.ExitCode(execErr)
 					if exitCode == 0 && !interrupted && execErr != nil {
-						return fantasy.ToolResponse{}, fmt.Errorf("[Job %s] error executing command: %w", bgShell.ID, execErr)
+						return Failf("[Job %s] error executing command: %s", bgShell.ID, execErr)
 					}
 
 					stdout = formatOutput(stdout, stderr, execErr)
@@ -251,10 +251,10 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 						WorkingDirectory: bgShell.WorkingDir,
 					}
 					if stdout == "" {
-						return fantasy.WithResponseMetadata(fantasy.NewTextResponse(BashNoOutput), metadata), nil
+						return Ok(BashNoOutput).WithMetadata(metadata)
 					}
 					stdout += fmt.Sprintf("\n\n<cwd>%s</cwd>", normalizeWorkingDir(bgShell.WorkingDir))
-					return fantasy.WithResponseMetadata(fantasy.NewTextResponse(stdout), metadata), nil
+					return Ok(stdout).WithMetadata(metadata)
 				}
 
 				// Still running after fast-failure check - return as background job
@@ -267,7 +267,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 					ShellID:          bgShell.ID,
 				}
 				response := fmt.Sprintf("Background shell started with ID: %s\n\nUse job_output tool to view output or job_kill to terminate.", bgShell.ID)
-				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
+				return Ok(response).WithMetadata(metadata)
 			}
 
 			// Start synchronous execution with auto-background support
@@ -278,7 +278,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 			bgManager.Cleanup()
 			bgShell, err := bgManager.Start(context.Background(), sessionID, execWorkingDir, blockFuncs(), params.Command, params.Description)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error starting shell: %w", err)
+				return FailErr("error starting shell", err)
 			}
 
 			// Wait for either completion, auto-background threshold, or context cancellation
@@ -305,10 +305,11 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 					stdout, stderr, done, execErr = bgShell.GetOutput()
 					break waitLoop
 				case <-ctx.Done():
-					// Incoming context was cancelled before we moved to background
-					// Kill the shell and return error
+					// Incoming context was cancelled before we moved to background;
+					// kill the shell. NewTool's adapter reads ctx.Err() itself once
+					// this returns, so the Result value here is discarded either way.
 					bgManager.Kill(bgShell.ID, sessionID)
-					return fantasy.ToolResponse{}, ctx.Err()
+					return Fail("cancelled")
 				}
 			}
 
@@ -321,7 +322,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 				interrupted := shell.IsInterrupt(execErr)
 				exitCode := shell.ExitCode(execErr)
 				if exitCode == 0 && !interrupted && execErr != nil {
-					return fantasy.ToolResponse{}, fmt.Errorf("[Job %s] error executing command: %w", bgShell.ID, execErr)
+					return Failf("[Job %s] error executing command: %s", bgShell.ID, execErr)
 				}
 
 				stdout = formatOutput(stdout, stderr, execErr)
@@ -335,10 +336,10 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 					WorkingDirectory: bgShell.WorkingDir,
 				}
 				if stdout == "" {
-					return fantasy.WithResponseMetadata(fantasy.NewTextResponse(BashNoOutput), metadata), nil
+					return Ok(BashNoOutput).WithMetadata(metadata)
 				}
 				stdout += fmt.Sprintf("\n\n<cwd>%s</cwd>", normalizeWorkingDir(bgShell.WorkingDir))
-				return fantasy.WithResponseMetadata(fantasy.NewTextResponse(stdout), metadata), nil
+				return Ok(stdout).WithMetadata(metadata)
 			}
 
 			// Still running - keep as background job
@@ -351,7 +352,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 				ShellID:          bgShell.ID,
 			}
 			response := fmt.Sprintf("Command is taking longer than expected and has been moved to background.\n\nBackground shell ID: %s\n\nUse job_output tool to view output or job_kill to terminate.", bgShell.ID)
-			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
+			return Ok(response).WithMetadata(metadata)
 		},
 	)
 }

@@ -46,26 +46,26 @@ func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 		client = newDefaultHTTPClient(defaultToolHTTPTimeout)
 	}
 
-	return fantasy.NewParallelAgentTool(
+	return NewParallelTool(
 		toolnames.Fetch,
 		fetchDescription(),
-		func(ctx context.Context, params FetchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params FetchParams, call fantasy.ToolCall) Result {
 			if params.URL == "" {
-				return fantasy.NewTextErrorResponse("URL parameter is required"), nil
+				return Fail("URL parameter is required")
 			}
 
 			format := strings.ToLower(params.Format)
 			if format != "text" && format != "markdown" && format != "html" {
-				return fantasy.NewTextErrorResponse("Format must be one of: text, markdown, html"), nil
+				return Fail("Format must be one of: text, markdown, html")
 			}
 
 			if !strings.HasPrefix(params.URL, "http://") && !strings.HasPrefix(params.URL, "https://") {
-				return fantasy.NewTextErrorResponse("URL must start with http:// or https://"), nil
+				return Fail("URL must start with http:// or https://")
 			}
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
+				return Fail("session ID is required for creating a new file")
 			}
 
 			// maxFetchTimeoutSeconds is the maximum allowed timeout for fetch requests (2 minutes)
@@ -84,31 +84,31 @@ func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 
 			req, err := http.NewRequestWithContext(requestCtx, "GET", params.URL, nil)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create request: %w", err)
+				return FailErr("failed to create request", err)
 			}
 
 			req.Header.Set("User-Agent", "angela/1.0")
 
 			resp, err := client.Do(req)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to fetch URL: %w", err)
+				return FailErr("failed to fetch URL", err)
 			}
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
+				return Failf("Request failed with status code: %d", resp.StatusCode)
 			}
 
 			body, err := io.ReadAll(io.LimitReader(resp.Body, MaxFetchSize))
 			if err != nil {
-				return fantasy.NewTextErrorResponse("Failed to read response body: " + err.Error()), nil
+				return Fail("Failed to read response body: " + err.Error())
 			}
 
 			content := string(body)
 
 			validUTF8 := utf8.ValidString(content)
 			if !validUTF8 {
-				return fantasy.NewTextErrorResponse("Response content is not valid UTF-8"), nil
+				return Fail("Response content is not valid UTF-8")
 			}
 			contentType := resp.Header.Get("Content-Type")
 
@@ -117,7 +117,7 @@ func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 				if strings.Contains(contentType, "text/html") {
 					text, err := extractTextFromHTML(content)
 					if err != nil {
-						return fantasy.NewTextErrorResponse("Failed to extract text from HTML: " + err.Error()), nil
+						return Fail("Failed to extract text from HTML: " + err.Error())
 					}
 					content = text
 				}
@@ -126,7 +126,7 @@ func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 				if strings.Contains(contentType, "text/html") {
 					markdown, err := convertHTMLToMarkdown(content)
 					if err != nil {
-						return fantasy.NewTextErrorResponse("Failed to convert HTML to Markdown: " + err.Error()), nil
+						return Fail("Failed to convert HTML to Markdown: " + err.Error())
 					}
 					content = markdown
 				}
@@ -138,14 +138,14 @@ func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 				if strings.Contains(contentType, "text/html") {
 					doc, err := goquery.NewDocumentFromReader(strings.NewReader(content))
 					if err != nil {
-						return fantasy.NewTextErrorResponse("Failed to parse HTML: " + err.Error()), nil
+						return Fail("Failed to parse HTML: " + err.Error())
 					}
 					body, err := doc.Find("body").Html()
 					if err != nil {
-						return fantasy.NewTextErrorResponse("Failed to extract body from HTML: " + err.Error()), nil
+						return Fail("Failed to extract body from HTML: " + err.Error())
 					}
 					if body == "" {
-						return fantasy.NewTextErrorResponse("No body content found in HTML"), nil
+						return Fail("No body content found in HTML")
 					}
 					content = "<html>\n<body>\n" + body + "\n</body>\n</html>"
 				}
@@ -156,7 +156,7 @@ func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 				content += fmt.Sprintf("\n\n[Content truncated to %d bytes]", MaxFetchSize)
 			}
 
-			return fantasy.NewTextResponse(content), nil
+			return Ok(content)
 		},
 	)
 }

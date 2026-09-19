@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	_ "embed"
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -27,30 +26,30 @@ type ReadMCPResourcePermissionsParams struct {
 var readMCPResourceDescription string
 
 func NewReadMCPResourceTool(cfg *config.ConfigStore) fantasy.AgentTool {
-	return fantasy.NewParallelAgentTool(
+	return NewParallelTool(
 		toolnames.ReadMCPResource,
 		readMCPResourceDescription,
-		func(ctx context.Context, params ReadMCPResourceParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params ReadMCPResourceParams, call fantasy.ToolCall) Result {
 			params.MCPName = strings.TrimSpace(params.MCPName)
 			params.URI = strings.TrimSpace(params.URI)
 			if params.MCPName == "" {
-				return fantasy.NewTextErrorResponse("mcp_name parameter is required"), nil
+				return Fail("mcp_name parameter is required")
 			}
 			if params.URI == "" {
-				return fantasy.NewTextErrorResponse("uri parameter is required"), nil
+				return Fail("uri parameter is required")
 			}
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for reading MCP resources")
+				return Fail("session ID is required for reading MCP resources")
 			}
 
 			contents, err := mcp.ReadResource(ctx, cfg, params.MCPName, params.URI)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(err.Error()), nil
+				return Fail(err.Error())
 			}
 			if len(contents) == 0 {
-				return fantasy.NewTextResponse(""), nil
+				return Ok("")
 			}
 
 			var textParts []string
@@ -70,10 +69,10 @@ func NewReadMCPResourceTool(cfg *config.ConfigStore) fantasy.AgentTool {
 			}
 
 			if len(textParts) == 0 {
-				return fantasy.NewTextResponse(""), nil
+				return Ok("")
 			}
 
-			return fantasy.NewTextResponse(strings.Join(textParts, "\n")), nil
+			return Ok(strings.Join(textParts, "\n"))
 		},
 	)
 }

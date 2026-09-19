@@ -22,28 +22,28 @@ type CallHierarchyParams struct {
 var callHierarchyDescription string
 
 func NewCallHierarchyTool(lspManager *lsp.Manager) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.LSPCallHierarchy,
 		callHierarchyDescription,
-		func(ctx context.Context, params CallHierarchyParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params CallHierarchyParams, call fantasy.ToolCall) Result {
 			if params.Symbol == "" {
-				return fantasy.NewTextErrorResponse("symbol is required"), nil
+				return Fail("symbol is required")
 			}
 			if params.Direction != "incoming" && params.Direction != "outgoing" {
-				return fantasy.NewTextErrorResponse("direction must be 'incoming' or 'outgoing'"), nil
+				return Fail("direction must be 'incoming' or 'outgoing'")
 			}
 			workingDir := cmp.Or(params.Path, ".")
 			resolved, err := resolveSymbol(ctx, lspManager, params.Symbol, workingDir)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("Symbol '%s' not found", params.Symbol)), nil
+				return Failf("Symbol '%s' not found", params.Symbol)
 			}
 
 			items, err := resolved.client.PrepareCallHierarchy(ctx, resolved.path, resolved.line, resolved.char)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to prepare call hierarchy: %s", err)), nil
+				return Failf("failed to prepare call hierarchy: %s", err)
 			}
 			if len(items) == 0 {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("No call hierarchy information for '%s'", params.Symbol)), nil
+				return Failf("No call hierarchy information for '%s'", params.Symbol)
 			}
 
 			item := items[0]
@@ -54,7 +54,7 @@ func NewCallHierarchyTool(lspManager *lsp.Manager) fantasy.AgentTool {
 			if params.Direction == "incoming" {
 				calls, err := resolved.client.IncomingCalls(ctx, item)
 				if err != nil {
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to get incoming calls: %s", err)), nil
+					return Failf("failed to get incoming calls: %s", err)
 				}
 				if len(calls) == 0 {
 					b.WriteString("No incoming calls found.\n")
@@ -69,7 +69,7 @@ func NewCallHierarchyTool(lspManager *lsp.Manager) fantasy.AgentTool {
 			} else {
 				calls, err := resolved.client.OutgoingCalls(ctx, item)
 				if err != nil {
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to get outgoing calls: %s", err)), nil
+					return Failf("failed to get outgoing calls: %s", err)
 				}
 				if len(calls) == 0 {
 					b.WriteString("No outgoing calls found.\n")
@@ -83,7 +83,7 @@ func NewCallHierarchyTool(lspManager *lsp.Manager) fantasy.AgentTool {
 				}
 			}
 
-			return fantasy.NewTextResponse(b.String()), nil
+			return Ok(b.String())
 		},
 	)
 }

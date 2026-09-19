@@ -50,22 +50,22 @@ func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 		client = newDefaultHTTPClient(defaultToolHTTPTimeout)
 	}
 
-	return fantasy.NewParallelAgentTool(
+	return NewParallelTool(
 		toolnames.WebFetch,
 		renderToolDescription(webFetchDescriptionTpl),
-		func(ctx context.Context, params WebFetchParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params WebFetchParams, call fantasy.ToolCall) Result {
 			if params.URL == "" {
-				return fantasy.NewTextErrorResponse("url is required"), nil
+				return Fail("url is required")
 			}
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for creating a new file")
+				return Fail("session ID is required for creating a new file")
 			}
 
 			content, err := FetchURLAndConvert(ctx, client, params.URL)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to fetch URL: %s", err)), nil
+				return Failf("Failed to fetch URL: %s", err)
 			}
 
 			hasLargeContent := len(content) > LargeContentThreshold
@@ -74,24 +74,24 @@ func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 			if hasLargeContent {
 				sessionScratchDir, err := WebFetchScratchDir(scratchDir, sessionID)
 				if err != nil {
-					return fantasy.ToolResponse{}, err
+					return Fail(err.Error())
 				}
 				if err := os.MkdirAll(sessionScratchDir, 0o700); err != nil {
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to create scratch directory: %s", err)), nil
+					return Failf("Failed to create scratch directory: %s", err)
 				}
 
 				tempFile, err := os.CreateTemp(sessionScratchDir, "page-*.md")
 				if err != nil {
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to create temporary file: %s", err)), nil
+					return Failf("Failed to create temporary file: %s", err)
 				}
 				tempFilePath := tempFile.Name()
 
 				if _, err := tempFile.WriteString(content); err != nil {
 					_ = tempFile.Close() // Best effort close
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to write content to file: %s", err)), nil
+					return Failf("Failed to write content to file: %s", err)
 				}
 				if err := tempFile.Close(); err != nil {
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to close temporary file: %s", err)), nil
+					return Failf("Failed to close temporary file: %s", err)
 				}
 
 				fmt.Fprintf(&result, "Fetched content from %s (large page)\n\n", params.URL)
@@ -102,7 +102,7 @@ func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 				result.WriteString(content)
 			}
 
-			return fantasy.NewTextResponse(result.String()), nil
+			return Ok(result.String())
 		},
 	)
 }

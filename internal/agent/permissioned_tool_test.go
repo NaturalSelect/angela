@@ -289,7 +289,7 @@ func TestPermissionedTool_SettledPlanSkipsTheGate(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	settled := fantasy.NewTextErrorResponse("old_string not found")
+	settled := tools.Fail("old_string not found")
 	inner := newPlanningTool(t, toolnames.Edit, tools.Plan{Response: &settled})
 
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
@@ -299,7 +299,7 @@ func TestPermissionedTool_SettledPlanSkipsTheGate(t *testing.T) {
 	resp, err := gated.Run(sessionCtx(t.Context()), editCall(t, filepath.Join(dir, "a.go")))
 	require.NoError(t, err)
 
-	require.Equal(t, settled.Content, resp.Content)
+	require.Equal(t, settled.Response().Content, resp.Content)
 	require.Equal(t, 1, inner.planned)
 	require.False(t, inner.call.called, "a settled plan must not be applied")
 	require.Empty(t, events, "a settled plan must not prompt the user")
@@ -320,9 +320,9 @@ func TestPermissionedTool_PolicyDenyPrecedesPlanning(t *testing.T) {
 	require.NoError(t, err)
 
 	applied := false
-	inner := newPlanningTool(t, toolnames.Edit, tools.Plan{Apply: func(context.Context) (fantasy.ToolResponse, error) {
+	inner := newPlanningTool(t, toolnames.Edit, tools.Plan{Apply: func(context.Context) tools.Result {
 		applied = true
-		return fantasy.NewTextResponse("wrote"), nil
+		return tools.Ok("wrote")
 	}})
 
 	svc := permission.NewPermissionService(dir, permission.ModeManual, policy)
@@ -353,8 +353,8 @@ func TestPermissionedTool_RefusalKeepsPreviewMetadata(t *testing.T) {
 			Additions: 1, Removals: 1,
 			OldContent: "a\n", NewContent: "b\n",
 		},
-		Apply: func(context.Context) (fantasy.ToolResponse, error) {
-			return fantasy.NewTextResponse("wrote"), nil
+		Apply: func(context.Context) tools.Result {
+			return tools.Ok("wrote")
 		},
 	})
 

@@ -20,29 +20,29 @@ type SymbolsParams struct {
 var symbolsDescription string
 
 func NewSymbolsTool(lspManager *lsp.Manager) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.LSPSymbols,
 		symbolsDescription,
-		func(ctx context.Context, params SymbolsParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params SymbolsParams, call fantasy.ToolCall) Result {
 			if params.FilePath == "" {
-				return fantasy.NewTextErrorResponse("file_path is required"), nil
+				return Fail("file_path is required")
 			}
 			lspManager.Start(ctx, params.FilePath)
 
 			client := findLSPClient(lspManager, params.FilePath)
 			if client == nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("no LSP client handles file: %s", params.FilePath)), nil
+				return Failf("no LSP client handles file: %s", params.FilePath)
 			}
 
 			symbols, err := client.DocumentSymbols(ctx, params.FilePath)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to get document symbols: %s", err)), nil
+				return Failf("failed to get document symbols: %s", err)
 			}
 			if len(symbols) == 0 {
-				return fantasy.NewTextResponse(fmt.Sprintf("No symbols found in %s", params.FilePath)), nil
+				return Ok(fmt.Sprintf("No symbols found in %s", params.FilePath))
 			}
 
-			return fantasy.NewTextResponse(formatSymbols(symbols, 0)), nil
+			return Ok(formatSymbols(symbols, 0))
 		},
 	)
 }

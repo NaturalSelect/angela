@@ -60,9 +60,10 @@ func TestNewDownloadToolRequiresSessionID(t *testing.T) {
 	input, err := json.Marshal(DownloadParams{URL: "https://example.com/file", FilePath: "out.bin"})
 	require.NoError(t, err)
 
-	_, err = tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.Download, Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "session ID is required")
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.Download, Input: string(input)})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "session ID is required")
 }
 
 func TestNewDownloadToolWritesFileUnderWorkingDir(t *testing.T) {

@@ -73,17 +73,14 @@ func NewWriteTool(
 		filetracker: filetracker,
 		workingDir:  workingDir,
 	}
-	t.AgentTool = fantasy.NewAgentTool(toolnames.Write, writeDescription, t.run)
+	t.AgentTool = NewTool(toolnames.Write, writeDescription, t.run)
 	return t
 }
 
-func (t *writeTool) run(ctx context.Context, params WriteParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	plan, err := t.plan(ctx, params)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
+func (t *writeTool) run(ctx context.Context, params WriteParams, call fantasy.ToolCall) Result {
+	plan := t.plan(ctx, params)
 	if plan.Response != nil {
-		return *plan.Response, nil
+		return *plan.Response
 	}
 	return plan.Apply(ctx)
 }
@@ -91,22 +88,22 @@ func (t *writeTool) run(ctx context.Context, params WriteParams, call fantasy.To
 func (t *writeTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[WriteParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.Write)
+		return settled(Fail(fmt.Sprintf("invalid input for %s", toolnames.Write))), nil
 	}
-	return t.plan(ctx, params)
+	return t.plan(ctx, params), nil
 }
 
 // plan reads what the write would replace and works out the diff,
 // without creating anything. Nothing here touches the file being
 // written, so a refused write leaves the disk as it found it.
-func (t *writeTool) plan(ctx context.Context, params WriteParams) (Plan, error) {
+func (t *writeTool) plan(ctx context.Context, params WriteParams) Plan {
 	if params.FilePath == "" {
-		return settled(fantasy.NewTextErrorResponse("file_path is required")), nil
+		return settled(Fail("file_path is required"))
 	}
 
 	sessionID := GetSessionFromContext(ctx)
 	if sessionID == "" {
-		return Plan{}, fmt.Errorf("session_id is required")
+		return settled(Fail("session_id is required"))
 	}
 
 	filePath := filepathext.SmartJoin(t.workingDir, params.FilePath)
@@ -117,24 +114,24 @@ func (t *writeTool) plan(ctx context.Context, params WriteParams) (Plan, error) 
 	switch {
 	case err == nil:
 		if fileInfo.IsDir() {
-			return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("Path is a directory, not a file: %s", filePath))), nil
+			return settled(Fail(fmt.Sprintf("Path is a directory, not a file: %s", filePath)))
 		}
 
 		modTime := fileInfo.ModTime().Truncate(time.Second)
 		lastRead := t.filetracker.LastReadTime(ctx, sessionID, filePath)
 		if modTime.After(lastRead) {
-			return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("File %s has been modified since it was last read.\nLast modification: %s\nLast read: %s\n\nPlease read the file again before modifying it.",
-				filePath, modTime.Format(time.RFC3339), lastRead.Format(time.RFC3339)))), nil
+			return settled(Fail(fmt.Sprintf("File %s has been modified since it was last read.\nLast modification: %s\nLast read: %s\n\nPlease read the file again before modifying it.",
+				filePath, modTime.Format(time.RFC3339), lastRead.Format(time.RFC3339))))
 		}
 
 		if oldBytes, readErr := os.ReadFile(filePath); readErr == nil {
 			oldContent = string(oldBytes)
 			if oldContent == params.Content {
-				return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("File %s already contains the exact content. No changes made.", filePath))), nil
+				return settled(Fail(fmt.Sprintf("File %s already contains the exact content. No changes made.", filePath)))
 			}
 		}
 	case !os.IsNotExist(err):
-		return Plan{}, fmt.Errorf("error checking file: %w", err)
+		return settled(FailErr("error checking file", err))
 	}
 
 	unified, additions, removals := diff.GenerateDiff(
@@ -160,10 +157,10 @@ func (t *writeTool) plan(ctx context.Context, params WriteParams) (Plan, error) 
 			},
 		},
 		Refusal: metadata,
-		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+		Apply: func(ctx context.Context) Result {
 			return t.apply(ctx, params, filePath, sessionID, oldContent, metadata)
 		},
-	}, nil
+	}
 }
 
 func (t *writeTool) apply(
@@ -171,19 +168,19 @@ func (t *writeTool) apply(
 	params WriteParams,
 	filePath, sessionID, oldContent string,
 	metadata WriteResponseMetadata,
-) (fantasy.ToolResponse, error) {
+) Result {
 	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("error creating directory: %w", err)
+		return FailErr("error creating directory", err)
 	}
 
 	if err := os.WriteFile(filePath, []byte(params.Content), 0o644); err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("error writing file: %w", err)
+		return FailErr("error writing file", err)
 	}
 
 	file, err := t.files.GetByPathAndSession(ctx, filePath, sessionID)
 	if err != nil {
 		if _, err := t.files.Create(ctx, sessionID, filePath, oldContent); err != nil {
-			return fantasy.ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
+			return FailErr("error creating file history", err)
 		}
 	}
 	if file.Content != oldContent {
@@ -203,5 +200,5 @@ func (t *writeTool) apply(
 	result := fmt.Sprintf("File successfully written: %s", filePath)
 	result = fmt.Sprintf("<result>\n%s\n</result>", result)
 	result += getDiagnostics(filePath, t.lspManager)
-	return fantasy.WithResponseMetadata(fantasy.NewTextResponse(result), metadata), nil
+	return Ok(result).WithMetadata(metadata)
 }

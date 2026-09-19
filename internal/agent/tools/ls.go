@@ -71,26 +71,23 @@ func lsDescription() string {
 }
 
 func NewLsTool(workingDir string, lsConfig config.ToolLs) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.LS,
 		lsDescription(),
-		func(ctx context.Context, params LSParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params LSParams, call fantasy.ToolCall) Result {
 			searchPath, err := fsext.Expand(cmp.Or(params.Path, workingDir))
 			if err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("error expanding path: %v", err)), nil
+				return Failf("error expanding path: %v", err)
 			}
 
 			searchPath = filepathext.SmartJoin(workingDir, searchPath)
 
 			output, metadata, err := ListDirectoryTree(searchPath, params, lsConfig)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(err.Error()), nil
+				return Fail(err.Error())
 			}
 
-			return fantasy.WithResponseMetadata(
-				fantasy.NewTextResponse(output),
-				metadata,
-			), nil
+			return Ok(output).WithMetadata(metadata)
 		},
 	)
 }

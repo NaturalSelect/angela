@@ -24,24 +24,24 @@ type JobKillResponseMetadata struct {
 }
 
 func NewJobKillTool() fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.JobKill,
 		jobKillDescription,
-		func(ctx context.Context, params JobKillParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params JobKillParams, call fantasy.ToolCall) Result {
 			if params.ShellID == "" {
-				return fantasy.NewTextErrorResponse("missing shell_id"), nil
+				return Fail("missing shell_id")
 			}
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for terminating a background shell")
+				return Fail("session ID is required for terminating a background shell")
 			}
 
 			bgManager := shell.GetBackgroundShellManager()
 
 			bgShell, ok := bgManager.Get(params.ShellID, sessionID)
 			if !ok {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("background shell not found: %s", params.ShellID)), nil
+				return Failf("background shell not found: %s", params.ShellID)
 			}
 
 			metadata := JobKillResponseMetadata{
@@ -52,11 +52,11 @@ func NewJobKillTool() fantasy.AgentTool {
 
 			err := bgManager.Kill(params.ShellID, sessionID)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(err.Error()), nil
+				return Fail(err.Error())
 			}
 
 			result := fmt.Sprintf("Background shell %s terminated successfully", params.ShellID)
-			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(result), metadata), nil
+			return Ok(result).WithMetadata(metadata)
 		},
 	)
 }

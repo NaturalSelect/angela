@@ -24,6 +24,7 @@ tasks:
     desc: Run base linters
     cmds:
       - task: lint:log
+      - task: lint:tools
       - golangci-lint run --path-mode=abs --config=".golangci.yml" --timeout=5m
     env:
       GOEXPERIMENT: null
@@ -32,6 +33,11 @@ tasks:
     desc: Check that log messages start with capital letters
     cmds:
       - ./scripts/check_log_capitalization.sh
+
+  lint:tools:
+    desc: Check that tools go through tools.NewTool / tools.NewParallelTool
+    cmds:
+      - ./scripts/check_tool_results.sh
 
   lint:fix:
     desc: Run base linters and fix issues

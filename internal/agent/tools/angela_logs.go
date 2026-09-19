@@ -73,12 +73,12 @@ type AngelaLogsParams struct {
 }
 
 func NewAngelaLogsTool(logFile string) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.AngelaLogs,
 		angelaLogsDescription(),
-		func(ctx context.Context, params AngelaLogsParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params AngelaLogsParams, call fantasy.ToolCall) Result {
 			result := runAngelaLogs(logFile, params)
-			return fantasy.NewTextResponse(result), nil
+			return Ok(result)
 		},
 	)
 }

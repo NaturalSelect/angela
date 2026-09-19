@@ -28,18 +28,18 @@ type ReferencesParams struct {
 var referencesDescription string
 
 func NewReferencesTool(lspManager *lsp.Manager) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.LSPReferences,
 		referencesDescription,
-		func(ctx context.Context, params ReferencesParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params ReferencesParams, call fantasy.ToolCall) Result {
 			if params.Symbol == "" {
-				return fantasy.NewTextErrorResponse("symbol is required"), nil
+				return Fail("symbol is required")
 			}
 
 			workingDir := cmp.Or(params.Path, ".")
 			results, err := resolveSymbolResults(ctx, lspManager, params.Symbol, workingDir)
 			if err != nil {
-				return fantasy.NewTextResponse(fmt.Sprintf("Symbol '%s' not found", params.Symbol)), nil
+				return Ok(fmt.Sprintf("Symbol '%s' not found", params.Symbol))
 			}
 
 			var allLocations []protocol.Location
@@ -63,13 +63,13 @@ func NewReferencesTool(lspManager *lsp.Manager) fantasy.AgentTool {
 
 			if len(allLocations) > 0 {
 				output := formatReferences(cleanupLocations(allLocations))
-				return fantasy.NewTextResponse(output), nil
+				return Ok(output)
 			}
 
 			if allErrs != nil {
-				return fantasy.NewTextErrorResponse(allErrs.Error()), nil
+				return Fail(allErrs.Error())
 			}
-			return fantasy.NewTextResponse(fmt.Sprintf("No references found for symbol '%s'", params.Symbol)), nil
+			return Ok(fmt.Sprintf("No references found for symbol '%s'", params.Symbol))
 		},
 	)
 }

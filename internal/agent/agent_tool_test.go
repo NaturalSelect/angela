@@ -47,9 +47,9 @@ func TestAgentToolRequiresAgentMessageID(t *testing.T) {
 		Name:  toolnames.Agent,
 		Input: `{"prompt":"hello"}`,
 	})
-	require.Error(t, err)
-	require.Equal(t, "agent message id missing from context", err.Error())
-	require.Empty(t, resp)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Equal(t, "agent message id missing from context", resp.Content)
 }
 
 // TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves pins that
@@ -96,9 +96,9 @@ func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 		Name:  toolnames.Agent,
 		Input: `{"prompt":"hello"}`,
 	})
-	require.Error(t, err)
-	require.Equal(t, "session id missing from context", err.Error())
-	require.Empty(t, resp)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Equal(t, "session id missing from context", resp.Content)
 }
 
 // TestAgentToolUnknownSubagentTypeListsAvailable pins M10: an unknown

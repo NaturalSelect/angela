@@ -98,9 +98,10 @@ func TestTool_Run_RequiresSession(t *testing.T) {
 
 	tool := &Tool{mcpName: "git", tool: &mcp.Tool{Name: "commit"}}
 
-	_, err := tool.Run(t.Context(), fantasy.ToolCall{Input: `{}`})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "session ID is required")
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{Input: `{}`})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "session ID is required")
 }
 
 // TestTool_Run_InvalidJSONInput pins that malformed call input is

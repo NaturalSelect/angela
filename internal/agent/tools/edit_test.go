@@ -21,9 +21,7 @@ func editPlan(t *testing.T, dir string, tracker filetracker.Service, files histo
 	tool := NewEditTool(nil, files, tracker, dir).(*editTool)
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "session")
 
-	plan, err := tool.plan(ctx, params)
-	require.NoError(t, err)
-	return plan, ctx
+	return tool.plan(ctx, params), ctx
 }
 
 func TestReplaceContentPreservesCRLFAndMetadata(t *testing.T) {
@@ -38,8 +36,7 @@ func TestReplaceContentPreservesCRLFAndMetadata(t *testing.T) {
 		FilePath: filePath, OldString: "beta", NewString: "BETA",
 	})
 
-	resp, err := plan.Apply(ctx)
-	require.NoError(t, err)
+	resp := plan.Apply(ctx).Response()
 	require.False(t, resp.IsError)
 	require.Contains(t, resp.Content, "Content replaced in file: "+filePath)
 
@@ -67,8 +64,8 @@ func TestDeleteContentRejectsMultipleMatchesWithoutReplaceAll(t *testing.T) {
 	})
 
 	require.NotNil(t, plan.Response, "an ambiguous edit is settled, not prompted")
-	require.True(t, plan.Response.IsError)
-	require.Contains(t, plan.Response.Content, "old_string appears multiple times")
+	require.True(t, plan.Response.Response().IsError)
+	require.Contains(t, plan.Response.Response().Content, "old_string appears multiple times")
 	require.Nil(t, plan.Apply)
 
 	content, err := os.ReadFile(filePath)
@@ -93,8 +90,7 @@ func TestEditCreatePlanCreatesNothing(t *testing.T) {
 	require.NoDirExists(t, filepath.Dir(nested), "planning must not create directories")
 	require.NotNil(t, plan.Apply)
 
-	_, err := plan.Apply(ctx)
-	require.NoError(t, err)
+	plan.Apply(ctx)
 
 	content, err := os.ReadFile(nested)
 	require.NoError(t, err)
@@ -118,8 +114,8 @@ func TestEditPlanKeepsMismatchDiagnostics(t *testing.T) {
 	})
 
 	require.NotNil(t, plan.Response)
-	require.True(t, plan.Response.IsError)
-	require.Contains(t, plan.Response.Content, "old_string not found")
+	require.True(t, plan.Response.Response().IsError)
+	require.Contains(t, plan.Response.Response().Content, "old_string not found")
 	require.Nil(t, plan.Apply)
 }
 
@@ -163,8 +159,8 @@ func TestEditPlanRefusesUnreadFile(t *testing.T) {
 	})
 
 	require.NotNil(t, plan.Response)
-	require.True(t, plan.Response.IsError)
-	require.Contains(t, plan.Response.Content, "must read the file")
+	require.True(t, plan.Response.Response().IsError)
+	require.Contains(t, plan.Response.Response().Content, "must read the file")
 	require.Nil(t, plan.Apply)
 }
 

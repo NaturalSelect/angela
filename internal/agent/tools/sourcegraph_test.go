@@ -460,9 +460,10 @@ func TestNewSourcegraphToolMalformedJSONResponse(t *testing.T) {
 	input, err := json.Marshal(SourcegraphParams{Query: "needle"})
 	require.NoError(t, err)
 
-	_, err = tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.Sourcegraph, Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to unmarshal response")
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.Sourcegraph, Input: string(input)})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "failed to unmarshal response")
 }
 
 func TestNewSourcegraphToolFormatErrorFromMalformedButValidJSON(t *testing.T) {
@@ -524,9 +525,10 @@ func TestNewSourcegraphToolTimeoutCancelsSlowRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	start := time.Now()
-	_, err = tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.Sourcegraph, Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to fetch URL")
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.Sourcegraph, Input: string(input)})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "failed to fetch URL")
 	require.Less(t, time.Since(start), 10*time.Second)
 }
 

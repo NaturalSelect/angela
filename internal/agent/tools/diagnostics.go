@@ -24,13 +24,13 @@ type DiagnosticsParams struct {
 var diagnosticsDescription string
 
 func NewDiagnosticsTool(lspManager *lsp.Manager) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.LSPDiagnostics,
 		diagnosticsDescription,
-		func(ctx context.Context, params DiagnosticsParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params DiagnosticsParams, call fantasy.ToolCall) Result {
 			notifyLSPs(ctx, lspManager, params.FilePath)
 			output := getDiagnostics(params.FilePath, lspManager)
-			return fantasy.NewTextResponse(output), nil
+			return Ok(output)
 		},
 	)
 }

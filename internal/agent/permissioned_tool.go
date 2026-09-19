@@ -60,7 +60,7 @@ func (p *permissionedTool) Run(ctx context.Context, call fantasy.ToolCall) (fant
 
 	sessionID := tools.GetSessionFromContext(ctx)
 	if sessionID == "" {
-		return fantasy.ToolResponse{}, fmt.Errorf("session ID is required to run %s", call.Name)
+		return fantasy.NewTextErrorResponse(fmt.Sprintf("session ID is required to run %s", call.Name)), nil
 	}
 
 	// A denied call must be refused before anything reads the file it
@@ -101,7 +101,7 @@ func (p *permissionedTool) runPlanned(
 		return fantasy.ToolResponse{}, err
 	}
 	if plan.Response != nil {
-		return *plan.Response, nil
+		return plan.Response.Response(), nil
 	}
 
 	decision := p.permissions.Gate(ctx, permission.GateRequest{
@@ -118,5 +118,12 @@ func (p *permissionedTool) runPlanned(
 		return resp, nil
 	}
 
-	return plan.Apply(ctx)
+	result := plan.Apply(ctx)
+	// Apply ran arbitrary work under a ctx that may have been canceled
+	// partway through; the adapter in tools.NewTool would normally catch
+	// that, but a Planner's Apply bypasses it, so check directly.
+	if err := ctx.Err(); err != nil {
+		return fantasy.ToolResponse{}, err
+	}
+	return result.Response(), nil
 }

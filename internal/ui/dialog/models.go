@@ -38,6 +38,10 @@ const (
 // ModelsID is the identifier for the model selection dialog.
 const ModelsID = "models"
 
+// AgentModelModelsID is the identifier for the model picker in the
+// "Switch Agent Model" flow.
+const AgentModelModelsID = "agent-model-models"
+
 const defaultModelsDialogMaxWidth = 73
 
 // Models represents a model selection dialog.
@@ -61,6 +65,14 @@ type Models struct {
 	// highlighted entry is the one the session actually runs rather
 	// than the global default.
 	active *workspace.ActiveAgent
+
+	// forAgent is set by ForAgent to switch the dialog into the
+	// "Switch Agent Model" flow: a pick reports ActionSelectAgentModel
+	// for this agent instead of editing modelName, and active (built
+	// by the caller from that agent's own instance rather than the
+	// session's) decides the highlighted entry regardless of which
+	// slot it runs on.
+	forAgent string
 
 	// catalogLoaded reports whether providers arrived. Recents can only
 	// be judged stale against a loaded catalog: pruning them against an
@@ -155,6 +167,9 @@ func NewModels(com *common.Common, isOnboarding bool, active *workspace.ActiveAg
 
 // ID implements Dialog.
 func (m *Models) ID() string {
+	if m.forAgent != "" {
+		return AgentModelModelsID
+	}
 	return ModelsID
 }
 
@@ -242,6 +257,14 @@ func (m *Models) HandleMsg(msg tea.Msg) Action {
 			modelItem, ok := selectedItem.(*ModelItem)
 			if !ok {
 				break
+			}
+
+			if m.forAgent != "" {
+				return ActionSelectAgentModel{
+					AgentID:  m.forAgent,
+					Provider: modelItem.prov,
+					Model:    modelItem.SelectedModel(),
+				}
 			}
 
 			isEdit := key.Matches(msg, m.keyMap.Edit)
@@ -375,6 +398,18 @@ func (m *Models) RestrictToProvider(id catwalk.InferenceProvider) {
 	m.setProviderItems()
 }
 
+// ForAgent switches the dialog into the "Switch Agent Model" flow: a
+// pick reports ActionSelectAgentModel for agentID instead of editing
+// modelName, and the title names the agent so the scope reads
+// unambiguously. The caller must have built active (passed to
+// NewModels) from agentID's own instance, since that is what decides
+// the entry this rebuild highlights.
+func (m *Models) ForAgent(agentID string) {
+	m.forAgent = agentID
+	m.frame.SetTitle("Model for "+agentID, "")
+	m.setProviderItems()
+}
+
 // setProviderItems sets the provider items in the list.
 func (m *Models) setProviderItems() {
 	t := m.com.Styles
@@ -384,8 +419,14 @@ func (m *Models) setProviderItems() {
 	// The list opens on what the session runs, not on the global
 	// default: highlighting the global model makes confirming it look
 	// like a no-op while it silently moves the session off its own.
+	// In the "Switch Agent Model" flow active is built from the
+	// target agent's own instance rather than the session's, and that
+	// agent may run on a slot other than modelName, so the match is
+	// unconditional there.
 	currentModel := cfg.Slots[m.modelName]
-	if m.active != nil && m.active.Slot == m.modelName {
+	if m.forAgent != "" && m.active != nil {
+		currentModel = m.active.ModelCfg
+	} else if m.active != nil && m.active.Slot == m.modelName {
 		currentModel = m.active.ModelCfg
 	}
 	recentItems := cfg.RecentModels[m.modelName]

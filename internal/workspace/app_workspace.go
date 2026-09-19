@@ -468,6 +468,15 @@ func (w *AppWorkspace) RefreshOAuthToken(ctx context.Context, scope config.Scope
 	return w.store.RefreshOAuthToken(ctx, scope, providerID)
 }
 
+func (w *AppWorkspace) SetAgentModelOverride(agentID string, model config.SelectedModel) error {
+	return w.store.SetAgentModelOverride(agentID, model)
+}
+
+func (w *AppWorkspace) ClearAgentModelOverrides() error {
+	w.store.ClearAgentModelOverrides()
+	return nil
+}
+
 // -- Project lifecycle --
 
 func (w *AppWorkspace) ProjectNeedsInitialization() (bool, error) {

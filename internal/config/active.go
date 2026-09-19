@@ -18,7 +18,10 @@ type ActiveAgent struct {
 	// It is a read-only snapshot: editing never writes to it, even
 	// when the user picks a preset — that is what VariantPick is for.
 	// Its Variant field is therefore always the config's own default,
-	// never the session's choice.
+	// except when a process-level "switch agent model" override is
+	// active for this agent: InstantiateAgent then substitutes the
+	// picked variant here so it outranks the configured one, the same
+	// way a runtime slot pin outranks the config file.
 	Agent Agent
 
 	// Slot records which global model slot Model was instantiated
@@ -105,6 +108,17 @@ func (c *Config) InstantiateAgent(agentID string) (ActiveAgent, bool) {
 		model = c.Slots[name]
 	}
 
+	// A runtime override (set by the "switch agent model" command)
+	// replaces the model outright and overrides the agent's own
+	// configured Variant, which would otherwise keep outranking the
+	// picked model's variant in EffectiveVariant. Slot is left
+	// pointing at the agent's normal slot so InstantiateFor's
+	// same-slot inheritance still applies to the overridden model.
+	if override, ok := c.AgentModelOverrides[agentID]; ok {
+		model = override
+		agent.Variant = override.Variant
+	}
+
 	active := ActiveAgent{Agent: agent, Slot: name, Model: model}
 	active.Think = c.EffectiveThink(model, active.EffectiveVariant())
 	return active.Clone(), true
@@ -180,6 +194,12 @@ func (c *Config) InstantiateFor(agentID string, host ActiveAgent) (ActiveAgent, 
 	active, ok := c.InstantiateAgent(agentID)
 	if !ok {
 		return ActiveAgent{}, false
+	}
+	if _, overridden := c.AgentModelOverrides[agentID]; overridden {
+		// An explicit pin on this agent wins over inheriting the
+		// host's model: the user asked to override this agent
+		// specifically, not whatever session it happens to run in.
+		return active, true
 	}
 	if active.Slot != host.Slot {
 		return active, true

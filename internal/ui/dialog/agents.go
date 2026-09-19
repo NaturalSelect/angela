@@ -19,15 +19,21 @@ import (
 
 const (
 	// AgentsID is the identifier for the agent selection dialog.
-	AgentsID              = "agents"
+	AgentsID = "agents"
+	// AgentModelAgentsID is the identifier for the agent picker in the
+	// "Switch Agent Model" flow, which lists every configured agent
+	// rather than only the switchable primary ones.
+	AgentModelAgentsID    = "agent-model-agents"
 	agentsDialogMaxWidth  = 60
 	agentsDialogMinHeight = 8
 	agentsDialogMaxHeight = 20
 )
 
-// Agents is a dialog for switching the session's primary agent. Only
-// primary agents are listed: subagents are delegation targets reached
-// through the agent tool, not something a session runs on.
+// Agents is a dialog for picking an agent: either the session's
+// primary agent (NewAgents), or the override target of a "Switch
+// Agent Model" pick (NewAgentModelTarget). onSelect decides which
+// action a pick reports, so both flows share one list, filter and
+// navigation implementation.
 type Agents struct {
 	com   *common.Common
 	help  help.Model
@@ -36,6 +42,9 @@ type Agents struct {
 
 	frame   *Frame
 	metrics FrameMetrics
+
+	id       string
+	onSelect func(agentID string) Action
 
 	keyMap struct {
 		Select   key.Binding
@@ -73,10 +82,47 @@ var (
 // NewAgents creates the agent selection dialog. currentAgent is the
 // agent the session runs on today, so it can be marked and preselected.
 func NewAgents(com *common.Common, currentAgent string) (*Agents, error) {
-	a := &Agents{com: com}
+	cfg := com.Config()
+	if cfg == nil {
+		return nil, errors.New("configuration not available")
+	}
+	candidates := switchableAgents(cfg)
+	if len(candidates) == 0 {
+		return nil, errors.New("no primary agents configured")
+	}
+	return newAgents(com, AgentsID, "Switch Agent", currentAgent, candidates,
+		func(agentID string) Action { return ActionSelectAgent{AgentID: agentID} })
+}
+
+// NewAgentModelTarget creates the agent picker for the "Switch Agent
+// Model" command. Every configured agent is a valid override target,
+// hidden ones included: an override applies wherever InstantiateAgent
+// resolves that agent, whether that is a session's primary agent or
+// one of Angela's own internal calls, so restricting the list the way
+// NewAgents does would make those agents unreachable for this command
+// specifically. Hidden agents keep an "internal" label so the
+// distinction isn't lost.
+func NewAgentModelTarget(com *common.Common, currentAgent string) (*Agents, error) {
+	cfg := com.Config()
+	if cfg == nil {
+		return nil, errors.New("configuration not available")
+	}
+	candidates := allAgents(cfg)
+	if len(candidates) == 0 {
+		return nil, errors.New("no agents configured")
+	}
+	return newAgents(com, AgentModelAgentsID, "Switch Agent Model", currentAgent, candidates,
+		func(agentID string) Action { return ActionSelectAgentModelTarget{AgentID: agentID} })
+}
+
+// newAgents builds the dialog plumbing shared by NewAgents and
+// NewAgentModelTarget: only the identifier, title, candidate list and
+// the action a pick reports differ between the two.
+func newAgents(com *common.Common, id, title, currentAgent string, candidates []config.Agent, onSelect func(agentID string) Action) (*Agents, error) {
+	a := &Agents{com: com, id: id, onSelect: onSelect}
 
 	a.frame = NewFrame(com.Styles, FrameSpec{
-		Title:     "Switch Agent",
+		Title:     title,
 		MaxWidth:  agentsDialogMaxWidth,
 		MinHeight: agentsDialogMinHeight,
 		MaxHeight: agentsDialogMaxHeight,
@@ -113,16 +159,14 @@ func NewAgents(com *common.Common, currentAgent string) (*Agents, error) {
 	)
 	a.keyMap.Close = CloseKey
 
-	if err := a.setAgentItems(currentAgent); err != nil {
-		return nil, err
-	}
+	a.setAgentItems(candidates, currentAgent)
 
 	return a, nil
 }
 
 // ID implements Dialog.
 func (a *Agents) ID() string {
-	return AgentsID
+	return a.id
 }
 
 // HandleMsg implements [Dialog].
@@ -159,7 +203,7 @@ func (a *Agents) HandleMsg(msg tea.Msg) Action {
 			if !ok {
 				break
 			}
-			return ActionSelectAgent{AgentID: agentItem.agentID}
+			return a.onSelect(agentItem.agentID)
 		default:
 			var cmd tea.Cmd
 			a.input, cmd = a.input.Update(msg)
@@ -237,21 +281,11 @@ func (a *Agents) FullHelp() [][]key.Binding {
 	return m
 }
 
-func (a *Agents) setAgentItems(currentAgent string) error {
-	cfg := a.com.Config()
-	if cfg == nil {
-		return errors.New("configuration not available")
-	}
-
+func (a *Agents) setAgentItems(candidates []config.Agent, currentAgent string) {
 	// An empty record means the session never switched, so it is on the
 	// coder — the same fallback the coordinator applies per turn.
 	if currentAgent == "" {
 		currentAgent = config.AgentCoder
-	}
-
-	candidates := switchableAgents(cfg)
-	if len(candidates) == 0 {
-		return errors.New("no primary agents configured")
 	}
 
 	items := make([]list.FilterableItem, 0, len(candidates))
@@ -261,11 +295,15 @@ func (a *Agents) setAgentItems(currentAgent string) error {
 		if title == "" {
 			title = agentCfg.ID
 		}
+		description := agentCfg.Description
+		if agentCfg.IsHidden() {
+			description = "internal · " + description
+		}
 		items = append(items, &AgentItem{
 			Versioned:   list.NewVersioned(),
 			agentID:     agentCfg.ID,
 			title:       title,
-			description: agentCfg.Description,
+			description: description,
 			isCurrent:   agentCfg.ID == currentAgent,
 			t:           a.com.Styles,
 		})
@@ -277,7 +315,6 @@ func (a *Agents) setAgentItems(currentAgent string) error {
 	a.list.SetItems(items...)
 	a.list.SetSelected(selectedIndex)
 	a.list.ScrollToSelected()
-	return nil
 }
 
 // switchableAgents returns the agents a session can run on, sorted by ID
@@ -290,6 +327,20 @@ func switchableAgents(cfg *config.Config) []config.Agent {
 		if agentCfg.Mode != config.AgentModePrimary || agentCfg.IsHidden() {
 			continue
 		}
+		agents = append(agents, agentCfg)
+	}
+	sort.Slice(agents, func(i, j int) bool { return agents[i].ID < agents[j].ID })
+	return agents
+}
+
+// allAgents returns every configured agent, sorted by ID so the list
+// is stable across openings. It backs the "Switch Agent Model" picker,
+// which — unlike switchableAgents — has to reach hidden agents too.
+// Disabled agents never reach cfg.Agents: ResolveAgents drops them at
+// load time.
+func allAgents(cfg *config.Config) []config.Agent {
+	agents := make([]config.Agent, 0, len(cfg.Agents))
+	for _, agentCfg := range cfg.Agents {
 		agents = append(agents, agentCfg)
 	}
 	sort.Slice(agents, func(i, j int) bool { return agents[i].ID < agents[j].ID })

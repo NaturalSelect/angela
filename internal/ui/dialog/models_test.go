@@ -203,6 +203,67 @@ func TestTheRecentEntryIsHighlightedForTheSession(t *testing.T) {
 	require.Zero(t, ws.writes, "a resolvable recent must not be pruned")
 }
 
+// TestModels_ForAgent_ChangesID verifies switching into the "Switch
+// Agent Model" flow changes the dialog's identity, so the overlay
+// stack and openDialog routing can tell it apart from the ordinary
+// model switcher.
+func TestModels_ForAgent_ChangesID(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newModelsDialog(t, ws, nil)
+	require.Equal(t, ModelsID, m.ID())
+
+	m.ForAgent("reviewer")
+	require.Equal(t, AgentModelModelsID, m.ID())
+}
+
+// TestModels_ForAgent_HighlightsRegardlessOfSlot pins the exception
+// setProviderItems carves out for the "Switch Agent Model" flow: active
+// is built from the target agent's own instance, which may run on a
+// slot other than modelName, and ForAgent must keep following it rather
+// than falling back to the global model the way the ordinary Switch
+// Model flow does for a foreign slot (TestTheListFallsBackToTheGlobalModel).
+func TestModels_ForAgent_HighlightsRegardlessOfSlot(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	active := &workspace.ActiveAgent{
+		Slot:     config.SlotChore,
+		ModelCfg: config.SelectedModel{Provider: testProviderID, Model: sessionModelID},
+	}
+	m := newModelsDialog(t, ws, active)
+	m.SetProviders(catalogFor())
+	require.Equal(t, globalModelID, selectedModelID(t, m),
+		"before ForAgent this is the ordinary flow, so a foreign slot falls back to the global model")
+
+	m.ForAgent("reviewer")
+	require.Equal(t, sessionModelID, selectedModelID(t, m),
+		"ForAgent must highlight the target agent's own model even though it runs on a different slot")
+}
+
+// TestModels_ForAgent_SelectEmitsAgentModelAction verifies a pick made
+// after ForAgent reports ActionSelectAgentModel for that agent instead
+// of the ActionSelectModel the ordinary flow emits.
+func TestModels_ForAgent_SelectEmitsAgentModelAction(t *testing.T) {
+	t.Parallel()
+
+	ws := &configWorkspace{cfg: modelsConfig(t)}
+	m := newModelsDialog(t, ws, nil)
+	m.SetProviders(catalogFor())
+	m.ForAgent("reviewer")
+
+	selected, ok := m.list.SelectedItem().(*ModelItem)
+	require.True(t, ok, "the list must have a model highlighted to pick")
+
+	action := m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionSelectAgentModel)
+	require.True(t, ok)
+	require.Equal(t, "reviewer", resp.AgentID)
+	require.Equal(t, selected.SelectedModel(), resp.Model)
+	require.Equal(t, selected.prov, resp.Provider)
+}
+
 // TestOpeningTheDialogLoadsNoCatalog is B5. Listing providers can block
 // for as long as a catalog refresh takes, and construction runs on the
 // Update goroutine.

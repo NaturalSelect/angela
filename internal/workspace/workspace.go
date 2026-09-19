@@ -282,6 +282,16 @@ type Workspace interface {
 	RemoveConfigField(scope config.Scope, key string) error
 	ImportCopilot() (*oauth.Token, bool)
 	RefreshOAuthToken(ctx context.Context, scope config.Scope, providerID string) error
+	// SetAgentModelOverride pins agentID to model (and its Variant)
+	// for the lifetime of this process, without touching any config
+	// file. It backs the "switch agent model" command, which lets a
+	// user try a different model on one agent without editing
+	// angela.json.
+	SetAgentModelOverride(agentID string, model config.SelectedModel) error
+	// ClearAgentModelOverrides drops every pin SetAgentModelOverride
+	// made on this instance, returning every agent to whatever its
+	// config file says.
+	ClearAgentModelOverrides() error
 
 	// Project lifecycle
 	ProjectNeedsInitialization() (bool, error)

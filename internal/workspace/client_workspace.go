@@ -668,6 +668,14 @@ func (w *ClientWorkspace) RefreshOAuthToken(ctx context.Context, scope config.Sc
 	return w.refreshAfter(w.client.RefreshOAuthToken(ctx, w.workspaceID(), scope, providerID))
 }
 
+func (w *ClientWorkspace) SetAgentModelOverride(agentID string, model config.SelectedModel) error {
+	return w.refreshAfter(w.client.SetAgentModelOverride(context.Background(), w.workspaceID(), agentID, model))
+}
+
+func (w *ClientWorkspace) ClearAgentModelOverrides() error {
+	return w.refreshAfter(w.client.ClearAgentModelOverrides(context.Background(), w.workspaceID()))
+}
+
 // -- Project lifecycle --
 
 func (w *ClientWorkspace) ProjectNeedsInitialization() (bool, error) {

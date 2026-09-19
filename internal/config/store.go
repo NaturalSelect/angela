@@ -70,6 +70,14 @@ type RuntimeOverrides struct {
 	// selection made here always outranks whatever the shared config file
 	// happens to hold — see pinPreferredModelLocked.
 	Slots map[SlotName]SelectedModel
+	// AgentModels records the "switch agent model" pins made in this
+	// instance, keyed by agent ID. Like Slots, they are reapplied
+	// after a config reload — see pinAgentModelOverrideLocked — except
+	// a pin that no longer validates against the reloaded config
+	// (agent removed, provider disabled, variant gone) is dropped
+	// instead of reapplied, since replaying it as-is would resolve to
+	// nothing.
+	AgentModels map[string]SelectedModel
 	// NoDockerSandbox disables the shortcut that treats an existing
 	// Docker/OCI container as sufficient sandboxing (via the
 	// --no-docker-sandbox flag), so sandbox.New still applies Landlock
@@ -501,6 +509,48 @@ func (s *ConfigStore) pinPreferredModelLocked(modelType SlotName, model Selected
 		s.overrides.Slots = make(map[SlotName]SelectedModel)
 	}
 	s.overrides.Slots[modelType] = model
+}
+
+// SetAgentModelOverride pins agentID to model (and its Variant) for the
+// lifetime of this process, without touching any config file. It backs the
+// "switch agent model" command, which lets a user try a different model on
+// one agent — including a hidden, internal one — without editing
+// angela.json. The pin outranks the agent's own config and, for any agent
+// that shares its slot, is not inherited the way a session's model pick
+// would be: see InstantiateFor.
+func (s *ConfigStore) SetAgentModelOverride(agentID string, model SelectedModel) error {
+	if err := s.Config().ValidateAgentModelOverride(agentID, model); err != nil {
+		return err
+	}
+	s.mutateInMemory(func(c *Config) {
+		if c.AgentModelOverrides == nil {
+			c.AgentModelOverrides = make(map[string]SelectedModel)
+		}
+		c.AgentModelOverrides[agentID] = model
+		s.pinAgentModelOverrideLocked(agentID, model)
+	})
+	return nil
+}
+
+// pinAgentModelOverrideLocked records an agent model override made in this
+// instance so ReloadFromDisk can replay it afterward, the same way
+// pinPreferredModelLocked does for slot pins.
+//
+// Caller must hold writeMu.
+func (s *ConfigStore) pinAgentModelOverrideLocked(agentID string, model SelectedModel) {
+	if s.overrides.AgentModels == nil {
+		s.overrides.AgentModels = make(map[string]SelectedModel)
+	}
+	s.overrides.AgentModels[agentID] = model
+}
+
+// ClearAgentModelOverrides drops every "switch agent model" pin set on this
+// instance, returning every agent to whatever its config file says.
+func (s *ConfigStore) ClearAgentModelOverrides() {
+	s.mutateInMemory(func(c *Config) {
+		c.AgentModelOverrides = nil
+		s.overrides.AgentModels = nil
+	})
 }
 
 // RemoveConfigField removes a key from the config file for the given scope.
@@ -1350,6 +1400,25 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	// Agent resolution reads only Options and AgentConfigs, so it runs
 	// regardless of whether any provider is configured.
 	prepareResolvedConfig(cfg)
+
+	// Reapply agent model overrides made in this instance, the same way
+	// Slots pins are reapplied above. Unlike a Slots pin, one that no
+	// longer validates against the reloaded config — its agent was
+	// removed, its provider disabled, its variant dropped — is discarded
+	// instead of reapplied, since keeping it would silently pin the agent
+	// to a model or variant that no longer resolves.
+	for agentID, model := range overrides.AgentModels {
+		if err := cfg.ValidateAgentModelOverride(agentID, model); err != nil {
+			slog.Warn("Dropping agent model override; it no longer resolves after reload",
+				"agent", agentID, "error", err)
+			delete(overrides.AgentModels, agentID)
+			continue
+		}
+		if cfg.AgentModelOverrides == nil {
+			cfg.AgentModelOverrides = make(map[string]SelectedModel, len(overrides.AgentModels))
+		}
+		cfg.AgentModelOverrides[agentID] = model
+	}
 
 	s.setConfig(cfg)
 	s.loadedPaths = loadedPaths

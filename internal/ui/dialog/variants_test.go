@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -121,6 +122,40 @@ func TestVariants_HandleMsg_Select(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, "low", resp.Variant)
 	})
+}
+
+// TestVariants_ForAgentModel_ChangesID verifies switching into the
+// "Switch Agent Model" flow changes the dialog's identity, so the
+// overlay stack and openDialog routing can tell it apart from the
+// ordinary variant picker.
+func TestVariants_ForAgentModel_ChangesID(t *testing.T) {
+	t.Parallel()
+
+	v := newTestVariants(t, []string{"low", "high"}, "")
+	require.Equal(t, VariantsID, v.ID())
+
+	v.ForAgentModel("reviewer", config.SelectedModel{Provider: "acme", Model: "big"})
+	require.Equal(t, AgentModelVariantsID, v.ID())
+}
+
+// TestVariants_ForAgentModel_SelectEmitsAgentModelVariant verifies a
+// pick made after ForAgentModel reports ActionSelectAgentModelVariant
+// for that agent+model instead of the ActionSelectVariant the ordinary
+// flow emits.
+func TestVariants_ForAgentModel_SelectEmitsAgentModelVariant(t *testing.T) {
+	t.Parallel()
+
+	v := newTestVariants(t, []string{"low", "high"}, "")
+	model := config.SelectedModel{Provider: "acme", Model: "big"}
+	v.ForAgentModel("reviewer", model)
+
+	v.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+	action := v.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionSelectAgentModelVariant)
+	require.True(t, ok)
+	require.Equal(t, "reviewer", resp.AgentID)
+	require.Equal(t, model, resp.Model)
+	require.Equal(t, "low", resp.Variant)
 }
 
 // TestVariants_HandleMsg_TypingFilters verifies free text narrows the

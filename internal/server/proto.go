@@ -1517,6 +1517,12 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 		// caller can correct. A 500 here would tell them to retry an
 		// edit that will never be accepted.
 		status = http.StatusBadRequest
+	case errors.Is(err, backend.ErrAgentOverrideUnknownAgent),
+		errors.Is(err, backend.ErrAgentOverrideUnknownModel),
+		errors.Is(err, backend.ErrAgentOverrideUnknownVariant):
+		// A "switch agent model" override naming an agent, model or
+		// variant that does not resolve is the caller's to correct.
+		status = http.StatusBadRequest
 	case errors.Is(err, backend.ErrAgentNotInitialized):
 		status = http.StatusBadRequest
 	case errors.Is(err, backend.ErrPathRequired):

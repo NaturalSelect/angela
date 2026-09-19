@@ -312,6 +312,41 @@ func TestDefaultCommands_TransparentBackgroundLabel(t *testing.T) {
 	})
 }
 
+// TestDefaultCommands_SwitchAgentModelAlwaysVisible verifies the
+// "Switch Agent Model" entry is always on the menu: it is how the
+// first override gets set, so it cannot be gated behind one already
+// existing.
+func TestDefaultCommands_SwitchAgentModelAlwaysVisible(t *testing.T) {
+	t.Parallel()
+
+	ids := commandIDs(newCommandsForDefaults(t, nil, false, nil, nil).defaultCommands())
+	require.Contains(t, ids, "switch_agent_model")
+}
+
+// TestDefaultCommands_ClearAgentModelOverridesGating verifies "Reset
+// Agent Model Overrides" only appears once some agent actually carries
+// a process-level override to clear.
+func TestDefaultCommands_ClearAgentModelOverridesGating(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no overrides hides the command", func(t *testing.T) {
+		t.Parallel()
+		ids := commandIDs(newCommandsForDefaults(t, &config.Config{}, false, nil, nil).defaultCommands())
+		require.NotContains(t, ids, "clear_agent_model_overrides")
+	})
+
+	t.Run("an override reveals the command", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{
+			AgentModelOverrides: map[string]config.SelectedModel{
+				"coder": {Provider: "acme", Model: "big"},
+			},
+		}
+		ids := commandIDs(newCommandsForDefaults(t, cfg, false, nil, nil).defaultCommands())
+		require.Contains(t, ids, "clear_agent_model_overrides")
+	})
+}
+
 func TestCommands_HandleMsg_Close(t *testing.T) {
 	t.Parallel()
 

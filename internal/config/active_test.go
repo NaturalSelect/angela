@@ -309,3 +309,78 @@ func TestRestoreExplicitBaselinePickOutranksSlotVariant(t *testing.T) {
 	require.Empty(t, active.EffectiveVariant(),
 		"an explicit baseline pick must not fall back to the slot's variant")
 }
+
+// TestAgentModelOverrideOutranksConfig pins the "switch agent model"
+// override contract: it replaces Model outright and outranks the
+// agent's own configured Variant, the same way a session's
+// VariantPick would. Slot stays whatever the agent's own config
+// says, so InstantiateFor's same-slot inheritance keeps working
+// against the overridden model.
+func TestAgentModelOverrideOutranksConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	agent := cfg.Agents["coder"]
+	agent.Variant = "custom"
+	cfg.Agents["coder"] = agent
+	cfg.AgentModelOverrides = map[string]SelectedModel{
+		"coder": {Provider: "groq", Model: "llama", Variant: "careful"},
+	}
+
+	active, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	require.Equal(t, "groq", active.Model.Provider)
+	require.Equal(t, "llama", active.Model.Model)
+	require.Equal(t, "careful", active.EffectiveVariant(),
+		"the override's variant must outrank the agent's own configured variant")
+	require.Equal(t, SlotMain, active.Slot,
+		"the slot label stays the agent's own, not the override's origin")
+}
+
+// TestInstantiateForIgnoresHostWhenTargetHasItsOwnOverride pins that
+// an explicit override on an internal agent wins over inheriting the
+// host's model, even when both sit on the same slot: the user asked
+// to override that agent specifically.
+func TestInstantiateForIgnoresHostWhenTargetHasItsOwnOverride(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["compact"] = Agent{ID: "compact", Slot: SlotMain}
+	cfg.AgentModelOverrides = map[string]SelectedModel{
+		"compact": {Provider: "groq", Model: "llama"},
+	}
+
+	host, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	host.Model = SelectedModel{Provider: "anthropic", Model: "claude-opus"}
+
+	compact, ok := cfg.InstantiateFor("compact", host)
+	require.True(t, ok)
+	require.Equal(t, "llama", compact.Model.Model,
+		"compact's own override must win over inheriting the host's model")
+}
+
+// TestRestoreSessionModelOutranksProcessOverride pins that a
+// session's own persisted model pick keeps winning over a
+// process-level override set on that agent afterward: switching an
+// agent's model process-wide must not silently change a session that
+// already made its own choice.
+func TestRestoreSessionModelOutranksProcessOverride(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.AgentModelOverrides = map[string]SelectedModel{
+		"coder": {Provider: "groq", Model: "llama"},
+	}
+
+	state := ActiveAgentState{
+		Agent: "coder",
+		Slot:  SlotChore,
+		Model: SelectedModel{Provider: "openai", Model: "gpt-mini"},
+	}
+	restored, ok := cfg.Restore(state)
+	require.True(t, ok)
+	require.Equal(t, "openai", restored.Model.Provider,
+		"a session's own persisted model pick must outrank a process-level override")
+	require.Equal(t, "gpt-mini", restored.Model.Model)
+}

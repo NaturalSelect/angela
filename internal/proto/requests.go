@@ -28,6 +28,14 @@ type ConfigModelRequest struct {
 	Model config.SelectedModel `json:"model"`
 }
 
+// ConfigAgentModelRequest represents a request to pin an agent to a
+// model (and variant) for the lifetime of the server process, via
+// the "switch agent model" command.
+type ConfigAgentModelRequest struct {
+	AgentID string               `json:"agent_id"`
+	Model   config.SelectedModel `json:"model"`
+}
+
 // ConfigPruneRecentModelsRequest represents a request to drop specific
 // recent-model entries. It names the entries to remove rather than the
 // list to keep, so a pick recorded concurrently is not erased.

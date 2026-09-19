@@ -299,6 +299,20 @@ func (mr *MockWorkspaceMockRecorder) AgentSummarize(ctx, sessionID any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentSummarize", reflect.TypeOf((*MockWorkspace)(nil).AgentSummarize), ctx, sessionID)
 }
 
+// ClearAgentModelOverrides mocks base method.
+func (m *MockWorkspace) ClearAgentModelOverrides() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearAgentModelOverrides")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearAgentModelOverrides indicates an expected call of ClearAgentModelOverrides.
+func (mr *MockWorkspaceMockRecorder) ClearAgentModelOverrides() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearAgentModelOverrides", reflect.TypeOf((*MockWorkspace)(nil).ClearAgentModelOverrides))
+}
+
 // Config mocks base method.
 func (m *MockWorkspace) Config() *config.Config {
 	m.ctrl.T.Helper()
@@ -1114,6 +1128,20 @@ func (m *MockWorkspace) SaveSession(ctx context.Context, sess session.Session) (
 func (mr *MockWorkspaceMockRecorder) SaveSession(ctx, sess any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveSession", reflect.TypeOf((*MockWorkspace)(nil).SaveSession), ctx, sess)
+}
+
+// SetAgentModelOverride mocks base method.
+func (m *MockWorkspace) SetAgentModelOverride(agentID string, model config.SelectedModel) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAgentModelOverride", agentID, model)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetAgentModelOverride indicates an expected call of SetAgentModelOverride.
+func (mr *MockWorkspaceMockRecorder) SetAgentModelOverride(agentID, model any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAgentModelOverride", reflect.TypeOf((*MockWorkspace)(nil).SetAgentModelOverride), agentID, model)
 }
 
 // SetCompactMode mocks base method.

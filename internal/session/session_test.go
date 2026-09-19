@@ -176,6 +176,41 @@ func TestSaveAndFetchPersistGenStats(t *testing.T) {
 	require.EqualValues(t, 67890, fetched.GenDurationMs)
 }
 
+// CacheReadTokens and CacheCreationTokens are lifetime cache-usage
+// counters, accumulated and persisted the same way as GenOutputTokens/
+// GenDurationMs. Save must write them through and a fresh fetch must
+// read back exactly what was written.
+func TestSaveAndFetchPersistCacheStats(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Cleanup(func() {
+		require.NoError(t, db.Release(dataDir))
+		db.ResetPool()
+	})
+
+	conn, err := db.Connect(t.Context(), dataDir)
+	require.NoError(t, err)
+
+	sessions := NewService(db.New(conn), conn)
+
+	created, err := sessions.Create(t.Context(), "cache stats")
+	require.NoError(t, err)
+	require.Zero(t, created.CacheReadTokens)
+	require.Zero(t, created.CacheCreationTokens)
+
+	created.CacheReadTokens = 5000
+	created.CacheCreationTokens = 20000
+
+	saved, err := sessions.Save(t.Context(), created)
+	require.NoError(t, err)
+	require.EqualValues(t, 5000, saved.CacheReadTokens)
+	require.EqualValues(t, 20000, saved.CacheCreationTokens)
+
+	fetched, err := sessions.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.EqualValues(t, 5000, fetched.CacheReadTokens)
+	require.EqualValues(t, 20000, fetched.CacheCreationTokens)
+}
+
 // Sibling sub-sessions reach a shared ancestor concurrently. Every
 // increment has to survive; a read-add-write keeps only the last.
 func TestConcurrentAddCostKeepsEveryIncrement(t *testing.T) {

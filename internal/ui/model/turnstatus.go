@@ -227,7 +227,8 @@ func (m *UI) renderIdleStatus(width int) string {
 // percentage of the context window it fills, so the two numbers always
 // appear side by side instead of one depending on whether a turn is
 // in flight. The percentage is omitted until the context window size is
-// known.
+// known. The tok/s rate and cache hit rate are both session-wide
+// averages appended when their underlying counters have data.
 func (m *UI) tokenUsageField() string {
 	tokens := m.session.PromptTokens + m.session.CompletionTokens
 	if tokens <= 0 {
@@ -246,6 +247,12 @@ func (m *UI) tokenUsageField() string {
 	// as the token counts above only move at step boundaries.
 	if tps, ok := common.AverageTPS(m.session.GenOutputTokens, m.session.GenDurationMs); ok {
 		usage += turnStatusSeparator + fmt.Sprintf("%d tok/s", tps)
+	}
+	// Same session-wide-average reasoning as tok/s above, but derived
+	// from cumulative cache read/creation tokens instead of output
+	// tokens and generation time.
+	if hitRate, ok := common.CacheHitRate(m.session.CacheReadTokens, m.session.CacheCreationTokens); ok {
+		usage += turnStatusSeparator + fmt.Sprintf("%d%% cache hit", hitRate)
 	}
 	return usage
 }

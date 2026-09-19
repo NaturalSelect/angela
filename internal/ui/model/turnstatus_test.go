@@ -181,6 +181,35 @@ func TestTurnStatusOmitsTokensPerSecondWithoutQualifyingStep(t *testing.T) {
 	require.NotContains(t, out, "tok/s")
 }
 
+// The cache hit rate figure is a session-wide average like tok/s, so it
+// must show up both while the agent is busy and once it has gone idle.
+func TestTurnStatusShowsCacheHitRateForSession(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.session.CacheReadTokens = 3
+	m.session.CacheCreationTokens = 1
+
+	busy := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, busy, "75% cache hit")
+
+	m.agentBusyCache.set(false)
+	idle := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, idle, "75% cache hit")
+}
+
+// With no cache reads or creations recorded yet (e.g. a provider that
+// doesn't support prompt caching, or a session that hasn't made a
+// request yet), the figure must not appear.
+func TestTurnStatusOmitsCacheHitRateWithoutCacheData(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+
+	out := ansi.Strip(m.renderTurnStatus(200))
+	require.NotContains(t, out, "cache hit")
+}
+
 // A sub-cent turn must not read as free.
 func TestFormatCostCollapsesSubCent(t *testing.T) {
 	t.Parallel()

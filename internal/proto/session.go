@@ -18,23 +18,25 @@ import (
 // live SSE stream. Hold-only clients (streams == 0) do not contribute.
 // Like IsBusy, it is computed on read by REST handlers.
 type Session struct {
-	ID               string                  `json:"id"`
-	ParentSessionID  string                  `json:"parent_session_id"`
-	Title            string                  `json:"title"`
-	Agent            string                  `json:"agent,omitempty"`
-	ActiveAgent      config.ActiveAgentState `json:"active_agent,omitzero"`
-	MessageCount     int64                   `json:"message_count"`
-	PromptTokens     int64                   `json:"prompt_tokens"`
-	CompletionTokens int64                   `json:"completion_tokens"`
-	SummaryMessageID string                  `json:"summary_message_id"`
-	Cost             float64                 `json:"cost"`
-	GenOutputTokens  int64                   `json:"gen_output_tokens"`
-	GenDurationMs    int64                   `json:"gen_duration_ms"`
-	Todos            []Todo                  `json:"todos,omitempty"`
-	CreatedAt        int64                   `json:"created_at"`
-	UpdatedAt        int64                   `json:"updated_at"`
-	IsBusy           bool                    `json:"is_busy"`
-	AttachedClients  int                     `json:"attached_clients"`
+	ID                  string                  `json:"id"`
+	ParentSessionID     string                  `json:"parent_session_id"`
+	Title               string                  `json:"title"`
+	Agent               string                  `json:"agent,omitempty"`
+	ActiveAgent         config.ActiveAgentState `json:"active_agent,omitzero"`
+	MessageCount        int64                   `json:"message_count"`
+	PromptTokens        int64                   `json:"prompt_tokens"`
+	CompletionTokens    int64                   `json:"completion_tokens"`
+	SummaryMessageID    string                  `json:"summary_message_id"`
+	Cost                float64                 `json:"cost"`
+	GenOutputTokens     int64                   `json:"gen_output_tokens"`
+	GenDurationMs       int64                   `json:"gen_duration_ms"`
+	CacheReadTokens     int64                   `json:"cache_read_tokens"`
+	CacheCreationTokens int64                   `json:"cache_creation_tokens"`
+	Todos               []Todo                  `json:"todos,omitempty"`
+	CreatedAt           int64                   `json:"created_at"`
+	UpdatedAt           int64                   `json:"updated_at"`
+	IsBusy              bool                    `json:"is_busy"`
+	AttachedClients     int                     `json:"attached_clients"`
 }
 
 // ActiveAgent is everything the UI needs to name what a session is

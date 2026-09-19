@@ -54,6 +54,8 @@ SET
     cost = ?,
     gen_output_tokens = ?,
     gen_duration_ms = ?,
+    cache_read_tokens = ?,
+    cache_creation_tokens = ?,
     todos = ?
 WHERE id = ?
 RETURNING *;

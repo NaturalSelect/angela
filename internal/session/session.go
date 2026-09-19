@@ -90,6 +90,15 @@ type Session struct {
 	GenOutputTokens int64
 	GenDurationMs   int64
 
+	// CacheReadTokens and CacheCreationTokens are cumulative totals of
+	// prompt-cache-eligible tokens accumulated the same way as
+	// GenOutputTokens/GenDurationMs: every step's usage adds to the
+	// session's lifetime total and neither ever shrinks. The UI derives
+	// a cache hit rate from them as CacheReadTokens / (CacheReadTokens +
+	// CacheCreationTokens).
+	CacheReadTokens     int64
+	CacheCreationTokens int64
+
 	Todos     []Todo
 	CreatedAt int64
 	UpdatedAt int64
@@ -252,9 +261,11 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 			String: session.SummaryMessageID,
 			Valid:  session.SummaryMessageID != "",
 		},
-		Cost:            session.Cost,
-		GenOutputTokens: session.GenOutputTokens,
-		GenDurationMs:   session.GenDurationMs,
+		Cost:                session.Cost,
+		GenOutputTokens:     session.GenOutputTokens,
+		GenDurationMs:       session.GenDurationMs,
+		CacheReadTokens:     session.CacheReadTokens,
+		CacheCreationTokens: session.CacheCreationTokens,
 		Todos: sql.NullString{
 			String: todosJSON,
 			Valid:  todosJSON != "",
@@ -423,20 +434,22 @@ func (s *service) sessionFromRow(item db.Session) Session {
 		slog.Error("Failed to unmarshal todos", "session_id", item.ID, "error", err)
 	}
 	return Session{
-		ID:               item.ID,
-		ParentSessionID:  item.ParentSessionID.String,
-		Title:            item.Title,
-		Agent:            item.Agent.String,
-		MessageCount:     item.MessageCount,
-		PromptTokens:     item.PromptTokens,
-		CompletionTokens: item.CompletionTokens,
-		SummaryMessageID: item.SummaryMessageID.String,
-		Cost:             item.Cost,
-		GenOutputTokens:  item.GenOutputTokens,
-		GenDurationMs:    item.GenDurationMs,
-		Todos:            todos,
-		CreatedAt:        item.CreatedAt,
-		UpdatedAt:        item.UpdatedAt,
+		ID:                  item.ID,
+		ParentSessionID:     item.ParentSessionID.String,
+		Title:               item.Title,
+		Agent:               item.Agent.String,
+		MessageCount:        item.MessageCount,
+		PromptTokens:        item.PromptTokens,
+		CompletionTokens:    item.CompletionTokens,
+		SummaryMessageID:    item.SummaryMessageID.String,
+		Cost:                item.Cost,
+		GenOutputTokens:     item.GenOutputTokens,
+		GenDurationMs:       item.GenDurationMs,
+		CacheReadTokens:     item.CacheReadTokens,
+		CacheCreationTokens: item.CacheCreationTokens,
+		Todos:               todos,
+		CreatedAt:           item.CreatedAt,
+		UpdatedAt:           item.UpdatedAt,
 	}
 }
 

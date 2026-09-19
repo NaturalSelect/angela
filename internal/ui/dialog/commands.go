@@ -592,7 +592,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	// an empty override map means every agent is already on its
 	// configured model, so there would be nothing for the command to
 	// do.
-	if len(cfg.AgentModelOverrides) > 0 {
+	if cfg != nil && len(cfg.AgentModelOverrides) > 0 {
 		commands = append(commands, NewCommandItem(c.com.Styles, "clear_agent_model_overrides", "Reset Agent Model Overrides", "", ActionClearAgentModelOverrides{}))
 	}
 

@@ -81,7 +81,7 @@ func TestRunBranchAgentForkBoundary(t *testing.T) {
 	agent, resolved := idleBranchAgent(t, seen)
 
 	go func() {
-		_, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
 	}()
 
 	prompt := requireBranchStarted(t, seen)
@@ -143,7 +143,7 @@ func TestRunBranchAgentForkBoundaryAfterCompaction(t *testing.T) {
 	agent, resolved := idleBranchAgent(t, seen)
 
 	go func() {
-		_, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
 	}()
 
 	requireBranchStarted(t, seen)
@@ -223,9 +223,9 @@ func TestParallelBranchDispatchesBothLand(t *testing.T) {
 			}
 			p := branchParams(agent, resolved, parent.ID, forking.ID)
 			p.ToolCallID = callID
-			resp, err := c.runBranchAgent(t.Context(), p)
-			if err != nil {
-				t.Errorf("branch dispatch failed: %v", err)
+			resp := c.runBranchAgent(t.Context(), p).Response()
+			if resp.IsError {
+				t.Errorf("branch dispatch failed: %s", resp.Content)
 				return
 			}
 			responses <- resp
@@ -282,12 +282,11 @@ func TestRunBranchAgentReturnsTheMergedSummary(t *testing.T) {
 	agent, resolved := idleBranchAgent(t, seen)
 
 	var resp fantasy.ToolResponse
-	var runErr error
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		resp, runErr = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		resp = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
 	}()
 
 	requireBranchStarted(t, seen)
@@ -295,7 +294,6 @@ func TestRunBranchAgentReturnsTheMergedSummary(t *testing.T) {
 	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "invalidate all but the current"}))
 
 	wg.Wait()
-	require.NoError(t, runErr)
 	require.False(t, resp.IsError)
 	require.Equal(t, "invalidate all but the current", resp.Content)
 }
@@ -329,7 +327,7 @@ func TestRunBranchAgentPublishesBranchForked(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
 	}()
 
 	requireBranchStarted(t, seen)
@@ -365,7 +363,7 @@ func TestRunBranchAgentReportsAbandonment(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		resp = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
 	}()
 
 	requireBranchStarted(t, seen)
@@ -404,7 +402,7 @@ func TestCancelOnAnIdleBranchDoesNotAbandonIt(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		resp = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
 	}()
 
 	requireBranchStarted(t, seen)
@@ -473,7 +471,7 @@ func forkBusyBranch(t *testing.T, turnErr error) *busyBranchFixture {
 	f.wg.Add(1)
 	go func() {
 		defer f.wg.Done()
-		f.resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		f.resp = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
 	}()
 
 	requireBranchStarted(t, seen)
@@ -556,7 +554,7 @@ func TestAbandonBranchCascadesToNestedBranches(t *testing.T) {
 	outerSeen := make(chan string, 1)
 	outerAgent, outerResolved := idleBranchAgent(t, outerSeen)
 	go func() {
-		_, _ = c.runBranchAgent(t.Context(), branchParams(outerAgent, outerResolved, parent.ID, forking.ID))
+		c.runBranchAgent(t.Context(), branchParams(outerAgent, outerResolved, parent.ID, forking.ID))
 	}()
 	requireBranchStarted(t, outerSeen)
 	outerID := requireBranchSession(t, c, parent.ID)
@@ -570,7 +568,7 @@ func TestAbandonBranchCascadesToNestedBranches(t *testing.T) {
 		return agentResultWithText("hello"), nil
 	})
 	go func() {
-		_, _ = c.runBranchAgent(t.Context(), branchParams(innerAgent, innerResolved, outerID, nestedForking.ID))
+		c.runBranchAgent(t.Context(), branchParams(innerAgent, innerResolved, outerID, nestedForking.ID))
 	}()
 	requireBranchStarted(t, innerSeen)
 	innerID := requireBranchSession(t, c, outerID)
@@ -633,7 +631,7 @@ func TestCancelOnTheParentDoesNotAbandonTheBranch(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		resp = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
 	}()
 
 	requireBranchStarted(t, seen)
@@ -704,7 +702,7 @@ func TestCancelOnTheRootInterruptsANestedBusyBranch(t *testing.T) {
 	innerWG.Add(1)
 	go func() {
 		defer innerWG.Done()
-		innerResp, _ = f.c.runBranchAgent(t.Context(), branchParams(innerAgent, innerResolved, f.branchID, nestedForking.ID))
+		innerResp = f.c.runBranchAgent(t.Context(), branchParams(innerAgent, innerResolved, f.branchID, nestedForking.ID)).Response()
 	}()
 	requireBranchStarted(t, innerSeen)
 	innerID := requireBranchSession(t, f.c, f.branchID)
@@ -760,8 +758,7 @@ func TestRunBranchAgentReportsAStartupFailure(t *testing.T) {
 			return nil, context.DeadlineExceeded
 		})
 
-	resp, err := c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
-	require.NoError(t, err)
+	resp := c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "could not be started")
 }
@@ -790,7 +787,7 @@ func TestRunBranchAgentSurvivesACancelledOpeningTurn(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		resp = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
 	}()
 
 	branchID := requireBranchSessions(t, c, parent.ID, 1)[0]
@@ -826,7 +823,7 @@ func TestRunBranchAgentSurvivesATransportErrorOnOpeningTurn(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		resp, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		resp = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
 	}()
 
 	branchID := requireBranchSessions(t, c, parent.ID, 1)[0]
@@ -1014,7 +1011,7 @@ func TestBranchForkedBySubagentStaysAttended(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, _ = c.runBranchAgent(t.Context(), branchParams(agent, resolved, sub.ID, forking.ID))
+		c.runBranchAgent(t.Context(), branchParams(agent, resolved, sub.ID, forking.ID))
 	}()
 
 	requireBranchStarted(t, seen)

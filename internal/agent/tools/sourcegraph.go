@@ -50,12 +50,12 @@ func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		client = newDefaultHTTPClient(defaultToolHTTPTimeout)
 	}
-	return fantasy.NewParallelAgentTool(
+	return NewParallelTool(
 		toolnames.Sourcegraph,
 		sourcegraphDescription(),
-		func(ctx context.Context, params SourcegraphParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params SourcegraphParams, call fantasy.ToolCall) Result {
 			if params.Query == "" {
-				return fantasy.NewTextErrorResponse("Query parameter is required"), nil
+				return Fail("Query parameter is required")
 			}
 
 			if params.Count <= 0 {
@@ -94,7 +94,7 @@ func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 
 			graphqlQueryBytes, err := json.Marshal(request)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to marshal GraphQL request: %w", err)
+				return FailErr("failed to marshal GraphQL request", err)
 			}
 			graphqlQuery := string(graphqlQueryBytes)
 
@@ -105,7 +105,7 @@ func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 				bytes.NewBuffer([]byte(graphqlQuery)),
 			)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create request: %w", err)
+				return FailErr("failed to create request", err)
 			}
 
 			req.Header.Set("Content-Type", "application/json")
@@ -113,34 +113,34 @@ func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 
 			resp, err := client.Do(req)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to fetch URL: %w", err)
+				return FailErr("failed to fetch URL", err)
 			}
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
 				body, _ := io.ReadAll(resp.Body)
 				if len(body) > 0 {
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d, response: %s", resp.StatusCode, string(body))), nil
+					return Failf("Request failed with status code: %d, response: %s", resp.StatusCode, string(body))
 				}
 
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
+				return Failf("Request failed with status code: %d", resp.StatusCode)
 			}
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to read response body: %w", err)
+				return FailErr("failed to read response body", err)
 			}
 
 			var result map[string]any
 			if err = json.Unmarshal(body, &result); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to unmarshal response: %w", err)
+				return FailErr("failed to unmarshal response", err)
 			}
 
 			formattedResults, err := formatSourcegraphResults(result, params.ContextWindow, params.Count)
 			if err != nil {
-				return fantasy.NewTextErrorResponse("Failed to format results: " + err.Error()), nil
+				return Fail("Failed to format results: " + err.Error())
 			}
 
-			return fantasy.NewTextResponse(formattedResults), nil
+			return Ok(formattedResults)
 		},
 	)
 }

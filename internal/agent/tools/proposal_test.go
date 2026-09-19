@@ -256,8 +256,9 @@ func TestProposalToolsNeedASession(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := tc.tool.Run(t.Context(), proposalCall(tc.name, tc.input))
-			require.Error(t, err)
+			resp, err := tc.tool.Run(t.Context(), proposalCall(tc.name, tc.input))
+			require.NoError(t, err)
+			require.True(t, resp.IsError)
 		})
 	}
 }

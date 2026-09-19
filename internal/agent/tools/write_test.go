@@ -71,8 +71,7 @@ func TestWritePlanCreatesNothingUntilApply(t *testing.T) {
 	require.NoFileExists(t, fullPath)
 
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "test-session")
-	resp, err := plan.Apply(ctx)
-	require.NoError(t, err)
+	resp := plan.Apply(ctx).Response()
 	require.False(t, resp.IsError)
 
 	content, err := os.ReadFile(fullPath)
@@ -136,6 +135,6 @@ func TestWritePlanSettlesWithoutPrompting(t *testing.T) {
 
 	plan := writePlan(t, workingDir, WriteParams{FilePath: "same.txt", Content: "x"})
 	require.NotNil(t, plan.Response, "an unchanged write is settled by planning")
-	require.True(t, plan.Response.IsError)
+	require.True(t, plan.Response.Response().IsError)
 	require.Nil(t, plan.Apply)
 }

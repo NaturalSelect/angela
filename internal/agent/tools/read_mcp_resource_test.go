@@ -38,8 +38,8 @@ func TestReadMCPResourceTool_RequiresURI(t *testing.T) {
 }
 
 // TestReadMCPResourceTool_RequiresSession pins that a call outside a
-// session comes back as a plain error rather than a tool response,
-// mirroring the other session-scoped tools.
+// session comes back as a tool-error response rather than a plain Go
+// error, mirroring the other session-scoped tools.
 func TestReadMCPResourceTool_RequiresSession(t *testing.T) {
 	t.Parallel()
 
@@ -48,9 +48,9 @@ func TestReadMCPResourceTool_RequiresSession(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := tool.Run(t.Context(), fantasy.ToolCall{Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "session ID is required")
-	require.Zero(t, resp)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "session ID is required")
 }
 
 // TestReadMCPResourceTool_MCPNotConfigured pins that reading from a

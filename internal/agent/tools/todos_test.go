@@ -13,17 +13,17 @@ import (
 )
 
 // TestTodosTool_RequiresSession pins that a call outside a session
-// fails fast with a plain error rather than reaching the session
-// store at all.
+// fails fast with a tool-error result rather than reaching the
+// session store at all.
 func TestTodosTool_RequiresSession(t *testing.T) {
 	t.Parallel()
 
 	tool := NewTodosTool(NewMockSessionService(gomock.NewController(t)))
 
 	resp, err := tool.Run(t.Context(), fantasy.ToolCall{Input: `{"todos":[]}`})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "session ID is required")
-	require.Zero(t, resp)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "session ID is required")
 }
 
 // TestTodosTool_GetSessionError pins that a lookup failure is wrapped
@@ -38,9 +38,9 @@ func TestTodosTool_GetSessionError(t *testing.T) {
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "session-1")
 
 	resp, err := tool.Run(ctx, fantasy.ToolCall{Input: `{"todos":[]}`})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to get session")
-	require.Zero(t, resp)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "failed to get session")
 }
 
 // TestTodosTool_InvalidStatus pins that an unrecognized status is
@@ -60,9 +60,9 @@ func TestTodosTool_InvalidStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := tool.Run(ctx, fantasy.ToolCall{Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), `invalid status "bogus"`)
-	require.Zero(t, resp)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, `invalid status "bogus"`)
 }
 
 // TestTodosTool_SaveError pins that a save failure is wrapped with
@@ -81,9 +81,9 @@ func TestTodosTool_SaveError(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := tool.Run(ctx, fantasy.ToolCall{Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to save todos")
-	require.Zero(t, resp)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "failed to save todos")
 }
 
 // TestTodosTool_CreateNewList pins the first-ever write: IsNew is

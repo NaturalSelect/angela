@@ -130,7 +130,7 @@ func TestRunSubAgent(t *testing.T) {
 			return agentResultWithText("done"), nil
 		})
 
-		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -138,8 +138,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "do something",
 			SessionTitle:   "Test Session",
-		})
-		require.NoError(t, err)
+		}).Response()
 		assert.Equal(t, "done", resp.Content)
 		assert.False(t, resp.IsError)
 	})
@@ -152,7 +151,7 @@ func TestRunSubAgent(t *testing.T) {
 			return agentResultWithText("output before cost failure"), nil
 		})
 
-		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      "missing-parent-session",
@@ -160,8 +159,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "test",
 			SessionTitle:   "Test",
-		})
-		require.NoError(t, err)
+		}).Response()
 		assert.False(t, resp.IsError)
 		assert.Equal(t, "output before cost failure", resp.Content)
 	})
@@ -177,7 +175,7 @@ func TestRunSubAgent(t *testing.T) {
 			return agentResultWithText("the answer"), nil
 		})
 
-		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -185,8 +183,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "test",
 			SessionTitle:   "Test",
-		})
-		require.NoError(t, err)
+		}).Response()
 		assert.False(t, resp.IsError)
 		assert.Equal(t, "the answer", resp.Content)
 	})
@@ -202,7 +199,7 @@ func TestRunSubAgent(t *testing.T) {
 			return nil, nil
 		})
 
-		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -210,8 +207,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "test",
 			SessionTitle:   "Test",
-		})
-		require.NoError(t, err)
+		}).Response()
 		assert.True(t, resp.IsError)
 		assert.Equal(t, "Sub-agent completed but produced no text output.", resp.Content)
 	})
@@ -227,7 +223,7 @@ func TestRunSubAgent(t *testing.T) {
 			return &fantasy.AgentResult{}, nil
 		})
 
-		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -235,8 +231,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "test",
 			SessionTitle:   "Test",
-		})
-		require.NoError(t, err)
+		}).Response()
 		assert.True(t, resp.IsError)
 		assert.Equal(t, "Sub-agent completed but produced no text output.", resp.Content)
 	})
@@ -263,7 +258,7 @@ func TestRunSubAgent(t *testing.T) {
 		})
 		resolved := resolvedAgent{Model: model, MaxTokens: maxTokensFor(agentCfg, model)}
 
-		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -271,8 +266,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "test",
 			SessionTitle:   "Test",
-		})
-		require.NoError(t, err)
+		}).Response()
 		assert.Equal(t, "ok", resp.Content)
 	})
 
@@ -289,7 +283,7 @@ func TestRunSubAgent(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		_, err = coord.runSubAgent(ctx, subAgentParams{
+		resp := coord.runSubAgent(ctx, subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -297,8 +291,9 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "test",
 			SessionTitle:   "Test",
-		})
-		require.Error(t, err)
+		}).Response()
+		require.True(t, resp.IsError)
+		require.Contains(t, resp.Content, "create session")
 	})
 
 	t.Run("provider not configured", func(t *testing.T) {
@@ -311,7 +306,7 @@ func TestRunSubAgent(t *testing.T) {
 		// Agent references a provider that doesn't exist in config.
 		agent, resolved := newMockAgent(t, "unknown-provider", 4096, nil)
 
-		_, err = coord.runSubAgent(t.Context(), subAgentParams{
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -319,9 +314,9 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "test",
 			SessionTitle:   "Test",
-		})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "model provider not configured")
+		}).Response()
+		require.True(t, resp.IsError)
+		assert.Contains(t, resp.Content, "model provider not configured")
 	})
 
 	t.Run("agent run error returns error response", func(t *testing.T) {
@@ -335,7 +330,7 @@ func TestRunSubAgent(t *testing.T) {
 			return nil, errors.New("provider request failed")
 		})
 
-		resp, err := coord.runSubAgent(t.Context(), subAgentParams{
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -343,9 +338,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "test",
 			SessionTitle:   "Test",
-		})
-		// runSubAgent returns (errorResponse, nil) when agent.Run fails — not a Go error.
-		require.NoError(t, err)
+		}).Response()
 		assert.True(t, resp.IsError)
 		assert.Equal(t, "Failed to generate response: provider request failed", resp.Content)
 	})
@@ -371,7 +364,7 @@ func TestRunSubAgent(t *testing.T) {
 			return agentResultWithText("ok"), nil
 		})
 
-		_, err = coord.runSubAgent(t.Context(), subAgentParams{
+		coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -380,7 +373,6 @@ func TestRunSubAgent(t *testing.T) {
 			Prompt:         "test",
 			SessionTitle:   "Test",
 		})
-		require.NoError(t, err)
 
 		updated, err := env.sessions.Get(t.Context(), parentSession.ID)
 		require.NoError(t, err)
@@ -423,7 +415,7 @@ func TestRunSubAgent(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 		defer cancel()
 
-		resp, err := coord.runSubAgent(ctx, subAgentParams{
+		resp := coord.runSubAgent(ctx, subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -431,8 +423,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "fetch it",
 			SessionTitle:   "Test",
-		})
-		require.NoError(t, err)
+		}).Response()
 		require.False(t, resp.IsError, resp.Content)
 		assert.Equal(t, permission.OutcomePolicyDeny, decision.Outcome,
 			"a sub-agent must not inherit a blanket approval its parent never had")
@@ -485,7 +476,7 @@ func TestRunSubAgent(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
 		defer cancel()
 
-		resp, err := coord.runSubAgent(ctx, subAgentParams{
+		resp := coord.runSubAgent(ctx, subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentSession.ID,
@@ -493,8 +484,7 @@ func TestRunSubAgent(t *testing.T) {
 			ToolCallID:     "call-1",
 			Prompt:         "fetch it",
 			SessionTitle:   "Test",
-		})
-		require.NoError(t, err)
+		}).Response()
 		require.False(t, resp.IsError, resp.Content)
 		assert.True(t, decision.Allowed(), "the child must see the grant its parent already earned")
 	})
@@ -1025,7 +1015,7 @@ func TestSubAgentInheritsWhetherAnyoneCanApprove(t *testing.T) {
 				return agentResultWithText("done"), nil
 			})
 
-		_, err := coord.runSubAgent(t.Context(), subAgentParams{
+		coord.runSubAgent(t.Context(), subAgentParams{
 			Agent:          agent,
 			Resolved:       resolved,
 			SessionID:      parentID,
@@ -1034,7 +1024,6 @@ func TestSubAgentInheritsWhetherAnyoneCanApprove(t *testing.T) {
 			Prompt:         "work",
 			SessionTitle:   "Child",
 		})
-		require.NoError(t, err)
 		require.NotEmpty(t, childID, "the sub-agent must have run in a session")
 		return childID
 	}

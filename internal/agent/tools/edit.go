@@ -84,17 +84,14 @@ func NewEditTool(
 		filetracker: filetracker,
 		workingDir:  workingDir,
 	}
-	t.AgentTool = fantasy.NewAgentTool(toolnames.Edit, editDescription, t.run)
+	t.AgentTool = NewTool(toolnames.Edit, editDescription, t.run)
 	return t
 }
 
-func (t *editTool) run(ctx context.Context, params EditParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	plan, err := t.plan(ctx, params)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
+func (t *editTool) run(ctx context.Context, params EditParams, call fantasy.ToolCall) Result {
+	plan := t.plan(ctx, params)
 	if plan.Response != nil {
-		return *plan.Response, nil
+		return *plan.Response
 	}
 	return plan.Apply(ctx)
 }
@@ -102,17 +99,17 @@ func (t *editTool) run(ctx context.Context, params EditParams, call fantasy.Tool
 func (t *editTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[EditParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.Edit)
+		return settled(Fail(fmt.Sprintf("invalid input for %s", toolnames.Edit))), nil
 	}
-	return t.plan(ctx, params)
+	return t.plan(ctx, params), nil
 }
 
 // plan works out the file's new content without writing anything. Which
 // of the three shapes an edit takes is decided by what the caller left
 // empty: no old string creates, no new string deletes.
-func (t *editTool) plan(ctx context.Context, params EditParams) (Plan, error) {
+func (t *editTool) plan(ctx context.Context, params EditParams) Plan {
 	if params.FilePath == "" {
-		return settled(fantasy.NewTextErrorResponse("file_path is required")), nil
+		return settled(Fail("file_path is required"))
 	}
 
 	filePath := filepathext.SmartJoin(t.workingDir, params.FilePath)
@@ -144,20 +141,20 @@ func (t *editTool) plan(ctx context.Context, params EditParams) (Plan, error) {
 	}
 }
 
-func (t *editTool) planCreateNewFile(edit editContext, filePath, content string) (Plan, error) {
+func (t *editTool) planCreateNewFile(edit editContext, filePath, content string) Plan {
 	fileInfo, err := os.Stat(filePath)
 	if err == nil {
 		if fileInfo.IsDir() {
-			return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("path is a directory, not a file: %s", filePath))), nil
+			return settled(Fail(fmt.Sprintf("path is a directory, not a file: %s", filePath)))
 		}
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("file already exists: %s", filePath))), nil
+		return settled(Fail(fmt.Sprintf("file already exists: %s", filePath)))
 	} else if !os.IsNotExist(err) {
-		return Plan{}, fmt.Errorf("failed to access file: %w", err)
+		return settled(FailErr("failed to access file", err))
 	}
 
 	sessionID := GetSessionFromContext(edit.ctx)
 	if sessionID == "" {
-		return Plan{}, fmt.Errorf("session ID is required for creating a new file")
+		return settled(Fail("session ID is required for creating a new file"))
 	}
 
 	_, additions, removals := diff.GenerateDiff(
@@ -183,27 +180,27 @@ func (t *editTool) planCreateNewFile(edit editContext, filePath, content string)
 			},
 		},
 		Refusal: metadata,
-		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+		Apply: func(ctx context.Context) Result {
 			// Creating the parent directories belongs here rather than
 			// in planning: a refused edit must leave no trace.
 			if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create parent directories: %w", err)
+				return FailErr("failed to create parent directories", err)
 			}
 			if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
+				return FailErr("failed to write file", err)
 			}
 
 			if _, err := t.files.Create(ctx, sessionID, filePath, ""); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
+				return FailErr("error creating file history", err)
 			}
 			if _, err := t.files.CreateVersion(ctx, sessionID, filePath, content); err != nil {
 				slog.Error("Error creating file history version", "error", err)
 			}
 			t.filetracker.RecordRead(ctx, sessionID, filePath)
 
-			return t.finish(ctx, filePath, "File created: "+filePath, metadata), nil
+			return FromResponse(t.finish(ctx, filePath, "File created: "+filePath, metadata))
 		},
-	}, nil
+	}
 }
 
 // rewrite describes an edit to a file that already exists. Deleting is
@@ -223,21 +220,18 @@ type rewrite struct {
 	rejectNoop bool
 }
 
-func (t *editTool) planRewrite(edit editContext, r rewrite) (Plan, error) {
-	sessionID, oldContent, isCrlf, resp, err := loadExistingFile(edit, r.filePath, r.sessionErr)
-	if err != nil {
-		return Plan{}, err
-	}
-	if resp.Content != "" || resp.IsError {
-		return settled(resp), nil
+func (t *editTool) planRewrite(edit editContext, r rewrite) Plan {
+	sessionID, oldContent, isCrlf, result, ok := loadExistingFile(edit, r.filePath, r.sessionErr)
+	if !ok {
+		return settled(result)
 	}
 
 	newContent, whitespaceCorrected, err := findAndReplace(oldContent, r.oldString, r.newString, r.replaceAll)
 	if err != nil {
-		return settled(fantasy.NewTextErrorResponse(err.Error())), nil
+		return settled(Fail(err.Error()))
 	}
 	if r.rejectNoop && newContent == oldContent {
-		return settled(fantasy.NewTextErrorResponse("new content is the same as old content. No changes made.")), nil
+		return settled(Fail("new content is the same as old content. No changes made."))
 	}
 
 	_, additions, removals := diff.GenerateDiff(
@@ -266,13 +260,13 @@ func (t *editTool) planRewrite(edit editContext, r rewrite) (Plan, error) {
 			Additions:  additions,
 			Removals:   removals,
 		},
-		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+		Apply: func(ctx context.Context) Result {
 			applyCtx := edit
 			applyCtx.ctx = ctx
 			if err := commitFileChange(applyCtx, sessionID, r.filePath, oldContent, writeContent); err != nil {
-				return fantasy.ToolResponse{}, err
+				return Fail(err.Error())
 			}
-			return t.finish(ctx, r.filePath,
+			return FromResponse(t.finish(ctx, r.filePath,
 				withWhitespaceNote(r.done+r.filePath, whitespaceCorrected),
 				EditResponseMetadata{
 					OldContent: oldContent,
@@ -280,9 +274,9 @@ func (t *editTool) planRewrite(edit editContext, r rewrite) (Plan, error) {
 					Additions:  additions,
 					Removals:   removals,
 				},
-			), nil
+			))
 		},
-	}, nil
+	}
 }
 
 // finish tells the language servers what changed and folds the fresh
@@ -371,44 +365,47 @@ func commitFileChange(edit editContext, sessionID, filePath, oldContent, newCont
 	return nil
 }
 
-func loadExistingFile(edit editContext, filePath, sessionError string) (sessionID, oldContent string, isCrlf bool, resp fantasy.ToolResponse, err error) {
+// loadExistingFile reads a file for an in-place edit. ok is false when
+// the caller should return result immediately instead of proceeding; the
+// other return values are only meaningful when ok is true.
+func loadExistingFile(edit editContext, filePath, sessionError string) (sessionID, oldContent string, isCrlf bool, result Result, ok bool) {
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", "", false, fantasy.NewTextErrorResponse(fmt.Sprintf("file not found: %s", filePath)), nil
+			return "", "", false, Fail(fmt.Sprintf("file not found: %s", filePath)), false
 		}
-		return "", "", false, fantasy.ToolResponse{}, fmt.Errorf("failed to access file: %w", err)
+		return "", "", false, FailErr("failed to access file", err), false
 	}
 
 	if fileInfo.IsDir() {
-		return "", "", false, fantasy.NewTextErrorResponse(fmt.Sprintf("path is a directory, not a file: %s", filePath)), nil
+		return "", "", false, Fail(fmt.Sprintf("path is a directory, not a file: %s", filePath)), false
 	}
 
 	sessionID = GetSessionFromContext(edit.ctx)
 	if sessionID == "" {
-		return "", "", false, fantasy.ToolResponse{}, fmt.Errorf("%s", sessionError)
+		return "", "", false, Fail(sessionError), false
 	}
 
 	lastRead := edit.filetracker.LastReadTime(edit.ctx, sessionID, filePath)
 	if lastRead.IsZero() {
-		return "", "", false, fantasy.NewTextErrorResponse("you must read the file before editing it. Use the Read tool first"), nil
+		return "", "", false, Fail("you must read the file before editing it. Use the Read tool first"), false
 	}
 
 	modTime := fileInfo.ModTime().Truncate(time.Second)
 	if modTime.After(lastRead) {
-		return "", "", false, fantasy.NewTextErrorResponse(
+		return "", "", false, Fail(
 			fmt.Sprintf(
 				"file %s has been modified since it was last read (mod time: %s, last read: %s)",
 				filePath, modTime.Format(time.RFC3339), lastRead.Format(time.RFC3339),
 			),
-		), nil
+		), false
 	}
 
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", "", false, fantasy.ToolResponse{}, fmt.Errorf("failed to read file: %w", err)
+		return "", "", false, FailErr("failed to read file", err), false
 	}
 
 	oldContent, isCrlf = fsext.ToUnixLineEndings(string(content))
-	return sessionID, oldContent, isCrlf, fantasy.ToolResponse{}, nil
+	return sessionID, oldContent, isCrlf, Result{}, true
 }

@@ -68,17 +68,14 @@ func NewRenameTool(
 		files:       files,
 		filetracker: filetracker,
 	}
-	t.AgentTool = fantasy.NewAgentTool(toolnames.LSPRename, renameDescription, t.run)
+	t.AgentTool = NewTool(toolnames.LSPRename, renameDescription, t.run)
 	return t
 }
 
-func (t *renameTool) run(ctx context.Context, params RenameParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	plan, err := t.plan(ctx, params)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
+func (t *renameTool) run(ctx context.Context, params RenameParams, call fantasy.ToolCall) Result {
+	plan := t.plan(ctx, params)
 	if plan.Response != nil {
-		return *plan.Response, nil
+		return *plan.Response
 	}
 	return plan.Apply(ctx)
 }
@@ -86,34 +83,34 @@ func (t *renameTool) run(ctx context.Context, params RenameParams, call fantasy.
 func (t *renameTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[RenameParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.LSPRename)
+		return settled(Fail(fmt.Sprintf("invalid input for %s", toolnames.LSPRename))), nil
 	}
-	return t.plan(ctx, params)
+	return t.plan(ctx, params), nil
 }
 
 // plan asks the language server what the rename would touch. That
 // answer is a proposal, not a write: nothing reaches disk until Apply.
-func (t *renameTool) plan(ctx context.Context, params RenameParams) (Plan, error) {
+func (t *renameTool) plan(ctx context.Context, params RenameParams) Plan {
 	if params.Symbol == "" {
-		return settled(fantasy.NewTextErrorResponse("symbol is required")), nil
+		return settled(Fail("symbol is required"))
 	}
 	if params.NewName == "" {
-		return settled(fantasy.NewTextErrorResponse("new_name is required")), nil
+		return settled(Fail("new_name is required"))
 	}
 
 	workingDir := cmp.Or(params.Path, ".")
 	resolved, err := resolveSymbol(ctx, t.lspManager, params.Symbol, workingDir)
 	if err != nil {
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("Symbol '%s' not found", params.Symbol))), nil
+		return settled(Failf("Symbol '%s' not found", params.Symbol))
 	}
 
 	edit, err := resolved.client.Rename(ctx, resolved.path, resolved.line, resolved.char, params.NewName)
 	if err != nil {
 		slog.Error("Failed to rename symbol", "error", err, "symbol", params.Symbol)
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("rename failed: %s", err))), nil
+		return settled(Failf("rename failed: %s", err))
 	}
 	if edit == nil {
-		return settled(fantasy.NewTextResponse(fmt.Sprintf("No rename edits generated for symbol '%s'", params.Symbol))), nil
+		return settled(Ok(fmt.Sprintf("No rename edits generated for symbol '%s'", params.Symbol)))
 	}
 
 	affectedFiles := collectAffectedFiles(edit)
@@ -127,12 +124,12 @@ func (t *renameTool) plan(ctx context.Context, params RenameParams) (Plan, error
 				NewName: params.NewName,
 			},
 		},
-		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+		Apply: func(ctx context.Context) Result {
 			sessionID := GetSessionFromContext(ctx)
 			before := t.readAll(affectedFiles)
 
 			if err := lsputil.ApplyWorkspaceEdit(*edit, encoding); err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("failed to apply rename edits: %s", err)), nil
+				return Failf("failed to apply rename edits: %s", err)
 			}
 
 			renamed := t.recordRename(ctx, sessionID, affectedFiles, before)
@@ -148,9 +145,9 @@ func (t *renameTool) plan(ctx context.Context, params RenameParams) (Plan, error
 			if len(affectedFiles) > 0 {
 				text += "\n" + getDiagnostics(affectedFiles[0], t.lspManager)
 			}
-			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(text), RenameResponseMetadata{Files: renamed}), nil
+			return Ok(text).WithMetadata(RenameResponseMetadata{Files: renamed})
 		},
-	}, nil
+	}
 }
 
 // readAll snapshots the files a rename is about to rewrite, so both

@@ -103,10 +103,9 @@ func TestRenamePlanRejectsBadInput(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			plan, err := tool.plan(context.Background(), params)
-			require.NoError(t, err)
+			plan := tool.plan(context.Background(), params)
 			require.NotNil(t, plan.Response)
-			require.True(t, plan.Response.IsError)
+			require.True(t, plan.Response.Response().IsError)
 			require.Nil(t, plan.Apply)
 		})
 	}
@@ -128,11 +127,10 @@ func TestRenamePlanSymbolNotFound(t *testing.T) {
 	dir := t.TempDir()
 	tool := NewRenameTool(newLSPManagerWithNoClients(t), nil, nil).(*renameTool)
 
-	plan, err := tool.plan(t.Context(), RenameParams{Symbol: "NoSuchSymbolXYZ", NewName: "After", Path: dir})
-	require.NoError(t, err)
+	plan := tool.plan(t.Context(), RenameParams{Symbol: "NoSuchSymbolXYZ", NewName: "After", Path: dir})
 	require.NotNil(t, plan.Response)
-	require.True(t, plan.Response.IsError)
-	require.Contains(t, plan.Response.Content, "not found")
+	require.True(t, plan.Response.Response().IsError)
+	require.Contains(t, plan.Response.Response().Content, "not found")
 	require.Nil(t, plan.Apply)
 }
 
@@ -143,8 +141,7 @@ func TestRenameToolRun_PropagatesPlanResponse(t *testing.T) {
 
 	tool := NewRenameTool(nil, nil, nil).(*renameTool)
 
-	resp, err := tool.run(t.Context(), RenameParams{NewName: "After"}, fantasy.ToolCall{})
-	require.NoError(t, err)
+	resp := tool.run(t.Context(), RenameParams{NewName: "After"}, fantasy.ToolCall{}).Response()
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "symbol is required")
 }
@@ -165,13 +162,15 @@ func TestRenameToolPlanCapitalized(t *testing.T) {
 		plan, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: string(input)})
 		require.NoError(t, err)
 		require.NotNil(t, plan.Response)
-		require.True(t, plan.Response.IsError)
-		require.Contains(t, plan.Response.Content, "new_name is required")
+		require.True(t, plan.Response.Response().IsError)
+		require.Contains(t, plan.Response.Response().Content, "new_name is required")
 	})
 
 	t.Run("rejects malformed input", func(t *testing.T) {
 		t.Parallel()
-		_, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: `{not valid json`})
-		require.Error(t, err)
+		plan, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: `{not valid json`})
+		require.NoError(t, err)
+		require.NotNil(t, plan.Response)
+		require.True(t, plan.Response.Response().IsError)
 	})
 }

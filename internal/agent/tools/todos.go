@@ -33,18 +33,18 @@ type TodosResponseMetadata struct {
 }
 
 func NewTodosTool(sessions session.Service) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.Todos,
 		todosDescription,
-		func(ctx context.Context, params TodosParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params TodosParams, call fantasy.ToolCall) Result {
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for managing todos")
+				return Fail("session ID is required for managing todos")
 			}
 
 			currentSession, err := sessions.Get(ctx, sessionID)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to get session: %w", err)
+				return FailErr("failed to get session", err)
 			}
 
 			isNew := len(currentSession.Todos) == 0
@@ -57,7 +57,7 @@ func NewTodosTool(sessions session.Service) fantasy.AgentTool {
 				switch item.Status {
 				case "pending", "in_progress", "completed":
 				default:
-					return fantasy.ToolResponse{}, fmt.Errorf("invalid status %q for todo %q", item.Status, item.Content)
+					return Failf("invalid status %q for todo %q", item.Status, item.Content)
 				}
 			}
 
@@ -97,7 +97,7 @@ func NewTodosTool(sessions session.Service) fantasy.AgentTool {
 			currentSession.Todos = todos
 			_, err = sessions.Save(ctx, currentSession)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to save todos: %w", err)
+				return FailErr("failed to save todos", err)
 			}
 
 			response := "Todo list updated successfully.\n\n"
@@ -128,7 +128,7 @@ func NewTodosTool(sessions session.Service) fantasy.AgentTool {
 				Total:         len(todos),
 			}
 
-			return fantasy.WithResponseMetadata(fantasy.NewTextResponse(response), metadata), nil
+			return Ok(response).WithMetadata(metadata)
 		},
 	)
 }

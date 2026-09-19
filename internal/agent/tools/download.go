@@ -57,20 +57,20 @@ func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		client = newDefaultHTTPClient(downloadHTTPTimeout)
 	}
-	return fantasy.NewParallelAgentTool(
+	return NewParallelTool(
 		toolnames.Download,
 		downloadDescription(),
-		func(ctx context.Context, params DownloadParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params DownloadParams, call fantasy.ToolCall) Result {
 			if params.URL == "" {
-				return fantasy.NewTextErrorResponse("URL parameter is required"), nil
+				return Fail("URL parameter is required")
 			}
 
 			if params.FilePath == "" {
-				return fantasy.NewTextErrorResponse("file_path parameter is required"), nil
+				return Fail("file_path parameter is required")
 			}
 
 			if !strings.HasPrefix(params.URL, "http://") && !strings.HasPrefix(params.URL, "https://") {
-				return fantasy.NewTextErrorResponse("URL must start with http:// or https://"), nil
+				return Fail("URL must start with http:// or https://")
 			}
 
 			filePath := filepathext.SmartJoin(workingDir, params.FilePath)
@@ -79,7 +79,7 @@ func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for downloading files")
+				return Fail("session ID is required for downloading files")
 			}
 
 			// Handle timeout with context
@@ -96,30 +96,30 @@ func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 
 			req, err := http.NewRequestWithContext(requestCtx, "GET", params.URL, nil)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create request: %w", err)
+				return FailErr("failed to create request", err)
 			}
 
 			req.Header.Set("User-Agent", "angela/1.0")
 
 			resp, err := client.Do(req)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to download from URL: %w", err)
+				return FailErr("failed to download from URL", err)
 			}
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("Request failed with status code: %d", resp.StatusCode)), nil
+				return Failf("Request failed with status code: %d", resp.StatusCode)
 			}
 
 			// Create parent directories if they don't exist
 			if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create parent directories: %w", err)
+				return FailErr("failed to create parent directories", err)
 			}
 
 			// Create the output file
 			outFile, err := os.Create(filePath)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create output file: %w", err)
+				return FailErr("failed to create output file", err)
 			}
 			defer outFile.Close()
 
@@ -128,7 +128,7 @@ func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 			// and any upstream server limits.
 			bytesWritten, err := io.Copy(outFile, resp.Body)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
+				return FailErr("failed to write file", err)
 			}
 
 			contentType := resp.Header.Get("Content-Type")
@@ -137,7 +137,7 @@ func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 				responseMsg += fmt.Sprintf(" (Content-Type: %s)", contentType)
 			}
 
-			return fantasy.NewTextResponse(responseMsg), nil
+			return Ok(responseMsg)
 		},
 	)
 }

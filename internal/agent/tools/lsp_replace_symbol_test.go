@@ -31,10 +31,9 @@ func TestReplaceSymbolRecordsBothSides(t *testing.T) {
 	files, recorded := newRecordingHistoryService(t, "", true)
 	tool := NewReplaceSymbolTool(nil, files, newFileTracker(t, time.Now())).(*replaceSymbolTool)
 
-	resp, err := tool.apply(t.Context(),
+	resp := tool.apply(t.Context(),
 		ReplaceSymbolParams{Symbol: "Foo", FilePath: path},
-		"replace", "s1", "old\n", "new\n", 0, 0)
-	require.NoError(t, err)
+		"replace", "s1", "old\n", "new\n", 0, 0).Response()
 	require.False(t, resp.IsError)
 
 	require.Equal(t, []string{"old\n", "new\n"}, *recorded,
@@ -58,10 +57,9 @@ func TestReplaceSymbolRecordsAdditionsAndRemovals(t *testing.T) {
 
 	tool := NewReplaceSymbolTool(nil, newHistoryService(t, "", true), newFileTracker(t, time.Now())).(*replaceSymbolTool)
 
-	resp, err := tool.apply(t.Context(),
+	resp := tool.apply(t.Context(),
 		ReplaceSymbolParams{Symbol: "Foo", FilePath: path},
-		"replace", "s1", "old\n", "new\n", 0, 0)
-	require.NoError(t, err)
+		"replace", "s1", "old\n", "new\n", 0, 0).Response()
 	require.False(t, resp.IsError)
 
 	var meta ReplaceSymbolResponseMetadata
@@ -83,10 +81,9 @@ func TestReplaceSymbolKeepsContentChangedOutsideTheSession(t *testing.T) {
 	files, recorded := newRecordingHistoryService(t, "what history last saw", false)
 	tool := NewReplaceSymbolTool(nil, files, newFileTracker(t, time.Now())).(*replaceSymbolTool)
 
-	_, err := tool.apply(t.Context(),
+	tool.apply(t.Context(),
 		ReplaceSymbolParams{Symbol: "Foo", FilePath: path},
 		"replace", "s1", "what is on disk now", "new", 0, 0)
-	require.NoError(t, err)
 
 	require.Equal(t, []string{"what is on disk now", "new"}, *recorded)
 }
@@ -135,10 +132,9 @@ func TestReplaceSymbolPlanRejectsBadInput(t *testing.T) {
 	for name, params := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			plan, err := tool.plan(context.Background(), params)
-			require.NoError(t, err)
+			plan := tool.plan(context.Background(), params)
 			require.NotNil(t, plan.Response, "bad input is settled, not prompted")
-			require.True(t, plan.Response.IsError)
+			require.True(t, plan.Response.Response().IsError)
 			require.Nil(t, plan.Apply)
 		})
 	}
@@ -160,8 +156,7 @@ func TestReplaceSymbolToolRun_PropagatesPlanResponse(t *testing.T) {
 
 	tool := NewReplaceSymbolTool(nil, nil, nil).(*replaceSymbolTool)
 
-	resp, err := tool.run(t.Context(), ReplaceSymbolParams{FilePath: "a.go"}, fantasy.ToolCall{})
-	require.NoError(t, err)
+	resp := tool.run(t.Context(), ReplaceSymbolParams{FilePath: "a.go"}, fantasy.ToolCall{}).Response()
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "symbol is required")
 }
@@ -182,14 +177,16 @@ func TestReplaceSymbolToolPlanCapitalized(t *testing.T) {
 		plan, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: string(input)})
 		require.NoError(t, err)
 		require.NotNil(t, plan.Response)
-		require.True(t, plan.Response.IsError)
-		require.Contains(t, plan.Response.Content, "file_path is required")
+		require.True(t, plan.Response.Response().IsError)
+		require.Contains(t, plan.Response.Response().Content, "file_path is required")
 	})
 
 	t.Run("rejects malformed input", func(t *testing.T) {
 		t.Parallel()
-		_, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: `{not valid json`})
-		require.Error(t, err)
+		plan, err := tool.Plan(t.Context(), fantasy.ToolCall{Input: `{not valid json`})
+		require.NoError(t, err)
+		require.NotNil(t, plan.Response)
+		require.True(t, plan.Response.Response().IsError)
 	})
 }
 

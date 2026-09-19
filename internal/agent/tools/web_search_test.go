@@ -32,9 +32,10 @@ func TestNewWebSearchToolRequiresSessionID(t *testing.T) {
 	input, err := json.Marshal(WebSearchParams{Query: "golang"})
 	require.NoError(t, err)
 
-	_, err = tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.WebSearch, Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "session ID is required")
+	resp, err := tool.Run(context.Background(), fantasy.ToolCall{ID: "1", Name: toolnames.WebSearch, Input: string(input)})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "session ID is required")
 }
 
 // TestNewWebSearchToolReturnsFormattedResults drives the tool wrapper

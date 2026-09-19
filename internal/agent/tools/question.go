@@ -80,17 +80,17 @@ type QuestionChoice struct {
 
 // NewQuestionTool creates a new question tool.
 func NewQuestionTool(svc question.Service) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.Question,
 		questionDescription,
-		func(ctx context.Context, params QuestionParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params QuestionParams, call fantasy.ToolCall) Result {
 			sessionID := GetSessionFromContext(ctx)
 
 			if len(params.Questions) == 0 {
-				return fantasy.NewTextErrorResponse("at least one question is required"), nil
+				return Fail("at least one question is required")
 			}
 			if len(params.Questions) > question.MaxQuestions {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("exceeds maximum of %d questions per batch (got %d). Split into multiple batches and tell the user there will be follow-up questions", question.MaxQuestions, len(params.Questions))), nil
+				return Failf("exceeds maximum of %d questions per batch (got %d). Split into multiple batches and tell the user there will be follow-up questions", question.MaxQuestions, len(params.Questions))
 			}
 
 			questions := make([]question.Question, len(params.Questions))
@@ -101,7 +101,7 @@ func NewQuestionTool(svc question.Service) fantasy.AgentTool {
 					if label == "" {
 						label = item.Question
 					}
-					return fantasy.NewTextErrorResponse(fmt.Sprintf("question %d [%s]: invalid type %q (must be yes_no, single_choice, multi_choice, or free_text)", i+1, label, item.Type)), nil
+					return Failf("question %d [%s]: invalid type %q (must be yes_no, single_choice, multi_choice, or free_text)", i+1, label, item.Type)
 				}
 				questions[i] = question.Question{
 					Type:        qType,
@@ -123,14 +123,13 @@ func NewQuestionTool(svc question.Service) fantasy.AgentTool {
 			answers, err := svc.Ask(ctx, req)
 			if err != nil {
 				if errors.Is(err, question.ErrCancelled) {
-					resp := fantasy.NewTextErrorResponse("User cancelled this question")
-					resp.StopTurn = true
-					return resp, nil
+					return Halt("User cancelled this question")
 				}
-				return fantasy.NewTextErrorResponse(err.Error()), nil
+				return Fail(err.Error())
 			}
 
-			return formatAnswers(answers, questions)
+			resp, _ := formatAnswers(answers, questions)
+			return FromResponse(resp)
 		},
 	)
 }

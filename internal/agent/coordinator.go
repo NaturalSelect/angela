@@ -1046,8 +1046,8 @@ func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int
 		return strings.Compare(a.Info().Name, b.Info().Name)
 	})
 
-	// The wrappers compose outside in as hooks -> permissions -> tool.
-	// A hook must run first so its allow decision is already on the
+	// The wrappers compose outside in as safety -> hooks -> permissions ->
+	// tool. A hook must run first so its allow decision is already on the
 	// context when the gate looks for one, and the gate must run before
 	// the tool so a tool cannot forget to ask.
 	filteredTools = wrapToolsWithPermissions(filteredTools, c.permissions, c.cfg.WorkingDir())
@@ -1059,6 +1059,12 @@ func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int
 	// the two apart. The top-level `agent` call and the tool calls the
 	// sub-agent then makes are distinct events, not duplicates.
 	filteredTools = wrapToolsWithHooks(filteredTools, hookRunner)
+
+	// Outermost: catches a stray Go error from any tool (builtin, MCP,
+	// or otherwise) before it reaches fantasy's step loop, where it
+	// would be classified alongside provider errors and could trigger
+	// an unrelated retry. See safe_tool.go.
+	filteredTools = wrapToolsWithSafety(filteredTools)
 
 	return filteredTools, nil
 }
@@ -2284,12 +2290,12 @@ type subAgentParams struct {
 // runSubAgent runs a sub-agent and handles session management and cost accumulation.
 // It creates a sub-session, runs the agent with the given prompt, and propagates
 // the cost to the parent session.
-func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (fantasy.ToolResponse, error) {
+func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) tools.Result {
 	// Create sub-session
 	agentToolSessionID := c.sessions.CreateAgentToolSessionID(params.AgentMessageID, params.ToolCallID)
 	session, err := c.sessions.CreateTaskSession(ctx, agentToolSessionID, params.SessionID, params.SessionTitle)
 	if err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("create session: %w", err)
+		return tools.FailErr("create session", err)
 	}
 	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)
 
@@ -2320,7 +2326,7 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 
 	providerCfg, ok := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
 	if !ok {
-		return fantasy.ToolResponse{}, errModelProviderNotConfigured
+		return tools.Fail(errModelProviderNotConfigured.Error())
 	}
 
 	// Run the agent
@@ -2346,7 +2352,7 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 	}
 	result, err := run()
 	if err != nil {
-		return fantasy.NewTextErrorResponse(fmt.Sprintf("Failed to generate response: %s", err)), nil
+		return tools.Failf("Failed to generate response: %s", err)
 	}
 
 	// Update parent session cost on a best-effort basis. A failure here must
@@ -2362,9 +2368,9 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) (f
 
 	output := subAgentOutput(result)
 	if output == "" {
-		return fantasy.NewTextErrorResponse("Sub-agent completed but produced no text output."), nil
+		return tools.Fail("Sub-agent completed but produced no text output.")
 	}
-	return fantasy.NewTextResponse(output), nil
+	return tools.Ok(output)
 }
 
 func subAgentOutput(result *fantasy.AgentResult) string {
@@ -2384,11 +2390,11 @@ func subAgentOutput(result *fantasy.AgentResult) string {
 // first turn merely starts the conversation, and what crosses back is
 // whatever the user eventually approves through the merge tool —
 // possibly many turns later.
-func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams) (fantasy.ToolResponse, error) {
+func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams) tools.Result {
 	branchSessionID := c.sessions.CreateAgentToolSessionID(params.AgentMessageID, params.ToolCallID)
 	session, err := c.sessions.CreateTaskSession(ctx, branchSessionID, params.SessionID, params.SessionTitle)
 	if err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("create branch session: %w", err)
+		return tools.FailErr("create branch session", err)
 	}
 	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)
 
@@ -2406,7 +2412,7 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 
 	parentSession, err := c.sessions.Get(ctx, params.SessionID)
 	if err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("look up parent session: %w", err)
+		return tools.FailErr("look up parent session", err)
 	}
 
 	// Everything the caller had said and seen up to the call that forked
@@ -2419,12 +2425,12 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	// branch exactly the history compaction was meant to discard.
 	summaryID, err := c.messages.ForkSession(ctx, params.SessionID, session.ID, parentSession.SummaryMessageID, params.AgentMessageID)
 	if err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("fork conversation into branch: %w", err)
+		return tools.FailErr("fork conversation into branch", err)
 	}
 	if summaryID != "" {
 		session.SummaryMessageID = summaryID
 		if session, err = c.sessions.Save(ctx, session); err != nil {
-			return fantasy.ToolResponse{}, fmt.Errorf("record branch summary point: %w", err)
+			return tools.FailErr("record branch summary point", err)
 		}
 	}
 
@@ -2433,7 +2439,7 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 		Prompt:      params.Prompt,
 	})
 	if err != nil {
-		return fantasy.ToolResponse{}, fmt.Errorf("render branch prompt: %w", err)
+		return tools.FailErr("render branch prompt", err)
 	}
 
 	// Registered before the first turn, not after: that turn may call
@@ -2475,14 +2481,16 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 
 	select {
 	case <-ctx.Done():
-		return fantasy.ToolResponse{}, ctx.Err()
+		// The Result returned here is discarded either way: this
+		// method's caller goes through tools.NewParallelTool, whose
+		// adapter reads ctx.Err() itself once Run returns and reports
+		// cancellation as a Go error instead of a tool result.
+		return tools.Fail("cancelled")
 	case out := <-done:
 		if out.Merged {
-			return fantasy.NewTextResponse(out.Payload), nil
+			return tools.Ok(out.Payload)
 		}
-		resp := fantasy.NewTextErrorResponse(out.Payload)
-		resp.StopTurn = true
-		return resp, nil
+		return tools.Halt(out.Payload)
 	}
 }
 

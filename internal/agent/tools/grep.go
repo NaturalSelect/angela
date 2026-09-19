@@ -122,12 +122,12 @@ func escapeRegexPattern(pattern string) string {
 }
 
 func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.Grep,
 		grepDescription(),
-		func(ctx context.Context, params GrepParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params GrepParams, call fantasy.ToolCall) Result {
 			if params.Pattern == "" {
-				return fantasy.NewTextErrorResponse("pattern is required"), nil
+				return Fail("pattern is required")
 			}
 
 			searchPattern := params.Pattern
@@ -142,7 +142,7 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 
 			matches, truncated, err := searchFiles(searchCtx, searchPattern, searchPath, params.Include, 100)
 			if err != nil {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf("error searching files: %v", err)), nil
+				return Failf("error searching files: %v", err)
 			}
 
 			var output strings.Builder
@@ -180,13 +180,12 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 				}
 			}
 
-			return fantasy.WithResponseMetadata(
-				fantasy.NewTextResponse(output.String()),
+			return Ok(output.String()).WithMetadata(
 				GrepResponseMetadata{
 					NumberOfMatches: len(matches),
 					Truncated:       truncated,
 				},
-			), nil
+			)
 		},
 	)
 }

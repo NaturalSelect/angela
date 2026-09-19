@@ -23,7 +23,8 @@ func TestListMCPResourcesTool_RequiresMCPName(t *testing.T) {
 }
 
 // TestListMCPResourcesTool_RequiresSession pins that a call outside a
-// session comes back as a plain error rather than a tool response.
+// session comes back as a tool-error response rather than a plain Go
+// error.
 func TestListMCPResourcesTool_RequiresSession(t *testing.T) {
 	t.Parallel()
 
@@ -32,9 +33,9 @@ func TestListMCPResourcesTool_RequiresSession(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := tool.Run(t.Context(), fantasy.ToolCall{Input: string(input)})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "session ID is required")
-	require.Zero(t, resp)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "session ID is required")
 }
 
 // TestListMCPResourcesTool_MCPNotConfigured pins that listing

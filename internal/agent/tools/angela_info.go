@@ -28,11 +28,11 @@ func NewAngelaInfoTool(
 	activeSkills []*skills.Skill,
 	skillTracker *skills.Tracker,
 ) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.AngelaInfo,
 		angelaInfoDescription,
-		func(ctx context.Context, _ AngelaInfoParams, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			return fantasy.NewTextResponse(buildAngelaInfo(cfg, lspManager, allSkills, activeSkills, skillTracker)), nil
+		func(ctx context.Context, _ AngelaInfoParams, _ fantasy.ToolCall) Result {
+			return Ok(buildAngelaInfo(cfg, lspManager, allSkills, activeSkills, skillTracker))
 		},
 	)
 }

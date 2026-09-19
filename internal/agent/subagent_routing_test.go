@@ -521,7 +521,7 @@ func TestRunSubAgentRegistersItsRoute(t *testing.T) {
 	})
 	resolved.ID = "explore"
 
-	_, err = coord.runSubAgent(t.Context(), subAgentParams{
+	coord.runSubAgent(t.Context(), subAgentParams{
 		Agent:          child,
 		Resolved:       resolved,
 		SessionID:      parent.ID,
@@ -530,7 +530,6 @@ func TestRunSubAgentRegistersItsRoute(t *testing.T) {
 		Prompt:         "do something",
 		SessionTitle:   "explore run",
 	})
-	require.NoError(t, err)
 
 	childID := env.sessions.CreateAgentToolSessionID("msg-1", "call-1")
 	coord.Cancel(childID)
@@ -557,7 +556,7 @@ func TestRunSubAgentRecordsItsAgentOnTheSession(t *testing.T) {
 	resolved.ID = "explore"
 	resolved.Host = config.ActiveAgent{Agent: config.Agent{ID: "explore"}}
 
-	_, err = coord.runSubAgent(t.Context(), subAgentParams{
+	coord.runSubAgent(t.Context(), subAgentParams{
 		Agent:          child,
 		Resolved:       resolved,
 		SessionID:      parent.ID,
@@ -566,7 +565,6 @@ func TestRunSubAgentRecordsItsAgentOnTheSession(t *testing.T) {
 		Prompt:         "do something",
 		SessionTitle:   "explore run",
 	})
-	require.NoError(t, err)
 
 	childID := env.sessions.CreateAgentToolSessionID("msg-1", "call-1")
 	stored, err := env.sessions.Get(t.Context(), childID)

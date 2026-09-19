@@ -184,9 +184,7 @@ func multiEditPlan(t *testing.T, dir string, tracker filetracker.Service, files 
 	tool := NewMultiEditTool(nil, files, tracker, dir).(*multiEditTool)
 	ctx := context.WithValue(t.Context(), SessionIDContextKey, "session")
 
-	plan, err := tool.plan(ctx, params)
-	require.NoError(t, err)
-	return plan, ctx
+	return tool.plan(ctx, params), ctx
 }
 
 func TestProcessMultiEditExistingFilePartialFailure(t *testing.T) {
@@ -204,8 +202,7 @@ func TestProcessMultiEditExistingFilePartialFailure(t *testing.T) {
 		},
 	})
 
-	resp, err := plan.Apply(ctx)
-	require.NoError(t, err)
+	resp := plan.Apply(ctx).Response()
 	require.False(t, resp.IsError)
 	require.Contains(t, resp.Content, "Applied 1 of 2 edits")
 
@@ -237,8 +234,7 @@ func TestProcessMultiEditWithCreationPartialFailure(t *testing.T) {
 		},
 	})
 
-	resp, err := plan.Apply(ctx)
-	require.NoError(t, err)
+	resp := plan.Apply(ctx).Response()
 	require.False(t, resp.IsError)
 	require.Contains(t, resp.Content, "File created with 2 of 3 edits")
 
@@ -272,8 +268,7 @@ func TestMultiEditPlanCreatesNothingUntilApply(t *testing.T) {
 	require.NoDirExists(t, filepath.Dir(filePath), "planning must not create directories")
 	require.NotNil(t, plan.Apply)
 
-	_, err := plan.Apply(ctx)
-	require.NoError(t, err)
+	plan.Apply(ctx)
 	require.FileExists(t, filePath)
 }
 
@@ -321,8 +316,8 @@ func TestMultiEditPlanSettlesWhenEveryEditFails(t *testing.T) {
 	})
 
 	require.NotNil(t, plan.Response)
-	require.True(t, plan.Response.IsError)
-	require.Contains(t, plan.Response.Content, "all 1 edit(s) failed")
+	require.True(t, plan.Response.Response().IsError)
+	require.Contains(t, plan.Response.Response().Content, "all 1 edit(s) failed")
 	require.Nil(t, plan.Apply)
 }
 

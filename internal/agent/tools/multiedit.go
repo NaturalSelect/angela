@@ -86,17 +86,14 @@ func NewMultiEditTool(
 		filetracker: filetracker,
 		workingDir:  workingDir,
 	}
-	t.AgentTool = fantasy.NewAgentTool(toolnames.MultiEdit, multieditDescription, t.run)
+	t.AgentTool = NewTool(toolnames.MultiEdit, multieditDescription, t.run)
 	return t
 }
 
-func (t *multiEditTool) run(ctx context.Context, params MultiEditParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	plan, err := t.plan(ctx, params)
-	if err != nil {
-		return fantasy.ToolResponse{}, err
-	}
+func (t *multiEditTool) run(ctx context.Context, params MultiEditParams, call fantasy.ToolCall) Result {
+	plan := t.plan(ctx, params)
 	if plan.Response != nil {
-		return *plan.Response, nil
+		return *plan.Response
 	}
 	return plan.Apply(ctx)
 }
@@ -104,26 +101,26 @@ func (t *multiEditTool) run(ctx context.Context, params MultiEditParams, call fa
 func (t *multiEditTool) Plan(ctx context.Context, call fantasy.ToolCall) (Plan, error) {
 	params, ok := decodeInput[MultiEditParams](call.Input)
 	if !ok {
-		return Plan{}, fmt.Errorf("invalid input for %s", toolnames.MultiEdit)
+		return settled(Fail(fmt.Sprintf("invalid input for %s", toolnames.MultiEdit))), nil
 	}
-	return t.plan(ctx, params)
+	return t.plan(ctx, params), nil
 }
 
 // plan runs every edit against an in-memory copy of the file, so the
 // user sees the combined result of the whole batch rather than being
 // asked once per edit.
-func (t *multiEditTool) plan(ctx context.Context, params MultiEditParams) (Plan, error) {
+func (t *multiEditTool) plan(ctx context.Context, params MultiEditParams) Plan {
 	if params.FilePath == "" {
-		return settled(fantasy.NewTextErrorResponse("file_path is required")), nil
+		return settled(Fail("file_path is required"))
 	}
 	if len(params.Edits) == 0 {
-		return settled(fantasy.NewTextErrorResponse("at least one edit operation is required")), nil
+		return settled(Fail("at least one edit operation is required"))
 	}
 
 	params.FilePath = filepathext.SmartJoin(t.workingDir, params.FilePath)
 
 	if err := validateEdits(params.Edits); err != nil {
-		return settled(fantasy.NewTextErrorResponse(err.Error())), nil
+		return settled(Fail(err.Error()))
 	}
 
 	edit := editContext{ctx, t.files, t.filetracker, t.workingDir}
@@ -165,11 +162,11 @@ func applyEditsToContent(currentContent string, edits []MultiEditOperation, star
 	return currentContent, failedEdits, whitespaceCorrected
 }
 
-func (t *multiEditTool) planWithCreation(edit editContext, params MultiEditParams) (Plan, error) {
+func (t *multiEditTool) planWithCreation(edit editContext, params MultiEditParams) Plan {
 	if _, err := os.Stat(params.FilePath); err == nil {
-		return settled(fantasy.NewTextErrorResponse(fmt.Sprintf("file already exists: %s", params.FilePath))), nil
+		return settled(Fail(fmt.Sprintf("file already exists: %s", params.FilePath)))
 	} else if !os.IsNotExist(err) {
-		return Plan{}, fmt.Errorf("failed to access file: %w", err)
+		return settled(FailErr("failed to access file", err))
 	}
 
 	firstEdit := params.Edits[0]
@@ -177,7 +174,7 @@ func (t *multiEditTool) planWithCreation(edit editContext, params MultiEditParam
 
 	sessionID := GetSessionFromContext(edit.ctx)
 	if sessionID == "" {
-		return Plan{}, fmt.Errorf("session ID is required for creating a new file")
+		return settled(Fail("session ID is required for creating a new file"))
 	}
 
 	_, additions, removals := diff.GenerateDiff("", currentContent, strings.TrimPrefix(params.FilePath, t.workingDir))
@@ -208,18 +205,18 @@ func (t *multiEditTool) planWithCreation(edit editContext, params MultiEditParam
 			},
 		},
 		Refusal: metadata,
-		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+		Apply: func(ctx context.Context) Result {
 			// Creating the parent directories belongs here rather than
 			// in planning: a refused edit must leave no trace.
 			if err := os.MkdirAll(filepath.Dir(params.FilePath), 0o755); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to create parent directories: %w", err)
+				return FailErr("failed to create parent directories", err)
 			}
 			if err := os.WriteFile(params.FilePath, []byte(currentContent), 0o644); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to write file: %w", err)
+				return FailErr("failed to write file", err)
 			}
 
 			if _, err := t.files.Create(ctx, sessionID, params.FilePath, ""); err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("error creating file history: %w", err)
+				return FailErr("error creating file history", err)
 			}
 			if _, err := t.files.CreateVersion(ctx, sessionID, params.FilePath, currentContent); err != nil {
 				slog.Error("Error creating file history version", "error", err)
@@ -230,33 +227,29 @@ func (t *multiEditTool) planWithCreation(edit editContext, params MultiEditParam
 			if len(failedEdits) > 0 {
 				message = fmt.Sprintf("File created with %d of %d edits: %s (%d edit(s) failed)", editsApplied, len(params.Edits), params.FilePath, len(failedEdits))
 			}
-			return t.finish(ctx, params.FilePath, withWhitespaceNote(message, whitespaceCorrected), metadata), nil
+			return FromResponse(t.finish(ctx, params.FilePath, withWhitespaceNote(message, whitespaceCorrected), metadata))
 		},
-	}, nil
+	}
 }
 
-func (t *multiEditTool) planExistingFile(edit editContext, params MultiEditParams) (Plan, error) {
-	sessionID, oldContent, isCrlf, resp, err := loadExistingFile(edit, params.FilePath, "session ID is required for editing a file")
-	if err != nil {
-		return Plan{}, err
-	}
-	if resp.Content != "" || resp.IsError {
-		return settled(resp), nil
+func (t *multiEditTool) planExistingFile(edit editContext, params MultiEditParams) Plan {
+	sessionID, oldContent, isCrlf, result, ok := loadExistingFile(edit, params.FilePath, "session ID is required for editing a file")
+	if !ok {
+		return settled(result)
 	}
 
 	currentContent, failedEdits, whitespaceCorrected := applyEditsToContent(oldContent, params.Edits, 0)
 
 	if oldContent == currentContent {
 		if len(failedEdits) > 0 {
-			return settled(fantasy.WithResponseMetadata(
-				fantasy.NewTextErrorResponse(fmt.Sprintf("no changes made - all %d edit(s) failed", len(failedEdits))),
+			return settled(Fail(fmt.Sprintf("no changes made - all %d edit(s) failed", len(failedEdits))).WithMetadata(
 				MultiEditResponseMetadata{
 					EditsApplied: 0,
 					EditsFailed:  failedEdits,
 				},
-			)), nil
+			))
 		}
-		return settled(fantasy.NewTextErrorResponse("no changes made - all edits resulted in identical content")), nil
+		return settled(Fail("no changes made - all edits resulted in identical content"))
 	}
 
 	_, additions, removals := diff.GenerateDiff(oldContent, currentContent, strings.TrimPrefix(params.FilePath, t.workingDir))
@@ -291,20 +284,20 @@ func (t *multiEditTool) planExistingFile(edit editContext, params MultiEditParam
 			},
 		},
 		Refusal: metadata,
-		Apply: func(ctx context.Context) (fantasy.ToolResponse, error) {
+		Apply: func(ctx context.Context) Result {
 			applyCtx := edit
 			applyCtx.ctx = ctx
 			if err := commitFileChange(applyCtx, sessionID, params.FilePath, oldContent, writeContent); err != nil {
-				return fantasy.ToolResponse{}, err
+				return Fail(err.Error())
 			}
 
 			message := fmt.Sprintf("Applied %d edits to file: %s", len(params.Edits), params.FilePath)
 			if len(failedEdits) > 0 {
 				message = fmt.Sprintf("Applied %d of %d edits to file: %s (%d edit(s) failed)", editsApplied, len(params.Edits), params.FilePath, len(failedEdits))
 			}
-			return t.finish(ctx, params.FilePath, withWhitespaceNote(message, whitespaceCorrected), metadata), nil
+			return FromResponse(t.finish(ctx, params.FilePath, withWhitespaceNote(message, whitespaceCorrected), metadata))
 		},
-	}, nil
+	}
 }
 
 // finish tells the language servers what changed and folds the fresh

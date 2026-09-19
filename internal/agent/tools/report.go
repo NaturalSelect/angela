@@ -108,27 +108,27 @@ type LoadReportParams struct {
 }
 
 func NewLoadReportTool(sessions session.Service, messages message.Service) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.LoadReport,
 		loadReportDescription,
-		func(ctx context.Context, params LoadReportParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params LoadReportParams, call fantasy.ToolCall) Result {
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for loading a report")
+				return Fail("session ID is required for loading a report")
 			}
 
 			reports, err := CollectReports(ctx, sessions, messages, sessionID)
 			if err != nil {
-				return fantasy.ToolResponse{}, fmt.Errorf("failed to collect reports: %w", err)
+				return FailErr("failed to collect reports", err)
 			}
 
 			wanted := strings.TrimSpace(params.ID)
 			for _, report := range reports {
 				if report.ID == wanted {
-					return fantasy.NewTextResponse(report.Content), nil
+					return Ok(report.Content)
 				}
 			}
-			return fantasy.NewTextErrorResponse(unknownReportMessage(wanted, reports)), nil
+			return Fail(unknownReportMessage(wanted, reports))
 		},
 	)
 }

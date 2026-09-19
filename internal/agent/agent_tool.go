@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -57,12 +56,12 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet) (fan
 		availableIDs[i] = a.ID
 	}
 
-	return fantasy.NewParallelAgentTool(
+	return tools.NewParallelTool(
 		toolnames.Agent,
 		description,
-		func(ctx context.Context, params AgentParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params AgentParams, call fantasy.ToolCall) tools.Result {
 			if params.Prompt == "" {
-				return fantasy.NewTextErrorResponse("prompt is required"), nil
+				return tools.Fail("prompt is required")
 			}
 
 			// A call with no subagent_type is almost always a search
@@ -74,27 +73,23 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet) (fan
 
 			entry, ok := c.subagents.Get(agentType)
 			if !ok {
-				return fantasy.NewTextErrorResponse(
-					fmt.Sprintf("Unknown subagent_type %q. Available types: %s",
-						agentType, strings.Join(availableIDs, ", ")),
-				), nil
+				return tools.Failf("Unknown subagent_type %q. Available types: %s",
+					agentType, strings.Join(availableIDs, ", "))
 			}
 
 			if !allowed.Allows(agentType) {
-				return fantasy.NewTextErrorResponse(
-					fmt.Sprintf("Agent %q is not available from here. Available: %s",
-						agentType, strings.Join(availableIDs, ", ")),
-				), nil
+				return tools.Failf("Agent %q is not available from here. Available: %s",
+					agentType, strings.Join(availableIDs, ", "))
 			}
 
 			sessionID := tools.GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, errors.New("session id missing from context")
+				return tools.Fail("session id missing from context")
 			}
 
 			agentMessageID := tools.GetMessageFromContext(ctx)
 			if agentMessageID == "" {
-				return fantasy.ToolResponse{}, errors.New("agent message id missing from context")
+				return tools.Fail("agent message id missing from context")
 			}
 
 			// Building the agent can fail on a bad prompt template or
@@ -104,9 +99,7 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet) (fan
 			agent, resolved, err := c.dispatchSubAgent(ctx, entry, depth+1)
 			if err != nil {
 				slog.Error("Failed to build subagent", "agent", agentType, "error", err)
-				return fantasy.NewTextErrorResponse(
-					fmt.Sprintf("Subagent %q is unavailable: %v", agentType, err),
-				), nil
+				return tools.Failf("Subagent %q is unavailable: %v", agentType, err)
 			}
 
 			title := params.Description
@@ -120,12 +113,12 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet) (fan
 				// misconfigured branch still reports the build failure
 				// rather than a refusal that hides it.
 				if refusal := c.branchDispatchRefusal(ctx, sessionID); refusal != "" {
-					return fantasy.NewTextErrorResponse(refusal), nil
+					return tools.Fail(refusal)
 				}
 				run = c.runBranchAgent
 			}
 
-			resp, err := run(ctx, subAgentParams{
+			result := run(ctx, subAgentParams{
 				Agent:          agent,
 				Resolved:       resolved,
 				SessionID:      sessionID,
@@ -134,11 +127,8 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet) (fan
 				Prompt:         params.Prompt,
 				SessionTitle:   title,
 			})
-			if err != nil {
-				return resp, err
-			}
 			reportID := tools.ReportID(c.sessions, agentMessageID, call.ID)
-			return withReportHeader(resp, reportID, agentType, params.Description), nil
+			return tools.FromResponse(withReportHeader(result.Response(), reportID, agentType, params.Description))
 		},
 	), nil
 }

@@ -1247,7 +1247,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			wrapped := fantasy.NewTransportError(err)
 			currentAssistant.AddFinish(message.FinishReasonError, stringext.Capitalize(wrapped.Title), wrapped.Message)
 		} else {
-			currentAssistant.AddFinish(message.FinishReasonError, defaultTitle, err.Error())
+			// Not a classified provider/fantasy/transport error, so
+			// defaultTitle ("Provider Error") would mislabel it: with
+			// the tools.Result union and safeTool in place, this branch
+			// should only ever see a genuine infrastructure failure
+			// (e.g. a DB write error), never a tool's business failure.
+			currentAssistant.AddFinish(message.FinishReasonError, "Error", err.Error())
 		}
 		// Note: we use the cleanup context here because the genCtx has been
 		// cancelled.

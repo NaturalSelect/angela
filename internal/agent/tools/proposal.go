@@ -69,88 +69,88 @@ type ProposalReadParams struct {
 }
 
 func NewProposalWriteTool(store *ProposalStore) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.ProposalWrite,
 		proposalWriteDescription,
-		func(ctx context.Context, params ProposalWriteParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params ProposalWriteParams, call fantasy.ToolCall) Result {
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", toolnames.ProposalWrite)
+				return Failf("session ID is required for %s", toolnames.ProposalWrite)
 			}
 			if params.Content == "" {
-				return fantasy.NewTextErrorResponse("content is required"), nil
+				return Fail("content is required")
 			}
 
 			store.Set(sessionID, params.Content)
 			// The proposal itself is deliberately absent from the reply:
 			// echoing it back would spend on the return path exactly what
 			// editing in place saves on the way in.
-			return fantasy.NewTextResponse(fmt.Sprintf(
+			return Ok(fmt.Sprintf(
 				"Proposal saved, %d lines. Revise it with %s rather than writing it out again.",
 				lineCount(params.Content), toolnames.ProposalEdit,
-			)), nil
+			))
 		},
 	)
 }
 
 func NewProposalEditTool(store *ProposalStore) fantasy.AgentTool {
-	return fantasy.NewAgentTool(
+	return NewTool(
 		toolnames.ProposalEdit,
 		proposalEditDescription,
-		func(ctx context.Context, params ProposalEditParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params ProposalEditParams, call fantasy.ToolCall) Result {
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", toolnames.ProposalEdit)
+				return Failf("session ID is required for %s", toolnames.ProposalEdit)
 			}
 			if params.OldString == "" {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf(
+				return Failf(
 					"old_string is required. To start the proposal, use %s.", toolnames.ProposalWrite,
-				)), nil
+				)
 			}
 
 			doc, ok := store.Get(sessionID)
 			if !ok {
-				return fantasy.NewTextErrorResponse(fmt.Sprintf(
+				return Failf(
 					"There is no proposal to edit yet. Draft it with %s first.", toolnames.ProposalWrite,
-				)), nil
+				)
 			}
 
 			updated, whitespaceCorrected, err := findAndReplace(doc, params.OldString, params.NewString, params.ReplaceAll)
 			if err != nil {
 				// A failed match leaves the stored document untouched, so
 				// the model can retry against what is still there.
-				return fantasy.NewTextErrorResponse(err.Error()), nil
+				return Fail(err.Error())
 			}
 
 			store.Set(sessionID, updated)
-			return fantasy.NewTextResponse(withWhitespaceNote(fmt.Sprintf(
+			return Ok(withWhitespaceNote(fmt.Sprintf(
 				"Proposal updated, %d lines.", lineCount(updated),
-			), whitespaceCorrected)), nil
+			), whitespaceCorrected))
 		},
 	)
 }
 
 func NewProposalReadTool(store *ProposalStore) fantasy.AgentTool {
-	return fantasy.NewParallelAgentTool(
+	return NewParallelTool(
 		toolnames.ProposalRead,
 		proposalReadDescription,
-		func(ctx context.Context, params ProposalReadParams, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+		func(ctx context.Context, params ProposalReadParams, call fantasy.ToolCall) Result {
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return fantasy.ToolResponse{}, fmt.Errorf("session ID is required for %s", toolnames.ProposalRead)
+				return Failf("session ID is required for %s", toolnames.ProposalRead)
 			}
 
 			doc, ok := store.Get(sessionID)
 			if !ok || doc == "" {
-				return fantasy.NewTextResponse(fmt.Sprintf(
+				return Ok(fmt.Sprintf(
 					"The proposal is empty. Draft it with %s.", toolnames.ProposalWrite,
-				)), nil
+				))
 			}
 
 			if params.Limit <= 0 {
 				params.Limit = DefaultReadLimit
 			}
-			return fantasy.NewTextResponse(sliceProposalLines(doc, params.Offset, params.Limit)), nil
+			return Ok(sliceProposalLines(doc, params.Offset, params.Limit))
 		},
 	)
 }

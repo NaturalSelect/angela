@@ -61,16 +61,15 @@ func TestWorkspaceScopedHandlers_SuccessPaths(t *testing.T) {
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpSrv }, nil)
 	httpSrv := httptest.NewServer(mcpHandler)
 	t.Cleanup(httpSrv.Close)
-	// Wait for the startup mcp.Initialize goroutine (armed by app.New
-	// during workspace creation above) to finish ranging over
-	// Config().MCP before mutating that same map below: this write goes
-	// straight into the live config instead of through the store's
-	// copy-on-write mutators, so it must not overlap that read.
-	require.NoError(t, angelamcp.WaitForInit(t.Context()))
-	ws.Cfg.Config().MCP["disabled-server"] = config.MCPConfig{
+	// Go through SetConfigField rather than indexing ws.Cfg.Config().MCP
+	// directly: the startup mcp.Initialize goroutine (armed by app.New
+	// during workspace creation above) ranges over that same map in the
+	// background, and SetConfigField's write-then-reload never mutates a
+	// published Config in place, so it can't race that read.
+	require.NoError(t, ws.Cfg.SetConfigField(config.ScopeGlobal, "mcp.disabled-server", config.MCPConfig{
 		Type: config.MCPHttp,
 		URL:  httpSrv.URL,
-	}
+	}))
 
 	c := &controllerV1{backend: h.backend, server: h.srv}
 

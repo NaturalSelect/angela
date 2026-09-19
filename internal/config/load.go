@@ -871,13 +871,50 @@ func lookupConfigs(cwd string) []string {
 	foundConfigs, err := fsext.LookupBounded(cwd, projectBoundary(cwd), configNames...)
 	if err != nil {
 		// returns at least default configs
-		return configPaths
+		return dedupeConfigPathsByIdentity(configPaths)
 	}
 
 	// reverse order so last config has more priority
 	slices.Reverse(foundConfigs)
 
-	return append(configPaths, foundConfigs...)
+	return dedupeConfigPathsByIdentity(append(configPaths, foundConfigs...))
+}
+
+// dedupeConfigPathsByIdentity drops entries that resolve to the same
+// underlying file as a later, higher-priority entry (for example a
+// project angela.json symlinked to the global config, or a working
+// directory that happens to sit inside the global config directory).
+// Paths are ordered low-to-high priority and loadFromBytes merges array
+// fields by concatenation, so reading the same file twice would double
+// its hooks, permissions, and MCP server entries. Keeping the last
+// occurrence means a duplicated file merges with the priority of the
+// most specific place it was found, and the relative order of every
+// other, distinct path is left untouched. Paths that do not exist or
+// cannot be stat'd are left in place; loadFromConfigPaths already skips
+// them when it reads.
+func dedupeConfigPathsByIdentity(paths []string) []string {
+	keep := make([]bool, len(paths))
+	var seen []os.FileInfo
+	for i := len(paths) - 1; i >= 0; i-- {
+		info, err := os.Stat(paths[i])
+		if err != nil {
+			keep[i] = true
+			continue
+		}
+		if slices.ContainsFunc(seen, func(s os.FileInfo) bool { return os.SameFile(info, s) }) {
+			continue
+		}
+		seen = append(seen, info)
+		keep[i] = true
+	}
+
+	out := make([]string, 0, len(paths))
+	for i, p := range paths {
+		if keep[i] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []string, error) {

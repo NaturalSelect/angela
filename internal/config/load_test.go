@@ -153,6 +153,61 @@ func TestLookupConfigs_BoundedByProject(t *testing.T) {
 		// priority when configs are merged.
 		require.Equal(t, "/etc/angela/angela.json", got[0])
 	})
+
+	t.Run("dedupes a config reachable through two paths, keeping the highest-priority one", func(t *testing.T) {
+		project := t.TempDir()
+		globalPath := GlobalConfig()
+		require.NoError(t, os.WriteFile(globalPath, []byte(`{}`), 0o644))
+
+		projectPath := filepath.Join(project, "angela.json")
+		if err := os.Symlink(globalPath, projectPath); err != nil {
+			t.Skipf("cannot create symlink: %v", err)
+		}
+
+		got := lookupConfigs(project)
+
+		var matches []string
+		for _, p := range got {
+			if p == globalPath || p == projectPath {
+				matches = append(matches, p)
+			}
+		}
+		require.Len(t, matches, 1, "the same file reached through two paths must not be merged twice: %v", got)
+		require.Equal(t, projectPath, matches[0], "the higher-priority project path must win over the global one")
+	})
+}
+
+func TestDedupeConfigPathsByIdentity(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	low := filepath.Join(dir, "low.json")
+	mid := filepath.Join(dir, "mid.json")
+	high := filepath.Join(dir, "high.json")
+	require.NoError(t, os.WriteFile(low, []byte(`{}`), 0o644))
+	require.NoError(t, os.WriteFile(mid, []byte(`{}`), 0o644))
+
+	// low and high resolve to the same file; mid is distinct and sits
+	// between them in priority order.
+	if err := os.Symlink(low, high); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	got := dedupeConfigPathsByIdentity([]string{low, mid, high})
+
+	require.Equal(t, []string{mid, high}, got, "must drop the lower-priority duplicate and keep the order of distinct entries")
+}
+
+func TestDedupeConfigPathsByIdentity_MissingPathsUntouched(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.json")
+	require.NoError(t, os.WriteFile(real, []byte(`{}`), 0o644))
+	missing := filepath.Join(dir, "missing.json")
+
+	got := dedupeConfigPathsByIdentity([]string{missing, real, missing})
+	require.Equal(t, []string{missing, real, missing}, got, "paths that cannot be stat'd must be left untouched")
 }
 
 func TestLoadFromConfigPaths_InvalidJSON(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -18,12 +19,22 @@ import (
 const (
 	// VariantsID is the identifier for the model variant dialog.
 	VariantsID = "variants"
+	// AgentModelVariantsID is the identifier for the variant picker in
+	// the "Switch Agent Model" flow.
+	AgentModelVariantsID = "agent-model-variants"
 
 	// baselineVariantTitle names the entry that clears the preset. The
 	// empty variant is a real choice, not the absence of one, so it
 	// needs a label a user can read and select.
 	baselineVariantTitle = "Baseline"
 )
+
+// agentModelVariantTarget names the agent+model a variant pick in the
+// "Switch Agent Model" flow applies to, once ForAgentModel sets it.
+type agentModelVariantTarget struct {
+	agentID string
+	model   config.SelectedModel
+}
 
 // Variants is a dialog for switching the parameter preset of the model
 // the session already runs on. It changes no identity: same agent, same
@@ -36,6 +47,12 @@ type Variants struct {
 
 	frame   *Frame
 	metrics FrameMetrics
+
+	// forAgent is set by ForAgentModel to switch the dialog into the
+	// "Switch Agent Model" flow: a pick reports
+	// ActionSelectAgentModelVariant for this agent+model instead of
+	// adjusting the preset of whatever the session already runs.
+	forAgent *agentModelVariantTarget
 
 	keyMap struct {
 		Select   key.Binding
@@ -123,7 +140,18 @@ func NewVariants(com *common.Common, modelName string, variants []string, curren
 
 // ID implements Dialog.
 func (v *Variants) ID() string {
+	if v.forAgent != nil {
+		return AgentModelVariantsID
+	}
 	return VariantsID
+}
+
+// ForAgentModel switches the dialog into the "Switch Agent Model"
+// flow: a pick reports ActionSelectAgentModelVariant for agentID+model
+// instead of adjusting the preset of whatever the session already
+// runs.
+func (v *Variants) ForAgentModel(agentID string, model config.SelectedModel) {
+	v.forAgent = &agentModelVariantTarget{agentID: agentID, model: model}
 }
 
 // HandleMsg implements [Dialog].
@@ -159,6 +187,13 @@ func (v *Variants) HandleMsg(msg tea.Msg) Action {
 			variantItem, ok := selectedItem.(*VariantItem)
 			if !ok {
 				break
+			}
+			if v.forAgent != nil {
+				return ActionSelectAgentModelVariant{
+					AgentID: v.forAgent.agentID,
+					Model:   v.forAgent.model,
+					Variant: variantItem.variant,
+				}
 			}
 			return ActionSelectVariant{Variant: variantItem.variant}
 		default:

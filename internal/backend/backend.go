@@ -61,6 +61,13 @@ var (
 	ErrAgentNotAvailable   = agent.ErrAgentNotAvailable
 	ErrVariantNotAvailable = agent.ErrVariantNotAvailable
 	ErrModelSlotMismatch   = agent.ErrModelSlotMismatch
+
+	// The three below are a "switch agent model" override naming an
+	// agent, model or variant that does not resolve. Also the
+	// caller's to correct.
+	ErrAgentOverrideUnknownAgent   = config.ErrAgentOverrideUnknownAgent
+	ErrAgentOverrideUnknownModel   = config.ErrAgentOverrideUnknownModel
+	ErrAgentOverrideUnknownVariant = config.ErrAgentOverrideUnknownVariant
 )
 
 // DefaultCreateGrace is the window in which a client must open an SSE

@@ -81,6 +81,8 @@ var wsHandlerCases = []wsHandlerCase{
 	{name: "PostWorkspaceConfigProviderModel", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceConfigProviderModel},
 	{name: "PostWorkspaceConfigImportCopilot", invoke: (*controllerV1).handlePostWorkspaceConfigImportCopilot},
 	{name: "PostWorkspaceConfigRefreshOAuth", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceConfigRefreshOAuth},
+	{name: "PostWorkspaceConfigAgentModel", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceConfigAgentModel},
+	{name: "DeleteWorkspaceConfigAgentModel", invoke: (*controllerV1).handleDeleteWorkspaceConfigAgentModel},
 	{name: "GetWorkspaceProjectNeedsInit", invoke: (*controllerV1).handleGetWorkspaceProjectNeedsInit},
 	{name: "PostWorkspaceProjectInit", invoke: (*controllerV1).handlePostWorkspaceProjectInit},
 	{name: "GetWorkspaceProjectInitPrompt", invoke: (*controllerV1).handleGetWorkspaceProjectInitPrompt},

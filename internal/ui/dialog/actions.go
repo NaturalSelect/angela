@@ -81,6 +81,33 @@ type ActionSelectAgent struct {
 	AgentID string
 }
 
+// ActionSelectAgentModelTarget is emitted when the user picks which
+// agent to override in the "Switch Agent Model" flow.
+type ActionSelectAgentModelTarget struct {
+	AgentID string
+}
+
+// ActionSelectAgentModel is emitted when the user picks a model for
+// the agent chosen in the "Switch Agent Model" flow.
+type ActionSelectAgentModel struct {
+	AgentID  string
+	Provider catwalk.Provider
+	Model    config.SelectedModel
+}
+
+// ActionSelectAgentModelVariant is emitted when the user picks a
+// parameter preset for the agent+model chosen in the "Switch Agent
+// Model" flow.
+type ActionSelectAgentModelVariant struct {
+	AgentID string
+	Model   config.SelectedModel
+	Variant string
+}
+
+// ActionClearAgentModelOverrides drops every process-level "switch
+// agent model" pin, returning every agent to its configured model.
+type ActionClearAgentModelOverrides struct{}
+
 // Messages for commands
 type (
 	ActionNewSession        struct{}

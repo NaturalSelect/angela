@@ -479,6 +479,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		NewCommandItem(c.com.Styles, "switch_session", "Sessions", "ctrl+s", ActionOpenDialog{SessionsID}),
 		NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}),
 		NewCommandItem(c.com.Styles, "switch_agent", "Switch Agent", "", ActionOpenDialog{AgentsID}).WithAliases("agent"),
+		NewCommandItem(c.com.Styles, "switch_agent_model", "Switch Agent Model", "", ActionOpenDialog{AgentModelAgentsID}).WithAliases("agent-model", "override-model"),
 		NewCommandItem(c.com.Styles, "manage_mcp", "Manage MCP Servers", "", ActionOpenDialog{MCPServersID}).WithAliases("mcp", "mcps"),
 		NewCommandItem(c.com.Styles, "suspend", "Suspend", "ctrl+z", ActionSuspend{}),
 	}
@@ -585,6 +586,14 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	// Add disable Docker MCP command if it's currently enabled
 	if cfg.IsDockerMCPEnabled() {
 		commands = append(commands, NewCommandItem(c.com.Styles, "disable_docker_mcp", "Disable Docker MCP Catalog", "", ActionDisableDockerMCP{}))
+	}
+
+	// Offered only once a "Switch Agent Model" pick exists to clear:
+	// an empty override map means every agent is already on its
+	// configured model, so there would be nothing for the command to
+	// do.
+	if len(cfg.AgentModelOverrides) > 0 {
+		commands = append(commands, NewCommandItem(c.com.Styles, "clear_agent_model_overrides", "Reset Agent Model Overrides", "", ActionClearAgentModelOverrides{}))
 	}
 
 	// Sandbox restriction is irreversible for the life of the process, so

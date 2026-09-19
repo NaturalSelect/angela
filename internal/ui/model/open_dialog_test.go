@@ -103,6 +103,7 @@ func TestOpenDialog_RoutesEveryKnownID(t *testing.T) {
 		dialog.CommandsID,
 		dialog.VariantsID,
 		dialog.AgentsID,
+		dialog.AgentModelAgentsID,
 		dialog.NotificationsID,
 		dialog.SessionsID,
 		dialog.FilePickerID,

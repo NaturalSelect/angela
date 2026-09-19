@@ -2452,6 +2452,20 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		if cmd := m.handleSelectVariant(msg.Variant); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.ActionSelectAgentModelTarget:
+		if cmd := m.handleSelectAgentModelTarget(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionSelectAgentModel:
+		if cmd := m.handleSelectAgentModel(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionSelectAgentModelVariant:
+		m.dialog.CloseDialog(dialog.AgentModelVariantsID)
+		cmds = append(cmds, m.applyAgentModelOverrideCmd(msg.AgentID, msg.Model, msg.Variant))
+	case dialog.ActionClearAgentModelOverrides:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		cmds = append(cmds, m.clearAgentModelOverridesCmd())
 	case dialog.ActionPermissionResponse:
 		m.dialog.CloseDialog(dialog.PermissionsID)
 		switch msg.Action {
@@ -2991,6 +3005,164 @@ func (m *UI) recordRecentModelCmd(name config.SlotName, model config.SelectedMod
 		}
 		return nil
 	}
+}
+
+// agentModelDialogTarget builds the workspace.ActiveAgent the model
+// and variant dialogs highlight against in the "Switch Agent Model"
+// flow: agentID's own instance, not the current session's — the two
+// may differ, and may even run on different slots.
+func agentModelDialogTarget(cfg *config.Config, agentID string) (workspace.ActiveAgent, bool) {
+	active, ok := cfg.InstantiateAgent(agentID)
+	if !ok {
+		return workspace.ActiveAgent{}, false
+	}
+	var catwalkCfg config.ProviderModel
+	if catalog := cfg.GetModel(active.Model.Provider, active.Model.Model); catalog != nil {
+		catwalkCfg = *catalog
+	}
+	return workspace.ActiveAgent{
+		AgentID:    active.Agent.ID,
+		AgentName:  active.Agent.Name,
+		Slot:       active.Slot,
+		ModelCfg:   active.Model,
+		CatwalkCfg: catwalkCfg,
+		Think:      active.Think,
+		Variant:    active.EffectiveVariant(),
+	}, true
+}
+
+// handleSelectAgentModelTarget continues the "Switch Agent Model"
+// command once the target agent is picked: it opens the model dialog
+// scoped to that agent, highlighting the model the agent runs today
+// rather than whatever the current session happens to run.
+func (m *UI) handleSelectAgentModelTarget(msg dialog.ActionSelectAgentModelTarget) tea.Cmd {
+	m.dialog.CloseDialog(dialog.AgentModelAgentsID)
+
+	cfg := m.com.Config()
+	if cfg == nil {
+		return util.ReportError(errors.New("configuration not found"))
+	}
+	target, ok := agentModelDialogTarget(cfg, msg.AgentID)
+	if !ok {
+		return util.ReportError(fmt.Errorf("agent not found: %s", msg.AgentID))
+	}
+
+	modelsDialog := dialog.NewModels(m.com, false, &target)
+	modelsDialog.ForAgent(msg.AgentID)
+	m.dialog.OpenDialog(modelsDialog)
+	return modelsDialog.InitialCmd()
+}
+
+// handleSelectAgentModel continues the "Switch Agent Model" command
+// once a model is picked. An unconfigured provider is left to the
+// ordinary Switch Model flow instead of routed into onboarding's
+// authentication dialogs here, which report a plain ActionSelectModel
+// on success and would lose the agent this pick is for. A model that
+// offers presets opens the variant dialog next; one that doesn't
+// applies the override immediately on the baseline.
+func (m *UI) handleSelectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
+	m.dialog.CloseDialog(dialog.AgentModelModelsID)
+
+	cfg := m.com.Config()
+	if cfg == nil {
+		return util.ReportError(errors.New("configuration not found"))
+	}
+	if _, ok := cfg.Providers.Get(msg.Model.Provider); !ok {
+		return util.ReportWarn("Configure this provider first via Switch Model (ctrl+l).")
+	}
+
+	catwalkModel := cfg.GetModel(msg.Model.Provider, msg.Model.Model)
+	var variants []string
+	if catwalkModel != nil {
+		variants = catwalkModel.VariantNames()
+	}
+	if len(variants) == 0 {
+		return m.applyAgentModelOverrideCmd(msg.AgentID, msg.Model, "")
+	}
+
+	// The agent's current preset only survives the picker opening on
+	// it when the pick did not also change the model: moving to a
+	// different model always drops whatever preset was in effect
+	// before, the same rule a session's own pick follows.
+	var current string
+	if target, ok := agentModelDialogTarget(cfg, msg.AgentID); ok &&
+		target.ModelCfg.Provider == msg.Model.Provider && target.ModelCfg.Model == msg.Model.Model {
+		current = target.Variant
+	}
+
+	variantsDialog, err := dialog.NewVariants(m.com, catwalkModel.Name, variants, current)
+	if err != nil {
+		return util.ReportError(err)
+	}
+	variantsDialog.ForAgentModel(msg.AgentID, msg.Model)
+
+	m.dialog.OpenDialog(variantsDialog)
+	return nil
+}
+
+// applyAgentModelOverrideCmd pins agentID to model+variant for the
+// rest of this process: every future instantiation of that agent — a
+// new session, a subagent dispatch, an internal call — resolves to
+// it. The pin is never written to any config file and survives a
+// config reload; a turn already streaming keeps the instance it
+// started on. When agentID is the agent driving the current session,
+// that session's own instance is also moved onto the pick in the same
+// edit, so the change is visible immediately rather than waiting for
+// the session's next restart.
+func (m *UI) applyAgentModelOverrideCmd(agentID string, model config.SelectedModel, variant string) tea.Cmd {
+	sessionID := m.currentSessionID()
+	active := m.activeAgent()
+	syncSession := active != nil && active.AgentID == agentID
+
+	cfg := m.com.Config()
+	agentName := agentID
+	modelName := model.Model
+	if cfg != nil {
+		if agent, ok := cfg.Agents[agentID]; ok && agent.Name != "" {
+			agentName = agent.Name
+		}
+		if catwalkModel := cfg.GetModel(model.Provider, model.Model); catwalkModel != nil && catwalkModel.Name != "" {
+			modelName = catwalkModel.Name
+		}
+	}
+	variantSuffix := ""
+	if variant != "" {
+		variantSuffix = " (" + variant + ")"
+	}
+
+	overrideModel := model
+	overrideModel.Variant = variant
+
+	applyCmd := func() tea.Msg {
+		if err := m.com.Workspace.SetAgentModelOverride(agentID, overrideModel); err != nil {
+			return util.ReportError(err)()
+		}
+		if syncSession {
+			edit := config.ActiveAgentEdit{Model: &model, Variant: &variant}
+			if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
+				return util.ReportError(err)()
+			}
+		}
+		return util.NewInfoMsg(fmt.Sprintf("%s now runs %s%s for this run", agentName, modelName, variantSuffix))
+	}
+
+	return m.refreshActiveAgentCmd(tea.Sequence(
+		m.recordRecentModelCmd(config.SlotMain, model),
+		applyCmd,
+	))
+}
+
+// clearAgentModelOverridesCmd drops every process-level "switch agent
+// model" pin. A turn already streaming on an overridden agent keeps
+// running on it; only the next instantiation of each agent reverts to
+// its configured model.
+func (m *UI) clearAgentModelOverridesCmd() tea.Cmd {
+	return m.refreshActiveAgentCmd(func() tea.Msg {
+		if err := m.com.Workspace.ClearAgentModelOverrides(); err != nil {
+			return util.ReportError(err)()
+		}
+		return util.NewInfoMsg("Agent model overrides cleared")
+	})
 }
 
 func (m *UI) openAuthenticationDialog(provider catwalk.Provider, model config.SelectedModel, modelType config.SlotName) tea.Cmd {
@@ -4970,6 +5142,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openAgentsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.AgentModelAgentsID:
+		if cmd := m.openAgentModelTargetDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.NotificationsID:
 		if cmd := m.openNotificationsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -5104,6 +5280,32 @@ func (m *UI) openAgentsDialog() tea.Cmd {
 	}
 
 	agentsDialog, err := dialog.NewAgents(m.com, active.AgentID)
+	if err != nil {
+		return util.ReportError(err)
+	}
+
+	m.dialog.OpenDialog(agentsDialog)
+	return nil
+}
+
+// openAgentModelTargetDialog opens the agent picker for the "Switch
+// Agent Model" command: the first step of pinning some agent — any
+// configured agent, not just the one driving this session — to a
+// model+variant for the rest of this process. Unlike openAgentsDialog
+// it does not require a known active agent: overriding another
+// agent's model has nothing to do with what this session currently
+// runs, so there is no reason to make it wait on that probe.
+func (m *UI) openAgentModelTargetDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.AgentModelAgentsID) {
+		m.dialog.BringToFront(dialog.AgentModelAgentsID)
+		return nil
+	}
+	currentAgent := ""
+	if active := m.activeAgent(); active != nil {
+		currentAgent = active.AgentID
+	}
+
+	agentsDialog, err := dialog.NewAgentModelTarget(m.com, currentAgent)
 	if err != nil {
 		return util.ReportError(err)
 	}

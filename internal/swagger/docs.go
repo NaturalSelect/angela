@@ -1184,6 +1184,90 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/config/agent-model": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "config"
+                ],
+                "summary": "Pin an agent to a model for this process",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Agent model override request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.ConfigAgentModelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "config"
+                ],
+                "summary": "Clear every agent model override",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/config/compact": {
             "post": {
                 "consumes": [
@@ -4560,6 +4644,10 @@ const docTemplate = `{
                     "description": "Think sets the default thinking mode for Anthropic-family\nmodels that support it. A session can still flip this with\n/think; Think only decides where a fresh session starts.",
                     "type": "boolean"
                 },
+                "use_responses": {
+                    "description": "UseResponses overrides the provider-level use_responses for this\nmodel only. Left unset, the provider setting and ID-based\ndefaults apply in the usual order.",
+                    "type": "boolean"
+                },
                 "variants": {
                     "description": "Variants are named parameter presets over this model. They\noverride only the keys they name, so N models by M presets\nstays N+M configs instead of N*M. Selecting one is how a\nsession overrides this model's defaults for a turn.",
                     "type": "object",
@@ -4727,6 +4815,13 @@ const docTemplate = `{
             "properties": {
                 "$schema": {
                     "type": "string"
+                },
+                "agent_model_overrides": {
+                    "description": "AgentModelOverrides pins an agent to a model (and variant) for\nthe lifetime of this process, set by the \"switch agent model\"\ncommand. It lives only in memory: config writes go through\nwriteConfigFields, which patches named fields in the file and\nnever serializes this one, so a pin never reaches disk and does\nnot survive a restart. ReloadFromDisk replays it from\nConfigStore's RuntimeOverrides afterward, the same way slot\npins survive a reload. The json tag exists only so a served\nConfig carries the pin to a connected client.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.SelectedModel"
+                    }
                 },
                 "agents": {
                     "description": "AgentConfigs holds user-defined agent overrides and custom agents.\nThese are merged over built-in defaults during SetupAgents().",
@@ -5177,6 +5272,12 @@ const docTemplate = `{
                 "created_at": {
                     "type": "integer"
                 },
+                "gen_duration_ms": {
+                    "type": "integer"
+                },
+                "gen_output_tokens": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -5249,6 +5350,17 @@ const docTemplate = `{
             "properties": {
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "proto.ConfigAgentModelRequest": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
+                "model": {
+                    "$ref": "#/definitions/config.SelectedModel"
                 }
             }
         },
@@ -5850,6 +5962,12 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "created_at": {
+                    "type": "integer"
+                },
+                "gen_duration_ms": {
+                    "type": "integer"
+                },
+                "gen_output_tokens": {
                     "type": "integer"
                 },
                 "id": {

@@ -142,3 +142,67 @@ func TestBuildAgentAppliesTemperature(t *testing.T) {
 	require.Equal(t, want, *later.Model.CatwalkCfg.Options.Temperature,
 		"every turn must keep applying the agent's Temperature override")
 }
+
+// TestAgentModelOverrideOutranksAgentConfig pins that a "switch agent
+// model" override reaches buildModel, not just InstantiateAgent in
+// isolation: the override must win over the agent's own configured
+// slot the same way it does at the config layer.
+func TestAgentModelOverrideOutranksAgentConfig(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+
+	// The coder is configured to prefer the chore (small) model.
+	require.NoError(t, coord.cfg.SetAgentModelOverride(config.AgentCoder,
+		config.SelectedModel{Provider: "mock", Model: "large-model"}))
+
+	model, err := coord.buildModel(context.Background(), instantiate(t, coord, config.AgentCoder), false)
+	require.NoError(t, err)
+	require.Equal(t, "large-model", model.ModelCfg.Model,
+		"the override must outrank the agent's own configured slot")
+}
+
+// TestAgentModelOverrideReachesSubagentDispatch pins that the override
+// applies to a sub-agent resolved through the agent tool's dispatch
+// path, not just a coordinator's own primary agent: resolveSubagent
+// calls the same InstantiateAgent a primary turn does, so it must see
+// the same override.
+func TestAgentModelOverrideReachesSubagentDispatch(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+
+	require.NoError(t, coord.cfg.SetAgentModelOverride(config.AgentExplore,
+		config.SelectedModel{Provider: "mock", Model: "large-model"}))
+
+	resolved, err := coord.resolveSubagent(context.Background(), config.AgentExplore, "")
+	require.NoError(t, err)
+	require.Equal(t, "large-model", resolved.Model.ModelCfg.Model,
+		"a sub-agent dispatch must see the same override a primary agent's turn does")
+}
+
+// TestSessionModelPickOutranksLaterAgentModelOverride pins the other
+// half: a session that already recorded its own model pick keeps it
+// even after a process-level override is set on that same agent
+// afterward. materializeActiveAgent is exercised directly because it
+// is what rebuilds a session's instance from its persisted delta on a
+// cold cache — a fresh load, or a new coordinator after a restart —
+// which is exactly when a stale override could leak in.
+func TestSessionModelPickOutranksLaterAgentModelOverride(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	sessionID := newVariantSession(t, coord)
+
+	// The session explicitly moves off the agent's configured default
+	// (chore/small-model) onto the other model.
+	_, err := coord.EditActiveAgent(t.Context(), sessionID, switchModelEdit("large-model"))
+	require.NoError(t, err)
+
+	sess, err := coord.sessions.Get(t.Context(), sessionID)
+	require.NoError(t, err)
+
+	// A process-level override set afterward targets the model the
+	// session just moved away from.
+	require.NoError(t, coord.cfg.SetAgentModelOverride(config.AgentCoder,
+		config.SelectedModel{Provider: "mock", Model: "small-model"}))
+
+	agentCfg, err := coord.materializeActiveAgent(sessionID, sess.ActiveAgent)
+	require.NoError(t, err)
+	require.Equal(t, "large-model", agentCfg.Model.Model,
+		"a session's own persisted pick must outrank a process-level override set afterward")
+}

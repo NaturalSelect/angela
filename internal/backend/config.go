@@ -181,6 +181,34 @@ func (b *Backend) RefreshOAuthToken(ctx context.Context, workspaceID string, sco
 	return nil
 }
 
+// SetAgentModelOverride pins agentID to model (and its Variant) for
+// the lifetime of the server process, without touching any config
+// file.
+func (b *Backend) SetAgentModelOverride(workspaceID string, agentID string, model config.SelectedModel) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	if err := ws.Cfg.SetAgentModelOverride(agentID, model); err != nil {
+		return err
+	}
+	publishConfigChanged(ws)
+	return nil
+}
+
+// ClearAgentModelOverrides drops every "switch agent model" pin set
+// on the server process, returning every agent to whatever its
+// config file says.
+func (b *Backend) ClearAgentModelOverrides(workspaceID string) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	ws.Cfg.ClearAgentModelOverrides()
+	publishConfigChanged(ws)
+	return nil
+}
+
 // ProjectNeedsInitialization checks whether the project in this
 // workspace needs initialization.
 func (b *Backend) ProjectNeedsInitialization(workspaceID string) (bool, error) {

@@ -214,6 +214,38 @@ func (c *Client) RefreshOAuthToken(ctx context.Context, id string, scope config.
 	return nil
 }
 
+// SetAgentModelOverride pins agentID to model (and its Variant) on
+// the server for the lifetime of the server process, without
+// touching any config file.
+func (c *Client) SetAgentModelOverride(ctx context.Context, id string, agentID string, model config.SelectedModel) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/config/agent-model", id), nil, jsonBody(struct {
+		AgentID string               `json:"agent_id"`
+		Model   config.SelectedModel `json:"model"`
+	}{AgentID: agentID, Model: model}), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return fmt.Errorf("failed to set agent model override: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return fmt.Errorf("failed to set agent model override: %w", err)
+	}
+	return nil
+}
+
+// ClearAgentModelOverrides drops every "switch agent model" pin set
+// on the server process.
+func (c *Client) ClearAgentModelOverrides(ctx context.Context, id string) error {
+	rsp, err := c.delete(ctx, fmt.Sprintf("/workspaces/%s/config/agent-model", id), nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to clear agent model overrides: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return fmt.Errorf("failed to clear agent model overrides: %w", err)
+	}
+	return nil
+}
+
 // ProjectNeedsInitialization checks if the project needs
 // initialization.
 func (c *Client) ProjectNeedsInitialization(ctx context.Context, id string) (bool, error) {

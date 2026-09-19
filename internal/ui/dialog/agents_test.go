@@ -317,3 +317,118 @@ func TestAgents_CursorAccountsForWideRunes(t *testing.T) {
 	require.Equal(t, curASCII.X+3, curCJK.X,
 		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
 }
+
+// newTestAgentModelTarget builds the "Switch Agent Model" agent picker
+// against agentsTestConfig, mirroring newTestAgents.
+func newTestAgentModelTarget(t *testing.T, currentAgent string) *Agents {
+	t.Helper()
+	s := styles.CharmtonePantera()
+	com := &common.Common{Styles: &s, Workspace: &agentsWorkspace{cfg: agentsTestConfig()}}
+	a, err := NewAgentModelTarget(com, currentAgent)
+	require.NoError(t, err)
+	return a
+}
+
+// TestNewAgentModelTarget_RequiresConfig pins the guard against a
+// workspace that cannot answer Config() yet, mirroring
+// TestNewAgents_RequiresConfig.
+func TestNewAgentModelTarget_RequiresConfig(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{Styles: &s, Workspace: &agentsWorkspace{cfg: nil}}
+	_, err := NewAgentModelTarget(com, "")
+	require.ErrorContains(t, err, "configuration not available")
+}
+
+// TestNewAgentModelTarget_RequiresAnAgent pins the guard against a
+// config that resolved to no agents at all.
+func TestNewAgentModelTarget_RequiresAnAgent(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{Styles: &s, Workspace: &agentsWorkspace{cfg: &config.Config{}}}
+	_, err := NewAgentModelTarget(com, "")
+	require.ErrorContains(t, err, "no agents configured")
+}
+
+// TestNewAgentModelTarget_ID verifies the picker identifies itself
+// distinctly from the ordinary agent switcher, so the overlay stack and
+// openDialog routing can tell the two apart.
+func TestNewAgentModelTarget_ID(t *testing.T) {
+	t.Parallel()
+
+	a := newTestAgentModelTarget(t, "")
+	require.Equal(t, AgentModelAgentsID, a.ID())
+}
+
+// TestNewAgentModelTarget_ShowsAllAgents verifies every configured
+// agent is a candidate override target, hidden and subagent entries
+// included: an override applies wherever InstantiateAgent resolves
+// that agent, not only where a session's own agent switch would reach.
+func TestNewAgentModelTarget_ShowsAllAgents(t *testing.T) {
+	t.Parallel()
+
+	a := newTestAgentModelTarget(t, "")
+
+	var ids []string
+	for _, it := range a.list.FilteredItems() {
+		item, ok := it.(*AgentItem)
+		require.True(t, ok)
+		ids = append(ids, item.agentID)
+	}
+	require.Equal(t, []string{config.AgentCoder, "ghost", "reviewer", "task"}, ids,
+		"every configured agent must be listed, hidden and subagent included, sorted by ID")
+}
+
+// TestNewAgentModelTarget_HiddenAgentGetsInternalPrefix verifies a
+// hidden agent's row keeps the "internal" label the ordinary agent
+// switcher already uses, so the distinction isn't lost just because
+// this picker reaches agents that dialog never lists.
+func TestNewAgentModelTarget_HiddenAgentGetsInternalPrefix(t *testing.T) {
+	t.Parallel()
+
+	a := newTestAgentModelTarget(t, "")
+
+	var ghost *AgentItem
+	for _, it := range a.list.FilteredItems() {
+		item, ok := it.(*AgentItem)
+		require.True(t, ok)
+		if item.agentID == "ghost" {
+			ghost = item
+		}
+	}
+	require.NotNil(t, ghost, "the hidden agent must still be listed")
+	require.Contains(t, ghost.description, "internal ·")
+}
+
+// TestNewAgentModelTarget_SelectEmitsAgentModelTarget verifies a pick
+// reports ActionSelectAgentModelTarget rather than the ActionSelectAgent
+// the ordinary agent switcher emits, since this flow overrides a model
+// instead of switching the session onto the agent.
+func TestNewAgentModelTarget_SelectEmitsAgentModelTarget(t *testing.T) {
+	t.Parallel()
+
+	a := newTestAgentModelTarget(t, config.AgentCoder)
+	a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+
+	action := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionSelectAgentModelTarget)
+	require.True(t, ok)
+	require.Equal(t, "ghost", resp.AgentID)
+}
+
+// TestAllAgents_IncludesHiddenAndSubagent pins the exact membership and
+// ordering NewAgentModelTarget's list is built from: every agent
+// cfg.Agents holds, sorted by ID.
+func TestAllAgents_IncludesHiddenAndSubagent(t *testing.T) {
+	t.Parallel()
+
+	agents := allAgents(agentsTestConfig())
+
+	ids := make([]string, len(agents))
+	for i, a := range agents {
+		ids[i] = a.ID
+	}
+	require.Equal(t, []string{config.AgentCoder, "ghost", "reviewer", "task"}, ids)
+}

@@ -992,6 +992,17 @@ type Config struct {
 	// Agents is the resolved agent map (built-in + markdown + config).
 	// Not serialized; rebuilt by SetupAgents() on every load.
 	Agents map[string]Agent `json:"-"`
+
+	// AgentModelOverrides pins an agent to a model (and variant) for
+	// the lifetime of this process, set by the "switch agent model"
+	// command. It lives only in memory: config writes go through
+	// writeConfigFields, which patches named fields in the file and
+	// never serializes this one, so a pin never reaches disk and does
+	// not survive a restart. ReloadFromDisk replays it from
+	// ConfigStore's RuntimeOverrides afterward, the same way slot
+	// pins survive a reload. The json tag exists only so a served
+	// Config carries the pin to a connected client.
+	AgentModelOverrides map[string]SelectedModel `json:"agent_model_overrides,omitempty" jsonschema:"-"`
 }
 
 // cloneForWrite returns a copy of c that the store's typed field mutators
@@ -1019,6 +1030,7 @@ func (c *Config) cloneForWrite() *Config {
 	}
 	nc.RecentModels = maps.Clone(c.RecentModels)
 	nc.MCP = maps.Clone(c.MCP)
+	nc.AgentModelOverrides = maps.Clone(c.AgentModelOverrides)
 	if c.Options != nil {
 		opts := *c.Options
 		if c.Options.TUI != nil {

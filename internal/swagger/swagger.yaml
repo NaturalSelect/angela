@@ -405,6 +405,12 @@ definitions:
           models that support it. A session can still flip this with
           /think; Think only decides where a fresh session starts.
         type: boolean
+      use_responses:
+        description: |-
+          UseResponses overrides the provider-level use_responses for this
+          model only. Left unset, the provider setting and ID-based
+          defaults apply in the usual order.
+        type: boolean
       variants:
         additionalProperties:
           $ref: '#/definitions/config.SelectedModelOverride'
@@ -535,6 +541,20 @@ definitions:
     properties:
       $schema:
         type: string
+      agent_model_overrides:
+        additionalProperties:
+          $ref: '#/definitions/config.SelectedModel'
+        description: |-
+          AgentModelOverrides pins an agent to a model (and variant) for
+          the lifetime of this process, set by the "switch agent model"
+          command. It lives only in memory: config writes go through
+          writeConfigFields, which patches named fields in the file and
+          never serializes this one, so a pin never reaches disk and does
+          not survive a restart. ReloadFromDisk replays it from
+          ConfigStore's RuntimeOverrides afterward, the same way slot
+          pins survive a reload. The json tag exists only so a served
+          Config carries the pin to a connected client.
+        type: object
       agents:
         additionalProperties:
           $ref: '#/definitions/config.Agent'
@@ -869,6 +889,10 @@ definitions:
         type: number
       created_at:
         type: integer
+      gen_duration_ms:
+        type: integer
+      gen_output_tokens:
+        type: integer
       id:
         type: string
       is_branch:
@@ -919,6 +943,13 @@ definitions:
     properties:
       message:
         type: string
+    type: object
+  proto.ConfigAgentModelRequest:
+    properties:
+      agent_id:
+        type: string
+      model:
+        $ref: '#/definitions/config.SelectedModel'
     type: object
   proto.ConfigCompactRequest:
     properties:
@@ -1318,6 +1349,10 @@ definitions:
       cost:
         type: number
       created_at:
+        type: integer
+      gen_duration_ms:
+        type: integer
+      gen_output_tokens:
         type: integer
       id:
         type: string
@@ -2346,6 +2381,61 @@ paths:
       summary: Get workspace config
       tags:
       - workspaces
+  /workspaces/{id}/config/agent-model:
+    delete:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Clear every agent model override
+      tags:
+      - config
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Agent model override request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.ConfigAgentModelRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Pin an agent to a model for this process
+      tags:
+      - config
   /workspaces/{id}/config/compact:
     post:
       consumes:

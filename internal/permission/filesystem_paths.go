@@ -33,6 +33,14 @@ import (
 // pattern that starts with a wildcard, or one that resolves to a
 // filesystem root. The last case matters because granting it would
 // defeat the sandbox rather than merely widen it to match the rule.
+//
+// A path that some rule grants read-write and another grants only
+// read (e.g. a "read" rule and an "edit" rule sharing the same
+// pattern, which is the ordinary way to unconditionally allow both)
+// comes back in readWrite alone: read-write already implies read, and
+// leaving it in both would show the same path twice, with
+// contradictory access, in the /sandbox dialog and in an OS-level
+// sandbox's derived path list.
 func FilesystemAllowPaths(rules []Rule, cwd string) (readOnlyDirs, readWriteDirs, readOnlyFiles, readWriteFiles []string) {
 	for _, rule := range rules {
 		if rule.Action != RuleAllow {
@@ -56,7 +64,28 @@ func FilesystemAllowPaths(rules []Rule, cwd string) (readOnlyDirs, readWriteDirs
 			}
 		}
 	}
+	readOnlyDirs = excludeWritable(readOnlyDirs, readWriteDirs)
+	readOnlyFiles = excludeWritable(readOnlyFiles, readWriteFiles)
 	return readOnlyDirs, readWriteDirs, readOnlyFiles, readWriteFiles
+}
+
+// excludeWritable returns readOnly with every entry that also appears
+// in readWrite dropped, preserving readOnly's order.
+func excludeWritable(readOnly, readWrite []string) []string {
+	if len(readOnly) == 0 || len(readWrite) == 0 {
+		return readOnly
+	}
+	writable := make(map[string]bool, len(readWrite))
+	for _, p := range readWrite {
+		writable[p] = true
+	}
+	out := make([]string, 0, len(readOnly))
+	for _, p := range readOnly {
+		if !writable[p] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // filesystemRuleTool reports whether tool names a filesystem-facing

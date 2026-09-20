@@ -200,6 +200,33 @@ func TestFilesystemAllowPaths_MultipleRulesAccumulateInOrder(t *testing.T) {
 	require.Equal(t, []string{filepath.Join("/work", "d", "key.txt")}, readWriteFiles)
 }
 
+// TestFilesystemAllowPaths_EditRuleWinsOverReadForSamePath is the
+// regression test for a path ending up in both readOnlyDirs and
+// readWriteDirs (or the file equivalents) when one rule grants it
+// read/list and another grants it edit, which is the ordinary way to
+// unconditionally allow both on the same directory. Read-write must
+// win outright rather than also listing the path as read-only: the
+// /sandbox dialog and sandboxConfigFromFlags both feed these straight
+// into an OS-level sandbox config, and a path in both fields would
+// render as two contradictory rows for the exact same path instead of
+// the one read-write row the rules actually add up to.
+func TestFilesystemAllowPaths_EditRuleWinsOverReadForSamePath(t *testing.T) {
+	t.Parallel()
+
+	readOnlyDirs, readWriteDirs, readOnlyFiles, readWriteFiles := FilesystemAllowPaths([]Rule{
+		{Action: RuleAllow, Tool: "read", Pattern: "cache/**"},
+		{Action: RuleAllow, Tool: "list", Pattern: "cache/**"},
+		{Action: RuleAllow, Tool: "edit", Pattern: "cache/**"},
+		{Action: RuleAllow, Tool: "read", Pattern: "key.txt"},
+		{Action: RuleAllow, Tool: "edit", Pattern: "key.txt"},
+	}, "/work")
+
+	require.Empty(t, readOnlyDirs, "an edit rule on the same path must drop the redundant read-only dir entry")
+	require.Equal(t, []string{filepath.Join("/work", "cache")}, readWriteDirs)
+	require.Empty(t, readOnlyFiles, "an edit rule on the same path must drop the redundant read-only file entry")
+	require.Equal(t, []string{filepath.Join("/work", "key.txt")}, readWriteFiles)
+}
+
 func TestRuleDir(t *testing.T) {
 	t.Parallel()
 

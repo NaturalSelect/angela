@@ -252,7 +252,7 @@ func (m *UI) tokenUsageField() string {
 	// from cumulative cache read/creation tokens instead of output
 	// tokens and generation time.
 	if hitRate, ok := common.CacheHitRate(m.session.CacheReadTokens, m.session.CacheCreationTokens); ok {
-		usage += turnStatusSeparator + fmt.Sprintf("%d%% cache hit", hitRate)
+		usage += turnStatusSeparator + fmt.Sprintf("%.2f%% cache hit", hitRate)
 	}
 	return usage
 }

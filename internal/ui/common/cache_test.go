@@ -13,14 +13,14 @@ func TestCacheHitRate(t *testing.T) {
 		name     string
 		read     int64
 		creation int64
-		wantPct  int64
+		wantPct  float64
 		wantOK   bool
 	}{
 		{"no cache activity yet", 0, 0, 0, false},
 		{"all reads is a perfect hit rate", 100, 0, 100, true},
 		{"all creation is a zero hit rate", 0, 100, 0, true},
 		{"half and half", 50, 50, 50, true},
-		{"rounds to the nearest point", 2, 1, 67, true},
+		{"two thirds", 2, 1, float64(2) / float64(3) * 100, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

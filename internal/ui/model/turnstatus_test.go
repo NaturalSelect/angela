@@ -191,11 +191,11 @@ func TestTurnStatusShowsCacheHitRateForSession(t *testing.T) {
 	m.session.CacheCreationTokens = 1
 
 	busy := ansi.Strip(m.renderTurnStatus(200))
-	require.Contains(t, busy, "75% cache hit")
+	require.Contains(t, busy, "75.00% cache hit")
 
 	m.agentBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
-	require.Contains(t, idle, "75% cache hit")
+	require.Contains(t, idle, "75.00% cache hit")
 }
 
 // With no cache reads or creations recorded yet (e.g. a provider that

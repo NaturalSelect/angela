@@ -15,25 +15,31 @@ var dangerousCommands = []string{
 	"chmod",
 	"chown",
 	"dd",
+	"del",
+	"diskpart",
+	"format",
 	"git push",
 	"kill",
 	"killall",
 	"mkfs",
 	"pkill",
+	"rd",
 	"reboot",
 	"rm",
 	"shutdown",
+	"taskkill",
 }
 
 // execVehicles can carry an arbitrary command, so their words say
 // nothing about what actually runs. They are never auto-allowed, and a
 // grant for one is pinned to the full command.
 var execVehicles = []string{
-	"ack", "awk", "bash", "brew", "bun", "bunx", "chroot", "dash", "deno",
-	"doas", "docker", "fish", "flock", "gawk", "ksh", "make", "mawk",
-	"nawk", "npm", "npx", "nsenter", "pipx", "pnpm", "podman", "setsid",
-	"sh", "ssh", "su", "sudo", "uv", "uvx", "watch", "xargs", "yarn",
-	"zsh",
+	"ack", "awk", "bash", "brew", "bun", "bunx", "chroot", "cmd",
+	"cscript", "dash", "deno", "doas", "docker", "fish", "flock",
+	"gawk", "ksh", "make", "mawk", "mshta", "nawk", "npm", "npx",
+	"nsenter", "pipx", "pnpm", "podman", "powershell", "pwsh",
+	"setsid", "sh", "ssh", "su", "sudo", "uv", "uvx", "watch",
+	"wscript", "wsl", "xargs", "yarn", "zsh",
 }
 
 // execVehicleFamilies are interpreters whose binaries carry a version
@@ -158,11 +164,17 @@ func SafePrefix(words []string) int {
 
 // isDangerous reports a dangerous verb anywhere in the words. It is
 // applied per segment, so a chain is judged link by link.
+//
+// The head is normalized before matching so that a ".exe" suffix or a
+// full path ahead of the command name, as Windows callers write it,
+// cannot hide a dangerous verb from the pattern list.
 func isDangerous(words []string) bool {
 	if len(words) == 0 {
 		return false
 	}
-	joined := strings.Join(words, " ")
+	normalized := slices.Clone(words)
+	normalized[0] = commandHead(words)
+	joined := strings.Join(normalized, " ")
 	for _, pattern := range dangerousCommands {
 		if matchesCommandPrefix(joined, pattern) {
 			return true

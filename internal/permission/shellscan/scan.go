@@ -367,5 +367,7 @@ func isSafeWriteSink(path string) bool {
 	case "/dev/null", "/dev/stdout", "/dev/stderr":
 		return true
 	}
-	return false
+	// NUL is the Windows equivalent of /dev/null, and Windows paths are
+	// case-insensitive.
+	return strings.EqualFold(path, "NUL")
 }

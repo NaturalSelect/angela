@@ -2373,6 +2373,7 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) to
 	return tools.Ok(output)
 }
 
+// subAgentOutput extracts the final text answer from a sub-agent run.
 func subAgentOutput(result *fantasy.AgentResult) string {
 	if result == nil {
 		return ""

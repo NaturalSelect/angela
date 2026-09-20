@@ -160,12 +160,15 @@ func (s *runState) enqueueCall(call SessionAgentCall) {
 	s.messageQueue.Set(call.SessionID, existing)
 }
 
-// enqueueAutoContinue re-queues call with a fixed follow-up prompt so a
-// turn whose text output was cut off by the model's own output token
+// enqueueAutoContinue re-queues call with a follow-up prompt so a
+// turn whose output was cut off by the model's own output token
 // limit resumes automatically instead of leaving a truncated response
-// as the final answer. It reuses call as-is (same RunID, same Agent)
-// so the continuation is treated as part of the same turn rather than
-// a new queued prompt, the same way the tool-calls-pending
+// as the final answer. The caller supplies the prompt to use because
+// the appropriate wording differs by stage: a text-generation cutoff
+// uses autoContinuePrompt while a thinking/reasoning cutoff uses
+// autoContinueThinkingPrompt. It reuses call as-is (same RunID,
+// same Agent) so the continuation is treated as part of the same turn
+// rather than a new queued prompt, the same way the tool-calls-pending
 // continuation does. Attachments are dropped: they were already
 // delivered to the model on the turn being resumed, so carrying them
 // over would resend the same files on every synthetic continuation.
@@ -178,7 +181,7 @@ func (s *runState) enqueueCall(call SessionAgentCall) {
 // same session; without it, a prompt submitted while this continuation
 // is being queued can read the queue before this Set lands and then
 // overwrite it, silently dropping one of the two.
-func (s *runState) enqueueAutoContinue(call SessionAgentCall) {
+func (s *runState) enqueueAutoContinue(call SessionAgentCall, prompt string) {
 	mu := s.sessionMu(call.SessionID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -186,7 +189,7 @@ func (s *runState) enqueueAutoContinue(call SessionAgentCall) {
 	if !ok {
 		existing = []SessionAgentCall{}
 	}
-	call.Prompt = autoContinuePrompt
+	call.Prompt = prompt
 	call.Attachments = nil
 	existing = append(existing, call)
 	s.messageQueue.Set(call.SessionID, existing)

@@ -131,6 +131,50 @@ func TestDangerousVerbIsFlaggedPerSegment(t *testing.T) {
 	require.True(t, r.Segments[1].Dangerous)
 }
 
+// TestWindowsDangerousCommandsAreFlagged pins that Windows destructive
+// commands are recognised the same way their POSIX equivalents are,
+// even though the words themselves look nothing alike.
+func TestWindowsDangerousCommandsAreFlagged(t *testing.T) {
+	t.Parallel()
+
+	for _, command := range []string{
+		"taskkill /F /PID 123", "format D:", "diskpart",
+		"del file.txt", "rd /s /q build",
+	} {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
+			r := Scan(command, workDir)
+			require.False(t, r.Opaque, "unexpectedly opaque: %s", r.Reason)
+			require.Len(t, r.Segments, 1)
+			require.True(t, r.Segments[0].Dangerous)
+		})
+	}
+}
+
+// TestIsDangerousNormalizesTheCommandHead pins that a ".exe" suffix or
+// a full path ahead of the command name cannot hide a dangerous verb,
+// the way Windows callers write both.
+func TestIsDangerousNormalizesTheCommandHead(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		words []string
+		want  bool
+	}{
+		{[]string{"rm.exe", "-rf", "build"}, true},
+		{[]string{`C:\tools\rm.exe`, "-rf", "build"}, true},
+		{[]string{"RM.EXE", "-rf", "build"}, true},
+		{[]string{"ls", "-la"}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(strings.Join(tc.words, " "), func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, isDangerous(tc.words))
+		})
+	}
+}
+
 // TestWrapperStrippingExposesTheRealCommand pins that a wrapper is
 // peeled before classification, so the wrapper name can never stand in
 // for the command it carries.
@@ -180,7 +224,7 @@ func TestRedirectionIsModelledAsAWrite(t *testing.T) {
 func TestSafeWriteSinksAreIgnored(t *testing.T) {
 	t.Parallel()
 
-	for _, sink := range []string{"/dev/null", "/dev/stdout", "/dev/stderr"} {
+	for _, sink := range []string{"/dev/null", "/dev/stdout", "/dev/stderr", "NUL", "nul"} {
 		r := Scan("echo hi > "+sink, workDir)
 		require.False(t, r.Opaque)
 		require.Len(t, r.Segments, 1)
@@ -255,6 +299,32 @@ func TestGlobOperandAnchorsToItsDirectory(t *testing.T) {
 			require.False(t, r.Opaque, "unexpectedly opaque: %s", r.Reason)
 			require.Len(t, r.Segments, 1)
 			require.Equal(t, []FileRef{{Path: tc.path}}, r.Segments[0].Files)
+		})
+	}
+}
+
+// TestGlobAnchorHandlesBackslashSeparators pins that a Windows operand
+// anchors the same way a POSIX one does. mvdan/sh keeps '\' literal in
+// a Lit node, so the anchor search must recognise it as a separator
+// too.
+func TestGlobAnchorHandlesBackslashSeparators(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		path   string
+		anchor string
+	}{
+		{`C:\project\*.go`, `C:\project`},
+		{`src\*.go`, `src`},
+		{`\*.go`, `\`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
+			anchor, ok := globAnchor(tc.path)
+			require.True(t, ok)
+			require.Equal(t, tc.anchor, anchor)
 		})
 	}
 }
@@ -348,6 +418,7 @@ func TestExecVehiclesAreFlagged(t *testing.T) {
 		"sudo ls", "sh script.sh", "bash -c ls", "npx cowsay hi",
 		"python3 script.py", "node index.js", "docker run alpine",
 		"xargs ls", "ssh host ls", "find . -delete",
+		"powershell -c ls", "pwsh -c ls", "cmd /c dir", "wsl ls",
 	} {
 		t.Run(command, func(t *testing.T) {
 			t.Parallel()

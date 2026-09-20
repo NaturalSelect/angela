@@ -25,15 +25,6 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// ShellType represents the type of shell to use
-type ShellType int
-
-const (
-	ShellTypePOSIX ShellType = iota
-	ShellTypeCmd
-	ShellTypePowerShell
-)
-
 // AngelaEnvMarkers returns a fresh slice of the environment variables that
 // Angela unconditionally sets on every shell it spawns — both the interactive
 // bash tool's [Shell] and the hook runner's [Run] calls. Tools that want to

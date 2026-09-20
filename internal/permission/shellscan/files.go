@@ -238,12 +238,14 @@ func globAnchor(path string) (string, bool) {
 	if i < 0 {
 		return path, false
 	}
-	cut := strings.LastIndex(path[:i], "/")
+	// A Windows operand carries '\' rather than '/', and mvdan/sh keeps
+	// it literal in the Lit node, so both separators must anchor a glob.
+	cut := strings.LastIndexAny(path[:i], `/\`)
 	switch cut {
 	case -1:
 		return ".", true
 	case 0:
-		return "/", true
+		return path[:1], true
 	default:
 		return path[:cut], true
 	}

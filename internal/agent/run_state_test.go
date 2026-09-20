@@ -81,7 +81,7 @@ func TestRunStateEnqueueAutoContinueRaceWithEnqueueCall(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			s.enqueueAutoContinue(SessionAgentCall{SessionID: sessionID})
+			s.enqueueAutoContinue(SessionAgentCall{SessionID: sessionID}, autoContinuePrompt)
 		}()
 		wg.Wait()
 

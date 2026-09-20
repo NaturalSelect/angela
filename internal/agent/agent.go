@@ -69,7 +69,27 @@ const (
 	// text output is cut off by the output token limit, so the model
 	// resumes instead of leaving a truncated response as the final
 	// answer.
-	autoContinuePrompt = "Continue exactly where you left off in your previous response if you have next steps. Do not repeat any content already provided."
+	autoContinuePrompt = "Your previous response was cut off by the output token limit. Continue generating from exactly where it was interrupted. Do not repeat any content already provided."
+
+	// autoContinueThinkingPrompt is sent instead of autoContinuePrompt
+	// when the output token limit is hit while the model is still in
+	// its extended thinking (reasoning) phase — i.e. the turn produced
+	// reasoning content but no text output yet. Asking the model to
+	// "continue from exactly where it was interrupted" makes no sense
+	// for a cut-off reasoning block, so we ask it to restart its
+	// reasoning and produce a complete response instead.
+	autoContinueThinkingPrompt = "Your extended thinking was cut off by the output token limit before you produced a response. Please continue your reasoning and provide a complete response."
+
+	// autoContinueSubSessionPrompt is sent instead of autoContinuePrompt
+	// when a non-interactive (sub-agent) session's text output is cut off
+	// by the output token limit. Unlike the interactive case — where the
+	// model can safely continue from the truncation point because the
+	// parent reads the last continuation segment via finalResponse() —
+	// the parent agent receives only the final segment's text, losing
+	// everything before it. Asking the model to regenerate the full
+	// response from scratch is therefore more reliable than asking it to
+	// continue from an invisible truncation point.
+	autoContinueSubSessionPrompt = "Your previous response was cut off by the output token limit. Please regenerate your complete response from the beginning. Do not reference the truncated output."
 
 	// attachmentOnlyPrompt substitutes for the current turn's prompt text
 	// when the user sends attachments with no typed message: fantasy's
@@ -1300,7 +1320,30 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		}
 	}
 	if hitMaxTokens {
-		a.enqueueAutoContinue(call)
+		// Choose the continuation prompt based on two dimensions:
+		// stage (thinking vs text generation) and session type
+		// (interactive vs non-interactive sub-agent).
+		//
+		// Thinking stage: reasoning content is present but no text output
+		// yet — the model was cut off during its reasoning phase. Asking
+		// it to "continue from exactly where it left off" makes no sense
+		// for a truncated reasoning block; ask it to restart instead.
+		//
+		// Sub-agent text stage: in a non-interactive session the parent
+		// caller receives only result.Response (the last segment), so
+		// asking the model to continue from an invisible truncation point
+		// would produce a fragment the parent can't join. Asking for a
+		// full regeneration from scratch is more reliable.
+		//
+		// Interactive text stage: the user sees the conversation in full,
+		// so continuing from the truncation point is correct.
+		continuePrompt := autoContinuePrompt
+		if currentAssistant.Content().Text == "" && currentAssistant.ReasoningContent().Thinking != "" {
+			continuePrompt = autoContinueThinkingPrompt
+		} else if call.NonInteractive {
+			continuePrompt = autoContinueSubSessionPrompt
+		}
+		a.enqueueAutoContinue(call, continuePrompt)
 	}
 
 	// Release active request before publishing the notification.

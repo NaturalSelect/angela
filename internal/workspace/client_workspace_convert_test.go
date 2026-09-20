@@ -133,6 +133,7 @@ func TestProtoToSession(t *testing.T) {
 		GenDurationMs:       4000,
 		CacheReadTokens:     40,
 		CacheCreationTokens: 50,
+		UncachedInputTokens: 10,
 		Todos: []proto.Todo{
 			{Content: "do it", Status: "pending", ActiveForm: "doing it"},
 		},
@@ -158,6 +159,7 @@ func TestProtoToSession(t *testing.T) {
 		GenDurationMs:       4000,
 		CacheReadTokens:     40,
 		CacheCreationTokens: 50,
+		UncachedInputTokens: 10,
 		Todos: []session.Todo{
 			{Content: "do it", Status: session.TodoStatusPending, ActiveForm: "doing it"},
 		},

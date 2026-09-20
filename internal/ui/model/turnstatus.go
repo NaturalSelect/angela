@@ -251,7 +251,7 @@ func (m *UI) tokenUsageField() string {
 	// Same session-wide-average reasoning as tok/s above, but derived
 	// from cumulative cache read/creation tokens instead of output
 	// tokens and generation time.
-	if hitRate, ok := common.CacheHitRate(m.session.CacheReadTokens, m.session.CacheCreationTokens); ok {
+	if hitRate, ok := common.CacheHitRate(m.session.CacheReadTokens, m.session.CacheCreationTokens, m.session.UncachedInputTokens); ok {
 		usage += turnStatusSeparator + fmt.Sprintf("%.2f%% cache hit", hitRate)
 	}
 	return usage

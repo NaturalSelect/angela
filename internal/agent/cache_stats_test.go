@@ -21,6 +21,7 @@ func TestRun_RecordsCacheStatsForSingleStep(t *testing.T) {
 	model := newMockLanguageModel(t)
 	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
 		Return(textThenFinish("the answer", fantasy.FinishReasonStop, fantasy.Usage{
+			InputTokens:         100,
 			OutputTokens:        50,
 			CacheReadTokens:     5000,
 			CacheCreationTokens: 2000,
@@ -40,6 +41,8 @@ func TestRun_RecordsCacheStatsForSingleStep(t *testing.T) {
 		"the session's lifetime cache-read total must pick up the step's usage")
 	require.EqualValues(t, 2000, updated.CacheCreationTokens,
 		"the session's lifetime cache-creation total must pick up the step's usage")
+	require.EqualValues(t, 100, updated.UncachedInputTokens,
+		"the session's lifetime uncached-input total must pick up the step's usage")
 }
 
 // TestRun_AccumulatesCacheStatsAcrossStepsIncludingToolCalls verifies
@@ -58,12 +61,14 @@ func TestRun_AccumulatesCacheStatsAcrossStepsIncludingToolCalls(t *testing.T) {
 	gomock.InOrder(
 		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
 			Return(toolCallThenFinish(fantasy.Usage{
+				InputTokens:         200,
 				OutputTokens:        20,
 				CacheReadTokens:     1000,
 				CacheCreationTokens: 4000,
 			}), nil),
 		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
 			Return(textThenFinish("all done", fantasy.FinishReasonStop, fantasy.Usage{
+				InputTokens:         150,
 				OutputTokens:        30,
 				CacheReadTokens:     6000,
 				CacheCreationTokens: 0,
@@ -84,4 +89,6 @@ func TestRun_AccumulatesCacheStatsAcrossStepsIncludingToolCalls(t *testing.T) {
 		"the session total must sum both steps' cache-read tokens, including the tool-call step")
 	require.EqualValues(t, 4000, updated.CacheCreationTokens,
 		"the session total must sum both steps' cache-creation tokens, including the tool-call step")
+	require.EqualValues(t, 350, updated.UncachedInputTokens,
+		"the session total must sum both steps' uncached-input tokens, including the tool-call step")
 }

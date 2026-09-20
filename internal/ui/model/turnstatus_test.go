@@ -189,6 +189,7 @@ func TestTurnStatusShowsCacheHitRateForSession(t *testing.T) {
 	m := busyStatusUI(t)
 	m.session.CacheReadTokens = 3
 	m.session.CacheCreationTokens = 1
+	m.session.UncachedInputTokens = 0
 
 	busy := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, busy, "75.00% cache hit")

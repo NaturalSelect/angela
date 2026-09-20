@@ -57,7 +57,7 @@ INSERT INTO sessions (
     null,
     strftime('%s', 'now'),
     strftime('%s', 'now')
-) RETURNING id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens
+) RETURNING id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens, uncached_input_tokens
 `
 
 type CreateSessionParams struct {
@@ -103,6 +103,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.GenDurationMs,
 		&i.CacheReadTokens,
 		&i.CacheCreationTokens,
+		&i.UncachedInputTokens,
 	)
 	return i, err
 }
@@ -118,7 +119,7 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 }
 
 const getLastSession = `-- name: GetLastSession :one
-SELECT id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens
+SELECT id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens, uncached_input_tokens
 FROM sessions
 ORDER BY updated_at DESC
 LIMIT 1
@@ -145,12 +146,13 @@ func (q *Queries) GetLastSession(ctx context.Context) (Session, error) {
 		&i.GenDurationMs,
 		&i.CacheReadTokens,
 		&i.CacheCreationTokens,
+		&i.UncachedInputTokens,
 	)
 	return i, err
 }
 
 const getSessionByID = `-- name: GetSessionByID :one
-SELECT id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens
+SELECT id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens, uncached_input_tokens
 FROM sessions
 WHERE id = ? LIMIT 1
 `
@@ -176,12 +178,13 @@ func (q *Queries) GetSessionByID(ctx context.Context, id string) (Session, error
 		&i.GenDurationMs,
 		&i.CacheReadTokens,
 		&i.CacheCreationTokens,
+		&i.UncachedInputTokens,
 	)
 	return i, err
 }
 
 const listSessions = `-- name: ListSessions :many
-SELECT id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens
+SELECT id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens, uncached_input_tokens
 FROM sessions
 WHERE parent_session_id is NULL
 ORDER BY updated_at DESC
@@ -214,6 +217,7 @@ func (q *Queries) ListSessions(ctx context.Context) ([]Session, error) {
 			&i.GenDurationMs,
 			&i.CacheReadTokens,
 			&i.CacheCreationTokens,
+			&i.UncachedInputTokens,
 		); err != nil {
 			return nil, err
 		}
@@ -257,9 +261,10 @@ SET
     gen_duration_ms = ?,
     cache_read_tokens = ?,
     cache_creation_tokens = ?,
+    uncached_input_tokens = ?,
     todos = ?
 WHERE id = ?
-RETURNING id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens
+RETURNING id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens, uncached_input_tokens
 `
 
 type UpdateSessionParams struct {
@@ -272,6 +277,7 @@ type UpdateSessionParams struct {
 	GenDurationMs       int64          `json:"gen_duration_ms"`
 	CacheReadTokens     int64          `json:"cache_read_tokens"`
 	CacheCreationTokens int64          `json:"cache_creation_tokens"`
+	UncachedInputTokens int64          `json:"uncached_input_tokens"`
 	Todos               sql.NullString `json:"todos"`
 	ID                  string         `json:"id"`
 }
@@ -287,6 +293,7 @@ func (q *Queries) UpdateSession(ctx context.Context, arg UpdateSessionParams) (S
 		arg.GenDurationMs,
 		arg.CacheReadTokens,
 		arg.CacheCreationTokens,
+		arg.UncachedInputTokens,
 		arg.Todos,
 		arg.ID,
 	)
@@ -309,6 +316,7 @@ func (q *Queries) UpdateSession(ctx context.Context, arg UpdateSessionParams) (S
 		&i.GenDurationMs,
 		&i.CacheReadTokens,
 		&i.CacheCreationTokens,
+		&i.UncachedInputTokens,
 	)
 	return i, err
 }

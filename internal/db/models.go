@@ -56,4 +56,5 @@ type Session struct {
 	GenDurationMs       int64          `json:"gen_duration_ms"`
 	CacheReadTokens     int64          `json:"cache_read_tokens"`
 	CacheCreationTokens int64          `json:"cache_creation_tokens"`
+	UncachedInputTokens int64          `json:"uncached_input_tokens"`
 }

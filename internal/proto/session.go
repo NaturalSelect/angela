@@ -32,6 +32,7 @@ type Session struct {
 	GenDurationMs       int64                   `json:"gen_duration_ms"`
 	CacheReadTokens     int64                   `json:"cache_read_tokens"`
 	CacheCreationTokens int64                   `json:"cache_creation_tokens"`
+	UncachedInputTokens int64                   `json:"uncached_input_tokens"`
 	Todos               []Todo                  `json:"todos,omitempty"`
 	CreatedAt           int64                   `json:"created_at"`
 	UpdatedAt           int64                   `json:"updated_at"`

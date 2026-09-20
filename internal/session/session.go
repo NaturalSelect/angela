@@ -90,14 +90,19 @@ type Session struct {
 	GenOutputTokens int64
 	GenDurationMs   int64
 
-	// CacheReadTokens and CacheCreationTokens are cumulative totals of
-	// prompt-cache-eligible tokens accumulated the same way as
+	// CacheReadTokens, CacheCreationTokens, and UncachedInputTokens are
+	// cumulative totals accumulated the same way as
 	// GenOutputTokens/GenDurationMs: every step's usage adds to the
-	// session's lifetime total and neither ever shrinks. The UI derives
-	// a cache hit rate from them as CacheReadTokens / (CacheReadTokens +
-	// CacheCreationTokens).
+	// session's lifetime total and none ever shrinks. The UI derives a
+	// cache hit rate from them as CacheReadTokens / (CacheReadTokens +
+	// CacheCreationTokens + UncachedInputTokens). UncachedInputTokens
+	// holds the plain non-cached portion of input (usage.InputTokens)
+	// so that providers like OpenAI — which report all cached tokens as
+	// CacheReadTokens and never set CacheCreationTokens — do not
+	// spuriously show 100% hit rate.
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	UncachedInputTokens int64
 
 	Todos     []Todo
 	CreatedAt int64
@@ -266,6 +271,7 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 		GenDurationMs:       session.GenDurationMs,
 		CacheReadTokens:     session.CacheReadTokens,
 		CacheCreationTokens: session.CacheCreationTokens,
+		UncachedInputTokens: session.UncachedInputTokens,
 		Todos: sql.NullString{
 			String: todosJSON,
 			Valid:  todosJSON != "",
@@ -447,6 +453,7 @@ func (s *service) sessionFromRow(item db.Session) Session {
 		GenDurationMs:       item.GenDurationMs,
 		CacheReadTokens:     item.CacheReadTokens,
 		CacheCreationTokens: item.CacheCreationTokens,
+		UncachedInputTokens: item.UncachedInputTokens,
 		Todos:               todos,
 		CreatedAt:           item.CreatedAt,
 		UpdatedAt:           item.UpdatedAt,

@@ -56,6 +56,7 @@ SET
     gen_duration_ms = ?,
     cache_read_tokens = ?,
     cache_creation_tokens = ?,
+    uncached_input_tokens = ?,
     todos = ?
 WHERE id = ?
 RETURNING *;

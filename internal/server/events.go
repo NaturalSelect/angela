@@ -217,6 +217,7 @@ func sessionToProto(s session.Session) proto.Session {
 		GenDurationMs:       s.GenDurationMs,
 		CacheReadTokens:     s.CacheReadTokens,
 		CacheCreationTokens: s.CacheCreationTokens,
+		UncachedInputTokens: s.UncachedInputTokens,
 		Todos:               todosToProto(s.Todos),
 		CreatedAt:           s.CreatedAt,
 		UpdatedAt:           s.UpdatedAt,

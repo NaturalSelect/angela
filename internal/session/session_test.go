@@ -196,19 +196,23 @@ func TestSaveAndFetchPersistCacheStats(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, created.CacheReadTokens)
 	require.Zero(t, created.CacheCreationTokens)
+	require.Zero(t, created.UncachedInputTokens)
 
 	created.CacheReadTokens = 5000
 	created.CacheCreationTokens = 20000
+	created.UncachedInputTokens = 300
 
 	saved, err := sessions.Save(t.Context(), created)
 	require.NoError(t, err)
 	require.EqualValues(t, 5000, saved.CacheReadTokens)
 	require.EqualValues(t, 20000, saved.CacheCreationTokens)
+	require.EqualValues(t, 300, saved.UncachedInputTokens)
 
 	fetched, err := sessions.Get(t.Context(), created.ID)
 	require.NoError(t, err)
 	require.EqualValues(t, 5000, fetched.CacheReadTokens)
 	require.EqualValues(t, 20000, fetched.CacheCreationTokens)
+	require.EqualValues(t, 300, fetched.UncachedInputTokens)
 }
 
 // Sibling sub-sessions reach a shared ancestor concurrently. Every

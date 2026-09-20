@@ -1116,6 +1116,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			}
 			updatedSession.CacheReadTokens += usage.CacheReadTokens
 			updatedSession.CacheCreationTokens += usage.CacheCreationTokens
+			updatedSession.UncachedInputTokens += usage.InputTokens
 			slog.Info("Model response received",
 				"session_id", call.SessionID,
 				"finish_reason", string(finishReason),

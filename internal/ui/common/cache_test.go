@@ -10,12 +10,12 @@ func TestCacheHitRate(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		read           int64
-		creation       int64
-		uncachedInput  int64
-		wantPct        float64
-		wantOK         bool
+		name          string
+		read          int64
+		creation      int64
+		uncachedInput int64
+		wantPct       float64
+		wantOK        bool
 	}{
 		{"no cache activity yet", 0, 0, 0, 0, false},
 		{"all reads is a perfect hit rate", 100, 0, 0, 100, true},

@@ -88,8 +88,10 @@ const (
 	// the parent agent receives only the final segment's text, losing
 	// everything before it. Asking the model to regenerate the full
 	// response from scratch is therefore more reliable than asking it to
-	// continue from an invisible truncation point.
-	autoContinueSubSessionPrompt = "Your previous response was cut off by the output token limit. Please regenerate your complete response from the beginning. Do not reference the truncated output."
+	// continue from an invisible truncation point. The "or make it
+	// shorter" hint nudges the model to consider whether its answer
+	// genuinely needs to be this long.
+	autoContinueSubSessionPrompt = "Your previous response was cut off by the output token limit. Please regenerate your complete response from the beginning, or make it shorter if possible. Do not reference the truncated output."
 
 	// attachmentOnlyPrompt substitutes for the current turn's prompt text
 	// when the user sends attachments with no typed message: fantasy's

@@ -42,7 +42,7 @@ starts and configures the agent.
 
 Selected string fields — API keys, MCP headers, and similar credential-bearing
 values — run through shell expansion when they are used, so `$VAR` and
-`$(cmd)` work:
+`$(cmd)` work in the global config:
 
 ```json
 {
@@ -56,10 +56,33 @@ values — run through shell expansion when they are used, so `$VAR` and
 }
 ```
 
+A project-level `angela.json` restricts `$(cmd)` in some of these fields —
+see [Security](#security).
+
 ## Security
 
 `angela.json` is a trusted file. Guard it carefully and don't download random
 configs without reading them first.
+
+That said, a project-level `angela.json` — found by walking up from the
+working directory to the git worktree root — is loaded automatically just by
+being there, even in a repository you just cloned and haven't read yet. The
+global and system configs are always user- or admin-authored, so they get
+full shell expansion, `$(cmd)` included, everywhere it's offered. A
+project-level config is more restricted: the fields most likely to matter for
+credential exfiltration or a hostile takeover only expand plain
+`$VAR`/`${VAR}` and a leading `~`, never `$(cmd)`:
+
+- Permission rule patterns (`permissions.rules[].pattern`)
+- Provider data fields: `api_key`, `base_url`, `extra_headers`
+- MCP data fields: `url`, `headers`, `oauth_client_id`, `oauth_client_secret`
+
+Everywhere else — including MCP and LSP `command`, `args`, and `env` — a
+project config keeps full shell expansion, since those fields already run an
+arbitrary program; restricting command substitution inside them would not
+add any safety. A project config can still point an MCP or LSP server's
+`command` at anything, so the advice above stands: don't launch Angela in a
+directory whose config you haven't read.
 
 ## Where config lives
 
@@ -361,11 +384,13 @@ Layers are deep-merged, with the one closest to the project winning.
 For a full reference, see the [JSON schema](../../schema.json).
 
 Only selected string fields (API keys, URLs, MCP/LSP commands and args,
-headers) are shell-expanded at load time.
+headers) are shell-expanded at load time, and how much power that expansion
+has depends on which layer set the field — see [Security](#security).
 
-Config is trusted code: shell expansion runs with your shell privileges before
-the UI appears. Don't launch Angela in a directory whose config you haven't
-read.
+Config is still not something to load blindly: MCP/LSP `command`, `args`, and
+`env` always run with full shell privileges regardless of which layer sets
+them, and the global/system layers get full `$(cmd)` expansion everywhere.
+Don't launch Angela in a directory whose config you haven't read.
 
 ---
 

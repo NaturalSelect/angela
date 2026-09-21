@@ -21,7 +21,7 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 		paths := writeLayers(t,
 			`{"agents": {"restricted": {"id": "restricted", "allowed_tool": ["read"]}}}`,
 		)
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		require.NotContains(t, cfg.AgentConfigs, "restricted",
@@ -35,7 +35,7 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 		paths := writeLayers(t,
 			`{"agents": {"restricted": {"id": "restricted", "allowed_tools": ["read"]}}}`,
 		)
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		agent, ok := cfg.AgentConfigs["restricted"]
@@ -49,7 +49,7 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 		paths := writeLayers(t,
 			`{"agents": {"reviewer": {"id": "reviewer", "compact_agent": "my-compact"}}}`,
 		)
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		agent, ok := cfg.AgentConfigs["reviewer"]
@@ -64,7 +64,7 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 			"broken": {"id": "broken", "tempratur": 0.5},
 			"fine":   {"id": "fine", "temperature": 0.5}
 		}}`)
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		require.NotContains(t, cfg.AgentConfigs, "broken")

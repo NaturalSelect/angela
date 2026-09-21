@@ -41,10 +41,14 @@ func TestRetryAfterUnauthorizedRoutesAWSProvidersToSSORefresh(t *testing.T) {
 // TestRetryAfterUnauthorizedRoutesTemplatedKeysToReresolution pins
 // that the API-key-template branch is chosen purely from the template
 // containing a "$", and that a resolution failure propagates.
+//
+// Uses newTrustedGateTestCoordinator (no t.Parallel: it sets
+// ANGELA_GLOBAL_CONFIG via t.Setenv) so the "mock" provider's api_key
+// resolves through the full shell resolver rather than the env-only
+// fallback an untrusted project config would get -- only the former can
+// fail on a lone "$". See dataFieldTrust.
 func TestRetryAfterUnauthorizedRoutesTemplatedKeysToReresolution(t *testing.T) {
-	t.Parallel()
-
-	coord := newGateTestCoordinator(t, false)
+	coord := newTrustedGateTestCoordinator(t, false)
 	err := coord.retryAfterUnauthorized(t.Context(), config.ProviderConfig{
 		ID:             "mock",
 		APIKeyTemplate: "$", // A lone "$" is always a resolution error.
@@ -97,10 +101,14 @@ func TestRefreshApiKeyTemplateResolvesAndStoresTheNewKey(t *testing.T) {
 
 // TestRefreshApiKeyTemplateReturnsResolveError pins that a malformed
 // template fails instead of silently storing an empty key.
+//
+// Uses newTrustedGateTestCoordinator (no t.Parallel: it sets
+// ANGELA_GLOBAL_CONFIG via t.Setenv) so the "mock" provider's api_key
+// resolves through the full shell resolver rather than the env-only
+// fallback an untrusted project config would get -- only the former can
+// fail on a lone "$". See dataFieldTrust.
 func TestRefreshApiKeyTemplateReturnsResolveError(t *testing.T) {
-	t.Parallel()
-
-	coord := newGateTestCoordinator(t, false)
+	coord := newTrustedGateTestCoordinator(t, false)
 	err := coord.refreshApiKeyTemplate(t.Context(), config.ProviderConfig{
 		ID:             "mock",
 		APIKeyTemplate: "$",

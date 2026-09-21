@@ -19,6 +19,30 @@ import (
 // succeed without any network access.
 func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
 	t.Helper()
+	return newHermeticTestCoordinator(t, interactive, false)
+}
+
+// newTrustedGateTestCoordinator is like newGateTestCoordinator, but writes
+// the hermetic provider config as the global (trusted) config layer
+// instead of a project-level angela.json. The "mock" provider's api_key
+// and base_url are otherwise classified as set by an untrusted layer,
+// which routes their resolution through the env-only fallback instead of
+// the full shell resolver -- see dataFieldTrust. Use this for tests that
+// need a malformed APIKeyTemplate to actually produce a resolution error.
+//
+// Callers must not use t.Parallel, since this sets ANGELA_GLOBAL_CONFIG
+// via t.Setenv.
+func newTrustedGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
+	t.Helper()
+	return newHermeticTestCoordinator(t, interactive, true)
+}
+
+// newHermeticTestCoordinator builds a minimal coordinator against a
+// hermetic config: one openai-typed provider pointed at a closed port,
+// with large and small models selected so model resolution and the
+// system-prompt build both succeed without any network access.
+func newHermeticTestCoordinator(t *testing.T, interactive, trusted bool) *coordinator {
+	t.Helper()
 
 	env := testEnv(t)
 
@@ -30,7 +54,14 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
   "slots": {"main": {"provider": "mock", "model": "mock-model"},
              "chore": {"provider": "mock", "model": "mock-model"}}
 }`
-	require.NoError(t, os.WriteFile(filepath.Join(env.workingDir, "angela.json"), []byte(angelaJSON), 0o644))
+	if trusted {
+		t.Setenv("ANGELA_GLOBAL_CONFIG", t.TempDir())
+		globalPath := config.GlobalConfig()
+		require.NoError(t, os.MkdirAll(filepath.Dir(globalPath), 0o755))
+		require.NoError(t, os.WriteFile(globalPath, []byte(angelaJSON), 0o644))
+	} else {
+		require.NoError(t, os.WriteFile(filepath.Join(env.workingDir, "angela.json"), []byte(angelaJSON), 0o644))
+	}
 
 	cfg, err := config.Init(env.workingDir, "", false)
 	require.NoError(t, err)

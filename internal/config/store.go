@@ -128,6 +128,8 @@ type ConfigStore struct {
 	config             *Config
 	workingDir         string
 	resolver           VariableResolver
+	envOnlyResolver    VariableResolver // env-var-only fallback for untrusted provider/MCP data fields; see dataFieldTrust
+	dataTrust          *dataFieldTrust
 	globalDataPath     string   // ~/.config/angela/angela.json
 	workspacePath      string   // .angela/angela.json
 	loadedPaths        []string // config files that were successfully loaded
@@ -210,6 +212,32 @@ func (s *ConfigStore) Resolve(key string) (string, error) {
 		return "", fmt.Errorf("no variable resolver configured")
 	}
 	return r.ResolveValue(key)
+}
+
+// ProviderFieldResolver returns the resolver to use for a provider
+// data field (api_key, base_url, or an extra_headers value): the full
+// shell resolver, unless field was last set by an untrusted (i.e. not
+// system or global) config layer, in which case command substitution
+// is disabled and only $VAR/${VAR} expands. See dataFieldTrust.
+func (s *ConfigStore) ProviderFieldResolver(providerID, field string) VariableResolver {
+	s.writeMu.RLock()
+	defer s.writeMu.RUnlock()
+	if s.dataTrust.providerUntrusted(providerID, field) {
+		return s.envOnlyResolver
+	}
+	return s.resolver
+}
+
+// MCPFieldResolver returns the resolver to use for an MCP data field
+// (url, a headers value, oauth_client_id, or oauth_client_secret). See
+// ProviderFieldResolver.
+func (s *ConfigStore) MCPFieldResolver(name, field string) VariableResolver {
+	s.writeMu.RLock()
+	defer s.writeMu.RUnlock()
+	if s.dataTrust.mcpUntrusted(name, field) {
+		return s.envOnlyResolver
+	}
+	return s.resolver
 }
 
 // KnownProviders returns the list of known providers.
@@ -1304,7 +1332,7 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	migrateDisableNotifications()
 
 	configPaths := lookupConfigs(s.workingDir)
-	cfg, loadedPaths, err := loadFromConfigPaths(ctx, configPaths)
+	cfg, loadedPaths, layers, err := loadFromConfigPaths(ctx, configPaths)
 	if err != nil {
 		return fmt.Errorf("failed to reload config: %w", err)
 	}
@@ -1333,6 +1361,7 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 			*cfg = *merged
 			cfg.setDefaults(s.workingDir, dataDir)
 			loadedPaths = append(loadedPaths, workspacePath)
+			layers = append(layers, wsData)
 		}
 	}
 
@@ -1363,6 +1392,10 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	// Reconfigure providers
 	env := env.New()
 	resolver := NewShellVariableResolver(env)
+	envOnlyResolver := NewEnvOnlyVariableResolver(env)
+	dataTrust := computeDataFieldTrust(loadedPaths, layers, func(path string) bool {
+		return trustedConfigLayer(path) || path == workspacePath
+	})
 
 	// Apply top-level env vars before configuring providers so variables
 	// like AWS_PROFILE are visible to the AWS SDK credential chain.
@@ -1376,7 +1409,7 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 		slog.Warn("Reload continuing with the previously known providers", "error", err)
 	}
 
-	if err := cfg.configureProviders(ctx, s, env, resolver, providers); err != nil {
+	if err := cfg.configureProviders(ctx, s, env, resolver, providers, withDataTrust(dataTrust)); err != nil {
 		return fmt.Errorf("failed to configure providers during reload: %w", err)
 	}
 
@@ -1423,6 +1456,8 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	s.setConfig(cfg)
 	s.loadedPaths = loadedPaths
 	s.resolver = resolver
+	s.envOnlyResolver = envOnlyResolver
+	s.dataTrust = dataTrust
 	s.knownProviders = providers
 	s.overrides = overrides
 	s.workspacePath = workspacePath

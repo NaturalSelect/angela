@@ -42,7 +42,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 			`{"agents": {"coder": {"allowed_tools": ["read"]}}}`,
 		)
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		coder := cfg.AgentConfigs["coder"]
@@ -58,7 +58,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 			`{"agents": {"coder": {"allowed_tools": []}}}`,
 		)
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		coder := cfg.AgentConfigs["coder"]
@@ -73,7 +73,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 			`{"agents": {"coder": {"disabled_tools": ["write"]}}}`,
 		)
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		require.Equal(t, []string{"write"}, cfg.AgentConfigs["coder"].DisabledTools,
@@ -87,7 +87,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 			`{"agents": {"coder": {"allowed_tools": "inherited"}}}`,
 		)
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		coder := cfg.AgentConfigs["coder"]
@@ -102,7 +102,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 			`{"agents": {"coder": {"allowed_tools": ["read"]}}}`,
 		)
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		coder := cfg.AgentConfigs["coder"]
@@ -118,7 +118,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 			`{"agents": {"plan": {"allowed_agents": ["explore"]}}}`,
 		)
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		require.Equal(t, &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{"explore"}}, cfg.AgentConfigs["plan"].AllowedAgents,
@@ -132,7 +132,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 			`{"agents": {"plan": {"allowed_agents": []}}}`,
 		)
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		require.NotNil(t, cfg.AgentConfigs["plan"].AllowedAgents)
@@ -147,7 +147,7 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 			`{"agents": {"plan": {"allowed_agents": "all"}}}`,
 		)
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), paths)
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
 		require.NoError(t, err)
 
 		require.Equal(t, &AllowedAgentSet{Kind: ToolSetAll}, cfg.AgentConfigs["plan"].AllowedAgents,

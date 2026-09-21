@@ -1838,8 +1838,8 @@ func (c *coordinator) buildProvider(providerCfg config.ProviderConfig, model con
 		}
 	}
 
-	apiKey, _ := c.cfg.Resolve(providerCfg.APIKey)
-	baseURL, _ := c.cfg.Resolve(providerCfg.BaseURL)
+	apiKey, _ := c.cfg.ProviderFieldResolver(providerCfg.ID, "api_key").ResolveValue(providerCfg.APIKey)
+	baseURL, _ := c.cfg.ProviderFieldResolver(providerCfg.ID, "base_url").ResolveValue(providerCfg.BaseURL)
 
 	switch providerCfg.ID {
 	case string(catwalk.InferenceProviderOpenCodeGo), string(catwalk.InferenceProviderOpenCodeZen):
@@ -2261,7 +2261,7 @@ func (c *coordinator) refreshOAuth2Token(ctx context.Context, providerCfg config
 }
 
 func (c *coordinator) refreshApiKeyTemplate(ctx context.Context, providerCfg config.ProviderConfig) error {
-	newAPIKey, err := c.cfg.Resolve(providerCfg.APIKeyTemplate)
+	newAPIKey, err := c.cfg.ProviderFieldResolver(providerCfg.ID, "api_key").ResolveValue(providerCfg.APIKeyTemplate)
 	if err != nil {
 		slog.Error("Failed to re-resolve API key after 401 error", "provider", providerCfg.ID, "error", err)
 		return err

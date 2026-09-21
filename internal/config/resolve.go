@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/env"
@@ -71,6 +72,31 @@ func NewShellVariableResolver(e env.Env, opts ...ShellResolverOption) VariableRe
 		opt(r)
 	}
 	return r
+}
+
+// envOnlyResolver resolves $VAR / ${VAR} references by reading the
+// process environment via os.Expand, and never runs $(command)
+// substitution -- a malformed or unsupported construct such as "$("
+// or "${VAR:?msg}" is left as a literal substring rather than
+// erroring, matching os.Expand's own contract. Used for provider/MCP
+// data fields (api_key, base_url, extra_headers, url, headers,
+// oauth_client_id, oauth_client_secret) last set by an untrusted
+// config layer: a project-level angela.json is auto-loaded even from
+// a freshly cloned, untrusted repository, so its data fields must
+// never gain command-execution power merely by being loaded.
+type envOnlyResolver struct {
+	env env.Env
+}
+
+// NewEnvOnlyVariableResolver returns a VariableResolver that only
+// reads environment variables; "$(...)" is left untouched rather than
+// executed.
+func NewEnvOnlyVariableResolver(e env.Env) VariableResolver {
+	return envOnlyResolver{env: e}
+}
+
+func (r envOnlyResolver) ResolveValue(value string) (string, error) {
+	return os.Expand(value, r.env.Get), nil
 }
 
 // ResolveValue resolves shell-style substitution anywhere in the string:

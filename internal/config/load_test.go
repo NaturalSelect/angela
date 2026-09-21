@@ -221,7 +221,7 @@ func TestLoadFromConfigPaths_InvalidJSON(t *testing.T) {
 		require.NoError(t, os.WriteFile(good, []byte(`{"providers":{}}`), 0o644))
 		require.NoError(t, os.WriteFile(bad, []byte(`{not valid json}`), 0o644))
 
-		_, _, err := loadFromConfigPaths(context.Background(), []string{good, bad})
+		_, _, _, err := loadFromConfigPaths(context.Background(), []string{good, bad})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid JSON in config file")
 		require.Contains(t, err.Error(), "bad.json")
@@ -233,7 +233,7 @@ func TestLoadFromConfigPaths_InvalidJSON(t *testing.T) {
 		empty := filepath.Join(tmpDir, "empty.json")
 		require.NoError(t, os.WriteFile(empty, []byte(""), 0o644))
 
-		cfg, _, err := loadFromConfigPaths(context.Background(), []string{
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), []string{
 			filepath.Join(tmpDir, "nonexistent.json"),
 			empty,
 		})

@@ -992,6 +992,18 @@ func maybeTimeoutErr(err error, timeout time.Duration) error {
 	return err
 }
 
+// mcpFieldResolver selects the resolver for an MCP data field (url,
+// headers, oauth_client_id/secret), routing through cfg's trust-aware
+// ConfigStore.MCPFieldResolver when a config store is available. Unit
+// tests exercise createTransport directly with a nil cfg and their own
+// resolver, bypassing trust routing entirely.
+func mcpFieldResolver(cfg *config.ConfigStore, resolver config.VariableResolver, name, field string) config.VariableResolver {
+	if cfg == nil {
+		return resolver
+	}
+	return cfg.MCPFieldResolver(name, field)
+}
+
 func createTransport(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, *mcpoauth.Handler, error) {
 	switch m.Type {
 	case config.MCPStdio:
@@ -1022,7 +1034,7 @@ func createTransport(ctx context.Context, cfg *config.ConfigStore, name string, 
 			Command: cmd,
 		}, nil, nil
 	case config.MCPHttp:
-		url, err := m.ResolvedURL(resolver)
+		url, err := m.ResolvedURL(mcpFieldResolver(cfg, resolver, name, "url"))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1048,11 +1060,11 @@ func createTransport(ctx context.Context, cfg *config.ConfigStore, name string, 
 			// values so $VAR and $(cmd) work.
 			var preregistered *oauth.OAuthClient
 			if strings.TrimSpace(m.OAuthClientID) != "" {
-				clientID, err := resolver.ResolveValue(m.OAuthClientID)
+				clientID, err := mcpFieldResolver(cfg, resolver, name, "oauth_client_id").ResolveValue(m.OAuthClientID)
 				if err != nil {
 					return nil, nil, fmt.Errorf("oauth_client_id: %w", err)
 				}
-				clientSecret, err := resolver.ResolveValue(m.OAuthClientSecret)
+				clientSecret, err := mcpFieldResolver(cfg, resolver, name, "oauth_client_secret").ResolveValue(m.OAuthClientSecret)
 				if err != nil {
 					return nil, nil, fmt.Errorf("oauth_client_secret: %w", err)
 				}
@@ -1075,7 +1087,7 @@ func createTransport(ctx context.Context, cfg *config.ConfigStore, name string, 
 			}, oauthHandler, nil
 		}
 
-		headers, err := m.ResolvedHeaders(resolver)
+		headers, err := m.ResolvedHeaders(mcpFieldResolver(cfg, resolver, name, "headers"))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1089,14 +1101,14 @@ func createTransport(ctx context.Context, cfg *config.ConfigStore, name string, 
 			HTTPClient: client,
 		}, nil, nil
 	case config.MCPSSE:
-		url, err := m.ResolvedURL(resolver)
+		url, err := m.ResolvedURL(mcpFieldResolver(cfg, resolver, name, "url"))
 		if err != nil {
 			return nil, nil, err
 		}
 		if strings.TrimSpace(url) == "" {
 			return nil, nil, fmt.Errorf("mcp sse config requires a non-empty 'url' field")
 		}
-		headers, err := m.ResolvedHeaders(resolver)
+		headers, err := m.ResolvedHeaders(mcpFieldResolver(cfg, resolver, name, "headers"))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1119,11 +1131,11 @@ func createTransport(ctx context.Context, cfg *config.ConfigStore, name string, 
 
 			var preregistered *oauth.OAuthClient
 			if strings.TrimSpace(m.OAuthClientID) != "" {
-				clientID, err := resolver.ResolveValue(m.OAuthClientID)
+				clientID, err := mcpFieldResolver(cfg, resolver, name, "oauth_client_id").ResolveValue(m.OAuthClientID)
 				if err != nil {
 					return nil, nil, fmt.Errorf("oauth_client_id: %w", err)
 				}
-				clientSecret, err := resolver.ResolveValue(m.OAuthClientSecret)
+				clientSecret, err := mcpFieldResolver(cfg, resolver, name, "oauth_client_secret").ResolveValue(m.OAuthClientSecret)
 				if err != nil {
 					return nil, nil, fmt.Errorf("oauth_client_secret: %w", err)
 				}

@@ -27,6 +27,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/home"
 	"github.com/NaturalSelect/angela/internal/hookevents"
+	"github.com/NaturalSelect/angela/internal/shell"
 	powernapConfig "github.com/charmbracelet/x/powernap/pkg/config"
 	"github.com/qjebbs/go-jsons"
 	"github.com/tidwall/gjson"
@@ -43,7 +44,7 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 
 	configPaths := lookupConfigs(workingDir)
 
-	cfg, loadedPaths, err := loadFromConfigPaths(context.Background(), configPaths)
+	cfg, loadedPaths, layers, err := loadFromConfigPaths(context.Background(), configPaths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config from paths %v: %w", configPaths, err)
 	}
@@ -80,6 +81,7 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 			cfg.setDefaults(workingDir, dataDir)
 			store.config = cfg
 			store.loadedPaths = append(store.loadedPaths, store.workspacePath)
+			layers = append(layers, wsData)
 		}
 	}
 
@@ -130,6 +132,11 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	// Configure providers
 	valueResolver := NewShellVariableResolver(env)
 	store.resolver = valueResolver
+	store.envOnlyResolver = NewEnvOnlyVariableResolver(env)
+	dataTrust := computeDataFieldTrust(store.loadedPaths, layers, func(path string) bool {
+		return trustedConfigLayer(path) || path == store.workspacePath
+	})
+	store.dataTrust = dataTrust
 
 	// Hold writeMu during initial load to prevent configureProviders
 	// from triggering auto-reload via RemoveConfigField.
@@ -140,7 +147,7 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	// like AWS_PROFILE are visible to the AWS SDK credential chain.
 	cfg.applyEnv(valueResolver)
 
-	if err := cfg.configureProviders(context.Background(), store, env, valueResolver, store.knownProviders); err != nil {
+	if err := cfg.configureProviders(context.Background(), store, env, valueResolver, store.knownProviders, withDataTrust(dataTrust)); err != nil {
 		return nil, fmt.Errorf("failed to configure providers: %w", err)
 	}
 
@@ -194,8 +201,14 @@ func mustMarshalConfig(cfg *Config) []byte {
 	return data
 }
 
-func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider) error {
+func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env env.Env, resolver VariableResolver, knownProviders []catwalk.Provider, opts ...configureProvidersOption) error {
+	var options configureProvidersOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+	dataTrust := options.dataTrust
 	knownProviderNames := make(map[string]bool)
+	envOnly := NewEnvOnlyVariableResolver(env)
 
 	// When disable_default_providers is enabled, skip all default/embedded
 	// providers entirely. Users must fully specify any providers they want.
@@ -257,8 +270,9 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 		// message, and a header that resolves to the empty string
 		// (unset bare $VAR under lenient nounset, $(echo), or literal
 		// "") is dropped from the outgoing request.
+		headerResolver := providerFieldResolver(dataTrust, resolver, envOnly, string(p.ID), "extra_headers")
 		for k, v := range headers {
-			resolved, err := resolver.ResolveValue(v)
+			resolved, err := headerResolver.ResolveValue(v)
 			if err != nil {
 				return fmt.Errorf("resolving provider %s header %q: %w", p.ID, k, err)
 			}
@@ -317,7 +331,7 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 			prepared.ExtraParams["project"] = project
 			prepared.ExtraParams["location"] = location
 		case catwalk.InferenceProviderAzure:
-			endpoint, err := resolver.ResolveValue(p.APIEndpoint)
+			endpoint, err := providerFieldResolver(dataTrust, resolver, envOnly, string(p.ID), "base_url").ResolveValue(p.APIEndpoint)
 			if err != nil || endpoint == "" {
 				if configExists {
 					slog.Warn("Skipping Azure provider due to missing API endpoint", "provider", p.ID, "error", err)
@@ -337,7 +351,7 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 			}
 		default:
 			// if the provider api or endpoint are missing we skip them
-			v, err := resolver.ResolveValue(p.APIKey)
+			v, err := providerFieldResolver(dataTrust, resolver, envOnly, string(p.ID), "api_key").ResolveValue(p.APIKey)
 			if v == "" || err != nil {
 				if configExists {
 					slog.Warn("Skipping provider due to missing API key", "provider", p.ID)
@@ -383,11 +397,12 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 			ExistingModels: providerModelsToCatwalk(pc.Models),
 		}
 		providerType := cmp.Or(pc.Type, catwalk.TypeOpenAICompat)
+		discoveryResolver := discoveryFieldResolver(dataTrust, resolver, envOnly, providerID)
 		wg.Go(func() {
-			models, err := discover.DiscoverModels(discoverCtx, cfg, resolver)
+			models, err := discover.DiscoverModels(discoverCtx, cfg, discoveryResolver)
 			if err == nil && len(models) > 0 {
 				if enricher := discover.GetEnricher(string(providerType)); enricher != nil {
-					models, _ = enricher.EnrichModels(discoverCtx, cfg, resolver, models)
+					models, _ = enricher.EnrichModels(discoverCtx, cfg, discoveryResolver, models)
 				}
 			}
 			mu.Lock()
@@ -451,11 +466,11 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 			continue
 		}
 
-		apiKey, err := resolver.ResolveValue(providerConfig.APIKey)
+		apiKey, err := providerFieldResolver(dataTrust, resolver, envOnly, id, "api_key").ResolveValue(providerConfig.APIKey)
 		if apiKey == "" || err != nil {
 			slog.Warn("Provider is missing API key, this might be OK for local providers", "provider", id)
 		}
-		baseURL, err := resolver.ResolveValue(providerConfig.BaseURL)
+		baseURL, err := providerFieldResolver(dataTrust, resolver, envOnly, id, "base_url").ResolveValue(providerConfig.BaseURL)
 		if baseURL == "" || err != nil {
 			slog.Warn("Skipping custom provider due to missing API endpoint", "provider", id, "error", err)
 			c.Providers.Del(id)
@@ -464,8 +479,9 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 
 		// Custom-provider headers share the MCP error contract; see
 		// the known-provider loop above.
+		customHeaderResolver := providerFieldResolver(dataTrust, resolver, envOnly, id, "extra_headers")
 		for k, v := range providerConfig.ExtraHeaders {
-			resolved, err := resolver.ResolveValue(v)
+			resolved, err := customHeaderResolver.ResolveValue(v)
 			if err != nil {
 				return fmt.Errorf("resolving provider %s header %q: %w", id, k, err)
 			}
@@ -917,9 +933,17 @@ func dedupeConfigPathsByIdentity(paths []string) []string {
 	return out
 }
 
-func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []string, error) {
+// loadFromConfigPaths reads and merges configPaths in priority order
+// (lowest first). Besides the merged Config and the subset of paths
+// that actually loaded, it returns the raw, per-layer bytes (after
+// permission-pattern expansion) parallel to that path list, so callers
+// can run computeDataFieldTrust over the same layers once any
+// additional, non-lookupConfigs layers (e.g. the workspace runtime
+// sidecar) have also been merged in.
+func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []string, [][]byte, error) {
 	var configs [][]byte
 	var loaded []string
+	e := env.New()
 
 	for _, path := range configPaths {
 		if path == "" {
@@ -930,24 +954,91 @@ func loadFromConfigPaths(ctx context.Context, configPaths []string) (*Config, []
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, nil, fmt.Errorf("failed to open config file %s: %w", path, err)
+			return nil, nil, nil, fmt.Errorf("failed to open config file %s: %w", path, err)
 		}
 		if len(data) == 0 {
 			continue
 		}
 
 		if !json.Valid(data) {
-			return nil, nil, fmt.Errorf("invalid JSON in config file %s", path)
+			return nil, nil, nil, fmt.Errorf("invalid JSON in config file %s", path)
 		}
+
+		data, err = expandPermissionRulePatterns(ctx, path, data, e)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("config file %s: %w", path, err)
+		}
+
 		configs = append(configs, data)
 		loaded = append(loaded, path)
 	}
 
 	cfg, err := loadFromBytes(configs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return cfg, loaded, nil
+	return cfg, loaded, configs, nil
+}
+
+// trustedConfigLayer reports whether path is the system or global
+// config file. Both are user- or admin-authored and never auto-loaded
+// from a cloned repository, unlike a project-level angela.json found by
+// lookupConfigs, so values they contribute may use the full shell
+// resolver (command substitution included). Used for both
+// permission-rule patterns and provider/MCP data fields.
+func trustedConfigLayer(path string) bool {
+	return path == systemConfigPath || path == GlobalConfig()
+}
+
+// expandPermissionRulePatterns resolves tilde and environment-variable
+// substitutions inside permissions.rules[].pattern before the generic
+// merge runs, so each layer's patterns are expanded against its own
+// trust level rather than losing their origin in the merged byte
+// stream. Project-level patterns only get tilde and plain $VAR/${VAR}
+// substitution, never command execution, because lookupConfigs
+// auto-loads project angela.json files -- including from a freshly
+// cloned, untrusted repository -- with no confirmation gate. A pattern
+// with no "$" or "~" is left untouched (and the file bytes are not
+// rewritten) so the common case costs nothing.
+func expandPermissionRulePatterns(ctx context.Context, path string, data []byte, e env.Env) ([]byte, error) {
+	rules := gjson.GetBytes(data, "permissions.rules")
+	if !rules.IsArray() {
+		return data, nil
+	}
+	trusted := trustedConfigLayer(path)
+
+	out := data
+	for i, rule := range rules.Array() {
+		pattern := rule.Get("pattern")
+		if pattern.Type != gjson.String || pattern.String() == "" {
+			continue
+		}
+		expanded, err := expandRulePattern(ctx, pattern.String(), trusted, e)
+		if err != nil {
+			return nil, fmt.Errorf("permission rule %d: invalid pattern %q: %w", i, pattern.String(), err)
+		}
+		if expanded == pattern.String() {
+			continue
+		}
+		out, err = sjson.SetBytes(out, fmt.Sprintf("permissions.rules.%d.pattern", i), expanded)
+		if err != nil {
+			return nil, fmt.Errorf("permission rule %d: %w", i, err)
+		}
+	}
+	return out, nil
+}
+
+// expandRulePattern expands a single pattern. Tilde expansion always
+// runs -- resolving a leading "~" is no riskier than reading $HOME --
+// while the rest of the expansion depends on trust: the full shell
+// resolver for trusted config, or a read-only $VAR/${VAR} lookup that
+// can never execute a command for everything else.
+func expandRulePattern(ctx context.Context, pattern string, trusted bool, e env.Env) (string, error) {
+	pattern = home.Long(pattern)
+	if trusted {
+		return shell.ExpandValue(ctx, pattern, e.Env())
+	}
+	return os.Expand(pattern, e.Get), nil
 }
 
 func loadFromBytes(configs [][]byte) (*Config, error) {

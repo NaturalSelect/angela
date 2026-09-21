@@ -180,7 +180,7 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		// so a pattern climbing out with ".." stays visible.
 		prefix, _ := filepathext.SplitGlobPrefix(p.Pattern)
 		access.Action = permission.ActionList
-		access.Path = resolve(filepath.Join(p.Path, prefix))
+		access.Path = resolve(filepathext.SmartJoin(p.Path, prefix))
 
 	case toolnames.Grep:
 		p, ok := decodeInput[GrepParams](rawInput)

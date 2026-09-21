@@ -111,6 +111,12 @@ func TestAccessOf(t *testing.T) {
 			want:  permission.Access{Action: permission.ActionList, Path: filepath.Join(workDir, "..", "..", "etc")},
 		},
 		{
+			name:  "glob discards a stray path hint when the pattern is already absolute",
+			tool:  toolnames.Glob,
+			input: fmt.Sprintf(`{"pattern":%s,"path":"sub"}`, jsonPath(filepath.Join(outside, "*.conf"))),
+			want:  permission.Access{Action: permission.ActionList, Path: outside},
+		},
+		{
 			name:  "grep is a read of its search root",
 			tool:  toolnames.Grep,
 			input: fmt.Sprintf(`{"pattern":"x","path":%s}`, jsonPath(outside)),

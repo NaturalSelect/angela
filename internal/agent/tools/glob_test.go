@@ -149,6 +149,31 @@ func TestNewGlobToolUsesParamsPathOverWorkingDir(t *testing.T) {
 	require.Contains(t, resp.Content, "only.go")
 }
 
+// TestGlobFilesAbsolutePatternDoesNotMangle is a regression test for the bug
+// where filepath.Join(searchPath, absolutePrefix) produced a mangled path like
+// /searchPath/home/.../  when the pattern was absolute, causing fastwalk to
+// return "stat: no such file or directory". SmartJoin must be used instead so
+// an absolute prefix is taken as-is.
+func TestGlobFilesAbsolutePatternDoesNotMangle(t *testing.T) {
+	t.Parallel()
+
+	// Put a real file in a directory that is unrelated to the search root,
+	// simulating an absolute-path pattern the user typed.
+	target := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(target, "match.go"), []byte("x"), 0o644))
+
+	// searchPath is a completely different directory — before the fix,
+	// filepath.Join(searchPath, target) produced a nonexistent mangled path.
+	searchPath := t.TempDir()
+
+	pattern := filepath.Join(target, "*.go")
+
+	got, _, err := globFiles(context.Background(), pattern, searchPath, 100)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Contains(t, got[0], "match.go")
+}
+
 func TestNormalizeFilePaths(t *testing.T) {
 	t.Parallel()
 

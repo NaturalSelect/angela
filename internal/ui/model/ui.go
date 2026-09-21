@@ -867,6 +867,16 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.dispatchPromptQueueRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case agentRunFailedMsg:
+		// AppWorkspace's in-process AgentRun blocks for the whole turn and
+		// reports a terminal failure right here; the client/server
+		// transport instead reports it later via handleAgentNotification's
+		// TypeAgentError case. Both restore whatever this session still
+		// has queued behind the failed turn.
+		cmds = append(cmds, util.ReportError(msg.err))
+		if cmd := m.restoreQueueOnAgentError(msg.sessionID); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case loadSessionMsg:
 		// Sub-session navigation: push/pop deferred to here so a
 		// failed load (which sends ReportError, not loadSessionMsg)
@@ -4917,16 +4927,17 @@ func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.
 	m.busyFetchGen++
 	m.invalidatePromptQueue()
 	cmds = append(cmds, func() tea.Msg {
-		// AgentRun is fire-and-forget: it returns once the prompt has
-		// been accepted (HTTP 202) or synchronously with a validation
-		// or transport error. Run failures and cancellation surface
-		// through SSE-derived events, not this return value.
+		// AgentRun is fire-and-forget over the client/server transport:
+		// it returns once the prompt is accepted, and a run failure
+		// arrives later as an SSE-derived TypeAgentError notification
+		// (handleAgentNotification). AppWorkspace's in-process path
+		// instead runs the turn synchronously and reports the outcome
+		// right here. Either way a terminal failure must restore
+		// whatever this session still has queued behind it, so both
+		// paths funnel through restoreQueueOnAgentError.
 		err := m.com.Workspace.AgentRun(context.Background(), sessionID, content, attachments...)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			return util.InfoMsg{
-				Type: util.InfoTypeError,
-				Msg:  fmt.Sprintf("%v", err),
-			}
+			return agentRunFailedMsg{sessionID: sessionID, err: err}
 		}
 		return agentRunSubmittedMsg{}
 	})
@@ -5102,6 +5113,24 @@ func (m *UI) popQueuedPromptsToEditor() tea.Cmd {
 	}
 
 	return m.prependToEditor(strings.Join(texts, "\n\n"))
+}
+
+// restoreQueueOnAgentError pops any prompts still queued behind
+// sessionID's turn back into the editor when that turn ends in an
+// error instead of finishing normally. A failed turn never drains its
+// own queue (see drainQueueForStep), so without this the prompts would
+// sit stranded on the backend — indistinguishable from ones an idle
+// agent simply has not gotten to yet — until the user noticed and
+// pressed esc. Scoped to the session currently on screen: an error on
+// a session the user has since navigated away from must not reach
+// into the visible editor.
+func (m *UI) restoreQueueOnAgentError(sessionID string) tea.Cmd {
+	if sessionID == "" || sessionID != m.currentSessionID() || m.promptQueue == 0 {
+		return nil
+	}
+	restoreCmd := m.popQueuedPromptsToEditor()
+	m.com.Workspace.AgentClearQueue(sessionID)
+	return restoreCmd
 }
 
 // prependToEditor places text ahead of whatever draft is being composed,
@@ -5508,7 +5537,12 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 		}))
 	case notify.TypeAgentError:
 		// Terminal edge like TypeAgentFinished; fall through to the
-		// busy/queue refresh below.
+		// busy/queue refresh below. A failed turn never runs whatever is
+		// still queued behind it, so restore it to the editor the same
+		// way cancelling does instead of leaving it stranded.
+		if cmd := m.restoreQueueOnAgentError(n.SessionID); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case notify.TypeAgentRetrying:
 		m.setRetryStatus(n)
 		return nil

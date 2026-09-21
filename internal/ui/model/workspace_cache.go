@@ -122,6 +122,16 @@ type promptQueueMsg struct {
 // be re-fetched.
 type agentRunSubmittedMsg struct{}
 
+// agentRunFailedMsg reports that a prompt submitted through AgentRun's
+// synchronous in-process path (AppWorkspace) ended in an error. It is
+// kept distinct from util.InfoMsg — which also carries unrelated
+// errors such as LSP or git failures — so only an agent turn's own
+// failure can trigger a queue restore (see restoreQueueOnAgentError).
+type agentRunFailedMsg struct {
+	sessionID string
+	err       error
+}
+
 // agentModelChangedMsg reports that the agent a session runs on was
 // changed (agent switch, model selection, preset, thinking toggle) or
 // rebuilt, so the memoized ready/active state should be re-fetched

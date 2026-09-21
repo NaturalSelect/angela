@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -287,6 +288,64 @@ func TestAgentTerminalNotificationsRefreshBusy(t *testing.T) {
 				"busy→idle edge must reach the cache without waiting for the TTL")
 		})
 	}
+}
+
+// TestAgentErrorNotificationRestoresQueuedPrompts pins the new behavior
+// added alongside the busy/queue refresh: a terminal TypeAgentError
+// notification restores whatever the current session still has queued
+// behind the failed turn, the same way cancelling does. A failed turn
+// never drains its own queue (drainQueueForStep only runs between
+// steps of a turn that keeps going), so without this the prompts would
+// sit stranded, indistinguishable from ones an idle agent simply
+// hasn't gotten to yet.
+func TestAgentErrorNotificationRestoresQueuedPrompts(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true) // stale: still busy
+	m.promptQueue = 1
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "queued follow-up"}}
+	active := workspace.ActiveAgent{}
+	stubBusyProbe(ws, true, false, permission.ModeManual, &active) // agent now idle
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+	ws.EXPECT().AgentClearQueue(gomock.Any())
+
+	_, cmd := m.Update(pubsub.Event[notify.Notification]{
+		Type:    pubsub.CreatedEvent,
+		Payload: notify.Notification{Type: notify.TypeAgentError, SessionID: "s1"},
+	})
+	runCmds(m, cmd)
+
+	require.Zero(t, m.promptQueue, "the cached count must be zeroed immediately")
+	require.Empty(t, m.promptQueueItems)
+	require.Equal(t, "queued follow-up", m.textarea.Value(),
+		"a prompt still queued behind the failed turn must reappear in the editor")
+}
+
+// TestAgentErrorNotificationIgnoresOtherSession pins the scoping guard:
+// the queued-prompt mirror belongs to whichever session is on screen,
+// so an error reported for a different session (e.g. a background
+// branch) must never reach into the visible editor or clear a queue
+// that was never fetched for it.
+func TestAgentErrorNotificationIgnoresOtherSession(t *testing.T) {
+	pinTTLs(t)
+
+	m, _ := newMockBusyUI(t) // current session is "s1"
+	warmCaches(m, true)
+	m.promptQueue = 1
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "queued follow-up"}}
+	// AgentClearQueue and AgentQueuedPromptsList are deliberately left
+	// unstubbed and their results never awaited: this test checks the
+	// synchronous scoping guard inside handleAgentNotification itself,
+	// before any off-thread refresh command would even run.
+
+	m.Update(pubsub.Event[notify.Notification]{
+		Type:    pubsub.CreatedEvent,
+		Payload: notify.Notification{Type: notify.TypeAgentError, SessionID: "other-session"},
+	})
+
+	require.Equal(t, 1, m.promptQueue, "an error on a different session must not touch this one's queue")
+	require.Empty(t, m.textarea.Value())
 }
 
 // TestAgentRetryingSetsTurnStatus pins that a retry notification reaches
@@ -613,6 +672,32 @@ func TestCancelAgentRestoresQueueAheadOfDraft(t *testing.T) {
 
 	m.cancelAgent()
 	require.Equal(t, "first queued\n\nsecond queued\n\nstill typing this", m.textarea.Value())
+}
+
+// TestAgentRunFailedMsgRestoresQueuedPrompts pins the local (AppWorkspace)
+// counterpart to TestAgentErrorNotificationRestoresQueuedPrompts:
+// AgentRun's in-process path reports a turn failure synchronously as
+// agentRunFailedMsg rather than through a pubsub notification, and that
+// path must restore the queue exactly the same way, ahead of whatever
+// draft the user was already composing.
+func TestAgentRunFailedMsgRestoresQueuedPrompts(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.promptQueue = 2
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "first queued"}, {Prompt: "second queued"}}
+	m.textarea.SetValue("still typing this")
+
+	ws.EXPECT().AgentClearQueue(gomock.Any())
+
+	_, cmd := m.Update(agentRunFailedMsg{sessionID: "s1", err: errors.New("500 Internal Server Error")})
+	runCmds(m, cmd)
+
+	require.Zero(t, m.promptQueue)
+	require.Empty(t, m.promptQueueItems)
+	require.Equal(t, "first queued\n\nsecond queued\n\nstill typing this", m.textarea.Value(),
+		"prompts queued behind the failed turn must lead, with the half-typed draft kept intact after them")
 }
 
 // TestBackstopRefreshesStaleCaches: when the memoized state outlives its TTL

@@ -24,7 +24,7 @@ const ModelConfigID = "model_config"
 // Defaults for a model the catalog knows nothing about, which is the
 // case for every hand-typed one.
 const (
-	defaultModelMaxTokens     int64 = 32768
+	defaultModelMaxTokens     int64 = 65536
 	defaultModelContextWindow int64 = 1048576
 )
 

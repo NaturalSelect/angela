@@ -215,6 +215,10 @@ stays merged in. If unsure which file defines it, check each candidate from
 - `tools.*.timeout` values are nanoseconds as an integer, not seconds.
 - An `ANGELA_`-prefixed variable (e.g. `ANGELA_OPENAI_API_KEY`) shadows the
   bare one in every shell-expanded field.
+- A project-level config only gets plain `$VAR`/`${VAR}` (no `$(cmd)`) in
+  provider `api_key`/`base_url`/`extra_headers`, MCP `url`/`headers`/oauth
+  fields, and permission rule patterns — put anything needing `$(cmd)` in
+  the global config instead. See `reference/discovery.md`.
 - A literal `$` in a URL must be escaped as `\$`.
 - `disable_*` options read backwards on purpose: `true` turns the thing
   **off**.

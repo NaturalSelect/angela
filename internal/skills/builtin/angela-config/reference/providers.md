@@ -11,13 +11,13 @@ slot's `provider` field references.
 | `name`                 | string            | Display name                                                    |
 | `type`                 | string            | API format: `openai`, `openai-compat`, `openrouter`, `vercel`, `anthropic`, `google`, `azure`, `bedrock`, `google-vertex`, `litellm`, `llamacpp`, `lmstudio`, `ollama`, `omlx`. Defaults to `openai` |
 | `use_responses`        | bool              | Force the OpenAI Responses API on or off for this provider; unset picks per model from its ID |
-| `base_url`             | string            | API base URL                                                    |
-| `api_key`              | string            | Shell-expanded                                                  |
+| `base_url`             | string            | API base URL; shell-expanded, `$(cmd)` only from system/global config |
+| `api_key`              | string            | Shell-expanded, `$(cmd)` only from system/global config         |
 | `disable`              | bool              | Default `false`                                                 |
 | `flat_rate`            | bool              | Skip cost accumulation for subscription/flat-rate billing       |
 | `discover_models`      | bool              | Default `true`. Fetches `/v1/models`; when `models` is also set the discovered ones are merged in and yours win. Set `false` to use only what you list |
 | `system_prompt_prefix` | string            | Prefix prepended to system prompts for this provider            |
-| `extra_headers`        | object            | Extra HTTP headers; values shell-expanded, empty ones dropped   |
+| `extra_headers`        | object            | Extra HTTP headers; values shell-expanded (empty ones dropped), `$(cmd)` only from system/global |
 | `extra_body`           | object            | Merged verbatim into OpenAI-compatible request bodies; **not** shell-expanded |
 | `provider_options`     | object            | Provider-specific options                                       |
 | `aws_auth_refresh`     | string            | Shell command run when Bedrock credentials expire               |

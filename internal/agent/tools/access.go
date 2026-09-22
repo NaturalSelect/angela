@@ -113,6 +113,13 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Command = p.Command
 		access.Path = resolve(p.WorkingDir)
 
+	case toolnames.Git:
+		// Runs git in argv form after the tool itself has judged the
+		// verb read-only, so it reads the checkout the same way Grep
+		// does rather than the open-ended way Bash does.
+		access.Action = permission.ActionRead
+		access.Path = resolve("")
+
 	case toolnames.Edit:
 		p, ok := decodeInput[EditParams](rawInput)
 		if !ok {

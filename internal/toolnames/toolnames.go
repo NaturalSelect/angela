@@ -19,6 +19,7 @@ package toolnames
 // Core file and shell tools.
 const (
 	Bash      = "Bash"
+	Git       = "Git"
 	Edit      = "Edit"
 	MultiEdit = "MultiEdit"
 	Read      = "Read"

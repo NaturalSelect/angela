@@ -208,6 +208,7 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 		toolnames.AngelaInfo,
 		toolnames.AngelaLogs,
 		toolnames.Bash,
+		toolnames.Git,
 		toolnames.LSPCallHierarchy,
 		toolnames.LSPDefinition,
 		toolnames.LSPDiagnostics,

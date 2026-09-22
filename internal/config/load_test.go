@@ -813,11 +813,11 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 	assert.Equal(t, ToolSetScope, coderAgent.AllowedTools.Kind)
-	assert.Equal(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch"}, false), coderAgent.AllowedTools.Tools)
+	assert.Equal(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch", "Git"}, false), coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "Grep", "LS", "Sourcegraph", "Read"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"Git", "AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "Grep", "LS", "Sourcegraph", "Read"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
@@ -840,7 +840,7 @@ func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
-	assert.Equal(t, []string{"AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "LS", "Sourcegraph", "Read"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"Git", "AngelaInfo", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "Fetch", "Glob", "LS", "Sourcegraph", "Read"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
@@ -868,7 +868,7 @@ func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
 	assert.Equal(t, ToolSetScope, exploreAgent.AllowedTools.Kind)
-	assert.Equal(t, []string{"AngelaInfo", "Fetch"}, exploreAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"Git", "AngelaInfo", "Fetch"}, exploreAgent.AllowedTools.Tools)
 }
 
 func TestConfig_configureProvidersWithDisabledProvider(t *testing.T) {

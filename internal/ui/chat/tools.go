@@ -326,6 +326,17 @@ func (t *baseToolMessageItem) Animate(msg anim.StepMsg) tea.Cmd {
 	return t.anim.Animate(msg)
 }
 
+// AdvanceFrame advances the animation by one frame without scheduling a new
+// tick. Called by a parent container that drives the tick centrally so this
+// item's frame progresses without starting its own independent tick chain.
+func (t *baseToolMessageItem) AdvanceFrame() {
+	if !t.isSpinning() {
+		return
+	}
+	t.anim.AdvanceFrame()
+	t.Bump()
+}
+
 // RawRender implements [MessageItem].
 func (t *baseToolMessageItem) RawRender(width int) string {
 	toolItemWidth := width - MessageLeftPaddingTotal
@@ -407,6 +418,9 @@ func (t *baseToolMessageItem) ToolCall() message.ToolCall {
 
 // SetToolCall sets the tool call associated with this message item.
 func (t *baseToolMessageItem) SetToolCall(tc message.ToolCall) {
+	if t.toolCall.Input == tc.Input && t.toolCall.Finished == tc.Finished {
+		return
+	}
 	t.toolCall = tc
 	t.clearCache()
 	t.Bump()

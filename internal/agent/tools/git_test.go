@@ -94,6 +94,7 @@ func TestGitTool_RejectsWritesAndEscapes(t *testing.T) {
 		{"log with output redirect option", []string{"log", "--output=/tmp/x"}, "is not a read-only command"},
 		{"diff no-index escapes the repo", []string{"diff", "--no-index", "a", "b"}, "is not a read-only command"},
 		{"show with external diff driver", []string{"show", "--ext-diff"}, "is not a read-only command"},
+		{"grep pager option glued to a shell command", []string{"grep", "-Otouch /tmp/pwned", "hello"}, "is not a read-only command"},
 		{"leading global option", []string{"-C", "/tmp", "log"}, "args[0] must be a git verb"},
 	}
 

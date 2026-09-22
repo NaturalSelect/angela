@@ -45,11 +45,10 @@ func NewGitTool(workingDir string) fantasy.AgentTool {
 				return Fail("missing args")
 			}
 			// The first word must be the verb itself, with no global
-			// option ahead of it. This is stricter than SafePrefix
-			// needs to be — it also catches a glued short option (like
-			// -Ofile) that SafePrefix's exact-match list would miss —
-			// and it costs nothing because every allowed verb here is
-			// legal as args[0].
+			// option ahead of it (e.g. -C to point git at a different
+			// directory). This is stricter than SafePrefix needs to
+			// be, but costs nothing because every allowed verb here
+			// is legal as args[0].
 			if strings.HasPrefix(params.Args[0], "-") {
 				return Fail("args[0] must be a git verb, not an option; global flags such as -C are not allowed")
 			}

@@ -138,6 +138,16 @@ func (s *ShellItem) Animate(msg anim.StepMsg) tea.Cmd {
 	return s.anim.Animate(msg)
 }
 
+// AdvanceFrame advances the animation by one frame without scheduling a new
+// tick. Called by a parent container that drives the tick centrally.
+func (s *ShellItem) AdvanceFrame() {
+	if !s.pending {
+		return
+	}
+	s.anim.AdvanceFrame()
+	s.Bump()
+}
+
 func (s *ShellItem) Render(width int) string {
 	innerWidth := max(0, width-MessageLeftPaddingTotal)
 	content := s.RawRender(innerWidth)

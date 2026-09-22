@@ -64,6 +64,8 @@ func (m *testAnimatableItem) Animate(msg anim.StepMsg) tea.Cmd {
 	return func() tea.Msg { return nil }
 }
 
+func (m *testAnimatableItem) AdvanceFrame() {}
+
 func (m *testAnimatableItem) StartAnimation() tea.Cmd {
 	m.startAnimationCalls++
 	return func() tea.Msg { return nil }

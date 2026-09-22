@@ -2116,15 +2116,12 @@ func (m *UI) handleChildSessionMessage(event pubsub.Event[message.Message]) tea.
 			}
 		}
 		if !found {
-			// Create a new nested tool item.
+			// Create a new nested tool item. Animation is driven by the
+			// parent AgentToolMessageItem's tick chain via AdvanceFrame,
+			// so we do not start an independent tick chain here.
 			nestedItem := chat.NewToolMessageItem(m.com.Styles, event.Payload.ID, tc, nil, false, m.com.Workspace.WorkingDir())
 			if simplifiable, ok := nestedItem.(chat.Compactable); ok {
 				simplifiable.SetCompact(true)
-			}
-			if animatable, ok := nestedItem.(chat.Animatable); ok {
-				if cmd := animatable.StartAnimation(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
 			}
 			nestedTools = append(nestedTools, nestedItem)
 		}

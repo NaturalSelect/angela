@@ -414,6 +414,25 @@ func (a *Anim) Stop() {
 	a.gen.Add(1)
 }
 
+// AdvanceFrame advances the animation by one frame without scheduling a new
+// tick. Use this when a parent container drives the tick so this Anim's
+// frame progresses without starting its own independent tick chain.
+func (a *Anim) AdvanceFrame() {
+	step := a.step.Add(1)
+	if int(step) >= len(a.cyclingFrames) {
+		a.step.Store(0)
+	}
+	frames := a.framesSinceStart.Add(1)
+	if a.initialized.Load() && a.labelWidth > 0 {
+		ellipsisStep := a.ellipsisStep.Add(1)
+		if int(ellipsisStep) >= ellipsisAnimSpeed*len(ellipsisFrames) {
+			a.ellipsisStep.Store(0)
+		}
+	} else if !a.initialized.Load() && int(frames) >= maxBirthSteps {
+		a.initialized.Store(true)
+	}
+}
+
 // Animate advances the animation to the next step.
 func (a *Anim) Animate(msg StepMsg) tea.Cmd {
 	if msg.ID != a.id {

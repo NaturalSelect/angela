@@ -98,32 +98,27 @@ func NewAgentToolMessageItem(
 
 // Animate progresses the message animation if it should be spinning.
 //
-// Bumps the parent's F6 list-cache version on both the parent-tick and
-// nested-tick branches. Nested tools are not list entries of their
-// own — their IDs map to this parent's index in idInxMap
-// (internal/ui/model/chat.go:240-246) and their renders are embedded
-// inline in this parent's output — so the list only checks the
-// parent's version. Without the bump, the list cache would serve the
-// previously rendered frame indefinitely and the spinner would appear
-// frozen.
+// On a parent tick the parent's own frame advances and all spinning
+// nested tools are driven via AdvanceFrame so they share a single
+// tick chain rather than each running their own. The nested-tick
+// routing branch has been removed: nested tools no longer start
+// independent tick chains (see internal/ui/model/ui.go).
 func (a *AgentToolMessageItem) Animate(msg anim.StepMsg) tea.Cmd {
 	if a.result != nil || a.Status() == ToolStatusCanceled {
 		return nil
 	}
-	if msg.ID == a.ID() {
-		a.Bump()
-		return a.anim.Animate(msg)
+	if msg.ID != a.ID() {
+		return nil
 	}
+	a.Bump()
+	// Drive all spinning nested tool animations from this single tick so
+	// they stay in sync without independent tick chains.
 	for _, nestedTool := range a.nestedTools {
-		if msg.ID != nestedTool.ID() {
-			continue
-		}
 		if s, ok := nestedTool.(Animatable); ok {
-			a.Bump()
-			return s.Animate(msg)
+			s.AdvanceFrame()
 		}
 	}
-	return nil
+	return a.anim.Animate(msg)
 }
 
 // NestedTools returns the nested tools.

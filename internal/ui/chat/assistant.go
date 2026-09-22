@@ -285,6 +285,16 @@ func (a *AssistantMessageItem) Animate(msg anim.StepMsg) tea.Cmd {
 	return a.anim.Animate(msg)
 }
 
+// AdvanceFrame advances the animation by one frame without scheduling a new
+// tick. Called by a parent container that drives the tick centrally.
+func (a *AssistantMessageItem) AdvanceFrame() {
+	if !a.isSpinning() {
+		return
+	}
+	a.anim.AdvanceFrame()
+	a.Bump()
+}
+
 // ID implements MessageItem.
 func (a *AssistantMessageItem) ID() string {
 	return a.message.ID

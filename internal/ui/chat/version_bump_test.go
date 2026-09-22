@@ -404,12 +404,11 @@ func TestBaseToolMessageItem_AnimateBumpsVersion(t *testing.T) {
 }
 
 // TestAgentToolMessageItem_AnimateBumpsVersion is the spinner
-// regression test for agent tools. The parent must bump on both
-// the parent-tick branch (msg.ID == parent.ID()) and the
-// nested-tick branch (msg.ID == nested.ID()) because the list
-// only checks the parent's version — nested tools are not list
-// entries of their own. Unrelated IDs must not bump, and a parent
-// with a result must not bump on any ID.
+// regression test for agent tools. The parent must bump on its own
+// tick (msg.ID == parent.ID()), must not bump on a nested child ID
+// (nested tools no longer start independent tick chains; their frames
+// are advanced via AdvanceFrame on the parent tick), and must not
+// bump on any ID once the parent has a result.
 func TestAgentToolMessageItem_AnimateBumpsVersion(t *testing.T) {
 	t.Parallel()
 
@@ -426,11 +425,10 @@ func TestAgentToolMessageItem_AnimateBumpsVersion(t *testing.T) {
 		parent.Animate(anim.StepMsg{ID: parentTC.ID})
 	})
 
-	// Spinning + nested child ID → parent bumps. The list only
-	// invalidates on the parent; without this the nested
-	// spinner's frame would never reach the screen even though
-	// the nested anim's step has advanced.
-	requireBump(t, "Animate[spinning,nested ID]", parent, func() {
+	// Spinning + nested child ID → no bump. Nested tools no longer
+	// have independent tick chains; child IDs are never sent as
+	// StepMsgs to the parent. AdvanceFrame() drives them instead.
+	requireNoBump(t, "Animate[spinning,nested ID]", parent, func() {
 		parent.Animate(anim.StepMsg{ID: childTC.ID})
 	})
 

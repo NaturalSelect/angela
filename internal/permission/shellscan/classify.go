@@ -219,11 +219,20 @@ func matchesCommandPrefix(cmd, pattern string) bool {
 	return cmd == pattern || strings.HasPrefix(cmd, pattern+" ")
 }
 
+// gitUnsafeOption reports w as one of gitUnsafeOptions, matching a
+// short option even when its value is glued on with no separator at
+// all. That is the only form some of them take: git grep's pager
+// override is documented as -O<pager>, never as "-O <pager>" or
+// "-O=<pager>", so cutting on "=" or comparing the whole word would
+// never see it, and the classifier would judge the command read-only.
+func gitUnsafeOption(w string) bool {
+	return slices.Contains(gitUnsafeOptions, optionName(w)) || attachedShortOption(w, gitUnsafeOptions)
+}
+
 func gitSafePrefix(words []string) int {
 	i := 1
 	for i < len(words) && strings.HasPrefix(words[i], "-") {
-		opt, _, _ := strings.Cut(words[i], "=")
-		if slices.Contains(gitUnsafeOptions, opt) {
+		if gitUnsafeOption(words[i]) {
 			return 0
 		}
 		i++
@@ -257,9 +266,7 @@ func gitSafePrefix(words []string) int {
 		if !slices.Contains(gitReadOnlyVerbs, verb) {
 			return 0
 		}
-		if slices.ContainsFunc(rest, func(w string) bool {
-			return slices.Contains(gitUnsafeOptions, optionName(w))
-		}) {
+		if slices.ContainsFunc(rest, gitUnsafeOption) {
 			return 0
 		}
 	}

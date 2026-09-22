@@ -14,7 +14,7 @@ A rule matches on what a call actually touches, not just on the tool name:
 | --------- | ------ | ------------------------------------------------------------------------ |
 | `action`  | string | **Required**: `allow`, `ask`, or `deny`                                   |
 | `tool`    | string | An access category (`read`, `edit`, `execute`, `network`, `mcp`, `list`, `merge`) or a single tool name (`Bash`, `Read`, case-sensitive). Empty matches everything |
-| `pattern` | string | Narrows the match. Empty or `*` matches everything                        |
+| `pattern` | string | Narrows the match. Empty or `*` matches everything. Expands a leading `~` and `$VAR`/`${VAR}`; `$(cmd)` only from system/global config, see `reference/discovery.md` |
 | `mode`    | string | How `pattern` is compared: `auto` (picks by action), `path`, `free`, `domain` |
 
 `merge` is the access category for the `Merge` tool a `branch` agent uses to

@@ -57,34 +57,66 @@ warnings.
 ## Shell expansion
 
 Selected string fields run through Angela's embedded shell at load time, so
-secrets never have to be written into the file:
+secrets never have to be written into the file. How much of that expansion a
+field gets can depend on which layer set it — system/global config is always
+user- or admin-authored, while a project-level `angela.json` loads
+automatically just by being there, even in a repository you haven't read yet.
 
-| Surface                                                   | Expanded                           |
-| --------------------------------------------------------- | ----------------------------------- |
-| Provider `api_key`, `base_url`, `extra_headers`            | yes                                |
-| Provider `extra_body`                                      | **no** (JSON passthrough)          |
-| MCP `command`, `args`, `env`, `url`, `headers`             | yes                                |
-| MCP `oauth_client_id`, `oauth_client_secret`               | yes                                |
-| LSP `command`, `args`, `env`                               | yes                                |
-| Top-level `env` values                                     | yes                                |
-| Hook `command`                                             | runs via the shell at fire time    |
+| Surface                                                        | Expanded                                                          |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Provider `api_key`, `base_url`, `extra_headers`                   | full in system/global; `$VAR`/`${VAR}` only from a project layer   |
+| Provider `extra_body`                                             | **no** (JSON passthrough)                                          |
+| MCP `command`, `args`, `env`                                      | full, every layer                                                   |
+| MCP `url`, `headers`, `oauth_client_id`, `oauth_client_secret`    | full in system/global; `$VAR`/`${VAR}` only from a project layer   |
+| LSP `command`, `args`, `env`                                      | full, every layer                                                   |
+| Permission rule `pattern`                                         | `$VAR`/`${VAR}` and a leading `~`, every layer; `$(cmd)` only from system/global |
+| Top-level `env` values                                             | full, every layer                                                   |
+| Hook `command`                                                     | full, runs via the shell at fire time                               |
 
-Supported constructs: `$VAR`, `${VAR}`, `${VAR:-default}`, `${VAR:+alt}`,
-`${VAR:?message}`, `$(command)`. An unset variable expands to empty; a failing
-`$(command)` is an error. A **header that resolves to empty is dropped** from
-the request rather than sent as `Header:`. A literal `$` in a URL (e.g. OData
-`$filter`) must be escaped as `\$`.
+Supported constructs where a field gets full expansion: `$VAR`, `${VAR}`,
+`${VAR:-default}`, `${VAR:+alt}`, `${VAR:?message}`, `$(command)`. An unset
+variable expands to empty; a failing `$(command)` is an error. A **header
+that resolves to empty is dropped** from the request rather than sent as
+`Header:`. A literal `$` in a URL (e.g. OData `$filter`) must be escaped as
+`\$`.
 
-An `ANGELA_`-prefixed variable shadows its bare name in every expansion here
-— set `ANGELA_OPENAI_API_KEY` to override `$OPENAI_API_KEY` for Angela alone,
-leaving the plain variable untouched for your shell and other programs. A
-`$(command)` has a 5-minute timeout; a slower command fails config loading
-instead of hanging.
+An `ANGELA_`-prefixed variable shadows its bare name in every expansion here,
+restricted or not — set `ANGELA_OPENAI_API_KEY` to override `$OPENAI_API_KEY`
+for Angela alone, leaving the plain variable untouched for your shell and
+other programs. A `$(command)` has a 5-minute timeout; a slower command
+fails config loading instead of hanging.
+
+### Project config gets less than system/global
+
+For the fields marked "only from a project layer" above, a project-level
+`angela.json` can read an existing environment variable but can't run a
+command: `$(cmd)` is left as a literal, unexecuted string rather than being
+run or erroring. The bash-only defaulting forms `${VAR:-default}`,
+`${VAR:+alt}`, `${VAR:?message}` aren't special-cased either in this
+restricted mode — the expander looks up a variable literally named e.g.
+`VAR:?message`, finds nothing, and silently substitutes empty. A "required"
+check written with `:?` in a project config therefore won't fail loudly, it
+just goes blank. Use the global config for anything that needs `$(command)`
+or those bash defaulting forms.
+
+Trust is decided per field, after all layers merge: whichever layer supplies
+a field's final value determines that field's expansion power, even if a
+lower-priority layer also set it. `<data_directory>/angela.json` (the
+workspace layer Angela writes itself, e.g. from a TUI model switch) counts
+as trusted too, since that file is Angela's own output, not something a
+cloned repository can plant.
+
+MCP/LSP `command`, `args`, and `env` are deliberately excluded from this
+split and keep full expansion in every layer, project config included —
+those fields already run an arbitrary program, so restricting `$(cmd)`
+inside them would add no safety. A project config can still point an MCP or
+LSP server's `command` at anything.
 
 > [!WARNING]
-> `angela.json` is trusted code: any `$(...)` in it runs at load time with your
-> shell privileges, before the UI appears. Don't launch Angela in a directory
-> whose config you haven't reviewed.
+> `angela.json` is trusted code: any `$(...)` in the system or global config,
+> or in an MCP/LSP `command`, `args`, or `env` from *any* layer, runs at load
+> time with your shell privileges, before the UI appears. Don't launch
+> Angela in a directory whose config you haven't reviewed.
 
 ## Environment variables
 

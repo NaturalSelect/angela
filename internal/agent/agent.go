@@ -969,6 +969,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		OnStepStart: func(stepNumber int) error {
 			stepStart = time.Now()
 			stepGenDuration = 0
+			retryAttempt = 0
 			return nil
 		},
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {

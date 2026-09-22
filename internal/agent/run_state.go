@@ -195,6 +195,48 @@ func (s *runState) enqueueAutoContinue(call SessionAgentCall, prompt string) {
 	s.messageQueue.Set(call.SessionID, existing)
 }
 
+// enqueueResumeBeforeSummarize re-queues call, with its prompt already
+// wrapped by the caller to explain the interruption, ahead of any prompt
+// already queued for the same session. It must run before Summarize so
+// that Summarize's own end-of-call queue drain (which recurses into Run
+// for the queue's head) picks the resume-wrapped call first instead of a
+// user follow-up that queued while summarizing was in flight. Appending
+// instead of prepending would let that follow-up run before the resumed
+// turn ever gets its continuation prompt.
+//
+// It takes the per-session lock itself, for the same reason
+// enqueueAutoContinue does: without it, a prompt submitted concurrently
+// could read the queue before this Set lands and then overwrite it,
+// dropping one of the two.
+func (s *runState) enqueueResumeBeforeSummarize(call SessionAgentCall) {
+	mu := s.sessionMu(call.SessionID)
+	mu.Lock()
+	defer mu.Unlock()
+	existing, _ := s.messageQueue.Get(call.SessionID)
+	s.messageQueue.Set(call.SessionID, append([]SessionAgentCall{call}, existing...))
+}
+
+// popResumeOnSummarizeFailure undoes enqueueResumeBeforeSummarize after
+// Summarize returns an error. A failed Summarize never reaches its own
+// queue drain, so the call prepended before it would otherwise sit
+// orphaned in the queue and later fire as a stray turn on top of whatever
+// the caller submits next. Prepending is the only queue operation that
+// runs ahead of it, so the entry is guaranteed to still be at the head.
+func (s *runState) popResumeOnSummarizeFailure(sessionID string) {
+	mu := s.sessionMu(sessionID)
+	mu.Lock()
+	defer mu.Unlock()
+	existing, ok := s.messageQueue.Get(sessionID)
+	if !ok || len(existing) == 0 {
+		return
+	}
+	if len(existing) == 1 {
+		s.messageQueue.Del(sessionID)
+		return
+	}
+	s.messageQueue.Set(sessionID, existing[1:])
+}
+
 // drainQueueForStep partitions the session's queued calls for the current
 // streaming step under the per-session dispatch mutex so the filtering is
 // atomic against a concurrent Cancel: canceledBySeq requires the caller to

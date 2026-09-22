@@ -1127,6 +1127,7 @@ func allToolNames() []string {
 		toolnames.Agent,
 		toolnames.LoadReport,
 		toolnames.Bash,
+		toolnames.Git,
 		toolnames.AngelaInfo,
 		toolnames.AngelaLogs,
 		toolnames.JobOutput,
@@ -1183,7 +1184,7 @@ func exploreToolNames() []string {
 		toolnames.Fetch, toolnames.AngelaInfo,
 		toolnames.Glob, toolnames.Grep, toolnames.LS,
 		toolnames.LSPCallHierarchy, toolnames.LSPDefinition, toolnames.LSPSymbols,
-		toolnames.Sourcegraph, toolnames.Read,
+		toolnames.Sourcegraph, toolnames.Read, toolnames.Git,
 	}
 }
 
@@ -1297,13 +1298,17 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetAll},
 			// web_fetch/web_search stay behind the web-fetch sub-agent
 			// so a page fetch always goes through its own delegated
-			// turn rather than the coder reaching for it directly.
-			DisabledTools: []string{toolnames.WebFetch, toolnames.WebSearch},
+			// turn rather than the coder reaching for it directly. Git
+			// stays behind explore too: coder already has bash, and
+			// withinScope lets a workspace-local read-only git command
+			// through unprompted, so a second read-only path here would
+			// only duplicate it.
+			DisabledTools: []string{toolnames.WebFetch, toolnames.WebSearch, toolnames.Git},
 		},
 		AgentExplore: {
 			ID:           AgentExplore,
 			Name:         "Explore",
-			Description:  "Fast read-only codebase scout — it locates and reports code, never reviews or judges it. Use it proactively, without waiting to be asked, whenever answering would mean searching or reading across several files: finding files by pattern, locating a symbol, definition or its callers, tracing a flow across modules, or mapping the conventions a package follows. Delegating keeps the conclusion in your context instead of the file dumps. Not for a single-fact lookup in a file you can already name, and not for judgment calls — what to build belongs to plan, a root cause that resists investigation to deep_research. It reads excerpts rather than whole files, so state the breadth you need: \"quick\" for one targeted lookup, \"medium\" for moderate exploration, \"very thorough\" for multiple locations and naming conventions.",
+			Description:  "Fast read-only codebase scout — it locates and reports code, never reviews or judges it. Use it proactively, without waiting to be asked, whenever answering would mean searching or reading across several files: finding files by pattern, locating a symbol, definition or its callers, tracing a flow across modules, mapping the conventions a package follows, or answering a git-history question (who changed a line, when, and what the diff was) with its read-only git tool. Delegating keeps the conclusion in your context instead of the file dumps. Not for a single-fact lookup in a file you can already name, and not for judgment calls — what to build belongs to plan, a root cause that resists investigation to deep_research. It reads excerpts rather than whole files, so state the breadth you need: \"quick\" for one targeted lookup, \"medium\" for moderate exploration, \"very thorough\" for multiple locations and naming conventions.",
 			Mode:         AgentModeSubagent,
 			Slot:         SlotMain,
 			ContextPaths: contextPaths,

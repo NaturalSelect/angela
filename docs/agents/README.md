@@ -9,7 +9,7 @@ tasks to specialized sub-agents via the `agent` tool.
 |-----------|-----------|------------------------------------------------------------------------|
 | `coder`   | primary   | Main agent for executing coding tasks. Has access to all tools.        |
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
-| `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, LSP (read-only). |
+| `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git (read-only), LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
 | `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. Read-only. |
 | `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: Fetch, WebFetch, WebSearch, Glob, Grep, Read, Sourcegraph. |
@@ -108,19 +108,26 @@ no `bash`, no `edit`, and no `write`: the plan is the only thing it produces.
 That is also why merging it is safe to approve — nothing in your working tree
 changed while it ran.
 
-If you want it to do more, override it like any other agent. Giving it `bash`
-lets it dig through `git log` and `git blame`, at the cost of a permission
-prompt per command:
+If you want it to do more, override it like any other agent. Adding the same
+read-only `Git` tool `explore` uses lets it run `git log`/`git blame` without
+opening anything else up:
 
 ```json
 {
   "agents": {
     "plan": {
-      "allowed_tools": ["Glob", "Grep", "LS", "Read", "Fetch", "Sourcegraph", "AngelaInfo", "Bash"]
+      "allowed_tools": ["Glob", "Grep", "LS", "Read", "Fetch", "Sourcegraph", "AngelaInfo", "Git"]
     }
   }
 }
 ```
+
+Giving it `Bash` instead reaches further — any command, not just git — but
+trades away the guarantee that `plan` cannot write. That trade is not a
+prompt per command: a workspace-local read-only command already runs
+unprompted, so `git log` costs nothing extra either way. What `Bash` actually
+gives up is the structural guarantee, since yolo mode approves everything
+`Bash` runs, git included, without distinction.
 
 ### `deep-research`
 

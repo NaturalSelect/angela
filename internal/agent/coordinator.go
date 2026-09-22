@@ -967,6 +967,7 @@ func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int
 	allTools = append(
 		allTools,
 		tools.NewBashTool(c.cfg.WorkingDir(), c.cfg.Config().Options.Attribution, modelName),
+		tools.NewGitTool(c.cfg.WorkingDir()),
 		tools.NewAngelaInfoTool(c.cfg, c.lspManager, c.allSkills, c.activeSkills, c.skillTracker),
 		tools.NewAngelaLogsTool(logFile),
 		tools.NewJobOutputTool(),

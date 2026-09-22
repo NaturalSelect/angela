@@ -1037,7 +1037,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pubsub.UpdatedEvent:
 			cmds = append(cmds, m.updateSessionMessage(msg.Payload))
 		case pubsub.DeletedEvent:
-			m.chat.RemoveMessage(msg.Payload.ID)
+			m.chat.RemoveMessageWithToolCalls(msg.Payload.ID)
 		}
 		// Follow the turn: spin while the agent works, stop when it stops.
 		if cmd := m.syncTurnSpinner(); cmd != nil {

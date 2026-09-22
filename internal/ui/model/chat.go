@@ -876,6 +876,24 @@ func (m *Chat) RemoveMessage(id string) {
 	delete(m.pausedAnimations, id)
 }
 
+// RemoveMessageWithToolCalls removes a message and all tool call items that
+// belong to it from the chat list.
+func (m *Chat) RemoveMessageWithToolCalls(messageID string) {
+	// Collect tool call IDs belonging to this message before removing anything,
+	// since RemoveMessage rebuilds the index map on every removal.
+	var toolIDs []string
+	for i := 0; i < m.list.Len(); i++ {
+		item, ok := m.list.ItemAt(i).(chat.ToolMessageItem)
+		if ok && item.MessageID() == messageID {
+			toolIDs = append(toolIDs, item.ID())
+		}
+	}
+	m.RemoveMessage(messageID)
+	for _, id := range toolIDs {
+		m.RemoveMessage(id)
+	}
+}
+
 // RemoveOrphanedToolCalls removes tool items belonging to messageID whose
 // tool call is no longer present in keepIDs. A provider-level retry can
 // reset an assistant message's streamed content mid-step (see

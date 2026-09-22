@@ -1307,19 +1307,27 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		// cleanup above is conditional: a plain Del here would drop
 		// whatever a concurrent run has since registered.
 		a.activeRequests.CompareAndDelete(call.SessionID, ac)
-		if summarizeErr := a.Summarize(genCtx, call.SessionID, call.Compact, call.SummarizeProviderOptions, call.SummarizeOnAuthRefresh); summarizeErr != nil {
-			return nil, summarizeErr
-		}
-		// If the agent wasn't done...
-		if len(currentAssistant.ToolCalls()) > 0 {
-			existing, ok := a.messageQueue.Get(call.SessionID)
-			if !ok {
-				existing = []SessionAgentCall{}
-			}
+		// If the agent wasn't done, queue its resume ahead of Summarize
+		// so Summarize's own post-summary queue drain (which recurses
+		// into Run for the queue's head) resumes this turn before any
+		// user follow-up that queued while summarizing was in flight.
+		// Queuing this after Summarize returns is too late: by then
+		// Summarize has already drained and run whatever was queued
+		// first.
+		queuedResume := len(currentAssistant.ToolCalls()) > 0
+		if queuedResume {
 			call.Prompt = wrapInterruptedPrompt(call.Prompt)
-			existing = append(existing, call)
-			a.messageQueue.Set(call.SessionID, existing)
+			a.enqueueResumeBeforeSummarize(call)
 			hitMaxTokens = false
+		}
+		if summarizeErr := a.Summarize(genCtx, call.SessionID, call.Compact, call.SummarizeProviderOptions, call.SummarizeOnAuthRefresh); summarizeErr != nil {
+			// Summarize failed before reaching its own queue drain, so
+			// the resume call just prepended above would otherwise be
+			// left behind to fire as a stray turn later.
+			if queuedResume {
+				a.popResumeOnSummarizeFailure(call.SessionID)
+			}
+			return nil, summarizeErr
 		}
 	}
 	if hitMaxTokens {

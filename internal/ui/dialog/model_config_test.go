@@ -50,7 +50,7 @@ func TestAnUnknownModelGetsTheDefaults(t *testing.T) {
 
 	m := newModelConfigDialog(t, config.ProviderModel{})
 
-	require.Equal(t, []string{"", "32768", "1048576"}, fieldValues(m))
+	require.Equal(t, []string{"", "65536", "1048576"}, fieldValues(m))
 }
 
 // TestAKnownModelPrefillsFromItsCatalogEntry keeps the step from

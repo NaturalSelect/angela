@@ -319,6 +319,19 @@ func (m *Message) IsThinking() bool {
 	return false
 }
 
+// IsThinkingTruncated reports whether the message's reasoning was cut off
+// by the output token limit before any reply text was produced. This is
+// the case the agent's auto-continue treats specially (see
+// autoContinueThinkingPrompt): the model has to restart its reasoning
+// rather than resume it, so a repeat truncation is more likely than for a
+// plain text cutoff. The TUI surfaces this as a distinct banner rather
+// than silently auto-continuing forever.
+func (m *Message) IsThinkingTruncated() bool {
+	return m.FinishReason() == FinishReasonMaxTokens &&
+		m.Content().Text == "" &&
+		m.ReasoningContent().Thinking != ""
+}
+
 func (m *Message) AppendContent(delta string) {
 	found := false
 	for i, part := range m.Parts {

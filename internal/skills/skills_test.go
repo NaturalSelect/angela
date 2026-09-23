@@ -489,6 +489,110 @@ func TestDiscoverBuiltin(t *testing.T) {
 	}
 	require.True(t, foundMigrate, "angela-migrate builtin skill not found")
 
+	var foundAgents bool
+	for _, s := range discovered {
+		if s.Name == "angela-agents" {
+			foundAgents = true
+			require.Equal(t, "angela://skills/angela-agents/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-agents", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundAgents, "angela-agents builtin skill not found")
+
+	var foundLSP bool
+	for _, s := range discovered {
+		if s.Name == "angela-lsp" {
+			foundLSP = true
+			require.Equal(t, "angela://skills/angela-lsp/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-lsp", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundLSP, "angela-lsp builtin skill not found")
+
+	var foundMCP bool
+	for _, s := range discovered {
+		if s.Name == "angela-mcp" {
+			foundMCP = true
+			require.Equal(t, "angela://skills/angela-mcp/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-mcp", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundMCP, "angela-mcp builtin skill not found")
+
+	var foundPermissions bool
+	for _, s := range discovered {
+		if s.Name == "angela-permissions" {
+			foundPermissions = true
+			require.Equal(t, "angela://skills/angela-permissions/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-permissions", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundPermissions, "angela-permissions builtin skill not found")
+
+	var foundSandbox bool
+	for _, s := range discovered {
+		if s.Name == "angela-sandbox" {
+			foundSandbox = true
+			require.Equal(t, "angela://skills/angela-sandbox/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-sandbox", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundSandbox, "angela-sandbox builtin skill not found")
+
+	var foundSessions bool
+	for _, s := range discovered {
+		if s.Name == "angela-sessions" {
+			foundSessions = true
+			require.Equal(t, "angela://skills/angela-sessions/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-sessions", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundSessions, "angela-sessions builtin skill not found")
+
+	var foundShell bool
+	for _, s := range discovered {
+		if s.Name == "angela-shell" {
+			foundShell = true
+			require.Equal(t, "angela://skills/angela-shell/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-shell", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundShell, "angela-shell builtin skill not found")
+
+	var foundSkills bool
+	for _, s := range discovered {
+		if s.Name == "angela-skills" {
+			foundSkills = true
+			require.Equal(t, "angela://skills/angela-skills/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/angela-skills", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundSkills, "angela-skills builtin skill not found")
+
 	// angela-config's field reference lives alongside its SKILL.md as
 	// separate files the agent loads on demand (see angela-config's
 	// "Reference index"). DiscoverBuiltinWithStates's fs.WalkDir only

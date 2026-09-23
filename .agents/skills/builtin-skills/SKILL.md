@@ -41,10 +41,18 @@ These are always available without user configuration.
 
 ## Existing Builtin Skills
 
-| Skill            | Directory                 | Description                                       |
-| ---------------- | ------------------------- | ------------------------------------------------- |
-| `angela-config`  | `builtin/angela-config/`  | Agent-driven config changes, validated with `angela config validate`; field reference lives in `reference/*.md` |
-| `angela-hooks`   | `builtin/angela-hooks/`   | Authoring, configuring and debugging hooks        |
-| `angela-migrate` | `builtin/angela-migrate/` | Migrate config from Claude Code, OpenCode, Cursor |
-| `angela-setup`   | `builtin/angela-setup/`   | Interactive new-user onboarding and setup guide   |
-| `jq`             | `builtin/jq/`             | jq JSON processor usage guide                     |
+| Skill                | Directory                     | Description                                       |
+| -------------------- | ------------------------------ | -------------------------------------------------- |
+| `angela-agents`      | `builtin/angela-agents/`       | Multi-agent system: built-in agents, dispatch depth, sub-agent constraints |
+| `angela-config`      | `builtin/angela-config/`       | Agent-driven config changes, validated with `angela config validate`; field reference lives in `reference/*.md` |
+| `angela-hooks`       | `builtin/angela-hooks/`        | Authoring, configuring and debugging hooks        |
+| `angela-lsp`         | `builtin/angela-lsp/`          | LSP integration: diagnostics, definitions, references, rename, call hierarchy |
+| `angela-mcp`         | `builtin/angela-mcp/`          | MCP server config, tool naming, OAuth flow, per-agent tool allowlists |
+| `angela-migrate`     | `builtin/angela-migrate/`      | Migrate config from Claude Code, OpenCode, Cursor |
+| `angela-permissions` | `builtin/angela-permissions/`  | Permission rules: allow/ask/deny precedence, shell and MCP judgment |
+| `angela-sandbox`     | `builtin/angela-sandbox/`      | OS-level sandbox: Landlock/Seatbelt/Docker backends, CLI flags |
+| `angela-sessions`    | `builtin/angela-sessions/`     | Session CLI, headless mode, client-server daemon mode |
+| `angela-setup`       | `builtin/angela-setup/`        | Interactive new-user onboarding and setup guide   |
+| `angela-shell`       | `builtin/angela-shell/`        | Embedded POSIX shell semantics, background jobs, permission judgment |
+| `angela-skills`      | `builtin/angela-skills/`       | Authoring and discovering skills, frontmatter fields, precedence |
+| `jq`                 | `builtin/jq/`                  | jq JSON processor usage guide                     |

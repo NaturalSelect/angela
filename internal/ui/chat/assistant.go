@@ -59,6 +59,19 @@ const (
 	refusalDetails  = "The provider's safety classifier stopped this response before any usable content was produced. Rephrase the request, start a fresh session, or try a different model."
 )
 
+// Default copy for the thinking-truncated banner. The agent persists
+// only the FinishReasonMaxTokens reason; the TUI owns this text for the
+// case where the cutoff landed before any reply text was produced (see
+// message.IsThinkingTruncated and autoContinueThinkingPrompt). Auto-continue
+// already resends the request, but since the model has to restart its
+// reasoning rather than resume it, the same cutoff can repeat — this
+// banner tells the user why and how to avoid it.
+const (
+	thinkingTruncatedTagLabel = "TRUNCATED"
+	thinkingTruncatedTitle    = "Thinking was cut off before a response"
+	thinkingTruncatedDetails  = "The model hit its output token limit while still reasoning. It will retry automatically, but the same model may need more room to finish. Consider raising max output tokens for this model."
+)
+
 // maxExpandedThinkingTailLines is the F5 tail-window cap. When the user
 // expands a thinking block whose post-glamour line count exceeds this
 // threshold, only the last N lines are shown with an affordance line
@@ -448,7 +461,7 @@ func (a *AssistantMessageItem) renderMessageContent(width int) (string, int) {
 		switch {
 		case a.message.FinishReason() == message.FinishReasonCanceled:
 			messageParts = append(messageParts, a.sty.Messages.AssistantCanceled.Render("Canceled"))
-		case a.message.IsErrorLike():
+		case a.message.IsErrorLike(), a.message.IsThinkingTruncated():
 			messageParts = append(messageParts, a.cachedError(width))
 		}
 	}
@@ -530,7 +543,7 @@ func (a *AssistantMessageItem) contentKey() (uint64, uint64) {
 // error / refusal section. Returns (0, 0) when no error-like finish
 // is present so the cache stays a no-op for normal messages.
 func (a *AssistantMessageItem) errorKey() (uint64, uint64) {
-	if !a.message.IsFinished() || !a.message.IsErrorLike() {
+	if !a.message.IsFinished() || (!a.message.IsErrorLike() && !a.message.IsThinkingTruncated()) {
 		return 0, 0
 	}
 	finishPart := a.message.FinishPart()
@@ -677,10 +690,15 @@ func (a *AssistantMessageItem) renderError(width int) string {
 	tagLabel := "ERROR"
 	titleText := finishPart.Message
 	detailsText := finishPart.Details
-	if finishPart.Reason == message.FinishReasonContentFilter {
+	switch {
+	case finishPart.Reason == message.FinishReasonContentFilter:
 		tagLabel = refusalTagLabel
 		titleText = cmp.Or(titleText, refusalTitle)
 		detailsText = cmp.Or(detailsText, refusalDetails)
+	case a.message.IsThinkingTruncated():
+		tagLabel = thinkingTruncatedTagLabel
+		titleText = cmp.Or(titleText, thinkingTruncatedTitle)
+		detailsText = cmp.Or(detailsText, thinkingTruncatedDetails)
 	}
 	errTag := a.sty.Messages.ErrorTag.Render(tagLabel)
 	truncated := ansi.Truncate(titleText, width-2-lipgloss.Width(errTag), "...")

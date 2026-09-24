@@ -35,6 +35,20 @@ func TestFormatTokensAndCostOmitsEstimatedPrefix(t *testing.T) {
 	require.NotContains(t, actual, "~12%")
 }
 
+// Usage that exceeds the context window — from an overestimate, or a
+// context window that shrank after a model switch — must still read as
+// "100%", not spill past it into a number with no meaning.
+func TestFormatTokensAndCostCapsPercentageAt100(t *testing.T) {
+	t.Parallel()
+
+	sty := styles.CharmtonePantera()
+
+	actual := ansi.Strip(formatTokensAndCost(&sty, 3240, 1000, 0, false))
+
+	require.Contains(t, actual, "100%")
+	require.NotContains(t, actual, "324%")
+}
+
 func TestPrettyPath(t *testing.T) {
 	t.Parallel()
 

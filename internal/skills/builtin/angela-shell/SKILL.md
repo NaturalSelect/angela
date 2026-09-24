@@ -6,7 +6,8 @@ description: Use when the user wants to understand how Angela executes shell com
 # Angela Shell
 
 Angela uses an embedded POSIX shell interpreter (`mvdan.cc/sh/v3`) for all
-command execution — the Bash tool, hooks, and MCP/LSP shell expansion all
+command execution — the Bash tool, hooks, and config shell expansion (MCP
+and LSP fields, provider credentials, permission patterns, and more) all
 run through it. This works the same on Linux, macOS, and Windows without
 requiring an external shell.
 
@@ -88,11 +89,25 @@ Differences to be aware of:
 
 ## Shell Expansion in Config
 
-`command`, `args`, and `env` fields in MCP and LSP config entries run through
-the same embedded shell for expansion. `$VAR` and `$(cmd)` both work. For
-`url`, `headers`, and OAuth credential fields, `$(cmd)` is restricted to
-system/global config layers (project config cannot run arbitrary commands for
-those fields).
+This isn't limited to MCP/LSP: `angela.json` also shell-expands provider
+`api_key`/`base_url`/`extra_headers`, permission rule `pattern`, and the
+top-level `env` map, so secrets and dynamic values never have to be
+written literally into the file. `$VAR`, `${VAR}`, `${VAR:-default}`,
+`${VAR:+alt}`, `${VAR:?message}`, and `$(cmd)` are all supported.
+
+`command`, `args`, and `env` fields in MCP and LSP entries always get the
+full form, `$(cmd)` included — those fields already run arbitrary programs,
+so restricting substitution there would add no safety. Everywhere else
+(MCP `url`/`headers`/OAuth fields, provider `api_key`/`base_url`/
+`extra_headers`, permission `pattern`), `$(cmd)` only runs from a
+system/global config layer; a project-level `angela.json` gets
+`$VAR`/`${VAR}` there instead, since it can be auto-loaded from an
+untrusted, freshly cloned repo. The top-level `env` map is the exception:
+it gets the full form at every layer.
+
+Hook `command` strings work differently — see the "Shell Expansion" section
+of the `angela-hooks` skill. For the authoritative per-field table, see the
+`angela-config` skill's `reference/discovery.md`.
 
 ## How Commands Are Judged by the Permission System
 
@@ -151,7 +166,10 @@ the command or add a more specific allow rule.
 within a session, but only if the same underlying shell process is reused.
 Confirm the commands run in the same session.
 
-**`$(cmd)` in MCP `url` or `headers` not expanding** — `$(cmd)` substitution
-in those fields is only available when the config is in a system-level or
-global config file, not a project-level `angela.json`. Move the entry to the
-global config or use `$VAR` (env var expansion) instead.
+**`$(cmd)` not expanding in a config field** — for restricted fields (MCP
+`url`/`headers`/OAuth fields, provider `api_key`/`base_url`/
+`extra_headers`, permission `pattern`), `$(cmd)` only runs from a
+system-level or global config file — a project-level `angela.json` leaves
+it untouched. Move the entry to the global config, or use `$VAR`/`${VAR}`
+instead. MCP/LSP `command`, `args`, and `env` (and the top-level `env`
+map) are exempt from this restriction and always support `$(cmd)`.

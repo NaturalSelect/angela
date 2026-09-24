@@ -149,9 +149,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	permissionMode := store.Overrides().PermissionMode
 
 	permissions := permission.NewPermissionService(store.WorkingDir(), permissionMode, policy, cfg.Options.SkillsPaths...)
-	if store.Overrides().NoYoloMerge {
-		permissions.SetYoloSkipMerge(false)
-	}
+	permissions.SetYoloSkipMerge(store.Overrides().YoloMerge)
 	if !store.Overrides().NoVSCodeDiff {
 		permissions.SetEditorReviewer(editorapproval.VSCodeMCP{
 			WorkingDir: store.WorkingDir(),

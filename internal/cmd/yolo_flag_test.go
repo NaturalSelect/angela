@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestYoloFlagAvailableOnRunCmd guards against --yolo and --no-yolo-merge
+// TestYoloFlagAvailableOnRunCmd guards against --yolo and --yolo-merge
 // being registered as local root flags (rootCmd.Flags) rather than
 // persistent ones. When local, `angela run --yolo` fails with "unknown
 // flag" because runCmd does not inherit root's local flags — and a
@@ -20,8 +20,8 @@ func TestYoloFlagAvailableOnRunCmd(t *testing.T) {
 	require.NotNil(t, flag, "the --yolo flag must be available on `angela run` (register it as a persistent flag on rootCmd)")
 	require.Equal(t, "bool", flag.Value.Type())
 
-	mergeFlag := runCmd.Flags().Lookup("no-yolo-merge")
-	require.NotNil(t, mergeFlag, "the --no-yolo-merge flag must be available on `angela run` (register it as a persistent flag on rootCmd)")
+	mergeFlag := runCmd.Flags().Lookup("yolo-merge")
+	require.NotNil(t, mergeFlag, "the --yolo-merge flag must be available on `angela run` (register it as a persistent flag on rootCmd)")
 	require.Equal(t, "bool", mergeFlag.Value.Type())
 }
 

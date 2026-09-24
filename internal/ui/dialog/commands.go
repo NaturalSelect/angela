@@ -621,7 +621,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands = append(commands, NewCommandItem(c.com.Styles, "toggle_transparent", transparentLabel, "", ActionToggleTransparentBackground{}))
 
 	// Add a runtime toggle for whether yolo mode skips the merge tool's
-	// approval prompt (see --no-yolo-merge).
+	// approval prompt (see --yolo-merge).
 	if c.com.Workspace.PermissionYoloSkipMerge() {
 		commands = append(commands, NewCommandItem(c.com.Styles, "disable_yolo_skip_merge", "Disable Yolo Skip Merge", "", ActionDisableYoloSkipMerge{}))
 	} else {

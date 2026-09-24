@@ -1553,10 +1553,10 @@ definitions:
           NoVSCodeDiff disables the VS Code MCP diff-review channel (from
           the --no-vscode-diff flag).
         type: boolean
-      no_yolo_merge:
+      yolo_merge:
         description: |-
-          NoYoloMerge disables the shortcut that lets yolo mode skip the
-          merge tool's approval prompt (from the --no-yolo-merge flag).
+          YoloMerge enables the shortcut that lets yolo mode skip the
+          merge tool's approval prompt (from the --yolo-merge flag).
         type: boolean
       path:
         type: string

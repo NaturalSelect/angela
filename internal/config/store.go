@@ -84,10 +84,10 @@ type RuntimeOverrides struct {
 	// enforcement even when the process is already running inside a
 	// container.
 	NoDockerSandbox bool
-	// NoYoloMerge disables the shortcut that lets yolo mode skip the
-	// merge tool's approval prompt (via the --no-yolo-merge flag), so
-	// merging a branch is always approved explicitly even in yolo mode.
-	NoYoloMerge bool
+	// YoloMerge enables the shortcut that lets yolo mode skip the
+	// merge tool's approval prompt (via the --yolo-merge flag), so
+	// merging a branch is auto-approved in yolo mode.
+	YoloMerge bool
 	// NoVSCodeDiff disables the VS Code MCP diff-review channel (via
 	// the --no-vscode-diff flag), even when a matching VS Code window
 	// is detected, so an edit-shaped prompt only ever opens in the

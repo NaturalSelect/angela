@@ -178,6 +178,15 @@ type Finish struct {
 	// tool execution time. 0 means unknown (older messages, cancellations,
 	// errors, or summary messages that never went through OnStepFinish).
 	GenDurationMs int64 `json:"gen_duration_ms,omitempty"`
+	// InputTokens is the step's uncached prompt token count. Zero means
+	// unknown.
+	InputTokens int64 `json:"input_tokens,omitempty"`
+	// CacheReadTokens is the step's prompt tokens served from cache.
+	// Zero means unknown or none.
+	CacheReadTokens int64 `json:"cache_read_tokens,omitempty"`
+	// CacheCreationTokens is the step's prompt tokens written to cache.
+	// Zero means unknown or none.
+	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
 }
 
 func (Finish) isPart() {}

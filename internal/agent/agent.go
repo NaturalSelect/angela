@@ -1110,6 +1110,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			// above, since usage is only known once fallbackStepUsage
 			// runs; see SetFinishUsage.
 			currentAssistant.SetFinishUsage(usage.OutputTokens, stepGenDuration)
+			if !estimated {
+				// Estimated usage (fallbackStepUsage) never carries real
+				// cache data, so recording it would falsely read as a 0%
+				// cache-hit step instead of "unknown".
+				currentAssistant.SetFinishCacheUsage(usage.InputTokens, usage.CacheReadTokens, usage.CacheCreationTokens)
+			}
 			a.updateSessionUsage(runModel, &updatedSession, usage, openrouterCost(stepResult.ProviderMetadata), estimated)
 			if stepGenDuration > 0 && usage.OutputTokens > 0 {
 				updatedSession.GenOutputTokens += usage.OutputTokens

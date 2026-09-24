@@ -227,8 +227,9 @@ func (m *UI) renderIdleStatus(width int) string {
 // percentage of the context window it fills, so the two numbers always
 // appear side by side instead of one depending on whether a turn is
 // in flight. The percentage is omitted until the context window size is
-// known. The tok/s rate and cache hit rate are both session-wide
-// averages appended when their underlying counters have data.
+// known. The cumulative input token count, the tok/s rate, and the
+// cache hit rate are all session-wide figures appended when their
+// underlying counters have data.
 func (m *UI) tokenUsageField() string {
 	tokens := m.session.PromptTokens + m.session.CompletionTokens
 	if tokens <= 0 {
@@ -239,6 +240,14 @@ func (m *UI) tokenUsageField() string {
 		if pct := m.contextPercent(active.CatwalkCfg.ContextWindow); pct != "" {
 			usage = pct + " " + usage
 		}
+	}
+	// Cumulative session input tokens (cache read + cache creation +
+	// uncached), the same total the cache hit rate below is a
+	// fraction of. Unlike the ⇣ figure above, which is the last
+	// step's prompt+completion, this is a running total across every
+	// step, so it only grows.
+	if inputTokens := m.session.CacheReadTokens + m.session.CacheCreationTokens + m.session.UncachedInputTokens; inputTokens > 0 {
+		usage += turnStatusSeparator + "in " + formatTokensCompact(inputTokens)
 	}
 	// The rate is a session-wide average (total output tokens over
 	// total generation time), not a live per-frame figure: it moves

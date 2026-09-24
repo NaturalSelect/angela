@@ -181,6 +181,37 @@ func TestTurnStatusOmitsTokensPerSecondWithoutQualifyingStep(t *testing.T) {
 	require.NotContains(t, out, "tok/s")
 }
 
+// The cumulative input token count is a session-wide running total
+// like tok/s and cache hit rate, so it must show up both while the
+// agent is busy and once it has gone idle.
+func TestTurnStatusShowsCumulativeInputTokensForSession(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.session.CacheReadTokens = 1000
+	m.session.CacheCreationTokens = 200
+	m.session.UncachedInputTokens = 300
+
+	busy := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, busy, "in 1.5k")
+
+	m.agentBusyCache.set(false)
+	idle := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, idle, "in 1.5k")
+}
+
+// With no cache-read, cache-creation, or uncached-input tokens
+// recorded yet, the cumulative input token field must be omitted
+// entirely rather than showing "in 0".
+func TestTurnStatusOmitsCumulativeInputTokensWithoutData(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+
+	out := ansi.Strip(m.renderTurnStatus(200))
+	require.NotContains(t, out, "in ")
+}
+
 // The cache hit rate figure is a session-wide average like tok/s, so it
 // must show up both while the agent is busy and once it has gone idle.
 func TestTurnStatusShowsCacheHitRateForSession(t *testing.T) {

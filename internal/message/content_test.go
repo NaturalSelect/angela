@@ -590,6 +590,30 @@ func TestMessage_SetFinishUsageNoFinishPartIsNoop(t *testing.T) {
 	require.Empty(t, m.Parts)
 }
 
+func TestMessage_SetFinishCacheUsage(t *testing.T) {
+	t.Parallel()
+
+	m := &Message{}
+	m.AddFinish(FinishReasonEndTurn, "", "")
+	m.SetFinishCacheUsage(100, 200, 300)
+
+	finish := m.FinishPart()
+	require.NotNil(t, finish)
+	require.Equal(t, int64(100), finish.InputTokens)
+	require.Equal(t, int64(200), finish.CacheReadTokens)
+	require.Equal(t, int64(300), finish.CacheCreationTokens)
+}
+
+func TestMessage_SetFinishCacheUsageNoFinishPartIsNoop(t *testing.T) {
+	t.Parallel()
+
+	// Calling before AddFinish must not panic and must leave no Finish part.
+	m := &Message{}
+	m.SetFinishCacheUsage(100, 200, 300)
+	require.Nil(t, m.FinishPart())
+	require.Empty(t, m.Parts)
+}
+
 func TestMessage_CloneIsIndependentOfOriginal(t *testing.T) {
 	t.Parallel()
 

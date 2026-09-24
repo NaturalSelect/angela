@@ -803,6 +803,15 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.appendTPSNotice(msg.dist, msg.ok, msg.avgTokens, msg.avgDurationMs); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case cacheComputedMsg:
+		// Drop a result for a session the user has already navigated
+		// away from while the fetch was in flight.
+		if msg.sessionID != m.currentSessionID() {
+			break
+		}
+		if cmd := m.appendCacheNotice(msg.dist, msg.ok, msg.readTokens, msg.creationTokens, msg.uncachedTokens); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case undoResultMsg:
 		if msg.result.PoppedText != "" {
 			if cmd := m.prependToEditor(msg.result.PoppedText); cmd != nil {
@@ -2388,6 +2397,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionShowTPS:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if cmd := m.showTPS(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case dialog.ActionShowCache:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if cmd := m.showCache(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	case dialog.ActionSuspend:

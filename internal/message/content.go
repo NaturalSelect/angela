@@ -142,6 +142,16 @@ type Finish struct {
 	// tool execution time. 0 means unknown (older messages, cancellations,
 	// errors, or summary messages that never went through OnStepFinish).
 	GenDurationMs int64 `json:"gen_duration_ms,omitempty"`
+	// InputTokens is the step's uncached prompt token count, recorded via
+	// SetFinishCacheUsage once usage is known. Zero means the count is
+	// unknown (older messages, or steps with only estimated usage).
+	InputTokens int64 `json:"input_tokens,omitempty"`
+	// CacheReadTokens is the step's prompt tokens served from cache,
+	// recorded via SetFinishCacheUsage. Zero means unknown or none.
+	CacheReadTokens int64 `json:"cache_read_tokens,omitempty"`
+	// CacheCreationTokens is the step's prompt tokens written to cache,
+	// recorded via SetFinishCacheUsage. Zero means unknown or none.
+	CacheCreationTokens int64 `json:"cache_creation_tokens,omitempty"`
 }
 
 func (Finish) isPart() {}
@@ -576,6 +586,25 @@ func (m *Message) SetFinishUsage(outputTokens int64, genDuration time.Duration) 
 		if c, ok := part.(Finish); ok {
 			c.OutputTokens = outputTokens
 			c.GenDurationMs = genDuration.Milliseconds()
+			m.Parts[i] = c
+			return
+		}
+	}
+}
+
+// SetFinishCacheUsage records the step's prompt token breakdown (plain,
+// cache read, cache creation) on its existing Finish part. It is a no-op
+// if the message has no Finish part yet (AddFinish must run first).
+//
+// NOTE: kept separate from SetFinishUsage because callers with only
+// estimated usage (no real cache data) must skip this without also
+// skipping the output token / duration recording.
+func (m *Message) SetFinishCacheUsage(inputTokens, cacheReadTokens, cacheCreationTokens int64) {
+	for i, part := range m.Parts {
+		if c, ok := part.(Finish); ok {
+			c.InputTokens = inputTokens
+			c.CacheReadTokens = cacheReadTokens
+			c.CacheCreationTokens = cacheCreationTokens
 			m.Parts[i] = c
 			return
 		}

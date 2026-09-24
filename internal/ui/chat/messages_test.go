@@ -258,6 +258,82 @@ func TestAssistantInfoItemRenderShowsTokensPerSecondUnderOneSecond(t *testing.T)
 	require.Contains(t, out, "10 tok/s")
 }
 
+// TestAssistantInfoItemRenderShowsCacheHitBadge covers a step whose
+// Finish part carries per-step cache usage: the footer must append a
+// "% cache" badge alongside tok/s.
+func TestAssistantInfoItemRenderShowsCacheHitBadge(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
+	start := time.Unix(1000, 0)
+	msg := &message.Message{
+		ID:        "m1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.Finish{
+				Reason: message.FinishReasonEndTurn, Time: 1005, GenDurationMs: 5000, OutputTokens: 100,
+				CacheReadTokens: 75, InputTokens: 25,
+			},
+		},
+	}
+
+	item := NewAssistantInfoItem(&sty, msg, cfg, start)
+
+	out := ansi.Strip(item.Render(80))
+	require.Contains(t, out, "20 tok/s")
+	require.Contains(t, out, "75% cache")
+}
+
+// TestAssistantInfoItemRenderShowsCacheHitBadgeWithoutTPS verifies the
+// cache badge appears even when the step's tok/s reading is
+// unavailable, since the two come from independent parts of Finish.
+func TestAssistantInfoItemRenderShowsCacheHitBadgeWithoutTPS(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
+	start := time.Unix(1000, 0)
+	msg := &message.Message{
+		ID:        "m1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1000, CacheReadTokens: 75, InputTokens: 25},
+		},
+	}
+
+	item := NewAssistantInfoItem(&sty, msg, cfg, start)
+
+	out := ansi.Strip(item.Render(80))
+	require.NotContains(t, out, "tok/s")
+	require.Contains(t, out, "75% cache")
+}
+
+// TestAssistantInfoItemRenderOmitsCacheHitBadgeWithoutCacheData covers
+// a step with no per-step cache usage recorded (e.g. an older
+// message, or a step whose usage was only estimated): no badge must
+// appear.
+func TestAssistantInfoItemRenderOmitsCacheHitBadgeWithoutCacheData(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+	cfg := &config.Config{Providers: csync.NewMap[string, config.ProviderConfig]()}
+	start := time.Unix(1000, 0)
+	msg := &message.Message{
+		ID:        "m1",
+		Role:      message.Assistant,
+		CreatedAt: 1000,
+		Parts: []message.ContentPart{
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 1005, GenDurationMs: 5000, OutputTokens: 100},
+		},
+	}
+
+	item := NewAssistantInfoItem(&sty, msg, cfg, start)
+
+	out := ansi.Strip(item.Render(80))
+	require.Contains(t, out, "20 tok/s")
+	require.NotContains(t, out, "cache")
+}
+
 // -----------------------------------------------------------------------------
 // ExtractMessageItems
 // -----------------------------------------------------------------------------

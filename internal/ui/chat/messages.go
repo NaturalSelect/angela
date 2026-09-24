@@ -350,7 +350,13 @@ func (a *AssistantInfoItem) renderContent(width int) string {
 	// turn-spanning "in %s" duration above, which still reflects
 	// wall-clock time since the last user message.
 	if tps, ok := common.StepTPS(a.message); ok {
-		durationText = fmt.Sprintf("in %s · %d tok/s", duration, tps)
+		durationText += fmt.Sprintf(" · %d tok/s", tps)
+	}
+	// The cache-hit badge comes from a different part of Finish than
+	// tok/s, so it must still appear on a step whose tok/s reading is
+	// unavailable (e.g. GenDurationMs unset).
+	if hitRate, ok := common.StepCacheHitRate(a.message); ok {
+		durationText += fmt.Sprintf(" · %.0f%% cache", hitRate)
 	}
 	infoMsg := a.sty.Messages.AssistantInfoDuration.Render(durationText)
 	icon := a.sty.Messages.AssistantInfoIcon.Render(styles.ModelIcon)

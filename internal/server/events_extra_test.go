@@ -157,7 +157,7 @@ func TestMessageToProto_AllContentPartTypes(t *testing.T) {
 		Parts: []message.ContentPart{
 			message.ReasoningContent{Thinking: "hmm", Signature: "sig", StartedAt: 1, FinishedAt: 2},
 			message.ToolCall{ID: "call-1", Name: "read", Input: `{"path":"a"}`, Finished: true},
-			message.Finish{Reason: message.FinishReasonEndTurn, Time: 42, Message: "done", Details: "ok", OutputTokens: 123, GenDurationMs: 4567},
+			message.Finish{Reason: message.FinishReasonEndTurn, Time: 42, Message: "done", Details: "ok", OutputTokens: 123, GenDurationMs: 4567, InputTokens: 89, CacheReadTokens: 66, CacheCreationTokens: 44},
 			message.ImageURLContent{URL: "https://example.com/x.png", Detail: "high"},
 			message.BinaryContent{Path: "/tmp/x.bin", MIMEType: "application/octet-stream", Data: []byte("data")},
 			message.ShellCommand{Command: "ls -la", Output: "total 0", ExitCode: 0},
@@ -189,6 +189,9 @@ func TestMessageToProto_AllContentPartTypes(t *testing.T) {
 	require.Equal(t, "ok", finish.Details)
 	require.Equal(t, int64(123), finish.OutputTokens)
 	require.Equal(t, int64(4567), finish.GenDurationMs)
+	require.Equal(t, int64(89), finish.InputTokens)
+	require.Equal(t, int64(66), finish.CacheReadTokens)
+	require.Equal(t, int64(44), finish.CacheCreationTokens)
 
 	imgURL, ok := got.Parts[3].(proto.ImageURLContent)
 	require.True(t, ok, "expected proto.ImageURLContent, got %T", got.Parts[3])

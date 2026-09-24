@@ -25,7 +25,7 @@ func TestMarshalParts_RoundTripsEveryConcreteType(t *testing.T) {
 		{name: "binary", part: BinaryContent{Path: "a.bin", MIMEType: "application/octet-stream", Data: []byte{1, 2, 3}}},
 		{name: "tool call", part: ToolCall{ID: "tc1", Name: "bash", Input: "{}", Finished: true}},
 		{name: "tool result", part: ToolResult{ToolCallID: "tc1", Name: "bash", Content: "ok"}},
-		{name: "finish", part: Finish{Reason: FinishReasonEndTurn, Time: 123, Message: "done"}},
+		{name: "finish", part: Finish{Reason: FinishReasonEndTurn, Time: 123, Message: "done", OutputTokens: 42, GenDurationMs: 1500, InputTokens: 100, CacheReadTokens: 200, CacheCreationTokens: 300}},
 		{name: "shell command", part: ShellCommand{Command: "ls", Output: "a.txt", ExitCode: 0}},
 	}
 

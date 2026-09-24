@@ -43,6 +43,19 @@ func TestRun_RecordsCacheStatsForSingleStep(t *testing.T) {
 		"the session's lifetime cache-creation total must pick up the step's usage")
 	require.EqualValues(t, 100, updated.UncachedInputTokens,
 		"the session's lifetime uncached-input total must pick up the step's usage")
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2, "user prompt and the single assistant reply")
+
+	finish := msgs[1].FinishPart()
+	require.NotNil(t, finish)
+	require.EqualValues(t, 100, finish.InputTokens,
+		"the step's own message must carry its uncached-input tokens")
+	require.EqualValues(t, 5000, finish.CacheReadTokens,
+		"the step's own message must carry its cache-read tokens")
+	require.EqualValues(t, 2000, finish.CacheCreationTokens,
+		"the step's own message must carry its cache-creation tokens")
 }
 
 // TestRun_AccumulatesCacheStatsAcrossStepsIncludingToolCalls verifies
@@ -91,4 +104,26 @@ func TestRun_AccumulatesCacheStatsAcrossStepsIncludingToolCalls(t *testing.T) {
 		"the session total must sum both steps' cache-creation tokens, including the tool-call step")
 	require.EqualValues(t, 350, updated.UncachedInputTokens,
 		"the session total must sum both steps' uncached-input tokens, including the tool-call step")
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 4, "user prompt, first step's reply with a tool call, its tool result, and the second step's reply")
+
+	firstFinish := msgs[1].FinishPart()
+	require.NotNil(t, firstFinish)
+	require.EqualValues(t, 200, firstFinish.InputTokens,
+		"the first step's own message must carry only its own uncached-input tokens, not the cumulative total")
+	require.EqualValues(t, 1000, firstFinish.CacheReadTokens,
+		"the first step's own message must carry only its own cache-read tokens, not the cumulative total")
+	require.EqualValues(t, 4000, firstFinish.CacheCreationTokens,
+		"the first step's own message must carry only its own cache-creation tokens, not the cumulative total")
+
+	secondFinish := msgs[3].FinishPart()
+	require.NotNil(t, secondFinish)
+	require.EqualValues(t, 150, secondFinish.InputTokens,
+		"the second step's own message must carry only its own uncached-input tokens, not the cumulative total")
+	require.EqualValues(t, 6000, secondFinish.CacheReadTokens,
+		"the second step's own message must carry only its own cache-read tokens, not the cumulative total")
+	require.EqualValues(t, 0, secondFinish.CacheCreationTokens,
+		"the second step's own message must carry only its own cache-creation tokens, not the cumulative total")
 }

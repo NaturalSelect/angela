@@ -105,6 +105,7 @@ func TestNewCommands_DefaultSystemCommands(t *testing.T) {
 	require.NotContains(t, ids, "session_details", "no session is open yet")
 	require.NotContains(t, ids, "show_todos", "no session is open yet")
 	require.NotContains(t, ids, "show_tps", "no session is open yet")
+	require.NotContains(t, ids, "show_cache", "no session is open yet")
 	require.NotContains(t, ids, "scroll_to_top", "no session is open yet")
 	require.NotContains(t, ids, "scroll_to_latest_user", "no session is open yet")
 }
@@ -125,6 +126,7 @@ func TestNewCommands_SessionGatedCommands(t *testing.T) {
 	require.Contains(t, ids, "toggle_compact")
 	require.Contains(t, ids, "show_todos")
 	require.Contains(t, ids, "show_tps")
+	require.Contains(t, ids, "show_cache")
 }
 
 // TestDefaultCommands_ActiveAgentGating pins which of the thinking
@@ -438,6 +440,20 @@ func TestCommands_HandleMsg_TypingTpsFiltersToShowTPS(t *testing.T) {
 	}
 
 	require.Contains(t, visibleCommandIDs(c), "show_tps")
+}
+
+// TestCommands_HandleMsg_TypingCacheFiltersToShowCache verifies the
+// "cache" alias makes the show_cache command reachable by typing
+// "/cache", the way a user would invoke it.
+func TestCommands_HandleMsg_TypingCacheFiltersToShowCache(t *testing.T) {
+	t.Parallel()
+
+	c := newTestCommands(t, nil, "sess-1", true, nil, nil, nil)
+	for _, r := range "cache" {
+		c.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	require.Contains(t, visibleCommandIDs(c), "show_cache")
 }
 
 // TestCommands_HandleMsg_TabCycling verifies tab is inert with only

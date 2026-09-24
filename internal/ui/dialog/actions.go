@@ -117,7 +117,10 @@ type (
 	ActionShowTodos         struct{}
 	// ActionShowTPS reports the current session's tokens/sec
 	// distribution across its qualifying assistant steps.
-	ActionShowTPS                 struct{}
+	ActionShowTPS struct{}
+	// ActionShowCache reports the current session's cache-hit-rate
+	// distribution across its qualifying assistant steps.
+	ActionShowCache               struct{}
 	ActionSuspend                 struct{}
 	ActionToggleThinking          struct{}
 	ActionExternalEditor          struct{}

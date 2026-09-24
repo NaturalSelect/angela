@@ -84,8 +84,8 @@ func TestPermissionService_YoloSkipsMergeByDefault(t *testing.T) {
 	assert.True(t, decision.Allowed(), "yolo mode should grant a merge without prompting by default")
 }
 
-// TestPermissionService_YoloSkipMergeDisabled pins the --no-yolo-merge
-// behavior: once YoloSkipMerge is turned off, a merge reaches the
+// TestPermissionService_YoloSkipMergeDisabled pins the default behavior
+// (no --yolo-merge): YoloSkipMerge is off, so a merge reaches the
 // prompt even in yolo mode, while every other action keeps sailing
 // through untouched.
 func TestPermissionService_YoloSkipMergeDisabled(t *testing.T) {

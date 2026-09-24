@@ -91,7 +91,7 @@ Daemon mode has some restrictions that don't apply to local mode:
 | `-D, --data-dir <dir>` | Override the data directory (default `.angela`). |
 | `-y, --yolo` | Auto-approve every prompt. |
 | `--auto-accept-edits` | Auto-approve file edits only. Mutually exclusive with `--yolo`. |
-| `--no-yolo-merge` | Even under `--yolo`, still prompt before merging a branch's result. |
+| `--yolo-merge` | Under `--yolo`, also auto-approve branch merges (by default, merge still prompts). |
 | `--subagent-branches` | Allow sub-agents (not just the top-level session) to dispatch branch agents. No effect on `angela run`. |
 
 ## Recipes

@@ -446,7 +446,7 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	mode, _ := permission.ParsePermissionMode(args.PermissionMode)
 	cfg.Overrides().PermissionMode = mode
 	cfg.Overrides().EnabledChannels = args.Channels
-	cfg.Overrides().NoYoloMerge = args.NoYoloMerge
+	cfg.Overrides().YoloMerge = args.YoloMerge
 	cfg.Overrides().NoVSCodeDiff = args.NoVSCodeDiff
 	cfg.Overrides().SubagentBranches = args.SubagentBranches
 	// Overrides().Env lets app.New see the connecting client's
@@ -1120,7 +1120,7 @@ func workspaceToProto(ws *Workspace) proto.Workspace {
 		ID:               ws.ID,
 		Path:             ws.Path,
 		PermissionMode:   ws.Cfg.Overrides().PermissionMode.String(),
-		NoYoloMerge:      ws.Cfg.Overrides().NoYoloMerge,
+		YoloMerge:        ws.Cfg.Overrides().YoloMerge,
 		NoVSCodeDiff:     ws.Cfg.Overrides().NoVSCodeDiff,
 		SubagentBranches: ws.Cfg.Overrides().SubagentBranches,
 		Channels:         ws.Cfg.Overrides().EnabledChannels,
@@ -1151,7 +1151,7 @@ func logFirstWinsMismatch(existing *Workspace, args proto.Workspace) {
 	requestedMode, _ := permission.ParsePermissionMode(args.PermissionMode)
 	existingChannels := existing.Cfg.Overrides().EnabledChannels
 	if existingMode == requestedMode &&
-		existing.Cfg.Overrides().NoYoloMerge == args.NoYoloMerge &&
+		existing.Cfg.Overrides().YoloMerge == args.YoloMerge &&
 		existing.Cfg.Overrides().NoVSCodeDiff == args.NoVSCodeDiff &&
 		existing.Cfg.Overrides().SubagentBranches == args.SubagentBranches &&
 		existingCfg.Options.Debug == args.Debug &&

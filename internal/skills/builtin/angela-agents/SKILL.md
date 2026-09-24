@@ -164,7 +164,7 @@ everything else.
    task the coder gave it.
 2. **Talk** — you drive it; tools, permissions, and `/` commands all work.
 3. **Merge** — the branch calls the `merge` tool with a summary. Always asks
-   for approval (even in yolo mode unless `--no-yolo-merge` was passed).
+   for approval (even in yolo mode unless `--yolo-merge` was passed).
    Approving ends the branch and returns the summary to the coder. Denying
    keeps the branch open so you can redirect it.
 4. **Abandon** — `/abort` drops the branch without merging; the coder is told

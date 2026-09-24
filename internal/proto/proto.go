@@ -17,9 +17,9 @@ type Workspace struct {
 	// PermissionMode is the wire representation of permission.PermissionMode
 	// ("manual", "auto_accept_edits", or "yolo").
 	PermissionMode string `json:"permission_mode,omitempty"`
-	// NoYoloMerge disables the shortcut that lets yolo mode skip the
-	// merge tool's approval prompt (from the --no-yolo-merge flag).
-	NoYoloMerge bool `json:"no_yolo_merge,omitempty"`
+	// YoloMerge enables the shortcut that lets yolo mode skip the
+	// merge tool's approval prompt (from the --yolo-merge flag).
+	YoloMerge bool `json:"yolo_merge,omitempty"`
 	// NoVSCodeDiff disables the VS Code MCP diff-review channel (from
 	// the --no-vscode-diff flag).
 	NoVSCodeDiff bool `json:"no_vscode_diff,omitempty"`

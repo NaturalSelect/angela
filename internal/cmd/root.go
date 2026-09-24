@@ -67,7 +67,7 @@ func init() {
 	// headless run cannot answer, so --yolo must reach every command
 	// that can end up gating a permission request.
 	rootCmd.PersistentFlags().BoolP("yolo", "y", false, "Automatically accept all permissions (dangerous mode)")
-	rootCmd.PersistentFlags().Bool("no-yolo-merge", false, "Still require approval for the merge tool even in yolo mode")
+	rootCmd.PersistentFlags().Bool("yolo-merge", false, "Auto-approve the merge tool in yolo mode (by default, merge still requires approval)")
 	rootCmd.PersistentFlags().Bool("auto-accept-edits", false, "Automatically accept file edits but still ask about everything else (same as cycling Shift+Tab once)")
 	rootCmd.MarkFlagsMutuallyExclusive("yolo", "auto-accept-edits")
 	rootCmd.Flags().Bool("no-vscode-diff", false, "Do not open edit diffs in VS Code even when running inside its terminal")
@@ -113,8 +113,8 @@ angela --debug --cwd /path/to/project
 # Run in yolo mode (auto-accept all permissions; use with care)
 angela --yolo
 
-# Run in yolo mode but still ask before merging a branch
-angela --yolo --no-yolo-merge
+# Run in yolo mode and also auto-approve branch merges
+angela --yolo --yolo-merge
 
 # Auto-accept file edits but still ask about commands, network, etc.
 angela --auto-accept-edits
@@ -378,7 +378,7 @@ func permissionModeFromFlags(cmd *cobra.Command) permission.PermissionMode {
 // AppWorkspace.
 func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
 	debug, _ := cmd.Flags().GetBool("debug")
-	noYoloMerge, _ := cmd.Flags().GetBool("no-yolo-merge")
+	yoloMerge, _ := cmd.Flags().GetBool("yolo-merge")
 	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
 	subagentBranches, _ := cmd.Flags().GetBool("subagent-branches")
 	channels, _ := cmd.Flags().GetStringSlice("channels")
@@ -400,7 +400,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	store.Overrides().PermissionMode = permissionModeFromFlags(cmd)
 	store.Overrides().EnabledChannels = channels
 	store.Overrides().NoDockerSandbox = noDockerSandbox
-	store.Overrides().NoYoloMerge = noYoloMerge
+	store.Overrides().YoloMerge = yoloMerge
 	store.Overrides().NoVSCodeDiff = noVSCodeDiff
 	store.Overrides().SubagentBranches = subagentBranches
 
@@ -552,7 +552,7 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 	}
 
 	debug, _ := cmd.Flags().GetBool("debug")
-	noYoloMerge, _ := cmd.Flags().GetBool("no-yolo-merge")
+	yoloMerge, _ := cmd.Flags().GetBool("yolo-merge")
 	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
 	subagentBranches, _ := cmd.Flags().GetBool("subagent-branches")
 	mode := permissionModeFromFlags(cmd)
@@ -574,7 +574,7 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 		DataDir:          dataDir,
 		Debug:            debug,
 		PermissionMode:   mode.String(),
-		NoYoloMerge:      noYoloMerge,
+		YoloMerge:        yoloMerge,
 		NoVSCodeDiff:     noVSCodeDiff,
 		SubagentBranches: subagentBranches,
 		Channels:         channels,

@@ -134,7 +134,7 @@ Cycle through modes in the TUI with **Shift+Tab**:
 Start with a flag:
 ```sh
 angela --yolo                    # accept everything
-angela --yolo --no-yolo-merge    # yolo, but still ask before merging branches
+angela --yolo --yolo-merge       # yolo, and also auto-approve branch merges
 angela --auto-accept-edits       # auto-accept edits only
 ```
 

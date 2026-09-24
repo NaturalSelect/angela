@@ -1051,7 +1051,7 @@ func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int
 	// tool. A hook must run first so its allow decision is already on the
 	// context when the gate looks for one, and the gate must run before
 	// the tool so a tool cannot forget to ask.
-	filteredTools = wrapToolsWithPermissions(filteredTools, c.permissions, c.cfg.WorkingDir())
+	filteredTools = wrapToolsWithPermissions(filteredTools, c.permissions, c.cfg.WorkingDir(), agent.AllowYoloMerge)
 
 	// Every tool call runs through the user's PreToolUse hooks, including
 	// the ones a sub-agent makes. A delegated `bash` is still a bash

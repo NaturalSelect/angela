@@ -153,4 +153,36 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 		require.Equal(t, &AllowedAgentSet{Kind: ToolSetAll}, cfg.AgentConfigs["plan"].AllowedAgents,
 			"the high-priority layer must be able to widen back to unrestricted")
 	})
+
+	t.Run("allow_yolo_merge overrides across layers", func(t *testing.T) {
+		t.Parallel()
+		paths := writeLayers(t,
+			`{"agents": {"coder": {"allow_yolo_merge": true}}}`,
+			`{"agents": {"coder": {"allow_yolo_merge": false}}}`,
+		)
+
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
+		require.NoError(t, err)
+
+		coder := cfg.AgentConfigs["coder"]
+		require.NotNil(t, coder.AllowYoloMerge)
+		require.False(t, *coder.AllowYoloMerge,
+			"the high-priority layer's allow_yolo_merge must win")
+	})
+
+	t.Run("allow_yolo_merge unset preserves lower layer", func(t *testing.T) {
+		t.Parallel()
+		paths := writeLayers(t,
+			`{"agents": {"coder": {"allow_yolo_merge": false}}}`,
+			`{"agents": {"coder": {"name": "custom-coder"}}}`,
+		)
+
+		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
+		require.NoError(t, err)
+
+		coder := cfg.AgentConfigs["coder"]
+		require.NotNil(t, coder.AllowYoloMerge)
+		require.False(t, *coder.AllowYoloMerge,
+			"when the high layer omits allow_yolo_merge, the low layer's value must survive")
+	})
 }

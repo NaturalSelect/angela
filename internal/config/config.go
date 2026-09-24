@@ -875,12 +875,24 @@ type Agent struct {
 	// does not resolve to a compact-mode agent all fall back to the
 	// built-in "compact" agent.
 	CompactAgent string `json:"compact_agent,omitempty" jsonschema:"description=ID of the compact-mode agent used to summarize this agent's sessions; unset or invalid falls back to the built-in compact agent"`
+
+	// AllowYoloMerge controls whether yolo mode may auto-approve the
+	// merge tool for this agent. Nil and true both allow it (the
+	// workspace-wide --yolo-merge flag still has to be on); false
+	// means merge always prompts regardless of yolo state.
+	AllowYoloMerge *bool `json:"allow_yolo_merge,omitempty" jsonschema:"description=Whether yolo mode may auto-approve merges for this agent; default true"`
 }
 
 // IsHidden reports whether the agent should stay out of dispatch lists
 // and UI completion. Unset means visible.
 func (a Agent) IsHidden() bool {
 	return a.Hidden != nil && *a.Hidden
+}
+
+// YoloMergeAllowed reports whether yolo mode may auto-approve the
+// merge tool for this agent. Nil and true both allow it.
+func (a Agent) YoloMergeAllowed() bool {
+	return a.AllowYoloMerge == nil || *a.AllowYoloMerge
 }
 
 type Tools struct {
@@ -1510,6 +1522,9 @@ func mergeAgent(base, override Agent) Agent {
 	}
 	if override.MaxTokens != nil {
 		base.MaxTokens = override.MaxTokens
+	}
+	if override.AllowYoloMerge != nil {
+		base.AllowYoloMerge = override.AllowYoloMerge
 	}
 	return base
 }

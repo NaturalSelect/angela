@@ -168,7 +168,7 @@ func TestMergeToolDeniedNeverRuns(t *testing.T) {
 	c := mergeCoordinator(t)
 	done := c.branches.Register("s1", "parent-1")
 	c.proposals.Set("s1", "found the leak")
-	gated := newPermissionedTool(c.mergeTool(), svc, dir)
+	gated := newPermissionedTool(c.mergeTool(), svc, dir, nil)
 
 	events := svc.Subscribe(t.Context())
 	result := make(chan fantasy.ToolResponse, 1)
@@ -205,7 +205,7 @@ func TestMergeToolRetriesAfterDenial(t *testing.T) {
 	c := mergeCoordinator(t)
 	done := c.branches.Register("s1", "parent-1")
 	c.proposals.Set("s1", "ship the first try")
-	gated := newPermissionedTool(c.mergeTool(), svc, dir)
+	gated := newPermissionedTool(c.mergeTool(), svc, dir, nil)
 	events := svc.Subscribe(t.Context())
 
 	run := func(approve bool) fantasy.ToolResponse {
@@ -253,7 +253,7 @@ func TestProposalToolsNeverPrompt(t *testing.T) {
 	store := tools.NewProposalStore()
 	events := svc.Subscribe(t.Context())
 
-	write := newPermissionedTool(tools.NewProposalWriteTool(store), svc, dir)
+	write := newPermissionedTool(tools.NewProposalWriteTool(store), svc, dir, nil)
 	resp, err := write.Run(sessionCtx(t.Context()), fantasy.ToolCall{
 		ID: "call-w", Name: toolnames.ProposalWrite,
 		Input: `{"content":"first draft"}`,
@@ -261,7 +261,7 @@ func TestProposalToolsNeverPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
 
-	edit := newPermissionedTool(tools.NewProposalEditTool(store), svc, dir)
+	edit := newPermissionedTool(tools.NewProposalEditTool(store), svc, dir, nil)
 	resp, err = edit.Run(sessionCtx(t.Context()), fantasy.ToolCall{
 		ID: "call-e", Name: toolnames.ProposalEdit,
 		Input: `{"old_string":"first","new_string":"second"}`,
@@ -269,7 +269,7 @@ func TestProposalToolsNeverPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, resp.IsError)
 
-	read := newPermissionedTool(tools.NewProposalReadTool(store), svc, dir)
+	read := newPermissionedTool(tools.NewProposalReadTool(store), svc, dir, nil)
 	resp, err = read.Run(sessionCtx(t.Context()), fantasy.ToolCall{
 		ID: "call-r", Name: toolnames.ProposalRead, Input: `{}`,
 	})

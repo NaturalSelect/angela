@@ -466,6 +466,11 @@ func TestDiffPreview_ImplementedByEditShapedParams(t *testing.T) {
 			params:       MergePermissionsParams{Name: ProposalDocumentName, OldContent: "", NewContent: "proposed"},
 			wantFilePath: ProposalDocumentName, wantOld: "", wantNew: "proposed",
 		},
+		{
+			name:         "lsp_replace_symbol",
+			params:       ReplaceSymbolPermissionsParams{FilePath: "/work/d.go", OldContent: "old4", NewContent: "new4"},
+			wantFilePath: "/work/d.go", wantOld: "old4", wantNew: "new4",
+		},
 	}
 
 	for _, tc := range cases {

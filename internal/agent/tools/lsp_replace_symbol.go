@@ -44,6 +44,12 @@ type ReplaceSymbolPermissionsParams struct {
 	NewContent string `json:"new_content"`
 }
 
+// DiffPreview lets the permission package offer this replacement to an
+// external code editor for review.
+func (p ReplaceSymbolPermissionsParams) DiffPreview() (filePath, oldContent, newContent string) {
+	return p.FilePath, p.OldContent, p.NewContent
+}
+
 type replaceSymbolTool struct {
 	fantasy.AgentTool
 

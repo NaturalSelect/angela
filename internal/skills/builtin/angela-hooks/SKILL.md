@@ -53,6 +53,17 @@ invoking the interpreter: `node ./hooks/h.js`, `python3 ./hooks/h.py`,
 `./hooks/h.sh`, inline `echo '…'`, etc. The rest of this skill shows bash, but
 the input/output contract is identical regardless of language.
 
+## Shell Expansion
+
+Unlike MCP/LSP `command`/`args`/`env`, which Angela's own resolver expands
+once at config-load time (see the `angela-shell` skill), a hook's `command`
+string is not pre-resolved — it's executed directly by the embedded shell
+each time the hook fires, exactly like running a script by hand. `$VAR`,
+`$(cmd)`, pipes, and redirects all work with plain shell syntax; there's no
+need for the resolver-specific `${VAR:?message}` form. The command also
+sees every `ANGELA_*` variable listed under Input below, plus the rest of
+the process environment.
+
 ## Input
 
 **Environment variables:**

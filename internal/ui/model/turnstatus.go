@@ -224,30 +224,38 @@ func (m *UI) renderIdleStatus(width int) string {
 }
 
 // tokenUsageField formats the running token count together with the
-// percentage of the context window it fills, so the two numbers always
-// appear side by side instead of one depending on whether a turn is
-// in flight. The percentage is omitted until the context window size is
-// known. The cumulative input token count, the tok/s rate, and the
-// cache hit rate are all session-wide figures appended when their
-// underlying counters have data.
+// context window it fills, so the reader always sees both the current
+// figure and the ceiling it is measured against instead of a lone
+// percentage that hides the window size. The window size and percentage
+// are omitted until the context window size is known. The cumulative
+// input and output token counts, the tok/s rate, and the cache hit rate
+// are all session-wide figures appended when their underlying counters
+// have data.
 func (m *UI) tokenUsageField() string {
 	tokens := m.session.PromptTokens + m.session.CompletionTokens
 	if tokens <= 0 {
 		return ""
 	}
-	usage := "⇣" + formatTokensCompact(tokens)
+	usage := "▣" + formatTokensCompact(tokens)
 	if active := m.activeAgent(); active != nil {
-		if pct := m.contextPercent(active.CatwalkCfg.ContextWindow); pct != "" {
-			usage = pct + " " + usage
+		contextWindow := active.CatwalkCfg.ContextWindow
+		if pct := m.contextPercent(contextWindow); pct != "" {
+			usage = pct + " " + usage + "/" + formatTokensCompact(contextWindow)
 		}
 	}
 	// Cumulative session input tokens (cache read + cache creation +
 	// uncached), the same total the cache hit rate below is a
-	// fraction of. Unlike the ⇣ figure above, which is the last
+	// fraction of. Unlike the ▣ figure above, which is the last
 	// step's prompt+completion, this is a running total across every
 	// step, so it only grows.
 	if inputTokens := m.session.CacheReadTokens + m.session.CacheCreationTokens + m.session.UncachedInputTokens; inputTokens > 0 {
 		usage += turnStatusSeparator + "in " + formatTokensCompact(inputTokens)
+	}
+	// Cumulative session output tokens: the same running total that
+	// tok/s below derives a rate from, shown here as a raw count
+	// alongside "in" for the same reason that count is shown above.
+	if m.session.GenOutputTokens > 0 {
+		usage += turnStatusSeparator + "out " + formatTokensCompact(m.session.GenOutputTokens)
 	}
 	// The rate is a session-wide average (total output tokens over
 	// total generation time), not a live per-frame figure: it moves
@@ -266,12 +274,17 @@ func (m *UI) tokenUsageField() string {
 	return usage
 }
 
-// contextPercent formats how much of the context window the session fills.
+// contextPercent formats how much of the context window the session fills,
+// capped at 100% since an estimated usage figure (or a context window that
+// shrank after a model switch) can otherwise push the ratio past it.
 func (m *UI) contextPercent(contextWindow int64) string {
 	if contextWindow <= 0 {
 		return ""
 	}
 	used := float64(m.session.CompletionTokens+m.session.PromptTokens) / float64(contextWindow) * 100
+	if used > 100 {
+		used = 100
+	}
 	pct := fmt.Sprintf("%d%%", int(used))
 	if m.session.EstimatedUsage {
 		pct = "~" + pct

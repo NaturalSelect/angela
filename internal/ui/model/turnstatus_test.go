@@ -88,7 +88,10 @@ func TestTurnStatusHintTracksCancelState(t *testing.T) {
 
 // Token usage and context-window usage are two views of the same number;
 // showing one without the other left the reader guessing what the visible
-// one meant, so both turn states must carry them together.
+// one meant, so both turn states must carry them together. The window
+// size itself must also be visible, not just a derived percentage, so a
+// reader never has to guess the ceiling a given percentage is measured
+// against.
 func TestTurnStatusShowsTokensAndContextTogether(t *testing.T) {
 	t.Parallel()
 
@@ -102,12 +105,12 @@ func TestTurnStatusShowsTokensAndContextTogether(t *testing.T) {
 
 	busy := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, busy, "32%", "busy status must show the context percentage")
-	require.Contains(t, busy, "3.2k", "busy status must show the raw token count")
+	require.Contains(t, busy, "3.2k/10.0k", "busy status must show the current tokens over the window size")
 
 	m.agentBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "32%", "idle status must show the context percentage")
-	require.Contains(t, idle, "3.2k", "idle status must show the raw token count")
+	require.Contains(t, idle, "3.2k/10.0k", "idle status must show the current tokens over the window size")
 }
 
 // Without a known context window there is nothing to take a percentage of,
@@ -125,6 +128,60 @@ func TestTurnStatusTokenUsageWithoutContextWindow(t *testing.T) {
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "3.2k")
 	require.NotContains(t, idle, "%")
+}
+
+// A usage figure that exceeds the context window — from an overestimate,
+// or a context window that shrank after a model switch — must still read
+// as "100%", not spill past it into a number with no meaning. The raw
+// current/window figures next to it are left uncapped, since they are
+// what makes the overshoot legible in the first place.
+func TestTurnStatusCapsContextPercentAt100(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.agentReady = true
+	m.agentActiveKnown = true
+	m.agentActiveSession = m.currentSessionID()
+	m.agentActive = workspace.ActiveAgent{
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000}},
+	}
+
+	busy := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, busy, "100%")
+	require.NotContains(t, busy, "324%")
+	require.Contains(t, busy, "3.2k/1.0k", "the raw figures must still show the true overshoot")
+
+	m.agentBusyCache.set(false)
+	idle := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, idle, "100%")
+}
+
+// TestTurnStatusNeverExceedsWidth exercises busyStatusUI, which never sets
+// an active agent, so it never renders the percentage/fraction branch at
+// all. An over-100% session pushes that branch to its longest form (e.g.
+// "100% ▣32.4k/1.0k"), so the fixed-width layout needs its own sweep to
+// confirm the extra length never corrupts the frame.
+func TestTurnStatusNeverExceedsWidthWhenOverContextWindow(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.agentReady = true
+	m.agentActiveKnown = true
+	m.agentActiveSession = m.currentSessionID()
+	m.agentActive = workspace.ActiveAgent{
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000}},
+	}
+
+	for width := 1; width <= 200; width++ {
+		require.LessOrEqual(t, ansi.StringWidth(m.renderTurnStatus(width)), width,
+			"busy status overflows at width %d", width)
+	}
+
+	m.agentBusyCache.set(false)
+	for width := 1; width <= 200; width++ {
+		require.LessOrEqual(t, ansi.StringWidth(m.renderTurnStatus(width)), width,
+			"idle status overflows at width %d", width)
+	}
 }
 
 // The tok/s figure is a session-wide average, so it must show up both
@@ -210,6 +267,34 @@ func TestTurnStatusOmitsCumulativeInputTokensWithoutData(t *testing.T) {
 
 	out := ansi.Strip(m.renderTurnStatus(200))
 	require.NotContains(t, out, "in ")
+}
+
+// The cumulative output token count is a session-wide running total
+// like the cumulative input count, so it must show up both while the
+// agent is busy and once it has gone idle.
+func TestTurnStatusShowsCumulativeOutputTokensForSession(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.session.GenOutputTokens = 1500
+
+	busy := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, busy, "out 1.5k")
+
+	m.agentBusyCache.set(false)
+	idle := ansi.Strip(m.renderTurnStatus(200))
+	require.Contains(t, idle, "out 1.5k")
+}
+
+// With no output tokens recorded yet, the cumulative output token
+// field must be omitted entirely rather than showing "out 0".
+func TestTurnStatusOmitsCumulativeOutputTokensWithoutData(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+
+	out := ansi.Strip(m.renderTurnStatus(200))
+	require.NotContains(t, out, "out ")
 }
 
 // The cache hit rate figure is a session-wide average like tok/s, so it

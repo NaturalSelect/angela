@@ -54,5 +54,6 @@ These are always available without user configuration.
 | `angela-sessions`    | `builtin/angela-sessions/`     | Session CLI, headless mode, client-server daemon mode |
 | `angela-setup`       | `builtin/angela-setup/`        | Interactive new-user onboarding and setup guide   |
 | `angela-shell`       | `builtin/angela-shell/`        | Embedded POSIX shell semantics, background jobs, permission judgment |
-| `angela-skills`      | `builtin/angela-skills/`       | Authoring and discovering skills, frontmatter fields, precedence |
-| `jq`                 | `builtin/jq/`                  | jq JSON processor usage guide                     |
+| `angela-skills`           | `builtin/angela-skills/`            | Authoring and discovering skills, frontmatter fields, precedence        |
+| `builtin-write-unit-tests` | `builtin/builtin-write-unit-tests/` | General-purpose guide for writing unit and E2E tests in any project     |
+| `jq`                       | `builtin/jq/`                       | jq JSON processor usage guide                                           |

@@ -118,10 +118,10 @@ func TestBackendPermission_YoloSkipMerge(t *testing.T) {
 
 	enabled, err := b.GetYoloSkipMerge(ws.ID)
 	require.NoError(t, err)
-	require.True(t, enabled, "a fresh workspace defaults to skipping merge approval in yolo mode")
+	require.False(t, enabled, "without --yolo-merge a fresh workspace still asks before merging in yolo mode")
 
-	require.NoError(t, b.SetYoloSkipMerge(ws.ID, false))
+	require.NoError(t, b.SetYoloSkipMerge(ws.ID, true))
 	enabled, err = b.GetYoloSkipMerge(ws.ID)
 	require.NoError(t, err)
-	require.False(t, enabled)
+	require.True(t, enabled)
 }

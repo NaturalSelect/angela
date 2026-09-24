@@ -30,7 +30,7 @@ func runGated(t *testing.T, svc permission.Service, dir string, call fantasy.Too
 	t.Helper()
 
 	inner, _ := newFakeTool(t, call.Name, fantasy.NewTextResponse("ran"))
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 
 	events := svc.Subscribe(t.Context())
 	done := make(chan fantasy.ToolResponse, 1)
@@ -104,7 +104,7 @@ func TestPermissionedTool_SafeCommandsRunSilently(t *testing.T) {
 			svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
 			inner, rec := newFakeTool(t, toolnames.Bash, fantasy.NewTextResponse("ran"))
-			gated := newPermissionedTool(inner, svc, dir)
+			gated := newPermissionedTool(inner, svc, dir, nil)
 
 			resp, err := gated.Run(sessionCtx(t.Context()), bashCall(t, command))
 			require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestPermissionedTool_UnknownToolIsDenied(t *testing.T) {
 	dir := t.TempDir()
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 	inner, rec := newFakeTool(t, "brand_new_tool", fantasy.NewTextResponse("ran"))
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 
 	resp, err := gated.Run(sessionCtx(t.Context()), fantasy.ToolCall{
 		ID: "c1", Name: "brand_new_tool", Input: "{}",
@@ -147,7 +147,7 @@ func TestPermissionedTool_DenyOutcomesDiffer(t *testing.T) {
 	svc := permission.NewPermissionService(dir, permission.ModeManual, policy)
 
 	inner, _ := newFakeTool(t, toolnames.Bash, fantasy.NewTextResponse("ran"))
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 
 	byPolicy, err := gated.Run(sessionCtx(t.Context()), bashCall(t, "curl http://evil"))
 	require.NoError(t, err)
@@ -171,7 +171,7 @@ func TestPermissionedTool_DenyReasonReachesToolResponse(t *testing.T) {
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
 	inner, _ := newFakeTool(t, toolnames.Bash, fantasy.NewTextResponse("ran"))
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 
 	events := svc.Subscribe(t.Context())
 	done := make(chan fantasy.ToolResponse, 1)
@@ -218,7 +218,7 @@ func TestPermissionedTool_PolicyDenyBeatsSkip(t *testing.T) {
 	require.NoError(t, err)
 
 	inner, rec := newFakeTool(t, toolnames.Write, fantasy.NewTextResponse("wrote"))
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 
 	resp, err := gated.Run(sessionCtx(t.Context()), fantasy.ToolCall{
 		ID: "c1", Name: toolnames.Write, Input: string(input),
@@ -238,7 +238,7 @@ func TestPermissionedTool_HookAllowReachesTheGate(t *testing.T) {
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
 
 	inner, rec := newFakeTool(t, toolnames.Bash, fantasy.NewTextResponse("ran"))
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 	hooked := newHookedTool(gated, newRunner(t, `echo '{"decision":"allow"}'`))
 
 	resp, err := hooked.Run(sessionCtx(t.Context()), bashCall(t, "touch out.txt"))
@@ -293,7 +293,7 @@ func TestPermissionedTool_SettledPlanSkipsTheGate(t *testing.T) {
 	inner := newPlanningTool(t, toolnames.Edit, tools.Plan{Response: &settled})
 
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 
 	events := svc.Subscribe(t.Context())
 	resp, err := gated.Run(sessionCtx(t.Context()), editCall(t, filepath.Join(dir, "a.go")))
@@ -326,7 +326,7 @@ func TestPermissionedTool_PolicyDenyPrecedesPlanning(t *testing.T) {
 	}})
 
 	svc := permission.NewPermissionService(dir, permission.ModeManual, policy)
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 
 	resp, err := gated.Run(sessionCtx(t.Context()), editCall(t, filepath.Join(dir, ".env")))
 	require.NoError(t, err)
@@ -359,7 +359,7 @@ func TestPermissionedTool_RefusalKeepsPreviewMetadata(t *testing.T) {
 	})
 
 	svc := permission.NewPermissionService(dir, permission.ModeManual, nil)
-	gated := newPermissionedTool(inner, svc, dir)
+	gated := newPermissionedTool(inner, svc, dir, nil)
 
 	events := svc.Subscribe(t.Context())
 	done := make(chan fantasy.ToolResponse, 1)

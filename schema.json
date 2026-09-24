@@ -87,6 +87,10 @@
         "compact_agent": {
           "type": "string",
           "description": "ID of the compact-mode agent used to summarize this agent's sessions; unset or invalid falls back to the built-in compact agent"
+        },
+        "allow_yolo_merge": {
+          "type": "boolean",
+          "description": "Whether yolo mode may auto-approve merges for this agent; default true"
         }
       },
       "additionalProperties": false,

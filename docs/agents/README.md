@@ -187,6 +187,9 @@ prompt follows and decides everything else.
    - Under yolo mode (`--yolo`, or permissions set to skip requests), merge
      still asks for approval by default. Pass `--yolo-merge` at startup or
      use the "Enable Yolo Skip Merge" command to auto-approve merges too.
+     Individual agents can also opt out with `"allow_yolo_merge": false` in
+     their config, which forces merge to prompt even when `--yolo-merge` is
+     on.
 4. **Abandon.** If the branch led nowhere, drop it: the coder is told the
    branch was abandoned and continues without a summary. That is a normal
    outcome, not an error.

@@ -109,6 +109,101 @@ func TestPermissionService_YoloSkipMergeDisabled(t *testing.T) {
 	assert.True(t, wait().Allowed(), "the user's approval must still let the merge through")
 }
 
+// TestPermissionService_AllowYoloMerge_NilAllowsMerge pins the default:
+// when the per-agent AllowYoloMerge is nil, the workspace-wide
+// YoloSkipMerge flag is the only gate.
+func TestPermissionService_AllowYoloMerge_NilAllowsMerge(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/tmp", ModeYolo, nil)
+
+	decision := service.Gate(t.Context(), GateRequest{
+		SessionID:      "s1",
+		ToolCallID:     "call-1",
+		Access:         Access{Tool: "merge", Action: ActionMerge},
+		AllowYoloMerge: nil,
+	})
+	assert.True(t, decision.Allowed(), "nil AllowYoloMerge must defer to the workspace flag")
+}
+
+// TestPermissionService_AllowYoloMerge_FalseBlocksYoloMerge pins the
+// per-agent override: even when the workspace YoloSkipMerge is on,
+// setting AllowYoloMerge to false forces the merge to prompt.
+func TestPermissionService_AllowYoloMerge_FalseBlocksYoloMerge(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/tmp", ModeYolo, nil)
+	assert.True(t, service.YoloSkipMerge(), "precondition: workspace flag is on")
+
+	events := service.Subscribe(t.Context())
+	deny := false
+	done := make(chan Decision, 1)
+	go func() {
+		done <- service.Gate(t.Context(), GateRequest{
+			SessionID:      "s1",
+			ToolCallID:     "call-1",
+			Access:         Access{Tool: "merge", Action: ActionMerge},
+			AllowYoloMerge: &deny,
+		})
+	}()
+
+	select {
+	case ev := <-events:
+		service.Grant(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("merge must reach the prompt when per-agent AllowYoloMerge is false")
+	}
+	assert.True(t, (<-done).Allowed())
+}
+
+// TestPermissionService_AllowYoloMerge_FalseDoesNotAffectOtherActions
+// pins that a per-agent AllowYoloMerge=false only restricts the merge
+// action; every other yolo skip is unaffected.
+func TestPermissionService_AllowYoloMerge_FalseDoesNotAffectOtherActions(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/tmp", ModeYolo, nil)
+	deny := false
+
+	decision := service.Gate(t.Context(), GateRequest{
+		SessionID:      "s1",
+		ToolCallID:     "call-1",
+		Access:         editAccess("/tmp/test.txt"),
+		AllowYoloMerge: &deny,
+	})
+	assert.True(t, decision.Allowed(), "AllowYoloMerge must not restrict non-merge actions")
+}
+
+// TestPermissionService_AllowYoloMerge_WorkspaceFlagTakesPrecedence
+// pins that both flags must agree: if the workspace YoloSkipMerge is
+// off, a per-agent AllowYoloMerge=true cannot override it.
+func TestPermissionService_AllowYoloMerge_WorkspaceFlagTakesPrecedence(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/tmp", ModeYolo, nil)
+	service.SetYoloSkipMerge(false)
+	allow := true
+
+	events := service.Subscribe(t.Context())
+	done := make(chan Decision, 1)
+	go func() {
+		done <- service.Gate(t.Context(), GateRequest{
+			SessionID:      "s1",
+			ToolCallID:     "call-1",
+			Access:         Access{Tool: "merge", Action: ActionMerge},
+			AllowYoloMerge: &allow,
+		})
+	}()
+
+	select {
+	case ev := <-events:
+		service.Grant(ev.Payload)
+	case <-time.After(2 * time.Second):
+		t.Fatal("merge must still prompt when workspace YoloSkipMerge is off, even with AllowYoloMerge=true")
+	}
+	assert.True(t, (<-done).Allowed())
+}
+
 // TestPermissionService_AutoAcceptEditsMode pins that ModeAutoAcceptEdits
 // only widens the ladder for edits: an edit is granted without a
 // prompt, but every other action still runs the normal ladder.

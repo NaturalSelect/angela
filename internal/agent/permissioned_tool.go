@@ -13,26 +13,27 @@ import (
 // check here rather than inside each tool means a new tool cannot
 // forget it: an unmapped tool is refused rather than waved through.
 type permissionedTool struct {
-	inner       fantasy.AgentTool
-	permissions permission.Service
-	workingDir  string
+	inner          fantasy.AgentTool
+	permissions    permission.Service
+	workingDir     string
+	allowYoloMerge *bool
 }
 
-func newPermissionedTool(inner fantasy.AgentTool, permissions permission.Service, workingDir string) *permissionedTool {
-	return &permissionedTool{inner: inner, permissions: permissions, workingDir: workingDir}
+func newPermissionedTool(inner fantasy.AgentTool, permissions permission.Service, workingDir string, allowYoloMerge *bool) *permissionedTool {
+	return &permissionedTool{inner: inner, permissions: permissions, workingDir: workingDir, allowYoloMerge: allowYoloMerge}
 }
 
 // wrapToolsWithPermissions gates every tool in the slice. It runs
 // before the hook wrapper is applied, so the finished chain is
 // hooks -> permissions -> tool and a hook's allow decision is already
 // on the context when the gate looks for it.
-func wrapToolsWithPermissions(agentTools []fantasy.AgentTool, permissions permission.Service, workingDir string) []fantasy.AgentTool {
+func wrapToolsWithPermissions(agentTools []fantasy.AgentTool, permissions permission.Service, workingDir string, allowYoloMerge *bool) []fantasy.AgentTool {
 	if permissions == nil {
 		return agentTools
 	}
 	out := make([]fantasy.AgentTool, len(agentTools))
 	for i, tool := range agentTools {
-		out[i] = newPermissionedTool(tool, permissions, workingDir)
+		out[i] = newPermissionedTool(tool, permissions, workingDir, allowYoloMerge)
 	}
 	return out
 }
@@ -76,10 +77,11 @@ func (p *permissionedTool) Run(ctx context.Context, call fantasy.ToolCall) (fant
 	}
 
 	decision := p.permissions.Gate(ctx, permission.GateRequest{
-		SessionID:  sessionID,
-		ToolCallID: call.ID,
-		Access:     access,
-		Preview:    tools.PreviewOfTool(p.inner, call.Name, call.Input, p.workingDir),
+		SessionID:      sessionID,
+		ToolCallID:     call.ID,
+		Access:         access,
+		Preview:        tools.PreviewOfTool(p.inner, call.Name, call.Input, p.workingDir),
+		AllowYoloMerge: p.allowYoloMerge,
 	})
 	if !decision.Allowed() {
 		return tools.DecisionResponse(decision), nil
@@ -105,10 +107,11 @@ func (p *permissionedTool) runPlanned(
 	}
 
 	decision := p.permissions.Gate(ctx, permission.GateRequest{
-		SessionID:  sessionID,
-		ToolCallID: call.ID,
-		Access:     access,
-		Preview:    plan.Preview,
+		SessionID:      sessionID,
+		ToolCallID:     call.ID,
+		Access:         access,
+		Preview:        plan.Preview,
+		AllowYoloMerge: p.allowYoloMerge,
 	})
 	if decision.Outcome != permission.OutcomeAllow {
 		resp := tools.DecisionResponse(decision)

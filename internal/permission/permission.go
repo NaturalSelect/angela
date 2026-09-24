@@ -69,6 +69,9 @@ type GateRequest struct {
 	Access     Access
 	// Preview is what the user sees if the request reaches the prompt.
 	Preview Preview
+	// AllowYoloMerge is the per-agent override for whether yolo mode
+	// may auto-approve merges. Nil means allowed (the default).
+	AllowYoloMerge *bool
 }
 
 // Preview is what the user is shown when a request reaches the prompt.
@@ -345,8 +348,11 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 	mode := s.Mode()
 	// A merge is the one moment a branch's result crosses back into
 	// the conversation that forked it, so YoloSkipMerge lets yolo mode
-	// keep asking about it while everything else sails through.
-	yoloSkips := access.Action != ActionMerge || s.YoloSkipMerge()
+	// keep asking about it while everything else sails through. The
+	// per-agent AllowYoloMerge further restricts: both the workspace
+	// flag and the agent flag must allow it.
+	agentAllowsYoloMerge := req.AllowYoloMerge == nil || *req.AllowYoloMerge
+	yoloSkips := access.Action != ActionMerge || (s.YoloSkipMerge() && agentAllowsYoloMerge)
 	if mode == ModeYolo && yoloSkips {
 		return Decision{Outcome: OutcomeAllow, Reason: "permission prompts are disabled"}
 	}

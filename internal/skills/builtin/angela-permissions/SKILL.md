@@ -140,6 +140,13 @@ angela --auto-accept-edits       # auto-accept edits only
 
 `--yolo` and `--auto-accept-edits` are mutually exclusive.
 
+Per-agent override in `angela.json`:
+```json
+{ "agents": { "deep_research": { "allow_yolo_merge": false } } }
+```
+Set `allow_yolo_merge` to `false` on an agent to force merge approval even
+when `--yolo-merge` is on. Default is `true` (defer to the workspace flag).
+
 ## Hiding vs. Restricting a Tool
 
 `permissions` governs whether a call is approved. To remove a tool from the

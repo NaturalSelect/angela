@@ -21,9 +21,13 @@ definitions:
       agent:
         type: string
       model:
-        $ref: '#/definitions/config.SelectedModel'
-      slot:
-        $ref: '#/definitions/config.SlotName'
+        allOf:
+        - $ref: '#/definitions/config.SelectedModel'
+        description: |-
+          Model is the model the user picked for this session, and is
+          absent when they never picked one — the same reasoning as
+          Variant and Think below: a config default must keep reaching a
+          session that never overrode it.
       think:
         description: |-
           Think is the thinking-mode value the user picked, and is absent
@@ -823,13 +827,9 @@ definitions:
           different primary agent.
         type: string
       model:
-        $ref: '#/definitions/config.SelectedModel'
-      slot:
         allOf:
-        - $ref: '#/definitions/config.SlotName'
-        description: |-
-          Model, when non-nil, replaces the session's model outright, and
-          Slot labels which global slot it was taken from.
+        - $ref: '#/definitions/config.SelectedModel'
+        description: Model, when non-nil, replaces the session's model outright.
       think:
         description: |-
           Think, when non-nil, sets the thinking flag to an absolute

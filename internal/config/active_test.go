@@ -119,12 +119,13 @@ func TestActiveAgentStateRoundTripKeepsModelAndRefreshesDefinition(t *testing.T)
 	require.True(t, ok)
 
 	// The session picks a model the config never named for it.
-	active.Slot = "fast"
-	active.Model = SelectedModel{Provider: "groq", Model: "llama"}
+	picked := SelectedModel{Provider: "groq", Model: "llama"}
+	active.Model = picked
+	active.ModelPick = &picked
 	state := active.State()
 
 	require.Equal(t, "coder", state.Agent)
-	require.Equal(t, SlotName("fast"), state.Slot)
+	require.Equal(t, picked, state.Model)
 
 	// Meanwhile the config file changed the agent's prompt.
 	agent := cfg.Agents["coder"]
@@ -139,6 +140,52 @@ func TestActiveAgentStateRoundTripKeepsModelAndRefreshesDefinition(t *testing.T)
 	// ...while the model selection stays the session's own.
 	require.Equal(t, "groq", restored.Model.Provider)
 	require.Equal(t, "llama", restored.Model.Model)
+}
+
+// TestRestoreSlotAlwaysFollowsTheCurrentConfigLayout pins the A1 root-
+// cause fix: Slot is never carried by the persisted state (the type
+// does not even have such a field any more), so restoring the exact
+// same state under two different slot layouts must follow the layout
+// as it stands at restore time, not whatever it was when the state was
+// written.
+func TestRestoreSlotAlwaysFollowsTheCurrentConfigLayout(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+
+	picked := SelectedModel{Provider: "groq", Model: "llama"}
+	state := ActiveAgentState{Agent: "coder", Model: picked}
+
+	restored, ok := cfg.Restore(state)
+	require.True(t, ok)
+	require.Equal(t, SlotMain, restored.Slot, "coder's own config currently names SlotMain")
+
+	// The config is reorganized: "coder" now runs on a different slot.
+	agent := cfg.Agents["coder"]
+	agent.Slot = SlotChore
+	cfg.Agents["coder"] = agent
+
+	restored, ok = cfg.Restore(state)
+	require.True(t, ok)
+	require.Equal(t, SlotChore, restored.Slot,
+		"restoring the exact same persisted state must follow the slot layout as it stands now")
+}
+
+// TestStateOmitsModelWhenNothingWasPicked pins the other half of A1: a
+// session that never picked a model must not freeze whatever the
+// config happened to resolve at instantiation time into its persisted
+// state, or a later config change would stop reaching it.
+func TestStateOmitsModelWhenNothingWasPicked(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+
+	active, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	require.Nil(t, active.ModelPick, "a freshly instantiated agent has picked nothing")
+
+	state := active.State()
+	require.Zero(t, state.Model, "the model must not be persisted until the user actually picks one")
 }
 
 func TestRestoreFallsBackWhenStateCarriesNoModel(t *testing.T) {
@@ -375,7 +422,6 @@ func TestRestoreSessionModelOutranksProcessOverride(t *testing.T) {
 
 	state := ActiveAgentState{
 		Agent: "coder",
-		Slot:  SlotChore,
 		Model: SelectedModel{Provider: "openai", Model: "gpt-mini"},
 	}
 	restored, ok := cfg.Restore(state)

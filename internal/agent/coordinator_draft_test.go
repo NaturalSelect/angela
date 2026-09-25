@@ -106,6 +106,57 @@ func TestAdoptDraftIsANoOpWhenTheDraftWasNeverTouched(t *testing.T) {
 		"adopting an untouched draft must not write anything")
 }
 
+// TestAdoptDraftConsumesThePick pins the other half of adoption: once
+// a session has taken the draft's pick, the draft itself must forget
+// it. A landing-page pick is meant for the one session it produces,
+// not for every session that happens to come after it.
+func TestAdoptDraftConsumesThePick(t *testing.T) {
+	coord := newVariantTestCoordinator(t)
+
+	require.NoError(t, editActive(t, coord, draftSessionID, config.ActiveAgentEdit{Variant: ptrTo("deep")}))
+
+	sess, err := coord.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+	require.NoError(t, coord.AdoptDraft(t.Context(), sess.ID))
+
+	active, _, err := coord.ActiveAgent(t.Context(), draftSessionID)
+	require.NoError(t, err)
+	require.Empty(t, active.EffectiveVariant(),
+		"the draft must forget its pick once a session has adopted it")
+}
+
+// TestAdoptDraftDoesNotReapplyToASecondSession pins the consequence of
+// consuming the pick: a second session created after the first one
+// already adopted the draft must come up on the plain config default,
+// exactly as if AdoptDraft had never been called for it — the one
+// pick the user made only ever belonged to the first session.
+func TestAdoptDraftDoesNotReapplyToASecondSession(t *testing.T) {
+	coord := newVariantTestCoordinator(t)
+
+	require.NoError(t, editActive(t, coord, draftSessionID, config.ActiveAgentEdit{Variant: ptrTo("deep")}))
+
+	first, err := coord.sessions.Create(t.Context(), "first")
+	require.NoError(t, err)
+	require.NoError(t, coord.AdoptDraft(t.Context(), first.ID))
+
+	second, err := coord.sessions.Create(t.Context(), "second")
+	require.NoError(t, err)
+	before, err := coord.sessions.Get(t.Context(), second.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, coord.AdoptDraft(t.Context(), second.ID))
+
+	after, err := coord.sessions.Get(t.Context(), second.ID)
+	require.NoError(t, err)
+	require.Equal(t, before.ActiveAgent, after.ActiveAgent,
+		"a second session must not inherit a pick the draft already gave to the first one")
+
+	active, _, err := coord.ActiveAgent(t.Context(), second.ID)
+	require.NoError(t, err)
+	require.Empty(t, active.EffectiveVariant(),
+		"the second session must follow the config default, not the already-consumed draft pick")
+}
+
 // TestAdoptDraftLinearizesAgainstConcurrentDraftEdits pins the
 // ordering guarantee AdoptDraft's lock provides: it holds the draft's
 // own lock for its whole operation, not just the initial read, so a

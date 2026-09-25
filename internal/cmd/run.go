@@ -287,7 +287,7 @@ func runNonInteractive(
 	// alone, and a continued session without an override keeps the model
 	// it was already on.
 	if mainOverride != nil {
-		edit := config.ActiveAgentEdit{Slot: config.SlotMain, Model: mainOverride}
+		edit := config.ActiveAgentEdit{Model: mainOverride}
 		if _, err := c.AgentEditSessionActive(ctx, ws.ID, sess.ID, edit); err != nil {
 			return fmt.Errorf("failed to apply the model override: %w", err)
 		}
@@ -524,11 +524,12 @@ func waitForAgent(ctx context.Context, c *client.Client, wsID string) error {
 // belongs to the session and is returned for the caller to apply once
 // the session is resolved.
 //
-// NOTE: --small-model still writes workspace config. It serves the
-// internal agents (titling, compaction), which belong to no session, and
-// the server exposes no in-memory override channel the way the
-// in-process path has. This is the one remaining config write driven by
-// a CLI flag.
+// NOTE: --small-model applies in memory only, for this process's
+// lifetime (config.ScopeEphemeral). It serves the internal agents
+// (titling, compaction), which belong to no session and so have
+// nowhere else to read an override from, but a CLI flag must not
+// durably rewrite the user's workspace config file just to steer one
+// run.
 func applyModelOverrides(
 	ctx context.Context,
 	c *client.Client,
@@ -548,7 +549,7 @@ func applyModelOverrides(
 
 	if small != nil {
 		slog.Info("Overriding small model", "provider", small.provider, "model", small.modelID)
-		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeWorkspace, config.SlotChore, config.SelectedModel{
+		if err := c.UpdatePreferredModel(ctx, ws.ID, config.ScopeEphemeral, config.SlotChore, config.SelectedModel{
 			Provider: small.provider,
 			Model:    small.modelID,
 		}); err != nil {

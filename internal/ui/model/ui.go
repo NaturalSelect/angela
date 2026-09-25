@@ -2586,50 +2586,6 @@ func substituteArgs(content string, args map[string]string) string {
 	return content
 }
 
-// modelPickTarget says where picking a model for a slot lands.
-type modelPickTarget int
-
-const (
-	// modelPickGlobal edits the global default: the active agent (the
-	// session's, or the landing screen's draft) does not run on this
-	// slot (the chore model, say). The pick has no instance to live
-	// on, and one is already running on the config as it stands, so
-	// persisting is the only choice that means anything.
-	modelPickGlobal modelPickTarget = iota
-	// modelPickSession edits the active agent's own instance: the
-	// session's, or — with no session yet — the landing screen's
-	// draft, which the first message turns into the session's.
-	modelPickSession
-	// modelPickEphemeral applies the pick in memory for this process
-	// only: there is no session yet, and the slot is not the one the
-	// landing screen's draft runs on, so persisting it would silently
-	// overwrite the saved default for a slot the user was only
-	// previewing.
-	modelPickEphemeral
-	// modelPickUnknown means the active agent has not been probed
-	// yet, so the other cases cannot be told apart. Falling back to
-	// global here would rewrite the default for every future session
-	// on the strength of a probe that simply had not landed.
-	modelPickUnknown
-)
-
-// modelPickScope reports where picking a model for this slot should
-// land. Only the slot the active agent — the session's, or the
-// landing screen's draft — actually runs on is instance-scoped.
-func (m *UI) modelPickScope(slot config.SlotName) modelPickTarget {
-	active := m.activeAgent()
-	if active == nil {
-		return modelPickUnknown
-	}
-	if active.Slot == slot {
-		return modelPickSession
-	}
-	if m.currentSessionID() == "" {
-		return modelPickEphemeral
-	}
-	return modelPickGlobal
-}
-
 // transparentToggledMsg carries the persisted transparency setting back
 // to Update. The command must not apply it directly: Draw reads
 // isTransparent on every frame, so writing it from a command races the
@@ -2866,32 +2822,6 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 		return m.openOnboardingStep(onboardingStepModelConfig)
 	}
 
-	// Picking a model for the slot the active agent runs on edits that
-	// instance: the session's, or — with no session yet — the landing
-	// screen's draft, which the first message turns into the session's.
-	// Picking one for any other slot (the chore model, say) is a global
-	// preference — unless there is no session yet, in which case it is
-	// onboarding's first-run default, which persists, or the landing
-	// screen previewing a model before the first message, which must
-	// not silently overwrite the saved default.
-	sessionID := m.currentSessionID()
-	scope := modelPickGlobal
-	if !isOnboarding {
-		scope = m.modelPickScope(msg.ModelType)
-	}
-	if scope == modelPickUnknown {
-		// Which of the two this is depends on an agent probe that has
-		// not landed. Writing the global default on a guess would
-		// change the model for every future session, so the pick waits
-		// for the probe instead.
-		m.dialog.CloseDialog(dialog.ModelsID)
-		cmds = append(cmds,
-			util.ReportWarn("The agent is still starting up — pick again in a moment."),
-			agentModelChangedCmd,
-		)
-		return tea.Batch(cmds...)
-	}
-
 	modelChangedMsg := func() tea.Msg {
 		var (
 			modelType = stringext.Capitalize(string(msg.ModelType))
@@ -2903,9 +2833,25 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 		return util.NewInfoMsg(fmt.Sprintf("%s model changed to %s", modelType, modelName))
 	}
 
-	if scope == modelPickSession {
+	// Outside onboarding, a pick always edits the live instance in
+	// memory: the current session's, or — with no session yet — the
+	// landing screen's draft, which currentSessionID's empty string
+	// resolves to naturally, the same as every other in-session edit
+	// in this file (handleSelectAgent, handleSelectVariant,
+	// toggleThinkingCmd). There is nothing left to route between: the
+	// slot an agent runs on is derived fresh from config on every
+	// read, never persisted or compared, so no pick can land on the
+	// wrong instance. Onboarding is the one exception — it runs before
+	// any session or resolved config exists to edit, so bootstrapping
+	// the initial config by writing it is the only option.
+	if isOnboarding {
+		cmds = append(cmds, m.refreshActiveAgentCmd(
+			m.applyOnboardingPickCmd(msg.ModelType, msg.Model, modelChangedMsg),
+		))
+	} else {
+		sessionID := m.currentSessionID()
 		editCmd := func() tea.Msg {
-			edit := config.ActiveAgentEdit{Slot: msg.ModelType, Model: &msg.Model}
+			edit := config.ActiveAgentEdit{Model: &msg.Model}
 			active, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit)
 			if err != nil {
 				return util.ReportError(err)()
@@ -2921,14 +2867,6 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 			m.recordRecentModelCmd(msg.ModelType, msg.Model),
 			editCmd,
 		)))
-	} else {
-		persistScope := config.ScopeGlobal
-		if scope == modelPickEphemeral {
-			persistScope = config.ScopeEphemeral
-		}
-		cmds = append(cmds, m.refreshActiveAgentCmd(
-			m.applyGlobalModelCmd(msg.ModelType, msg.Model, persistScope, isOnboarding, modelChangedMsg),
-		))
 	}
 
 	m.dialog.CloseDialog(dialog.APIKeyInputID)
@@ -2980,35 +2918,24 @@ func (m *UI) applyOnboardingModelCmd(msg dialog.ActionConfigureModel, done func(
 	}
 }
 
-// applyGlobalModelCmd applies a model pick made outside any session and
-// brings the agent in line with it. scope decides whether the pick
-// persists to disk (onboarding's first-run default) or lives only for
-// this process (the landing screen, which has no session to scope it
-// to and no reason to overwrite the saved default). The steps live in
-// one command because each depends on the one before having
-// succeeded: tea.Sequence would run them all even after a failure, and
-// tea.Batch would run them concurrently.
-//
-// During onboarding there is no coordinator yet, so starting one is what
-// applies the model; afterwards the existing one is reconciled instead.
-func (m *UI) applyGlobalModelCmd(
+// applyOnboardingPickCmd persists the model onboarding just picked as
+// the initial global default and starts the agent on it. Onboarding
+// is the only path left that ever writes to the on-disk config: it
+// runs before any session or resolved config exists yet to edit in
+// memory, so bootstrapping the config by writing it is the only
+// option. The steps live in one command because each depends on the
+// one before having succeeded: tea.Sequence would run them all even
+// after a failure, and tea.Batch would run them concurrently.
+func (m *UI) applyOnboardingPickCmd(
 	name config.SlotName,
 	model config.SelectedModel,
-	scope config.Scope,
-	startAgent bool,
 	done func() tea.Msg,
 ) tea.Cmd {
 	return func() tea.Msg {
-		if err := m.com.Workspace.UpdatePreferredModel(scope, name, model); err != nil {
+		if err := m.com.Workspace.UpdatePreferredModel(config.ScopeGlobal, name, model); err != nil {
 			return util.ReportError(err)()
 		}
-		if startAgent {
-			if err := m.com.Workspace.InitCoderAgent(context.TODO()); err != nil {
-				return util.ReportError(err)()
-			}
-			return done()
-		}
-		if err := m.com.Workspace.UpdateAgentModel(context.TODO()); err != nil {
+		if err := m.com.Workspace.InitCoderAgent(context.TODO()); err != nil {
 			return util.ReportError(err)()
 		}
 		return done()
@@ -4734,17 +4661,24 @@ func (m *UI) editorPlaceholder() string {
 }
 
 // editorCaption returns the one-line run context: which agent and model the
-// next message will go to, plus the input mode when it is not the ordinary
-// one. The text is unstyled; the caller owns how it is drawn.
+// next message will go to, the reasoning effort when the model has one, and
+// the input mode when it is not the ordinary one. The text is unstyled; the
+// caller owns how it is drawn.
 func (m *UI) editorCaption(width int) string {
 	if width <= 0 {
 		return ""
 	}
 
-	var modelName, agentName string
+	var modelName, agentName, effort string
 	if active := m.activeAgent(); active != nil {
 		modelName = active.CatwalkCfg.Name
 		agentName = active.AgentName
+		// A graduated effort scale is worth naming; a plain think
+		// on/off toggle already has nowhere near this much nuance and
+		// belongs to the sidebar's fuller model info instead.
+		if active.CatwalkCfg.CanReason && len(active.CatwalkCfg.ReasoningLevels) > 0 {
+			effort = common.FormatReasoningEffort(active.CatwalkCfg.DefaultReasoningEffort)
+		}
 	}
 
 	var mode string
@@ -4759,7 +4693,7 @@ func (m *UI) editorCaption(width int) string {
 
 	// Narrow terminals keep only what identifies the run: the model, and
 	// the mode when it is escalated.
-	fields := []string{agentName, modelName, mode}
+	fields := []string{agentName, modelName, effort, mode}
 	if width < narrowWidthBreakpoint {
 		fields = []string{modelName, mode}
 	}

@@ -96,9 +96,46 @@ func TestASessionPickWritesNothingInsideUpdate(t *testing.T) {
 	require.Equal(t, "s1", editSessionID)
 }
 
-// TestAGlobalPickWritesNothingInsideUpdate is the other branch:
-// UpdatePreferredModel has the same cost and the same rule.
+// TestAGlobalPickWritesNothingInsideUpdate pins that a pick never
+// reaches the disk-write path, even when the active agent runs on a
+// slot other than the one being picked: routing no longer compares
+// slots at all, so every non-onboarding pick edits the session's live
+// instance in memory instead.
 func TestAGlobalPickWritesNothingInsideUpdate(t *testing.T) {
+	pinTTLs(t)
+
+	ws := pickMockWorkspace(t)
+	active := workspace.ActiveAgent{Slot: "opus"}
+	m := newBusyUIWithWorkspace(ws)
+	warmCaches(m, false)
+	m.agentActive = active
+
+	// UpdatePreferredModel is deliberately left unstubbed: reaching it
+	// would fail the test immediately, which is the proof a pick made
+	// while the active agent runs on a different slot still never
+	// writes to disk.
+	cmd := m.handleSelectModel(pickAction(config.SlotChore))
+
+	var editCalls int
+	var editSessionID string
+	ws.EXPECT().RecordRecentModel(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	ws.EXPECT().AgentEditActive(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, sessionID string, _ config.ActiveAgentEdit) (workspace.ActiveAgent, error) {
+			editCalls++
+			editSessionID = sessionID
+			return active, nil
+		})
+
+	runCmds(m, cmd)
+	require.Equal(t, 1, editCalls, "the session edit must happen exactly once")
+	require.Equal(t, "s1", editSessionID)
+}
+
+// TestASessionPickReportsPlainSuccess guards the other side of the
+// fix above: when the pick lands on the running session itself, the
+// toast must stay an unqualified success rather than the "keeps
+// running" wording meant only for the global-only case.
+func TestASessionPickReportsPlainSuccess(t *testing.T) {
 	pinTTLs(t)
 
 	ws := pickMockWorkspace(t)
@@ -107,22 +144,21 @@ func TestAGlobalPickWritesNothingInsideUpdate(t *testing.T) {
 	warmCaches(m, false)
 	m.agentActive = active
 
-	// The chore slot is not the one the session runs, so this is global.
-	// Nothing beyond Config/WorkingDir is stubbed yet: reaching
-	// UpdatePreferredModel, AgentEditActive, or any syncProbes method
-	// here would fail the test immediately.
-	cmd := m.handleSelectModel(pickAction(config.SlotChore))
+	cmd := m.handleSelectModel(pickAction(config.SlotMain))
 
-	var preferredModelCalls int
-	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(config.Scope, config.SlotName, config.SelectedModel) error {
-			preferredModelCalls++
-			return nil
-		})
-	ws.EXPECT().UpdateAgentModel(gomock.Any()).Return(nil)
+	ws.EXPECT().RecordRecentModel(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	ws.EXPECT().AgentEditActive(gomock.Any(), gomock.Any(), gomock.Any()).Return(active, nil)
 
-	runCmds(m, cmd)
-	require.Equal(t, 1, preferredModelCalls)
+	var toast util.InfoMsg
+	var found bool
+	for _, msg := range runCmds(m, cmd) {
+		if switched, ok := msg.(modelSwitchedMsg); ok {
+			toast, found = switched.toast.(util.InfoMsg)
+		}
+	}
+	require.True(t, found, "expected a modelSwitchedMsg carrying the toast")
+	require.Equal(t, util.InfoTypeInfo, toast.Type)
+	require.Equal(t, "Main model changed to picked-model", toast.Msg)
 }
 
 // TestALandingPickIsEphemeral pins the fix for a real bug: picking a
@@ -130,7 +166,8 @@ func TestAGlobalPickWritesNothingInsideUpdate(t *testing.T) {
 // straight from "Switch Model" with nothing open yet) used to go
 // through the same persisted write as onboarding's first-run default,
 // silently overwriting the user's saved main model on disk. It must
-// instead apply only to this process.
+// instead edit the workspace's draft in memory — the same
+// AgentEditActive path a session uses, just with an empty session ID.
 func TestALandingPickIsEphemeral(t *testing.T) {
 	pinTTLs(t)
 
@@ -139,19 +176,24 @@ func TestALandingPickIsEphemeral(t *testing.T) {
 	m.session = nil
 	warmCaches(m, false)
 
+	// UpdatePreferredModel is deliberately left unstubbed: reaching it
+	// would fail the test immediately, which is the proof a pick made
+	// with no session open never persists to disk.
 	cmd := m.handleSelectModel(pickAction(config.SlotMain))
 
-	var scope config.Scope
-	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(s config.Scope, _ config.SlotName, _ config.SelectedModel) error {
-			scope = s
-			return nil
+	var editCalls int
+	var editSessionID string
+	ws.EXPECT().RecordRecentModel(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	ws.EXPECT().AgentEditActive(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, sessionID string, _ config.ActiveAgentEdit) (workspace.ActiveAgent, error) {
+			editCalls++
+			editSessionID = sessionID
+			return workspace.ActiveAgent{}, nil
 		})
-	ws.EXPECT().UpdateAgentModel(gomock.Any()).Return(nil)
 
 	runCmds(m, cmd)
-	require.Equal(t, config.ScopeEphemeral, scope,
-		"a pick made with no session open must never persist to disk")
+	require.Equal(t, 1, editCalls, "the draft edit must happen exactly once")
+	require.Equal(t, "", editSessionID, "a pick made with no session open lands on the draft")
 }
 
 // TestOnboardingStartsTheAgentOffThread covers the third write on this
@@ -200,15 +242,17 @@ func TestOnboardingPersistsTheModelBeforeStartingTheAgent(t *testing.T) {
 
 // TestAFailedGlobalPersistStopsThere is B2. These ran as a tea.Sequence,
 // which does not stop on failure, so a write that never landed was still
-// followed by a rebuild and a "model changed" report.
+// followed by a rebuild and a "model changed" report. Onboarding is now
+// the only path that ever calls UpdatePreferredModel — every other pick
+// edits the live instance in memory instead — so it is the only place
+// left to pin the regression against.
 func TestAFailedGlobalPersistStopsThere(t *testing.T) {
 	pinTTLs(t)
 
 	ws := pickMockWorkspace(t)
-	active := workspace.ActiveAgent{Slot: config.SlotMain}
 	m := newBusyUIWithWorkspace(ws)
+	m.state = uiOnboarding
 	warmCaches(m, false)
-	m.agentActive = active
 
 	var preferredModelCalls int
 	ws.EXPECT().UpdatePreferredModel(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -216,9 +260,8 @@ func TestAFailedGlobalPersistStopsThere(t *testing.T) {
 			preferredModelCalls++
 			return errors.New("disk is full")
 		})
-	// UpdateAgentModel and InitCoderAgent are deliberately left
-	// unstubbed: a model that was never persisted must not be applied
-	// to the agent or start it.
+	// InitCoderAgent is deliberately left unstubbed: a model that was
+	// never persisted must not be applied to the agent or start it.
 
 	msgs := runCmds(m, m.handleSelectModel(pickAction(config.SlotChore)))
 

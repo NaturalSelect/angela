@@ -56,11 +56,10 @@ var (
 	// that does not exist, which is a 404 rather than a failure.
 	ErrSessionNotFound = session.ErrSessionNotFound
 
-	// The three below are malformed requests: an agent, a preset or a
-	// model slot that does not fit. They are the caller's to correct.
+	// The two below are malformed requests: an agent or a preset that
+	// does not fit. They are the caller's to correct.
 	ErrAgentNotAvailable   = agent.ErrAgentNotAvailable
 	ErrVariantNotAvailable = agent.ErrVariantNotAvailable
-	ErrModelSlotMismatch   = agent.ErrModelSlotMismatch
 
 	// The three below are a "switch agent model" override naming an
 	// agent, model or variant that does not resolve. Also the

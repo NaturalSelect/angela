@@ -54,15 +54,14 @@ import (
 
 // Coordinator errors.
 //
-// The exported three are what a caller can get wrong: they name an
-// agent, a preset or a model slot that does not fit. Transports answer
-// them as a bad request, so they have to be nameable from outside this
-// package. The rest describe a broken configuration or a broken
-// process, which is nobody's request to fix.
+// The exported two are what a caller can get wrong: they name an
+// agent or a preset that does not fit. Transports answer them as a
+// bad request, so they have to be nameable from outside this package.
+// The rest describe a broken configuration or a broken process, which
+// is nobody's request to fix.
 var (
 	ErrAgentNotAvailable   = errors.New("agent not available")
 	ErrVariantNotAvailable = errors.New("model variant not available")
-	ErrModelSlotMismatch   = errors.New("model slot does not match the agent")
 
 	errCoderAgentNotConfigured    = errors.New("coder agent not configured")
 	errModelProviderNotConfigured = errors.New("model provider not configured")
@@ -1283,10 +1282,13 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 // session the user just watched get configured would open on
 // whatever the config's own defaults are instead.
 //
-// The draft itself is left in place rather than consumed, so
-// returning to the landing page after creating a session still shows
-// the same pick — the next session created from it starts the same
-// way, until something changes it.
+// The draft is consumed by this call rather than left in place: once
+// the pick has landed on sessionID, the draft's own cached state is
+// reset to zero. A landing-page pick belongs to whichever session the
+// user is about to start, not to every session started afterward —
+// leaving it in place would let a second, unrelated new session
+// silently inherit the same stale one-time pick instead of falling
+// back to whatever the config actually specifies.
 func (c *coordinator) AdoptDraft(ctx context.Context, sessionID string) error {
 	// The draft's lock is held for the whole operation, not just the
 	// read below: releasing it early would let a concurrent edit on
@@ -1307,13 +1309,22 @@ func (c *coordinator) AdoptDraft(ctx context.Context, sessionID string) error {
 		return nil
 	}
 
-	return c.active.edit(ctx, sessionID, c.activeIO(), func(config.ActiveAgent) (config.ActiveAgent, bool, error) {
+	if err := c.active.edit(ctx, sessionID, c.activeIO(), func(config.ActiveAgent) (config.ActiveAgent, bool, error) {
 		active, err := c.materializeActiveAgent(sessionID, draft)
 		if err != nil {
 			return config.ActiveAgent{}, false, err
 		}
 		return active, true, nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	// The pick just copied onto sessionID was a one-time landing-page
+	// choice, not a standing preference. Clearing it here — still
+	// under the draft's lock acquired above — is what stops a later
+	// session from adopting that same stale pick a second time.
+	c.active.remember(draftSessionID, config.ActiveAgentState{})
+	return nil
 }
 
 // SwitchAgent points a session at a different agent from the next turn
@@ -1395,21 +1406,18 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 		if !ok {
 			return current, change, fmt.Errorf("%w: %q", ErrAgentNotAvailable, edit.Agent)
 		}
+		// instantiated carries no ModelPick: a fresh agent switch takes
+		// the new agent's own configured model rather than a pick, the
+		// same way it takes its own configured model over carrying the
+		// old one across.
 		next = instantiated
 		change.agentFrom, change.agentTo, change.agentMoved = current.Agent.ID, instantiated.Agent, true
 	}
 
 	if edit.Model != nil && !sameModel(*edit.Model, next.Model) {
-		// The slot belongs to the agent, not to the caller: it is what
-		// InstantiateFor matches on to decide whether an internal agent
-		// inherits this model. An omitted name keeps the agent's own; a
-		// name that disagrees would silently break that inheritance, so
-		// it is reported rather than taken.
-		if edit.Slot != "" && edit.Slot != next.Slot {
-			return current, change, fmt.Errorf("%w: %q runs on %q, not %q",
-				ErrModelSlotMismatch, next.Agent.ID, next.Slot, edit.Slot)
-		}
-		next.Model = *edit.Model
+		picked := *edit.Model
+		next.Model = picked
+		next.ModelPick = &picked
 		change.modelMoved = true
 
 		// A preset is a different way to call the model it names, not

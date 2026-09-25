@@ -51,13 +51,13 @@ func TestSwitchAgentUpdatesSessionRecordAndLeavesTrail(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testReviewerAgent, stored.Agent,
 		"the switch must be recorded on the session, not just held in memory")
-	require.Equal(t, "large-model", stored.ActiveAgent.Model.Model,
-		"the recorded model must follow the new agent's own model preference")
 
 	agentCfg, err = coord.activeAgentFor(t.Context(), sess.ID)
 	require.NoError(t, err)
 	require.Equal(t, testReviewerAgent, agentCfg.Agent.ID,
 		"the next turn must resolve the agent the session was switched to")
+	require.Equal(t, "large-model", agentCfg.Model.Model,
+		"the recorded model must follow the new agent's own model preference")
 
 	msgs, err := coord.messages.List(t.Context(), sess.ID)
 	require.NoError(t, err)

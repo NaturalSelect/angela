@@ -159,7 +159,7 @@ func TestTurnStatusCapsContextPercentAt100(t *testing.T) {
 // TestTurnStatusNeverExceedsWidth exercises busyStatusUI, which never sets
 // an active agent, so it never renders the percentage/fraction branch at
 // all. An over-100% session pushes that branch to its longest form (e.g.
-// "100% ▣32.4k/1.0k"), so the fixed-width layout needs its own sweep to
+// "100% · 32.4k/1.0k"), so the fixed-width layout needs its own sweep to
 // confirm the extra length never corrupts the frame.
 func TestTurnStatusNeverExceedsWidthWhenOverContextWindow(t *testing.T) {
 	t.Parallel()

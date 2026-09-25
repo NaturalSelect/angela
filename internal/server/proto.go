@@ -1511,8 +1511,7 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 	case errors.Is(err, backend.ErrSessionNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, backend.ErrAgentNotAvailable),
-		errors.Is(err, backend.ErrVariantNotAvailable),
-		errors.Is(err, backend.ErrModelSlotMismatch):
+		errors.Is(err, backend.ErrVariantNotAvailable):
 		// The request named something that does not fit, which the
 		// caller can correct. A 500 here would tell them to retry an
 		// edit that will never be accepted.

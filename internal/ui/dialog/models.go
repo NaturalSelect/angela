@@ -419,14 +419,13 @@ func (m *Models) setProviderItems() {
 	// The list opens on what the session runs, not on the global
 	// default: highlighting the global model makes confirming it look
 	// like a no-op while it silently moves the session off its own.
-	// In the "Switch Agent Model" flow active is built from the
-	// target agent's own instance rather than the session's, and that
-	// agent may run on a slot other than modelName, so the match is
-	// unconditional there.
+	// active is always this session's (or, in the "Switch Agent Model"
+	// flow, the target agent's own) actually running model, whatever
+	// slot it happens to run on — there is no slot to compare against
+	// modelName anymore. Only a genuinely unknown agent falls back to
+	// the config default.
 	currentModel := cfg.Slots[m.modelName]
-	if m.forAgent != "" && m.active != nil {
-		currentModel = m.active.ModelCfg
-	} else if m.active != nil && m.active.Slot == m.modelName {
+	if m.active != nil {
 		currentModel = m.active.ModelCfg
 	}
 	recentItems := cfg.RecentModels[m.modelName]

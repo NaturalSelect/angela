@@ -4200,10 +4200,12 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "model": {
-                    "$ref": "#/definitions/config.SelectedModel"
-                },
-                "slot": {
-                    "$ref": "#/definitions/config.SlotName"
+                    "description": "Model is the model the user picked for this session, and is\nabsent when they never picked one — the same reasoning as\nVariant and Think below: a config default must keep reaching a\nsession that never overrode it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.SelectedModel"
+                        }
+                    ]
                 },
                 "think": {
                     "description": "Think is the thinking-mode value the user picked, and is absent\nwhen they never touched it, for the same reason Variant is: a\nmodel's catalog default must keep reaching a session that never\noverrode it.",
@@ -5190,13 +5192,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "model": {
-                    "$ref": "#/definitions/config.SelectedModel"
-                },
-                "slot": {
-                    "description": "Model, when non-nil, replaces the session's model outright, and\nSlot labels which global slot it was taken from.",
+                    "description": "Model, when non-nil, replaces the session's model outright.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/config.SlotName"
+                            "$ref": "#/definitions/config.SelectedModel"
                         }
                     ]
                 },

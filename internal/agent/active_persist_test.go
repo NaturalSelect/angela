@@ -190,7 +190,6 @@ func TestEditingAModelStopsFollowingTheConfig(t *testing.T) {
 
 	picked := config.SelectedModel{Provider: "mock", Model: "large-model"}
 	require.NoError(t, editActive(t, coord, sess.ID, config.ActiveAgentEdit{
-		Slot:  config.SlotChore,
 		Model: &picked,
 	}))
 
@@ -227,34 +226,6 @@ func TestEditKeepsTheAgentsSlotWhenTheCallerOmitsIt(t *testing.T) {
 	require.Equal(t, "large-model", active.Model.Model)
 	require.Equal(t, before.Slot, active.Slot,
 		"an omitted slot must keep the one the agent runs on")
-}
-
-// TestEditRejectsASlotTheAgentDoesNotRunOn is the other half: a caller
-// that names the wrong slot is reporting a bug, and taking the name
-// would break the same inheritance silently.
-func TestEditRejectsASlotTheAgentDoesNotRunOn(t *testing.T) {
-	coord := newModelPrefTestCoordinator(t, nil)
-
-	sess, err := coord.sessions.Create(t.Context(), "session")
-	require.NoError(t, err)
-
-	before, err := coord.activeAgentFor(t.Context(), sess.ID)
-	require.NoError(t, err)
-	require.Equal(t, config.SlotChore, before.Slot,
-		"this coordinator's agent is expected to run on the chore slot")
-
-	picked := config.SelectedModel{Provider: "mock", Model: "large-model"}
-	err = editActive(t, coord, sess.ID, config.ActiveAgentEdit{
-		Slot:  config.SlotMain,
-		Model: &picked,
-	})
-	require.ErrorIs(t, err, ErrModelSlotMismatch)
-
-	active, err := coord.activeAgentFor(t.Context(), sess.ID)
-	require.NoError(t, err)
-	require.Equal(t, before.Model.Model, active.Model.Model,
-		"a rejected edit must leave the instance alone")
-	require.Equal(t, config.SlotChore, active.Slot)
 }
 
 // TestEditActiveAgentMovesEverythingAtOnce covers the combined edit the

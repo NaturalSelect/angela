@@ -236,16 +236,16 @@ func (m *UI) tokenUsageField() string {
 	if tokens <= 0 {
 		return ""
 	}
-	usage := "▣" + formatTokensCompact(tokens)
+	usage := formatTokensCompact(tokens)
 	if active := m.activeAgent(); active != nil {
 		contextWindow := active.CatwalkCfg.ContextWindow
 		if pct := m.contextPercent(contextWindow); pct != "" {
-			usage = pct + " " + usage + "/" + formatTokensCompact(contextWindow)
+			usage = pct + turnStatusSeparator + usage + "/" + formatTokensCompact(contextWindow)
 		}
 	}
 	// Cumulative session input tokens (cache read + cache creation +
 	// uncached), the same total the cache hit rate below is a
-	// fraction of. Unlike the ▣ figure above, which is the last
+	// fraction of. Unlike the figure above, which is the last
 	// step's prompt+completion, this is a running total across every
 	// step, so it only grows.
 	if inputTokens := m.session.CacheReadTokens + m.session.CacheCreationTokens + m.session.UncachedInputTokens; inputTokens > 0 {

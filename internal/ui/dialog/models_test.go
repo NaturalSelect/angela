@@ -150,19 +150,23 @@ func TestTheListOpensOnTheSessionsModel(t *testing.T) {
 	require.Equal(t, sessionModelID, selectedModelID(t, m))
 }
 
-// TestTheListFallsBackToTheGlobalModel covers the two cases where the
-// session cannot answer: its agent is not known yet, and the pick is for
-// a slot the session does not own.
+// TestTheListFallsBackToTheGlobalModel covers the one case where the
+// session cannot answer: its agent is not known yet. Once an active
+// agent is known, its own model wins the highlight regardless of
+// which slot it runs on — see
+// TestModels_ForAgent_HighlightsRegardlessOfSlot.
 func TestTheListFallsBackToTheGlobalModel(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name   string
 		active *workspace.ActiveAgent
+		want   string
 	}{
 		{
 			name:   "the agent is not known yet",
 			active: nil,
+			want:   globalModelID,
 		},
 		{
 			name: "the session owns a different slot",
@@ -170,6 +174,7 @@ func TestTheListFallsBackToTheGlobalModel(t *testing.T) {
 				Slot:     config.SlotChore,
 				ModelCfg: config.SelectedModel{Provider: testProviderID, Model: sessionModelID},
 			},
+			want: sessionModelID,
 		},
 	}
 
@@ -180,7 +185,7 @@ func TestTheListFallsBackToTheGlobalModel(t *testing.T) {
 			m := newModelsDialog(t, ws, tt.active)
 			m.SetProviders(catalogFor())
 
-			require.Equal(t, globalModelID, selectedModelID(t, m))
+			require.Equal(t, tt.want, selectedModelID(t, m))
 		})
 	}
 }
@@ -218,12 +223,11 @@ func TestModels_ForAgent_ChangesID(t *testing.T) {
 	require.Equal(t, AgentModelModelsID, m.ID())
 }
 
-// TestModels_ForAgent_HighlightsRegardlessOfSlot pins the exception
-// setProviderItems carves out for the "Switch Agent Model" flow: active
-// is built from the target agent's own instance, which may run on a
-// slot other than modelName, and ForAgent must keep following it rather
-// than falling back to the global model the way the ordinary Switch
-// Model flow does for a foreign slot (TestTheListFallsBackToTheGlobalModel).
+// TestModels_ForAgent_HighlightsRegardlessOfSlot pins that active's own
+// model always wins the highlight, on a foreign slot or not: there is
+// no slot comparison left for either the ordinary Switch Model flow or
+// the "Switch Agent Model" flow ForAgent switches into to fall back
+// from.
 func TestModels_ForAgent_HighlightsRegardlessOfSlot(t *testing.T) {
 	t.Parallel()
 
@@ -234,12 +238,12 @@ func TestModels_ForAgent_HighlightsRegardlessOfSlot(t *testing.T) {
 	}
 	m := newModelsDialog(t, ws, active)
 	m.SetProviders(catalogFor())
-	require.Equal(t, globalModelID, selectedModelID(t, m),
-		"before ForAgent this is the ordinary flow, so a foreign slot falls back to the global model")
+	require.Equal(t, sessionModelID, selectedModelID(t, m),
+		"the ordinary flow already highlights the session's own model regardless of slot")
 
 	m.ForAgent("reviewer")
 	require.Equal(t, sessionModelID, selectedModelID(t, m),
-		"ForAgent must highlight the target agent's own model even though it runs on a different slot")
+		"ForAgent must keep highlighting the target agent's own model")
 }
 
 // TestModels_ForAgent_SelectEmitsAgentModelAction verifies a pick made

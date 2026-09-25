@@ -210,8 +210,8 @@ func TestApplyModelOverrides_UpdatePreferredModelErrorPropagates(t *testing.T) {
 // TestApplyModelOverrides_OnlySmallModelReturnsNilLarge covers the
 // mirror image of OnlyLargeModelSkipsConfigWrite: with no --model flag,
 // the large-model return value must be nil (nothing for the caller to
-// apply to the session) even though the small model was successfully
-// written to workspace config.
+// apply to the session) even though the small model override was
+// successfully applied.
 func TestApplyModelOverrides_OnlySmallModelReturnsNilLarge(t *testing.T) {
 	t.Parallel()
 

@@ -37,7 +37,6 @@ func TestBashAttributionNamesTheModelThatRanTheTurn(t *testing.T) {
 	// The coder sits on the chore slot, so moving the session to the
 	// large model makes the two disagree.
 	require.NoError(t, editActive(t, coord, sess.ID, config.ActiveAgentEdit{
-		Slot:  config.SlotChore,
 		Model: &config.SelectedModel{Provider: "mock", Model: "large-model"},
 	}))
 	require.Equal(t, "small-model", coord.cfg.Config().Slots[config.SlotChore].Model,

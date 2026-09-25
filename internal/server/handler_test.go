@@ -353,7 +353,6 @@ func TestHandleError_MapsSentinelsToStatus(t *testing.T) {
 		{name: "session not found", err: backend.ErrSessionNotFound, want: http.StatusNotFound},
 		{name: "agent not available", err: backend.ErrAgentNotAvailable, want: http.StatusBadRequest},
 		{name: "variant not available", err: backend.ErrVariantNotAvailable, want: http.StatusBadRequest},
-		{name: "model slot mismatch", err: backend.ErrModelSlotMismatch, want: http.StatusBadRequest},
 		{name: "agent not initialized", err: backend.ErrAgentNotInitialized, want: http.StatusBadRequest},
 		{name: "path required", err: backend.ErrPathRequired, want: http.StatusBadRequest},
 		{name: "invalid permission action", err: backend.ErrInvalidPermissionAction, want: http.StatusBadRequest},

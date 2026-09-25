@@ -84,11 +84,6 @@ func TestActiveAgentErrorsCarryTheRightStatus(t *testing.T) {
 			want: http.StatusBadRequest,
 		},
 		{
-			name: "a model slot the agent does not run on",
-			err:  fmt.Errorf("%w: main", agent.ErrModelSlotMismatch),
-			want: http.StatusBadRequest,
-		},
-		{
 			// The control: a genuine fault must stay a 500, or the
 			// mapping would be telling clients to fix requests that
 			// were never wrong.

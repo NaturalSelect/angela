@@ -190,6 +190,47 @@ func TestEditorCaptionDegradesWithWidth(t *testing.T) {
 	require.Contains(t, narrow, "claude-sonnet-4-5")
 }
 
+// TestEditorCaptionShowsReasoningEffort pins that a model with graduated
+// reasoning levels names its effort in the caption, formatted the same way
+// the sidebar does, and that narrow terminals drop it alongside the agent
+// name. A model with only a binary think toggle has no effort scale, so it
+// must not show one.
+func TestEditorCaptionShowsReasoningEffort(t *testing.T) {
+	pinTTLs(t)
+
+	ws, _ := detailsMockWorkspace(t)
+	m := newBusyUIWithWorkspace(ws)
+	m.session = &session.Session{ID: "s1", Title: "a session"}
+	m.agentReady = true
+	m.agentActiveKnown = true
+	m.agentActiveSession = m.currentSessionID()
+	m.agentActive = workspace.ActiveAgent{
+		AgentID:   "coder",
+		AgentName: "coder",
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+			Name:                   "claude-opus-5-5",
+			CanReason:              true,
+			ReasoningLevels:        []string{"high", "max", "xhigh"},
+			DefaultReasoningEffort: "xhigh",
+		}},
+	}
+
+	m.width = 200
+	wide := m.editorCaption(200)
+	require.Contains(t, wide, "X-High", "wide captions name the reasoning effort")
+
+	m.width = 60
+	narrow := m.editorCaption(60)
+	require.NotContains(t, narrow, "X-High",
+		"narrow captions drop the effort alongside the agent name")
+
+	m.agentActive.CatwalkCfg.ReasoningLevels = nil
+	m.agentActive.CatwalkCfg.DefaultReasoningEffort = ""
+	m.width = 200
+	require.NotContains(t, m.editorCaption(200), "X-High",
+		"a think-only model has no effort level to show")
+}
+
 // TestEditorPlaceholderHasNoPersonality pins the fixed placeholder: it must
 // tell the user what to do rather than emit a random mood word.
 func TestEditorPlaceholderHasNoPersonality(t *testing.T) {

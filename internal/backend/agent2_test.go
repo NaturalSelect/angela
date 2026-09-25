@@ -400,7 +400,7 @@ func TestBackend_EditSessionActiveAgent(t *testing.T) {
 	t.Run("edit error is returned without re-reading", func(t *testing.T) {
 		t.Parallel()
 		b, _ := newTestBackend(t)
-		wantErr := agent.ErrModelSlotMismatch
+		wantErr := agent.ErrVariantNotAvailable
 		coord := &fakeCoordinator{editErr: wantErr}
 		ws := insertAgentWorkspace(t, b, coord)
 

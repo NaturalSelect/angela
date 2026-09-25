@@ -26,12 +26,23 @@ type ActiveAgent struct {
 
 	// Slot records which global model slot Model was instantiated
 	// from. It is a label for display and for the model dialog, not a
-	// live reference.
+	// live reference. It is never itself persisted: Restore always
+	// re-derives it from InstantiateAgent, so reorganizing the slot
+	// layout after a session was created is reflected immediately
+	// instead of replaying a name that may no longer mean anything.
 	Slot SlotName
 
 	// Model is the materialized model configuration this session
 	// runs.
 	Model SelectedModel
+
+	// ModelPick is the model the user chose for this session, or nil
+	// when they never touched it, in which case Model still tracks
+	// whatever the config resolves for Slot. Mirrors VariantPick's
+	// reasoning: only a pick is worth persisting, so a session that
+	// never chose its own model keeps following the config the same
+	// way its prompt and tools do.
+	ModelPick *SelectedModel
 
 	// Think is the current thinking-mode state, resolved from the
 	// model's catalog default and the active variant until ThinkPick
@@ -54,13 +65,21 @@ type ActiveAgent struct {
 }
 
 // ActiveAgentState is the persisted, session-scoped delta of an
-// ActiveAgent: which agent it runs and which model that agent was
-// pointed at. The agent definition itself is deliberately absent —
-// prompts, tools and permissions are re-read from the config files on
-// every load so a session never runs a stale copy of them.
+// ActiveAgent: which agent it runs and which model the user actually
+// picked for it, if any. The agent definition itself is deliberately
+// absent — prompts, tools and permissions are re-read from the config
+// files on every load so a session never runs a stale copy of them.
+// The slot a model happens to run on is absent for the same reason:
+// it is implementation-detail plumbing that InstantiateAgent always
+// derives fresh from the config, never a user choice worth freezing
+// here.
 type ActiveAgentState struct {
-	Agent string        `json:"agent,omitempty"`
-	Slot  SlotName      `json:"slot,omitempty"`
+	Agent string `json:"agent,omitempty"`
+
+	// Model is the model the user picked for this session, and is
+	// absent when they never picked one — the same reasoning as
+	// Variant and Think below: a config default must keep reaching a
+	// session that never overrode it.
 	Model SelectedModel `json:"model,omitzero"`
 
 	// Variant is the preset the user picked, and is absent when they
@@ -147,9 +166,7 @@ type ActiveAgentEdit struct {
 	// different primary agent.
 	Agent string `json:"agent,omitempty"`
 
-	// Model, when non-nil, replaces the session's model outright, and
-	// Slot labels which global slot it was taken from.
-	Slot  SlotName       `json:"slot,omitempty"`
+	// Model, when non-nil, replaces the session's model outright.
 	Model *SelectedModel `json:"model,omitempty"`
 
 	// Variant, when non-nil, sets the parameter preset. The empty
@@ -237,6 +254,7 @@ func (c *Config) CompactAgentIDFor(host Agent) string {
 func (a ActiveAgent) Clone() ActiveAgent {
 	a.Agent = a.Agent.clone()
 	a.Model = a.Model.clone()
+	a.ModelPick = clonePtr(a.ModelPick)
 	a.ThinkPick = clonePtr(a.ThinkPick)
 	a.VariantPick = clonePtr(a.VariantPick)
 	return a
@@ -264,15 +282,18 @@ func (a ActiveAgent) EffectiveVariant() string {
 }
 
 // State reduces the instance to the part worth persisting: what the
-// user chose, never what the config supplied.
+// user chose, never what the config supplied or what InstantiateAgent
+// happened to derive.
 func (a ActiveAgent) State() ActiveAgentState {
-	return ActiveAgentState{
+	state := ActiveAgentState{
 		Agent:   a.Agent.ID,
-		Slot:    a.Slot,
-		Model:   a.Model,
 		Variant: a.VariantPick,
 		Think:   a.ThinkPick,
 	}
+	if a.ModelPick != nil {
+		state.Model = *a.ModelPick
+	}
+	return state
 }
 
 // Restore rebuilds an instance from a persisted state: the agent
@@ -281,6 +302,12 @@ func (a ActiveAgent) State() ActiveAgentState {
 // is the whole point — a session keeps what the user chose for it
 // while picking up edits to prompts, tools and permissions. A state
 // that records no preset pick keeps following the configured one.
+//
+// Slot is never taken from state either, and for the same reason: it
+// always comes from whatever InstantiateAgent resolves right now, so
+// a config that reorganizes its slot layout after the state was
+// written is reflected immediately rather than replayed from a name
+// that may no longer mean anything.
 //
 // It reports false when the recorded agent no longer resolves, which
 // leaves the caller to decide on a fallback.
@@ -301,8 +328,9 @@ func (c *Config) Restore(state ActiveAgentState) (ActiveAgent, bool) {
 	if state.Model.Model == "" || state.Model.Provider == "" {
 		return active, true
 	}
-	active.Slot = state.Slot
-	active.Model = state.Model
+	pick := state.Model
+	active.Model = pick
+	active.ModelPick = &pick
 	if active.ThinkPick == nil {
 		active.Think = c.EffectiveThink(active.Model, active.EffectiveVariant())
 	}

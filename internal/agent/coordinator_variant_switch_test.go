@@ -41,7 +41,10 @@ func TestSwitchVariantRecordsItAndLeavesTrail(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sess.ActiveAgent.Variant, "an explicit switch must record a pick")
 	require.Equal(t, "deep", *sess.ActiveAgent.Variant)
-	require.Equal(t, "small-model", sess.ActiveAgent.Model.Model,
+
+	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Equal(t, "small-model", agentCfg.Model.Model,
 		"a variant switch moves no identity")
 
 	msgs, err := coord.messages.List(t.Context(), sessionID)
@@ -194,10 +197,10 @@ func TestSwitchVariantToBaselineOutranksSlotVariant(t *testing.T) {
 }
 
 // switchModelEdit builds the edit a session-scoped model pick from the
-// UI sends: same slot label, a different model underneath it.
+// UI sends: a different model, with no slot label since Slot is no
+// longer part of an edit.
 func switchModelEdit(model string) config.ActiveAgentEdit {
 	return config.ActiveAgentEdit{
-		Slot:  config.SlotChore,
 		Model: &config.SelectedModel{Provider: "mock", Model: model},
 	}
 }

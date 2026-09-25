@@ -426,7 +426,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	// continued session without an override keeps the model it was
 	// already on.
 	if mainOverride != nil {
-		edit := config.ActiveAgentEdit{Slot: config.SlotMain, Model: mainOverride}
+		edit := config.ActiveAgentEdit{Model: mainOverride}
 		if _, err := app.AgentCoordinator.EditActiveAgent(ctx, sess.ID, edit); err != nil {
 			return fmt.Errorf("failed to apply the model override: %w", err)
 		}

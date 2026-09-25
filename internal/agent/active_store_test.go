@@ -47,7 +47,6 @@ func (f *fakeActiveIO) materialize(_ string, state config.ActiveAgentState) (con
 	}
 	return config.ActiveAgent{
 		Agent: config.Agent{ID: agentID},
-		Slot:  state.Slot,
 		Model: state.Model,
 	}, nil
 }
@@ -76,7 +75,9 @@ func (f *fakeActiveIO) counter(t *testing.T, sessionID string) int {
 }
 
 // bumpCounter is the read-modify-write the store has to serialize: it
-// reads the value the session currently holds and writes back one more.
+// reads the value the session currently holds and writes back one
+// more. It sets ModelPick itself, standing in for a real pick, since
+// State only persists Model when a pick was recorded.
 func bumpCounter(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
 	n := 0
 	if current.Model.Model != "" {
@@ -86,8 +87,9 @@ func bumpCounter(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
 		}
 		n = parsed
 	}
-	current.Model.Model = strconv.Itoa(n + 1)
-	current.Model.Provider = "mock"
+	model := config.SelectedModel{Model: strconv.Itoa(n + 1), Provider: "mock"}
+	current.Model = model
+	current.ModelPick = &model
 	return current, true, nil
 }
 

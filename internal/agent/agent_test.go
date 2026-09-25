@@ -1017,6 +1017,112 @@ func TestWorkaroundProviderMediaLimitations_VisionModel(t *testing.T) {
 	require.Equal(t, "image/png", file.MediaType)
 }
 
+// TestWorkaroundProviderMediaLimitations_TextOnlyModelPreservesCaption
+// covers the "model doesn't support this media type" branch: the fixed
+// placeholder text must still appear, but a caption carried on the
+// media must be preserved rather than discarded.
+func TestWorkaroundProviderMediaLimitations_TextOnlyModelPreservesCaption(t *testing.T) {
+	env := testEnv(t)
+	sa, _ := testSessionAgent(env, nil, nil, "test prompt")
+	agent := sa.(*sessionAgent)
+
+	pngBase64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
+
+	messages := []fantasy.Message{
+		{
+			Role: fantasy.MessageRoleTool,
+			Content: []fantasy.MessagePart{
+				fantasy.ToolResultPart{
+					ToolCallID: "call_1",
+					Output: fantasy.ToolResultOutputContentMedia{
+						Data:      pngBase64,
+						MediaType: "image/png",
+						Text:      "sunset-over-mountains-42",
+					},
+				},
+			},
+		},
+	}
+
+	// Non-Anthropic provider, no image support — should replace media
+	// with a text placeholder, appending the caption rather than
+	// dropping it.
+	largeModel := Model{
+		ModelCfg: config.SelectedModel{Provider: "openai"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+			SupportsImages: false,
+		}},
+	}
+
+	result := agent.workaroundProviderMediaLimitations(messages, largeModel)
+
+	require.Len(t, result, 1)
+	require.Equal(t, fantasy.MessageRoleTool, result[0].Role)
+
+	tr, ok := fantasy.AsMessagePart[fantasy.ToolResultPart](result[0].Content[0])
+	require.True(t, ok)
+	textOutput, ok := fantasy.AsToolResultOutputType[fantasy.ToolResultOutputContentText](tr.Output)
+	require.True(t, ok)
+	require.Contains(t, textOutput.Text, "not supported by this model")
+	require.Contains(t, textOutput.Text, "sunset-over-mountains-42")
+}
+
+// TestWorkaroundProviderMediaLimitations_VisionModelPreservesCaption
+// covers the "model does support this media type" branch: the fixed
+// placeholder text and synthetic file attachment must still appear,
+// but a caption carried on the media must be preserved rather than
+// discarded.
+func TestWorkaroundProviderMediaLimitations_VisionModelPreservesCaption(t *testing.T) {
+	env := testEnv(t)
+	sa, _ := testSessionAgent(env, nil, nil, "test prompt")
+	agent := sa.(*sessionAgent)
+
+	pngBase64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
+
+	messages := []fantasy.Message{
+		{
+			Role: fantasy.MessageRoleTool,
+			Content: []fantasy.MessagePart{
+				fantasy.ToolResultPart{
+					ToolCallID: "call_1",
+					Output: fantasy.ToolResultOutputContentMedia{
+						Data:      pngBase64,
+						MediaType: "image/png",
+						Text:      "sunset-over-mountains-42",
+					},
+				},
+			},
+		},
+	}
+
+	// Non-Anthropic provider, image support — should create a synthetic
+	// user message with FilePart, appending the caption to the tool
+	// result placeholder rather than dropping it.
+	largeModel := Model{
+		ModelCfg: config.SelectedModel{Provider: "openai"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+			SupportsImages: true,
+		}},
+	}
+
+	result := agent.workaroundProviderMediaLimitations(messages, largeModel)
+
+	require.Len(t, result, 2)
+	require.Equal(t, fantasy.MessageRoleTool, result[0].Role)
+	require.Equal(t, fantasy.MessageRoleUser, result[1].Role)
+
+	tr, ok := fantasy.AsMessagePart[fantasy.ToolResultPart](result[0].Content[0])
+	require.True(t, ok)
+	textOutput, ok := fantasy.AsToolResultOutputType[fantasy.ToolResultOutputContentText](tr.Output)
+	require.True(t, ok)
+	require.Contains(t, textOutput.Text, "see attached file")
+	require.Contains(t, textOutput.Text, "sunset-over-mountains-42")
+
+	file, ok := fantasy.AsMessagePart[fantasy.FilePart](result[1].Content[1])
+	require.True(t, ok)
+	require.Equal(t, "image/png", file.MediaType)
+}
+
 // TestRun_ImageOnlyAttachmentSendsSuccessfully guards the fix for a
 // message that carries only an image attachment and no typed text.
 // fantasy.Agent.Stream rejects an empty Prompt whenever Files is

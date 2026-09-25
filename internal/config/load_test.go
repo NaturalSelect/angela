@@ -836,7 +836,7 @@ func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 
-	assert.Equal(t, []string{"Agent", "LoadReport", "Bash", "AngelaInfo", "AngelaLogs", "JobOutput", "JobKill", "MultiEdit", "LSPDiagnostics", "LSPReferences", "LSPRestart", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "LSPRename", "LSPReplaceSymbol", "Fetch", "Glob", "LS", "Question", "Sourcegraph", "Todos", "Read", "Write", "ListMCPResources", "ReadMCPResource"}, coderAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"Agent", "LoadReport", "Bash", "AngelaInfo", "AngelaLogs", "JobOutput", "JobKill", "MultiEdit", "LSPDiagnostics", "LSPReferences", "LSPRestart", "LSPSymbols", "LSPDefinition", "LSPCallHierarchy", "LSPRename", "LSPReplaceSymbol", "Fetch", "Glob", "LS", "Question", "Sourcegraph", "ImageGenerate", "ImageEdit", "Todos", "Read", "Write", "ListMCPResources", "ReadMCPResource"}, coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
@@ -863,7 +863,7 @@ func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	cfg.SetupAgents()
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
-	assert.Equal(t, []string{"Agent", "LoadReport", "Bash", "AngelaInfo", "AngelaLogs", "JobOutput", "JobKill", "Download", "Edit", "MultiEdit", "LSPDiagnostics", "LSPReferences", "LSPRestart", "LSPRename", "LSPReplaceSymbol", "Fetch", "Question", "Todos", "Write", "ListMCPResources", "ReadMCPResource"}, coderAgent.AllowedTools.Tools)
+	assert.Equal(t, []string{"Agent", "LoadReport", "Bash", "AngelaInfo", "AngelaLogs", "JobOutput", "JobKill", "Download", "Edit", "MultiEdit", "LSPDiagnostics", "LSPReferences", "LSPRestart", "LSPRename", "LSPReplaceSymbol", "Fetch", "Question", "ImageGenerate", "ImageEdit", "Todos", "Write", "ListMCPResources", "ReadMCPResource"}, coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)

@@ -51,11 +51,12 @@ func (b *branchController) Forget(branchSessionID string) {
 
 // Signal resolves a branch, reporting whether this call was the one that did
 // it. Delivery happens at most once: Take removes the waiter under the map's
-// lock, so of any number of racing outcomes — a merge, a user abort, a failed
-// first turn — exactly one wins and the rest are no-ops.
+// lock, so of a merge and a user abort racing to resolve the same branch,
+// exactly one wins and the other is a no-op.
 //
-// It returns false for a session that is not a branch, which is what makes it
-// safe to call unconditionally from the shared cancel path.
+// It returns false for a session that is not a branch, which is what lets
+// AbandonBranch call it unconditionally on any session ID without checking
+// first whether it names a branch at all.
 func (b *branchController) Signal(branchSessionID string, out branchOutcome) bool {
 	w, ok := b.waiters.Take(branchSessionID)
 	if !ok {
@@ -72,10 +73,10 @@ func (b *branchController) Waiting(branchSessionID string) bool {
 	return ok
 }
 
-// branchesOf lists the branch session IDs still suspending the given parent,
-// without resolving any of them. This is what lets a cancel arriving on the
-// parent reach through to interrupt their turns while leaving the rendezvous
-// itself untouched — only Signal may resolve a branch.
+// branchesOf lists the branch session IDs still suspending the given parent.
+// It only reads the rendezvous; what a cancel reaching through this list
+// goes on to do with each one is interruptBranchTree's decision, not this
+// lookup's.
 func (b *branchController) branchesOf(parentSessionID string) []string {
 	var ids []string
 	for branchSessionID, w := range b.waiters.Seq2() {

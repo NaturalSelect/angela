@@ -31,6 +31,16 @@ const (
 // cannot be decoded during session replay.
 const mediaLoadFailedPlaceholder = "[Image data could not be loaded]"
 
+// MediaLoadedContent returns the generic caption used for a tool-result
+// media part that has no meaningful caption of its own (e.g. the Read
+// tool loading an image file). ToAIMessage compares a stored
+// ToolResult.Content against this value so the generic placeholder does
+// not start round-tripping as a visible Text caption on replay, while a
+// real caption (e.g. from an image-generation tool) still does.
+func MediaLoadedContent(mime string) string {
+	return fmt.Sprintf("Loaded %s content", mime)
+}
+
 type FinishReason string
 
 const (
@@ -735,10 +745,19 @@ func (m *Message) ToAIMessage() []fantasy.Message {
 				}
 			} else if result.Data != "" {
 				if stringext.IsValidBase64(result.Data) {
-					content = fantasy.ToolResultOutputContentMedia{
+					media := fantasy.ToolResultOutputContentMedia{
 						Data:      result.Data,
 						MediaType: result.MIMEType,
 					}
+					// Only carry the caption forward when it is real —
+					// not the generic "Loaded ... content" placeholder
+					// used for media with no meaningful caption (e.g.
+					// the Read tool loading an image) — so replay stays
+					// a no-op for that case.
+					if result.Content != "" && result.Content != MediaLoadedContent(result.MIMEType) {
+						media.Text = result.Content
+					}
+					content = media
 				} else {
 					content = fantasy.ToolResultOutputContentText{
 						Text: mediaLoadFailedPlaceholder,

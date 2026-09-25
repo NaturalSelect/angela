@@ -281,6 +281,29 @@ func TestSetupLocalWorkspace_SandboxEnabled_EntersWithoutError(t *testing.T) {
 	}
 }
 
+// TestSetupLocalWorkspace_DisableImageToolsFlagSetsOverride pins that
+// --disable-image-tools reaches the runtime override the same way its
+// sibling boolean flags (--no-vscode-diff, --yolo-merge, ...) do, so
+// the built-in image tools can be turned off for a single run without
+// touching angela.json.
+func TestSetupLocalWorkspace_DisableImageToolsFlagSetsOverride(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cmd := newSetupWorkspaceTestCmd(t, t.TempDir())
+	cmd.Flags().Bool("disable-image-tools", true, "")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	cmd.SetContext(ctx)
+
+	ws, cleanup, err := setupLocalWorkspace(cmd)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	appWs, ok := ws.(*workspace.AppWorkspace)
+	require.True(t, ok, "setupLocalWorkspace must return an *workspace.AppWorkspace in local mode")
+	require.True(t, appWs.Store().Overrides().DisableImageTools)
+}
+
 // TestRandomExitMessage pins the two invariants callers rely on: every
 // message is short enough for a single status line, and the choice is
 // actually randomized rather than a hardcoded string.

@@ -280,6 +280,23 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionNetwork
 		access.URL = p.Query
 
+	case toolnames.ImageGenerate:
+		if _, ok := decodeInput[ImageGenerateParams](rawInput); !ok {
+			return access, false
+		}
+		// URL is a pseudo-host, not a real address: session-level network
+		// grants are scoped by this string the same way they would be by
+		// a domain, since there is no URL of the model's choosing here.
+		access.Action = permission.ActionNetwork
+		access.URL = "openai-images"
+
+	case toolnames.ImageEdit:
+		if _, ok := decodeInput[ImageEditParams](rawInput); !ok {
+			return access, false
+		}
+		access.Action = permission.ActionNetwork
+		access.URL = "openai-images"
+
 	case toolnames.ListMCPResources:
 		p, ok := decodeInput[ListMCPResourcesParams](rawInput)
 		if !ok {
@@ -396,6 +413,25 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			return permission.Preview{
 				Description: "Search the web for: " + p.Query,
 				Params:      WebSearchPermissionsParams(p),
+			}
+		}
+
+	case toolnames.ImageGenerate:
+		if p, ok := decodeInput[ImageGenerateParams](rawInput); ok {
+			return permission.Preview{
+				Description: "Generate image: " + p.Prompt,
+				Params:      ImageGeneratePermissionsParams(p),
+			}
+		}
+
+	case toolnames.ImageEdit:
+		if p, ok := decodeInput[ImageEditParams](rawInput); ok {
+			return permission.Preview{
+				Description: fmt.Sprintf(
+					"Edit image: %s (image_ids: [%s], file_paths: [%s])",
+					p.Prompt, strings.Join(p.ImageIDs, ", "), strings.Join(p.FilePaths, ", "),
+				),
+				Params: ImageEditPermissionsParams(p),
 			}
 		}
 

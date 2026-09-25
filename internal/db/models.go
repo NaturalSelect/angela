@@ -18,6 +18,22 @@ type File struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
+type GeneratedImage struct {
+	ID             string `json:"id"`
+	SessionID      string `json:"session_id"`
+	ToolCallID     string `json:"tool_call_id"`
+	Prompt         string `json:"prompt"`
+	RevisedPrompt  string `json:"revised_prompt"`
+	SourceImageIds string `json:"source_image_ids"`
+	Provider       string `json:"provider"`
+	Model          string `json:"model"`
+	MimeType       string `json:"mime_type"`
+	Width          int64  `json:"width"`
+	Height         int64  `json:"height"`
+	Data           []byte `json:"data"`
+	CreatedAt      int64  `json:"created_at"`
+}
+
 type Message struct {
 	ID               string         `json:"id"`
 	SessionID        string         `json:"session_id"`

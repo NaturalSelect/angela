@@ -719,6 +719,11 @@
           "type": "boolean",
           "description": "Let a session other than the top-level one — a sub-agent or an existing branch — fork a branch agent of its own, within the same subagent_depth budget. Off by default: a branch hands the conversation to the user directly, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.",
           "default": false
+        },
+        "disable_image_tools": {
+          "type": "boolean",
+          "description": "Disable the built-in image generation and editing tools",
+          "default": false
         }
       },
       "additionalProperties": false,

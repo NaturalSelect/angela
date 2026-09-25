@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,7 +11,11 @@ import (
 	"time"
 
 	angelamcp "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
+	"github.com/NaturalSelect/angela/internal/app"
+	"github.com/NaturalSelect/angela/internal/backend"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -190,4 +195,85 @@ func TestPostWorkspaceAgentSessionCommitMessage_BackendError(t *testing.T) {
 	c.handlePostWorkspaceAgentSessionCommitMessage(rec, req)
 
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// newImageWorkspace returns a controller wired to a backend whose
+// single workspace has a real, SQLite-backed Images service (rather
+// than the mock coordinator [buildAgentWorkspace] wires up), so
+// handleGetWorkspaceImage's success and not-found paths can both be
+// exercised without booting a full app.App. The returned sessionID
+// already exists in the same database, satisfying the generated
+// images table's foreign key so callers can create fixture images.
+func newImageWorkspace(t *testing.T) (c *controllerV1, wsID string, svc images.Service, sessionID string) {
+	t.Helper()
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	q := db.New(conn)
+	svc = images.NewService(q)
+
+	sessionID = uuid.New().String()
+	_, err = q.CreateSession(t.Context(), db.CreateSessionParams{ID: sessionID, Title: "Test Session"})
+	require.NoError(t, err)
+
+	b := backend.New(context.Background(), nil, nil)
+	ws := &backend.Workspace{
+		ID:   uuid.New().String(),
+		Path: t.TempDir(),
+		App:  &app.App{Images: svc},
+	}
+	backend.InsertWorkspaceForTest(b, ws)
+	backend.SetWorkspaceShutdownFnForTest(ws, func() {})
+
+	return &controllerV1{backend: b, server: &Server{backend: b}}, ws.ID, svc, sessionID
+}
+
+// TestHandleGetWorkspaceImage_Success verifies that a generated image
+// persisted through the Images service round-trips through the HTTP
+// handler unchanged, including its raw bytes.
+func TestHandleGetWorkspaceImage_Success(t *testing.T) {
+	t.Parallel()
+
+	c, wsID, svc, sessionID := newImageWorkspace(t)
+	img, err := svc.Create(t.Context(), images.CreateParams{
+		SessionID: sessionID,
+		Prompt:    "a cat",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Width:     16,
+		Height:    16,
+		Data:      []byte("fake-png-bytes"),
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	req.SetPathValue("id", wsID)
+	req.SetPathValue("iid", img.ID)
+	rec := httptest.NewRecorder()
+	c.handleGetWorkspaceImage(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got proto.GeneratedImage
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, img.ID, got.ID)
+	require.Equal(t, img.Data, got.Data)
+}
+
+// TestHandleGetWorkspaceImage_ImageNotFound verifies that a missing
+// image ID inside an otherwise valid workspace is mapped to 404 by
+// handleError, distinctly from the workspace-not-found case already
+// covered by wsHandlerCases.
+func TestHandleGetWorkspaceImage_ImageNotFound(t *testing.T) {
+	t.Parallel()
+
+	c, wsID, _, _ := newImageWorkspace(t)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	req.SetPathValue("id", wsID)
+	req.SetPathValue("iid", "img_doesnotexist")
+	rec := httptest.NewRecorder()
+	c.handleGetWorkspaceImage(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -12,6 +13,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/sandbox"
@@ -272,6 +274,23 @@ func TestHandleDialogMsg_ActionAskSideQuestion_DispatchesAndAnswers(t *testing.T
 	item, ok := m.chat.MessageItem(answered.pendingID).(*chat.SideQuestionItem)
 	require.True(t, ok, "handleDialogMsg must append a pending *chat.SideQuestionItem for the question")
 	require.Equal(t, "what now?", item.FilterValue())
+}
+
+// TestHandleDialogMsg_ActionExportImage_EmptyIDOpensArgumentsDialog
+// verifies that picking "Export Image" from the command palette without
+// having entered an image ID yet (ImageID == "") opens the arguments
+// dialog to collect it, instead of asking the workspace for anything.
+func TestHandleDialogMsg_ActionExportImage_EmptyIDOpensArgumentsDialog(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+
+	cmd := m.handleDialogMsg(dialog.ActionExportImage{ImageID: ""})
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the arguments dialog opens")
+	require.True(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
+	if cmd != nil {
+		drain(cmd)
+	}
 }
 
 // TestHandleDialogMsg_ActionToggleMCPServer pins that toggling leaves
@@ -1112,4 +1131,46 @@ func TestHandleDialogMsg_ActionExportSession_WritesToLocalWorkingDirectory(t *te
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "the export must land in this process's own working directory, not a remote workspace path")
 	require.Equal(t, "regression-session.md", entries[0].Name())
+}
+
+// TestHandleDialogMsg_ActionExportImage_WritesToLocalWorkingDirectory
+// mirrors TestHandleDialogMsg_ActionExportSession_WritesToLocalWorkingDirectory
+// above: the export must be written relative to this test process's own
+// current directory, never a path resolved through the workspace (see the
+// comment on the production switch case). This does not run in parallel
+// because it changes the process's working directory.
+func TestHandleDialogMsg_ActionExportImage_WritesToLocalWorkingDirectory(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	img := images.Image{
+		ID:       "img_1a2b3c4d5e6f",
+		MIMEType: "image/png",
+		Data:     []byte("fake-png-bytes"),
+	}
+	ws.EXPECT().GetGeneratedImage(gomock.Any(), "img_1a2b3c4d5e6f").Return(img, nil)
+
+	m := newHandleDialogUI(t, ws)
+
+	dir := t.TempDir()
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(origWd)) })
+
+	cmd := m.handleDialogMsg(dialog.ActionExportImage{ImageID: "img_1a2b3c4d5e6f"})
+	require.NotNil(t, cmd)
+	msg := cmd()
+
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "export must report success, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeInfo, info.Type)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the export must land in this process's own working directory, not a remote workspace path")
+	require.Equal(t, "img_1a2b3c4d5e6f.png", entries[0].Name())
+
+	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	require.NoError(t, err)
+	require.Equal(t, img.Data, data)
 }

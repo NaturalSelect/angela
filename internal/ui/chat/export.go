@@ -338,7 +338,7 @@ func (e *sessionExporter) writeAsset(baseName, mimeType string, data []byte) (st
 		name = "asset"
 	}
 	if filepath.Ext(name) == "" {
-		name += extensionForMIME(mimeType)
+		name += ExtensionForMIME(mimeType)
 	}
 	fileName := fmt.Sprintf("%03d-%s", e.assetCount, name)
 
@@ -362,11 +362,11 @@ func (e *sessionExporter) ensureAssetsDir() error {
 	return nil
 }
 
-// extensionForMIME returns a filename extension (including the
+// ExtensionForMIME returns a filename extension (including the
 // leading dot) for mimeType, preferring a small table of the types
 // angela actually produces before falling back to the standard
 // library's registry, and finally ".bin".
-func extensionForMIME(mimeType string) string {
+func ExtensionForMIME(mimeType string) string {
 	mimeType = strings.TrimSpace(mimeType)
 	if idx := strings.IndexByte(mimeType, ';'); idx >= 0 {
 		mimeType = strings.TrimSpace(mimeType[:idx])

@@ -31,11 +31,13 @@ const (
 
 // Network tools.
 const (
-	Download    = "Download"
-	Fetch       = "Fetch"
-	WebFetch    = "WebFetch"
-	WebSearch   = "WebSearch"
-	Sourcegraph = "Sourcegraph"
+	Download      = "Download"
+	Fetch         = "Fetch"
+	WebFetch      = "WebFetch"
+	WebSearch     = "WebSearch"
+	Sourcegraph   = "Sourcegraph"
+	ImageGenerate = "ImageGenerate"
+	ImageEdit     = "ImageEdit"
 )
 
 // LSP tools.

@@ -514,6 +514,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "export_image", "Export Image", "", ActionExportImage{}).WithAliases("image"))
+	}
+
+	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "commit", "Commit Staged Changes", "", ActionCommit{SessionID: c.sessionID}))
 	}
 

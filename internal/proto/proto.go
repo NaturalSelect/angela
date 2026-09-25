@@ -23,6 +23,9 @@ type Workspace struct {
 	// NoVSCodeDiff disables the VS Code MCP diff-review channel (from
 	// the --no-vscode-diff flag).
 	NoVSCodeDiff bool `json:"no_vscode_diff,omitempty"`
+	// DisableImageTools disables the built-in image generation and
+	// editing tools (from the --disable-image-tools flag).
+	DisableImageTools bool `json:"disable_image_tools,omitempty"`
 	// SubagentBranches lets sub-agents dispatch branch agents, not just
 	// the top-level session (from the --subagent-branches flag).
 	SubagentBranches bool           `json:"subagent_branches,omitempty"`
@@ -67,6 +70,33 @@ type UpdateAvailable struct {
 // current-session endpoint. An empty SessionID clears the entry.
 type CurrentSession struct {
 	SessionID string `json:"session_id"`
+}
+
+// ClientImageSupport is the request body for the client-image-support
+// endpoint: a one-way report that the connected client can render
+// images via the Kitty graphics protocol, letting the backend
+// register the built-in image generation/editing tools.
+type ClientImageSupport struct {
+	Supported bool `json:"supported"`
+}
+
+// GeneratedImage is the wire representation of a generated image's
+// full-size original, returned by the get-generated-image endpoint so
+// the TUI's "Export Image" command can write it to disk.
+type GeneratedImage struct {
+	ID             string   `json:"id"`
+	SessionID      string   `json:"session_id"`
+	ToolCallID     string   `json:"tool_call_id"`
+	Prompt         string   `json:"prompt"`
+	RevisedPrompt  string   `json:"revised_prompt"`
+	SourceImageIDs []string `json:"source_image_ids,omitempty"`
+	Provider       string   `json:"provider"`
+	Model          string   `json:"model"`
+	MIMEType       string   `json:"mime_type"`
+	Width          int      `json:"width"`
+	Height         int      `json:"height"`
+	Data           []byte   `json:"data"`
+	CreatedAt      int64    `json:"created_at"`
 }
 
 // RunComplete is the authoritative end-of-run signal for a session,

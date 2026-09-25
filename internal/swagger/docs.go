@@ -1144,6 +1144,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/client-image-support": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workspaces"
+                ],
+                "summary": "Report client image rendering support",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Client image support report",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/proto.ClientImageSupport"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/config": {
             "get": {
                 "produces": [
@@ -1967,6 +2016,47 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/workspaces/{id}/images/{iid}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workspaces"
+                ],
+                "summary": "Get generated image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Generated image ID",
+                        "name": "iid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/proto.GeneratedImage"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/proto.Error"
                         }
@@ -4220,6 +4310,10 @@ const docTemplate = `{
         "config.Agent": {
             "type": "object",
             "properties": {
+                "allow_yolo_merge": {
+                    "description": "AllowYoloMerge controls whether yolo mode may auto-approve the\nmerge tool for this agent. Nil and true both allow it (the\nworkspace-wide --yolo-merge flag still has to be on); false\nmeans merge always prompts regardless of yolo state.",
+                    "type": "boolean"
+                },
                 "allowed_agents": {
                     "description": "AllowedAgents restricts which agent IDs this agent may dispatch\nthrough the agent tool, with the same tri-state shape as\nAllowedTools. nil means this layer did not mention the field; a\nresolved nil or ToolSetAll means every dispatchable agent is\navailable, matching the behavior before this field existed; and\nToolSetScope grants only its Agents, where an empty list means\nnone are, which is equivalent to dropping the agent tool\nentirely.",
                     "allOf": [
@@ -4714,11 +4808,13 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "main",
-                "chore"
+                "chore",
+                "image"
             ],
             "x-enum-varnames": [
                 "SlotMain",
-                "SlotChore"
+                "SlotChore",
+                "SlotImage"
             ]
         },
         "config.TUIOptions": {
@@ -4925,6 +5021,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "disable_default_providers": {
+                    "type": "boolean"
+                },
+                "disable_image_tools": {
                     "type": "boolean"
                 },
                 "disable_metrics": {
@@ -5262,6 +5361,12 @@ const docTemplate = `{
                 "attached_clients": {
                     "type": "integer"
                 },
+                "cache_creation_tokens": {
+                    "type": "integer"
+                },
+                "cache_read_tokens": {
+                    "type": "integer"
+                },
                 "completion_tokens": {
                     "type": "integer"
                 },
@@ -5308,6 +5413,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/proto.Todo"
                     }
                 },
+                "uncached_input_tokens": {
+                    "type": "integer"
+                },
                 "updated_at": {
                     "type": "integer"
                 }
@@ -5330,6 +5438,14 @@ const docTemplate = `{
                 },
                 "mime_type": {
                     "type": "string"
+                }
+            }
+        },
+        "proto.ClientImageSupport": {
+            "type": "object",
+            "properties": {
+                "supported": {
+                    "type": "boolean"
                 }
             }
         },
@@ -5543,6 +5659,56 @@ const docTemplate = `{
                 },
                 "session_id": {
                     "type": "string"
+                }
+            }
+        },
+        "proto.GeneratedImage": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "integer"
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "prompt": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "revised_prompt": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "source_image_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tool_call_id": {
+                    "type": "string"
+                },
+                "width": {
+                    "type": "integer"
                 }
             }
         },
@@ -5954,6 +6120,12 @@ const docTemplate = `{
                 "attached_clients": {
                     "type": "integer"
                 },
+                "cache_creation_tokens": {
+                    "type": "integer"
+                },
+                "cache_read_tokens": {
+                    "type": "integer"
+                },
                 "completion_tokens": {
                     "type": "integer"
                 },
@@ -5995,6 +6167,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/proto.Todo"
                     }
+                },
+                "uncached_input_tokens": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "integer"
@@ -6250,6 +6425,10 @@ const docTemplate = `{
                 "debug": {
                     "type": "boolean"
                 },
+                "disable_image_tools": {
+                    "description": "DisableImageTools disables the built-in image generation and\nediting tools (from the --disable-image-tools flag).",
+                    "type": "boolean"
+                },
                 "env": {
                     "type": "array",
                     "items": {
@@ -6261,10 +6440,6 @@ const docTemplate = `{
                 },
                 "no_vscode_diff": {
                     "description": "NoVSCodeDiff disables the VS Code MCP diff-review channel (from\nthe --no-vscode-diff flag).",
-                    "type": "boolean"
-                },
-                "yolo_merge": {
-                    "description": "YoloMerge enables the shortcut that lets yolo mode skip the\nmerge tool's approval prompt (from the --yolo-merge flag).",
                     "type": "boolean"
                 },
                 "path": {
@@ -6287,6 +6462,10 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "string"
+                },
+                "yolo_merge": {
+                    "description": "YoloMerge enables the shortcut that lets yolo mode skip the\nmerge tool's approval prompt (from the --yolo-merge flag).",
+                    "type": "boolean"
                 }
             }
         },

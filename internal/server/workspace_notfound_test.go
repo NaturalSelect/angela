@@ -66,6 +66,8 @@ var wsHandlerCases = []wsHandlerCase{
 	{name: "PostWorkspaceQuestionsCancel", invoke: (*controllerV1).handlePostWorkspaceQuestionsCancel},
 	{name: "PostWorkspacePermissionsMode", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspacePermissionsMode},
 	{name: "GetWorkspacePermissionsMode", invoke: (*controllerV1).handleGetWorkspacePermissionsMode},
+	{name: "PostWorkspaceClientImageSupport", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceClientImageSupport},
+	{name: "GetWorkspaceImage", invoke: (*controllerV1).handleGetWorkspaceImage},
 
 	{name: "PostWorkspaceConfigSet", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceConfigSet},
 	{name: "PostWorkspaceConfigRemove", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceConfigRemove},

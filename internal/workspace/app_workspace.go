@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/oauth"
@@ -97,6 +98,23 @@ func (w *AppWorkspace) ParseAgentToolSessionID(sessionID string) (string, string
 func (w *AppWorkspace) SetCurrentSession(ctx context.Context, sessionID string) error {
 	w.app.ReportCurrentSession(sessionID)
 	return nil
+}
+
+// SetClientImageSupport reports that the client can render images
+// (Kitty graphics protocol confirmed working) directly to the
+// in-process App, so it can register the built-in image
+// generation/editing tools. App.SetClientImageSupport cannot fail, so
+// this always returns nil; the error return exists only to satisfy
+// the Workspace interface.
+func (w *AppWorkspace) SetClientImageSupport(ctx context.Context, supported bool) error {
+	w.app.SetClientImageSupport(supported)
+	return nil
+}
+
+// GetGeneratedImage retrieves a generated image's full-size original
+// by ID from the in-process Images service.
+func (w *AppWorkspace) GetGeneratedImage(ctx context.Context, id string) (images.Image, error) {
+	return w.app.Images.Get(ctx, id)
 }
 
 // -- Messages --

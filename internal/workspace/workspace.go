@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/oauth"
@@ -137,6 +138,17 @@ type Workspace interface {
 	// mode it informs the server's per-client presence map so other
 	// observers can compute attached-client counts per session.
 	SetCurrentSession(ctx context.Context, sessionID string) error
+	// SetClientImageSupport reports that this client can render
+	// images (Kitty graphics protocol confirmed working), so the
+	// backend can register the built-in image generation/editing
+	// tools. This is a one-way, workspace-wide flag: once any client
+	// has reported support it stays enabled for the workspace, unlike
+	// SetCurrentSession there is no per-client bookkeeping.
+	SetClientImageSupport(ctx context.Context, supported bool) error
+	// GetGeneratedImage retrieves a generated image's full-size
+	// original by ID, for the "Export Image" command. It returns
+	// images.ErrNotFound if no image with that ID exists.
+	GetGeneratedImage(ctx context.Context, id string) (images.Image, error)
 
 	// Messages
 	ListMessages(ctx context.Context, sessionID string) ([]message.Message, error)

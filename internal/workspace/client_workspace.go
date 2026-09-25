@@ -19,6 +19,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/herdr"
 	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/log"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
@@ -211,6 +212,28 @@ func (w *ClientWorkspace) SetCurrentSession(ctx context.Context, sessionID strin
 	w.lastSession = sessionID
 	w.mu.Unlock()
 	return w.client.SetCurrentSession(ctx, w.workspaceID(), sessionID)
+}
+
+// SetClientImageSupport reports to the server that this client can
+// render images (Kitty graphics protocol confirmed working), so the
+// backend can register the built-in image generation/editing tools.
+// Unlike SetCurrentSession this is not per-client presence the
+// subscription loop needs to re-assert blindly on every reconnect;
+// the caller re-sends it itself when needed (see
+// UI.handleConnectionEvent), since the flag is workspace-wide rather
+// than tied to any one client's presence entry.
+func (w *ClientWorkspace) SetClientImageSupport(ctx context.Context, supported bool) error {
+	return w.client.SetClientImageSupport(ctx, w.workspaceID(), supported)
+}
+
+// GetGeneratedImage retrieves a generated image's full-size original
+// by ID from the server.
+func (w *ClientWorkspace) GetGeneratedImage(ctx context.Context, id string) (images.Image, error) {
+	img, err := w.client.GetGeneratedImage(ctx, w.workspaceID(), id)
+	if err != nil {
+		return images.Image{}, err
+	}
+	return protoToImage(img), nil
 }
 
 // -- Messages --
@@ -1338,6 +1361,26 @@ func protoToMCPEventType(t proto.MCPEventType) mcp.EventType {
 		return mcp.EventResourcesListChanged
 	default:
 		return mcp.EventStateChanged
+	}
+}
+
+// protoToImage converts a wire-level proto.GeneratedImage into the
+// domain images.Image.
+func protoToImage(img proto.GeneratedImage) images.Image {
+	return images.Image{
+		ID:             img.ID,
+		SessionID:      img.SessionID,
+		ToolCallID:     img.ToolCallID,
+		Prompt:         img.Prompt,
+		RevisedPrompt:  img.RevisedPrompt,
+		SourceImageIDs: img.SourceImageIDs,
+		Provider:       img.Provider,
+		Model:          img.Model,
+		MIMEType:       img.MIMEType,
+		Width:          img.Width,
+		Height:         img.Height,
+		Data:           img.Data,
+		CreatedAt:      img.CreatedAt,
 	}
 }
 

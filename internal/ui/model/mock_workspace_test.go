@@ -19,6 +19,7 @@ import (
 	commands "github.com/NaturalSelect/angela/internal/commands"
 	config "github.com/NaturalSelect/angela/internal/config"
 	history "github.com/NaturalSelect/angela/internal/history"
+	images "github.com/NaturalSelect/angela/internal/images"
 	lsp "github.com/NaturalSelect/angela/internal/lsp"
 	message "github.com/NaturalSelect/angela/internal/message"
 	oauth "github.com/NaturalSelect/angela/internal/oauth"
@@ -451,6 +452,21 @@ func (m *MockWorkspace) FileTrackerRecordRead(ctx context.Context, sessionID, pa
 func (mr *MockWorkspaceMockRecorder) FileTrackerRecordRead(ctx, sessionID, path any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FileTrackerRecordRead", reflect.TypeOf((*MockWorkspace)(nil).FileTrackerRecordRead), ctx, sessionID, path)
+}
+
+// GetGeneratedImage mocks base method.
+func (m *MockWorkspace) GetGeneratedImage(ctx context.Context, id string) (images.Image, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetGeneratedImage", ctx, id)
+	ret0, _ := ret[0].(images.Image)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetGeneratedImage indicates an expected call of GetGeneratedImage.
+func (mr *MockWorkspaceMockRecorder) GetGeneratedImage(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetGeneratedImage", reflect.TypeOf((*MockWorkspace)(nil).GetGeneratedImage), ctx, id)
 }
 
 // GetMCPPrompt mocks base method.
@@ -1142,6 +1158,20 @@ func (m *MockWorkspace) SetAgentModelOverride(agentID string, model config.Selec
 func (mr *MockWorkspaceMockRecorder) SetAgentModelOverride(agentID, model any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAgentModelOverride", reflect.TypeOf((*MockWorkspace)(nil).SetAgentModelOverride), agentID, model)
+}
+
+// SetClientImageSupport mocks base method.
+func (m *MockWorkspace) SetClientImageSupport(ctx context.Context, supported bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetClientImageSupport", ctx, supported)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetClientImageSupport indicates an expected call of SetClientImageSupport.
+func (mr *MockWorkspaceMockRecorder) SetClientImageSupport(ctx, supported any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetClientImageSupport", reflect.TypeOf((*MockWorkspace)(nil).SetClientImageSupport), ctx, supported)
 }
 
 // SetCompactMode mocks base method.

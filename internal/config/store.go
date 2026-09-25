@@ -93,6 +93,10 @@ type RuntimeOverrides struct {
 	// is detected, so an edit-shaped prompt only ever opens in the
 	// terminal.
 	NoVSCodeDiff bool
+	// DisableImageTools disables the built-in image generation and
+	// editing tools (via the --disable-image-tools flag), on top of
+	// whatever options.disable_image_tools already says.
+	DisableImageTools bool
 	// SubagentBranches lets sub-agents dispatch branch agents (via the
 	// --subagent-branches flag). It is OR'd with options.subagent_branches
 	// rather than replacing it, and like the other overrides here it is
@@ -269,6 +273,18 @@ func (s *ConfigStore) Overrides() *RuntimeOverrides {
 	s.writeMu.RLock()
 	defer s.writeMu.RUnlock()
 	return &s.overrides
+}
+
+// ImageToolsDisabled reports whether the built-in image generation
+// and editing tools are disabled, either persistently via
+// options.disable_image_tools or for this run via the
+// --disable-image-tools flag.
+func (s *ConfigStore) ImageToolsDisabled() bool {
+	var persisted bool
+	if cfg := s.Config(); cfg != nil && cfg.Options != nil {
+		persisted = cfg.Options.DisableImageTools
+	}
+	return persisted || s.Overrides().DisableImageTools
 }
 
 // LoadedPaths returns the config file paths that were successfully loaded.

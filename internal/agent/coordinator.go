@@ -28,6 +28,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/hooks"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/log"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
@@ -235,24 +236,35 @@ type coordinator struct {
 	allSkills    []*skills.Skill // Pre-filter: all discovered after dedup.
 	activeSkills []*skills.Skill // Post-filter: active skills only.
 	skillTracker *skills.Tracker
+
+	// images stores generated images for the built-in ImageGenerate
+	// and ImageEdit tools; imageSupport reports whether the connected
+	// client has ever proven it can render them. Both are nil-safe: a
+	// nil images, or a nil or false-returning imageSupport, simply
+	// keeps buildTools from registering the two tools. See
+	// imageToolsAvailable.
+	images       images.Service
+	imageSupport func() bool
 }
 
 // CoordinatorOptions holds the dependencies for NewCoordinator. Using a
 // struct keeps the constructor self-documenting and avoids a long
 // positional parameter list.
 type CoordinatorOptions struct {
-	Config      *config.ConfigStore
-	Sessions    session.Service
-	Messages    message.Service
-	Permissions permission.Service
-	Questions   question.Service
-	History     history.Service
-	FileTracker filetracker.Service
-	LSPManager  *lsp.Manager
-	Notify      pubsub.Publisher[notify.Notification]
-	RunComplete pubsub.Publisher[notify.RunComplete]
-	Skills      *skills.Manager
-	Interactive bool
+	Config       *config.ConfigStore
+	Sessions     session.Service
+	Messages     message.Service
+	Permissions  permission.Service
+	Questions    question.Service
+	History      history.Service
+	FileTracker  filetracker.Service
+	LSPManager   *lsp.Manager
+	Notify       pubsub.Publisher[notify.Notification]
+	RunComplete  pubsub.Publisher[notify.RunComplete]
+	Skills       *skills.Manager
+	Images       images.Service
+	ImageSupport func() bool
+	Interactive  bool
 }
 
 func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, error) {
@@ -287,6 +299,8 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		allSkills:      allSkills,
 		activeSkills:   activeSkills,
 		skillTracker:   skillTracker,
+		images:         opts.Images,
+		imageSupport:   opts.ImageSupport,
 		interactive:    opts.Interactive,
 	}
 
@@ -1012,6 +1026,20 @@ func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int
 			tools.NewListMCPResourcesTool(c.cfg),
 			tools.NewReadMCPResourceTool(c.cfg),
 		)
+	}
+
+	// Appended here, before the AllowedTools/disabled_tools filtering
+	// below, so a restrictive allowed_tools list or a global
+	// disabled_tools entry excludes these two tools the same way it
+	// would any other built-in, with no special-casing needed.
+	if available, reason := c.imageToolsAvailable(agent, depth); available {
+		allTools = append(
+			allTools,
+			tools.NewImageGenerateTool(c.newImageClient, c.images),
+			tools.NewImageEditTool(c.newImageClient, c.images, c.cfg.WorkingDir()),
+		)
+	} else {
+		slog.Debug("Image tools unavailable", "agent", agent.ID, "depth", depth, "reason", reason)
 	}
 
 	var filteredTools []fantasy.AgentTool
@@ -1943,23 +1971,18 @@ func (c *coordinator) LockSession(ctx context.Context, sessionID string) (func()
 const branchAbandonedMessage = "The user ended this branch without merging it."
 
 func (c *coordinator) Cancel(sessionID string) {
-	// Cancel never abandons a branch, on the branch itself or on a parent
-	// suspended on one: a parent has nothing of its own running either
-	// way, so treating its cancel as "give up the branch" needs only one
-	// misplaced keystroke to trigger by accident — pressing escape on a
-	// freshly forked branch's parent, before the branch has even produced
-	// its first response, used to abandon it exactly this way. Ending a
-	// branch outright is what AbandonBranch is for, and it is the only
-	// call that ever does it.
+	// Reaching through to a parent's branches below never abandons them:
+	// interruptBranchTree only interrupts whatever turn each one has
+	// running, the same as the branch directly in front of the user gets
+	// when its own turn is cancelled. Giving one up outright, on demand,
+	// is what AbandonBranch is for.
 	//
-	// What a parent's cancel must still do is reach through: it has
-	// nothing of its own to interrupt, so the branches it is suspended
-	// on are interrupted in its place, and so is whatever those branches
-	// have gone on to fork themselves — branchesOf only lists direct
-	// children, so reaching a grandchild takes the same descent
-	// AbandonBranch uses. Nothing here ever calls Signal, so none of
-	// this can resolve a branch, only interrupt whatever turn happens
-	// to be running on it.
+	// Cancelling sessionID's own context, below, is different: when
+	// sessionID is itself a parent suspended on a branch, that context is
+	// exactly what runBranchAgent's select is blocked on, so this ends
+	// that wait through its ctx.Done() case — the third way a branch can
+	// end, alongside a merge and an AbandonBranch, and one that never
+	// goes through Signal at all.
 	for _, branchSessionID := range c.branches.branchesOf(sessionID) {
 		c.interruptBranchTree(branchSessionID)
 	}
@@ -1969,10 +1992,14 @@ func (c *coordinator) Cancel(sessionID string) {
 }
 
 // interruptBranchTree stops whatever turn is running on a branch, then
-// does the same for every branch it has forked in turn. It never resolves
-// anything — that is Signal's job alone — so each of them survives this
-// exactly like the branch directly in front of the user does; only the
-// turn in progress is cut short.
+// does the same for every branch it has forked in turn. Ordinarily that
+// only interrupts: a turn cut short survives, same as the branch directly
+// in front of the user does when its own turn is cancelled. But when a
+// branch in the tree is itself suspended waiting on the next one down,
+// its context is exactly what that wait is blocked on, so cancelling it
+// here ends the wait too — the third way a branch can end, alongside a
+// merge and an AbandonBranch, and the reason this walks the whole tree
+// instead of stopping at the first level.
 //
 // Children are read before the branch itself is touched, for the same
 // reason AbandonBranch reads them first: interrupting a branch suspended
@@ -2468,24 +2495,28 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	}
 
 	if err := c.startBranchTurn(ctx, session.ID, forkPrompt, params); err != nil && !errors.Is(err, context.Canceled) {
-		// Only merge (through the branch's own merge tool) or
-		// AbandonBranch may end a branch, and the opening turn is no
-		// exception: whatever it failed with — a dropped connection, a
-		// retry fantasy gave up on, any other error — says nothing about
-		// whether the branch is worth keeping, and that call belongs to
-		// the user alone. Logging is all this does; the branch is left
-		// alive and idle, with the failure already visible as its own
-		// error banner in the branch's history, for the user to retry
-		// from or give up on outright with AbandonBranch.
+		// A branch only ever ends three ways: a successful merge, an
+		// explicit AbandonBranch, or its parent's own cancel, and the
+		// opening turn is no exception. Whatever it failed with here — a
+		// dropped connection, a retry fantasy gave up on, any other error
+		// that is not a cancellation — is none of those three, so it
+		// says nothing about whether the branch is worth keeping, and
+		// that call belongs to the user alone. Logging is all this does;
+		// the branch is left alive and idle, with the failure already
+		// visible as its own error banner in the branch's history, for
+		// the user to retry from or give up on outright with
+		// AbandonBranch.
 		slog.Error("Branch first turn failed", "session", session.ID, "error", err)
 	}
 
 	select {
 	case <-ctx.Done():
-		// The Result returned here is discarded either way: this
-		// method's caller goes through tools.NewParallelTool, whose
-		// adapter reads ctx.Err() itself once Run returns and reports
-		// cancellation as a Go error instead of a tool result.
+		// The third way a branch can end: the parent's own cancel shares
+		// this context, so it resolves the wait right here without ever
+		// touching Signal. The Result returned here is discarded either
+		// way: this method's caller goes through tools.NewParallelTool,
+		// whose adapter reads ctx.Err() itself once Run returns and
+		// reports cancellation as a Go error instead of a tool result.
 		return tools.Fail("cancelled")
 	case out := <-done:
 		if out.Merged {

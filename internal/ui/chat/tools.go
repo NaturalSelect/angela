@@ -228,6 +228,8 @@ func NewToolMessageItem(
 		item = NewReadToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.Write:
 		item = NewWriteToolMessageItem(sty, toolCall, result, canceled)
+	case toolnames.ImageGenerate, toolnames.ImageEdit:
+		item = NewImageToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.Edit:
 		item = NewEditToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.MultiEdit:
@@ -585,7 +587,7 @@ func toolKindIcon(name string) string {
 	switch name {
 	case toolnames.Bash, toolnames.JobOutput, toolnames.JobKill:
 		return styles.ToolIconShell
-	case toolnames.Write, toolnames.Edit, toolnames.MultiEdit:
+	case toolnames.Write, toolnames.Edit, toolnames.MultiEdit, toolnames.ImageGenerate, toolnames.ImageEdit:
 		return styles.ToolIconWrite
 	case toolnames.Read, toolnames.Download:
 		return styles.ToolIconRead
@@ -1347,6 +1349,14 @@ func (t *baseToolMessageItem) formatParametersForCopy() string {
 func (t *baseToolMessageItem) formatResultForCopy() string {
 	if t.result == nil {
 		return ""
+	}
+
+	// Image tool results always carry Data (the inline preview), but the
+	// caption text is what actually matters for a paste: it names the
+	// image ID for a later ImageEdit call. Handle it before the generic
+	// Data check below would reduce it to a bare "[Image: ...]" marker.
+	if t.toolCall.Name == toolnames.ImageGenerate || t.toolCall.Name == toolnames.ImageEdit {
+		return t.result.Content
 	}
 
 	if t.result.Data != "" {

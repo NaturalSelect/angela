@@ -380,8 +380,10 @@ func TestRunBranchAgentReportsAbandonment(t *testing.T) {
 // A cancel racing an idle branch must not read as "give this up": the
 // TUI's own busy check runs off a cache that can lag the turn actually
 // finishing, and if Cancel treated an idle branch as abandoned, that lag
-// alone would orphan a branch the user only meant to interrupt. Only
-// AbandonBranch may end a branch outright.
+// alone would orphan a branch the user only meant to interrupt. A branch
+// only ever ends three ways — a successful merge, an explicit
+// AbandonBranch, or its parent's own cancel — and this Cancel call,
+// aimed at the branch itself rather than its parent, is none of those.
 func TestCancelOnAnIdleBranchDoesNotAbandonIt(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
@@ -414,7 +416,7 @@ func TestCancelOnAnIdleBranchDoesNotAbandonIt(t *testing.T) {
 	// cancel. What matters here is what it must not do.
 	c.Cancel(branchID)
 	require.True(t, c.branches.Waiting(branchID),
-		"an idle branch must survive a cancel; only AbandonBranch may give it up")
+		"an idle branch must survive a cancel aimed at itself; ending it takes a merge, AbandonBranch, or its parent's own cancel")
 
 	// Still suspended, so it takes an explicit outcome to unblock the
 	// dispatch and let the goroutine finish.
@@ -512,9 +514,10 @@ func TestAbandonBranchGivesUpABusyBranch(t *testing.T) {
 }
 
 // The cancelled turn fails on its way out, but it never touches the
-// rendezvous: only merge or AbandonBranch may resolve a branch, so the
-// abandonment the user already chose is what the parent sees regardless of
-// what the interrupted turn goes on to return.
+// rendezvous: only a merge or an AbandonBranch resolves a branch through
+// Signal — a parent's own cancel ends one without going through Signal at
+// all — so the abandonment the user already chose is what the parent sees
+// regardless of what the interrupted turn goes on to return.
 func TestAbandonBranchOutlivesTheCancelledTurnsFailure(t *testing.T) {
 	f := forkBusyBranch(t, context.DeadlineExceeded)
 
@@ -742,10 +745,11 @@ func TestCancelOnAnOrdinarySessionIsUnchanged(t *testing.T) {
 }
 
 // A generic failure on the opening turn lands the same way a cancellation
-// or a transport error does: only merge or AbandonBranch may end a branch,
-// so whatever this turn failed with, the branch is left alive and idle for
-// the user to see the failure in its own history and decide what to do
-// about it.
+// or a transport error does: a branch only ever ends three ways — a
+// successful merge, an explicit AbandonBranch, or its parent's own
+// cancel — and a generic failure is none of those, so the branch is left
+// alive and idle for the user to see the failure in its own history and
+// decide what to do about it.
 func TestRunBranchAgentSurvivesAGenericOpeningTurnFailure(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)

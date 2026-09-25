@@ -129,6 +129,11 @@ type Chat struct {
 	resizing        bool
 	resizeSettleSeq int
 	warmNext        int
+
+	// imageCaps is the terminal's current image-rendering capabilities,
+	// applied to every chat.ImageItem so it knows whether and how to
+	// render an inline Kitty preview. See SetImageCaps.
+	imageCaps chat.ImageCaps
 }
 
 // scrollbarHideDuration is how long the scrollbar remains visible after scroll activity.
@@ -408,6 +413,9 @@ func (m *Chat) SetMessages(msgs ...chat.MessageItem) tea.Cmd {
 				m.idInxMap[nested.ID()] = i
 			}
 		}
+		if item, ok := msg.(chat.ImageItem); ok {
+			item.SetImageCaps(m.imageCaps)
+		}
 		items[i] = msg
 	}
 	m.list.SetItems(items...)
@@ -432,10 +440,64 @@ func (m *Chat) AppendMessages(msgs ...chat.MessageItem) {
 				m.idInxMap[nested.ID()] = indexOffset + i
 			}
 		}
+		if item, ok := msg.(chat.ImageItem); ok {
+			item.SetImageCaps(m.imageCaps)
+		}
 		items[i] = msg
 	}
 	m.list.AppendItems(items...)
 	m.appendQueuedTail(queued)
+}
+
+// SetImageCaps updates the terminal capabilities every chat.ImageItem in
+// the chat renders against, immediately propagating the change to items
+// already in the list. New items pick up the current value in
+// SetMessages/AppendMessages.
+func (m *Chat) SetImageCaps(caps chat.ImageCaps) {
+	if m.imageCaps == caps {
+		return
+	}
+	m.imageCaps = caps
+	for i := range m.list.Len() {
+		if item, ok := m.list.ItemAt(i).(chat.ImageItem); ok {
+			item.SetImageCaps(caps)
+		}
+	}
+}
+
+// ImageTransmitCmds collects the transmit commands for every chat.ImageItem
+// in the chat whose current grid size is not yet on the terminal (or not
+// yet in flight), so a resize or a newly detected capability can
+// (re)start inline previews across the whole transcript.
+func (m *Chat) ImageTransmitCmds() tea.Cmd {
+	width := m.list.Width()
+	var cmds []tea.Cmd
+	for i := range m.list.Len() {
+		item, ok := m.list.ItemAt(i).(chat.ImageItem)
+		if !ok {
+			continue
+		}
+		if cmd := item.ImageTransmitCmd(width); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
+// SetImageReady marks the item identified by itemID's grid size as
+// transmitted, so its next render draws the Kitty placeholder grid
+// instead of the plain-text fallback.
+func (m *Chat) SetImageReady(itemID, key string) {
+	idx, ok := m.idInxMap[itemID]
+	if !ok {
+		return
+	}
+	if item, ok := m.list.ItemAt(idx).(chat.ImageItem); ok {
+		item.SetImageReady(key)
+	}
 }
 
 // dropQueuedTail removes the queued entries parked at the end of the

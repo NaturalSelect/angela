@@ -1994,10 +1994,10 @@ func (c *coordinator) interruptBranchTree(sessionID string) {
 // rather than merely interrupted.
 //
 // The order is load-bearing. Signalling first claims the rendezvous for the
-// abandonment, so the error the cancelled turn may raise on its way out
-// arrives second and is discarded. Cancelling first would let a failing
-// first turn report "could not be started" through the same rendezvous and
-// win, leaving the parent with an outcome the user never chose.
+// abandonment, so a merge the branch's own turn is racing to complete
+// arrives second and is discarded. Cancelling first would leave a window
+// in which that in-flight turn could still merge successfully and win,
+// leaving the parent with an outcome the user never chose.
 //
 // It also cascades. A branch can fork branches of its own, within the same
 // delegation budget as any other dispatch, and once this one is gone
@@ -2467,26 +2467,17 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 		})
 	}
 
-	if err := c.startBranchTurn(ctx, session.ID, forkPrompt, params); err != nil &&
-		!errors.Is(err, context.Canceled) && !fantasy.IsTransportError(err) {
-		// Reported through the rendezvous rather than returned, so that a
-		// user who abandoned the branch while it was failing to start
-		// still sees their own outcome: delivery happens once, and
-		// whichever came first wins.
-		//
-		// A plain cancellation is excluded: interrupting the opening
-		// turn — the same way any later turn can be interrupted — must
-		// leave the branch alive and idle, not end it. A transport
-		// error is excluded for the same reason: it means the
-		// provider's connection dropped mid-stream after fantasy
-		// already retried and gave up, which says nothing about
-		// whether the branch itself is worth keeping. Only a genuine
-		// failure is reported here; ending the branch outright is still
-		// AbandonBranch's call alone.
+	if err := c.startBranchTurn(ctx, session.ID, forkPrompt, params); err != nil && !errors.Is(err, context.Canceled) {
+		// Only merge (through the branch's own merge tool) or
+		// AbandonBranch may end a branch, and the opening turn is no
+		// exception: whatever it failed with — a dropped connection, a
+		// retry fantasy gave up on, any other error — says nothing about
+		// whether the branch is worth keeping, and that call belongs to
+		// the user alone. Logging is all this does; the branch is left
+		// alive and idle, with the failure already visible as its own
+		// error banner in the branch's history, for the user to retry
+		// from or give up on outright with AbandonBranch.
 		slog.Error("Branch first turn failed", "session", session.ID, "error", err)
-		c.branches.Signal(session.ID, branchOutcome{
-			Payload: fmt.Sprintf("The branch could not be started: %s", err),
-		})
 	}
 
 	select {

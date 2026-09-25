@@ -511,10 +511,10 @@ func TestAbandonBranchGivesUpABusyBranch(t *testing.T) {
 	require.Contains(t, resp.Content, "ended this branch")
 }
 
-// The cancelled turn fails on its way out and reports that failure through
-// the same rendezvous. It has to lose: the user already chose an outcome,
-// and signalling before cancelling is what keeps "could not be started"
-// from overwriting it.
+// The cancelled turn fails on its way out, but it never touches the
+// rendezvous: only merge or AbandonBranch may resolve a branch, so the
+// abandonment the user already chose is what the parent sees regardless of
+// what the interrupted turn goes on to return.
 func TestAbandonBranchOutlivesTheCancelledTurnsFailure(t *testing.T) {
 	f := forkBusyBranch(t, context.DeadlineExceeded)
 
@@ -741,10 +741,12 @@ func TestCancelOnAnOrdinarySessionIsUnchanged(t *testing.T) {
 	require.True(t, c.branches.Waiting("branch-1"))
 }
 
-// The opening turn failing must not strand the caller. It is reported
-// through the same rendezvous everything else uses, so a user who gave up
-// while it was failing still sees their own outcome rather than this one.
-func TestRunBranchAgentReportsAStartupFailure(t *testing.T) {
+// A generic failure on the opening turn lands the same way a cancellation
+// or a transport error does: only merge or AbandonBranch may end a branch,
+// so whatever this turn failed with, the branch is left alive and idle for
+// the user to see the failure in its own history and decide what to do
+// about it.
+func TestRunBranchAgentSurvivesAGenericOpeningTurnFailure(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
 
@@ -758,9 +760,21 @@ func TestRunBranchAgentReportsAStartupFailure(t *testing.T) {
 			return nil, context.DeadlineExceeded
 		})
 
-	resp := c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
-	require.True(t, resp.IsError)
-	require.Contains(t, resp.Content, "could not be started")
+	var resp fantasy.ToolResponse
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		resp = c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID)).Response()
+	}()
+
+	branchID := requireBranchSessions(t, c, parent.ID, 1)[0]
+	require.True(t, c.branches.Waiting(branchID),
+		"a generic failure on the opening turn must leave the branch alive, not report it as failed to start")
+
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+	wg.Wait()
+	require.Equal(t, "done", resp.Content)
 }
 
 // Interrupting the opening turn must land exactly where interrupting any

@@ -47,6 +47,13 @@ definitions:
     type: object
   config.Agent:
     properties:
+      allow_yolo_merge:
+        description: |-
+          AllowYoloMerge controls whether yolo mode may auto-approve the
+          merge tool for this agent. Nil and true both allow it (the
+          workspace-wide --yolo-merge flag still has to be on); false
+          means merge always prompts regardless of yolo state.
+        type: boolean
       allowed_agents:
         allOf:
         - $ref: '#/definitions/config.AllowedAgentSet'
@@ -475,10 +482,12 @@ definitions:
     enum:
     - main
     - chore
+    - image
     type: string
     x-enum-varnames:
     - SlotMain
     - SlotChore
+    - SlotImage
   config.TUIOptions:
     properties:
       compact_mode:
@@ -638,6 +647,8 @@ definitions:
       debug_lsp:
         type: boolean
       disable_default_providers:
+        type: boolean
+      disable_image_tools:
         type: boolean
       disable_metrics:
         type: boolean
@@ -883,6 +894,10 @@ definitions:
         type: string
       attached_clients:
         type: integer
+      cache_creation_tokens:
+        type: integer
+      cache_read_tokens:
+        type: integer
       completion_tokens:
         type: integer
       cost:
@@ -916,6 +931,8 @@ definitions:
         items:
           $ref: '#/definitions/proto.Todo'
         type: array
+      uncached_input_tokens:
+        type: integer
       updated_at:
         type: integer
     type: object
@@ -931,6 +948,11 @@ definitions:
         type: string
       mime_type:
         type: string
+    type: object
+  proto.ClientImageSupport:
+    properties:
+      supported:
+        type: boolean
     type: object
   proto.CommitMessageRequest:
     properties:
@@ -1068,6 +1090,39 @@ definitions:
         type: string
       session_id:
         type: string
+    type: object
+  proto.GeneratedImage:
+    properties:
+      created_at:
+        type: integer
+      data:
+        items:
+          type: integer
+        type: array
+      height:
+        type: integer
+      id:
+        type: string
+      mime_type:
+        type: string
+      model:
+        type: string
+      prompt:
+        type: string
+      provider:
+        type: string
+      revised_prompt:
+        type: string
+      session_id:
+        type: string
+      source_image_ids:
+        items:
+          type: string
+        type: array
+      tool_call_id:
+        type: string
+      width:
+        type: integer
     type: object
   proto.ImportCopilotResponse:
     properties:
@@ -1344,6 +1399,10 @@ definitions:
         type: string
       attached_clients:
         type: integer
+      cache_creation_tokens:
+        type: integer
+      cache_read_tokens:
+        type: integer
       completion_tokens:
         type: integer
       cost:
@@ -1372,6 +1431,8 @@ definitions:
         items:
           $ref: '#/definitions/proto.Todo'
         type: array
+      uncached_input_tokens:
+        type: integer
       updated_at:
         type: integer
     type: object
@@ -1542,6 +1603,11 @@ definitions:
         type: string
       debug:
         type: boolean
+      disable_image_tools:
+        description: |-
+          DisableImageTools disables the built-in image generation and
+          editing tools (from the --disable-image-tools flag).
+        type: boolean
       env:
         items:
           type: string
@@ -1552,11 +1618,6 @@ definitions:
         description: |-
           NoVSCodeDiff disables the VS Code MCP diff-review channel (from
           the --no-vscode-diff flag).
-        type: boolean
-      yolo_merge:
-        description: |-
-          YoloMerge enables the shortcut that lets yolo mode skip the
-          merge tool's approval prompt (from the --yolo-merge flag).
         type: boolean
       path:
         type: string
@@ -1580,6 +1641,11 @@ definitions:
         type: boolean
       version:
         type: string
+      yolo_merge:
+        description: |-
+          YoloMerge enables the shortcut that lets yolo mode skip the
+          merge tool's approval prompt (from the --yolo-merge flag).
+        type: boolean
     type: object
   proto.YoloSkipMergeRequest:
     properties:
@@ -2355,6 +2421,38 @@ paths:
       summary: Update agent
       tags:
       - agent
+  /workspaces/{id}/client-image-support:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Client image support report
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.ClientImageSupport'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Report client image rendering support
+      tags:
+      - workspaces
   /workspaces/{id}/config:
     get:
       parameters:
@@ -2898,6 +2996,33 @@ paths:
       summary: Record file read
       tags:
       - filetracker
+  /workspaces/{id}/images/{iid}:
+    get:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Generated image ID
+        in: path
+        name: iid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.GeneratedImage'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Get generated image
+      tags:
+      - workspaces
   /workspaces/{id}/lsps:
     get:
       parameters:

@@ -11,6 +11,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/backend"
 	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/proto"
@@ -221,6 +222,26 @@ func sessionToProto(s session.Session) proto.Session {
 		Todos:               todosToProto(s.Todos),
 		CreatedAt:           s.CreatedAt,
 		UpdatedAt:           s.UpdatedAt,
+	}
+}
+
+// imageToProto converts a domain images.Image into the wire-level
+// proto.GeneratedImage.
+func imageToProto(img images.Image) proto.GeneratedImage {
+	return proto.GeneratedImage{
+		ID:             img.ID,
+		SessionID:      img.SessionID,
+		ToolCallID:     img.ToolCallID,
+		Prompt:         img.Prompt,
+		RevisedPrompt:  img.RevisedPrompt,
+		SourceImageIDs: img.SourceImageIDs,
+		Provider:       img.Provider,
+		Model:          img.Model,
+		MIMEType:       img.MIMEType,
+		Width:          img.Width,
+		Height:         img.Height,
+		Data:           img.Data,
+		CreatedAt:      img.CreatedAt,
 	}
 }
 

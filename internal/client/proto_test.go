@@ -387,6 +387,22 @@ func TestGetSessionNonOKStatus(t *testing.T) {
 	require.Contains(t, err.Error(), "status code 404")
 }
 
+// TestGetGeneratedImageNonOKStatus verifies that a 404 from the server
+// (the image does not exist) surfaces as an error identifying the
+// status code, mirroring TestGetSessionNonOKStatus.
+func TestGetGeneratedImageNonOKStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, err := captureClient(t, srv).GetGeneratedImage(context.Background(), "ws1", "img1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "status code 404")
+}
+
 func TestCreateSessionSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -637,6 +653,26 @@ func TestProtoMethodsSuccessPaths(t *testing.T) {
 			wantPath:   "/v1/workspaces/ws1/current-session",
 			call: func(t *testing.T, c *Client) {
 				require.NoError(t, c.SetCurrentSession(context.Background(), "ws1", "sess1"))
+			},
+		},
+		{
+			name:       "SetClientImageSupport",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/client-image-support",
+			call: func(t *testing.T, c *Client) {
+				require.NoError(t, c.SetClientImageSupport(context.Background(), "ws1", true))
+			},
+		},
+		{
+			name:       "GetGeneratedImage",
+			wantMethod: http.MethodGet,
+			wantPath:   "/v1/workspaces/ws1/images/img1",
+			body:       mustJSON(t, proto.GeneratedImage{ID: "img1", MIMEType: "image/png", Data: []byte("fake-png-bytes")}),
+			call: func(t *testing.T, c *Client) {
+				got, err := c.GetGeneratedImage(context.Background(), "ws1", "img1")
+				require.NoError(t, err)
+				require.Equal(t, "img1", got.ID)
+				require.Equal(t, []byte("fake-png-bytes"), got.Data)
 			},
 		},
 		{

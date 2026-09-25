@@ -77,6 +77,9 @@ const (
 	// SlotChore is the cheap model configuration used for auxiliary
 	// work such as titles and summaries.
 	SlotChore SlotName = "chore"
+	// SlotImage is the model configuration used by the built-in image
+	// generation and editing tools.
+	SlotImage SlotName = "image"
 )
 
 const (
@@ -96,6 +99,7 @@ const (
 	AgentGenerateAgent string = "generate-agent"
 	AgentInitialize    string = "initialize"
 	AgentCommit        string = "commit"
+	AgentImage         string = "image"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -548,6 +552,7 @@ type Options struct {
 	AgentPaths                []string     `json:"agent_paths,omitempty" jsonschema:"description=Paths to directories containing agent markdown files,example=~/.config/angela/agents,example=./agents"`
 	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
 	SubagentBranches          bool         `json:"subagent_branches,omitempty" jsonschema:"description=Let a session other than the top-level one — a sub-agent or an existing branch — fork a branch agent of its own\\, within the same subagent_depth budget. Off by default: a branch hands the conversation to the user directly\\, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.,default=false"`
+	DisableImageTools         bool         `json:"disable_image_tools,omitempty" jsonschema:"description=Disable the built-in image generation and editing tools,default=false"`
 }
 
 // DefaultSubagentDepth is the effective subagent dispatch depth when
@@ -1163,6 +1168,8 @@ func allToolNames() []string {
 		toolnames.LS,
 		toolnames.Question,
 		toolnames.Sourcegraph,
+		toolnames.ImageGenerate,
+		toolnames.ImageEdit,
 		toolnames.Todos,
 		toolnames.Read,
 		toolnames.Write,
@@ -1445,6 +1452,17 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Hidden:       ptr(true),
 			Slot:         SlotChore,
 			MaxTokens:    ptr(int64(150)),
+			ContextPaths: contextPaths,
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
+			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
+		},
+		AgentImage: {
+			ID:           AgentImage,
+			Name:         "Image",
+			Description:  "Selects the model used by the built-in image tools.",
+			Mode:         AgentModeSubagent,
+			Hidden:       ptr(true),
+			Slot:         SlotImage,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},

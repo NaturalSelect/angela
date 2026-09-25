@@ -2,12 +2,15 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 
 # slots
 
-`slots` maps a **slot name** to the model that fills it. Two slots ship with
-Angela:
+`slots` maps a **slot name** to the model that fills it. Three slots ship
+with Angela:
 
 - **`main`** — the workhorse, used by `coder` and most agents.
 - **`chore`** — the cheap model for auxiliary work such as titles and
   summaries.
+- **`image`** — the model used by the built-in image generation/editing
+  tools. Needs a provider of type `openai` or `openaicompat` that
+  implements `/images/*`.
 
 Any other slot name may be defined; it takes effect only when an agent's
 `slot` field names it. A slot is mostly a pure reference — thinking mode,

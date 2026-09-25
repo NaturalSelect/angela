@@ -30,6 +30,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createFileStmt, err = db.PrepareContext(ctx, createFile); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateFile: %w", err)
 	}
+	if q.createGeneratedImageStmt, err = db.PrepareContext(ctx, createGeneratedImage); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateGeneratedImage: %w", err)
+	}
 	if q.createMessageStmt, err = db.PrepareContext(ctx, createMessage); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateMessage: %w", err)
 	}
@@ -62,6 +65,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getFileReadStmt, err = db.PrepareContext(ctx, getFileRead); err != nil {
 		return nil, fmt.Errorf("error preparing query GetFileRead: %w", err)
+	}
+	if q.getGeneratedImageStmt, err = db.PrepareContext(ctx, getGeneratedImage); err != nil {
+		return nil, fmt.Errorf("error preparing query GetGeneratedImage: %w", err)
 	}
 	if q.getHourDayHeatmapStmt, err = db.PrepareContext(ctx, getHourDayHeatmap); err != nil {
 		return nil, fmt.Errorf("error preparing query GetHourDayHeatmap: %w", err)
@@ -159,6 +165,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createFileStmt: %w", cerr)
 		}
 	}
+	if q.createGeneratedImageStmt != nil {
+		if cerr := q.createGeneratedImageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createGeneratedImageStmt: %w", cerr)
+		}
+	}
 	if q.createMessageStmt != nil {
 		if cerr := q.createMessageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createMessageStmt: %w", cerr)
@@ -212,6 +223,11 @@ func (q *Queries) Close() error {
 	if q.getFileReadStmt != nil {
 		if cerr := q.getFileReadStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getFileReadStmt: %w", cerr)
+		}
+	}
+	if q.getGeneratedImageStmt != nil {
+		if cerr := q.getGeneratedImageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getGeneratedImageStmt: %w", cerr)
 		}
 	}
 	if q.getHourDayHeatmapStmt != nil {
@@ -390,6 +406,7 @@ type Queries struct {
 	tx                                   *sql.Tx
 	addSessionCostStmt                   *sql.Stmt
 	createFileStmt                       *sql.Stmt
+	createGeneratedImageStmt             *sql.Stmt
 	createMessageStmt                    *sql.Stmt
 	createSessionStmt                    *sql.Stmt
 	deleteFileStmt                       *sql.Stmt
@@ -401,6 +418,7 @@ type Queries struct {
 	getFileStmt                          *sql.Stmt
 	getFileByPathAndSessionStmt          *sql.Stmt
 	getFileReadStmt                      *sql.Stmt
+	getGeneratedImageStmt                *sql.Stmt
 	getHourDayHeatmapStmt                *sql.Stmt
 	getLastAssistantMessageBySessionStmt *sql.Stmt
 	getLastSessionStmt                   *sql.Stmt
@@ -436,6 +454,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		tx:                                   tx,
 		addSessionCostStmt:                   q.addSessionCostStmt,
 		createFileStmt:                       q.createFileStmt,
+		createGeneratedImageStmt:             q.createGeneratedImageStmt,
 		createMessageStmt:                    q.createMessageStmt,
 		createSessionStmt:                    q.createSessionStmt,
 		deleteFileStmt:                       q.deleteFileStmt,
@@ -447,6 +466,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getFileStmt:                          q.getFileStmt,
 		getFileByPathAndSessionStmt:          q.getFileByPathAndSessionStmt,
 		getFileReadStmt:                      q.getFileReadStmt,
+		getGeneratedImageStmt:                q.getGeneratedImageStmt,
 		getHourDayHeatmapStmt:                q.getHourDayHeatmapStmt,
 		getLastAssistantMessageBySessionStmt: q.getLastAssistantMessageBySessionStmt,
 		getLastSessionStmt:                   q.getLastSessionStmt,

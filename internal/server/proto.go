@@ -195,6 +195,61 @@ func (c *controllerV1) handlePostWorkspaceCurrentSession(w http.ResponseWriter, 
 	}
 }
 
+// handlePostWorkspaceClientImageSupport records that a connected
+// client can render images (Kitty graphics protocol confirmed
+// working), letting the backend register the built-in image
+// generation/editing tools for the workspace. This is a one-way,
+// workspace-wide flag: once any client has reported support it stays
+// enabled, so unlike current-session there is no per-client presence
+// bookkeeping and no client_id is required.
+//
+//	@Summary		Report client image rendering support
+//	@Tags			workspaces
+//	@Accept			json
+//	@Produce		json
+//	@Param			id			path	string						true	"Workspace ID"
+//	@Param			request		body	proto.ClientImageSupport	true	"Client image support report"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Router			/workspaces/{id}/client-image-support [post]
+func (c *controllerV1) handlePostWorkspaceClientImageSupport(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req proto.ClientImageSupport
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+	if err := c.backend.SetClientImageSupport(id, req.Supported); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+}
+
+// handleGetWorkspaceImage returns a generated image's full-size
+// original by ID, so the TUI's "Export Image" command can write it to
+// disk.
+//
+//	@Summary		Get generated image
+//	@Tags			workspaces
+//	@Produce		json
+//	@Param			id	path		string	true	"Workspace ID"
+//	@Param			iid	path		string	true	"Generated image ID"
+//	@Success		200	{object}	proto.GeneratedImage
+//	@Failure		404	{object}	proto.Error
+//	@Router			/workspaces/{id}/images/{iid} [get]
+func (c *controllerV1) handleGetWorkspaceImage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	iid := r.PathValue("iid")
+	img, err := c.backend.GetGeneratedImage(id, iid)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, imageToProto(img))
+}
+
 // handleDeleteClient retires a client, releasing every claim it holds.
 //
 //	@Summary		Retire a client
@@ -1509,6 +1564,8 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 	case errors.Is(err, backend.ErrLSPClientNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, backend.ErrSessionNotFound):
+		status = http.StatusNotFound
+	case errors.Is(err, backend.ErrImageNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, backend.ErrAgentNotAvailable),
 		errors.Is(err, backend.ErrVariantNotAvailable):

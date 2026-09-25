@@ -261,6 +261,15 @@ type UI struct {
 	// caps hold different terminal capabilities that we query for.
 	caps common.Capabilities
 
+	// imageSupportReported tracks whether this session has already
+	// told the workspace the client can render images (Kitty graphics
+	// protocol confirmed working via a successful KittyGraphicsEvent),
+	// so the one-shot report fires at most once per session — except
+	// on a client/server reconnect, where handleConnectionEvent
+	// re-sends it since a restarted daemon has no memory of the
+	// earlier report.
+	imageSupportReported bool
+
 	// Editor components
 	textarea textarea.Model
 
@@ -1131,6 +1140,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+		if cmd := m.applyImageCaps(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case tea.KeyboardEnhancementsMsg:
 		m.keyenh = msg
 		if msg.SupportsKeyDisambiguation() {
@@ -1562,6 +1574,19 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"response", string(msg.Payload),
 				"options", msg.Options)
 		}
+		if m.caps.SupportsKittyGraphics() && !m.imageSupportReported {
+			m.imageSupportReported = true
+			cmds = append(cmds, m.reportClientImageSupport())
+		}
+		if cmd := m.applyImageCaps(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case uv.PixelSizeEvent:
+		if cmd := m.applyImageCaps(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case chat.ImageReadyMsg:
+		m.chat.SetImageReady(msg.ItemID, msg.Key)
 	case dialog.ActionMCPAuthStarted:
 		cmds = append(cmds, m.authenticateMCP(msg.Ctx, msg.Name))
 	case dialog.ActionMCPAuthComplete, dialog.ActionMCPAuthErrored:
@@ -1745,6 +1770,9 @@ func (m *UI) applySessionItems(items []chat.MessageItem) tea.Cmd {
 	if cmd := m.chat.SetMessages(items...); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
+	if cmd := m.chat.ImageTransmitCmds(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	if cmd := m.chat.RestartPausedVisibleAnimations(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -1779,10 +1807,53 @@ func (m *UI) handleConnectionEvent(msg workspace.ConnectionEvent) []tea.Cmd {
 	}
 	m.status.SetInfoMsg(info)
 	cmds := []tea.Cmd{clearInfoMsgCmd(info.TTL)}
-	if msg.State == workspace.ConnectionRecovered && m.session != nil {
-		cmds = append(cmds, m.loadSession(m.session.ID))
+	if msg.State == workspace.ConnectionRecovered {
+		if m.session != nil {
+			cmds = append(cmds, m.loadSession(m.session.ID))
+		}
+		// A daemon we just reconnected to may be a fresh restart that
+		// lost the in-memory image-support flag entirely, even though
+		// this TUI already proved the terminal supports it earlier in
+		// the session. The terminal only answers the Kitty graphics
+		// query once at startup, so there is no future
+		// KittyGraphicsEvent to re-derive this from — re-assert it
+		// directly instead.
+		if m.imageSupportReported {
+			cmds = append(cmds, m.reportClientImageSupport())
+		}
 	}
 	return cmds
+}
+
+// reportClientImageSupport returns a fire-and-forget tea.Cmd that
+// tells the workspace this client can render images, once the Kitty
+// graphics protocol handshake has confirmed real terminal support.
+// This is what lets the backend register the built-in image
+// generation/editing tools. Errors are logged only: the report is
+// best-effort background bookkeeping and never surfaces to the user.
+func (m *UI) reportClientImageSupport() tea.Cmd {
+	return func() tea.Msg {
+		if err := m.com.Workspace.SetClientImageSupport(context.Background(), true); err != nil {
+			slog.Warn("Failed to report client image support", "error", err)
+		}
+		return nil
+	}
+}
+
+// applyImageCaps propagates the terminal's current image-rendering
+// capabilities to the chat and returns a command that (re)starts any
+// image transmissions those capabilities newly make possible: Kitty
+// support just confirmed, the per-cell pixel size just resolved, or a
+// resize changing the grid an inline image is sized for.
+func (m *UI) applyImageCaps() tea.Cmd {
+	_, tmux := m.caps.Env.LookupEnv("TMUX")
+	cellW, cellH := m.caps.CellSize()
+	m.chat.SetImageCaps(chat.ImageCaps{
+		Kitty: m.caps.SupportsKittyGraphics(),
+		Tmux:  tmux,
+		Cell:  fimage.CellSize{Width: cellW, Height: cellH},
+	})
+	return m.chat.ImageTransmitCmds()
 }
 
 // loadNestedToolCalls recursively loads nested tool calls for the agent tool.
@@ -1948,6 +2019,9 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			}
 			if toolMsgItem, ok := toolItem.(chat.ToolMessageItem); ok {
 				toolMsgItem.SetResult(&tr)
+				if cmd := m.chat.ImageTransmitCmds(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 				if m.chat.Follow() {
 					if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
 						cmds = append(cmds, cmd)
@@ -2299,6 +2373,63 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			}
 
 			return util.ReportInfo("Exported session to " + outPath)()
+		})
+	case dialog.ActionExportImage:
+		if strings.TrimSpace(msg.ImageID) == "" {
+			m.dialog.CloseFrontDialog()
+			argsDialog := dialog.NewArguments(
+				m.com,
+				"Export Image",
+				"Writes a generated image's full-size original to a file on disk.",
+				[]commands.Argument{
+					{ID: "IMAGE_ID", Title: "Image ID", Required: true},
+					{ID: "OUTPUT", Title: "Output path (optional)", Required: false},
+				},
+				msg, // Pass the action as the result
+			)
+			m.dialog.OpenDialog(argsDialog)
+			break
+		}
+		m.dialog.CloseFrontDialog()
+		imageID := msg.ImageID
+		output := msg.Output
+		cmds = append(cmds, func() tea.Msg {
+			ctx := context.Background()
+			img, err := m.com.Workspace.GetGeneratedImage(ctx, imageID)
+			if err != nil {
+				return util.ReportError(err)()
+			}
+
+			// The export always writes through this process's own
+			// filesystem, never the workspace's: in client-server mode
+			// Workspace.WorkingDir() names a path on the daemon host,
+			// which this client cannot write to and which may not even
+			// exist locally.
+			workingDir, err := os.Getwd()
+			if err != nil {
+				return util.ReportError(err)()
+			}
+
+			target := output
+			if target == "" {
+				target = imageID + chat.ExtensionForMIME(img.MIMEType)
+			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(workingDir, target)
+			}
+
+			outPath, err := chat.UniqueExportPath(target)
+			if err != nil {
+				return util.ReportError(err)()
+			}
+			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+				return util.ReportError(err)()
+			}
+			if err := os.WriteFile(outPath, img.Data, 0o644); err != nil {
+				return util.ReportError(err)()
+			}
+
+			return util.ReportInfo("Exported image to " + outPath)()
 		})
 	case dialog.ActionUndo:
 		// Session-scoped, matching ActionSummarize: the busy cache

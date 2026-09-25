@@ -217,6 +217,8 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 		toolnames.Fetch,
 		toolnames.Glob,
 		toolnames.Grep,
+		toolnames.ImageEdit,
+		toolnames.ImageGenerate,
 		toolnames.JobKill,
 		toolnames.JobOutput,
 		toolnames.LSPRestart,

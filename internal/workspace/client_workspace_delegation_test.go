@@ -105,6 +105,50 @@ func TestClientWorkspace_GetSession(t *testing.T) {
 	}
 }
 
+// TestClientWorkspace_GetGeneratedImage pins the request path and the
+// proto-to-domain conversion for fetching a generated image's
+// full-size original, mirroring TestClientWorkspace_GetSession.
+func TestClientWorkspace_GetGeneratedImage(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "success"},
+		{name: "server error", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, http.MethodGet, r.Method)
+				require.Equal(t, "/v1/workspaces/ws-1/images/img1", r.URL.Path)
+				if tc.wantErr {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				require.NoError(t, json.NewEncoder(w).Encode(proto.GeneratedImage{
+					ID:       "img1",
+					MIMEType: "image/png",
+					Data:     []byte("fake-png-bytes"),
+				}))
+			})
+
+			got, err := ws.GetGeneratedImage(t.Context(), "img1")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "img1", got.ID)
+			require.Equal(t, []byte("fake-png-bytes"), got.Data)
+		})
+	}
+}
+
 func TestClientWorkspace_SaveSession(t *testing.T) {
 	t.Parallel()
 
@@ -266,6 +310,48 @@ func TestClientWorkspace_SetCurrentSession(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "s1", gotBody.SessionID)
 			require.Equal(t, "s1", ws.lastSession)
+		})
+	}
+}
+
+// TestClientWorkspace_SetClientImageSupport pins the request shape for
+// reporting confirmed Kitty graphics support to the server: a POST to
+// the workspace's client-image-support endpoint carrying the reported
+// value as JSON, with server errors propagated to the caller.
+func TestClientWorkspace_SetClientImageSupport(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "success"},
+		{name: "server error", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotBody proto.ClientImageSupport
+			ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, http.MethodPost, r.Method)
+				require.Equal(t, "/v1/workspaces/ws-1/client-image-support", r.URL.Path)
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+				if tc.wantErr {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			})
+
+			err := ws.SetClientImageSupport(t.Context(), true)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, gotBody.Supported)
 		})
 	}
 }

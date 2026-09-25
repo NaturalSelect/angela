@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"slices"
 	"strings"
 
@@ -55,7 +56,14 @@ func (c *Capabilities) Update(msg any) {
 		c.PixelX = m.Width
 		c.PixelY = m.Height
 	case uv.KittyGraphicsEvent:
-		c.KittyGraphics = true
+		// The terminal's response payload is "OK" on success and
+		// "ERROR:..." (or similar) on failure; only an affirmative
+		// response means the terminal actually supports the Kitty
+		// graphics protocol. See
+		// https://sw.kovidgoyal.net/kitty/graphics-protocol/.
+		if bytes.HasPrefix(m.Payload, []byte("OK")) {
+			c.KittyGraphics = true
+		}
 	case uv.PrimaryDeviceAttributesEvent:
 		if slices.Contains(m, 4) {
 			c.SixelGraphics = true

@@ -182,6 +182,11 @@ A slot's `variant` only takes effect when an agent pointed at that slot names
 none of its own; an agent's `variant` field always takes priority (see the
 angela-config skill for the full agent field reference).
 
+Angela also ships a hidden `image` agent pointed at the `image` slot, which
+selects the model used by the built-in `ImageGenerate`/`ImageEdit` tools; it
+needs a provider of type `openai` or `openaicompat` that implements
+`/images/*`. See [Agents](../agents/) for how hidden agents work.
+
 ```jsonc
 {
   "slots": {
@@ -193,6 +198,10 @@ angela-config skill for the full agent field reference).
       "provider": "anthropic",
       "model": "claude-haiku-4-20250514",
       "variant": "fast"
+    },
+    "image": {
+      "provider": "openai",
+      "model": "gpt-image-1"
     }
   }
 }
@@ -322,6 +331,7 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
     "disable_metrics": false,
     "disable_provider_auto_update": false,
     "disable_default_providers": false,
+    "disable_image_tools": false,     // turns off ImageGenerate/ImageEdit
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
     "subagent_branches": false,       // let sub-agents fork branch agents too

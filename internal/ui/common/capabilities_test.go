@@ -47,12 +47,19 @@ func TestCapabilities_Update(t *testing.T) {
 		require.Equal(t, 600, c.PixelY)
 	})
 
-	t.Run("KittyGraphicsEvent enables Kitty graphics support", func(t *testing.T) {
+	t.Run("KittyGraphicsEvent with an OK payload enables Kitty graphics support", func(t *testing.T) {
 		t.Parallel()
 		var c Capabilities
 		require.False(t, c.SupportsKittyGraphics())
-		c.Update(uv.KittyGraphicsEvent{})
+		c.Update(uv.KittyGraphicsEvent{Payload: []byte("OK")})
 		require.True(t, c.SupportsKittyGraphics())
+	})
+
+	t.Run("KittyGraphicsEvent with an ERROR payload does not enable Kitty graphics support", func(t *testing.T) {
+		t.Parallel()
+		var c Capabilities
+		c.Update(uv.KittyGraphicsEvent{Payload: []byte("ERROR:EINVAL:bad request")})
+		require.False(t, c.SupportsKittyGraphics())
 	})
 
 	t.Run("PrimaryDeviceAttributesEvent with sixel support", func(t *testing.T) {

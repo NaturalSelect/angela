@@ -14,7 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/google/uuid"
@@ -1233,6 +1236,97 @@ func TestSetCurrentSession_RaceWithDetach(t *testing.T) {
 	require.NotContains(t, ws.clients, cidA, "detached client must be gone")
 	require.Contains(t, ws.clients, cidB, "remaining client must still be present")
 	require.Equal(t, "SB", ws.clients[cidB].currentSessionID, "remaining client must keep its last set session")
+}
+
+// TestSetClientImageSupport_Success verifies the happy path: reporting
+// support reaches the workspace's embedded [app.App] and is reflected
+// back through ClientImageSupported.
+func TestSetClientImageSupport_Success(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	ws, _ := insertTestWorkspace(t, b, "/tmp/client-image-support")
+	ws.App = &app.App{}
+
+	require.False(t, ws.ClientImageSupported(), "must start unreported")
+	require.NoError(t, b.SetClientImageSupport(ws.ID, true))
+	require.True(t, ws.ClientImageSupported())
+}
+
+// TestSetClientImageSupport_NilApp verifies that reporting support for
+// a workspace whose app has not finished starting is a harmless no-op
+// rather than a nil-pointer panic or error: there is nothing yet to
+// persist the flag on, and the client is free to re-report later.
+func TestSetClientImageSupport_NilApp(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	ws, _ := insertTestWorkspace(t, b, "/tmp/client-image-support-no-app")
+	require.Nil(t, ws.App)
+
+	require.NoError(t, b.SetClientImageSupport(ws.ID, true))
+}
+
+// TestSetClientImageSupport_UnknownWorkspace verifies the error surface
+// mirrors every other workspace-scoped backend method: an unknown
+// workspace ID reports ErrWorkspaceNotFound, which the server maps to
+// a 404.
+func TestSetClientImageSupport_UnknownWorkspace(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	err := b.SetClientImageSupport("00000000-0000-0000-0000-000000000000", true)
+	require.ErrorIs(t, err, ErrWorkspaceNotFound)
+}
+
+// TestGetGeneratedImage_UnknownWorkspace verifies the error surface
+// mirrors every other workspace-scoped backend method: an unknown
+// workspace ID reports ErrWorkspaceNotFound, which the server maps to
+// a 404.
+func TestGetGeneratedImage_UnknownWorkspace(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	_, err := b.GetGeneratedImage("00000000-0000-0000-0000-000000000000", "img1")
+	require.ErrorIs(t, err, ErrWorkspaceNotFound)
+}
+
+// TestGetGeneratedImage_NilApp verifies that a workspace whose app has
+// not finished starting reports the image as not found rather than
+// panicking on a nil Images service: there is nothing yet to look it
+// up in.
+func TestGetGeneratedImage_NilApp(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	ws, _ := insertTestWorkspace(t, b, "/tmp/get-generated-image-no-app")
+	require.Nil(t, ws.App)
+
+	_, err := b.GetGeneratedImage(ws.ID, "img1")
+	require.ErrorIs(t, err, ErrImageNotFound)
+}
+
+// TestGetGeneratedImage_NotFound verifies that once the workspace's
+// app is set up, a request for an image ID that does not exist in its
+// Images service reports ErrImageNotFound, which the server maps to a
+// 404.
+func TestGetGeneratedImage_NotFound(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	ws, _ := insertTestWorkspace(t, b, "/tmp/get-generated-image-not-found")
+	// insertTestWorkspace leaves ctx nil (SetClientImageSupport, the only
+	// other consumer of this helper, never needs it); GetGeneratedImage
+	// passes it straight through to the Images service, so it must be set.
+	ws.ctx = t.Context()
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	ws.App = &app.App{Images: images.NewService(db.New(conn))}
+
+	_, err = b.GetGeneratedImage(ws.ID, "img_doesnotexist")
+	require.ErrorIs(t, err, ErrImageNotFound)
 }
 
 // TestAttachedClients_BasicLifecycle walks one session's count through

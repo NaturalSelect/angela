@@ -11,6 +11,7 @@ import (
 type Querier interface {
 	AddSessionCost(ctx context.Context, arg AddSessionCostParams) (int64, error)
 	CreateFile(ctx context.Context, arg CreateFileParams) (File, error)
+	CreateGeneratedImage(ctx context.Context, arg CreateGeneratedImageParams) (GeneratedImage, error)
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	DeleteFile(ctx context.Context, id string) error
@@ -22,6 +23,7 @@ type Querier interface {
 	GetFile(ctx context.Context, id string) (File, error)
 	GetFileByPathAndSession(ctx context.Context, arg GetFileByPathAndSessionParams) (File, error)
 	GetFileRead(ctx context.Context, arg GetFileReadParams) (ReadFile, error)
+	GetGeneratedImage(ctx context.Context, id string) (GeneratedImage, error)
 	GetHourDayHeatmap(ctx context.Context) ([]GetHourDayHeatmapRow, error)
 	GetLastAssistantMessageBySession(ctx context.Context, sessionID string) (Message, error)
 	GetLastSession(ctx context.Context) (Session, error)

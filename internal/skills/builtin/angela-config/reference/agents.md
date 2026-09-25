@@ -5,7 +5,8 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 `agents` maps an agent ID to overrides for a built-in agent, or to a brand new
 agent. Built-in agents you can override: `coder`, `explore`, `general`,
 `plan`, `deep-research`, `web-fetch`, plus the hidden internal ones `title`,
-`compact`, `generate-agent`, and `initialize`.
+`compact`, `generate-agent`, `initialize`, and `image` (selects the model for
+the built-in image generation/editing tools).
 
 | Field            | Type   | Notes                                                              |
 | ---------------- | ------ | ------------------------------------------------------------------ |

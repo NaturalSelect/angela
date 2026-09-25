@@ -54,6 +54,19 @@ func Image(data []byte, mediaType string) Result {
 	return Result{resp: fantasy.NewImageResponse(data, mediaType)}
 }
 
+// ImageWithText returns an image result with an accompanying text
+// caption (e.g. an id or short description the model should be able to
+// refer back to on later turns). The caption travels as the tool
+// response's Content field, which fantasy surfaces as
+// ToolResultOutputContentMedia.Text when the result is first sent to the
+// model, and which convertToToolResult stores into
+// message.ToolResult.Content so it survives into session history.
+func ImageWithText(data []byte, mediaType, text string) Result {
+	r := Image(data, mediaType)
+	r.resp.Content = text
+	return r
+}
+
 // Media returns a non-image media result (audio, video, and so on).
 func Media(data []byte, mediaType string) Result {
 	return Result{resp: fantasy.NewMediaResponse(data, mediaType)}

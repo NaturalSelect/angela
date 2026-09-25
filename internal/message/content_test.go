@@ -121,6 +121,83 @@ func TestToAIMessage_ASCIIButInvalidBase64(t *testing.T) {
 	require.Equal(t, mediaLoadFailedPlaceholder, textContent.Text)
 }
 
+// TestToAIMessage_MediaWithCaptionRoundTrips guards against a caption
+// (e.g. an image-generation tool's id/description) getting dropped when
+// a past conversation is replayed: it must still be set on
+// ToolResultOutputContentMedia.Text after going through ToAIMessage.
+func TestToAIMessage_MediaWithCaptionRoundTrips(t *testing.T) {
+	t.Parallel()
+
+	validBase64 := base64.StdEncoding.EncodeToString([]byte{0x89, 0x50, 0x4E, 0x47})
+
+	msg := &Message{
+		Role: Tool,
+		Parts: []ContentPart{
+			ToolResult{
+				ToolCallID: "call_caption",
+				Name:       "generate_image",
+				Content:    "sunset-over-mountains-42",
+				Data:       validBase64,
+				MIMEType:   "image/png",
+			},
+		},
+	}
+
+	messages := msg.ToAIMessage()
+	require.Len(t, messages, 1)
+	require.Len(t, messages[0].Content, 1)
+
+	part, ok := messages[0].Content[0].(fantasy.ToolResultPart)
+	require.True(t, ok)
+	require.Equal(t, "call_caption", part.ToolCallID)
+
+	mediaContent, ok := part.Output.(fantasy.ToolResultOutputContentMedia)
+	require.True(t, ok, "valid media should remain as media")
+	require.Equal(t, validBase64, mediaContent.Data)
+	require.Equal(t, "image/png", mediaContent.MediaType)
+	require.Equal(t, "sunset-over-mountains-42", mediaContent.Text,
+		"a real caption must survive replay through ToAIMessage")
+}
+
+// TestToAIMessage_GenericPlaceholderDoesNotRoundTripAsText is the
+// no-op guard: a Read-tool-style media result that only carries the
+// generic "Loaded ... content" placeholder (no real caption) must not
+// start surfacing that placeholder as visible Text after ToAIMessage,
+// preserving existing behavior exactly.
+func TestToAIMessage_GenericPlaceholderDoesNotRoundTripAsText(t *testing.T) {
+	t.Parallel()
+
+	validBase64 := base64.StdEncoding.EncodeToString([]byte{0x89, 0x50, 0x4E, 0x47})
+
+	msg := &Message{
+		Role: Tool,
+		Parts: []ContentPart{
+			ToolResult{
+				ToolCallID: "call_read",
+				Name:       "read",
+				Content:    MediaLoadedContent("image/png"),
+				Data:       validBase64,
+				MIMEType:   "image/png",
+			},
+		},
+	}
+
+	messages := msg.ToAIMessage()
+	require.Len(t, messages, 1)
+	require.Len(t, messages[0].Content, 1)
+
+	part, ok := messages[0].Content[0].(fantasy.ToolResultPart)
+	require.True(t, ok)
+	require.Equal(t, "call_read", part.ToolCallID)
+
+	mediaContent, ok := part.Output.(fantasy.ToolResultOutputContentMedia)
+	require.True(t, ok, "valid media should remain as media")
+	require.Equal(t, validBase64, mediaContent.Data)
+	require.Equal(t, "image/png", mediaContent.MediaType)
+	require.Empty(t, mediaContent.Text,
+		"the generic placeholder must not round-trip as a visible caption")
+}
+
 func BenchmarkPromptWithTextAttachments(b *testing.B) {
 	cases := []struct {
 		name        string

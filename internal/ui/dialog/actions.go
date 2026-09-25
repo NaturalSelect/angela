@@ -149,6 +149,13 @@ type (
 		SessionID string
 		Question  string
 	}
+	// ActionExportImage asks for a generated image's full-size original to be
+	// written to disk. An empty ImageID means the user picked the command from
+	// the palette but has not entered one yet.
+	ActionExportImage struct {
+		ImageID string
+		Output  string
+	}
 	// ActionCommit generates a commit message from the workspace's
 	// currently staged changes and commits them with a sign-off in
 	// one step, without adding anything to the session's message

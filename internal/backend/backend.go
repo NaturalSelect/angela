@@ -20,6 +20,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -55,6 +56,10 @@ var (
 	// ErrSessionNotFound is a missing session: the request named one
 	// that does not exist, which is a 404 rather than a failure.
 	ErrSessionNotFound = session.ErrSessionNotFound
+
+	// ErrImageNotFound is a missing generated image: the request named
+	// one that does not exist, which is a 404 rather than a failure.
+	ErrImageNotFound = images.ErrNotFound
 
 	// The two below are malformed requests: an agent or a preset that
 	// does not fit. They are the caller's to correct.
@@ -447,6 +452,7 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	cfg.Overrides().EnabledChannels = args.Channels
 	cfg.Overrides().YoloMerge = args.YoloMerge
 	cfg.Overrides().NoVSCodeDiff = args.NoVSCodeDiff
+	cfg.Overrides().DisableImageTools = args.DisableImageTools
 	cfg.Overrides().SubagentBranches = args.SubagentBranches
 	// Overrides().Env lets app.New see the connecting client's
 	// environment instead of this daemon process's own, so a check
@@ -990,6 +996,43 @@ func (b *Backend) SetCurrentSession(workspaceID, clientID, sessionID string) err
 	return nil
 }
 
+// SetClientImageSupport records that a client attached to the
+// workspace has confirmed it can render images (Kitty graphics
+// protocol), so the coder agent can register the built-in image
+// generation/editing tools. Unlike SetCurrentSession this needs no
+// per-client bookkeeping: image tool availability is a single
+// workspace-wide flag that, once any client has proven support, is
+// never revoked.
+func (b *Backend) SetClientImageSupport(workspaceID string, supported bool) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+	// A workspace whose app has not finished starting has nothing to
+	// tell yet; there is no per-client state to persist here that
+	// would otherwise be lost.
+	if ws.App == nil {
+		return nil
+	}
+	ws.SetClientImageSupport(supported)
+	return nil
+}
+
+// GetGeneratedImage retrieves a generated image's full-size original
+// by ID from the workspace's Images service. A workspace whose app
+// has not finished starting has nothing to look up yet, so it is
+// reported the same as an unknown image.
+func (b *Backend) GetGeneratedImage(workspaceID, id string) (images.Image, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return images.Image{}, err
+	}
+	if ws.App == nil {
+		return images.Image{}, ErrImageNotFound
+	}
+	return ws.Images.Get(ws.ctx, id)
+}
+
 // AttachedClients returns the number of clients currently viewing
 // sessionID in the given workspace. Only clients with at least one live
 // SSE stream (streams > 0) AND a matching currentSessionID are counted;
@@ -1116,18 +1159,19 @@ func validateClientID(id string) (string, error) {
 func workspaceToProto(ws *Workspace) proto.Workspace {
 	cfg := ws.Cfg.Config()
 	out := proto.Workspace{
-		ID:               ws.ID,
-		Path:             ws.Path,
-		PermissionMode:   ws.Cfg.Overrides().PermissionMode.String(),
-		YoloMerge:        ws.Cfg.Overrides().YoloMerge,
-		NoVSCodeDiff:     ws.Cfg.Overrides().NoVSCodeDiff,
-		SubagentBranches: ws.Cfg.Overrides().SubagentBranches,
-		Channels:         ws.Cfg.Overrides().EnabledChannels,
-		DataDir:          cfg.Options.DataDirectory,
-		Debug:            cfg.Options.Debug,
-		Config:           cfg,
-		Env:              ws.Env,
-		Version:          version.Version,
+		ID:                ws.ID,
+		Path:              ws.Path,
+		PermissionMode:    ws.Cfg.Overrides().PermissionMode.String(),
+		YoloMerge:         ws.Cfg.Overrides().YoloMerge,
+		NoVSCodeDiff:      ws.Cfg.Overrides().NoVSCodeDiff,
+		DisableImageTools: ws.Cfg.Overrides().DisableImageTools,
+		SubagentBranches:  ws.Cfg.Overrides().SubagentBranches,
+		Channels:          ws.Cfg.Overrides().EnabledChannels,
+		DataDir:           cfg.Options.DataDirectory,
+		Debug:             cfg.Options.Debug,
+		Config:            cfg,
+		Env:               ws.Env,
+		Version:           version.Version,
 	}
 	if ws.Skills != nil {
 		out.Skills = skillStatesToProto(ws.Skills.States())
@@ -1152,6 +1196,7 @@ func logFirstWinsMismatch(existing *Workspace, args proto.Workspace) {
 	if existingMode == requestedMode &&
 		existing.Cfg.Overrides().YoloMerge == args.YoloMerge &&
 		existing.Cfg.Overrides().NoVSCodeDiff == args.NoVSCodeDiff &&
+		existing.Cfg.Overrides().DisableImageTools == args.DisableImageTools &&
 		existing.Cfg.Overrides().SubagentBranches == args.SubagentBranches &&
 		existingCfg.Options.Debug == args.Debug &&
 		existingCfg.Options.DataDirectory == args.DataDir &&

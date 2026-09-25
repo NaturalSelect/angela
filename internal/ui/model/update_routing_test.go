@@ -1281,6 +1281,42 @@ func TestUpdate_ConnectionEvent(t *testing.T) {
 
 		require.Equal(t, util.InfoTypeSuccess, m.status.msg.Type)
 	})
+
+	// The daemon a client reconnects to may be a fresh restart that
+	// lost the in-memory image-support flag, even though this TUI
+	// already proved the terminal supports it earlier in the session.
+	// handleConnectionEvent must re-assert it in that case, but only
+	// in that case.
+	t.Run("recovered re-sends image support when already reported this session", func(t *testing.T) {
+		t.Parallel()
+		m, ws := newMockBusyUI(t)
+		m.session = nil
+		m.imageSupportReported = true
+		ws.EXPECT().SetClientImageSupport(gomock.Any(), true).Return(nil)
+
+		cmds := m.handleConnectionEvent(workspace.ConnectionEvent{State: workspace.ConnectionRecovered})
+
+		require.NotEmpty(t, cmds)
+		// cmds[0] is always clearInfoMsgCmd, whose 5s tea.Tick must
+		// never be invoked in a test; run everything after it.
+		for _, c := range cmds[1:] {
+			runCmds(m, c)
+		}
+	})
+
+	t.Run("recovered does not report image support when it was never reported", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.session = nil
+		// No SetClientImageSupport expectation: an unexpected call
+		// fails the test on its own.
+
+		cmds := m.handleConnectionEvent(workspace.ConnectionEvent{State: workspace.ConnectionRecovered})
+
+		for _, c := range cmds[1:] {
+			runCmds(m, c)
+		}
+	})
 }
 
 func TestUpdate_ClearStatusMsg_ClearsStatus(t *testing.T) {
@@ -1326,6 +1362,48 @@ func TestUpdate_KittyGraphicsEvent_WarnsOnNonOKPayload(t *testing.T) {
 	require.NotPanics(t, func() {
 		m.Update(uv.KittyGraphicsEvent{Payload: []byte("ERROR")})
 	})
+}
+
+// TestUpdate_KittyGraphicsEvent_ReportsClientImageSupportOnce pins the
+// one-shot image-support report: an OK payload flips
+// Capabilities.KittyGraphics (see capabilities_test.go) and the handler
+// reports it to the workspace exactly once. The mock's default
+// exactly-once expectation fails the test if a second OK event in the
+// same session reports it again.
+func TestUpdate_KittyGraphicsEvent_ReportsClientImageSupportOnce(t *testing.T) {
+	// Not t.Parallel(): pinTTLs mutates package-level TTL globals,
+	// which would race against unrelated parallel tests reading them
+	// through Update's TTL backstop.
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, false)
+	ws.EXPECT().SetClientImageSupport(gomock.Any(), true).Return(nil)
+
+	_, cmd := m.Update(uv.KittyGraphicsEvent{Payload: []byte("OK")})
+	runCmds(m, cmd)
+	require.True(t, m.imageSupportReported)
+
+	// A second OK event in the same session must not report again.
+	_, cmd = m.Update(uv.KittyGraphicsEvent{Payload: []byte("OK")})
+	runCmds(m, cmd)
+}
+
+// TestUpdate_KittyGraphicsEvent_ERRORPayloadNeverReportsImageSupport
+// pins the flip side: a failed handshake must never flag
+// imageSupportReported or call SetClientImageSupport. No expectation
+// is set on the mock, so an unexpected call fails the test on its own.
+func TestUpdate_KittyGraphicsEvent_ERRORPayloadNeverReportsImageSupport(t *testing.T) {
+	// Not t.Parallel(): pinTTLs mutates package-level TTL globals.
+	pinTTLs(t)
+
+	m, _ := newMockBusyUI(t)
+	warmCaches(m, false)
+
+	_, cmd := m.Update(uv.KittyGraphicsEvent{Payload: []byte("ERROR")})
+	runCmds(m, cmd)
+
+	require.False(t, m.imageSupportReported)
 }
 
 func TestUpdate_MCPAuthStarted_DispatchesAuthentication(t *testing.T) {

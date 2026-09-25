@@ -2391,7 +2391,7 @@ func (a *sessionAgent) convertToToolResult(result fantasy.ToolResultContent) mes
 			} else {
 				content := r.Text
 				if content == "" {
-					content = fmt.Sprintf("Loaded %s content", r.MediaType)
+					content = message.MediaLoadedContent(r.MediaType)
 				}
 				baseResult.Content = content
 				baseResult.Data = r.Data
@@ -2458,11 +2458,16 @@ func (a *sessionAgent) workaroundProviderMediaLimitations(messages []fantasy.Mes
 					// Model cannot process images. Replace with a text
 					// placeholder and skip creating a synthetic user
 					// message with FilePart, which would brick the
-					// session on text-only models.
+					// session on text-only models. Preserve any caption
+					// the media carried instead of discarding it.
+					text := "[Image/media content not supported by this model]"
+					if media.Text != "" {
+						text += "\n" + media.Text
+					}
 					textParts = append(textParts, fantasy.ToolResultPart{
 						ToolCallID: toolResult.ToolCallID,
 						Output: fantasy.ToolResultOutputContentText{
-							Text: "[Image/media content not supported by this model]",
+							Text: text,
 						},
 						ProviderOptions: toolResult.ProviderOptions,
 					})
@@ -2482,10 +2487,16 @@ func (a *sessionAgent) workaroundProviderMediaLimitations(messages []fantasy.Mes
 					Filename:  fmt.Sprintf("tool-result-%s", toolResult.ToolCallID),
 				})
 
+				// Preserve any caption the media carried instead of
+				// discarding it.
+				text := "[Image/media content loaded - see attached file]"
+				if media.Text != "" {
+					text += "\n" + media.Text
+				}
 				textParts = append(textParts, fantasy.ToolResultPart{
 					ToolCallID: toolResult.ToolCallID,
 					Output: fantasy.ToolResultOutputContentText{
-						Text: "[Image/media content loaded - see attached file]",
+						Text: text,
 					},
 					ProviderOptions: toolResult.ProviderOptions,
 				})

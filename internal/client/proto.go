@@ -110,6 +110,28 @@ func (c *Client) SetCurrentSession(ctx context.Context, workspaceID, sessionID s
 	return nil
 }
 
+// SetClientImageSupport reports to the server that this client can
+// render images (Kitty graphics protocol confirmed working) for the
+// named workspace, so the backend can register the built-in image
+// generation/editing tools.
+func (c *Client) SetClientImageSupport(ctx context.Context, workspaceID string, supported bool) error {
+	rsp, err := c.post(
+		ctx,
+		fmt.Sprintf("/workspaces/%s/client-image-support", workspaceID),
+		nil,
+		jsonBody(proto.ClientImageSupport{Supported: supported}),
+		http.Header{"Content-Type": []string{"application/json"}},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set client image support: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return fmt.Errorf("failed to set client image support: %w", err)
+	}
+	return nil
+}
+
 // SubscribeEvents subscribes to server-sent events for a workspace.
 func (c *Client) SubscribeEvents(ctx context.Context, id string) (<-chan any, error) {
 	events := make(chan any, 100)
@@ -748,6 +770,24 @@ func (c *Client) GetSession(ctx context.Context, id string, sessionID string) (*
 		return nil, fmt.Errorf("failed to decode session: %w", err)
 	}
 	return &sess, nil
+}
+
+// GetGeneratedImage retrieves a generated image's full-size original
+// by ID as a proto type.
+func (c *Client) GetGeneratedImage(ctx context.Context, workspaceID, id string) (proto.GeneratedImage, error) {
+	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/images/%s", workspaceID, id), nil, nil)
+	if err != nil {
+		return proto.GeneratedImage{}, fmt.Errorf("failed to get generated image: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return proto.GeneratedImage{}, fmt.Errorf("failed to get generated image: status code %d", rsp.StatusCode)
+	}
+	var img proto.GeneratedImage
+	if err := json.NewDecoder(rsp.Body).Decode(&img); err != nil {
+		return proto.GeneratedImage{}, fmt.Errorf("failed to decode generated image: %w", err)
+	}
+	return img, nil
 }
 
 // ListSessionHistoryFiles retrieves history files for a session as proto types.

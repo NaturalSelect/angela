@@ -22,6 +22,7 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `disable_metrics`              | bool   | `false`            | Stop sending metrics                                            |
 | `disable_provider_auto_update` | bool   | `false`            | Stop auto-updating the provider catalog                         |
 | `disable_default_providers`    | bool   | `false`            | Ignore all embedded providers. Every provider must then be fully specified with `base_url`, `models`, and `api_key` — no merging with defaults |
+| `disable_image_tools`          | bool   | `false`            | Disable the built-in `ImageGenerate`/`ImageEdit` tools, even on a terminal that supports inline image rendering |
 | `attribution`                  | object | —                  | See below                                                       |
 | `compaction`                   | object | —                  | See below                                                       |
 | `tui`                          | object | —                  | See below                                                       |

@@ -25,8 +25,8 @@ is needed.
 | `deep-research` | branch | Investigates a hard question; has Bash but no edit/write. |
 | `web-fetch` | subagent | Fetches and analyzes web pages or searches the web. |
 
-Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`)
-can be overridden but are not dispatched via the `agent` tool.
+Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
+`image`) can be overridden but are not dispatched via the `agent` tool.
 
 ## Agent Modes
 

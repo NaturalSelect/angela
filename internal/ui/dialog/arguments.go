@@ -221,6 +221,10 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 				case ActionAskSideQuestion:
 					action.Question = args["QUESTION"]
 					return action
+				case ActionExportImage:
+					action.ImageID = args["IMAGE_ID"]
+					action.Output = args["OUTPUT"]
+					return action
 				}
 			}
 			a.focusInput(a.focused + 1)

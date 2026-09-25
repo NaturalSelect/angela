@@ -2,13 +2,17 @@ package workspace
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -154,6 +158,64 @@ func TestAppWorkspace_GetSession_Success(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+// newTestImagesApp returns an app.App wired to a real, SQLite-backed
+// Images service (there is no MockImagesService in this package,
+// unlike the other awFixture dependencies), plus a session ID already
+// present in the same database so callers can create fixture images
+// that satisfy the generated images table's foreign key.
+func newTestImagesApp(t *testing.T) (*app.App, string) {
+	t.Helper()
+	a := app.NewForTest(t.Context())
+	t.Cleanup(a.ShutdownForTest)
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	q := db.New(conn)
+	a.Images = images.NewService(q)
+
+	sessionID := uuid.New().String()
+	_, err = q.CreateSession(t.Context(), db.CreateSessionParams{ID: sessionID, Title: "Test Session"})
+	require.NoError(t, err)
+
+	return a, sessionID
+}
+
+// TestAppWorkspace_GetGeneratedImage_Success verifies that a generated
+// image persisted through the Images service round-trips through the
+// AppWorkspace passthrough unchanged, including its raw bytes.
+func TestAppWorkspace_GetGeneratedImage_Success(t *testing.T) {
+	t.Parallel()
+	a, sessionID := newTestImagesApp(t)
+	created, err := a.Images.Create(t.Context(), images.CreateParams{
+		SessionID: sessionID,
+		Prompt:    "a cat",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Width:     16,
+		Height:    16,
+		Data:      []byte("fake-png-bytes"),
+	})
+	require.NoError(t, err)
+
+	got, err := NewAppWorkspace(a, nil).GetGeneratedImage(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.Equal(t, created, got)
+}
+
+// TestAppWorkspace_GetGeneratedImage_NotFound pins that the images
+// package's sentinel error survives the AppWorkspace passthrough
+// unwrapped, since callers above this layer (the server's
+// GetGeneratedImage handler) branch on errors.Is(err, images.ErrNotFound).
+func TestAppWorkspace_GetGeneratedImage_NotFound(t *testing.T) {
+	t.Parallel()
+	a, _ := newTestImagesApp(t)
+
+	_, err := NewAppWorkspace(a, nil).GetGeneratedImage(t.Context(), "img_doesnotexist")
+	require.ErrorIs(t, err, images.ErrNotFound)
+}
+
 func TestAppWorkspace_ListSessions(t *testing.T) {
 	t.Parallel()
 
@@ -279,6 +341,22 @@ func TestAppWorkspace_SetCurrentSession(t *testing.T) {
 			t.Parallel()
 			fx := newAWFixture(t)
 			require.NoError(t, fx.ws.SetCurrentSession(t.Context(), sessionID))
+		})
+	}
+}
+
+// TestAppWorkspace_SetClientImageSupport pins that reporting client
+// image support in local mode never errors and always reaches the
+// underlying App, for both a positive and negative report.
+func TestAppWorkspace_SetClientImageSupport(t *testing.T) {
+	t.Parallel()
+
+	for _, supported := range []bool{true, false} {
+		t.Run(fmt.Sprintf("supported=%v", supported), func(t *testing.T) {
+			t.Parallel()
+			fx := newAWFixture(t)
+			require.NoError(t, fx.ws.SetClientImageSupport(t.Context(), supported))
+			require.Equal(t, supported, fx.app.ClientImageSupported())
 		})
 	}
 }

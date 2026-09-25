@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -28,6 +29,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/format"
 	"github.com/NaturalSelect/angela/internal/herdr"
 	"github.com/NaturalSelect/angela/internal/history"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/log"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
@@ -61,6 +63,7 @@ type App struct {
 	Permissions permission.Service
 	Questions   question.Service
 	FileTracker filetracker.Service
+	Images      images.Service
 	Undo        undo.Service
 	Sandbox     sandbox.Sandbox
 
@@ -92,6 +95,11 @@ type App struct {
 	// herdrClient reports agent state to herdr when running inside
 	// a herdr-managed pane. Nil when not in a herdr environment.
 	herdrClient *herdr.Client
+
+	// clientImageSupport records whether a connected client has ever
+	// reported Kitty-graphics image rendering support. See
+	// SetClientImageSupport.
+	clientImageSupport atomic.Bool
 }
 
 // coordinatorBusyChecker defers to app.AgentCoordinator at call time
@@ -125,6 +133,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 	messages := message.NewService(q)
 	files := history.NewService(q, conn)
 	fileTracker := filetracker.NewService(q)
+	imageService := images.NewService(q)
 	cfg := store.Config()
 
 	var rules []permission.Rule
@@ -164,6 +173,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		Permissions: permissions,
 		Questions:   question.NewService(),
 		FileTracker: fileTracker,
+		Images:      imageService,
 		LSPManager:  lsp.NewManager(store),
 		Skills:      skillsMgr,
 		Sandbox:     sandbox.New(store.Overrides().NoDockerSandbox),
@@ -680,6 +690,25 @@ func setupSubscriberMustDeliver[T any](
 	})
 }
 
+// SetClientImageSupport records that the connected client has reported
+// Kitty-graphics image rendering support. It only ever transitions
+// false -> true: once a client has proven support, a later report of
+// no support (e.g. a plainer client taking over the same session)
+// never revokes it, and an Info message is logged the first time it
+// flips so it is visible why the built-in image tools became
+// available.
+func (app *App) SetClientImageSupport(supported bool) {
+	if supported && app.clientImageSupport.CompareAndSwap(false, true) {
+		slog.Info("Client reported image rendering support")
+	}
+}
+
+// ClientImageSupported reports whether any connected client has ever
+// called SetClientImageSupport(true).
+func (app *App) ClientImageSupported() bool {
+	return app.clientImageSupport.Load()
+}
+
 func (app *App) InitCoderAgent(ctx context.Context) error {
 	return app.initCoderAgent(ctx, true)
 }
@@ -697,18 +726,20 @@ func (app *App) initCoderAgent(ctx context.Context, interactive bool) error {
 	}
 	var err error
 	app.AgentCoordinator, err = agent.NewCoordinator(ctx, agent.CoordinatorOptions{
-		Config:      app.config,
-		Sessions:    app.Sessions,
-		Messages:    app.Messages,
-		Permissions: app.Permissions,
-		Questions:   app.Questions,
-		History:     app.History,
-		FileTracker: app.FileTracker,
-		LSPManager:  app.LSPManager,
-		Notify:      app.agentNotifications,
-		RunComplete: app.runCompletions,
-		Skills:      app.Skills,
-		Interactive: interactive,
+		Config:       app.config,
+		Sessions:     app.Sessions,
+		Messages:     app.Messages,
+		Permissions:  app.Permissions,
+		Questions:    app.Questions,
+		History:      app.History,
+		FileTracker:  app.FileTracker,
+		LSPManager:   app.LSPManager,
+		Notify:       app.agentNotifications,
+		RunComplete:  app.runCompletions,
+		Skills:       app.Skills,
+		Images:       app.Images,
+		ImageSupport: app.ClientImageSupported,
+		Interactive:  interactive,
 	})
 	if err != nil {
 		slog.Error("Failed to create coder agent", "err", err)

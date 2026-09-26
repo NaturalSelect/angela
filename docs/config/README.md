@@ -185,7 +185,12 @@ angela-config skill for the full agent field reference).
 Angela also ships a hidden `image` agent pointed at the `image` slot, which
 selects the model used by the built-in `ImageGenerate`/`ImageEdit` tools; it
 needs a provider of type `openai` or `openaicompat` that implements
-`/images/*`. See [Agents](../agents/) for how hidden agents work.
+`/images/*`. The tools are only registered in a terminal that supports Kitty
+graphics Unicode placeholders — auto-detected for kitty, Ghostty, and Rio,
+but not VS Code's integrated terminal or WezTerm. Override detection with
+`--kitty-placeholders`/`--kitty-placeholders=false` (per launch) or
+`options.tui.kitty_placeholders` (persistent). See [Agents](../agents/) for
+how hidden agents work.
 
 ```jsonc
 {
@@ -356,6 +361,7 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
       "diff_mode": "split",           // unified or split
       "transparent": false,
       "scrollbar": "default",         // default, always, or never
+      "kitty_placeholders": true,     // unset = auto-detect Kitty Unicode placeholders
       "completions": {
         "max_depth": 0,
         "max_items": 1000

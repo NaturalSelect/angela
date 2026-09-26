@@ -22,7 +22,7 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `disable_metrics`              | bool   | `false`            | Stop sending metrics                                            |
 | `disable_provider_auto_update` | bool   | `false`            | Stop auto-updating the provider catalog                         |
 | `disable_default_providers`    | bool   | `false`            | Ignore all embedded providers. Every provider must then be fully specified with `base_url`, `models`, and `api_key` — no merging with defaults |
-| `disable_image_tools`          | bool   | `false`            | Disable the built-in `ImageGenerate`/`ImageEdit` tools, even on a terminal that supports inline image rendering |
+| `disable_image_tools`          | bool   | `false`            | Disable the built-in `ImageGenerate`/`ImageEdit` tools, even on a terminal that supports inline image rendering. The tools are only offered when the terminal supports Kitty graphics Unicode placeholders (auto-detected for kitty, Ghostty, Rio; not VS Code's terminal or WezTerm) — see `tui.kitty_placeholders` |
 | `attribution`                  | object | —                  | See below                                                       |
 | `compaction`                   | object | —                  | See below                                                       |
 | `tui`                          | object | —                  | See below                                                       |
@@ -54,6 +54,7 @@ Note the negative phrasing: `disable_metrics: true` turns metrics **off**.
 | `diff_mode`              | string | —         | `unified` or `split`             |
 | `transparent`            | bool   | `false`   | Transparent background           |
 | `scrollbar`              | string | `default` | `default` (auto-hide), `always`, `never` |
+| `kitty_placeholders`     | bool   | auto      | Force Kitty graphics Unicode placeholder support on (`true`) or off (`false`); unset auto-detects. Gates inline image previews and the `ImageGenerate`/`ImageEdit` tools. The `--kitty-placeholders[=false]` CLI flag overrides it for one launch — handy when you use several terminals |
 | `completions.max_depth`  | int    | `0`       | Depth limit for completions      |
 | `completions.max_items`  | int    | `1000`    | Item limit for completions       |
 

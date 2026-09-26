@@ -1097,6 +1097,10 @@
           ],
           "description": "Chat scrollbar visibility",
           "default": "default"
+        },
+        "kitty_placeholders": {
+          "type": "boolean",
+          "description": "Override detection of Kitty graphics Unicode placeholder support, needed for inline images and the ImageGenerate/ImageEdit tools; unset auto-detects"
         }
       },
       "additionalProperties": false,

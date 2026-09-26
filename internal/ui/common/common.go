@@ -24,6 +24,10 @@ var AllowedImageTypes = []string{".jpg", ".jpeg", ".png"}
 type Common struct {
 	Workspace workspace.Workspace
 	Styles    *styles.Styles
+	// KittyPlaceholders is a per-launch override from --kitty-placeholders
+	// for Kitty graphics Unicode placeholder support; nil defers to
+	// options.tui.kitty_placeholders or auto-detection.
+	KittyPlaceholders *bool
 }
 
 // Config returns the pure-data configuration associated with this [Common] instance.

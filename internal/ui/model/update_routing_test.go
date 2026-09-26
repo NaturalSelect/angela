@@ -1378,6 +1378,10 @@ func TestUpdate_KittyGraphicsEvent_ReportsClientImageSupportOnce(t *testing.T) {
 
 	m, ws := newMockBusyUI(t)
 	warmCaches(m, false)
+	// Set TerminalVersion so SupportsKittyPlaceholders() returns true:
+	// the one-shot report now requires placeholder capability, not
+	// just basic Kitty graphics.
+	m.caps.TerminalVersion = "kitty(0.35.2)"
 	ws.EXPECT().SetClientImageSupport(gomock.Any(), true).Return(nil)
 
 	_, cmd := m.Update(uv.KittyGraphicsEvent{Payload: []byte("OK")})
@@ -1404,6 +1408,51 @@ func TestUpdate_KittyGraphicsEvent_ERRORPayloadNeverReportsImageSupport(t *testi
 	runCmds(m, cmd)
 
 	require.False(t, m.imageSupportReported)
+}
+
+// TestUpdate_KittyGraphicsEvent_NonPlaceholderTerminalDoesNotReport
+// pins that a terminal answering the basic Kitty query OK but not
+// identified as placeholder-capable must NOT fire the one-shot
+// image-support report. No expectation is set on the mock workspace,
+// so an unexpected SetClientImageSupport call fails the test on its own.
+func TestUpdate_KittyGraphicsEvent_NonPlaceholderTerminalDoesNotReport(t *testing.T) {
+	// Not t.Parallel(): pinTTLs mutates package-level TTL globals.
+	pinTTLs(t)
+
+	m, _ := newMockBusyUI(t)
+	warmCaches(m, false)
+	m.caps.TerminalVersion = "xterm.js(5.6.0)"
+
+	_, cmd := m.Update(uv.KittyGraphicsEvent{Payload: []byte("OK")})
+	runCmds(m, cmd)
+
+	require.True(t, m.caps.KittyGraphics)
+	require.False(t, m.imageSupportReported)
+	require.True(t, m.placeholderMismatchLogged)
+}
+
+// TestUpdate_KittyGraphicsEvent_ThenTerminalVersionMsg pins the
+// ordering fix: the Kitty graphics query reply arrives before the
+// XTVERSION response, so the one-shot report must not fire until the
+// TerminalVersionMsg identifies the terminal as placeholder-capable.
+func TestUpdate_KittyGraphicsEvent_ThenTerminalVersionMsg(t *testing.T) {
+	// Not t.Parallel(): pinTTLs mutates package-level TTL globals.
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, false)
+	ws.EXPECT().SetClientImageSupport(gomock.Any(), true).Return(nil)
+
+	// First the Kitty query replies OK — no XTVERSION yet.
+	_, cmd := m.Update(uv.KittyGraphicsEvent{Payload: []byte("OK")})
+	runCmds(m, cmd)
+	require.True(t, m.caps.KittyGraphics)
+	require.False(t, m.imageSupportReported)
+
+	// Then XTVERSION arrives, identifying the terminal.
+	_, cmd = m.Update(tea.TerminalVersionMsg{Name: "ghostty 1.1.0"})
+	runCmds(m, cmd)
+	require.True(t, m.imageSupportReported)
 }
 
 func TestUpdate_MCPAuthStarted_DispatchesAuthentication(t *testing.T) {

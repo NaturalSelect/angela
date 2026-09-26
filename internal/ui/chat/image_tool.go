@@ -24,7 +24,8 @@ import (
 // ImageCaps is the subset of terminal capabilities an [ImageItem] needs to
 // decide whether and how to render an inline preview.
 type ImageCaps struct {
-	// Kitty is whether the terminal supports the Kitty graphics protocol;
+	// Kitty is whether the terminal supports Kitty graphics Unicode
+	// placeholders (virtual placement), not just the basic protocol;
 	// without it an image tool call only ever shows the plain-text
 	// fallback.
 	Kitty bool

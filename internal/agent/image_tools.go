@@ -33,7 +33,7 @@ func (c *coordinator) imageToolsAvailable(agent config.Agent, depth int) (bool, 
 		return false, "image tools are disabled by configuration"
 	}
 	if c.imageSupport == nil || !c.imageSupport() {
-		return false, "client has not reported image rendering support"
+		return false, "client has not reported image rendering support (terminal must support Kitty graphics Unicode placeholders)"
 	}
 	if c.images == nil {
 		return false, "no image storage service is configured"

@@ -4874,6 +4874,10 @@
                 "diff_mode": {
                     "type": "string"
                 },
+                "kitty_placeholders": {
+                    "description": "KittyPlaceholders overrides auto-detection of Kitty graphics Unicode\nplaceholder (virtual placement) support, which inline image\npreviews and the built-in ImageGenerate/ImageEdit tools require.\nAuto-detection recognizes kitty\\, Ghostty\\, and Rio; terminals such\nas VS Code's integrated terminal or WezTerm answer the basic Kitty\ngraphics query but do not render placeholders correctly. Leave\nunset to auto-detect.",
+                    "type": "boolean"
+                },
                 "scrollbar": {
                     "type": "string"
                 },

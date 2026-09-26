@@ -597,3 +597,84 @@ func TestRun_FinalizesToolCallTruncatedByMaxTokens(t *testing.T) {
 	_, queued := sa.messageQueue.Get(sess.ID)
 	require.False(t, queued, "the queue must be drained once the turn ends cleanly")
 }
+
+// TestRun_ResumeAfterCompactionUsesLatestFoldedMessage is the
+// regression for a reported bug: a follow-up message queued while a
+// turn is busy can be folded into that same turn once it reaches its
+// next step (see drainQueueForStep's fold in PrepareStep), landing in
+// the persisted transcript as a real user message instead of sitting
+// in the queue. If that same turn is then interrupted by
+// auto-compaction mid-tool-use, the wrapped resume prompt used to
+// always quote call.Prompt — the turn's very first message — even
+// though the folded-in message is the user's actual latest request.
+func TestRun_ResumeAfterCompactionUsesLatestFoldedMessage(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	// Queued before the turn even starts, so drainQueueForStep folds it
+	// into the very first step — the same way a message sent while an
+	// earlier step of this turn was still streaming would land there.
+	sa.enqueueCall(SessionAgentCall{
+		SessionID: sess.ID,
+		Prompt:    "actually, focus on the auth bug instead",
+	})
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		// The only step of the original turn: high usage trips
+		// auto-compaction immediately, leaving this tool call pending
+		// (never executed) and interrupting the turn.
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		// The turn resumed after compaction.
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        config.AgentCoder,
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:   compact,
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "seed task",
+	})
+	require.NoError(t, err)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	var userPrompts []string
+	for _, m := range msgs {
+		if m.Role == message.User {
+			userPrompts = append(userPrompts, m.Content().Text)
+		}
+	}
+
+	var resumed string
+	for _, p := range userPrompts {
+		if strings.Contains(p, "The previous session was interrupted") {
+			resumed = p
+		}
+	}
+	require.NotEmpty(t, resumed, "the interrupted turn must resume with a wrapped prompt")
+	require.Contains(t, resumed, "actually, focus on the auth bug instead",
+		"the resumed prompt must carry the message folded into the turn, which is the user's actual latest request")
+	require.NotContains(t, resumed, "`seed task`",
+		"the resumed prompt must not still quote the turn's original message once a later one was folded into the same turn")
+}

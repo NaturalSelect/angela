@@ -161,7 +161,8 @@ jobs:
             def mkmodel($id): {
               id: $id,
               can_reason: true,
-              reasoning_levels: ["low", "medium", "high", "max"]
+              reasoning_levels: ["low", "medium", "high", "max"],
+              default_reasoning_effort: "max"
             };
             {
               providers: {

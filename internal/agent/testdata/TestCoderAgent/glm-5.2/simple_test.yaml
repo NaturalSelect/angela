@@ -24,29 +24,15 @@ interactions:
     proto_minor: 0
     content_length: -1
     body: |+
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-14a2c122a547e66f6251fba3", "object": "chat.completion.chunk", "created": 1790431167, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "Hello! How"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-14a2c122a547e66f6251fba3", "object": "chat.completion.chunk", "created": 1790431167, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "Hello! How"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " can I help you today?\n\n"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-14a2c122a547e66f6251fba3", "object": "chat.completion.chunk", "created": 1790431167, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " can I help you"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": "I'm Angela"}, "finish_reason": null}]}
+      data: {"id": "chatcmpl-14a2c122a547e66f6251fba3", "object": "chat.completion.chunk", "created": 1790431167, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " today?"}, "finish_reason": null}]}
 
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": ", ready"}, "finish_reason": null}]}
-
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " to assist with software engineering tasks"}, "finish_reason": null}]}
-
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " like writing"}, "finish_reason": null}]}
-
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " code, debugging,"}, "finish_reason": null}]}
-
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " refactoring, or explaining things. What"}, "finish_reason": null}]}
-
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " are"}, "finish_reason": null}]}
-
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {"content": " you working on?"}, "finish_reason": null}]}
-
-      data: {"id": "chatcmpl-a0339230f92fb5eb25d5f17b", "object": "chat.completion.chunk", "created": 1790254239, "model": "glm-5.2", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"completion_tokens": 41, "prompt_tokens": 11635, "total_tokens": 11676, "completion_tokens_details": {"accepted_prediction_tokens": null, "audio_tokens": null, "reasoning_tokens": 0, "rejected_prediction_tokens": null}, "prompt_tokens_details": {"audio_tokens": null, "cached_tokens": 0}}}
+      data: {"id": "chatcmpl-14a2c122a547e66f6251fba3", "object": "chat.completion.chunk", "created": 1790431167, "model": "glm-5.2", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": {"completion_tokens": 11, "prompt_tokens": 11635, "total_tokens": 11646, "completion_tokens_details": {"accepted_prediction_tokens": null, "audio_tokens": null, "reasoning_tokens": 0, "rejected_prediction_tokens": null}, "prompt_tokens_details": {"audio_tokens": null, "cached_tokens": 0}}}
 
       data: [DONE]
 
@@ -55,4 +41,4 @@ interactions:
       - text/event-stream
     status: 200 OK
     code: 200
-    duration: 14.154831886s
+    duration: 12.938342925s

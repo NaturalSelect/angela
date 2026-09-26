@@ -71,7 +71,7 @@ func TestQuestion_Validate(t *testing.T) {
 		{
 			name:    "description too long",
 			q:       Question{Type: TypeYesNo, Text: "q", Description: strings.Repeat("a", MaxDescriptionLength+1)},
-			wantErr: "exceeds 600 characters",
+			wantErr: "exceeds 1000 characters",
 		},
 		{
 			name:    "free text needs no choices",

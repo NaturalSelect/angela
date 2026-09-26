@@ -162,7 +162,7 @@ jobs:
               id: $id,
               can_reason: true,
               reasoning_levels: ["low", "medium", "high", "max"],
-              default_reasoning_effort: "max"
+              default_reasoning_effort: "high"
             };
             {
               providers: {

@@ -26,7 +26,7 @@ func toolNames(ra resolvedAgent) []string {
 // depth 1.
 func dispatchTools(t *testing.T, coord *coordinator, entry *subagentEntry) []string {
 	t.Helper()
-	_, resolved, err := coord.dispatchSubAgent(context.Background(), entry, 1)
+	_, resolved, err := coord.dispatchSubAgent(context.Background(), entry, 1, config.ActiveAgent{})
 	require.NoError(t, err)
 	return toolNames(resolved)
 }
@@ -127,12 +127,12 @@ func TestDispatchIsolatesExecuteTimeTemplateError(t *testing.T) {
 	broken, ok := coord.subagents.Get("broken")
 	require.True(t, ok, "a broken agent is still registered; it fails on dispatch, not on reconcile")
 
-	_, _, err := coord.dispatchSubAgent(context.Background(), broken, 1)
+	_, _, err := coord.dispatchSubAgent(context.Background(), broken, 1, config.ActiveAgent{})
 	require.Error(t, err, "an execute-time template error must surface to its own dispatch")
 
 	healthy, ok := coord.subagents.Get(config.AgentExplore)
 	require.True(t, ok)
-	_, _, err = coord.dispatchSubAgent(context.Background(), healthy, 1)
+	_, _, err = coord.dispatchSubAgent(context.Background(), healthy, 1, config.ActiveAgent{})
 	require.NoError(t, err, "an unrelated subagent must still dispatch")
 
 	// Fixing the prompt takes effect on the next dispatch.
@@ -142,7 +142,7 @@ func TestDispatchIsolatesExecuteTimeTemplateError(t *testing.T) {
 
 	fixed, ok := coord.subagents.Get("broken")
 	require.True(t, ok)
-	_, resolved, err := coord.dispatchSubAgent(context.Background(), fixed, 1)
+	_, resolved, err := coord.dispatchSubAgent(context.Background(), fixed, 1, config.ActiveAgent{})
 	require.NoError(t, err, "a repaired prompt must dispatch without restarting the process")
 	require.Equal(t, "now valid", resolved.SystemPrompt)
 }
@@ -169,6 +169,59 @@ func TestReconcileReplacesEntriesWhenHooksChange(t *testing.T) {
 	reg.Reconcile(agents, []config.HookConfig{{Command: "exit 2"}})
 	after, _ := reg.Get("reviewer")
 	require.NotSame(t, before, after, "a new hook must invalidate cached subagents")
+}
+
+// TestDispatchSubAgentInheritsParentModel pins the point of
+// slot: "inherited": a dispatched agent configured with it runs on
+// the model that actually dispatched it, not on whatever its own
+// coder-slot fallback would have produced.
+func TestDispatchSubAgentInheritsParentModel(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	coord.cfg.Config().Agents["inherits"] = config.Agent{
+		ID:           "inherits",
+		Mode:         config.AgentModeSubagent,
+		Slot:         config.SlotInherited,
+		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetScope},
+		AllowedMCP:   &config.AllowedMCPSet{Kind: config.ToolSetScope},
+	}
+	coord.reconcileSubagents()
+	entry, ok := coord.subagents.Get("inherits")
+	require.True(t, ok)
+
+	// The coder's own slot is chore ("small-model"); the parent below
+	// deliberately runs something else, so a resolution matching it
+	// can only have come from inheriting the dispatcher rather than
+	// falling back to the coder's slot.
+	parent := instantiate(t, coord, config.AgentCoder)
+	parent.Model = config.SelectedModel{Provider: "mock", Model: "large-model"}
+
+	_, resolved, err := coord.dispatchSubAgent(context.Background(), entry, 1, parent)
+	require.NoError(t, err)
+	require.Equal(t, "large-model", resolved.Model.ModelCfg.Model)
+}
+
+// TestDispatchSubAgentWithoutParentFallsBackToCoderSlot pins the
+// other half: a dispatch with no live parent — the zero value used
+// when nothing actually dispatched the agent — falls back to the
+// coder's own slot, the same as InstantiateAgent resolves "inherited"
+// on its own.
+func TestDispatchSubAgentWithoutParentFallsBackToCoderSlot(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	coord.cfg.Config().Agents["inherits"] = config.Agent{
+		ID:           "inherits",
+		Mode:         config.AgentModeSubagent,
+		Slot:         config.SlotInherited,
+		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetScope},
+		AllowedMCP:   &config.AllowedMCPSet{Kind: config.ToolSetScope},
+	}
+	coord.reconcileSubagents()
+	entry, ok := coord.subagents.Get("inherits")
+	require.True(t, ok)
+
+	_, resolved, err := coord.dispatchSubAgent(context.Background(), entry, 1, config.ActiveAgent{})
+	require.NoError(t, err)
+	require.Equal(t, "small-model", resolved.Model.ModelCfg.Model,
+		"the coder's own slot is chore (small-model)")
 }
 
 func TestReconcileExcludesPrimaryAgents(t *testing.T) {

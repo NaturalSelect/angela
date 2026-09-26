@@ -80,6 +80,13 @@ const (
 	// SlotImage is the model configuration used by the built-in image
 	// generation and editing tools.
 	SlotImage SlotName = "image"
+	// SlotInherited is a reserved name, not a key into Config.Slots:
+	// an agent set to it runs on whatever model actually dispatched
+	// it, resolved fresh at dispatch time instead of naming one of
+	// the configs above. An agent with no dispatcher — a primary
+	// agent, a top-level session, or an internal call with no host —
+	// falls back to the coder agent's own slot.
+	SlotInherited SlotName = "inherited"
 )
 
 const (
@@ -824,7 +831,7 @@ type Agent struct {
 	// directly.
 	Mode AgentMode `json:"mode,omitempty" jsonschema:"description=Agent mode: primary or subagent or branch or compact,enum=primary,enum=subagent,enum=branch,enum=compact"`
 
-	Slot SlotName `json:"slot,omitempty" jsonschema:"description=Name of the model config to use,default=main"`
+	Slot SlotName `json:"slot,omitempty" jsonschema:"description=Name of the model config to use\\, or \"inherited\" to run on whatever model dispatched this agent,default=main"`
 
 	// Variant names a parameter preset on the model config above.
 	// Unknown names degrade to the model's baseline parameters. Always
@@ -1650,9 +1657,15 @@ func (c *Config) ResolveAgents() map[string]Agent {
 // its resolved sets, which every other agent's ToolSetInherited
 // expands to. Coder is the inheritance root, so it cannot itself
 // inherit: an explicit "inherited" from any layer is downgraded to
-// "all" with a warning rather than failing the load.
+// "all" with a warning rather than failing the load, and the same
+// applies to its own slot, which downgrades to SlotMain instead.
 func resolveCoderAgent(agents map[string]Agent, globalDisabled []string) (AllowedToolSet, AllowedMCPSet) {
 	coder := agents[AgentCoder]
+
+	if coder.Slot == SlotInherited {
+		slog.Warn("The coder agent cannot inherit its slot; using main instead")
+		coder.Slot = SlotMain
+	}
 
 	if coder.AllowedTools == nil || coder.AllowedTools.Kind == ToolSetInherited {
 		if coder.AllowedTools != nil {
@@ -1702,6 +1715,11 @@ func warnUnreadModelConfigs(cfg *Config) {
 		}
 	}
 	for name := range cfg.Slots {
+		if name == SlotInherited {
+			slog.Warn("Model config name is reserved and is always ignored",
+				"model", name, "hint", "rename this model config; \"inherited\" cannot be used as a slot name")
+			continue
+		}
 		if name == SlotMain || name == SlotChore || referenced[name] {
 			continue
 		}

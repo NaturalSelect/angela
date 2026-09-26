@@ -299,7 +299,7 @@ func TestBuildToolsGivesBranchesMerge(t *testing.T) {
 		env := testEnv(t)
 		c := newTestCoordinator(t, env, "test", config.ProviderConfig{})
 
-		tooling, err := c.buildTools(agent, "test-model", 0)
+		tooling, err := c.buildTools(agent, config.ActiveAgent{}, "test-model", 0)
 		require.NoError(t, err)
 
 		names := map[string]bool{}
@@ -372,7 +372,7 @@ func TestBranchHasNoSelfTerminationTool(t *testing.T) {
 		ID: "pairing", Mode: config.AgentModeBranch,
 		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetInherited},
 		AllowedMCP:   &config.AllowedMCPSet{Kind: config.ToolSetInherited},
-	}, "test-model", 0)
+	}, config.ActiveAgent{}, "test-model", 0)
 	require.NoError(t, err)
 
 	for _, tool := range built {

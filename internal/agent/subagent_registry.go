@@ -134,6 +134,16 @@ func (c *coordinator) reconcileSubagents() {
 	c.subagents.Reconcile(cfg.Agents, cfg.Hooks[hooks.EventPreToolUse])
 }
 
+// subagentExecutor returns the entry's cached executor, building it on first
+// use. Unlike dispatchSubAgent it resolves no identity, so callers that only
+// need somewhere to run — routing and cancellation — do not pay for a model
+// resolution they would throw away.
+func (c *coordinator) subagentExecutor(entry *subagentEntry) SessionAgent {
+	return entry.executor(func(agentCfg config.Agent) SessionAgent {
+		return c.buildAgent(agentCfg.ID, true)
+	})
+}
+
 // dispatchSubAgent produces what a dispatch needs: the cached executor
 // for this agent, plus a resolution made fresh for this dispatch.
 //
@@ -149,21 +159,15 @@ func (c *coordinator) reconcileSubagents() {
 // depth plus one). It is never baked into the cached executor: the same
 // entry can be reused across dispatches at different depths, and only
 // the per-dispatch resolution (its tool list) is depth-sensitive.
-// subagentExecutor returns the entry's cached executor, building it on first
-// use. Unlike dispatchSubAgent it resolves no identity, so callers that only
-// need somewhere to run — routing and cancellation — do not pay for a model
-// resolution they would throw away.
-func (c *coordinator) subagentExecutor(entry *subagentEntry) SessionAgent {
-	return entry.executor(func(agentCfg config.Agent) SessionAgent {
-		return c.buildAgent(agentCfg.ID, true)
-	})
-}
-
-func (c *coordinator) dispatchSubAgent(ctx context.Context, entry *subagentEntry, depth int) (SessionAgent, resolvedAgent, error) {
+//
+// parent is the dispatcher's own instance, which the new subagent
+// inherits from when its own slot is "inherited"; a zero value falls
+// back to the coder's slot, the same as InstantiateAgent.
+func (c *coordinator) dispatchSubAgent(ctx context.Context, entry *subagentEntry, depth int, parent config.ActiveAgent) (SessionAgent, resolvedAgent, error) {
 	// A subagent is instantiated fresh for every dispatch and never
 	// stored: it has no session of its own to own an instance, and its
 	// model is whatever config says right now.
-	active, ok := c.cfg.Config().InstantiateAgent(entry.cfg.ID)
+	active, ok := c.cfg.Config().InstantiateUnder(entry.cfg.ID, parent)
 	if !ok {
 		return nil, resolvedAgent{}, fmt.Errorf("%w: %q", ErrAgentNotAvailable, entry.cfg.ID)
 	}

@@ -37,7 +37,7 @@
         },
         "slot": {
           "type": "string",
-          "description": "Name of the model config to use",
+          "description": "Name of the model config to use, or \"inherited\" to run on whatever model dispatched this agent",
           "default": "main"
         },
         "variant": {

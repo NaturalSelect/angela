@@ -70,7 +70,7 @@ func (c *coordinator) resolveAgent(ctx context.Context, active config.ActiveAgen
 		return resolvedAgent{}, err
 	}
 
-	tools, err := c.buildTools(agentCfg, modelDisplayName(model), depth)
+	tools, err := c.buildTools(agentCfg, active, modelDisplayName(model), depth)
 	if err != nil {
 		return resolvedAgent{}, err
 	}

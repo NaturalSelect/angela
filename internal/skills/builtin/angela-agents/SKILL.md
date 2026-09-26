@@ -44,7 +44,7 @@ Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
 | `name` | string | Display name. |
 | `description` | string | Shown to the dispatching model. |
 | `mode` | string | `primary`, `subagent`, `branch`, or `compact`. |
-| `slot` | string | Model slot to use. Default `main`; `web-fetch` and `title` default to `chore`. |
+| `slot` | string | Model slot to use, or `"inherited"` to run on whatever model dispatched this agent. Default `main`; `web-fetch` and `title` default to `chore`. |
 | `variant` | string | Named variant on the slot's model; wins over the slot's own `variant`. |
 | `max_tokens` | int | Output-token cap; omit for model default. |
 | `prompt` | string | Replaces the built-in system prompt (Go template). |
@@ -68,10 +68,16 @@ Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
 an explicit `false` re-enables or un-hides something a lower-priority layer
 disabled.
 
-`coder` cannot use `allowed_tools: "inherited"` or `allowed_mcp: "inherited"`
-— both degrade to `"all"` with a warning, since coder is the root of the
-inheritance tree. `options.disabled_tools` always wins over a per-agent
-`allowed_tools`.
+`coder` cannot use `allowed_tools: "inherited"`, `allowed_mcp: "inherited"`,
+or `slot: "inherited"` — the first two degrade to `"all"` and the slot
+degrades to `main`, all with a warning, since coder is the root of the
+inheritance tree and has no dispatcher of its own to inherit from.
+`options.disabled_tools` always wins over a per-agent `allowed_tools`.
+
+A dispatched agent's `slot: "inherited"` follows whatever model actually
+dispatched it, resolved fresh at dispatch time — not a fixed name in
+`slots`. An agent with no dispatcher (a primary agent, or an internal call
+with no host session) falls back to `coder`'s own slot instead.
 
 ## Dispatch Depth
 

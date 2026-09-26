@@ -24,7 +24,7 @@ func TestSubagentsHaveNoDelegationTools(t *testing.T) {
 		t.Helper()
 		agentCfg, ok := coord.cfg.Config().Agents[agentID]
 		require.True(t, ok, "agent %q must be configured", agentID)
-		toolList, err := coord.buildTools(agentCfg, "", depth)
+		toolList, err := coord.buildTools(agentCfg, config.ActiveAgent{}, "", depth)
 		require.NoError(t, err)
 		names := make([]string, len(toolList))
 		for i, tool := range toolList {
@@ -67,7 +67,7 @@ func TestBuildToolsOmitsAgentToolWhenNoSubagents(t *testing.T) {
 	coord.reconcileSubagents()
 	require.Zero(t, coord.subagents.Len(), "test premise: no dispatchable subagents remain")
 
-	toolList, err := coord.buildTools(agents[config.AgentCoder], "", 0)
+	toolList, err := coord.buildTools(agents[config.AgentCoder], config.ActiveAgent{}, "", 0)
 	require.NoError(t, err, "an empty dispatch table must not fail the coder's tool build")
 
 	var names []string
@@ -99,7 +99,7 @@ func TestSubagentToolsAreHookWrapped(t *testing.T) {
 		{config.AgentGeneral, 1},
 	} {
 		t.Run(tc.agentID, func(t *testing.T) {
-			toolList, err := coord.buildTools(cfg.Agents[tc.agentID], "", tc.depth)
+			toolList, err := coord.buildTools(cfg.Agents[tc.agentID], config.ActiveAgent{}, "", tc.depth)
 			require.NoError(t, err)
 
 			var bash fantasy.AgentTool
@@ -135,7 +135,7 @@ func TestHookRunnerCarriesAgentIdentity(t *testing.T) {
 
 	run := func(t *testing.T, agentID string, depth int) string {
 		t.Helper()
-		toolList, err := coord.buildTools(cfg.Agents[agentID], "", depth)
+		toolList, err := coord.buildTools(cfg.Agents[agentID], config.ActiveAgent{}, "", depth)
 		require.NoError(t, err)
 		for _, tool := range toolList {
 			if tool.Info().Name != toolnames.Read {
@@ -183,7 +183,7 @@ func TestSubagentDepthBudget(t *testing.T) {
 		t.Run(fmt.Sprintf("max=%d/depth=%d", tc.maxDepth, tc.depth), func(t *testing.T) {
 			coord.cfg.Config().Options.SubagentDepth = ptrTo(tc.maxDepth)
 
-			toolList, err := coord.buildTools(coderCfg, "", tc.depth)
+			toolList, err := coord.buildTools(coderCfg, config.ActiveAgent{}, "", tc.depth)
 			require.NoError(t, err)
 
 			var names []string
@@ -208,7 +208,7 @@ func TestOutOfBudgetSubagentGetsNoToolWithoutTheOption(t *testing.T) {
 	coord := newGateTestCoordinator(t, true)
 	generalCfg := coord.cfg.Config().Agents[config.AgentGeneral]
 
-	toolList, err := coord.buildTools(generalCfg, "", 2)
+	toolList, err := coord.buildTools(generalCfg, config.ActiveAgent{}, "", 2)
 	require.NoError(t, err)
 
 	var names []string
@@ -233,6 +233,6 @@ func TestBuildToolsPropagatesAgentToolRenderError(t *testing.T) {
 	t.Cleanup(func() { agentToolDescriptionTmpl = original })
 
 	agents := coord.cfg.Config().Agents
-	_, err := coord.buildTools(agents[config.AgentCoder], "", 0)
+	_, err := coord.buildTools(agents[config.AgentCoder], config.ActiveAgent{}, "", 0)
 	require.Error(t, err)
 }

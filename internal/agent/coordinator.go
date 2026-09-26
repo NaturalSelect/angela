@@ -946,18 +946,22 @@ func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
 // attribution, which must name the model that did the work rather than
 // whatever the global slot happens to point at.
 //
+// parent is this turn's own instance, passed to the agent tool so a
+// further dispatch whose slot is "inherited" can inherit this turn's
+// live model rather than the coder's.
+//
 // depth is this turn's dispatch depth (0 for a primary turn, 1+ for a
 // subagent). It gates both the question tool and, against
 // Options.SubagentMaxDepth, the agent tool: a turn only holds it while
 // it still has delegation budget left, which keeps the dispatch chain
 // from growing past the configured limit.
-func (c *coordinator) buildTools(agent config.Agent, modelName string, depth int) ([]fantasy.AgentTool, error) {
+func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, modelName string, depth int) ([]fantasy.AgentTool, error) {
 	var allTools []fantasy.AgentTool
 	isSubAgent := depth > 0
 	canDelegate := depth < c.cfg.Config().Options.SubagentMaxDepth()
 
 	if canDelegate && agent.AllowedTools.Allows(toolnames.Agent) {
-		agentTool, err := c.agentTool(depth, agent.AllowedAgents)
+		agentTool, err := c.agentTool(depth, agent.AllowedAgents, parent)
 		if err != nil {
 			return nil, err
 		}

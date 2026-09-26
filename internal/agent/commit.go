@@ -34,10 +34,10 @@ func (c *coordinator) GenerateCommitMessage(ctx context.Context, sessionID, diff
 		diff = diff[:maxCommitDiffChars] + "\n… (diff truncated)"
 	}
 
-	host, err := c.activeAgentFor(ctx, sessionID)
-	if err != nil {
+	host := c.instanceFor(ctx, sessionID)
+	if host.Agent.ID == "" {
 		slog.Warn("Failed to resolve the session's agent for commit message generation; using the configured commit model",
-			"error", err, "sessionID", sessionID)
+			"sessionID", sessionID)
 	}
 	active, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentCommit, host)
 	if err != nil {

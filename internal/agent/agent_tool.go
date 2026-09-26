@@ -40,7 +40,11 @@ type AgentParams struct {
 // description and the dispatch itself to those IDs. Filtering the
 // description here rather than only refusing in the run closure keeps
 // it honest about what a call can actually reach.
-func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet) (fantasy.AgentTool, error) {
+//
+// parent is the dispatching agent's own instance, carried so a
+// dispatch whose slot is "inherited" can inherit parent's live model
+// instead of the coder's.
+func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, parent config.ActiveAgent) (fantasy.AgentTool, error) {
 	metadata := allowedAgentsOnly(c.subagents.Metadata(), allowed)
 	if len(metadata) == 0 {
 		return nil, nil
@@ -96,7 +100,7 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet) (fan
 			// an unreachable provider. That is this dispatch's problem
 			// alone, so it comes back as a tool error rather than
 			// taking down the coordinator.
-			agent, resolved, err := c.dispatchSubAgent(ctx, entry, depth+1)
+			agent, resolved, err := c.dispatchSubAgent(ctx, entry, depth+1, parent)
 			if err != nil {
 				slog.Error("Failed to build subagent", "agent", agentType, "error", err)
 				return tools.Failf("Subagent %q is unavailable: %v", agentType, err)

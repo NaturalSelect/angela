@@ -104,3 +104,50 @@ func TestUnreadModelConfigsAreReported(t *testing.T) {
 		require.NotContains(t, buf.String(), "never used")
 	})
 }
+
+// TestInheritedSlotNameIsReservedNotUnread pins two things about the
+// "inherited" sentinel: an agent set to it references no real slot,
+// so it must not count as "using" one it happens to share a name
+// with; and a model config actually named "inherited" is called out
+// as reserved rather than silently ignored or double-reported as
+// unread on top of that.
+func TestInheritedSlotNameIsReservedNotUnread(t *testing.T) {
+	t.Run("an agent set to inherited references no slot", func(t *testing.T) {
+		buf := captureWarnings(t)
+
+		cfg := &Config{
+			Options: &Options{},
+			Slots: map[SlotName]SelectedModel{
+				SlotMain: {Provider: "mock", Model: "big"},
+				"fast":   {Provider: "mock", Model: "quick"},
+			},
+			AgentConfigs: map[string]Agent{
+				"researcher": {ID: "researcher", Slot: SlotInherited},
+			},
+			Providers: csync.NewMap[string, ProviderConfig](),
+		}
+		cfg.SetupAgents()
+
+		require.Contains(t, buf.String(), "never used")
+		require.Contains(t, buf.String(), "fast",
+			"an inherited agent must not count as referencing the unrelated \"fast\" slot")
+	})
+
+	t.Run("a model config literally named inherited is reported as reserved", func(t *testing.T) {
+		buf := captureWarnings(t)
+
+		cfg := &Config{
+			Options: &Options{},
+			Slots: map[SlotName]SelectedModel{
+				SlotMain:      {Provider: "mock", Model: "big"},
+				SlotInherited: {Provider: "mock", Model: "leftover"},
+			},
+			Providers: csync.NewMap[string, ProviderConfig](),
+		}
+		cfg.SetupAgents()
+
+		require.Contains(t, buf.String(), "reserved")
+		require.NotContains(t, buf.String(), "never used",
+			"the reserved-name warning must not be followed by a second, redundant unread warning")
+	})
+}

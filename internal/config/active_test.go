@@ -430,3 +430,238 @@ func TestRestoreSessionModelOutranksProcessOverride(t *testing.T) {
 		"a session's own persisted model pick must outrank a process-level override")
 	require.Equal(t, "gpt-mini", restored.Model.Model)
 }
+
+// TestInstantiateUnderWithoutParentFallsBackToCoderSlot pins
+// InstantiateUnder's fallback: dispatching an inherited agent with no
+// live parent — the zero ActiveAgent a top-level or hostless call
+// passes — runs on the coder's own slot, exactly like InstantiateAgent
+// resolves "inherited" on its own.
+func TestInstantiateUnderWithoutParentFallsBackToCoderSlot(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	agent := cfg.Agents["coder"]
+	agent.Slot = "fast"
+	cfg.Agents["coder"] = agent
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+
+	active, ok := cfg.InstantiateUnder("inherits", ActiveAgent{})
+	require.True(t, ok)
+	require.Equal(t, SlotName("fast"), active.Slot)
+	require.Equal(t, "llama", active.Model.Model)
+}
+
+// TestInstantiateUnderInheritsParentsLiveModel is the point of the
+// feature: a dispatched agent whose own slot is "inherited" must run
+// on whatever model actually dispatched it — including a model the
+// parent switched to at runtime — rather than a name in Config.Slots.
+func TestInstantiateUnderInheritsParentsLiveModel(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+
+	parent, ok := cfg.InstantiateAgent("scout")
+	require.True(t, ok)
+	// The dispatcher moved off its own configured slot's model, the
+	// way a session's own runtime model pick would.
+	parent.Model = SelectedModel{Provider: "openai", Model: "gpt-mini"}
+
+	active, ok := cfg.InstantiateUnder("inherits", parent)
+	require.True(t, ok)
+	require.Equal(t, parent.Slot, active.Slot)
+	require.Equal(t, "openai", active.Model.Provider)
+	require.Equal(t, "gpt-mini", active.Model.Model)
+	require.Nil(t, active.ModelPick, "an inherited model is not the child's own pick and must not persist as one")
+}
+
+// TestInstantiateUnderVariantFollowsParentsEffectiveVariant pins that
+// a plain inherited agent (naming no variant of its own) follows
+// whatever preset the parent is actually running, not the model's own
+// catalog default.
+func TestInstantiateUnderVariantFollowsParentsEffectiveVariant(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+
+	parent, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	pick := "careful"
+	parent.VariantPick = &pick
+
+	active, ok := cfg.InstantiateUnder("inherits", parent)
+	require.True(t, ok)
+	require.Equal(t, "careful", active.EffectiveVariant(),
+		"a plain inherited agent must follow the parent's own picked preset")
+}
+
+// TestInstantiateUnderOwnVariantOutranksParents pins the other half:
+// a child that names its own variant keeps it, the same as it would
+// against a named slot's own default.
+func TestInstantiateUnderOwnVariantOutranksParents(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited, Variant: "custom"}
+
+	parent, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	pick := "careful"
+	parent.VariantPick = &pick
+
+	active, ok := cfg.InstantiateUnder("inherits", parent)
+	require.True(t, ok)
+	require.Equal(t, "custom", active.EffectiveVariant(),
+		"the child's own configured variant must outrank the parent's")
+}
+
+// TestInstantiateUnderParentsExplicitBaselineOverridesSlotDefault pins
+// that a parent who explicitly backed out of a preset propagates that
+// opt-out downward, rather than letting the child fall through to
+// whatever default its own coder-slot fallback would have carried.
+func TestInstantiateUnderParentsExplicitBaselineOverridesSlotDefault(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	slot := cfg.Slots[SlotMain]
+	slot.Variant = "careful"
+	cfg.Slots[SlotMain] = slot
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+
+	parent, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	baseline := ""
+	parent.VariantPick = &baseline
+
+	active, ok := cfg.InstantiateUnder("inherits", parent)
+	require.True(t, ok)
+	require.Empty(t, active.EffectiveVariant(),
+		"the parent's explicit baseline pick must not fall back to a slot default")
+}
+
+// TestInstantiateUnderThinkFollowsParentsExplicitPick pins that a
+// parent's own explicit thinking-mode pick propagates down like its
+// variant does, rather than being recomputed from the model's catalog
+// default.
+func TestInstantiateUnderThinkFollowsParentsExplicitPick(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+
+	parent, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	parent.Think = true
+	thinkPick := true
+	parent.ThinkPick = &thinkPick
+
+	active, ok := cfg.InstantiateUnder("inherits", parent)
+	require.True(t, ok)
+	require.True(t, active.Think, "the parent's explicit thinking pick must propagate")
+}
+
+// TestInstantiateUnderOverrideOutranksInheritance pins that an
+// explicit "switch agent model" pin on the dispatched agent itself
+// wins over inheriting the parent's model, the same as it already
+// wins over a named slot.
+func TestInstantiateUnderOverrideOutranksInheritance(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+	cfg.AgentModelOverrides = map[string]SelectedModel{
+		"inherits": {Provider: "groq", Model: "llama"},
+	}
+
+	parent, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+
+	active, ok := cfg.InstantiateUnder("inherits", parent)
+	require.True(t, ok)
+	require.Equal(t, "groq", active.Model.Provider)
+	require.Equal(t, "llama", active.Model.Model)
+}
+
+// TestInstantiateUnderLeavesNonInheritedAgentsUnchanged pins that
+// InstantiateUnder is a strict superset of InstantiateAgent: an agent
+// pinned to a real slot ignores parent entirely and resolves the same
+// either way it is instantiated.
+func TestInstantiateUnderLeavesNonInheritedAgentsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	parent, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+	parent.Model = SelectedModel{Provider: "groq", Model: "llama"}
+
+	viaAgent, ok := cfg.InstantiateAgent("scout")
+	require.True(t, ok)
+	viaUnder, ok := cfg.InstantiateUnder("scout", parent)
+	require.True(t, ok)
+
+	require.Equal(t, viaAgent.Slot, viaUnder.Slot)
+	require.Equal(t, viaAgent.Model, viaUnder.Model)
+}
+
+// TestInstantiateUnderRejectsUnknownAgent mirrors
+// TestInstantiateAgentRejectsUnknownAgent for the new entry point.
+func TestInstantiateUnderRejectsUnknownAgent(t *testing.T) {
+	t.Parallel()
+
+	_, ok := activeTestConfig().InstantiateUnder("ghost", ActiveAgent{})
+	require.False(t, ok)
+}
+
+// TestInstantiateUnderDoesNotShareMutableStateWithParent mirrors
+// TestInternalAgentDoesNotShareMutableStateWithItsHost: the inherited
+// model is copied by value, so retuning the parent's model after
+// dispatch must not reach back into the instance that already
+// inherited it.
+func TestInstantiateUnderDoesNotShareMutableStateWithParent(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+
+	parent, ok := cfg.InstantiateAgent("coder")
+	require.True(t, ok)
+
+	active, ok := cfg.InstantiateUnder("inherits", parent)
+	require.True(t, ok)
+	require.Equal(t, parent.Model, active.Model)
+
+	parent.Model = SelectedModel{Provider: "changed", Model: "changed"}
+
+	require.Equal(t, "anthropic", active.Model.Provider,
+		"the inherited model must be copied, not aliased to the parent's")
+	require.Equal(t, "claude", active.Model.Model)
+}
+
+// TestInternalAgentInheritedSlotFollowsHostRegardlessOfRole pins that
+// an internal agent (compact/title/generate) configured with
+// slot: "inherited" always follows its host, even on a role its own
+// coder-slot fallback would never have picked — unlike the pre-existing
+// same-slot inheritance, which only applies when the two already
+// happen to share a slot.
+func TestInternalAgentInheritedSlotFollowsHostRegardlessOfRole(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["reviewer"] = Agent{ID: "reviewer", Slot: "fast"}
+	cfg.Agents["compact"] = Agent{ID: "compact", Slot: SlotInherited}
+
+	// compact's own coder-slot fallback names SlotMain (coder's own
+	// slot), which differs from reviewer's "fast" — so a result that
+	// matches the host can only have come from the new
+	// slot-independent inheritance, not the pre-existing same-slot rule.
+	host, ok := cfg.InstantiateAgent("reviewer")
+	require.True(t, ok)
+
+	compact, ok := cfg.InstantiateFor("compact", host)
+	require.True(t, ok)
+	require.Equal(t, "groq", compact.Model.Provider,
+		"an inherited internal agent must follow the host even though its own coder-slot fallback names a different slot")
+	require.Equal(t, "llama", compact.Model.Model)
+	require.Equal(t, host.Slot, compact.Slot)
+}

@@ -281,6 +281,41 @@ with a warning.
 Above, `my-reviewer` says nothing about tools and so gets exactly
 `read`, `grep`, `edit`.
 
+### Slot Inheritance
+
+`slot` normally names a key in `slots` (`main`, `chore`, or a custom name).
+It also accepts the reserved value `"inherited"`: an agent set to it runs on
+whatever model actually dispatched it — resolved fresh at dispatch time,
+including a model the dispatcher switched to mid-session — instead of a
+fixed name in `slots`. This is for a sub-agent or branch agent that should
+ride along with whatever model its caller is currently using rather than
+always running on a separately named slot.
+
+Resuming an inherited agent's session re-resolves it against the
+dispatching session's *current* model, not whatever was live when it was
+first dispatched — the same "session follows config" rule every other slot
+already follows.
+
+An agent with no dispatcher — a primary agent, a top-level session, or an
+internal call (`compact`, `title`, `generate-agent`) with no host session —
+falls back to the `coder` agent's own slot.
+
+`coder` is the root of the dispatch chain and therefore cannot inherit: a
+`slot` of `"inherited"` written there is normalized to `main` with a
+warning, the same way its `allowed_tools`/`allowed_mcp` are.
+
+```json
+{
+  "agents": {
+    "reviewer": { "mode": "branch", "slot": "inherited" }
+  }
+}
+```
+
+Above, dispatching `reviewer` from a session running on a big model runs the
+branch on that same model; dispatching it from a session switched to a
+cheaper one runs it there instead.
+
 ### Restricting Delegation (`allowed_agents`)
 
 `allowed_agents` narrows which agents an agent may reach through its own
@@ -413,7 +448,7 @@ The body becomes the agent's system prompt. Frontmatter fields:
 | `name`          | string     | Display name                     |
 | `description`   | string     | What the agent does              |
 | `mode`          | string     | `primary`, `subagent`, `branch`, or `compact` (see Agent Modes) |
-| `slot`          | string     | `main` or `chore`                |
+| `slot`          | string     | `main`, `chore`, or `inherited` (see Slot Inheritance) |
 | `temperature`   | float      | Sampling temperature (0-1)       |
 | `allowed_tools` | []string, `"all"`, or `"inherited"` | Tool whitelist (see Permission Inheritance) |
 | `disabled_tools`| []string   | Tools to remove                  |
@@ -467,7 +502,7 @@ is published atomically so a failed write cannot leave a partial agent behind.
 | `name`          | string          | ""           | Display name                                     |
 | `description`   | string          | ""           | What the agent does                               |
 | `mode`          | string          | `subagent`   | How the agent can be used                        |
-| `slot`          | string          | `main`       | Slot name (`main` or `chore`)                    |
+| `slot`          | string          | `main`       | Slot name, or `"inherited"` to follow whatever model dispatched this agent (see Slot Inheritance). `coder` cannot inherit and normalizes to `main`. |
 | `prompt`        | string          | ""           | Custom system prompt (Go template)               |
 | `temperature`   | *float64        | nil          | Sampling temperature override                    |
 | `allowed_tools` | array, `"all"`, or `"inherited"` | `"inherited"` | Tool whitelist. `"inherited"` takes the coder's resolved set; `"all"` grants every tool; `[]` denies all tools; an array grants exactly those names. `coder` itself cannot inherit. |

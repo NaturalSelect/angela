@@ -50,13 +50,24 @@ func (c *coordinator) imageToolsAvailable(agent config.Agent, depth int) (bool, 
 // deferred to newImageClient, which runs only once a tool is actually
 // invoked. An error return means the image tools have nothing usable
 // to call and must stay unregistered.
+//
+// The image agent's slot is never resolved through InstantiateAgent:
+// imageToolsAvailable is only ever consulted for the primary agent
+// (depth 0), which has no dispatcher to inherit a model from, and
+// inheriting whatever chat model the coder happens to run would make
+// little sense for image generation anyway. A slot of "inherited" is
+// therefore treated the same as an unset one, falling straight to the
+// default image model.
 func (c *coordinator) imageSelection(cfg *config.Config) (config.SelectedModel, config.ProviderConfig, error) {
 	agentCfg, ok := cfg.Agents[config.AgentImage]
 	if !ok {
 		return config.SelectedModel{}, config.ProviderConfig{}, fmt.Errorf("agent %q is not configured", config.AgentImage)
 	}
 
-	model, ok := cfg.ModelForSlot(agentCfg.Slot)
+	model, ok := config.SelectedModel{}, false
+	if agentCfg.Slot != config.SlotInherited {
+		model, ok = cfg.ModelForSlot(agentCfg.Slot)
+	}
 	if !ok {
 		model = config.SelectedModel{Provider: defaultImageProvider, Model: imagegen.DefaultModel}
 	}

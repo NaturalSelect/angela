@@ -19,7 +19,7 @@ import (
 func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, nil)
+	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -38,7 +38,7 @@ func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
 func TestAgentToolRequiresAgentMessageID(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, nil)
+	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
@@ -63,7 +63,7 @@ func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
 		"ghost": {ID: "ghost", Mode: config.AgentModeSubagent, Description: "no longer configured"},
 	}, nil)
 
-	tool, err := coord.agentTool(0, nil)
+	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
@@ -88,7 +88,7 @@ func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
 func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, nil)
+	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -107,7 +107,7 @@ func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 func TestAgentToolUnknownSubagentTypeListsAvailable(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, nil)
+	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -226,7 +226,7 @@ func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
 func TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, &config.AllowedAgentSet{Kind: config.ToolSetScope, Agents: []string{config.AgentExplore}})
+	tool, err := coord.agentTool(0, &config.AllowedAgentSet{Kind: config.ToolSetScope, Agents: []string{config.AgentExplore}}, config.ActiveAgent{})
 	require.NoError(t, err)
 	require.Contains(t, tool.Info().Description, config.AgentExplore)
 	require.NotContains(t, tool.Info().Description, config.AgentGeneral)
@@ -250,7 +250,7 @@ func TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch(t *testing.T) {
 func TestAgentToolAllowedAgentsEmptyOmitsTheTool(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, &config.AllowedAgentSet{Kind: config.ToolSetScope})
+	tool, err := coord.agentTool(0, &config.AllowedAgentSet{Kind: config.ToolSetScope}, config.ActiveAgent{})
 	require.NoError(t, err)
 	require.Nil(t, tool)
 }
@@ -266,7 +266,7 @@ func TestBuiltinPlanAndDeepResearchOnlyDispatchExplore(t *testing.T) {
 	for _, id := range []string{config.AgentPlan, config.AgentDeepResearch} {
 		t.Run(id, func(t *testing.T) {
 			agentCfg := coord.cfg.Config().Agents[id]
-			toolList, err := coord.buildTools(agentCfg, "", 0)
+			toolList, err := coord.buildTools(agentCfg, config.ActiveAgent{}, "", 0)
 			require.NoError(t, err)
 
 			var agentTool fantasy.AgentTool

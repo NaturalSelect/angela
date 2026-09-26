@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/imagegen"
 	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
@@ -152,7 +153,7 @@ func TestBuildToolsImageToolsGating(t *testing.T) {
 			agentCfg, ok := coord.cfg.Config().Agents[config.AgentCoder]
 			require.True(t, ok, "coder agent must be configured")
 
-			toolList, err := coord.buildTools(agentCfg, "", tc.depth)
+			toolList, err := coord.buildTools(agentCfg, config.ActiveAgent{}, "", tc.depth)
 			require.NoError(t, err)
 
 			var names []string
@@ -212,4 +213,24 @@ func TestImageSelectionUsesConfiguredSlot(t *testing.T) {
 	require.Equal(t, config.SelectedModel{Provider: "gateway", Model: "custom-image-model"}, model)
 	require.Equal(t, "gateway", providerCfg.ID)
 	require.Equal(t, openaicompat.Name, string(providerCfg.Type))
+}
+
+// TestImageSelectionTreatsInheritedSlotAsUnset pins that the image
+// agent has no dispatcher to inherit a model from — imageSelection is
+// only ever consulted for the primary agent — so slot: "inherited" on
+// it must fall back to the default image model exactly as an unset
+// slot would, rather than trying to resolve "inherited" as a real
+// slot name (which would fail, since it names no entry in
+// Config.Slots) and losing the image tools entirely.
+func TestImageSelectionTreatsInheritedSlotAsUnset(t *testing.T) {
+	coord := newImageReadyCoordinator(t)
+	agentCfg := coord.cfg.Config().Agents[config.AgentImage]
+	agentCfg.Slot = config.SlotInherited
+	coord.cfg.Config().Agents[config.AgentImage] = agentCfg
+
+	model, providerCfg, err := coord.imageSelection(coord.cfg.Config())
+	require.NoError(t, err)
+	require.Equal(t, defaultImageProvider, model.Provider)
+	require.Equal(t, imagegen.DefaultModel, model.Model)
+	require.Equal(t, defaultImageProvider, providerCfg.ID)
 }

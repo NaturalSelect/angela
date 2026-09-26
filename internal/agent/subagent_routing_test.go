@@ -407,6 +407,44 @@ func TestAskSideQuestionOnAChildSessionUsesTheSubAgentIdentity(t *testing.T) {
 		"the child session's own delegation-depth tool budget must be used")
 }
 
+// TestResolveSubagentInheritsParentsCurrentModel pins the resume-path
+// half of slot: "inherited": a child session's identity is rebuilt
+// from the config as it stands right now, so it must follow whatever
+// model the parent session is running today, not one frozen at the
+// moment the child was first dispatched. instanceFor is what makes
+// this possible — it rebuilds the parent's own live instance rather
+// than reading a stored snapshot, since an inherited child persists no
+// model of its own to resume from.
+func TestResolveSubagentInheritsParentsCurrentModel(t *testing.T) {
+	t.Parallel()
+	coord := newModelPrefTestCoordinator(t, nil)
+	coord.cfg.Config().Agents["inherits"] = config.Agent{
+		ID:           "inherits",
+		Mode:         config.AgentModeSubagent,
+		Slot:         config.SlotInherited,
+		AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetScope},
+		AllowedMCP:   &config.AllowedMCPSet{Kind: config.ToolSetScope},
+	}
+	coord.reconcileSubagents()
+
+	childID := persistedChildSession(t, coord, "inherits")
+	child, err := coord.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
+
+	resolved, err := coord.resolveSubagent(t.Context(), "inherits", childID)
+	require.NoError(t, err)
+	require.Equal(t, "small-model", resolved.Model.ModelCfg.Model,
+		"before the parent ever switches models, the child follows the coder's own slot (chore)")
+
+	_, err = coord.EditActiveAgent(t.Context(), child.ParentSessionID, switchModelEdit("large-model"))
+	require.NoError(t, err)
+
+	resolved, err = coord.resolveSubagent(t.Context(), "inherits", childID)
+	require.NoError(t, err)
+	require.Equal(t, "large-model", resolved.Model.ModelCfg.Model,
+		"resuming the child must follow the parent's current model, not one frozen at dispatch time")
+}
+
 // A cached route must not freeze the identity the session was first resolved
 // with. Replacing a registry entry on a config change is the only way a
 // revoked tool stops being reachable, so a turn reusing a frozen resolution

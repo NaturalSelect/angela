@@ -7,6 +7,8 @@ import (
 	"log/slog"
 
 	"charm.land/fantasy"
+
+	"github.com/NaturalSelect/angela/internal/config"
 )
 
 // ErrSubSessionNotResumable is returned when a child session cannot be tied
@@ -176,13 +178,67 @@ func (c *coordinator) turnExecutorFor(ctx context.Context, sessionID string) (tu
 // hard-coded: a child session created at depth 2 must be resolved at
 // depth 2, not depth 1, or it would regain the agent tool and bypass
 // the configured subagent_max_depth limit.
+//
+// The parent instance is reconstructed the same way, through instanceFor,
+// so a resumed child whose own slot is "inherited" still follows whatever
+// the session that dispatched it is running today rather than falling
+// back to the coder's slot. sessionID naming no session this process can
+// find is not itself a resumability failure — dispatchDepth below is
+// just as tolerant of it — so it degrades to a zero parent rather than
+// failing the turn; InstantiateUnder's own coder-slot fallback is a
+// perfectly good answer when the live chain cannot be rebuilt.
 func (c *coordinator) resolveSubagent(ctx context.Context, agentID string, sessionID string) (resolvedAgent, error) {
-	active, ok := c.cfg.Config().InstantiateAgent(agentID)
+	var parent config.ActiveAgent
+	if sess, err := c.sessions.Get(ctx, sessionID); err == nil {
+		parent = c.instanceFor(ctx, sess.ParentSessionID)
+	}
+	active, ok := c.cfg.Config().InstantiateUnder(agentID, parent)
 	if !ok {
 		return resolvedAgent{}, fmt.Errorf("%w: agent %q is no longer configured", ErrSubSessionNotResumable, agentID)
 	}
 	depth := c.dispatchDepth(ctx, sessionID)
 	return c.resolveAgent(ctx, active, depth)
+}
+
+// instanceFor rebuilds the live instance a session is running as, which
+// resolveSubagent uses as the parent for a resumed child's own
+// InstantiateUnder call. A top-level session's instance is whatever the
+// user picked for it (activeAgentFor); a child session's is rebuilt the
+// same way its own turn would be, recursing up the parent chain so a
+// grandchild resumed after a restart still inherits through its whole
+// lineage instead of stopping one hop short. The recursion is bounded
+// by the same subagent_max_depth limit as the dispatch chain itself,
+// since a session can only be a child by having been dispatched within
+// that budget.
+//
+// A failure anywhere in the chain — a parent session that no longer
+// exists, an agent that has left config — returns a zero instance
+// rather than an error: instanceFor only ever backs an "inherited"
+// resolution, and InstantiateUnder's own coder-slot fallback is a
+// perfectly good answer when the live chain cannot be rebuilt.
+func (c *coordinator) instanceFor(ctx context.Context, sessionID string) config.ActiveAgent {
+	route, routed, err := c.routeFor(ctx, sessionID)
+	if err != nil {
+		return config.ActiveAgent{}
+	}
+	if !routed {
+		active, err := c.activeAgentFor(ctx, sessionID)
+		if err != nil {
+			return config.ActiveAgent{}
+		}
+		return active
+	}
+
+	sess, err := c.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return config.ActiveAgent{}
+	}
+	parent := c.instanceFor(ctx, sess.ParentSessionID)
+	active, ok := c.cfg.Config().InstantiateUnder(route.agentID, parent)
+	if !ok {
+		return config.ActiveAgent{}
+	}
+	return active
 }
 
 // dispatchDepth counts how many parent_session_id hops separate sessionID

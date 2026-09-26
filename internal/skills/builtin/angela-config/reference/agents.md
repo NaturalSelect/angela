@@ -13,7 +13,7 @@ the built-in image generation/editing tools).
 | `name`           | string | Display name                                                        |
 | `description`    | string | What the agent does; shown to the dispatching model                 |
 | `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user), `compact` (only ever summarizes another agent's session) |
-| `slot`           | string | A slot name from `slots`. Default `main` for most agents — `title` and `web-fetch` default to `chore` instead, which is how a subagent is pointed at a cheaper model |
+| `slot`           | string | A slot name from `slots`, or `"inherited"` to run on whatever model dispatched this agent. Default `main` for most agents — `title` and `web-fetch` default to `chore` instead, which is how a subagent is pointed at a cheaper model |
 | `variant`        | string | A variant name on that model slot; takes priority over the slot's own `variant` |
 | `max_tokens`     | int    | Output-token cap; omit for the model default                        |
 | `prompt`         | string | Replaces the built-in system prompt. Parsed as a Go template        |
@@ -39,8 +39,10 @@ layer turned off.
 > also special: it can never be `disabled`, and `allowed_tools: "inherited"`
 > or `allowed_mcp: "inherited"` on it degrades to `"all"` with a warning,
 > since it's the root of the inheritance tree and has nothing to inherit
-> from. A global `options.disabled_tools` always wins over a per-agent
-> `allowed_tools` — an agent can't re-enable a tool removed at the top level.
+> from. `slot: "inherited"` on `coder` degrades to `main` the same way, for
+> the same reason. A global `options.disabled_tools` always wins over a
+> per-agent `allowed_tools` — an agent can't re-enable a tool removed at the
+> top level.
 >
 > This is exactly the kind of mistake `angela config validate` catches:
 > re-run it after any `agents.*` edit and treat every `warning:` line about

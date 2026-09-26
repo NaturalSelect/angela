@@ -12,7 +12,7 @@ func toolNamesFor(t *testing.T, coord *coordinator, agentID string, depth int) [
 	t.Helper()
 	agentCfg, ok := coord.cfg.Config().Agents[agentID]
 	require.True(t, ok, "agent %q must be configured", agentID)
-	toolList, err := coord.buildTools(agentCfg, "", depth)
+	toolList, err := coord.buildTools(agentCfg, config.ActiveAgent{}, "", depth)
 	require.NoError(t, err)
 	names := make([]string, len(toolList))
 	for i, tool := range toolList {

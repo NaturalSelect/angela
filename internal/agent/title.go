@@ -43,10 +43,10 @@ func (c *coordinator) generateSessionTitle(ctx context.Context, sessionID, userP
 	// session's model where the two share a model role. An unreadable
 	// session degrades to plain config resolution rather than skipping
 	// the title: the fallback below would only name it "New Session".
-	host, err := c.activeAgentFor(ctx, sessionID)
-	if err != nil {
+	host := c.instanceFor(ctx, sessionID)
+	if host.Agent.ID == "" {
 		slog.Warn("Failed to resolve the session's agent for titling; using the configured title model",
-			"error", err, "sessionID", sessionID)
+			"sessionID", sessionID)
 	}
 	active, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentTitle, host)
 	if err != nil {

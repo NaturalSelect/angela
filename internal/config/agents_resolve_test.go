@@ -422,6 +422,29 @@ func TestResolveAgents_CoderCannotInherit(t *testing.T) {
 	require.Equal(t, ToolSetAll, coder.AllowedMCP.Kind)
 }
 
+// TestResolveAgents_CoderSlotCannotInherit pins the same rule for
+// slot that already applies to allowed_tools and allowed_mcp: the
+// coder is the inheritance root, with no dispatcher of its own to
+// inherit a model from, so an explicit slot: "inherited" on it
+// downgrades to main with a warning instead of leaving the coder
+// stuck resolving a sentinel that names no real model config.
+func TestResolveAgents_CoderSlotCannotInherit(t *testing.T) {
+	t.Parallel()
+
+	buf := captureWarnings(t)
+	cfg := &Config{
+		Options: &Options{},
+		AgentConfigs: map[string]Agent{
+			AgentCoder: {Slot: SlotInherited},
+		},
+	}
+
+	agents := cfg.ResolveAgents()
+	require.Equal(t, SlotMain, agents[AgentCoder].Slot,
+		"the coder has no dispatcher to inherit from and must fall back to main")
+	require.Contains(t, buf.String(), "cannot inherit its slot")
+}
+
 func TestResolveAgents_InheritedMCPFollowsCoder(t *testing.T) {
 	t.Parallel()
 

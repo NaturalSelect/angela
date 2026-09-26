@@ -110,6 +110,14 @@ func (s ActiveAgentState) IsZero() bool {
 // matching warnUnknownTools' tolerant philosophy — a typo must not
 // brick a turn. A missing SlotMain is left to the caller: it is the
 // difference between a misconfigured agent and an unconfigured app.
+//
+// An agent whose slot is SlotInherited resolves here to the coder
+// agent's own slot, since InstantiateAgent has no dispatcher to
+// inherit a live model from — InstantiateUnder and InstantiateFor are
+// the entry points that inherit an actual dispatcher's state. The
+// returned instance's Agent.Slot is left as SlotInherited regardless
+// (only the derived Slot label changes), so InstantiateUnder can tell
+// this instance apart from one pinned to a concrete slot.
 func (c *Config) InstantiateAgent(agentID string) (ActiveAgent, bool) {
 	agent, ok := c.Agents[agentID]
 	if !ok {
@@ -117,6 +125,9 @@ func (c *Config) InstantiateAgent(agentID string) (ActiveAgent, bool) {
 	}
 
 	name := agent.Slot
+	if name == SlotInherited {
+		name = c.coderSlot()
+	}
 	model, ok := c.ModelForSlot(name)
 	if !ok {
 		if name != "" {
@@ -141,6 +152,76 @@ func (c *Config) InstantiateAgent(agentID string) (ActiveAgent, bool) {
 	active := ActiveAgent{Agent: agent, Slot: name, Model: model}
 	active.Think = c.EffectiveThink(model, active.EffectiveVariant())
 	return active.Clone(), true
+}
+
+// coderSlot returns the model-config slot the coder agent resolved
+// to, which is where an "inherited" agent lands when nothing
+// dispatched it. The coder itself can never be SlotInherited —
+// resolveCoderAgent downgrades that to SlotMain while resolving the
+// config, before this is ever read — so the checks here only guard a
+// Config assembled by hand, bypassing ResolveAgents, the way tests
+// sometimes do.
+func (c *Config) coderSlot() SlotName {
+	slot := c.Agents[AgentCoder].Slot
+	if slot == "" || slot == SlotInherited {
+		return SlotMain
+	}
+	return slot
+}
+
+// inheritFrom overlays parent's live model state onto active, which is
+// how a dispatched SlotInherited agent ends up running on whatever
+// model actually dispatched it rather than a name in Config.Slots.
+// Slot and Model are copied wholesale; ModelPick stays nil because an
+// inherited value is never a user's own pick and must not be
+// persisted as one.
+//
+// Variant follows EffectiveVariant's usual precedence: active's own
+// Agent.Variant, when set, still outranks whatever parent is
+// currently running, exactly as it would against a named slot's own
+// default. Think mirrors that split — it is copied straight from
+// parent when parent's Think was itself an explicit pick (ThinkPick)
+// or when active has no variant of its own to reconsider it against,
+// and is otherwise recomputed against active's own effective variant.
+func (c *Config) inheritFrom(active, parent ActiveAgent) ActiveAgent {
+	active.Slot = parent.Slot
+	active.Model = parent.Model
+	active.Model.Variant = parent.EffectiveVariant()
+	active.ModelPick = nil
+
+	if parent.ThinkPick != nil || active.Agent.Variant == "" {
+		active.Think = parent.Think
+	} else {
+		active.Think = c.EffectiveThink(active.Model, active.EffectiveVariant())
+	}
+
+	return active.Clone()
+}
+
+// InstantiateUnder builds a dispatched agent's own instance, the way
+// dispatching through the agent tool does. It behaves exactly like
+// InstantiateAgent unless the agent's slot is SlotInherited, in which
+// case it inherits parent's live model instead of falling back to the
+// coder's slot — parent is the instance that actually dispatched this
+// agent, which InstantiateAgent has no way to know about.
+//
+// An explicit pin in AgentModelOverrides still wins over inheritance,
+// the same way it wins over a named slot: the user asked to override
+// this agent specifically. A zero parent — nothing actually dispatched
+// this agent, such as a primary agent's own top-level instantiation —
+// leaves InstantiateAgent's coder-slot fallback in place.
+func (c *Config) InstantiateUnder(agentID string, parent ActiveAgent) (ActiveAgent, bool) {
+	active, ok := c.InstantiateAgent(agentID)
+	if !ok {
+		return ActiveAgent{}, false
+	}
+	if _, overridden := c.AgentModelOverrides[agentID]; overridden {
+		return active, true
+	}
+	if active.Agent.Slot != SlotInherited || parent.Model.Provider == "" || parent.Model.Model == "" {
+		return active, true
+	}
+	return c.inheritFrom(active, parent), true
 }
 
 // EffectiveThink resolves the thinking-mode default for model, as
@@ -203,7 +284,9 @@ func (e ActiveAgentEdit) IsZero() bool {
 // compacts with the big model. An internal agent on a different role
 // resolves that role from config, because the session never chose
 // anything for it — which is what keeps titling cheap on SlotChore
-// while the session itself runs on SlotMain.
+// while the session itself runs on SlotMain. An internal agent whose
+// own slot is SlotInherited always follows host, regardless of role,
+// the same way InstantiateUnder follows a dispatcher.
 //
 // A zero host applies no override, so callers outside any session get
 // plain config resolution.
@@ -217,6 +300,9 @@ func (c *Config) InstantiateFor(agentID string, host ActiveAgent) (ActiveAgent, 
 		// host's model: the user asked to override this agent
 		// specifically, not whatever session it happens to run in.
 		return active, true
+	}
+	if active.Agent.Slot == SlotInherited && host.Model.Provider != "" && host.Model.Model != "" {
+		return c.inheritFrom(active, host), true
 	}
 	if active.Slot != host.Slot {
 		return active, true

@@ -392,6 +392,20 @@ func (mr *MockCoordinatorMockRecorder) SwitchVariant(ctx, sessionID, variant any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SwitchVariant", reflect.TypeOf((*MockCoordinator)(nil).SwitchVariant), ctx, sessionID, variant)
 }
 
+// TakeQueuedPrompts mocks base method.
+func (m *MockCoordinator) TakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TakeQueuedPrompts", sessionID)
+	ret0, _ := ret[0].([]message.QueuedPrompt)
+	return ret0
+}
+
+// TakeQueuedPrompts indicates an expected call of TakeQueuedPrompts.
+func (mr *MockCoordinatorMockRecorder) TakeQueuedPrompts(sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TakeQueuedPrompts", reflect.TypeOf((*MockCoordinator)(nil).TakeQueuedPrompts), sessionID)
+}
+
 // UpdateModels mocks base method.
 func (m *MockCoordinator) UpdateModels(ctx context.Context) error {
 	m.ctrl.T.Helper()

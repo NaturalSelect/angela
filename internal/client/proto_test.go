@@ -780,6 +780,27 @@ func TestProtoMethodsSuccessPaths(t *testing.T) {
 			},
 		},
 		{
+			name:       "TakeAgentSessionQueuedPrompts",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/agent/sessions/sess1/prompts/take",
+			body: mustJSON(t, []proto.QueuedPrompt{{
+				Prompt: "p1",
+				Attachments: []proto.Attachment{
+					{FilePath: "/tmp/a.txt", FileName: "a.txt", MimeType: "text/plain", Content: []byte("hello")},
+				},
+			}}),
+			call: func(t *testing.T, c *Client) {
+				got, err := c.TakeAgentSessionQueuedPrompts(context.Background(), "ws1", "sess1")
+				require.NoError(t, err)
+				require.Equal(t, []message.QueuedPrompt{{
+					Prompt: "p1",
+					Attachments: []message.Attachment{
+						{FilePath: "/tmp/a.txt", FileName: "a.txt", MimeType: "text/plain", Content: []byte("hello")},
+					},
+				}}, got)
+			},
+		},
+		{
 			name:       "GetAgentInfo",
 			wantMethod: http.MethodGet,
 			wantPath:   "/v1/workspaces/ws1/agent",

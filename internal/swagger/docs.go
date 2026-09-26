@@ -939,6 +939,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/agent/sessions/{sid}/prompts/take": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent"
+                ],
+                "summary": "Take prompt queue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/proto.QueuedPrompt"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/agent/sessions/{sid}/shell": {
             "post": {
                 "consumes": [
@@ -4809,12 +4859,14 @@ const docTemplate = `{
             "enum": [
                 "main",
                 "chore",
-                "image"
+                "image",
+                "inherited"
             ],
             "x-enum-varnames": [
                 "SlotMain",
                 "SlotChore",
-                "SlotImage"
+                "SlotImage",
+                "SlotInherited"
             ]
         },
         "config.TUIOptions": {
@@ -4846,6 +4898,14 @@ const docTemplate = `{
             }
         },
         "config.ToolGrep": {
+            "type": "object",
+            "properties": {
+                "timeout": {
+                    "$ref": "#/definitions/time.Duration"
+                }
+            }
+        },
+        "config.ToolImage": {
             "type": "object",
             "properties": {
                 "timeout": {
@@ -4886,6 +4946,9 @@ const docTemplate = `{
                 },
                 "grep": {
                     "$ref": "#/definitions/config.ToolGrep"
+                },
+                "image": {
+                    "$ref": "#/definitions/config.ToolImage"
                 },
                 "ls": {
                     "$ref": "#/definitions/config.ToolLs"

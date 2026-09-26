@@ -51,7 +51,114 @@ func TestRunStateQueuedPromptsList(t *testing.T) {
 	require.Equal(t, []message.QueuedPrompt{{Prompt: "other session"}}, s.QueuedPromptsList("session-2"))
 }
 
-// TestRunStateEnqueueAutoContinueRaceWithEnqueueCall is the regression
+// TestRunStateQueuedPromptsFiltersInternalEntries pins that the internal
+// resume-after-summarize entry never counts or appears in the
+// user-facing queue accessors, only the prompts a user actually queued.
+func TestRunStateQueuedPromptsFiltersInternalEntries(t *testing.T) {
+	t.Parallel()
+
+	s := newRunState()
+	s.enqueueCall(SessionAgentCall{SessionID: "session-1", Prompt: "first"})
+	s.enqueueCall(SessionAgentCall{SessionID: "session-1", Prompt: "second"})
+	s.enqueueResumeBeforeSummarize(SessionAgentCall{SessionID: "session-1", Prompt: "resume"})
+
+	require.Equal(t, 2, s.QueuedPrompts("session-1"), "the internal resume entry must not be counted")
+	require.Equal(t, []message.QueuedPrompt{{Prompt: "first"}, {Prompt: "second"}}, s.QueuedPromptsList("session-1"))
+
+	existing, _ := s.messageQueue.Get("session-1")
+	require.Len(t, existing, 3, "the internal entry stays in the underlying queue")
+}
+
+// TestRunStateQueuedPromptsAllInternalReportsEmpty pins that when only
+// the internal resume entry remains queued, QueuedPrompts/
+// QueuedPromptsList report an empty queue rather than leaking the
+// internal entry to a user-facing caller.
+func TestRunStateQueuedPromptsAllInternalReportsEmpty(t *testing.T) {
+	t.Parallel()
+
+	s := newRunState()
+	s.enqueueResumeBeforeSummarize(SessionAgentCall{SessionID: "session-1", Prompt: "resume"})
+
+	require.Zero(t, s.QueuedPrompts("session-1"))
+	require.Nil(t, s.QueuedPromptsList("session-1"))
+}
+
+// TestRunStateTakeUserQueueLeavesInternalEntry pins that takeUserQueue
+// returns only the user-queued calls and leaves the internal
+// resume-after-summarize entry queued behind for Summarize's own
+// recursion to pick up later.
+func TestRunStateTakeUserQueueLeavesInternalEntry(t *testing.T) {
+	t.Parallel()
+
+	s := newRunState()
+	s.enqueueCall(SessionAgentCall{SessionID: "session-1", Prompt: "first"})
+	s.enqueueResumeBeforeSummarize(SessionAgentCall{SessionID: "session-1", Prompt: "resume"})
+	s.enqueueCall(SessionAgentCall{SessionID: "session-1", Prompt: "second"})
+
+	taken := s.takeUserQueue("session-1")
+	require.Len(t, taken, 2)
+	require.Equal(t, "first", taken[0].Prompt)
+	require.Equal(t, "second", taken[1].Prompt)
+
+	remaining, ok := s.messageQueue.Get("session-1")
+	require.True(t, ok, "the internal entry must remain queued")
+	require.Len(t, remaining, 1)
+	require.True(t, remaining[0].internal)
+	require.Equal(t, "resume", remaining[0].Prompt)
+
+	// A second take, with nothing user-visible left, must report empty
+	// without disturbing the internal entry.
+	require.Empty(t, s.takeUserQueue("session-1"))
+	remaining, ok = s.messageQueue.Get("session-1")
+	require.True(t, ok)
+	require.Len(t, remaining, 1)
+}
+
+// TestRunStatePopResumeOnSummarizeFailureRemovesInternalEntryOnly pins
+// that popResumeOnSummarizeFailure finds and removes the internal
+// resume entry wherever it sits in the queue -- not just the head, since
+// a concurrent takeUserQueue can reinsert it behind other entries --
+// leaving any user-queued prompts around it untouched.
+func TestRunStatePopResumeOnSummarizeFailureRemovesInternalEntryOnly(t *testing.T) {
+	t.Parallel()
+
+	s := newRunState()
+	s.messageQueue.Set("session-1", []SessionAgentCall{
+		{SessionID: "session-1", Prompt: "ahead"},
+		{SessionID: "session-1", Prompt: "resume", internal: true},
+		{SessionID: "session-1", Prompt: "behind"},
+	})
+
+	s.popResumeOnSummarizeFailure("session-1")
+
+	remaining, ok := s.messageQueue.Get("session-1")
+	require.True(t, ok)
+	require.Len(t, remaining, 2)
+	for _, call := range remaining {
+		require.False(t, call.internal)
+	}
+	require.Equal(t, "ahead", remaining[0].Prompt)
+	require.Equal(t, "behind", remaining[1].Prompt)
+}
+
+// TestRunStatePopResumeOnSummarizeFailureNoopWithoutInternalEntry pins
+// that popResumeOnSummarizeFailure is a no-op when no internal entry
+// remains (e.g. it was already removed by a concurrent Cancel or
+// ClearQueue) -- it must never fall back to dropping a real user prompt.
+func TestRunStatePopResumeOnSummarizeFailureNoopWithoutInternalEntry(t *testing.T) {
+	t.Parallel()
+
+	s := newRunState()
+	s.enqueueCall(SessionAgentCall{SessionID: "session-1", Prompt: "only user prompt"})
+
+	s.popResumeOnSummarizeFailure("session-1")
+
+	remaining, ok := s.messageQueue.Get("session-1")
+	require.True(t, ok)
+	require.Len(t, remaining, 1)
+	require.Equal(t, "only user prompt", remaining[0].Prompt)
+}
+
 // for a bug where enqueueAutoContinue read, appended to, and wrote back
 // the message queue without holding the per-session dispatch mutex.
 // enqueueCall itself does not lock either: its only production caller

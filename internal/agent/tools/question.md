@@ -25,7 +25,7 @@ These are enforced. Violations return an error and waste a round trip.
 - **Max 5 choices** per question. If you have more, group or prioritize.
 - **Choices required** for `single_choice` and `multi_choice`. A
   single_choice without choices is an error.
-- **Description required** on every question. Keep it under 300 chars.
+- **Description required** on every question. Keep it under 1000 chars.
 - **Choice descriptions** must be under 100 chars each.
 - **Max 5 questions** per batch. If you need more, split into multiple
   batches and tell the user there will be follow-up questions.

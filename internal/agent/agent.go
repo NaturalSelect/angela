@@ -818,6 +818,15 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	var stepMessages []fantasy.Message
 	var shouldSummarize bool
+	// latestFoldedPrompt is the raw text of the most recent queued
+	// prompt folded into this turn (see the fold loop in PrepareStep
+	// below), if any. A turn interrupted by auto-summarization while
+	// mid-tool-use resumes by restating "the initial user request"
+	// (wrapInterruptedPrompt); without this, that restatement would
+	// always quote call.Prompt — this turn's very first message — even
+	// when a later message was queued and folded into the same turn,
+	// leaving the resumed request stale.
+	var latestFoldedPrompt string
 	// haltedByTool marks a step whose tool results ended the turn on
 	// purpose (a hook halt, a denied permission, a successful merge),
 	// as opposed to one cut short mid-tool-use. sessionEnded narrows
@@ -880,6 +889,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 					return callContext, prepared, createErr
 				}
 				prepared.Messages = append(prepared.Messages, userMessage.ToAIMessage()...)
+				latestFoldedPrompt = queued.Prompt
 			}
 
 			prepared.Messages = a.workaroundProviderMediaLimitations(prepared.Messages, runModel)
@@ -1344,7 +1354,15 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		// first.
 		queuedResume := pendingToolUse
 		if queuedResume {
-			call.Prompt = wrapInterruptedPrompt(call.Prompt)
+			// A message queued mid-turn and folded into this same turn
+			// (see latestFoldedPrompt) is the user's actual latest
+			// request; call.Prompt is still this turn's original message
+			// from before the fold.
+			resumePrompt := call.Prompt
+			if latestFoldedPrompt != "" {
+				resumePrompt = latestFoldedPrompt
+			}
+			call.Prompt = wrapInterruptedPrompt(resumePrompt)
 			a.enqueueResumeBeforeSummarize(call)
 			hitMaxTokens = false
 		}

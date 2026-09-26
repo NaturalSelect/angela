@@ -1260,6 +1260,14 @@ func TestCreateTransport_UnsupportedType(t *testing.T) {
 // includes argv[0] as its own first element, so the recheck always runs with
 // one duplicated leading argument. true/false ignore all arguments and exit
 // deterministically either way; a subcommand-sensitive binary would not.
+//
+// The tests pass a generous timeout rather than stdioCheckDefaultTimeout:
+// on loaded or slow CI runners (notably Windows), process spawn alone can
+// eat into a short timeout and trip the "treat a timed-out recheck as no
+// additional info" branch, which would make these assertions flaky rather
+// than testing the intended behavior.
+const testStdioCheckTimeout = 30 * time.Second
+
 func TestStdioCheck(t *testing.T) {
 	t.Parallel()
 
@@ -1269,12 +1277,12 @@ func TestStdioCheck(t *testing.T) {
 
 	t.Run("success returns nil", func(t *testing.T) {
 		t.Parallel()
-		require.NoError(t, stdioCheck(exec.CommandContext(t.Context(), "true")))
+		require.NoError(t, stdioCheck(exec.CommandContext(t.Context(), "true"), testStdioCheckTimeout))
 	})
 
 	t.Run("failure returns error with captured output", func(t *testing.T) {
 		t.Parallel()
-		err := stdioCheck(exec.CommandContext(t.Context(), "false"))
+		err := stdioCheck(exec.CommandContext(t.Context(), "false"), testStdioCheckTimeout)
 		require.Error(t, err)
 	})
 }
@@ -1285,13 +1293,13 @@ func TestMaybeStdioErr(t *testing.T) {
 	t.Run("non-EOF error returned unchanged", func(t *testing.T) {
 		t.Parallel()
 		orig := errors.New("boom")
-		got := maybeStdioErr(orig, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "true")})
+		got := maybeStdioErr(orig, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "true")}, testStdioCheckTimeout)
 		require.Equal(t, orig, got)
 	})
 
 	t.Run("EOF with non-command transport returned unchanged", func(t *testing.T) {
 		t.Parallel()
-		got := maybeStdioErr(io.EOF, &mcp.StreamableClientTransport{Endpoint: "http://example.com"})
+		got := maybeStdioErr(io.EOF, &mcp.StreamableClientTransport{Endpoint: "http://example.com"}, testStdioCheckTimeout)
 		require.ErrorIs(t, got, io.EOF)
 		require.Equal(t, io.EOF, got)
 	})
@@ -1302,13 +1310,13 @@ func TestMaybeStdioErr(t *testing.T) {
 
 	t.Run("EOF with command transport that now succeeds stays plain EOF", func(t *testing.T) {
 		t.Parallel()
-		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "true")})
+		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "true")}, testStdioCheckTimeout)
 		require.Equal(t, io.EOF, got, "a successful recheck must not join extra output onto the error")
 	})
 
 	t.Run("EOF with command transport that still fails is joined with recheck output", func(t *testing.T) {
 		t.Parallel()
-		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "false")})
+		got := maybeStdioErr(io.EOF, &mcp.CommandTransport{Command: exec.CommandContext(t.Context(), "false")}, testStdioCheckTimeout)
 		require.ErrorIs(t, got, io.EOF)
 		require.NotEqual(t, io.EOF.Error(), got.Error(), "a failing recheck must join its output onto the error")
 	})

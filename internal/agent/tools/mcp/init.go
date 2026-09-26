@@ -931,7 +931,7 @@ func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m 
 
 	session, err := client.Connect(mcpCtx, transport, nil)
 	if err != nil {
-		err = maybeStdioErr(err, transport)
+		err = maybeStdioErr(err, transport, stdioCheckDefaultTimeout)
 		updateState(name, StateError, maybeTimeoutErr(err, timeout), nil, Counts{})
 		slog.Error("MCP client failed to initialize", "error", err, "name", name)
 		cancel()
@@ -971,7 +971,7 @@ func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m 
 // error.
 // this happens particularly when starting things with npx, e.g. if node can't
 // be found or some other error like that.
-func maybeStdioErr(err error, transport mcp.Transport) error {
+func maybeStdioErr(err error, transport mcp.Transport, timeout time.Duration) error {
 	if !errors.Is(err, io.EOF) {
 		return err
 	}
@@ -979,7 +979,7 @@ func maybeStdioErr(err error, transport mcp.Transport) error {
 	if !ok {
 		return err
 	}
-	if err2 := stdioCheck(ct.Command); err2 != nil {
+	if err2 := stdioCheck(ct.Command, timeout); err2 != nil {
 		err = errors.Join(err, err2)
 	}
 	return err
@@ -1289,8 +1289,17 @@ func clearMCPData(name string) {
 	}
 }
 
-func stdioCheck(old *exec.Cmd) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+// stdioCheckDefaultTimeout bounds how long stdioCheck waits for the
+// recheck to exit in production use.
+const stdioCheckDefaultTimeout = 5 * time.Second
+
+// stdioCheck runs the recheck with an explicit timeout. Production code
+// always passes stdioCheckDefaultTimeout; tests pass a more generous
+// budget so process spawn time on slow or heavily loaded CI runners
+// doesn't trip the "treat a timed-out recheck as no additional info"
+// branch below and make the assertions flaky.
+func stdioCheck(old *exec.Cmd, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, old.Path, old.Args...)
 	cmd.Env = old.Env

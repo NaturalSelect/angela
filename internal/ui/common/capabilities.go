@@ -40,6 +40,11 @@ type Capabilities struct {
 	ReportFocusEvents bool
 	// OSC99Notifications indicates whether the terminal supports OSC 99 notifications.
 	OSC99Notifications bool
+	// KittyPlaceholdersOverride overrides auto-detection of Kitty graphics
+	// Unicode placeholder (virtual placement) support; nil defers to
+	// [kittyPlaceholderTerminal]. Set from --kitty-placeholders or
+	// options.tui.kitty_placeholders.
+	KittyPlaceholdersOverride *bool
 }
 
 // Update updates the capabilities based on the given message.
@@ -114,6 +119,77 @@ func (c Capabilities) SupportsTrueColor() bool {
 // SupportsKittyGraphics returns true if the terminal supports Kitty graphics.
 func (c Capabilities) SupportsKittyGraphics() bool {
 	return c.KittyGraphics
+}
+
+// placeholderTerminals lists terminals known to correctly render Kitty
+// graphics Unicode placeholders (virtual placement), which inline image
+// previews and the built-in ImageGenerate/ImageEdit tools require.
+// Terminals that only answer the basic Kitty graphics query (a=q) without
+// rendering placeholders correctly, such as VS Code's integrated terminal
+// (xterm.js) and WezTerm, are deliberately left out.
+var placeholderTerminals = []string{"kitty", "ghostty", "rio"}
+
+// multiplexerPrefixes lists terminal multiplexers whose own XTVERSION or
+// TERM_PROGRAM value must be looked past, in favor of environment
+// variables inherited from the terminal underneath, to identify the real
+// terminal.
+var multiplexerPrefixes = []string{"tmux", "screen", "zellij"}
+
+// hasAnyPrefix reports whether s starts with any of prefixes.
+func hasAnyPrefix(s string, prefixes ...string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// kittyPlaceholderTerminal reports whether the terminal identified by
+// version (the XTVERSION reply) and env is known to render Kitty
+// graphics Unicode placeholders correctly. A basic Kitty graphics query
+// response never revokes once acted on (see App.SetClientImageSupport),
+// so this never returns true for an unrecognized, non-empty version.
+func kittyPlaceholderTerminal(version string, env uv.Environ) bool {
+	v := strings.ToLower(version)
+	if v != "" && !hasAnyPrefix(v, multiplexerPrefixes...) {
+		return hasAnyPrefix(v, placeholderTerminals...)
+	}
+
+	if termProg, ok := env.LookupEnv("TERM_PROGRAM"); ok {
+		tp := strings.ToLower(termProg)
+		if tp != "tmux" {
+			return slices.Contains(placeholderTerminals, tp)
+		}
+	}
+
+	termType := strings.ToLower(env.Getenv("TERM"))
+	if xstrings.ContainsAnyOf(termType, placeholderTerminals...) {
+		return true
+	}
+	if _, ok := env.LookupEnv("KITTY_WINDOW_ID"); ok {
+		return true
+	}
+	_, ok := env.LookupEnv("GHOSTTY_RESOURCES_DIR")
+	return ok
+}
+
+// SupportsKittyPlaceholders returns true if the terminal supports the
+// Kitty graphics protocol's Unicode placeholders (virtual placement),
+// which the chat's inline image previews and the built-in
+// ImageGenerate/ImageEdit tools require. A positive [Capabilities.SupportsKittyGraphics]
+// only proves the terminal understands the basic protocol; many
+// terminals (notably VS Code's integrated terminal and WezTerm) answer
+// that query but do not render placeholders, so this is checked
+// separately. KittyPlaceholdersOverride, when set, always wins.
+func (c Capabilities) SupportsKittyPlaceholders() bool {
+	if !c.KittyGraphics {
+		return false
+	}
+	if c.KittyPlaceholdersOverride != nil {
+		return *c.KittyPlaceholdersOverride
+	}
+	return kittyPlaceholderTerminal(c.TerminalVersion, c.Env)
 }
 
 // SupportsSixelGraphics returns true if the terminal supports Sixel graphics.

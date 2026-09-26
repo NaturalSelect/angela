@@ -263,12 +263,17 @@ type UI struct {
 
 	// imageSupportReported tracks whether this session has already
 	// told the workspace the client can render images (Kitty graphics
-	// protocol confirmed working via a successful KittyGraphicsEvent),
-	// so the one-shot report fires at most once per session — except
-	// on a client/server reconnect, where handleConnectionEvent
-	// re-sends it since a restarted daemon has no memory of the
-	// earlier report.
+	// Unicode placeholder support confirmed via
+	// [common.Capabilities.SupportsKittyPlaceholders]), so the
+	// one-shot report fires at most once per session — except on a
+	// client/server reconnect, where handleConnectionEvent re-sends
+	// it since a restarted daemon has no memory of the earlier
+	// report.
 	imageSupportReported bool
+	// placeholderMismatchLogged tracks whether the one-time Info log
+	// explaining that Kitty graphics work but Unicode placeholders
+	// don't has already fired, so it logs at most once per session.
+	placeholderMismatchLogged bool
 
 	// Editor components
 	textarea textarea.Model
@@ -557,6 +562,13 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 	ui.progressBarEnabled = opts.Progress == nil || *opts.Progress
 	// enable transparent mode
 	ui.isTransparent = opts.TUI.Transparent != nil && *opts.TUI.Transparent
+	// --kitty-placeholders wins over options.tui.kitty_placeholders, which
+	// wins over auto-detection.
+	if com.KittyPlaceholders != nil {
+		ui.caps.KittyPlaceholdersOverride = com.KittyPlaceholders
+	} else {
+		ui.caps.KittyPlaceholdersOverride = opts.TUI.KittyPlaceholders
+	}
 
 	return ui
 }
@@ -1125,7 +1137,15 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.sendProgressBar {
 			m.sendProgressBar = xstrings.ContainsAnyOf(termVersion, "ghostty", "iterm2", "rio")
 		}
-		return m, nil
+		// XTVERSION can arrive after the Kitty graphics query reply,
+		// so re-evaluate placeholder support now that the terminal
+		// is identified.
+		if cmd := m.maybeReportImageSupport(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if cmd := m.applyImageCaps(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		// Suppress the chat's full-height scan during the resize so a drag
@@ -1574,9 +1594,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"response", string(msg.Payload),
 				"options", msg.Options)
 		}
-		if m.caps.SupportsKittyGraphics() && !m.imageSupportReported {
-			m.imageSupportReported = true
-			cmds = append(cmds, m.reportClientImageSupport())
+		if cmd := m.maybeReportImageSupport(); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 		if cmd := m.applyImageCaps(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1825,12 +1844,38 @@ func (m *UI) handleConnectionEvent(msg workspace.ConnectionEvent) []tea.Cmd {
 	return cmds
 }
 
+// maybeReportImageSupport reports client image support at most once
+// per session, the first time the terminal is confirmed to support
+// Kitty graphics Unicode placeholders (virtual placement) — the
+// basic Kitty graphics query response alone is not enough, since
+// terminals such as VS Code's integrated terminal and WezTerm answer
+// it OK without rendering placeholders correctly. If the terminal
+// only clears the basic check, it logs a one-time explanation of why
+// the built-in image tools stay disabled.
+func (m *UI) maybeReportImageSupport() tea.Cmd {
+	if m.caps.SupportsKittyPlaceholders() {
+		if m.imageSupportReported {
+			return nil
+		}
+		m.imageSupportReported = true
+		return m.reportClientImageSupport()
+	}
+	if m.caps.SupportsKittyGraphics() && !m.placeholderMismatchLogged {
+		m.placeholderMismatchLogged = true
+		slog.Info("Terminal supports Kitty graphics but not Unicode placeholders; built-in image tools stay disabled",
+			"terminal", m.caps.TerminalVersion,
+			"term_program", m.caps.Env.Getenv("TERM_PROGRAM"))
+	}
+	return nil
+}
+
 // reportClientImageSupport returns a fire-and-forget tea.Cmd that
 // tells the workspace this client can render images, once the Kitty
-// graphics protocol handshake has confirmed real terminal support.
-// This is what lets the backend register the built-in image
-// generation/editing tools. Errors are logged only: the report is
-// best-effort background bookkeeping and never surfaces to the user.
+// graphics Unicode placeholder handshake has confirmed real terminal
+// support. This is what lets the backend register the built-in
+// image generation/editing tools. Errors are logged only: the
+// report is best-effort background bookkeeping and never surfaces to
+// the user.
 func (m *UI) reportClientImageSupport() tea.Cmd {
 	return func() tea.Msg {
 		if err := m.com.Workspace.SetClientImageSupport(context.Background(), true); err != nil {
@@ -1849,7 +1894,7 @@ func (m *UI) applyImageCaps() tea.Cmd {
 	_, tmux := m.caps.Env.LookupEnv("TMUX")
 	cellW, cellH := m.caps.CellSize()
 	m.chat.SetImageCaps(chat.ImageCaps{
-		Kitty: m.caps.SupportsKittyGraphics(),
+		Kitty: m.caps.SupportsKittyPlaceholders(),
 		Tmux:  tmux,
 		Cell:  fimage.CellSize{Width: cellW, Height: cellH},
 	})

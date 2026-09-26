@@ -643,3 +643,45 @@ func TestPerHostServerDir_MkdirFailurePropagates(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to create server working directory")
 }
+
+func kittyPlaceholdersPtrBool(b bool) *bool {
+	return &b
+}
+
+// TestKittyPlaceholdersFlag pins the tri-state behavior of
+// --kitty-placeholders: unset must defer to config/auto-detection
+// (nil), while an explicit true or false always wins, including an
+// explicit false which is otherwise indistinguishable from the
+// flag's zero-value default.
+func TestKittyPlaceholdersFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		set  bool
+		val  string
+		want *bool
+	}{
+		{"not set", false, "", nil},
+		{"set to true", true, "true", kittyPlaceholdersPtrBool(true)},
+		{"set to false", true, "false", kittyPlaceholdersPtrBool(false)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cobra.Command{}
+			cmd.Flags().Bool("kitty-placeholders", false, "")
+			if tt.set {
+				require.NoError(t, cmd.Flags().Set("kitty-placeholders", tt.val))
+			}
+			got := kittyPlaceholdersFlag(cmd)
+			if tt.want == nil {
+				require.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			require.Equal(t, *tt.want, *got)
+		})
+	}
+}

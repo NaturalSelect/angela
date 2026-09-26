@@ -10,7 +10,11 @@ with Angela:
   summaries.
 - **`image`** — the model used by the built-in image generation/editing
   tools. Needs a provider of type `openai` or `openaicompat` that
-  implements `/images/*`.
+  implements `/images/*`. The tools are only registered in a terminal
+  that supports Kitty graphics Unicode placeholders (see
+  `options.tui.kitty_placeholders`); on an unsupported terminal (e.g.
+  VS Code's integrated terminal) they stay hidden regardless of this
+  slot's configuration.
 
 Any other slot name may be defined; it takes effect only when an agent's
 `slot` field names it. A slot is mostly a pure reference — thinking mode,

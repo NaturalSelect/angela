@@ -498,6 +498,16 @@ definitions:
         $ref: '#/definitions/config.Completions'
       diff_mode:
         type: string
+      kitty_placeholders:
+        description: |-
+          KittyPlaceholders overrides auto-detection of Kitty graphics Unicode
+          placeholder (virtual placement) support, which inline image
+          previews and the built-in ImageGenerate/ImageEdit tools require.
+          Auto-detection recognizes kitty\, Ghostty\, and Rio; terminals such
+          as VS Code's integrated terminal or WezTerm answer the basic Kitty
+          graphics query but do not render placeholders correctly. Leave
+          unset to auto-detect.
+        type: boolean
       scrollbar:
         type: string
       transparent:

@@ -198,6 +198,114 @@ func TestModeSupported(t *testing.T) {
 	require.False(t, modeSupported(ansi.ModeNotRecognized))
 }
 
+// ptrBool is a convenience helper for taking the address of a boolean
+// literal in table-driven tests.
+func ptrBool(b bool) *bool {
+	return &b
+}
+
+func TestCapabilities_SupportsKittyPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		caps Capabilities
+		want bool
+	}{
+		{
+			name: "KittyGraphics false returns false even with override",
+			caps: Capabilities{
+				KittyGraphics:             false,
+				KittyPlaceholdersOverride: ptrBool(true),
+			},
+			want: false,
+		},
+		{
+			name: "kitty terminal detected via TerminalVersion",
+			caps: Capabilities{
+				KittyGraphics:   true,
+				TerminalVersion: "kitty(0.35.2)",
+			},
+			want: true,
+		},
+		{
+			name: "ghostty terminal detected via TerminalVersion",
+			caps: Capabilities{
+				KittyGraphics:   true,
+				TerminalVersion: "ghostty 1.1.0",
+			},
+			want: true,
+		},
+		{
+			name: "xterm.js terminal NOT placeholder-capable",
+			caps: Capabilities{
+				KittyGraphics:   true,
+				TerminalVersion: "xterm.js(5.6.0)",
+			},
+			want: false,
+		},
+		{
+			name: "wezterm terminal NOT placeholder-capable",
+			caps: Capabilities{
+				KittyGraphics:   true,
+				TerminalVersion: "wezterm 20240203",
+			},
+			want: false,
+		},
+		{
+			name: "TERM_PROGRAM=vscode wins over inherited KITTY_WINDOW_ID",
+			caps: Capabilities{
+				KittyGraphics: true,
+				Env:           uv.Environ{"TERM_PROGRAM=vscode", "KITTY_WINDOW_ID=1"},
+			},
+			want: false,
+		},
+		{
+			name: "tmux multiplexer falls through to KITTY_WINDOW_ID",
+			caps: Capabilities{
+				KittyGraphics:   true,
+				TerminalVersion: "tmux 3.4",
+				Env:             uv.Environ{"TERM_PROGRAM=tmux", "KITTY_WINDOW_ID=1"},
+			},
+			want: true,
+		},
+		{
+			name: "TERM=xterm-kitty detected via TERM env var",
+			caps: Capabilities{
+				KittyGraphics: true,
+				Env:           uv.Environ{"TERM=xterm-kitty"},
+			},
+			want: true,
+		},
+		{
+			name: "override false wins over known placeholder terminal",
+			caps: Capabilities{
+				KittyGraphics:             true,
+				TerminalVersion:           "kitty(0.35.2)",
+				KittyPlaceholdersOverride: ptrBool(false),
+			},
+			want: false,
+		},
+		{
+			name: "override true wins over non-placeholder terminal",
+			caps: Capabilities{
+				KittyGraphics:             true,
+				TerminalVersion:           "xterm.js(5.6.0)",
+				KittyPlaceholdersOverride: ptrBool(true),
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := tt.caps.SupportsKittyPlaceholders()
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestShouldQueryCapabilities(t *testing.T) {
 	t.Parallel()
 

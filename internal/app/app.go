@@ -97,8 +97,8 @@ type App struct {
 	herdrClient *herdr.Client
 
 	// clientImageSupport records whether a connected client has ever
-	// reported Kitty-graphics image rendering support. See
-	// SetClientImageSupport.
+	// reported Kitty graphics Unicode placeholder (virtual placement)
+	// support. See SetClientImageSupport.
 	clientImageSupport atomic.Bool
 }
 
@@ -691,12 +691,12 @@ func setupSubscriberMustDeliver[T any](
 }
 
 // SetClientImageSupport records that the connected client has reported
-// Kitty-graphics image rendering support. It only ever transitions
-// false -> true: once a client has proven support, a later report of
-// no support (e.g. a plainer client taking over the same session)
-// never revokes it, and an Info message is logged the first time it
-// flips so it is visible why the built-in image tools became
-// available.
+// Kitty graphics Unicode placeholder (virtual placement) support. It
+// only ever transitions false -> true: once a client has proven
+// support, a later report of no support (e.g. a plainer client taking
+// over the same session) never revokes it, and an Info message is
+// logged the first time it flips so it is visible why the built-in
+// image tools became available.
 func (app *App) SetClientImageSupport(supported bool) {
 	if supported && app.clientImageSupport.CompareAndSwap(false, true) {
 		slog.Info("Client reported image rendering support")

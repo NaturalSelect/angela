@@ -401,6 +401,14 @@ type TUIOptions struct {
 	Completions Completions `json:"completions,omitzero" jsonschema:"description=Completions UI options"`
 	Transparent *bool       `json:"transparent,omitempty" jsonschema:"description=Enable transparent background for the TUI interface,default=false"`
 	Scrollbar   string      `json:"scrollbar,omitempty" jsonschema:"description=Chat scrollbar visibility,enum=default,enum=always,enum=never,default=default"`
+	// KittyPlaceholders overrides auto-detection of Kitty graphics Unicode
+	// placeholder (virtual placement) support, which inline image
+	// previews and the built-in ImageGenerate/ImageEdit tools require.
+	// Auto-detection recognizes kitty\, Ghostty\, and Rio; terminals such
+	// as VS Code's integrated terminal or WezTerm answer the basic Kitty
+	// graphics query but do not render placeholders correctly. Leave
+	// unset to auto-detect.
+	KittyPlaceholders *bool `json:"kitty_placeholders,omitempty" jsonschema:"description=Override detection of Kitty graphics Unicode placeholder support\\, needed for inline images and the ImageGenerate/ImageEdit tools; unset auto-detects"`
 }
 
 // Completions defines options for the completions UI.

@@ -121,7 +121,7 @@ func NewFilePicker(com *common.Common) (*FilePicker, tea.Cmd) {
 // SetImageCapabilities sets the image capabilities for the [FilePicker].
 func (f *FilePicker) SetImageCapabilities(caps *common.Capabilities) {
 	if caps != nil {
-		if caps.SupportsKittyGraphics() {
+		if caps.SupportsKittyPlaceholders() {
 			f.imgEnc = fimage.EncodingKitty
 		}
 		f.cellSizeW, f.cellSizeH = caps.CellSize()

@@ -185,6 +185,14 @@ a native VS Code diff tab with Accept/Reject buttons, alongside the usual
 terminal dialog — whichever you answer first settles the request. Pass
 `--no-vscode-diff` to always use the terminal dialog only.
 
+Inline image previews and the built-in `ImageGenerate`/`ImageEdit` tools
+need a terminal that supports Kitty graphics protocol Unicode placeholders.
+Angela auto-detects kitty, Ghostty, and Rio; VS Code's integrated terminal
+and WezTerm answer the basic Kitty query but don't render placeholders
+correctly, so the tools stay hidden there. Override the detection with
+`--kitty-placeholders`/`--kitty-placeholders=false` (per launch) or
+`options.tui.kitty_placeholders` (persistent, in `angela.json`).
+
 ## Local Models
 
 Angela auto-discovers models from Ollama, LM Studio, llama.cpp, and other

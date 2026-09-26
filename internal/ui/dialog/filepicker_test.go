@@ -121,7 +121,7 @@ func TestFilePicker_SetImageCapabilities(t *testing.T) {
 		require.False(t, f.isTmux)
 	})
 
-	t.Run("kitty graphics inside tmux", func(t *testing.T) {
+	t.Run("kitty graphics inside tmux with inherited KITTY_WINDOW_ID", func(t *testing.T) {
 		t.Parallel()
 		f := &FilePicker{}
 		f.SetImageCapabilities(&common.Capabilities{
@@ -130,8 +130,9 @@ func TestFilePicker_SetImageCapabilities(t *testing.T) {
 			Rows:          24,
 			PixelX:        800,
 			PixelY:        480,
-			Env:           uv.Environ{"TMUX=/tmp/tmux-1000/default,1,0"},
+			Env:           uv.Environ{"TMUX=/tmp/tmux-1000/default,1,0", "KITTY_WINDOW_ID=1"},
 		})
+		require.Equal(t, fimage.EncodingKitty, f.imgEnc)
 		require.Equal(t, 10, f.cellSizeW)
 		require.Equal(t, 20, f.cellSizeH)
 		require.True(t, f.isTmux)
@@ -141,6 +142,25 @@ func TestFilePicker_SetImageCapabilities(t *testing.T) {
 		t.Parallel()
 		f := &FilePicker{}
 		f.SetImageCapabilities(&common.Capabilities{Columns: 80, Rows: 24, PixelX: 800, PixelY: 480})
+		require.False(t, f.isTmux)
+	})
+
+	t.Run("vscode reports basic kitty graphics but not placeholders", func(t *testing.T) {
+		t.Parallel()
+		f := &FilePicker{}
+		f.SetImageCapabilities(&common.Capabilities{
+			KittyGraphics: true,
+			Columns:       80,
+			Rows:          24,
+			PixelX:        800,
+			PixelY:        480,
+			Env:           uv.Environ{"TERM_PROGRAM=vscode"},
+		})
+		// EncodingBlocks is the zero value; asserted explicitly so the
+		// test documents the expected fallback.
+		require.Equal(t, fimage.EncodingBlocks, f.imgEnc)
+		require.Equal(t, 10, f.cellSizeW)
+		require.Equal(t, 20, f.cellSizeH)
 		require.False(t, f.isTmux)
 	})
 }

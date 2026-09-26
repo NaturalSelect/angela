@@ -72,6 +72,7 @@ func init() {
 	rootCmd.MarkFlagsMutuallyExclusive("yolo", "auto-accept-edits")
 	rootCmd.Flags().Bool("no-vscode-diff", false, "Do not open edit diffs in VS Code even when running inside its terminal")
 	rootCmd.Flags().Bool("disable-image-tools", false, "Disable the built-in image generation and editing tools")
+	rootCmd.Flags().Bool("kitty-placeholders", false, "Force Kitty graphics Unicode placeholder support on or off (needed for inline images and the ImageGenerate/ImageEdit tools); omit to use options.tui.kitty_placeholders or auto-detection")
 	rootCmd.Flags().Bool("subagent-branches", false, "Let sub-agents, not just the top-level session, dispatch branch agents (also settable via options.subagent_branches); has no effect on angela run")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
 	_ = rootCmd.PersistentFlags().MarkHidden("channels")
@@ -92,6 +93,17 @@ func init() {
 		statsCmd,
 		sessionCmd,
 	)
+}
+
+// kittyPlaceholdersFlag returns the tri-state value of --kitty-placeholders:
+// nil when the flag was not passed (defer to options.tui.kitty_placeholders
+// or auto-detection), or a pointer to the flag's boolean value when it was.
+func kittyPlaceholdersFlag(cmd *cobra.Command) *bool {
+	if !cmd.Flags().Changed("kitty-placeholders") {
+		return nil
+	}
+	v, _ := cmd.Flags().GetBool("kitty-placeholders")
+	return &v
 }
 
 var rootCmd = &cobra.Command{
@@ -122,6 +134,9 @@ angela --auto-accept-edits
 
 # Run without opening edit diffs in VS Code's own diff viewer
 angela --no-vscode-diff
+
+# Force-enable inline images in a terminal Angela doesn't recognize
+angela --kitty-placeholders
 
 # Let sub-agents fork branch agents too, not just the top-level session
 angela --subagent-branches
@@ -162,6 +177,7 @@ angela --continue
 		event.AppInitialized()
 
 		com := common.DefaultCommon(ws)
+		com.KittyPlaceholders = kittyPlaceholdersFlag(cmd)
 		model := ui.New(com, sessionID, continueLast)
 
 		// Chrome/xdg-open inherit our stdout/stderr by default; without this,

@@ -818,6 +818,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	var stepMessages []fantasy.Message
 	var shouldSummarize bool
+	// haltedByTool marks a step whose tool results ended the turn on
+	// purpose (a hook halt, a denied permission, a successful merge),
+	// as opposed to one cut short mid-tool-use. sessionEnded narrows
+	// that further to the one case with nothing left to resume at
+	// all: a branch that just merged.
+	var haltedByTool, sessionEnded bool
 	var stepStart time.Time
 	var stepGenDuration time.Duration
 	sanitizedToolCalls := make(map[string]bool)
@@ -1086,9 +1092,15 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			// turn so the UI can render the assistant footer.
 			if finishReason == message.FinishReasonToolUse {
 				for _, tr := range stepResult.Content.ToolResults() {
-					if tr.StopTurn {
-						finishReason = message.FinishReasonEndTurn
-						break
+					if !tr.StopTurn {
+						continue
+					}
+					finishReason = message.FinishReasonEndTurn
+					haltedByTool = true
+					if tr.ToolName == toolnames.Merge {
+						if _, failed := fantasy.AsToolResultOutputType[fantasy.ToolResultOutputContentError](tr.Result); !failed {
+							sessionEnded = true
+						}
 					}
 				}
 			}
@@ -1300,16 +1312,25 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// too-long-resume path instead, so the two continuations never
 	// both fire for the same turn.
 	hitMaxTokens := currentAssistant.FinishReason() == message.FinishReasonMaxTokens
-	// A non-interactive (sub-agent) session is created fresh for every
+	// A pending tool call only means the turn was cut short — and
+	// needs resuming — when nothing already resolved it on purpose.
+	// haltedByTool means a tool result ended the turn deliberately (a
+	// hook halt, a denied permission, a successful merge), so the
+	// calls sitting on currentAssistant already got their answer; they
+	// are not abandoned mid-flight.
+	pendingToolUse := len(currentAssistant.ToolCalls()) > 0 && !haltedByTool
+	// Nothing left to compact for either of two reasons: a
+	// non-interactive (sub-agent) session is created fresh for every
 	// Task/Agent tool call and is never resumed later (see
-	// CreateAgentToolSessionID), so when this turn already ended with no
+	// CreateAgentToolSessionID), so when it already ended with no
 	// pending tool calls and wasn't merely cut off by the output-token
-	// limit, the sub-agent is genuinely done. There is no future turn
-	// left that a compacted history could ever help, so summarizing now
-	// would only add a wasted round trip in front of a result that is
-	// about to be returned anyway.
-	subAgentAlreadyDone := call.NonInteractive && !hitMaxTokens && len(currentAssistant.ToolCalls()) == 0
-	if shouldSummarize && !subAgentAlreadyDone {
+	// limit, it is genuinely done; or the turn ended because a branch
+	// just merged, which resolves the branch's own rendezvous and
+	// leaves no later turn a compacted history could ever help. Either
+	// way, summarizing now would only add a wasted round trip in front
+	// of a result that is about to be returned anyway.
+	nothingLeftToCompact := sessionEnded || (call.NonInteractive && !hitMaxTokens && !pendingToolUse)
+	if shouldSummarize && !nothingLeftToCompact {
 		// Release only our own entry, for the same reason the deferred
 		// cleanup above is conditional: a plain Del here would drop
 		// whatever a concurrent run has since registered.
@@ -1321,7 +1342,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		// Queuing this after Summarize returns is too late: by then
 		// Summarize has already drained and run whatever was queued
 		// first.
-		queuedResume := len(currentAssistant.ToolCalls()) > 0
+		queuedResume := pendingToolUse
 		if queuedResume {
 			call.Prompt = wrapInterruptedPrompt(call.Prompt)
 			a.enqueueResumeBeforeSummarize(call)

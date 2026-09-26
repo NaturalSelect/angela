@@ -61,6 +61,7 @@ func (c *blockingCoordinator) IsSessionBranch(string) bool                      
 func (c *blockingCoordinator) QueuedPrompts(string) int                           { return 0 }
 func (c *blockingCoordinator) QueuedPromptsList(string) []message.QueuedPrompt    { return nil }
 func (c *blockingCoordinator) ClearQueue(string)                                  {}
+func (c *blockingCoordinator) TakeQueuedPrompts(string) []message.QueuedPrompt    { return nil }
 func (c *blockingCoordinator) Summarize(context.Context, string) error            { return nil }
 func (c *blockingCoordinator) DefaultModel() agent.Model                          { return agent.Model{} }
 

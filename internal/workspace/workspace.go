@@ -186,6 +186,12 @@ type Workspace interface {
 	AgentReadyErr() error
 	AgentQueuedPrompts(sessionID string) int
 	AgentQueuedPromptsList(sessionID string) []message.QueuedPrompt
+	// AgentTakeQueuedPrompts atomically removes and returns every
+	// user-queued prompt for sessionID, complete with attachment
+	// bytes. Unlike AgentQueuedPromptsList, the result is meant to be
+	// restored elsewhere (e.g. an editor draft) rather than merely
+	// previewed.
+	AgentTakeQueuedPrompts(sessionID string) []message.QueuedPrompt
 	AgentClearQueue(sessionID string)
 	AgentSummarize(ctx context.Context, sessionID string) error
 	// AgentAskSideQuestion answers a one-off question from a

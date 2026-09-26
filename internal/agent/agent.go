@@ -223,6 +223,17 @@ type SessionAgentCall struct {
 	// fantasy retries the stream transparently. Returning an error
 	// surfaces the original auth error without retry.
 	OnAuthRefresh func(ctx context.Context, err *fantasy.ProviderError) error
+	// internal marks a queue entry synthesized by the harness itself
+	// (currently only the resume-after-summarize continuation enqueued
+	// by enqueueResumeBeforeSummarize) rather than submitted by a user
+	// or an external caller. User-facing queue accessors (QueuedPrompts,
+	// QueuedPromptsList, TakeQueuedPrompts) skip these entries so the
+	// UI never shows or lets the user pop an implementation detail of
+	// auto-compaction. Cancel/ClearQueue still remove internal entries
+	// from the queue like any other; only their visibility to the user
+	// differs. It is cleared once a call becomes the active turn in
+	// Run's Idle branch, so it never leaks into enqueueAutoContinue.
+	internal bool
 }
 
 type SessionAgent interface {
@@ -242,6 +253,14 @@ type SessionAgent interface {
 	IsBusy() bool
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []message.QueuedPrompt
+	// TakeQueuedPrompts atomically removes and returns every
+	// user-queued prompt for sessionID, complete with attachment bytes
+	// (unlike QueuedPromptsList, which strips them for cheap polling).
+	// Internal entries (the resume-after-summarize continuation) are
+	// left in the queue untouched. Used to restore queued prompts to
+	// the editor (Esc, cancel, or a failed auto-summarize) without
+	// losing attachment content.
+	TakeQueuedPrompts(sessionID string) []message.QueuedPrompt
 	ClearQueue(sessionID string)
 	Summarize(context.Context, string, resolvedAgent, fantasy.ProviderOptions, func(context.Context, *fantasy.ProviderError) error) error
 	// SideQuestion answers a one-off question from a session's existing
@@ -392,10 +411,18 @@ func (r *AcceptedRun) SessionID() string {
 // and are dropped silently as before. A detached, bounded context keeps the
 // must-deliver publish alive even when the run context that triggered the
 // drop is already canceled.
+//
+// Internal entries (see SessionAgentCall.internal) are always skipped
+// here, even though Cancel/cancelAndTakeQueue take them out of the
+// queue alongside user prompts: an internal resume call shares its
+// RunID with the turn that is still on the call stack inside Summarize,
+// so that turn's own Run defer will publish the terminal event for that
+// RunID once Summarize returns. Publishing here too would deliver two
+// terminal events for the same RunID.
 func (a *sessionAgent) publishCanceledQueueDrops(drops []SessionAgentCall) {
 	var hasRunID bool
 	for _, d := range drops {
-		if d.RunID != "" {
+		if d.RunID != "" && !d.internal {
 			hasRunID = true
 			break
 		}
@@ -406,7 +433,7 @@ func (a *sessionAgent) publishCanceledQueueDrops(drops []SessionAgentCall) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for _, d := range drops {
-		if d.RunID == "" {
+		if d.RunID == "" || d.internal {
 			continue
 		}
 		a.publishRunComplete(ctx, d, notify.RunComplete{
@@ -645,6 +672,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	if call.Accepted != nil {
 		call.Accepted.Close()
 	}
+	// This call is now the active turn rather than a queue entry, so the
+	// internal marker no longer applies. Clearing it here (rather than
+	// leaving it set) keeps it from leaking into enqueueAutoContinue if
+	// this same turn is later re-queued for a max-tokens continuation.
+	call.internal = false
 	sessMu.Unlock()
 
 	defer cancel()
@@ -1651,7 +1683,12 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 		return err
 	}
 	if len(msgs) == 0 {
-		// Nothing to summarize.
+		// Nothing to summarize. Still drop any internal resume entry
+		// queued ahead of this call (see enqueueResumeBeforeSummarize):
+		// this early return never reaches the queue drain below, so
+		// without this the entry would sit orphaned in the queue and
+		// later fire as a stray turn.
+		a.popResumeOnSummarizeFailure(sessionID)
 		return nil
 	}
 
@@ -1725,9 +1762,16 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 	if err != nil {
 		isCancelErr := errors.Is(err, context.Canceled)
 		if isCancelErr {
-			// User cancelled summarize we need to remove the summary message.
+			// User cancelled summarize we need to remove the summary
+			// message. Return the cancellation itself (joined with any
+			// delete failure) rather than swallowing it as success:
+			// the caller (Run, for the auto-compaction path) needs a
+			// non-nil, context.Canceled-wrapping error so it (a) drops
+			// the internal resume entry instead of treating it as
+			// still pending, and (b) reports this turn's RunComplete
+			// as cancelled instead of a silent success.
 			deleteErr := a.messages.Delete(ctx, summaryMessage.ID)
-			return deleteErr
+			return errors.Join(context.Canceled, deleteErr)
 		}
 		// Mark the summary message as finished with an error so the UI
 		// stops spinning.
@@ -1804,13 +1848,21 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 	a.activeRequests.CompareAndDelete(sessionID, ac)
 	cancel()
 
-	// Process any messages that were queued while summarizing.
+	// Process any messages that were queued while summarizing. Locked
+	// only around the Get-and-Set pop, not the recursive Run below: a
+	// concurrent takeUserQueue (e.g. the UI popping a user prompt back
+	// to the editor while this summarize was still running) must not
+	// have the entry it just took written back here.
+	mu := a.sessionMu(sessionID)
+	mu.Lock()
 	queuedMessages, ok := a.messageQueue.Get(sessionID)
 	if !ok || len(queuedMessages) == 0 {
+		mu.Unlock()
 		return nil
 	}
 	firstQueuedMessage := queuedMessages[0]
 	a.messageQueue.Set(sessionID, queuedMessages[1:])
+	mu.Unlock()
 	_, qErr := a.Run(ctx, reresolve(ctx, firstQueuedMessage))
 	return qErr
 }
@@ -2367,13 +2419,41 @@ func (a *sessionAgent) cancelAndTakeQueue(sessionID string) []SessionAgentCall {
 	return a.takeQueue(sessionID)
 }
 
+// ClearQueue drops every user-queued prompt for sessionID. It leaves an
+// internal resume-after-summarize entry (see SessionAgentCall.internal)
+// in place: clearing the queue is a user action, and the resume
+// continuation is not something the user queued, so a plain "clear my
+// queue" must not silently cancel an in-flight auto-compaction's
+// resume.
 func (a *sessionAgent) ClearQueue(sessionID string) {
 	mu := a.sessionMu(sessionID)
 	mu.Lock()
-	dropped := a.takeQueue(sessionID)
+	dropped := a.takeUserQueue(sessionID)
 	mu.Unlock()
 
 	a.publishCanceledQueueDrops(dropped)
+}
+
+// TakeQueuedPrompts atomically removes and returns every user-queued
+// prompt for sessionID, complete with attachment bytes (unlike
+// QueuedPromptsList, which strips them for cheap polling). It leaves
+// any internal resume-after-summarize entry in the queue untouched, for
+// the same reason ClearQueue does: that entry is not the caller's to
+// take back. Used to restore queued prompts to the editor (Esc, cancel,
+// or a failed auto-summarize) without losing attachment content.
+func (a *sessionAgent) TakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+	mu := a.sessionMu(sessionID)
+	mu.Lock()
+	taken := a.takeUserQueue(sessionID)
+	mu.Unlock()
+
+	a.publishCanceledQueueDrops(taken)
+
+	prompts := make([]message.QueuedPrompt, len(taken))
+	for i, call := range taken {
+		prompts[i] = message.QueuedPrompt{Prompt: call.Prompt, Attachments: call.Attachments}
+	}
+	return prompts
 }
 
 func (a *sessionAgent) CancelAll() {

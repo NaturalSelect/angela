@@ -60,6 +60,11 @@ func newMockSessionAgent(t *testing.T, agentID string, runFunc func(context.Cont
 	a.EXPECT().QueuedPrompts(gomock.Any()).DoAndReturn(func(string) int { return len(a.queued) }).AnyTimes()
 	a.EXPECT().QueuedPromptsList(gomock.Any()).DoAndReturn(func(string) []message.QueuedPrompt { return a.queued }).AnyTimes()
 	a.EXPECT().ClearQueue(gomock.Any()).Do(func(sessionID string) { a.cleared = append(a.cleared, sessionID) }).AnyTimes()
+	a.EXPECT().TakeQueuedPrompts(gomock.Any()).DoAndReturn(func(string) []message.QueuedPrompt {
+		taken := a.queued
+		a.queued = nil
+		return taken
+	}).AnyTimes()
 	a.EXPECT().Summarize(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, sessionID string, _ resolvedAgent, _ fantasy.ProviderOptions, _ func(context.Context, *fantasy.ProviderError) error) error {
 			a.summarized = append(a.summarized, sessionID)

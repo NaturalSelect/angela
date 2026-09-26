@@ -1066,6 +1066,31 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionPromptClear(w http.Respons
 	w.WriteHeader(http.StatusOK)
 }
 
+// handlePostWorkspaceAgentSessionPromptTake atomically removes and
+// returns every queued prompt for a session, including attachment
+// bytes. Unlike prompts/list, the result is meant to be restored
+// elsewhere (e.g. an editor draft) rather than merely previewed.
+//
+//	@Summary		Take prompt queue
+//	@Tags			agent
+//	@Produce		json
+//	@Param			id	path		string	true	"Workspace ID"
+//	@Param			sid	path		string	true	"Session ID"
+//	@Success		200	{array}		proto.QueuedPrompt
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/prompts/take [post]
+func (c *controllerV1) handlePostWorkspaceAgentSessionPromptTake(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+	prompts, err := c.backend.TakeQueuedPrompts(id, sid)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, proto.QueuedPromptsFromMessage(prompts))
+}
+
 // handlePostWorkspaceAgentSessionSummarize summarizes a session.
 //
 //	@Summary		Summarize session

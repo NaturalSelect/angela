@@ -209,6 +209,13 @@ func (s *runState) enqueueAutoContinue(call SessionAgentCall, prompt string) {
 // could read the queue before this Set lands and then overwrite it,
 // dropping one of the two.
 func (s *runState) enqueueResumeBeforeSummarize(call SessionAgentCall) {
+	// This entry is a harness-synthesized continuation, not something
+	// the user queued. Mark it internal so QueuedPrompts/
+	// QueuedPromptsList/TakeQueuedPrompts hide it: showing it (and
+	// letting it be popped like a real queued prompt) would break the
+	// expectation that summarize-then-resume is a single atomic,
+	// invisible step.
+	call.internal = true
 	mu := s.sessionMu(call.SessionID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -218,23 +225,63 @@ func (s *runState) enqueueResumeBeforeSummarize(call SessionAgentCall) {
 
 // popResumeOnSummarizeFailure undoes enqueueResumeBeforeSummarize after
 // Summarize returns an error. A failed Summarize never reaches its own
-// queue drain, so the call prepended before it would otherwise sit
-// orphaned in the queue and later fire as a stray turn on top of whatever
-// the caller submits next. Prepending is the only queue operation that
-// runs ahead of it, so the entry is guaranteed to still be at the head.
+// queue drain, so the internal resume call prepended before it would
+// otherwise sit orphaned in the queue and later fire as a stray turn on
+// top of whatever the caller submits next.
+//
+// It removes the first internal entry rather than assuming the queue
+// head, because the head may since have been taken by
+// takeUserQueue (e.g. the UI popping a user prompt back to the editor
+// while summarize was still running) and reinserted after other
+// entries. If no internal entry remains — it was already removed by a
+// Cancel/ClearQueue that ran concurrently — this is a no-op rather than
+// dropping a real user prompt.
 func (s *runState) popResumeOnSummarizeFailure(sessionID string) {
 	mu := s.sessionMu(sessionID)
 	mu.Lock()
 	defer mu.Unlock()
 	existing, ok := s.messageQueue.Get(sessionID)
+	if !ok {
+		return
+	}
+	for i, call := range existing {
+		if !call.internal {
+			continue
+		}
+		remaining := append(existing[:i:i], existing[i+1:]...)
+		if len(remaining) == 0 {
+			s.messageQueue.Del(sessionID)
+		} else {
+			s.messageQueue.Set(sessionID, remaining)
+		}
+		return
+	}
+}
+
+// takeUserQueue atomically removes and returns the user-visible
+// (non-internal) entries queued for sessionID, leaving any internal
+// entry (the resume-after-summarize continuation) in place. Callers
+// must hold the session's dispatch mutex (s.sessionMu(sessionID)) so
+// this is atomic against a concurrent enqueue or drain.
+func (s *runState) takeUserQueue(sessionID string) []SessionAgentCall {
+	existing, ok := s.messageQueue.Get(sessionID)
 	if !ok || len(existing) == 0 {
-		return
+		return nil
 	}
-	if len(existing) == 1 {
+	var taken, kept []SessionAgentCall
+	for _, call := range existing {
+		if call.internal {
+			kept = append(kept, call)
+		} else {
+			taken = append(taken, call)
+		}
+	}
+	if len(kept) == 0 {
 		s.messageQueue.Del(sessionID)
-		return
+	} else {
+		s.messageQueue.Set(sessionID, kept)
 	}
-	s.messageQueue.Set(sessionID, existing[1:])
+	return taken
 }
 
 // drainQueueForStep partitions the session's queued calls for the current
@@ -262,6 +309,19 @@ func (s *runState) drainQueueForStep(sessionID string) (fold, canceledWithRunID 
 	queuedCalls, _ := s.messageQueue.Get(sessionID)
 	var keep []SessionAgentCall
 	for _, queued := range queuedCalls {
+		if queued.internal {
+			// The resume-after-summarize continuation belongs to
+			// Summarize's own recursion, not to whatever unrelated
+			// turn is currently draining its queue for this step.
+			// Folding it here would run its wrapped prompt as part
+			// of the wrong turn; canceling it here would duplicate
+			// the terminal event Summarize's own caller will emit.
+			// In normal timing this never happens (the session is
+			// marked busy for the whole time the entry is queued),
+			// but leave it queued rather than touch it either way.
+			keep = append(keep, queued)
+			continue
+		}
 		if s.canceledBySeq(sessionID, queued.acceptSeq) {
 			if queued.RunID != "" {
 				canceledWithRunID = append(canceledWithRunID, queued)
@@ -326,21 +386,39 @@ func (s *runState) IsSessionBusy(sessionID string) bool {
 	return busy
 }
 
+// QueuedPrompts reports how many user-visible prompts are queued for
+// sessionID. Internal entries (see SessionAgentCall.internal), such as
+// the resume-after-summarize continuation, are excluded: they are an
+// implementation detail of auto-compaction, not something the user
+// queued, and must not appear as a queue count the UI shows.
 func (s *runState) QueuedPrompts(sessionID string) int {
 	l, ok := s.messageQueue.Get(sessionID)
 	if !ok {
 		return 0
 	}
-	return len(l)
+	var n int
+	for _, call := range l {
+		if !call.internal {
+			n++
+		}
+	}
+	return n
 }
 
+// QueuedPromptsList previews the user-visible prompts queued for
+// sessionID, skipping internal entries for the same reason as
+// QueuedPrompts. Returns nil when nothing user-visible is queued, even
+// if an internal entry remains.
 func (s *runState) QueuedPromptsList(sessionID string) []message.QueuedPrompt {
 	l, ok := s.messageQueue.Get(sessionID)
 	if !ok {
 		return nil
 	}
-	prompts := make([]message.QueuedPrompt, len(l))
-	for i, call := range l {
+	var prompts []message.QueuedPrompt
+	for _, call := range l {
+		if call.internal {
+			continue
+		}
 		// Only the metadata needed to preview an attachment travels
 		// here; the queue itself (call.Attachments) keeps the bytes
 		// for when the turn actually runs.
@@ -351,7 +429,7 @@ func (s *runState) QueuedPromptsList(sessionID string) []message.QueuedPrompt {
 				atts[j] = message.Attachment{FilePath: a.FilePath, FileName: a.FileName, MimeType: a.MimeType}
 			}
 		}
-		prompts[i] = message.QueuedPrompt{Prompt: call.Prompt, Attachments: atts}
+		prompts = append(prompts, message.QueuedPrompt{Prompt: call.Prompt, Attachments: atts})
 	}
 	return prompts
 }

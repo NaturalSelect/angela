@@ -219,3 +219,17 @@ func (mr *MockSessionAgentMockRecorder) Summarize(arg0, arg1, arg2, arg3, arg4 a
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Summarize", reflect.TypeOf((*MockSessionAgent)(nil).Summarize), arg0, arg1, arg2, arg3, arg4)
 }
+
+// TakeQueuedPrompts mocks base method.
+func (m *MockSessionAgent) TakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TakeQueuedPrompts", sessionID)
+	ret0, _ := ret[0].([]message.QueuedPrompt)
+	return ret0
+}
+
+// TakeQueuedPrompts indicates an expected call of TakeQueuedPrompts.
+func (mr *MockSessionAgentMockRecorder) TakeQueuedPrompts(sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TakeQueuedPrompts", reflect.TypeOf((*MockSessionAgent)(nil).TakeQueuedPrompts), sessionID)
+}

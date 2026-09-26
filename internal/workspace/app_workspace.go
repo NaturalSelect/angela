@@ -251,6 +251,13 @@ func (w *AppWorkspace) AgentQueuedPromptsList(sessionID string) []message.Queued
 	return w.app.AgentCoordinator.QueuedPromptsList(sessionID)
 }
 
+func (w *AppWorkspace) AgentTakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+	if w.app.AgentCoordinator == nil {
+		return nil
+	}
+	return w.app.AgentCoordinator.TakeQueuedPrompts(sessionID)
+}
+
 func (w *AppWorkspace) AgentClearQueue(sessionID string) {
 	if w.app.AgentCoordinator != nil {
 		w.app.AgentCoordinator.ClearQueue(sessionID)

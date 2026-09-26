@@ -203,6 +203,40 @@ func TestClientWorkspace_AgentQueuedPromptsList(t *testing.T) {
 	})
 }
 
+func TestClientWorkspace_AgentTakeQueuedPrompts(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, http.MethodPost, r.Method)
+			require.Equal(t, "/v1/workspaces/ws-1/agent/sessions/s1/prompts/take", r.URL.Path)
+			require.NoError(t, json.NewEncoder(w).Encode([]proto.QueuedPrompt{{
+				Prompt: "first",
+				Attachments: []proto.Attachment{
+					{FileName: "a.txt", MimeType: "text/plain", Content: []byte("hi")},
+				},
+			}}))
+		})
+
+		require.Equal(t, []message.QueuedPrompt{{
+			Prompt: "first",
+			Attachments: []message.Attachment{
+				{FileName: "a.txt", MimeType: "text/plain", Content: []byte("hi")},
+			},
+		}}, ws.AgentTakeQueuedPrompts("s1"))
+	})
+
+	t.Run("server error defaults to nil", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+
+		require.Nil(t, ws.AgentTakeQueuedPrompts("s1"))
+	})
+}
+
 func TestClientWorkspace_AgentClearQueue(t *testing.T) {
 	t.Parallel()
 

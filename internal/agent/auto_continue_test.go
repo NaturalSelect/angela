@@ -1,14 +1,19 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -677,4 +682,308 @@ func TestRun_ResumeAfterCompactionUsesLatestFoldedMessage(t *testing.T) {
 		"the resumed prompt must carry the message folded into the turn, which is the user's actual latest request")
 	require.NotContains(t, resumed, "`seed task`",
 		"the resumed prompt must not still quote the turn's original message once a later one was folded into the same turn")
+}
+
+// TestRun_EscPopDuringSummarizeKeepsResume pins the fix for the queue
+// visibility bug: while auto-summarize is in flight, the internal
+// resume-after-summarize entry it queued ahead of itself must be
+// invisible to the user-facing queue accessors, and taking back a user
+// prompt queued behind it (the way Esc does) must leave the internal
+// entry alone so the interrupted turn still resumes once summarize
+// completes.
+func TestRun_EscPopDuringSummarizeKeepsResume(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		// The only step of the original turn: high usage trips
+		// auto-compaction immediately, leaving this tool call pending.
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		// The turn resumed after compaction.
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := &gatedStreamModel{
+		text:    "<summary>summary</summary>",
+		gate:    make(chan struct{}),
+		entered: make(chan struct{}),
+	}
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	mainDone := make(chan error, 1)
+	go func() {
+		_, runErr := sa.Run(t.Context(), SessionAgentCall{
+			Agent: resolvedAgent{
+				ID:        config.AgentCoder,
+				Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+				MaxTokens: catwalkCfg.DefaultMaxTokens,
+			},
+			Compact:   compact,
+			SessionID: sess.ID,
+			RunID:     "run-1",
+			Prompt:    "seed task",
+		})
+		mainDone <- runErr
+	}()
+
+	select {
+	case <-compactModel.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("summarize never entered Stream")
+	}
+
+	// While summarize is in flight, the internal resume entry it
+	// enqueued ahead of itself must be invisible to the user-facing
+	// queue accessors.
+	require.Zero(t, sa.QueuedPrompts(sess.ID), "the internal resume entry must not surface as a queued prompt")
+	require.Nil(t, sa.QueuedPromptsList(sess.ID))
+
+	// Queue a user follow-up behind the busy session, exactly like a
+	// prompt typed while the auto-triggered summarize is running.
+	res, err := sa.Run(context.Background(), SessionAgentCall{
+		SessionID: sess.ID,
+		Prompt:    "user follow-up",
+	})
+	require.NoError(t, err)
+	require.Nil(t, res, "a busy-session follow-up must enqueue and return (nil, nil)")
+	require.Equal(t, 1, sa.QueuedPrompts(sess.ID))
+
+	// Esc: take the user prompt back. The internal entry must stay so
+	// summarize still resumes the interrupted turn once it completes.
+	taken := sa.TakeQueuedPrompts(sess.ID)
+	require.Len(t, taken, 1)
+	require.Equal(t, "user follow-up", taken[0].Prompt)
+	require.Zero(t, sa.QueuedPrompts(sess.ID))
+
+	close(compactModel.gate)
+	require.NoError(t, <-mainDone)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	var resumed bool
+	for _, m := range msgs {
+		if m.Role != message.User {
+			continue
+		}
+		text := m.Content().Text
+		if strings.Contains(text, "The previous session was interrupted") {
+			resumed = true
+		}
+		require.NotEqual(t, "user follow-up", text,
+			"the taken-back prompt must not still run as its own turn")
+	}
+	require.True(t, resumed, "the interrupted turn must still resume once the taken-back prompt is gone")
+}
+
+// TestRun_CancelDuringSummarizeEmitsOneRunComplete pins two fixes at
+// once: cancelling while auto-summarize is in flight must cancel
+// Summarize itself (not just leave it running unattended), and the
+// originating turn's RunID must receive exactly one terminal
+// RunComplete — not one from the cancel's queue drop and a second from
+// the outer Run's own defer, and not a resumed turn running after all.
+func TestRun_CancelDuringSummarizeEmitsOneRunComplete(t *testing.T) {
+	t.Parallel()
+
+	env := testEnv(t)
+	broker := pubsub.NewBroker[notify.RunComplete]()
+	t.Cleanup(broker.Shutdown)
+
+	titles := &coordinator{sessions: env.sessions, cfg: config.NewTestStore(&config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options:   &config.Options{},
+	})}
+	sa := NewSessionAgent(SessionAgentOptions{
+		IsYolo:        true,
+		Sessions:      env.sessions,
+		Messages:      env.messages,
+		RunComplete:   broker,
+		GenerateTitle: titles.generateSessionTitle,
+	}).(*sessionAgent)
+
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	subCtx, subCancel := context.WithCancel(t.Context())
+	defer subCancel()
+	events := broker.Subscribe(subCtx)
+
+	model := newMockLanguageModel(t)
+	// A single Stream call: high usage trips auto-compaction
+	// immediately, leaving this tool call pending. No second
+	// expectation — a resumed turn must never run once summarize is
+	// cancelled.
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil)
+
+	compactModel := &gatedStreamModel{
+		text:    "<summary>summary</summary>",
+		gate:    make(chan struct{}),
+		entered: make(chan struct{}),
+	}
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	mainDone := make(chan error, 1)
+	go func() {
+		_, runErr := sa.Run(t.Context(), SessionAgentCall{
+			Agent: resolvedAgent{
+				ID:        config.AgentCoder,
+				Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+				MaxTokens: catwalkCfg.DefaultMaxTokens,
+			},
+			Compact:   compact,
+			SessionID: sess.ID,
+			RunID:     "run-1",
+			Prompt:    "seed task",
+		})
+		mainDone <- runErr
+	}()
+
+	select {
+	case <-compactModel.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("summarize never entered Stream")
+	}
+
+	// The second esc press: cancel while summarize is still running.
+	// This cancels Summarize's own genCtx, which unblocks compactModel
+	// via its ctx.Done() branch instead of the gate.
+	sa.Cancel(sess.ID)
+
+	var runErr error
+	select {
+	case runErr = <-mainDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run never returned after Cancel")
+	}
+	require.Error(t, runErr, "a cancelled summarize must surface as an error from Run")
+
+	require.Zero(t, sa.QueuedPrompts(sess.ID))
+	_, queued := sa.messageQueue.Get(sess.ID)
+	require.False(t, queued, "the internal resume entry must not survive a cancelled summarize")
+
+	var got []notify.RunComplete
+	deadline := time.After(300 * time.Millisecond)
+collect:
+	for {
+		select {
+		case ev := <-events:
+			got = append(got, ev.Payload)
+		case <-deadline:
+			break collect
+		}
+	}
+	require.Len(t, got, 1, "run-1 must publish exactly one terminal RunComplete, not two")
+	require.Equal(t, "run-1", got[0].RunID)
+	require.True(t, got[0].Cancelled)
+}
+
+// TestRun_SummarizeFailureDropsResumeKeepsUserPrompts pins that when
+// auto-summarize itself fails (as opposed to being cancelled), the
+// internal resume entry is dropped rather than left to fire as a stray
+// turn later, while any real user prompts queued behind the failed
+// summarize are left for the caller (the UI) to take back with their
+// content intact.
+func TestRun_SummarizeFailureDropsResumeKeepsUserPrompts(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	// A single Stream call: high usage trips auto-compaction
+	// immediately, leaving this tool call pending. No second
+	// expectation — a resumed turn must never run once summarize fails.
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil)
+
+	// The compact model ignores the compact prompt and replies in
+	// plain prose, never wrapped in <summary> tags — Summarize rejects
+	// this as a failure (see TestSummarizeRejectsOutputMissingSummaryTags).
+	compactModel := &gatedStreamModel{
+		text:    "the model just kept doing the task instead of summarizing",
+		gate:    make(chan struct{}),
+		entered: make(chan struct{}),
+	}
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	mainDone := make(chan error, 1)
+	go func() {
+		_, runErr := sa.Run(t.Context(), SessionAgentCall{
+			Agent: resolvedAgent{
+				ID:        config.AgentCoder,
+				Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+				MaxTokens: catwalkCfg.DefaultMaxTokens,
+			},
+			Compact:   compact,
+			SessionID: sess.ID,
+			RunID:     "run-1",
+			Prompt:    "seed task",
+		})
+		mainDone <- runErr
+	}()
+
+	select {
+	case <-compactModel.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("summarize never entered Stream")
+	}
+
+	// A real user prompt queued behind the about-to-fail summarize.
+	res, err := sa.Run(context.Background(), SessionAgentCall{
+		SessionID: sess.ID,
+		Prompt:    "queued while summarize was failing",
+	})
+	require.NoError(t, err)
+	require.Nil(t, res)
+	require.Equal(t, 1, sa.QueuedPrompts(sess.ID))
+
+	close(compactModel.gate)
+
+	var runErr error
+	select {
+	case runErr = <-mainDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run never returned")
+	}
+	require.Error(t, runErr, "a summarize that fails to produce a valid summary must surface as an error from Run")
+
+	// The internal resume entry must be gone, but the real user prompt
+	// must still be there, intact, for the caller to take back.
+	taken := sa.TakeQueuedPrompts(sess.ID)
+	require.Len(t, taken, 1)
+	require.Equal(t, "queued while summarize was failing", taken[0].Prompt)
+
+	remaining, ok := sa.messageQueue.Get(sess.ID)
+	require.False(t, ok || len(remaining) > 0, "nothing must be left queued once the user prompt is taken")
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	for _, m := range msgs {
+		if m.Role == message.User {
+			require.NotContains(t, m.Content().Text, "The previous session was interrupted",
+				"a failed summarize must never resume the interrupted turn")
+		}
+	}
 }

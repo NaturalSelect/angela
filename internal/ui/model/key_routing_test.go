@@ -160,6 +160,7 @@ func TestHandleKeyPressMsg_ChatCancelWhenEscapeCancelsTrue(t *testing.T) {
 	m.isCanceling = true
 	m.agentBusyCache.set(true)
 	m.busyFetchInFlight = true // keeps dispatchBusyRefresh's returned cmd nil
+	ws.EXPECT().AgentTakeQueuedPrompts("s1").Return(nil)
 	ws.EXPECT().AgentCancel("s1")
 
 	m.handleKeyPressMsg(keyMsg("esc"))

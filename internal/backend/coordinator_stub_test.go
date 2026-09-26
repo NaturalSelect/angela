@@ -17,10 +17,12 @@ type fakeCoordinator struct {
 	model agent.Model
 	busy  bool
 
-	sessionBusy   map[string]bool
-	sessionBranch map[string]bool
-	queued        map[string]int
-	queuedList    map[string][]message.QueuedPrompt
+	sessionBusy    map[string]bool
+	sessionBranch  map[string]bool
+	queued         map[string]int
+	queuedList     map[string][]message.QueuedPrompt
+	takenQueue     map[string][]message.QueuedPrompt
+	takeQueueCalls []string
 
 	clearedQueue []string
 	abandoned    []string
@@ -84,6 +86,11 @@ func (c *fakeCoordinator) QueuedPromptsList(sessionID string) []message.QueuedPr
 
 func (c *fakeCoordinator) ClearQueue(sessionID string) {
 	c.clearedQueue = append(c.clearedQueue, sessionID)
+}
+
+func (c *fakeCoordinator) TakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+	c.takeQueueCalls = append(c.takeQueueCalls, sessionID)
+	return c.takenQueue[sessionID]
 }
 
 func (c *fakeCoordinator) Summarize(ctx context.Context, sessionID string) error {

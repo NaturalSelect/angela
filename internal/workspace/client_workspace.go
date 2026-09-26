@@ -348,6 +348,14 @@ func (w *ClientWorkspace) AgentQueuedPromptsList(sessionID string) []message.Que
 	return prompts
 }
 
+func (w *ClientWorkspace) AgentTakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+	prompts, err := w.client.TakeAgentSessionQueuedPrompts(context.Background(), w.workspaceID(), sessionID)
+	if err != nil {
+		return nil
+	}
+	return prompts
+}
+
 func (w *ClientWorkspace) AgentClearQueue(sessionID string) {
 	_ = w.client.ClearAgentSessionQueuedPrompts(context.Background(), w.workspaceID(), sessionID)
 }

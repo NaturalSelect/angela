@@ -42,6 +42,7 @@ func newCoordinator(t *testing.T) (*MockCoordinator, *coordinatorState) {
 	m.EXPECT().IsBusy().Return(false).AnyTimes()
 	m.EXPECT().QueuedPrompts(gomock.Any()).Return(0).AnyTimes()
 	m.EXPECT().QueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+	m.EXPECT().TakeQueuedPrompts(gomock.Any()).Return(nil).AnyTimes()
 	m.EXPECT().ClearQueue(gomock.Any()).AnyTimes()
 	m.EXPECT().Summarize(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	m.EXPECT().DefaultModel().Return(agent.Model{}).AnyTimes()

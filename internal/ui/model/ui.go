@@ -2321,7 +2321,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, func() tea.Msg {
 			err := m.com.Workspace.AgentSummarize(context.Background(), msg.SessionID)
 			if err != nil {
-				return util.ReportError(err)()
+				// Routed through agentRunFailedMsg (rather than a plain
+				// ReportError) so restoreQueueOnAgentError also fires and
+				// hands back whatever the user had queued behind this
+				// compact.
+				return agentRunFailedMsg{sessionID: msg.SessionID, err: err}
 			}
 			return nil
 		})
@@ -5121,9 +5125,9 @@ func (m *UI) cancelAgent() tea.Cmd {
 		}
 
 		// AgentCancel drops any prompts still waiting behind the active
-		// turn on the backend, so pop them back into the editor first —
+		// turn on the backend, so take them back into the editor first —
 		// cancelling must never silently lose typed text.
-		restoreCmd := m.popQueuedPromptsToEditor()
+		restoreCmd := m.takeQueuedPromptsToEditor(m.session.ID)
 		m.com.Workspace.AgentCancel(m.session.ID)
 		// Stop the spinning turn indicator and drop the memoized busy
 		// state the cancel just changed; the turn status re-renders from
@@ -5138,9 +5142,7 @@ func (m *UI) cancelAgent() tea.Cmd {
 	// of discarding them. Decide from the cached count (event-driven)
 	// instead of a synchronous workspace probe.
 	if m.promptQueue > 0 {
-		restoreCmd := m.popQueuedPromptsToEditor()
-		m.com.Workspace.AgentClearQueue(m.session.ID)
-		return restoreCmd
+		return m.takeQueuedPromptsToEditor(m.session.ID)
 	}
 
 	// First escape press - set canceling state and start timer.
@@ -5148,28 +5150,40 @@ func (m *UI) cancelAgent() tea.Cmd {
 	return cancelTimerCmd()
 }
 
-// popQueuedPromptsToEditor clears the UI's mirror of the session's queued
-// prompts and, if any were waiting, restores their text and attachments
-// into the editor and syncs the transcript so the "queued" entries
-// disappear along with them. It never touches the backend queue itself —
-// callers pair it with AgentCancel or AgentClearQueue, which is what
-// actually drops the queue there. Restored text and attachments are
-// placed ahead of whatever draft the user was already composing, in
-// queue order, so a half-typed follow-up is never clobbered and nothing
-// queued is ever silently lost.
-func (m *UI) popQueuedPromptsToEditor() tea.Cmd {
-	items := m.promptQueueItems
-	if len(items) == 0 {
-		return nil
-	}
+// takeQueuedPromptsToEditor atomically removes every user-queued prompt
+// behind sessionID's turn on the backend (the internal resume-after-
+// summarize entry, if any, is left in place) and, if any were waiting,
+// restores their text and attachments into the editor and syncs the
+// transcript so the "queued" entries disappear along with them. Taking
+// from the backend directly — rather than clearing it separately and
+// restoring from the UI's mirror — is what lets attachment bytes survive
+// the round trip: the mirror strips them for cheap polling. Restored text
+// and attachments are placed ahead of whatever draft the user was already
+// composing, in queue order, so a half-typed follow-up is never clobbered
+// and nothing queued is ever silently lost.
+func (m *UI) takeQueuedPromptsToEditor(sessionID string) tea.Cmd {
+	// The mirror can be stale (e.g. restoreQueueOnAgentError takes even
+	// when it reads 0, since a refresh may not have landed yet), so
+	// whether there is anything to sync visually is decided from
+	// whichever of the mirror or the take result had something, not
+	// from the take result alone.
+	hadMirror := m.promptQueue > 0 || len(m.promptQueueItems) > 0
+	items := m.com.Workspace.AgentTakeQueuedPrompts(sessionID)
 	m.promptQueue = 0
 	m.promptQueueItems = nil
 	m.promptQueueCheckedAt = time.Now()
-	// Bump the queue generation so a fetch started before this clear
-	// cannot land and repopulate the pill we just emptied.
-	m.invalidatePromptQueue()
-	m.syncQueuedChatItems()
-	m.updateLayoutAndSize()
+
+	if hadMirror || len(items) > 0 {
+		// Bump the queue generation so a fetch started before this take
+		// cannot land and repopulate the pill we just emptied.
+		m.invalidatePromptQueue()
+		m.syncQueuedChatItems()
+		m.updateLayoutAndSize()
+	}
+
+	if len(items) == 0 {
+		return nil
+	}
 
 	texts := make([]string, len(items))
 	var atts []message.Attachment
@@ -5201,12 +5215,10 @@ func (m *UI) popQueuedPromptsToEditor() tea.Cmd {
 // a session the user has since navigated away from must not reach
 // into the visible editor.
 func (m *UI) restoreQueueOnAgentError(sessionID string) tea.Cmd {
-	if sessionID == "" || sessionID != m.currentSessionID() || m.promptQueue == 0 {
+	if sessionID == "" || sessionID != m.currentSessionID() {
 		return nil
 	}
-	restoreCmd := m.popQueuedPromptsToEditor()
-	m.com.Workspace.AgentClearQueue(sessionID)
-	return restoreCmd
+	return m.takeQueuedPromptsToEditor(sessionID)
 }
 
 // prependToEditor places text ahead of whatever draft is being composed,

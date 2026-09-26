@@ -483,11 +483,13 @@ definitions:
     - main
     - chore
     - image
+    - inherited
     type: string
     x-enum-varnames:
     - SlotMain
     - SlotChore
     - SlotImage
+    - SlotInherited
   config.TUIOptions:
     properties:
       compact_mode:
@@ -507,6 +509,11 @@ definitions:
         $ref: '#/definitions/time.Duration'
     type: object
   config.ToolGrep:
+    properties:
+      timeout:
+        $ref: '#/definitions/time.Duration'
+    type: object
+  config.ToolImage:
     properties:
       timeout:
         $ref: '#/definitions/time.Duration'
@@ -535,6 +542,8 @@ definitions:
         $ref: '#/definitions/config.ToolGlob'
       grep:
         $ref: '#/definitions/config.ToolGrep'
+      image:
+        $ref: '#/definitions/config.ToolImage'
       ls:
         $ref: '#/definitions/config.ToolLs'
     type: object
@@ -2284,6 +2293,39 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Get queued prompt status
+      tags:
+      - agent
+  /workspaces/{id}/agent/sessions/{sid}/prompts/take:
+    post:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/proto.QueuedPrompt'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Take prompt queue
       tags:
       - agent
   /workspaces/{id}/agent/sessions/{sid}/shell:

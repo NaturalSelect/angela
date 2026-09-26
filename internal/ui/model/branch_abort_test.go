@@ -50,6 +50,7 @@ func newCancelRecordingWorkspace(t *testing.T) (*MockWorkspace, *cancelCalls) {
 	ws.EXPECT().SetCurrentSession(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 
 	calls := &cancelCalls{}
+	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil).AnyTimes()
 	ws.EXPECT().AgentCancel(gomock.Any()).Do(func(sessionID string) {
 		calls.cancelled = append(calls.cancelled, sessionID)
 	}).AnyTimes()

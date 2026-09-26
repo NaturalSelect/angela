@@ -156,6 +156,10 @@ type Coordinator interface {
 	IsBusy() bool
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []message.QueuedPrompt
+	// TakeQueuedPrompts atomically removes and returns every
+	// user-queued prompt for sessionID, complete with attachment
+	// bytes. See SessionAgent.TakeQueuedPrompts.
+	TakeQueuedPrompts(sessionID string) []message.QueuedPrompt
 	ClearQueue(sessionID string)
 	Summarize(ctx context.Context, sessionID string) error
 	// AskSideQuestion answers a one-off question from a session's
@@ -2139,6 +2143,14 @@ func (c *coordinator) QueuedPromptsList(sessionID string) []message.QueuedPrompt
 		return nil
 	}
 	return executor.QueuedPromptsList(sessionID)
+}
+
+func (c *coordinator) TakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+	executor, ok := c.executorForSession(sessionID)
+	if !ok {
+		return nil
+	}
+	return executor.TakeQueuedPrompts(sessionID)
 }
 
 func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {

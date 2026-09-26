@@ -132,6 +132,10 @@ func TestBackend_QueueOperations(t *testing.T) {
 		require.Nil(t, list)
 
 		require.NoError(t, b.ClearQueue(ws.ID, "s1"))
+
+		taken, err := b.TakeQueuedPrompts(ws.ID, "s1")
+		require.NoError(t, err)
+		require.Nil(t, taken)
 	})
 
 	t.Run("delegates to coordinator", func(t *testing.T) {
@@ -141,6 +145,9 @@ func TestBackend_QueueOperations(t *testing.T) {
 			queued: map[string]int{"s1": 3},
 			queuedList: map[string][]message.QueuedPrompt{
 				"s1": {{Prompt: "first"}, {Prompt: "second"}, {Prompt: "third"}},
+			},
+			takenQueue: map[string][]message.QueuedPrompt{
+				"s1": {{Prompt: "first", Attachments: []message.Attachment{{FileName: "a.txt", Content: []byte("hi")}}}},
 			},
 		}
 		ws := insertAgentWorkspace(t, b, coord)
@@ -155,6 +162,13 @@ func TestBackend_QueueOperations(t *testing.T) {
 
 		require.NoError(t, b.ClearQueue(ws.ID, "s1"))
 		require.Equal(t, []string{"s1"}, coord.clearedQueue)
+
+		taken, err := b.TakeQueuedPrompts(ws.ID, "s1")
+		require.NoError(t, err)
+		require.Equal(t, []message.QueuedPrompt{
+			{Prompt: "first", Attachments: []message.Attachment{{FileName: "a.txt", Content: []byte("hi")}}},
+		}, taken)
+		require.Equal(t, []string{"s1"}, coord.takeQueueCalls)
 	})
 
 	t.Run("workspace not found", func(t *testing.T) {
@@ -166,6 +180,8 @@ func TestBackend_QueueOperations(t *testing.T) {
 		_, err = b.QueuedPromptsList("nope", "s1")
 		require.ErrorIs(t, err, ErrWorkspaceNotFound)
 		require.ErrorIs(t, b.ClearQueue("nope", "s1"), ErrWorkspaceNotFound)
+		_, err = b.TakeQueuedPrompts("nope", "s1")
+		require.ErrorIs(t, err, ErrWorkspaceNotFound)
 	})
 }
 

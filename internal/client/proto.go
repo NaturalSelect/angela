@@ -507,6 +507,26 @@ func (c *Client) ClearAgentSessionQueuedPrompts(ctx context.Context, id string, 
 	return nil
 }
 
+// TakeAgentSessionQueuedPrompts atomically removes and returns every
+// queued prompt for a session, including attachment bytes. Unlike
+// GetAgentSessionQueuedPromptsList, the result is meant to be restored
+// elsewhere (e.g. an editor draft) rather than merely previewed.
+func (c *Client) TakeAgentSessionQueuedPrompts(ctx context.Context, id string, sessionID string) ([]message.QueuedPrompt, error) {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/prompts/take", id, sessionID), nil, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to take session agent queued prompts: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to take session agent queued prompts: status code %d", rsp.StatusCode)
+	}
+	var prompts []proto.QueuedPrompt
+	if err := json.NewDecoder(rsp.Body).Decode(&prompts); err != nil {
+		return nil, fmt.Errorf("failed to decode taken queued prompts: %w", err)
+	}
+	return proto.QueuedPromptsToMessage(prompts), nil
+}
+
 // GetAgentInfo retrieves the agent status for a workspace.
 func (c *Client) GetAgentInfo(ctx context.Context, id string) (*proto.AgentInfo, error) {
 	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/agent", id), nil, nil)

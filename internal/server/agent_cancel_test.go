@@ -80,6 +80,7 @@ func (s *runCoordinator) IsSessionBranch(string) bool                     { retu
 func (s *runCoordinator) QueuedPrompts(string) int                        { return 0 }
 func (s *runCoordinator) QueuedPromptsList(string) []message.QueuedPrompt { return nil }
 func (s *runCoordinator) ClearQueue(string)                               {}
+func (s *runCoordinator) TakeQueuedPrompts(string) []message.QueuedPrompt { return nil }
 func (s *runCoordinator) Summarize(context.Context, string) error {
 	return nil
 }

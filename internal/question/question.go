@@ -157,7 +157,7 @@ func (q Question) identifier() string {
 
 const (
 	MaxQuestionLength          = 240
-	MaxDescriptionLength       = 600
+	MaxDescriptionLength       = 1000
 	MaxChoiceLabelLength       = 200
 	MaxChoiceDescriptionLength = 200
 	MaxChoices                 = 5

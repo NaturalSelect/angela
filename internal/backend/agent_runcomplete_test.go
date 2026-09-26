@@ -50,6 +50,7 @@ func (c *errorCoordinator) IsSessionBranch(string) bool                        {
 func (c *errorCoordinator) QueuedPrompts(string) int                           { return 0 }
 func (c *errorCoordinator) QueuedPromptsList(string) []message.QueuedPrompt    { return nil }
 func (c *errorCoordinator) ClearQueue(string)                                  {}
+func (c *errorCoordinator) TakeQueuedPrompts(string) []message.QueuedPrompt    { return nil }
 func (c *errorCoordinator) Summarize(context.Context, string) error            { return nil }
 func (c *errorCoordinator) DefaultModel() agent.Model                          { return agent.Model{} }
 

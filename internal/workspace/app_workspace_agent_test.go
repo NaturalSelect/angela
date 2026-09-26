@@ -35,6 +35,7 @@ func TestAppWorkspace_Agent_NilCoordinator(t *testing.T) {
 	require.ErrorIs(t, fx.ws.AgentReadyErr(), ErrAgentNotInitialized)
 	require.Equal(t, 0, fx.ws.AgentQueuedPrompts("sess-1"))
 	require.Nil(t, fx.ws.AgentQueuedPromptsList("sess-1"))
+	require.Nil(t, fx.ws.AgentTakeQueuedPrompts("sess-1"))
 	fx.ws.AgentClearQueue("sess-1")
 
 	require.Error(t, fx.ws.AgentSummarize(t.Context(), "sess-1"))
@@ -131,6 +132,18 @@ func TestAppWorkspace_AgentQueuedPrompts(t *testing.T) {
 
 	require.Equal(t, 3, fx.ws.AgentQueuedPrompts("sess-1"))
 	require.Equal(t, []message.QueuedPrompt{{Prompt: "a"}, {Prompt: "b"}, {Prompt: "c"}}, fx.ws.AgentQueuedPromptsList("sess-1"))
+}
+
+func TestAppWorkspace_AgentTakeQueuedPrompts(t *testing.T) {
+	t.Parallel()
+	fx := newAWFixture(t)
+	fx.coord.EXPECT().TakeQueuedPrompts("sess-1").Return([]message.QueuedPrompt{
+		{Prompt: "a", Attachments: []message.Attachment{{FileName: "x.txt", Content: []byte("hi")}}},
+	})
+
+	require.Equal(t, []message.QueuedPrompt{
+		{Prompt: "a", Attachments: []message.Attachment{{FileName: "x.txt", Content: []byte("hi")}}},
+	}, fx.ws.AgentTakeQueuedPrompts("sess-1"))
 }
 
 func TestAppWorkspace_AgentClearQueue(t *testing.T) {

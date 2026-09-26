@@ -300,6 +300,20 @@ func (mr *MockWorkspaceMockRecorder) AgentSummarize(ctx, sessionID any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentSummarize", reflect.TypeOf((*MockWorkspace)(nil).AgentSummarize), ctx, sessionID)
 }
 
+// AgentTakeQueuedPrompts mocks base method.
+func (m *MockWorkspace) AgentTakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AgentTakeQueuedPrompts", sessionID)
+	ret0, _ := ret[0].([]message.QueuedPrompt)
+	return ret0
+}
+
+// AgentTakeQueuedPrompts indicates an expected call of AgentTakeQueuedPrompts.
+func (mr *MockWorkspaceMockRecorder) AgentTakeQueuedPrompts(sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentTakeQueuedPrompts", reflect.TypeOf((*MockWorkspace)(nil).AgentTakeQueuedPrompts), sessionID)
+}
+
 // ClearAgentModelOverrides mocks base method.
 func (m *MockWorkspace) ClearAgentModelOverrides() error {
 	m.ctrl.T.Helper()

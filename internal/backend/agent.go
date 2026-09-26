@@ -348,6 +348,23 @@ func (b *Backend) QueuedPromptsList(workspaceID, sessionID string) ([]message.Qu
 	return ws.AgentCoordinator.QueuedPromptsList(sessionID), nil
 }
 
+// TakeQueuedPrompts atomically removes and returns every user-queued
+// prompt for the session, complete with attachment bytes. Unlike
+// QueuedPromptsList, the result is meant to be restored somewhere else
+// (e.g. an editor draft) rather than merely previewed.
+func (b *Backend) TakeQueuedPrompts(workspaceID, sessionID string) ([]message.QueuedPrompt, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	if ws.AgentCoordinator == nil {
+		return nil, nil
+	}
+
+	return ws.AgentCoordinator.TakeQueuedPrompts(sessionID), nil
+}
+
 // RunShellCommand runs a shell command in the workspace directory and
 // persists the command + output as a user message in the session.
 func (b *Backend) RunShellCommand(ctx context.Context, workspaceID string, req proto.ShellCommandRequest) (proto.ShellCommandResponse, error) {

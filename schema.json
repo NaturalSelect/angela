@@ -1148,6 +1148,16 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ToolImage": {
+      "properties": {
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout for an ImageGenerate/ImageEdit tool call. Image generation is slow and can legitimately take several minutes, so the default is generous."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "ToolLs": {
       "properties": {
         "max_depth": {
@@ -1180,6 +1190,9 @@
         },
         "glob": {
           "$ref": "#/$defs/ToolGlob"
+        },
+        "image": {
+          "$ref": "#/$defs/ToolImage"
         }
       },
       "additionalProperties": false,

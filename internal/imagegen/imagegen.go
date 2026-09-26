@@ -25,13 +25,15 @@ import (
 // specify one.
 const DefaultModel = "gpt-image-1"
 
-// requestTimeout bounds a single Generate or Edit call. Image generation
-// is a slow, non-streaming operation that can legitimately run past a
-// minute — well beyond the idle-read timeout this repo's shared HTTP
-// client helpers apply to streaming provider traffic — so Client uses a
-// plain *http.Client (see New) and enforces this generous ceiling itself
-// instead.
-const requestTimeout = 5 * time.Minute
+// DefaultRequestTimeout bounds a single Generate or Edit call when
+// Endpoint.Timeout is unset. Image generation is a slow, non-streaming
+// operation that can legitimately run past a minute — well beyond the
+// idle-read timeout this repo's shared HTTP client helpers apply to
+// streaming provider traffic — so Client uses a plain *http.Client (see
+// New) and enforces this generous ceiling itself instead. It mirrors
+// config.ToolImage's own default so callers that build an Endpoint
+// without reading config still get a sane timeout.
+const DefaultRequestTimeout = 10 * time.Minute
 
 // maxEditSources is the largest number of source images Edit accepts, per
 // the OpenAI Images API's own limit for the GPT image models.
@@ -54,6 +56,9 @@ type Endpoint struct {
 	// Headers are extra HTTP headers sent with every request, e.g. for
 	// gateway routing.
 	Headers map[string]string
+	// Timeout bounds a single Generate or Edit call. Zero or negative
+	// uses DefaultRequestTimeout.
+	Timeout time.Duration
 }
 
 // Source is one input image supplied to Edit.
@@ -116,6 +121,11 @@ func New(ep Endpoint) Client {
 		model = DefaultModel
 	}
 
+	timeout := ep.Timeout
+	if timeout <= 0 {
+		timeout = DefaultRequestTimeout
+	}
+
 	opts := []option.RequestOption{option.WithAPIKey(ep.APIKey)}
 	if baseURL := config.NormalizeBaseURL(ep.BaseURL, catwalk.TypeOpenAI); baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
@@ -128,25 +138,27 @@ func New(ep Endpoint) Client {
 	// shared idle-timeout HTTP client helpers (internal/log), which cap
 	// idle reads at two minutes for streaming provider traffic and
 	// would risk aborting a legitimate, still-running request; Generate
-	// and Edit instead enforce their own requestTimeout via context.
+	// and Edit instead enforce their own timeout via context.
 	opts = append(opts, option.WithHTTPClient(&http.Client{}))
 
 	return &openaiClient{
-		sdk:   openai.NewClient(opts...),
-		model: model,
+		sdk:     openai.NewClient(opts...),
+		model:   model,
+		timeout: timeout,
 	}
 }
 
 // openaiClient is the Client implementation backed by openai-go.
 type openaiClient struct {
-	sdk   openai.Client
-	model string
+	sdk     openai.Client
+	model   string
+	timeout time.Duration
 }
 
 func (c *openaiClient) Model() string { return c.model }
 
 func (c *openaiClient) Generate(ctx context.Context, r Request) (Output, error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	params := openai.ImageGenerateParams{
@@ -178,7 +190,7 @@ func (c *openaiClient) Generate(ctx context.Context, r Request) (Output, error) 
 }
 
 func (c *openaiClient) Edit(ctx context.Context, r Request) (Output, error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
 	image, err := imageUnionFromSources(r.Sources)

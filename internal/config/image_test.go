@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -76,5 +77,19 @@ func TestConfigStore_ImageToolsDisabled(t *testing.T) {
 	t.Run("nil Options does not panic", func(t *testing.T) {
 		store := &ConfigStore{config: &Config{}}
 		require.False(t, store.ImageToolsDisabled())
+	})
+}
+
+// TestToolImage_GetTimeout covers the default (10 minutes) applied
+// when options.tools.image.timeout is unset, and that a configured
+// value overrides it.
+func TestToolImage_GetTimeout(t *testing.T) {
+	t.Run("defaults to 10 minutes", func(t *testing.T) {
+		require.Equal(t, 10*time.Minute, ToolImage{}.GetTimeout())
+	})
+
+	t.Run("uses the configured value", func(t *testing.T) {
+		timeout := 90 * time.Second
+		require.Equal(t, timeout, ToolImage{Timeout: &timeout}.GetTimeout())
 	})
 }

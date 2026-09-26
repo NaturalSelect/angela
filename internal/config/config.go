@@ -901,9 +901,10 @@ func (a Agent) YoloMergeAllowed() bool {
 }
 
 type Tools struct {
-	Ls   ToolLs   `json:"ls,omitzero"`
-	Grep ToolGrep `json:"grep,omitzero"`
-	Glob ToolGlob `json:"glob,omitzero"`
+	Ls    ToolLs    `json:"ls,omitzero"`
+	Grep  ToolGrep  `json:"grep,omitzero"`
+	Glob  ToolGlob  `json:"glob,omitzero"`
+	Image ToolImage `json:"image,omitzero"`
 }
 
 type ToolLs struct {
@@ -932,6 +933,15 @@ type ToolGlob struct {
 // GetTimeout returns the user-defined timeout or the default.
 func (t ToolGlob) GetTimeout() time.Duration {
 	return ptrValOr(t.Timeout, 30*time.Second)
+}
+
+type ToolImage struct {
+	Timeout *time.Duration `json:"timeout,omitempty" jsonschema:"description=Timeout for an ImageGenerate/ImageEdit tool call. Image generation is slow and can legitimately take several minutes\\, so the default is generous.,default=10m,example=15m"`
+}
+
+// GetTimeout returns the user-defined timeout or the default.
+func (t ToolImage) GetTimeout() time.Duration {
+	return ptrValOr(t.Timeout, 10*time.Minute)
 }
 
 // HookConfig defines a user-configured shell command that fires on a hook

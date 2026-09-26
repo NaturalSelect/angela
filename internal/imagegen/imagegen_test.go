@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -56,6 +57,24 @@ func TestNew_KeepsExplicitModel(t *testing.T) {
 
 	client := New(Endpoint{APIKey: "key", Model: "dall-e-3"})
 	require.Equal(t, "dall-e-3", client.Model())
+}
+
+func TestNew_DefaultsTimeoutWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	client := New(Endpoint{APIKey: "key"})
+	oc, ok := client.(*openaiClient)
+	require.True(t, ok)
+	require.Equal(t, DefaultRequestTimeout, oc.timeout)
+}
+
+func TestNew_KeepsExplicitTimeout(t *testing.T) {
+	t.Parallel()
+
+	client := New(Endpoint{APIKey: "key", Timeout: 90 * time.Second})
+	oc, ok := client.(*openaiClient)
+	require.True(t, ok)
+	require.Equal(t, 90*time.Second, oc.timeout)
 }
 
 func TestGenerate_HitsGenerationsEndpointWithAuthHeadersAndBody(t *testing.T) {

@@ -103,8 +103,9 @@ rather than aborting the load.
 | `ls.max_items`  | int  | `1000`  | Entry cap for the `ls` tool               |
 | `grep.timeout`  | int  | 5s      | Timeout for a `grep` tool call            |
 | `glob.timeout`  | int  | 30s     | Timeout for a `glob` tool call            |
+| `image.timeout` | int  | 10m     | Timeout for an `ImageGenerate`/`ImageEdit` call |
 
-The two timeouts are Go durations serialized as **integer nanoseconds** in
+The three timeouts are Go durations serialized as **integer nanoseconds** in
 JSON: `10000000000` is 10 seconds.
 
 Outside a git repository, unset `ls.max_depth`/`ls.max_items` (and the TUI's
@@ -115,7 +116,8 @@ unbounded walk of a non-project directory.
 {
   "tools": {
     "ls": { "max_depth": 10, "max_items": 500 },
-    "grep": { "timeout": 10000000000 }
+    "grep": { "timeout": 10000000000 },
+    "image": { "timeout": 900000000000 }
   }
 }
 ```

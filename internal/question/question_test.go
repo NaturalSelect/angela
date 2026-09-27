@@ -293,6 +293,7 @@ func TestQuestionService_AskContextCancelled(t *testing.T) {
 	s := NewService()
 	ctx, cancel := context.WithCancel(t.Context())
 	sub := s.Subscribe(t.Context())
+	notifSub := s.SubscribeNotifications(t.Context())
 
 	resultCh := make(chan error, 1)
 	go func() {
@@ -300,7 +301,13 @@ func TestQuestionService_AskContextCancelled(t *testing.T) {
 		resultCh <- err
 	}()
 
-	<-sub
+	var published Request
+	select {
+	case ev := <-sub:
+		published = ev.Payload
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for published request")
+	}
 	cancel()
 
 	select {
@@ -308,6 +315,16 @@ func TestQuestionService_AskContextCancelled(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for Ask to return")
+	}
+
+	// A notification must still be published so that open question
+	// forms are dismissed even when the agent turn (not the question
+	// itself) was cancelled out from under it.
+	select {
+	case ev := <-notifSub:
+		require.Equal(t, published.ID, ev.Payload.BatchID)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for notification")
 	}
 }
 

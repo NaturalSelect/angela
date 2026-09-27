@@ -274,6 +274,13 @@ func (s *questionService) Ask(ctx context.Context, req Request) ([]Answer, error
 
 	select {
 	case <-ctx.Done():
+		// The agent turn was cancelled out from under this question
+		// (e.g. the user cancelled the run) rather than through
+		// Answer/Cancel, so nobody else will publish a notification.
+		// Publish one here so open forms still get dismissed.
+		s.notificationBroker.Publish(pubsub.CreatedEvent, Notification{
+			BatchID: req.ID,
+		})
 		return nil, ctx.Err()
 	case <-cancelCh:
 		return nil, ErrCancelled

@@ -6,7 +6,7 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | ------------------------------ | ------ | ------------------ | ---------------------------------------------------------------- |
 | `context_paths`                | array  | —                  | Extra project context files                                     |
 | `reminders`                    | array  | —                  | Short notices re-injected as a system reminder at the end of every turn, unlike context files which are sent once and fade as the conversation grows |
-| `global_context_paths`         | array  | `~/.config/angela/ANGELA.md`, `~/.config/AGENTS.md` | Global context files      |
+| `global_context_paths`         | array  | `~/.config/angela/ANGELA.md`, `~/.config/AGENTS.md` | Global context files, loaded into every project's prompt already — set this only to use a different location, not to turn the feature on |
 | `skills_paths`                 | array  | —                  | Extra Agent Skills directories                                  |
 | `agent_paths`                  | array  | —                  | Directories holding agent markdown files                        |
 | `disabled_skills`              | array  | —                  | Skill names to hide from the agent                              |

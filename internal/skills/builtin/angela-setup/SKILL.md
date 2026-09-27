@@ -342,12 +342,15 @@ needed):
 - `ANGELA.md`, `ANGELA.local.md`
 - `AGENTS.md` (no `.local.md` variant, unlike the others)
 
-For global instructions that apply to all projects:
+For instructions that should apply to every project, Angela already reads
+`~/.config/angela/ANGELA.md` and `~/.config/AGENTS.md` by default — just
+create one of those files, no config needed. Only set
+`global_context_paths` if the user wants a different location instead:
 
 ```json
 {
   "options": {
-    "global_context_paths": ["~/.config/angela/ANGELA.md"]
+    "global_context_paths": ["~/notes/my-global-instructions.md"]
   }
 }
 ```

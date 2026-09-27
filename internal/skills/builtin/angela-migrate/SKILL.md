@@ -291,6 +291,11 @@ So existing `CLAUDE.md`, `.cursorrules`, and even a GitHub Copilot
 `.github/copilot-instructions.md` file all work as-is. For `OPENCODE.md`,
 either rename it to `ANGELA.md` or add it to `options.context_paths`.
 
+If the source tool also had global, cross-project instructions (e.g. Claude
+Code's `~/.claude/CLAUDE.md`), move that content to
+`~/.config/angela/ANGELA.md` or `~/.config/AGENTS.md` — Angela reads either
+by default (`options.global_context_paths`), no config needed.
+
 ### Options Mapping
 
 | Source | Angela |

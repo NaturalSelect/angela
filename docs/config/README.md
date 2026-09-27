@@ -376,6 +376,12 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
 > `skills_paths`: `.agents/skills`, `.angela/skills`, `.claude/skills`,
 > `.cursor/skills`.
 
+> [!IMPORTANT]
+> `global_context_paths` already defaults to `~/.config/angela/ANGELA.md`
+> and `~/.config/AGENTS.md` — create either file and Angela loads it into
+> every project's system prompt with no config change. Only set
+> `global_context_paths` yourself to point at a different location.
+
 ## Composing configs
 
 A shared base config is just another layer: put the team's settings in the

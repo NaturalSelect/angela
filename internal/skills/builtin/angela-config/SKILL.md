@@ -192,7 +192,10 @@ For an agent, use the `agents.<id>.disabled` recipe above instead.
 ```
 **Watch out:** `.agents/skills`, `.angela/skills`, `.claude/skills`,
 `.cursor/skills` are scanned by default — `skills_paths` is only for extra
-locations beyond those.
+locations beyond those. Likewise, `~/.config/angela/ANGELA.md` and
+`~/.config/AGENTS.md` are already read as global context files for every
+project — set `global_context_paths` only to point at a different file,
+not to enable the feature.
 **Reference:** `reference/options.md`
 
 ### Remove or undo a setting

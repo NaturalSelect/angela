@@ -100,13 +100,15 @@ func writeModels(b *strings.Builder, cfg *config.ConfigStore) {
 	if len(c.Slots) == 0 {
 		return
 	}
+	names := make([]string, 0, len(c.Slots))
+	for typ := range c.Slots {
+		names = append(names, string(typ))
+	}
+	slices.Sort(names)
 	b.WriteString("[model]\n")
-	for _, typ := range []config.SlotName{config.SlotMain, config.SlotChore} {
-		m, ok := c.Slots[typ]
-		if !ok {
-			continue
-		}
-		fmt.Fprintf(b, "%s = %s (%s)\n", typ, m.Model, m.Provider)
+	for _, name := range names {
+		m := c.Slots[config.SlotName(name)]
+		fmt.Fprintf(b, "%s = %s (%s)\n", name, m.Model, m.Provider)
 	}
 	b.WriteString("\n")
 }

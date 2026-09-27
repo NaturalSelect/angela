@@ -29,6 +29,10 @@ func (fakeImageStore) Get(context.Context, string) (images.Image, error) {
 	return images.Image{}, images.ErrNotFound
 }
 
+func (fakeImageStore) ListBySession(context.Context, string) ([]images.Image, error) {
+	return nil, nil
+}
+
 // newImageReadyCoordinator builds a coordinator on top of
 // newGateTestCoordinator's hermetic config, with every precondition
 // the built-in image tools need already satisfied: an "openai"

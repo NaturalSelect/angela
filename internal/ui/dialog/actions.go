@@ -11,6 +11,7 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -155,6 +156,14 @@ type (
 	ActionExportImage struct {
 		ImageID string
 		Output  string
+	}
+	// ActionSelectExportImage is emitted when the user picks an image
+	// from the "Export Image" picker dialog. WorkingDir is passed
+	// through unchanged so the next step can default the output path
+	// without the picker doing any IO itself.
+	ActionSelectExportImage struct {
+		Image      images.Image
+		WorkingDir string
 	}
 	// ActionCommit generates a commit message from the workspace's
 	// currently staged changes and commits them with a sign-off in

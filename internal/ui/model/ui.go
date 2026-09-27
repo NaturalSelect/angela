@@ -38,6 +38,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/home"
+	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -815,6 +816,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewUndo(m.com, msg.sessionID, msg.preview))
+	case exportImagesLoadedMsg:
+		// Drop a result for a session the user has already navigated
+		// away from while the fetch was in flight.
+		if msg.sessionID != m.currentSessionID() {
+			break
+		}
+		m.dialog.OpenDialog(dialog.NewImages(m.com, msg.images, msg.workingDir))
 	case tpsComputedMsg:
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
@@ -1656,6 +1664,15 @@ type undoPreviewMsg struct {
 	preview   undo.Preview
 }
 
+// exportImagesLoadedMsg carries a session's generated images, fetched
+// off the Update goroutine, so the "Export Image" picker dialog can
+// be opened with them once they arrive.
+type exportImagesLoadedMsg struct {
+	sessionID  string
+	images     []images.Image
+	workingDir string
+}
+
 // undoResultMsg carries the result of an executed undo, so its popped
 // text can be restored to the editor and the outcome reported.
 type undoResultMsg struct {
@@ -2425,21 +2442,37 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		})
 	case dialog.ActionExportImage:
 		if strings.TrimSpace(msg.ImageID) == "" {
-			m.dialog.CloseFrontDialog()
-			argsDialog := dialog.NewArguments(
-				m.com,
-				"Export Image",
-				"Writes a generated image's full-size original to a file on disk.",
-				[]commands.Argument{
-					{ID: "IMAGE_ID", Title: "Image ID", Required: true},
-					{ID: "OUTPUT", Title: "Output path (optional)", Required: false},
-				},
-				msg, // Pass the action as the result
-			)
-			m.dialog.OpenDialog(argsDialog)
+			m.dialog.CloseDialog(dialog.CommandsID)
+			if m.session == nil {
+				cmds = append(cmds, util.ReportWarn("Open a session before exporting an image."))
+				break
+			}
+			sessionID := m.session.ID
+			cmds = append(cmds, func() tea.Msg {
+				ctx := context.Background()
+				imgs, err := m.com.Workspace.ListSessionImages(ctx, sessionID)
+				if err != nil {
+					return util.ReportError(err)()
+				}
+				if len(imgs) == 0 {
+					return util.ReportWarn("No generated images in this session")()
+				}
+
+				// The export always writes through this process's own
+				// filesystem, never the workspace's: in client-server
+				// mode Workspace.WorkingDir() names a path on the
+				// daemon host, which this client cannot write to and
+				// which may not even exist locally.
+				workingDir, err := os.Getwd()
+				if err != nil {
+					return util.ReportError(err)()
+				}
+
+				return exportImagesLoadedMsg{sessionID: sessionID, images: imgs, workingDir: workingDir}
+			})
 			break
 		}
-		m.dialog.CloseFrontDialog()
+		m.dialog.CloseDialog(dialog.ArgumentsID)
 		imageID := msg.ImageID
 		output := msg.Output
 		cmds = append(cmds, func() tea.Msg {
@@ -2460,8 +2493,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			}
 
 			target := output
-			if target == "" {
-				target = imageID + chat.ExtensionForMIME(img.MIMEType)
+			if target == "" || strings.HasSuffix(target, string(filepath.Separator)) {
+				target = filepath.Join(target, imageID+chat.ExtensionForMIME(img.MIMEType))
+			} else if info, statErr := os.Stat(target); statErr == nil && info.IsDir() {
+				target = filepath.Join(target, imageID+chat.ExtensionForMIME(img.MIMEType))
 			}
 			if !filepath.IsAbs(target) {
 				target = filepath.Join(workingDir, target)
@@ -2480,6 +2515,22 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 
 			return util.ReportInfo("Exported image to " + outPath)()
 		})
+	case dialog.ActionSelectExportImage:
+		m.dialog.CloseDialog(dialog.ImagesID)
+		defaultPath := filepath.Join(msg.WorkingDir, msg.Image.ID+chat.ExtensionForMIME(msg.Image.MIMEType))
+		description := "Writes the generated image's full-size original to a file on disk."
+		if prompt := strings.Join(strings.Fields(msg.Image.Prompt), " "); prompt != "" {
+			description = fmt.Sprintf("Output path for %q.", ansi.Truncate(prompt, 60, "…"))
+		}
+		argsDialog := dialog.NewArguments(
+			m.com,
+			"Export Image",
+			description,
+			[]commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}},
+			dialog.ActionExportImage{ImageID: msg.Image.ID},
+		)
+		argsDialog.SetValue("OUTPUT", defaultPath)
+		m.dialog.OpenDialog(argsDialog)
 	case dialog.ActionUndo:
 		// Session-scoped, matching ActionSummarize: the busy cache
 		// answers for the whole process and would block this session's

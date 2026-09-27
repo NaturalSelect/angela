@@ -250,6 +250,34 @@ func (c *controllerV1) handleGetWorkspaceImage(w http.ResponseWriter, r *http.Re
 	jsonEncode(w, imageToProto(img))
 }
 
+// handleGetWorkspaceSessionImages returns the metadata for every
+// image generated in a session, newest first, so the TUI's "Export
+// Image" command can offer a picker without downloading every image's
+// full-size data up front.
+//
+//	@Summary		List a session's generated images
+//	@Tags			workspaces
+//	@Produce		json
+//	@Param			id	path		string	true	"Workspace ID"
+//	@Param			sid	path		string	true	"Session ID"
+//	@Success		200	{array}		proto.GeneratedImage
+//	@Failure		404	{object}	proto.Error
+//	@Router			/workspaces/{id}/sessions/{sid}/images [get]
+func (c *controllerV1) handleGetWorkspaceSessionImages(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+	imgs, err := c.backend.ListSessionImages(id, sid)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	out := make([]proto.GeneratedImage, len(imgs))
+	for i, img := range imgs {
+		out[i] = imageToProto(img)
+	}
+	jsonEncode(w, out)
+}
+
 // handleDeleteClient retires a client, releasing every claim it holds.
 //
 //	@Summary		Retire a client

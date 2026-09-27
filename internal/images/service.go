@@ -62,6 +62,11 @@ type Service interface {
 	// Get retrieves a generated image by its ID. It returns
 	// ErrNotFound if no image with that ID exists.
 	Get(ctx context.Context, id string) (Image, error)
+
+	// ListBySession retrieves the metadata for every image generated
+	// in a session, newest first. The returned images have no Data,
+	// so this is cheap to call even for sessions with many images.
+	ListBySession(ctx context.Context, sessionID string) ([]Image, error)
 }
 
 type service struct {
@@ -114,6 +119,25 @@ func (s *service) Get(ctx context.Context, id string) (Image, error) {
 	return rowToImage(row)
 }
 
+// ListBySession retrieves the metadata for every image generated in a
+// session, newest first.
+func (s *service) ListBySession(ctx context.Context, sessionID string) ([]Image, error) {
+	rows, err := s.q.ListGeneratedImagesBySession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("listing generated images: %w", err)
+	}
+
+	imgs := make([]Image, len(rows))
+	for i, row := range rows {
+		img, err := listRowToImage(row)
+		if err != nil {
+			return nil, err
+		}
+		imgs[i] = img
+	}
+	return imgs, nil
+}
+
 // marshalSourceImageIDs encodes the source image IDs as a JSON array
 // for storage. A nil slice is stored as an empty array rather than
 // JSON null so the column always round-trips to a valid []string.
@@ -131,9 +155,9 @@ func marshalSourceImageIDs(ids []string) (string, error) {
 // rowToImage converts a generated database row into the public Image
 // type, decoding the JSON-encoded source image IDs column.
 func rowToImage(row db.GeneratedImage) (Image, error) {
-	var sourceImageIDs []string
-	if err := json.Unmarshal([]byte(row.SourceImageIds), &sourceImageIDs); err != nil {
-		return Image{}, fmt.Errorf("unmarshaling source image ids: %w", err)
+	sourceImageIDs, err := unmarshalSourceImageIDs(row.SourceImageIds)
+	if err != nil {
+		return Image{}, err
 	}
 
 	return Image{
@@ -151,6 +175,41 @@ func rowToImage(row db.GeneratedImage) (Image, error) {
 		Data:           row.Data,
 		CreatedAt:      row.CreatedAt,
 	}, nil
+}
+
+// listRowToImage converts a ListGeneratedImagesBySession row into the
+// public Image type. The row carries no Data column, so the returned
+// Image's Data is always nil.
+func listRowToImage(row db.ListGeneratedImagesBySessionRow) (Image, error) {
+	sourceImageIDs, err := unmarshalSourceImageIDs(row.SourceImageIds)
+	if err != nil {
+		return Image{}, err
+	}
+
+	return Image{
+		ID:             row.ID,
+		SessionID:      row.SessionID,
+		ToolCallID:     row.ToolCallID,
+		Prompt:         row.Prompt,
+		RevisedPrompt:  row.RevisedPrompt,
+		SourceImageIDs: sourceImageIDs,
+		Provider:       row.Provider,
+		Model:          row.Model,
+		MIMEType:       row.MimeType,
+		Width:          int(row.Width),
+		Height:         int(row.Height),
+		CreatedAt:      row.CreatedAt,
+	}, nil
+}
+
+// unmarshalSourceImageIDs decodes the JSON-encoded source image IDs
+// column shared by both the single-row and list queries.
+func unmarshalSourceImageIDs(raw string) ([]string, error) {
+	var sourceImageIDs []string
+	if err := json.Unmarshal([]byte(raw), &sourceImageIDs); err != nil {
+		return nil, fmt.Errorf("unmarshaling source image ids: %w", err)
+	}
+	return sourceImageIDs, nil
 }
 
 // newImageID generates a new unique identifier for a generated image,

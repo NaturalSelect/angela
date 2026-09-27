@@ -236,6 +236,20 @@ func (w *ClientWorkspace) GetGeneratedImage(ctx context.Context, id string) (ima
 	return protoToImage(img), nil
 }
 
+// ListSessionImages retrieves the metadata for every image generated
+// in a session, newest first, from the server.
+func (w *ClientWorkspace) ListSessionImages(ctx context.Context, sessionID string) ([]images.Image, error) {
+	imgs, err := w.client.ListSessionImages(ctx, w.workspaceID(), sessionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]images.Image, len(imgs))
+	for i, img := range imgs {
+		out[i] = protoToImage(img)
+	}
+	return out, nil
+}
+
 // -- Messages --
 
 func (w *ClientWorkspace) ListMessages(ctx context.Context, sessionID string) ([]message.Message, error) {

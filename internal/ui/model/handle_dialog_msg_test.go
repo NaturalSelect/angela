@@ -276,21 +276,92 @@ func TestHandleDialogMsg_ActionAskSideQuestion_DispatchesAndAnswers(t *testing.T
 	require.Equal(t, "what now?", item.FilterValue())
 }
 
-// TestHandleDialogMsg_ActionExportImage_EmptyIDOpensArgumentsDialog
-// verifies that picking "Export Image" from the command palette without
-// having entered an image ID yet (ImageID == "") opens the arguments
-// dialog to collect it, instead of asking the workspace for anything.
-func TestHandleDialogMsg_ActionExportImage_EmptyIDOpensArgumentsDialog(t *testing.T) {
+// TestHandleDialogMsg_ActionExportImage_EmptyIDOpensPicker verifies
+// that picking "Export Image" from the command palette without having
+// entered an image ID yet (ImageID == "") fetches the current
+// session's images and, once they land, opens the picker dialog
+// rather than the free-text arguments dialog.
+func TestHandleDialogMsg_ActionExportImage_EmptyIDOpensPicker(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	imgs := []images.Image{
+		{ID: "img_1a2b3c4d5e6f", Prompt: "a cat", CreatedAt: 2000},
+		{ID: "img_2b3c4d5e6f7a", Prompt: "a dog", CreatedAt: 1000},
+	}
+	ws.EXPECT().ListSessionImages(gomock.Any(), "s1").Return(imgs, nil)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionExportImage{ImageID: ""})
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the picker opens")
+	require.NotNil(t, cmd)
+
+	m.Update(cmd())
+	require.True(t, m.dialog.ContainsDialog(dialog.ImagesID))
+}
+
+// TestHandleDialogMsg_ActionExportImage_NoSession verifies that
+// picking "Export Image" with no active session reports a warning
+// instead of asking the workspace for anything.
+func TestHandleDialogMsg_ActionExportImage_NoSession(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+	m.session = nil
+
+	cmd := m.handleDialogMsg(dialog.ActionExportImage{ImageID: ""})
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID))
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeWarn, info.Type)
+}
+
+// TestHandleDialogMsg_ActionExportImage_NoImagesInSession verifies
+// that a session with no generated images reports a warning instead
+// of opening an empty picker.
+func TestHandleDialogMsg_ActionExportImage_NoImagesInSession(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().ListSessionImages(gomock.Any(), "s1").Return(nil, nil)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionExportImage{ImageID: ""})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeWarn, info.Type)
+	require.False(t, m.dialog.ContainsDialog(dialog.ImagesID))
+}
+
+// TestHandleDialogMsg_ActionSelectExportImage_OpensArgumentsWithDefault
+// verifies that picking an image from the picker opens the output-path
+// step with the field already pre-filled with a default path under
+// the given working directory, rather than an empty placeholder.
+func TestHandleDialogMsg_ActionSelectExportImage_OpensArgumentsWithDefault(t *testing.T) {
 	t.Parallel()
 
 	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
 
-	cmd := m.handleDialogMsg(dialog.ActionExportImage{ImageID: ""})
-	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the arguments dialog opens")
+	img := images.Image{ID: "img_1a2b3c4d5e6f", Prompt: "a cat", MIMEType: "image/png"}
+	cmd := m.handleDialogMsg(dialog.ActionSelectExportImage{Image: img, WorkingDir: "/work"})
+	require.Nil(t, cmd)
 	require.True(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
-	if cmd != nil {
-		drain(cmd)
-	}
+
+	argsDialog, ok := m.dialog.Dialog(dialog.ArgumentsID).(*dialog.Arguments)
+	require.True(t, ok)
+	require.Equal(t, filepath.Join("/work", "img_1a2b3c4d5e6f.png"), argsDialog.Value("OUTPUT"))
 }
 
 // TestHandleDialogMsg_ActionToggleMCPServer pins that toggling leaves

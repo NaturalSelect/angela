@@ -149,6 +149,10 @@ type Workspace interface {
 	// original by ID, for the "Export Image" command. It returns
 	// images.ErrNotFound if no image with that ID exists.
 	GetGeneratedImage(ctx context.Context, id string) (images.Image, error)
+	// ListSessionImages retrieves the metadata for every image
+	// generated in a session, newest first, so the "Export Image"
+	// command can offer a picker. The returned images have no Data.
+	ListSessionImages(ctx context.Context, sessionID string) ([]images.Image, error)
 
 	// Messages
 	ListMessages(ctx context.Context, sessionID string) ([]message.Message, error)

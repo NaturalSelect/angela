@@ -277,3 +277,44 @@ func TestHandleGetWorkspaceImage_ImageNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+// TestHandleGetWorkspaceSessionImages_Success verifies that a
+// session's generated images round-trip through the HTTP handler,
+// newest first, without their raw byte payloads.
+func TestHandleGetWorkspaceSessionImages_Success(t *testing.T) {
+	t.Parallel()
+
+	c, wsID, svc, sessionID := newImageWorkspace(t)
+	first, err := svc.Create(t.Context(), images.CreateParams{
+		SessionID: sessionID,
+		Prompt:    "a cat",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Data:      []byte("fake-png-bytes-1"),
+	})
+	require.NoError(t, err)
+	second, err := svc.Create(t.Context(), images.CreateParams{
+		SessionID: sessionID,
+		Prompt:    "a dog",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Data:      []byte("fake-png-bytes-2"),
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	req.SetPathValue("id", wsID)
+	req.SetPathValue("sid", sessionID)
+	rec := httptest.NewRecorder()
+	c.handleGetWorkspaceSessionImages(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got []proto.GeneratedImage
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got, 2)
+	require.Equal(t, second.ID, got[0].ID)
+	require.Equal(t, first.ID, got[1].ID)
+	require.Nil(t, got[0].Data)
+}

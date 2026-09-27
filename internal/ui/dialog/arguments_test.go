@@ -161,6 +161,51 @@ func TestArguments_ConfirmWithUnrecognizedResultActionJustWrapsFocus(t *testing.
 	require.Equal(t, 0, a.focused, "single field wraps back to itself")
 }
 
+// TestArguments_SetValue verifies that SetValue pre-fills the named
+// input, that confirming submits the pre-filled value even if the
+// user never types anything, and that an unknown argument ID is
+// silently ignored.
+func TestArguments_SetValue(t *testing.T) {
+	t.Parallel()
+
+	a := newTestArguments(t, testArgumentList(
+		commands.Argument{ID: "OUTPUT", Title: "Output"},
+	), ActionRunCustomCommand{Content: "x"})
+
+	a.SetValue("OUTPUT", "/tmp/out.png")
+	require.Equal(t, "/tmp/out.png", a.inputs[0].Value())
+
+	a.SetValue("does-not-exist", "ignored")
+	require.Equal(t, "/tmp/out.png", a.inputs[0].Value(), "unknown argument ID must not touch any input")
+
+	action := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	got, ok := action.(ActionRunCustomCommand)
+	require.True(t, ok)
+	require.Equal(t, map[string]string{"OUTPUT": "/tmp/out.png"}, got.Args)
+	require.Equal(t, "/tmp/out.png", a.Value("OUTPUT"))
+	require.Equal(t, "", a.Value("does-not-exist"))
+}
+
+// TestArguments_ExportImageSubmitPreservesPreSetImageID verifies that
+// when only an OUTPUT field is present (the picker-driven step 2 of
+// the "Export Image" flow), confirming does not wipe out the ImageID
+// the picker already set on the result action.
+func TestArguments_ExportImageSubmitPreservesPreSetImageID(t *testing.T) {
+	t.Parallel()
+
+	a := newTestArguments(t, testArgumentList(
+		commands.Argument{ID: "OUTPUT", Title: "Output Path"},
+	), ActionExportImage{ImageID: "img_1a2b3c4d5e6f"})
+
+	a.SetValue("OUTPUT", "/tmp/img_1a2b3c4d5e6f.png")
+	action := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	got, ok := action.(ActionExportImage)
+	require.True(t, ok)
+	require.Equal(t, "img_1a2b3c4d5e6f", got.ImageID, "ImageID must survive a step with no IMAGE_ID field")
+	require.Equal(t, "/tmp/img_1a2b3c4d5e6f.png", got.Output)
+}
+
 // TestArguments_DefaultKeyForwardsToFocusedInput verifies that
 // unmatched keys (ordinary typing) are forwarded to the focused
 // textinput.

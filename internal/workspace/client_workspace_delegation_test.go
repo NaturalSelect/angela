@@ -149,6 +149,48 @@ func TestClientWorkspace_GetGeneratedImage(t *testing.T) {
 	}
 }
 
+// TestClientWorkspace_ListSessionImages pins the request path and the
+// proto-to-domain conversion for listing a session's generated
+// images, mirroring TestClientWorkspace_GetGeneratedImage.
+func TestClientWorkspace_ListSessionImages(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "success"},
+		{name: "server error", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, http.MethodGet, r.Method)
+				require.Equal(t, "/v1/workspaces/ws-1/sessions/sess-1/images", r.URL.Path)
+				if tc.wantErr {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				require.NoError(t, json.NewEncoder(w).Encode([]proto.GeneratedImage{
+					{ID: "img1", SessionID: "sess-1", MIMEType: "image/png"},
+				}))
+			})
+
+			got, err := ws.ListSessionImages(t.Context(), "sess-1")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			require.Equal(t, "img1", got[0].ID)
+		})
+	}
+}
+
 func TestClientWorkspace_SaveSession(t *testing.T) {
 	t.Parallel()
 

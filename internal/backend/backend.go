@@ -1033,6 +1033,21 @@ func (b *Backend) GetGeneratedImage(workspaceID, id string) (images.Image, error
 	return ws.Images.Get(ws.ctx, id)
 }
 
+// ListSessionImages retrieves the metadata for every image generated
+// in a session, newest first. A workspace whose app has not finished
+// starting has no images yet, so it returns an empty slice rather
+// than an error.
+func (b *Backend) ListSessionImages(workspaceID, sessionID string) ([]images.Image, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if ws.App == nil {
+		return nil, nil
+	}
+	return ws.Images.ListBySession(ws.ctx, sessionID)
+}
+
 // AttachedClients returns the number of clients currently viewing
 // sessionID in the given workspace. Only clients with at least one live
 // SSE stream (streams > 0) AND a matching currentSessionID are counted;

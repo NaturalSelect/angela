@@ -105,3 +105,62 @@ func (q *Queries) GetGeneratedImage(ctx context.Context, id string) (GeneratedIm
 	)
 	return i, err
 }
+
+const listGeneratedImagesBySession = `-- name: ListGeneratedImagesBySession :many
+SELECT id, session_id, tool_call_id, prompt, revised_prompt, source_image_ids,
+       provider, model, mime_type, width, height, created_at
+FROM generated_images
+WHERE session_id = ?
+ORDER BY created_at DESC, rowid DESC
+`
+
+type ListGeneratedImagesBySessionRow struct {
+	ID             string `json:"id"`
+	SessionID      string `json:"session_id"`
+	ToolCallID     string `json:"tool_call_id"`
+	Prompt         string `json:"prompt"`
+	RevisedPrompt  string `json:"revised_prompt"`
+	SourceImageIds string `json:"source_image_ids"`
+	Provider       string `json:"provider"`
+	Model          string `json:"model"`
+	MimeType       string `json:"mime_type"`
+	Width          int64  `json:"width"`
+	Height         int64  `json:"height"`
+	CreatedAt      int64  `json:"created_at"`
+}
+
+func (q *Queries) ListGeneratedImagesBySession(ctx context.Context, sessionID string) ([]ListGeneratedImagesBySessionRow, error) {
+	rows, err := q.query(ctx, q.listGeneratedImagesBySessionStmt, listGeneratedImagesBySession, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGeneratedImagesBySessionRow{}
+	for rows.Next() {
+		var i ListGeneratedImagesBySessionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.ToolCallID,
+			&i.Prompt,
+			&i.RevisedPrompt,
+			&i.SourceImageIds,
+			&i.Provider,
+			&i.Model,
+			&i.MimeType,
+			&i.Width,
+			&i.Height,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

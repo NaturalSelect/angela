@@ -1329,6 +1329,76 @@ func TestGetGeneratedImage_NotFound(t *testing.T) {
 	require.ErrorIs(t, err, ErrImageNotFound)
 }
 
+// TestListSessionImages_UnknownWorkspace mirrors
+// TestGetGeneratedImage_UnknownWorkspace: an unknown workspace ID
+// reports ErrWorkspaceNotFound.
+func TestListSessionImages_UnknownWorkspace(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	_, err := b.ListSessionImages("00000000-0000-0000-0000-000000000000", "sess1")
+	require.ErrorIs(t, err, ErrWorkspaceNotFound)
+}
+
+// TestListSessionImages_NilApp verifies that a workspace whose app has
+// not finished starting reports no images rather than panicking on a
+// nil Images service, and without treating that as an error.
+func TestListSessionImages_NilApp(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	ws, _ := insertTestWorkspace(t, b, "/tmp/list-session-images-no-app")
+	require.Nil(t, ws.App)
+
+	got, err := b.ListSessionImages(ws.ID, "sess1")
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
+// TestListSessionImages_ReturnsSessionScopedImages verifies that once
+// the workspace's app is set up, ListSessionImages returns only the
+// requested session's images, newest first.
+func TestListSessionImages_ReturnsSessionScopedImages(t *testing.T) {
+	t.Parallel()
+
+	b, _ := newTestBackend(t)
+	ws, _ := insertTestWorkspace(t, b, "/tmp/list-session-images")
+	ws.ctx = t.Context()
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	q := db.New(conn)
+	ws.App = &app.App{Images: images.NewService(q)}
+
+	_, err = q.CreateSession(t.Context(), db.CreateSessionParams{ID: "sess1", Title: "S1"})
+	require.NoError(t, err)
+	_, err = q.CreateSession(t.Context(), db.CreateSessionParams{ID: "sess2", Title: "S2"})
+	require.NoError(t, err)
+
+	first, err := ws.Images.Create(t.Context(), images.CreateParams{
+		SessionID: "sess1", Prompt: "a cat", Provider: "openai", Model: "gpt-image-1",
+		MIMEType: "image/png", Data: []byte{1},
+	})
+	require.NoError(t, err)
+	second, err := ws.Images.Create(t.Context(), images.CreateParams{
+		SessionID: "sess1", Prompt: "a dog", Provider: "openai", Model: "gpt-image-1",
+		MIMEType: "image/png", Data: []byte{2},
+	})
+	require.NoError(t, err)
+	_, err = ws.Images.Create(t.Context(), images.CreateParams{
+		SessionID: "sess2", Prompt: "unrelated", Provider: "openai", Model: "gpt-image-1",
+		MIMEType: "image/png", Data: []byte{3},
+	})
+	require.NoError(t, err)
+
+	got, err := b.ListSessionImages(ws.ID, "sess1")
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, second.ID, got[0].ID)
+	require.Equal(t, first.ID, got[1].ID)
+}
+
 // TestAttachedClients_BasicLifecycle walks one session's count through
 // attach -> set -> second client joins -> switch -> detach. It also
 // confirms hold-only and unselected clients do not contribute.

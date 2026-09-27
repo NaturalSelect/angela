@@ -121,6 +121,32 @@ func (a *Arguments) ID() string {
 	return ArgumentsID
 }
 
+// SetValue pre-fills the input for the argument with the given ID, if
+// one exists, and places the cursor at the end of the value. Unlike a
+// placeholder, this text is part of the value and is submitted as-is
+// if the user does not edit it.
+func (a *Arguments) SetValue(argID, value string) {
+	for i, arg := range a.arguments {
+		if arg.ID != argID {
+			continue
+		}
+		a.inputs[i].SetValue(value)
+		a.inputs[i].CursorEnd()
+		return
+	}
+}
+
+// Value returns the current value of the input for the argument with
+// the given ID, or "" if no such argument exists.
+func (a *Arguments) Value(argID string) string {
+	for i, arg := range a.arguments {
+		if arg.ID == argID {
+			return a.inputs[i].Value()
+		}
+	}
+	return ""
+}
+
 // focusInput changes focus to a new input by index with wrap-around.
 func (a *Arguments) focusInput(newIndex int) {
 	a.inputs[a.focused].Blur()
@@ -222,7 +248,13 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 					action.Question = args["QUESTION"]
 					return action
 				case ActionExportImage:
-					action.ImageID = args["IMAGE_ID"]
+					// The picker-driven step 2 only has an OUTPUT
+					// field; ImageID was already set by the picker
+					// and must survive here rather than being wiped
+					// by a missing IMAGE_ID key.
+					if imageID, ok := args["IMAGE_ID"]; ok {
+						action.ImageID = imageID
+					}
 					action.Output = args["OUTPUT"]
 					return action
 				}

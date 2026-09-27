@@ -117,6 +117,12 @@ func (w *AppWorkspace) GetGeneratedImage(ctx context.Context, id string) (images
 	return w.app.Images.Get(ctx, id)
 }
 
+// ListSessionImages retrieves the metadata for every image generated
+// in a session, newest first, from the in-process Images service.
+func (w *AppWorkspace) ListSessionImages(ctx context.Context, sessionID string) ([]images.Image, error) {
+	return w.app.Images.ListBySession(ctx, sessionID)
+}
+
 // -- Messages --
 
 func (w *AppWorkspace) ListMessages(ctx context.Context, sessionID string) ([]message.Message, error) {

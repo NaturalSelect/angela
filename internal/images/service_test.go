@@ -139,3 +139,62 @@ func TestService_DeleteSession_CascadesGeneratedImages(t *testing.T) {
 	_, err = env.svc.Get(t.Context(), created.ID)
 	require.True(t, errors.Is(err, ErrNotFound), "expected ErrNotFound after cascading delete, got %v", err)
 }
+
+func TestService_ListBySession_NewestFirstAndScopedToSession(t *testing.T) {
+	env := setupTest(t)
+	env.createSession(t, "sess-1")
+	env.createSession(t, "sess-2")
+
+	first, err := env.svc.Create(t.Context(), CreateParams{
+		SessionID: "sess-1",
+		Prompt:    "a cat",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Data:      []byte{1},
+	})
+	require.NoError(t, err)
+
+	second, err := env.svc.Create(t.Context(), CreateParams{
+		SessionID: "sess-1",
+		Prompt:    "a dog",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Data:      []byte{2},
+	})
+	require.NoError(t, err)
+
+	_, err = env.svc.Create(t.Context(), CreateParams{
+		SessionID: "sess-2",
+		Prompt:    "unrelated session",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Data:      []byte{3},
+	})
+	require.NoError(t, err)
+
+	got, err := env.svc.ListBySession(t.Context(), "sess-1")
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+
+	// Newest first, regardless of insertion order.
+	require.Equal(t, second.ID, got[0].ID)
+	require.Equal(t, "a dog", got[0].Prompt)
+	require.Equal(t, first.ID, got[1].ID)
+	require.Equal(t, "a cat", got[1].Prompt)
+
+	// Metadata-only: no Data payload comes back.
+	require.Nil(t, got[0].Data)
+	require.Nil(t, got[1].Data)
+}
+
+func TestService_ListBySession_NoImages(t *testing.T) {
+	env := setupTest(t)
+	env.createSession(t, "sess-1")
+
+	got, err := env.svc.ListBySession(t.Context(), "sess-1")
+	require.NoError(t, err)
+	require.Empty(t, got)
+}

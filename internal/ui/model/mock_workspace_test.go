@@ -697,6 +697,21 @@ func (mr *MockWorkspaceMockRecorder) ListSessionHistory(ctx, sessionID any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSessionHistory", reflect.TypeOf((*MockWorkspace)(nil).ListSessionHistory), ctx, sessionID)
 }
 
+// ListSessionImages mocks base method.
+func (m *MockWorkspace) ListSessionImages(ctx context.Context, sessionID string) ([]images.Image, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListSessionImages", ctx, sessionID)
+	ret0, _ := ret[0].([]images.Image)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListSessionImages indicates an expected call of ListSessionImages.
+func (mr *MockWorkspaceMockRecorder) ListSessionImages(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSessionImages", reflect.TypeOf((*MockWorkspace)(nil).ListSessionImages), ctx, sessionID)
+}
+
 // ListSessions mocks base method.
 func (m *MockWorkspace) ListSessions(ctx context.Context) ([]session.Session, error) {
 	m.ctrl.T.Helper()

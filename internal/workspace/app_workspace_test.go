@@ -216,6 +216,39 @@ func TestAppWorkspace_GetGeneratedImage_NotFound(t *testing.T) {
 	require.ErrorIs(t, err, images.ErrNotFound)
 }
 
+// TestAppWorkspace_ListSessionImages_Success verifies that a
+// session's generated images round-trip through the AppWorkspace
+// passthrough, newest first.
+func TestAppWorkspace_ListSessionImages_Success(t *testing.T) {
+	t.Parallel()
+	a, sessionID := newTestImagesApp(t)
+
+	first, err := a.Images.Create(t.Context(), images.CreateParams{
+		SessionID: sessionID,
+		Prompt:    "a cat",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Data:      []byte("fake-png-bytes-1"),
+	})
+	require.NoError(t, err)
+	second, err := a.Images.Create(t.Context(), images.CreateParams{
+		SessionID: sessionID,
+		Prompt:    "a dog",
+		Provider:  "openai",
+		Model:     "gpt-image-1",
+		MIMEType:  "image/png",
+		Data:      []byte("fake-png-bytes-2"),
+	})
+	require.NoError(t, err)
+
+	got, err := NewAppWorkspace(a, nil).ListSessionImages(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, second.ID, got[0].ID)
+	require.Equal(t, first.ID, got[1].ID)
+}
+
 func TestAppWorkspace_ListSessions(t *testing.T) {
 	t.Parallel()
 

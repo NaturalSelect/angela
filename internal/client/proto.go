@@ -810,6 +810,24 @@ func (c *Client) GetGeneratedImage(ctx context.Context, workspaceID, id string) 
 	return img, nil
 }
 
+// ListSessionImages retrieves the metadata for every image generated
+// in a session, newest first, as proto types.
+func (c *Client) ListSessionImages(ctx context.Context, workspaceID, sessionID string) ([]proto.GeneratedImage, error) {
+	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/sessions/%s/images", workspaceID, sessionID), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list session images: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to list session images: status code %d", rsp.StatusCode)
+	}
+	var imgs []proto.GeneratedImage
+	if err := json.NewDecoder(rsp.Body).Decode(&imgs); err != nil {
+		return nil, fmt.Errorf("failed to decode session images: %w", err)
+	}
+	return imgs, nil
+}
+
 // ListSessionHistoryFiles retrieves history files for a session as proto types.
 func (c *Client) ListSessionHistoryFiles(ctx context.Context, id string, sessionID string) ([]proto.File, error) {
 	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/sessions/%s/history", id, sessionID), nil, nil)

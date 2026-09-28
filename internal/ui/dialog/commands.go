@@ -472,6 +472,15 @@ func (c *Commands) setCommandItems(commandType CommandType) {
 	c.input.SetValue("")
 }
 
+// viewingSubAgent reports whether the menu was opened on an ordinary
+// sub-agent transcript rather than a branch: a session with a parent
+// that is not itself a branch. That transcript is read-only — the run
+// takes its instructions from the parent's model, not the user — so
+// undo must not be offered there. Mirrors UI.viewingSubAgent.
+func (c *Commands) viewingSubAgent() bool {
+	return c.hasParent && !c.inBranch
+}
+
 // defaultCommands returns the list of default system commands.
 func (c *Commands) defaultCommands() []*CommandItem {
 	commands := []*CommandItem{
@@ -521,7 +530,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "commit", "Commit Staged Changes", "", ActionCommit{SessionID: c.sessionID}))
 	}
 
-	if c.hasSession {
+	if c.hasSession && !c.viewingSubAgent() {
 		commands = append(commands, NewCommandItem(c.com.Styles, "undo", "Undo Last Turn", "", ActionUndo{SessionID: c.sessionID}).WithAliases("revert"))
 	}
 

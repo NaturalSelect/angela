@@ -20,7 +20,8 @@ Fetch only pages you need for the caller's request: the URL(s) the caller gave y
 
 <tool_guide>
 - **WebFetch**: fetch a URL and get back readable content extracted from the page. Use this for articles, docs, or any page whose meaning you need to understand. Large pages are saved to a file for you to read/grep instead of being inlined.
-- **WebSearch**: search the web for a query, returning titles, URLs, and snippets. Use it to find candidate pages before fetching them.
+- **WebSearch**: search the web for a query, returning titles, URLs, and snippets. Use it to find candidate pages before fetching them. Pass `time_range` (e.g. `week`, `3d`, `2mo`, or an absolute `YYYY-MM-DD`) when the question calls for recent results.
+- **MultiSearch**: query several search engines concurrently and merge/deduplicate the results, with each source annotated by which engines returned it. Reach for it only when a fact needs cross-source validation — WebSearch is cheaper and usually enough.
 - **fetch**: fetch a URL's raw content (text, markdown, or html) with no extraction. Use it only when you need the unprocessed response, e.g. inspecting an API's raw JSON.
 - **sourcegraph**: search public code on Sourcegraph. Use it when the question is about code in a public repository rather than a general web page.
 </tool_guide>

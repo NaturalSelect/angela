@@ -172,6 +172,22 @@ func TestPermissionRequestParamsTypeAssertable(t *testing.T) {
 			},
 		},
 		{
+			name:     "multi_search",
+			toolName: toolnames.MultiSearch,
+			params: tools.MultiSearchPermissionsParams{
+				Query:      "multi search permissions",
+				MaxResults: 5,
+				Engines:    []string{"bing", "exa"},
+			},
+			assert: func(t *testing.T, got any) {
+				v, ok := got.(tools.MultiSearchPermissionsParams)
+				require.True(t, ok, "params must decode as tools.MultiSearchPermissionsParams, got %T", got)
+				require.Equal(t, "multi search permissions", v.Query)
+				require.Equal(t, 5, v.MaxResults)
+				require.Equal(t, []string{"bing", "exa"}, v.Engines)
+			},
+		},
+		{
 			name:     "lsp_rename",
 			toolName: toolnames.LSPRename,
 			params: tools.RenamePermissionsParams{
@@ -445,6 +461,7 @@ func TestUnmarshalToolParamsFieldTypeMismatch(t *testing.T) {
 		{"fetch", toolnames.Fetch, "url"},
 		{"web_fetch", toolnames.WebFetch, "url"},
 		{"web_search", toolnames.WebSearch, "query"},
+		{"multi_search", toolnames.MultiSearch, "query"},
 		{"read", toolnames.Read, "file_path"},
 		{"ls", toolnames.LS, "path"},
 		{"lsp_replace_symbol", toolnames.LSPReplaceSymbol, "file_path"},

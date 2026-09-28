@@ -135,6 +135,12 @@ func unmarshalToolParams(toolName string, raw json.RawMessage) (any, error) {
 			return nil, err
 		}
 		return params, nil
+	case toolnames.MultiSearch:
+		var params MultiSearchPermissionsParams
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, err
+		}
+		return params, nil
 	case toolnames.Read:
 		var params ReadPermissionsParams
 		if err := json.Unmarshal(raw, &params); err != nil {

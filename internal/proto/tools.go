@@ -94,6 +94,10 @@ type WebFetchPermissionsParams = tools.WebFetchPermissionsParams
 // web_search tool.
 type WebSearchPermissionsParams = tools.WebSearchPermissionsParams
 
+// MultiSearchPermissionsParams represents the permission parameters for the
+// multi_search tool.
+type MultiSearchPermissionsParams = tools.MultiSearchPermissionsParams
+
 // GlobParams represents the parameters for the glob tool.
 type GlobParams struct {
 	Pattern string `json:"pattern"`

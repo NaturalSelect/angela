@@ -272,6 +272,14 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionNetwork
 		access.URL = p.Query
 
+	case toolnames.MultiSearch:
+		p, ok := decodeInput[MultiSearchParams](rawInput)
+		if !ok {
+			return access, false
+		}
+		access.Action = permission.ActionNetwork
+		access.URL = p.Query
+
 	case toolnames.Sourcegraph:
 		p, ok := decodeInput[SourcegraphParams](rawInput)
 		if !ok {
@@ -413,6 +421,14 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 			return permission.Preview{
 				Description: "Search the web for: " + p.Query,
 				Params:      WebSearchPermissionsParams(p),
+			}
+		}
+
+	case toolnames.MultiSearch:
+		if p, ok := decodeInput[MultiSearchParams](rawInput); ok {
+			return permission.Preview{
+				Description: "Search multiple web search engines for: " + p.Query,
+				Params:      MultiSearchPermissionsParams(p),
 			}
 		}
 

@@ -813,7 +813,7 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
 	assert.Equal(t, ToolSetScope, coderAgent.AllowedTools.Kind)
-	assert.Equal(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch", "Git"}, false), coderAgent.AllowedTools.Tools)
+	assert.Equal(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch", "MultiSearch", "Git"}, false), coderAgent.AllowedTools.Tools)
 
 	exploreAgent, ok := cfg.Agents[AgentExplore]
 	require.True(t, ok)
@@ -2072,7 +2072,7 @@ func TestSelectedModelVariantsSurviveResolution(t *testing.T) {
 					{
 						Model: catwalk.Model{ID: "large-model"},
 						Variants: map[string]SelectedModelOverride{
-							"deep": {MaxTokens: ptr(int64(32000))},
+							"deep": {MaxTokens: new(int64(32000))},
 						},
 					},
 				},

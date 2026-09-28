@@ -241,6 +241,7 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 		toolnames.Read,
 		toolnames.WebFetch,
 		toolnames.WebSearch,
+		toolnames.MultiSearch,
 		toolnames.Write,
 	}
 
@@ -308,6 +309,7 @@ func TestPreviewOfFeedsTheDialog(t *testing.T) {
 		{toolnames.Fetch, `{"url":"https://x"}`, FetchPermissionsParams{}},
 		{toolnames.WebFetch, `{"url":"https://x"}`, WebFetchPermissionsParams{}},
 		{toolnames.WebSearch, `{"query":"go"}`, WebSearchPermissionsParams{}},
+		{toolnames.MultiSearch, `{"query":"go"}`, MultiSearchPermissionsParams{}},
 		{toolnames.ListMCPResources, `{"mcp_name":"srv"}`, ListMCPResourcesPermissionsParams{}},
 		{toolnames.ReadMCPResource, `{"mcp_name":"srv","uri":"u"}`, ReadMCPResourcePermissionsParams{}},
 	}

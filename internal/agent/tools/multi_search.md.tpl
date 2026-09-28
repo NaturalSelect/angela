@@ -1,0 +1,1 @@
+Search multiple web search engines concurrently and merge/deduplicate the ranked results, with each source annotated by which engines returned it. Use this on demand for cross-source validation (e.g. confirming a fact across independent sources) rather than for routine lookups — WebSearch is cheaper and usually enough. Consumes more engine quota than a single WebSearch call.

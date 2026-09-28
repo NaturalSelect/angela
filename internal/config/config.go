@@ -109,7 +109,8 @@ const (
 	AgentImage         string = "image"
 )
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }
 
 // AgentMode determines how an agent can be used.
 type AgentMode string
@@ -916,10 +917,11 @@ func (a Agent) YoloMergeAllowed() bool {
 }
 
 type Tools struct {
-	Ls    ToolLs    `json:"ls,omitzero"`
-	Grep  ToolGrep  `json:"grep,omitzero"`
-	Glob  ToolGlob  `json:"glob,omitzero"`
-	Image ToolImage `json:"image,omitzero"`
+	Ls        ToolLs        `json:"ls,omitzero"`
+	Grep      ToolGrep      `json:"grep,omitzero"`
+	Glob      ToolGlob      `json:"glob,omitzero"`
+	Image     ToolImage     `json:"image,omitzero"`
+	WebSearch ToolWebSearch `json:"web_search,omitzero"`
 }
 
 type ToolLs struct {
@@ -957,6 +959,37 @@ type ToolImage struct {
 // GetTimeout returns the user-defined timeout or the default.
 func (t ToolImage) GetTimeout() time.Duration {
 	return ptrValOr(t.Timeout, 10*time.Minute)
+}
+
+// ToolWebSearch configures the WebSearch/MultiSearch tools' engine
+// router: which engine to try first, the fallback chain's total time
+// budget, and credentials for engines that use one.
+type ToolWebSearch struct {
+	// Engine is the id tried first; the rest of the built-in engines
+	// (in a fixed order) serve as fallback.
+	Engine *string `json:"engine,omitempty" jsonschema:"description=Preferred web search engine id tried first before falling back through the rest,default=bing,example=tavily"`
+	// Timeout bounds the fallback chain's total wall-clock time across
+	// every engine attempted for one search.
+	Timeout *time.Duration `json:"timeout,omitempty" jsonschema:"description=Total time budget for the web search fallback chain across all engines tried,default=30s,example=45s"`
+	// APIKeys maps an engine id to its credential. Values support $VAR
+	// shell-style expansion; engines with a keyless mode work without
+	// an entry here.
+	APIKeys map[string]string `json:"api_keys,omitempty" jsonschema:"description=Per-engine API keys keyed by engine id\\, supporting $VAR expansion"`
+	// BingMarket is the market/locale Bing search results are scoped to.
+	BingMarket string `json:"bing_market,omitempty" jsonschema:"description=Market/locale for Bing search results,default=en-US,example=en-GB"`
+	// SearxngInstances overrides the built-in list of public SearXNG
+	// instances tried in order.
+	SearxngInstances []string `json:"searxng_instances,omitempty" jsonschema:"description=Self-hosted or public SearXNG instance URLs tried in order"`
+}
+
+// GetEngine returns the user-defined preferred engine id or the default.
+func (t ToolWebSearch) GetEngine() string {
+	return ptrValOr(t.Engine, "bing")
+}
+
+// GetTimeout returns the user-defined fallback chain timeout or the default.
+func (t ToolWebSearch) GetTimeout() time.Duration {
+	return ptrValOr(t.Timeout, 30*time.Second)
 }
 
 // HookConfig defines a user-configured shell command that fires on a hook
@@ -1188,6 +1221,7 @@ func allToolNames() []string {
 		toolnames.Fetch,
 		toolnames.WebFetch,
 		toolnames.WebSearch,
+		toolnames.MultiSearch,
 		toolnames.Glob,
 		toolnames.Grep,
 		toolnames.LS,
@@ -1263,7 +1297,7 @@ func deepResearchToolNames() []string {
 // code-search tools to follow a link or grep a page it saved to disk.
 func webFetchToolNames() []string {
 	return []string{
-		toolnames.Fetch, toolnames.WebFetch, toolnames.WebSearch,
+		toolnames.Fetch, toolnames.WebFetch, toolnames.WebSearch, toolnames.MultiSearch,
 		toolnames.Glob, toolnames.Grep, toolnames.Read, toolnames.Sourcegraph,
 	}
 }
@@ -1347,7 +1381,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// withinScope lets a workspace-local read-only git command
 			// through unprompted, so a second read-only path here would
 			// only duplicate it.
-			DisabledTools: []string{toolnames.WebFetch, toolnames.WebSearch, toolnames.Git},
+			DisabledTools: []string{toolnames.WebFetch, toolnames.WebSearch, toolnames.MultiSearch, toolnames.Git},
 		},
 		AgentExplore: {
 			ID:           AgentExplore,
@@ -1424,9 +1458,9 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:         "Title",
 			Description:  "Names a session from its first user prompt.",
 			Mode:         AgentModeSubagent,
-			Hidden:       ptr(true),
+			Hidden:       new(true),
 			Slot:         SlotChore,
-			MaxTokens:    ptr(int64(40)),
+			MaxTokens:    new(int64(40)),
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
@@ -1436,7 +1470,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:        "Compact",
 			Description: "Summarizes a conversation so work can continue in a fresh context.",
 			Mode:        AgentModeCompact,
-			Hidden:      ptr(true),
+			Hidden:      new(true),
 			// Compaction borrows the workhorse model on purpose:
 			// summarizing on the cheap model silently degrades the only
 			// context a resumed session gets.
@@ -1450,7 +1484,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:         "Generate Agent",
 			Description:  "Writes a new agent definition from a description.",
 			Mode:         AgentModeSubagent,
-			Hidden:       ptr(true),
+			Hidden:       new(true),
 			Slot:         SlotMain,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
@@ -1461,7 +1495,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:        "Initialize",
 			Description: "Writes the project's initial context file.",
 			Mode:        AgentModeSubagent,
-			Hidden:      ptr(true),
+			Hidden:      new(true),
 			// Model is deliberately unset: initialize never makes an LLM
 			// call of its own. Its rendered prompt is injected into an
 			// ordinary session and runs on whatever agent is primary.
@@ -1474,9 +1508,9 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:         "Commit",
 			Description:  "Writes a commit message for the currently staged changes.",
 			Mode:         AgentModeSubagent,
-			Hidden:       ptr(true),
+			Hidden:       new(true),
 			Slot:         SlotChore,
-			MaxTokens:    ptr(int64(150)),
+			MaxTokens:    new(int64(150)),
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
@@ -1486,7 +1520,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Name:         "Image",
 			Description:  "Selects the model used by the built-in image tools.",
 			Mode:         AgentModeSubagent,
-			Hidden:       ptr(true),
+			Hidden:       new(true),
 			Slot:         SlotImage,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
@@ -1635,7 +1669,7 @@ func (c *Config) ResolveAgents() map[string]Agent {
 			// out of dispatch lists and strip tools and delegation
 			// regardless of what any layer configured, the same way
 			// the built-in compact agent has always been shaped.
-			a.Hidden = ptr(true)
+			a.Hidden = new(true)
 			a.AllowedTools = &AllowedToolSet{Kind: ToolSetScope}
 			a.AllowedMCP = &AllowedMCPSet{Kind: ToolSetScope}
 			a.AllowedAgents = &AllowedAgentSet{Kind: ToolSetScope}

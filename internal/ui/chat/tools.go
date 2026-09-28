@@ -254,6 +254,8 @@ func NewToolMessageItem(
 		item = NewWebFetchToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.WebSearch:
 		item = NewWebSearchToolMessageItem(sty, toolCall, result, canceled)
+	case toolnames.MultiSearch:
+		item = NewMultiSearchToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.Todos:
 		item = NewTodosToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.Question:
@@ -595,7 +597,7 @@ func toolKindIcon(name string) string {
 		return styles.ToolIconSearch
 	case toolnames.Fetch, toolnames.WebFetch:
 		return styles.ToolIconFetch
-	case toolnames.WebSearch:
+	case toolnames.WebSearch, toolnames.MultiSearch:
 		return styles.ToolIconWeb
 	case toolnames.Agent:
 		return styles.ToolIconAgent
@@ -1693,6 +1695,8 @@ func prettifyToolName(name string) string {
 		return "Fetch"
 	case toolnames.WebSearch:
 		return "Search"
+	case toolnames.MultiSearch:
+		return "Multi-Search"
 	case toolnames.Glob:
 		return toolnames.Glob
 	case toolnames.Grep:

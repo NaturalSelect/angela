@@ -254,6 +254,7 @@ func TestWebFetchSubagentIsRegistered(t *testing.T) {
 	names := dispatchTools(t, coord, entry)
 	require.Contains(t, names, toolnames.WebFetch)
 	require.Contains(t, names, toolnames.WebSearch)
+	require.Contains(t, names, toolnames.MultiSearch)
 	require.Contains(t, names, toolnames.Read)
 	require.NotContains(t, names, toolnames.Bash)
 	require.NotContains(t, names, toolnames.Agent)

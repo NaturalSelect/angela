@@ -208,3 +208,61 @@ func (w *WebSearchToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 	body := toolOutputMarkdownContent(sty, opts.Result.Content, cappedWidth, opts.ExpandedContent)
 	return joinToolParts(header, body)
 }
+
+// -----------------------------------------------------------------------------
+// MultiSearch Tool
+// -----------------------------------------------------------------------------
+
+// MultiSearchToolMessageItem is a message item that represents a multi_search tool call.
+type MultiSearchToolMessageItem struct {
+	*baseToolMessageItem
+}
+
+var _ ToolMessageItem = (*MultiSearchToolMessageItem)(nil)
+
+// NewMultiSearchToolMessageItem creates a new [MultiSearchToolMessageItem].
+func NewMultiSearchToolMessageItem(
+	sty *styles.Styles,
+	toolCall message.ToolCall,
+	result *message.ToolResult,
+	canceled bool,
+) ToolMessageItem {
+	return newBaseToolMessageItem(sty, toolCall, result, &MultiSearchToolRenderContext{}, canceled)
+}
+
+// MultiSearchToolRenderContext renders multi_search tool messages.
+type MultiSearchToolRenderContext struct{}
+
+// RenderTool implements the [ToolRenderer] interface.
+func (w *MultiSearchToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *ToolRenderOpts) string {
+	cappedWidth := cappedMessageWidth(width)
+	if opts.IsPending() {
+		return pendingTool(sty, "Multi-Search", opts.Anim, opts.Compact)
+	}
+
+	var params tools.MultiSearchParams
+	if err := json.Unmarshal([]byte(opts.ToolCall.Input), &params); err != nil {
+		return toolErrorContent(sty, &message.ToolResult{Content: "Invalid parameters"}, cappedWidth)
+	}
+
+	toolParams := []string{params.Query}
+	header := toolHeader(sty, opts.Status, "Multi-Search", cappedWidth, opts, toolParams...)
+	if opts.Compact {
+		return header
+	}
+
+	if earlyState, ok := toolEarlyStateContent(sty, opts, cappedWidth); ok {
+		return joinToolParts(header, earlyState)
+	}
+
+	if opts.HasEmptyResult() {
+		return header
+	}
+
+	if !opts.ExpandedContent {
+		return header
+	}
+
+	body := toolOutputMarkdownContent(sty, opts.Result.Content, cappedWidth, opts.ExpandedContent)
+	return joinToolParts(header, body)
+}

@@ -67,6 +67,9 @@ internal/
   oauth/                           OAuth2 token models & credential persistence (Copilot, MCP)
   discover/                        Local LLM service auto-discovery (Ollama, LM Studio, etc.)
   toolnames/                       Built-in tool name constants (breaks import cycles)
+  websearch/                       Web search engine abstraction: Router fallback chain,
+                                    multi-engine merge, time range parsing (see engines/
+                                    for the bing/ddg/exa/tavily/... implementations)
   diff/                            Unified diff text generation & line stats
   diffdetect/                      Detect unified diff format markers in text
   clipboard/                       Cross-platform clipboard read/write (text + PNG)

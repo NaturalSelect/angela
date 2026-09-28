@@ -1,2 +1,2 @@
-Search the web via DuckDuckGo; returns titles, URLs, and snippets. Follow up with WebFetch to get full page content.
+Search the web across multiple engines with automatic fallback; returns which engine answered, titles, URLs, and snippets. Optionally set `time_range` (e.g. `day`, `week`, `3d`, `2mo`, or an absolute `YYYY-MM-DD`) to filter by recency — engines that don't support it are skipped for that call. Follow up with WebFetch to get full page content.
 {{- if .GhAvailable }} For GitHub searches when an exact repo name, issue, or link is provided, use `gh search` in bash instead.{{- end }}

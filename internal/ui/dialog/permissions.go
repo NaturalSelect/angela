@@ -838,6 +838,8 @@ func (p *Permissions) renderContent(width int) string {
 		return p.renderWebFetchContent(width)
 	case toolnames.WebSearch:
 		return p.renderWebSearchContent(width)
+	case toolnames.MultiSearch:
+		return p.renderMultiSearchContent(width)
 	case toolnames.Read:
 		return p.renderReadContent(width)
 	case toolnames.LS:
@@ -985,6 +987,15 @@ func (p *Permissions) renderWebFetchContent(width int) string {
 
 func (p *Permissions) renderWebSearchContent(width int) string {
 	params, ok := p.permission.Params.(tools.WebSearchPermissionsParams)
+	if !ok {
+		return ""
+	}
+
+	return p.renderContentPanel(params.Query, width)
+}
+
+func (p *Permissions) renderMultiSearchContent(width int) string {
+	params, ok := p.permission.Params.(tools.MultiSearchPermissionsParams)
 	if !ok {
 		return ""
 	}

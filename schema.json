@@ -1184,6 +1184,46 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ToolWebSearch": {
+      "properties": {
+        "engine": {
+          "type": "string",
+          "description": "Preferred web search engine id tried first before falling back through the rest",
+          "default": "bing",
+          "examples": [
+            "tavily"
+          ]
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Total time budget for the web search fallback chain across all engines tried"
+        },
+        "api_keys": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Per-engine API keys keyed by engine id, supporting $VAR expansion"
+        },
+        "bing_market": {
+          "type": "string",
+          "description": "Market/locale for Bing search results",
+          "default": "en-US",
+          "examples": [
+            "en-GB"
+          ]
+        },
+        "searxng_instances": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Self-hosted or public SearXNG instance URLs tried in order"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Tools": {
       "properties": {
         "ls": {
@@ -1197,6 +1237,9 @@
         },
         "image": {
           "$ref": "#/$defs/ToolImage"
+        },
+        "web_search": {
+          "$ref": "#/$defs/ToolWebSearch"
         }
       },
       "additionalProperties": false,

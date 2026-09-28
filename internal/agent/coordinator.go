@@ -985,6 +985,11 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 			hooks.AgentIdentity{ID: agent.ID, Depth: depth})
 	}
 
+	webSearchRouter, err := c.newWebSearchRouter()
+	if err != nil {
+		return nil, fmt.Errorf("build web search router: %w", err)
+	}
+
 	allTools = append(
 		allTools,
 		tools.NewBashTool(c.cfg.WorkingDir(), c.cfg.Config().Options.Attribution, modelName),
@@ -998,7 +1003,8 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 		tools.NewMultiEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
 		tools.NewFetchTool(c.cfg.WorkingDir(), nil),
 		tools.NewWebFetchTool(filepath.Join(c.cfg.Config().Options.DataDirectory, "webfetch"), nil),
-		tools.NewWebSearchTool(c.cfg.WorkingDir(), nil),
+		tools.NewWebSearchTool(webSearchRouter),
+		tools.NewMultiSearchTool(webSearchRouter),
 		tools.NewGlobTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Glob),
 		tools.NewGrepTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Grep),
 		tools.NewLoadReportTool(c.sessions, c.messages),

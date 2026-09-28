@@ -35,6 +35,7 @@ const (
 	Fetch         = "Fetch"
 	WebFetch      = "WebFetch"
 	WebSearch     = "WebSearch"
+	MultiSearch   = "MultiSearch"
 	Sourcegraph   = "Sourcegraph"
 	ImageGenerate = "ImageGenerate"
 	ImageEdit     = "ImageEdit"

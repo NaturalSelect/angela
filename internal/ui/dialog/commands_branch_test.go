@@ -116,6 +116,56 @@ func TestGoToParentCommandGatedOnHasParent(t *testing.T) {
 	})
 }
 
+// newCommandsForUndo builds the menu the way the dialog does, with only
+// the fields defaultCommands's undo gate reads.
+func newCommandsForUndo(t *testing.T, hasParent, inBranch bool) *Commands {
+	t.Helper()
+
+	sty := styles.AngelaTeal()
+	return &Commands{
+		com: &common.Common{
+			Styles:    &sty,
+			Workspace: &configWorkspace{cfg: &config.Config{}},
+		},
+		sessionID:  "session-1",
+		hasSession: true,
+		hasParent:  hasParent,
+		inBranch:   inBranch,
+	}
+}
+
+// TestUndoCommandHiddenForSubAgentTranscript pins that /undo is withheld
+// while looking at a sub-agent's own transcript (a session with a parent
+// that is not a branch): that view is read-only — the run takes its
+// instructions from the parent's model, not the user — so offering undo
+// there would let the user mutate a session nobody driving the view
+// actually owns. A branch is the exception, since the user drives it
+// directly, so undo stays available there.
+func TestUndoCommandHiddenForSubAgentTranscript(t *testing.T) {
+	t.Parallel()
+
+	t.Run("viewing a sub-agent transcript", func(t *testing.T) {
+		t.Parallel()
+
+		ids := commandIDs(newCommandsForUndo(t, true, false).defaultCommands())
+		require.NotContains(t, ids, "undo")
+	})
+
+	t.Run("viewing a branch", func(t *testing.T) {
+		t.Parallel()
+
+		ids := commandIDs(newCommandsForUndo(t, true, true).defaultCommands())
+		require.Contains(t, ids, "undo")
+	})
+
+	t.Run("viewing a top-level session", func(t *testing.T) {
+		t.Parallel()
+
+		ids := commandIDs(newCommandsForUndo(t, false, false).defaultCommands())
+		require.Contains(t, ids, "undo")
+	})
+}
+
 // TestGoToParentCommandDispatchesAction pins the action payload: none, since
 // the handler navigates from whatever session is current rather than from a
 // session ID captured at menu-build time — unlike abort_branch, /parent

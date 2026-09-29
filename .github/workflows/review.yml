@@ -154,6 +154,7 @@ jobs:
             '
             def mkmodel($id): {
               id: $id,
+              default_max_tokens: 64000,
               can_reason: true,
               reasoning_levels: ["low", "medium", "high","xhigh", "max"],
               default_reasoning_effort: "xhigh"

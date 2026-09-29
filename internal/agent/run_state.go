@@ -234,8 +234,8 @@ func (s *runState) enqueueResumeBeforeSummarize(call SessionAgentCall) {
 // takeUserQueue (e.g. the UI popping a user prompt back to the editor
 // while summarize was still running) and reinserted after other
 // entries. If no internal entry remains — it was already removed by a
-// Cancel/ClearQueue that ran concurrently — this is a no-op rather than
-// dropping a real user prompt.
+// concurrent Cancel — this is a no-op rather than dropping a real user
+// prompt. ClearQueue and TakeQueuedPrompts never remove it.
 func (s *runState) popResumeOnSummarizeFailure(sessionID string) {
 	mu := s.sessionMu(sessionID)
 	mu.Lock()

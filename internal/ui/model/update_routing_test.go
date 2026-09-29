@@ -1455,6 +1455,46 @@ func TestUpdate_KittyGraphicsEvent_ThenTerminalVersionMsg(t *testing.T) {
 	require.True(t, m.imageSupportReported)
 }
 
+// TestMaybeReportImageSupport_OverrideTrueWithoutTerminalReply pins the
+// forced-on path: when the Kitty graphics query is never sent or
+// answered (e.g. SSH with an unrecognized TERM), an explicit
+// kitty_placeholders=true override must still report image support,
+// and only once.
+func TestMaybeReportImageSupport_OverrideTrueWithoutTerminalReply(t *testing.T) {
+	// Not t.Parallel(): pinTTLs mutates package-level TTL globals.
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, false)
+	forced := true
+	m.caps.KittyPlaceholdersOverride = &forced
+	ws.EXPECT().SetClientImageSupport(gomock.Any(), true).Return(nil)
+
+	require.False(t, m.caps.KittyGraphics)
+	runCmds(m, m.maybeReportImageSupport())
+	require.True(t, m.imageSupportReported)
+
+	require.Nil(t, m.maybeReportImageSupport())
+}
+
+// TestMaybeReportImageSupport_OverrideFalseNeverReports pins that an
+// explicit kitty_placeholders=false override wins over a terminal that
+// would otherwise be auto-detected as placeholder-capable.
+func TestMaybeReportImageSupport_OverrideFalseNeverReports(t *testing.T) {
+	// Not t.Parallel(): pinTTLs mutates package-level TTL globals.
+	pinTTLs(t)
+
+	m, _ := newMockBusyUI(t)
+	warmCaches(m, false)
+	forced := false
+	m.caps.KittyPlaceholdersOverride = &forced
+	m.caps.KittyGraphics = true
+	m.caps.TerminalVersion = "kitty(0.35.2)"
+
+	require.Nil(t, m.maybeReportImageSupport())
+	require.False(t, m.imageSupportReported)
+}
+
 func TestUpdate_MCPAuthStarted_DispatchesAuthentication(t *testing.T) {
 	t.Parallel()
 

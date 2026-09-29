@@ -43,7 +43,10 @@ type Capabilities struct {
 	// KittyPlaceholdersOverride overrides auto-detection of Kitty graphics
 	// Unicode placeholder (virtual placement) support; nil defers to
 	// [kittyPlaceholderTerminal]. Set from --kitty-placeholders or
-	// options.tui.kitty_placeholders.
+	// options.tui.kitty_placeholders. A non-nil value applies even when
+	// the terminal never answered the Kitty graphics query, which is what
+	// lets it force support on where the query is not sent at all (e.g.
+	// over SSH with an unrecognized TERM).
 	KittyPlaceholdersOverride *bool
 }
 
@@ -181,13 +184,14 @@ func kittyPlaceholderTerminal(version string, env uv.Environ) bool {
 // only proves the terminal understands the basic protocol; many
 // terminals (notably VS Code's integrated terminal and WezTerm) answer
 // that query but do not render placeholders, so this is checked
-// separately. KittyPlaceholdersOverride, when set, always wins.
+// separately. KittyPlaceholdersOverride, when set, always wins, even if
+// the Kitty graphics query was never sent or answered.
 func (c Capabilities) SupportsKittyPlaceholders() bool {
-	if !c.KittyGraphics {
-		return false
-	}
 	if c.KittyPlaceholdersOverride != nil {
 		return *c.KittyPlaceholdersOverride
+	}
+	if !c.KittyGraphics {
+		return false
 	}
 	return kittyPlaceholderTerminal(c.TerminalVersion, c.Env)
 }

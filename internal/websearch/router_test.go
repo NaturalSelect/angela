@@ -119,6 +119,47 @@ func TestRouter_TimeRangeReordersChain(t *testing.T) {
 	require.Equal(t, []string{"tavily"}, attempted) // bing never attempted
 }
 
+// TestRouter_TimeRangeFallsBackToUnfilteredEngineWithNote pins the
+// last-resort path: when every time-aware engine fails, a time-scoped
+// request may still be answered by a non-preferred engine that ignores
+// the filter, and the Note must say so.
+func TestRouter_TimeRangeFallsBackToUnfilteredEngineWithNote(t *testing.T) {
+	t.Parallel()
+	r, err := NewRouter([]Engine{
+		&fakeEngine{id: "tavily", supportsTR: true, searchFn: func(ctx context.Context, req Request) ([]Source, error) {
+			return nil, errors.New("rate limited")
+		}},
+		&fakeEngine{id: "bing", supportsTR: false, searchFn: func(ctx context.Context, req Request) ([]Source, error) {
+			return []Source{{URL: "https://bing.example"}}, nil
+		}},
+	}, "tavily", 0)
+	require.NoError(t, err)
+
+	res, err := r.Search(context.Background(), Request{Query: "go", TimeRange: &TimeRange{Days: 7}})
+	require.NoError(t, err)
+	require.Equal(t, "bing", res.Engine)
+	require.Contains(t, res.Note, "bing does not support time filtering")
+	require.Contains(t, res.Note, "NOT applied")
+}
+
+// TestRouter_TimeRangeNoNoteWhenPreferredHonorsFilter pins that a
+// time-scoped request answered by the preferred, filter-capable engine
+// produces no note.
+func TestRouter_TimeRangeNoNoteWhenPreferredHonorsFilter(t *testing.T) {
+	t.Parallel()
+	r, err := NewRouter([]Engine{
+		&fakeEngine{id: "tavily", supportsTR: true, searchFn: func(ctx context.Context, req Request) ([]Source, error) {
+			return []Source{{URL: "https://tavily.example"}}, nil
+		}},
+	}, "tavily", 0)
+	require.NoError(t, err)
+
+	res, err := r.Search(context.Background(), Request{Query: "go", TimeRange: &TimeRange{Days: 7}})
+	require.NoError(t, err)
+	require.Equal(t, "tavily", res.Engine)
+	require.Empty(t, res.Note)
+}
+
 func TestRouter_BudgetExhausted(t *testing.T) {
 	t.Parallel()
 	slow := &fakeEngine{id: "bing", searchFn: func(ctx context.Context, req Request) ([]Source, error) {

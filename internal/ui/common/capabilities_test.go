@@ -213,10 +213,26 @@ func TestCapabilities_SupportsKittyPlaceholders(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "KittyGraphics false returns false even with override",
+			name: "override true applies even when the Kitty graphics query was never answered",
 			caps: Capabilities{
 				KittyGraphics:             false,
 				KittyPlaceholdersOverride: ptrBool(true),
+			},
+			want: true,
+		},
+		{
+			name: "override false stays false when the Kitty graphics query was never answered",
+			caps: Capabilities{
+				KittyGraphics:             false,
+				KittyPlaceholdersOverride: ptrBool(false),
+			},
+			want: false,
+		},
+		{
+			name: "no override and no Kitty graphics reply returns false",
+			caps: Capabilities{
+				KittyGraphics:   false,
+				TerminalVersion: "kitty(0.35.2)",
 			},
 			want: false,
 		},

@@ -28,7 +28,8 @@ type Request struct {
 	MaxResults int
 	// TimeRange narrows results to a recent window or a date; nil means
 	// no filter. Only engines whose SupportsTimeRange returns true
-	// apply it.
+	// apply it; Router tries those first and falls back to the others
+	// last, noting in Result.Note that the filter was not applied.
 	TimeRange *TimeRange
 }
 

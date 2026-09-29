@@ -599,6 +599,16 @@ func (m *UI) Init() tea.Cmd {
 		cmds = append(cmds, cmd)
 	}
 	cmds = append(cmds, m.checkPendingMCPAuth())
+	// A forced-on --kitty-placeholders / options.tui.kitty_placeholders
+	// never gets a terminal reply to trigger these, since the Kitty
+	// graphics query may not be sent at all (e.g. over SSH with an
+	// unrecognized TERM). Without an override both are no-ops here.
+	if cmd := m.maybeReportImageSupport(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if cmd := m.applyImageCaps(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	return tea.Batch(cmds...)
 }
 

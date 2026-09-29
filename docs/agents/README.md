@@ -12,6 +12,7 @@ tasks to specialized sub-agents via the `agent` tool.
 | `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git (read-only), LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
 | `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. Read-only. |
+| `sketch`  | branch    | Designs a change with you as pseudo-code, one piece at a time, so you see and accept everything that gets built. Read-only. Only forked when you ask. |
 | `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: Fetch, WebFetch, WebSearch, Glob, Grep, Read, Sourcegraph. |
 
 Every sub-agent additionally loses the interactive `question` tool at run
@@ -93,8 +94,8 @@ Use it for work the model cannot finish alone: a design decision only you
 can make, an exploration whose direction you have to steer, a discussion
 that has to happen before the task is even well-defined.
 
-Angela ships two branch agents, `plan` and `deep-research`, and you can
-configure your own with your own system prompt.
+Angela ships three branch agents, `plan`, `deep-research` and `sketch`, and
+you can configure your own with your own system prompt.
 
 ### `plan`
 
@@ -147,6 +148,31 @@ reached by reading alone, and it needs to reproduce the failure, read the
 history, or run the one test that separates two hypotheses. Every command asks
 your permission first, and it still holds no `edit` or `write`: the finding is
 its only product, and acting on it is the coder's job.
+
+### `sketch`
+
+`sketch` is for the times you want to understand a design, not only approve
+it. You and the agent work out a change's data structures, how they interact,
+and where they land in the repository, all as pseudo-code. It first probes what
+you already know about the code, then fills the gaps. From then on you state
+decisions in plain words and it writes each one back as pseudo-code for you to
+confirm. It may suggest additions of its own, but a suggestion is marked as
+its own and enters the sketch only after you accept it. Finally it checks the
+sketch against the repository and reports where the two disagree.
+
+The rule behind all of this is that what you see is what gets built. The
+sketch it hands back holds only pseudo-code you have seen, and the coder that
+implements it must stop and tell you before deviating from any of it.
+
+Unlike `plan`, which hands back a finished document to approve, `sketch` builds
+the design piece by piece in front of you. That is slower, and it is the point:
+signing a plan does not repay the understanding you skip. The coder never
+forks `sketch` on its own. Ask for it, or accept when the coder offers it
+before a change that adds a data structure, introduces a cross-module flow, or
+alters an existing interface.
+
+Like `plan`, `sketch` is read-only, holds no `bash`, and can only delegate to
+`explore`.
 
 ### Configuring one
 
@@ -335,11 +361,11 @@ does.
   after a lower-priority layer narrowed it, since an unset field only ever
   keeps whatever a lower layer decided rather than clearing it.
 
-The built-in `plan` and `deep-research` agents both set
-`"allowed_agents": ["explore"]`: a plan or a root-cause finding is only as
-trustworthy as the read-only legwork behind it, so neither can hand the
-decision off to `general` or to each other — they can only delegate the
-read-only search `explore` provides.
+The built-in `plan`, `deep-research` and `sketch` agents all set
+`"allowed_agents": ["explore"]`: a plan, a sketch or a root-cause finding is
+only as trustworthy as the read-only legwork behind it, so none of them can
+hand the decision off to `general` or to each other — they can only delegate
+the read-only search `explore` provides.
 
 ```json
 {

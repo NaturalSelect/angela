@@ -22,8 +22,8 @@ func toolNamesFor(t *testing.T, coord *coordinator, agentID string, depth int) [
 }
 
 // builtinBranches are the branch agents Angela ships. Everything in this file
-// that is not about one of them specifically applies to both.
-var builtinBranches = []string{config.AgentPlan, config.AgentDeepResearch}
+// that is not about one of them specifically applies to all of them.
+var builtinBranches = []string{config.AgentPlan, config.AgentDeepResearch, config.AgentSketch}
 
 // TestBranchAgentsNeverWrite pins the boundary that makes a branch safe to
 // approve on merge: both of them investigate and hand back a document, so
@@ -97,6 +97,8 @@ func TestBranchExecutionBoundaryDiffers(t *testing.T) {
 
 	require.NotContains(t, toolNamesFor(t, coord, config.AgentPlan, 1), toolnames.Bash,
 		"plan reasons from what it reads")
+	require.NotContains(t, toolNamesFor(t, coord, config.AgentSketch, 1), toolnames.Bash,
+		"sketch designs from what it reads")
 
 	deepResearch := toolNamesFor(t, coord, config.AgentDeepResearch, 1)
 	for _, tool := range []string{toolnames.Bash, toolnames.JobOutput, toolnames.JobKill} {

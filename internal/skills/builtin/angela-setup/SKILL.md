@@ -247,7 +247,7 @@ For any stdio-based MCP server:
 
 Ask if the user wants to customize built-in agents. Common adjustments:
 
-- Point `explore`, `general`, `plan`, or `deep-research` at a cheaper model
+- Point `explore`, `general`, `plan`, `sketch`, or `deep-research` at a cheaper model
   — they all default to `main`:
 
 ```json

@@ -64,9 +64,11 @@ func (r *Router) EngineIDs() []string {
 // the preferred engine isn't first when req.TimeRange excludes it.
 // Without a time range: preferred first, then the rest in registration
 // order. With one: engines that honor it move to the front (preferred
-// among them, if it qualifies); an engine that doesn't support time
-// filtering is never tried for a time-scoped request, matching the
-// "excluded, not failed" semantics of the source this was ported from.
+// among them, if it qualifies). A preferred engine that doesn't honor it
+// is dropped for this request, while other engines that don't are kept
+// at the very end as a last resort so a time-scoped search still
+// answers when every time-aware engine fails. Search flags that case in
+// the result Note, since those engines ignore the time filter.
 func (r *Router) chain(req Request) (ordered []Engine, skippedReason string) {
 	if req.TimeRange == nil {
 		ordered = make([]Engine, 0, len(r.engines))
@@ -148,8 +150,10 @@ func (r *Router) Search(ctx context.Context, req Request) (Result, error) {
 
 		var note string
 		switch {
-		case engine.ID() == r.preferred:
-			// Preferred engine succeeded; nothing to explain.
+		case engine.ID() == r.preferred && (req.TimeRange == nil || engine.SupportsTimeRange()):
+			// Preferred engine succeeded with the filter honored; nothing to explain.
+		case req.TimeRange != nil && !engine.SupportsTimeRange():
+			note = fmt.Sprintf("Note: %s does not support time filtering, so time_range=%s was NOT applied; results may include older content.", engine.ID(), req.TimeRange.String())
 		case skippedReason != "":
 			note = fmt.Sprintf("Note: %s, using %s.", skippedReason, engine.ID())
 		case preferredFailure != "":

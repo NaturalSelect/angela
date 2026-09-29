@@ -194,8 +194,9 @@ type Workspace interface {
 	// user-queued prompt for sessionID, complete with attachment
 	// bytes. Unlike AgentQueuedPromptsList, the result is meant to be
 	// restored elsewhere (e.g. an editor draft) rather than merely
-	// previewed.
-	AgentTakeQueuedPrompts(sessionID string) []message.QueuedPrompt
+	// previewed. A non-nil error means the take did not complete, so the
+	// caller must not assume the queue is empty.
+	AgentTakeQueuedPrompts(sessionID string) ([]message.QueuedPrompt, error)
 	AgentClearQueue(sessionID string)
 	AgentSummarize(ctx context.Context, sessionID string) error
 	// AgentAskSideQuestion answers a one-off question from a

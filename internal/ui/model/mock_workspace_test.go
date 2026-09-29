@@ -301,11 +301,12 @@ func (mr *MockWorkspaceMockRecorder) AgentSummarize(ctx, sessionID any) *gomock.
 }
 
 // AgentTakeQueuedPrompts mocks base method.
-func (m *MockWorkspace) AgentTakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+func (m *MockWorkspace) AgentTakeQueuedPrompts(sessionID string) ([]message.QueuedPrompt, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AgentTakeQueuedPrompts", sessionID)
 	ret0, _ := ret[0].([]message.QueuedPrompt)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // AgentTakeQueuedPrompts indicates an expected call of AgentTakeQueuedPrompts.

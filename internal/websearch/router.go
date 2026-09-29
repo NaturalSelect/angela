@@ -151,7 +151,8 @@ func (r *Router) Search(ctx context.Context, req Request) (Result, error) {
 		var note string
 		switch {
 		case engine.ID() == r.preferred && (req.TimeRange == nil || engine.SupportsTimeRange()):
-			// Preferred engine succeeded with the filter honored; nothing to explain.
+			// Preferred engine succeeded with the filter honored; nothing
+			// to explain.
 		case req.TimeRange != nil && !engine.SupportsTimeRange():
 			note = fmt.Sprintf("Note: %s does not support time filtering, so time_range=%s was NOT applied; results may include older content.", engine.ID(), req.TimeRange.String())
 		case skippedReason != "":

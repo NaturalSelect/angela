@@ -13,7 +13,7 @@ func TestDefault_ReturnsEnginesInFixedOrder(t *testing.T) {
 	for i, e := range engines {
 		ids[i] = e.ID()
 	}
-	require.Equal(t, []string{"bing", "ddg", "ddg-lite", "anysearch", "exa", "tavily", "firecrawl", "searxng"}, ids)
+	require.Equal(t, []string{"bing", "ddg", "exa", "ddg-lite", "anysearch", "tavily", "firecrawl", "searxng"}, ids)
 }
 
 func TestDefault_BuildsAClientWhenNoneProvided(t *testing.T) {

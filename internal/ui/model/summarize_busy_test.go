@@ -1,6 +1,8 @@
 package model
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/session"
@@ -47,6 +49,45 @@ func TestSummarizeIgnoresUnrelatedSessionBusy(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionSummarize{SessionID: "current"})
 	require.NotNil(t, cmd, "an idle session's summarize must be dispatched, not refused")
 	drain(cmd)
+}
+
+// TestSummarizeCancelledIsNotAnError pins that a user-cancelled compact
+// stays silent: the coordinator reports the cancellation as an error so the
+// auto-compaction caller can react, but the manual path must not turn it
+// into an error toast or a queue restore.
+func TestSummarizeCancelledIsNotAnError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
+	ws.EXPECT().AgentSummarize(gomock.Any(), "current").
+		Return(errors.Join(context.Canceled, errors.New("delete failed")))
+
+	m := newSummarizeGateUI(t, ws)
+
+	cmd := m.handleDialogMsg(dialog.ActionSummarize{SessionID: "current"})
+	require.NotNil(t, cmd)
+	require.Nil(t, cmd(), "a cancelled compact must not report a failure")
+}
+
+// TestSummarizeFailureIsReported is the counterpart: a genuine failure
+// still surfaces as an agent failure so the queue is handed back.
+func TestSummarizeFailureIsReported(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
+	ws.EXPECT().AgentSummarize(gomock.Any(), "current").Return(errors.New("boom"))
+
+	m := newSummarizeGateUI(t, ws)
+
+	cmd := m.handleDialogMsg(dialog.ActionSummarize{SessionID: "current"})
+	require.NotNil(t, cmd)
+	failed, ok := cmd().(agentRunFailedMsg)
+	require.True(t, ok, "a real failure must reach agentRunFailedMsg")
+	require.Equal(t, "current", failed.sessionID)
 }
 
 // TestSummarizeRefusesItsOwnSessionBusy pins the other half: a summarize

@@ -62,3 +62,31 @@ func TestRouter_SearchManyRejectsUnknownEnginesOnly(t *testing.T) {
 	_, err = r.SearchMany(context.Background(), Request{Query: "go"}, []string{"nonexistent"})
 	require.Error(t, err)
 }
+
+func TestRouter_SearchManyCountsAnEngineOncePerSource(t *testing.T) {
+	t.Parallel()
+	r, err := NewRouter([]Engine{
+		okEngine("bing", Source{URL: "https://dup.example/page"}, Source{URL: "https://dup.example/page/"}),
+		okEngine("ddg", Source{URL: "https://other.example"}),
+	}, "bing", 0)
+	require.NoError(t, err)
+
+	res, err := r.SearchMany(context.Background(), Request{Query: "go"}, []string{"bing", "ddg"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"bing"}, res.Sources[0].SeenIn)
+}
+
+func TestRouter_SearchManyDedupesRepeatedEngineIDs(t *testing.T) {
+	t.Parallel()
+	r, err := NewRouter([]Engine{
+		okEngine("bing", Source{URL: "https://a.example"}),
+		okEngine("ddg", Source{URL: "https://b.example"}, Source{URL: "https://a.example"}),
+	}, "bing", 0)
+	require.NoError(t, err)
+
+	res, err := r.SearchMany(context.Background(), Request{Query: "go"}, []string{"bing", "bing", "ddg"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"bing", "ddg"}, res.Used)
+	require.ElementsMatch(t, []string{"bing", "ddg"}, res.Sources[0].SeenIn)
+	require.Equal(t, "https://a.example", res.Sources[0].URL)
+}

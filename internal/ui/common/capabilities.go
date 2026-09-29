@@ -180,12 +180,13 @@ func kittyPlaceholderTerminal(version string, env uv.Environ) bool {
 // SupportsKittyPlaceholders returns true if the terminal supports the
 // Kitty graphics protocol's Unicode placeholders (virtual placement),
 // which the chat's inline image previews and the built-in
-// ImageGenerate/ImageEdit tools require. A positive [Capabilities.SupportsKittyGraphics]
-// only proves the terminal understands the basic protocol; many
-// terminals (notably VS Code's integrated terminal and WezTerm) answer
-// that query but do not render placeholders, so this is checked
-// separately. KittyPlaceholdersOverride, when set, always wins, even if
-// the Kitty graphics query was never sent or answered.
+// ImageGenerate/ImageEdit tools require. A positive
+// [Capabilities.SupportsKittyGraphics] only proves the terminal
+// understands the basic protocol; many terminals (notably VS Code's
+// integrated terminal and WezTerm) answer that query but do not render
+// placeholders, so this is checked separately.
+// KittyPlaceholdersOverride, when set, always wins, even if the Kitty
+// graphics query was never sent or answered.
 func (c Capabilities) SupportsKittyPlaceholders() bool {
 	if c.KittyPlaceholdersOverride != nil {
 		return *c.KittyPlaceholdersOverride

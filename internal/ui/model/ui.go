@@ -925,6 +925,10 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.restoreQueueOnAgentError(msg.sessionID); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case queuedPromptsTakenMsg:
+		if cmd := m.applyQueuedPromptsTaken(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case loadSessionMsg:
 		// Sub-session navigation: push/pop deferred to here so a
 		// failed load (which sends ReportError, not loadSessionMsg)
@@ -2392,7 +2396,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 		cmds = append(cmds, func() tea.Msg {
 			err := m.com.Workspace.AgentSummarize(context.Background(), msg.SessionID)
-			if err != nil {
+			// NOTE: A cancelled compact is the user's choice, not a failure.
+			if err != nil && !errors.Is(err, context.Canceled) {
 				// Routed through agentRunFailedMsg (rather than a plain
 				// ReportError) so restoreQueueOnAgentError also fires and
 				// hands back whatever the user had queued behind this
@@ -5268,13 +5273,32 @@ func (m *UI) cancelAgent() tea.Cmd {
 // composing, in queue order, so a half-typed follow-up is never clobbered
 // and nothing queued is ever silently lost.
 func (m *UI) takeQueuedPromptsToEditor(sessionID string) tea.Cmd {
+	items, err := m.com.Workspace.AgentTakeQueuedPrompts(sessionID)
+	if err == nil {
+		return m.restoreQueuedPrompts(items)
+	}
+
+	// NOTE: AgentCancel will drop the backend queue, so use the mirror.
+	slog.Warn("Failed to take queued prompts; using the local copy",
+		"session", sessionID, "error", err)
+	items = m.promptQueueItems
+	if len(items) == 0 {
+		return nil
+	}
+	m.com.Workspace.AgentClearQueue(sessionID)
+	return tea.Batch(
+		util.ReportWarn("Could not fetch queued prompts from the server; restored the local copy (attachments may be missing)."),
+		m.restoreQueuedPrompts(items),
+	)
+}
+
+func (m *UI) restoreQueuedPrompts(items []message.QueuedPrompt) tea.Cmd {
 	// The mirror can be stale (e.g. restoreQueueOnAgentError takes even
 	// when it reads 0, since a refresh may not have landed yet), so
 	// whether there is anything to sync visually is decided from
 	// whichever of the mirror or the take result had something, not
 	// from the take result alone.
 	hadMirror := m.promptQueue > 0 || len(m.promptQueueItems) > 0
-	items := m.com.Workspace.AgentTakeQueuedPrompts(sessionID)
 	m.promptQueue = 0
 	m.promptQueueItems = nil
 	m.promptQueueCheckedAt = time.Now()
@@ -5319,12 +5343,31 @@ func (m *UI) takeQueuedPromptsToEditor(sessionID string) tea.Cmd {
 // agent simply has not gotten to yet — until the user noticed and
 // pressed esc. Scoped to the session currently on screen: an error on
 // a session the user has since navigated away from must not reach
-// into the visible editor.
+// into the visible editor. The take itself runs off the Update goroutine
+// and is applied when queuedPromptsTakenMsg lands.
 func (m *UI) restoreQueueOnAgentError(sessionID string) tea.Cmd {
 	if sessionID == "" || sessionID != m.currentSessionID() {
 		return nil
 	}
-	return m.takeQueuedPromptsToEditor(sessionID)
+	return m.takeQueuedPromptsCmd(sessionID)
+}
+
+func (m *UI) takeQueuedPromptsCmd(sessionID string) tea.Cmd {
+	ws := m.com.Workspace
+	return func() tea.Msg {
+		prompts, err := ws.AgentTakeQueuedPrompts(sessionID)
+		return queuedPromptsTakenMsg{sessionID: sessionID, prompts: prompts, err: err}
+	}
+}
+
+func (m *UI) applyQueuedPromptsTaken(msg queuedPromptsTakenMsg) tea.Cmd {
+	if msg.err != nil {
+		// NOTE: The queue is still on the backend, so leave the mirror alone.
+		slog.Warn("Failed to take queued prompts after an agent error",
+			"session", msg.sessionID, "error", msg.err)
+		return util.ReportWarn("Could not recover queued prompts; they are still queued.")
+	}
+	return m.restoreQueuedPrompts(msg.prompts)
 }
 
 // prependToEditor places text ahead of whatever draft is being composed,

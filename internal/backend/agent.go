@@ -252,7 +252,6 @@ func (b *Backend) GetSessionActiveAgent(ctx context.Context, workspaceID, sessio
 }
 
 // SummarizeSession triggers a session summarization.
-
 func (b *Backend) SummarizeSession(ctx context.Context, workspaceID, sessionID string) error {
 	ws, err := b.GetWorkspace(workspaceID)
 	if err != nil {
@@ -263,7 +262,11 @@ func (b *Backend) SummarizeSession(ctx context.Context, workspaceID, sessionID s
 		return ErrAgentNotInitialized
 	}
 
-	return ws.AgentCoordinator.Summarize(ctx, sessionID)
+	// NOTE: A cancelled summarize must not surface as a 500.
+	if err := ws.AgentCoordinator.Summarize(ctx, sessionID); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
 }
 
 // AskSideQuestion answers a one-off question from a session's existing

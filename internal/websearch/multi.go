@@ -3,6 +3,7 @@ package websearch
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -48,7 +49,12 @@ func (r *Router) SearchMany(ctx context.Context, req Request, engineIDs []string
 			targets = append(targets, r.byID[id])
 		}
 	} else {
+		var seen []string
 		for _, id := range engineIDs {
+			if slices.Contains(seen, id) {
+				continue
+			}
+			seen = append(seen, id)
 			if e, ok := r.byID[id]; ok {
 				targets = append(targets, e)
 			}
@@ -105,7 +111,9 @@ func (r *Router) SearchMany(ctx context.Context, req Request, engineIDs []string
 			}
 			key := normalizeURL(s.URL)
 			if m, ok := byURL[key]; ok {
-				m.seenIn = append(m.seenIn, o.id)
+				if !slices.Contains(m.seenIn, o.id) {
+					m.seenIn = append(m.seenIn, o.id)
+				}
 				if m.source.Title == "" {
 					m.source.Title = s.Title
 				}

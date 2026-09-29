@@ -35,12 +35,14 @@ func TestAppWorkspace_Agent_NilCoordinator(t *testing.T) {
 	require.ErrorIs(t, fx.ws.AgentReadyErr(), ErrAgentNotInitialized)
 	require.Equal(t, 0, fx.ws.AgentQueuedPrompts("sess-1"))
 	require.Nil(t, fx.ws.AgentQueuedPromptsList("sess-1"))
-	require.Nil(t, fx.ws.AgentTakeQueuedPrompts("sess-1"))
+	taken, err := fx.ws.AgentTakeQueuedPrompts("sess-1")
+	require.NoError(t, err)
+	require.Nil(t, taken)
 	fx.ws.AgentClearQueue("sess-1")
 
 	require.Error(t, fx.ws.AgentSummarize(t.Context(), "sess-1"))
 
-	_, err := fx.ws.AgentAskSideQuestion(t.Context(), "sess-1", "hi")
+	_, err = fx.ws.AgentAskSideQuestion(t.Context(), "sess-1", "hi")
 	require.Error(t, err)
 
 	_, err = fx.ws.AgentGenerateCommitMessage(t.Context(), "sess-1", "diff --git a/x b/x")
@@ -141,9 +143,11 @@ func TestAppWorkspace_AgentTakeQueuedPrompts(t *testing.T) {
 		{Prompt: "a", Attachments: []message.Attachment{{FileName: "x.txt", Content: []byte("hi")}}},
 	})
 
+	got, err := fx.ws.AgentTakeQueuedPrompts("sess-1")
+	require.NoError(t, err)
 	require.Equal(t, []message.QueuedPrompt{
 		{Prompt: "a", Attachments: []message.Attachment{{FileName: "x.txt", Content: []byte("hi")}}},
-	}, fx.ws.AgentTakeQueuedPrompts("sess-1"))
+	}, got)
 }
 
 func TestAppWorkspace_AgentClearQueue(t *testing.T) {

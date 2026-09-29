@@ -34,7 +34,8 @@ type MultiSearchParams struct {
 	Engines    []string `json:"engines,omitempty" description:"Optional list of engine ids to query concurrently (defaults to the top 3 engines in the fallback order)"`
 }
 
-// MultiSearchPermissionsParams defines the permission parameters for the multi_search tool.
+// MultiSearchPermissionsParams defines the permission parameters for the
+// multi_search tool.
 type MultiSearchPermissionsParams struct {
 	Query      string   `json:"query"`
 	MaxResults int      `json:"max_results,omitempty"`

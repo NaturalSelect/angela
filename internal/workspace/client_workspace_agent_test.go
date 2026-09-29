@@ -219,21 +219,25 @@ func TestClientWorkspace_AgentTakeQueuedPrompts(t *testing.T) {
 			}}))
 		})
 
+		got, err := ws.AgentTakeQueuedPrompts("s1")
+		require.NoError(t, err)
 		require.Equal(t, []message.QueuedPrompt{{
 			Prompt: "first",
 			Attachments: []message.Attachment{
 				{FileName: "a.txt", MimeType: "text/plain", Content: []byte("hi")},
 			},
-		}}, ws.AgentTakeQueuedPrompts("s1"))
+		}}, got)
 	})
 
-	t.Run("server error defaults to nil", func(t *testing.T) {
+	t.Run("server error is reported", func(t *testing.T) {
 		t.Parallel()
 		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		})
 
-		require.Nil(t, ws.AgentTakeQueuedPrompts("s1"))
+		got, err := ws.AgentTakeQueuedPrompts("s1")
+		require.Error(t, err)
+		require.Nil(t, got)
 	})
 }
 

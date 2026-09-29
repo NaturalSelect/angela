@@ -257,11 +257,11 @@ func (w *AppWorkspace) AgentQueuedPromptsList(sessionID string) []message.Queued
 	return w.app.AgentCoordinator.QueuedPromptsList(sessionID)
 }
 
-func (w *AppWorkspace) AgentTakeQueuedPrompts(sessionID string) []message.QueuedPrompt {
+func (w *AppWorkspace) AgentTakeQueuedPrompts(sessionID string) ([]message.QueuedPrompt, error) {
 	if w.app.AgentCoordinator == nil {
-		return nil
+		return nil, nil
 	}
-	return w.app.AgentCoordinator.TakeQueuedPrompts(sessionID)
+	return w.app.AgentCoordinator.TakeQueuedPrompts(sessionID), nil
 }
 
 func (w *AppWorkspace) AgentClearQueue(sessionID string) {

@@ -213,7 +213,8 @@ func (w *WebSearchToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 // MultiSearch Tool
 // -----------------------------------------------------------------------------
 
-// MultiSearchToolMessageItem is a message item that represents a multi_search tool call.
+// MultiSearchToolMessageItem is a message item that represents a
+// multi_search tool call.
 type MultiSearchToolMessageItem struct {
 	*baseToolMessageItem
 }

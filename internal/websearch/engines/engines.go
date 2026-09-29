@@ -52,8 +52,13 @@ type Options struct {
 	SearxngInstances []string
 }
 
-// Default returns the built-in engines in a fixed order: bing, ddg,
-// ddg-lite, anysearch, exa, tavily, firecrawl, searxng.
+// Default returns the built-in engines in a fixed order: bing, ddg, exa,
+// ddg-lite, anysearch, tavily, firecrawl, searxng.
+//
+// NOTE: The order is load-bearing. It is the fallback chain for a
+// single search and its first three entries are the multi-engine
+// default, so those three must not share a backend (ddg-lite is a
+// second DuckDuckGo frontend and therefore sits after them).
 func Default(opts Options) []websearch.Engine {
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = newDefaultHTTPClient()
@@ -61,9 +66,9 @@ func Default(opts Options) []websearch.Engine {
 	return []websearch.Engine{
 		newBingEngine(opts),
 		newDDGHTMLEngine(opts),
+		newExaEngine(opts),
 		newDDGLiteEngine(opts),
 		newAnysearchEngine(opts),
-		newExaEngine(opts),
 		newTavilyEngine(opts),
 		newFirecrawlEngine(opts),
 		newSearxngEngine(opts),

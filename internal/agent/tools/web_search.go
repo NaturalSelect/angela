@@ -43,7 +43,7 @@ func NewWebSearchTool(router *websearch.Router) fantasy.AgentTool {
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return Fail("session ID is required for creating a new file")
+				return Fail("session ID is required for searching the web")
 			}
 
 			timeRange, err := websearch.ParseTimeRange(params.TimeRange)

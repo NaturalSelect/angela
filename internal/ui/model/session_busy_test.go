@@ -23,6 +23,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/completions"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
@@ -120,7 +121,7 @@ func runCmds(m *UI, cmd tea.Cmd) []tea.Msg {
 		for _, c := range msg {
 			msgs = append(msgs, runCmds(m, c)...)
 		}
-	case busyStateMsg, promptQueueMsg, agentRunSubmittedMsg, lspStatesMsg, agentModelChangedMsg, branchStatusMsg, modelSwitchedMsg:
+	case busyStateMsg, promptQueueMsg, agentRunSubmittedMsg, lspStatesMsg, agentModelChangedMsg, branchStatusMsg, modelSwitchedMsg, queuedPromptsTakenMsg:
 		msgs = append(msgs, msg)
 		_, next := m.Update(msg)
 		msgs = append(msgs, runCmds(m, next)...)
@@ -277,7 +278,7 @@ func TestAgentTerminalNotificationsRefreshBusy(t *testing.T) {
 			// A TypeAgentError iteration reaches restoreQueueOnAgentError, which
 			// now always takes the queue back; AnyTimes covers the
 			// TypeAgentFinished iteration, which never calls it.
-			ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil).AnyTimes()
+			ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil, nil).AnyTimes()
 			require.True(t, m.isAgentBusy())
 
 			_, cmd := m.Update(pubsub.Event[notify.Notification]{
@@ -313,7 +314,7 @@ func TestAgentErrorNotificationRestoresQueuedPrompts(t *testing.T) {
 	stubBusyProbe(ws, true, false, permission.ModeManual, &active) // agent now idle
 	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
 	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).
-		Return([]message.QueuedPrompt{{Prompt: "queued follow-up"}})
+		Return([]message.QueuedPrompt{{Prompt: "queued follow-up"}}, nil)
 
 	_, cmd := m.Update(pubsub.Event[notify.Notification]{
 		Type:    pubsub.CreatedEvent,
@@ -344,7 +345,7 @@ func TestAgentErrorNotificationRestoresQueuedPromptsWithAttachments(t *testing.T
 	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return([]message.QueuedPrompt{{
 		Prompt:      "q",
 		Attachments: []message.Attachment{{FileName: "a.png", Content: []byte("x")}},
-	}})
+	}}, nil)
 
 	_, cmd := m.Update(pubsub.Event[notify.Notification]{
 		Type:    pubsub.CreatedEvent,
@@ -426,7 +427,7 @@ func TestAgentTerminalNotificationClearsRetryStatus(t *testing.T) {
 			// A TypeAgentError iteration reaches restoreQueueOnAgentError, which
 			// now always takes the queue back; AnyTimes covers the
 			// TypeAgentFinished iteration, which never calls it.
-			ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil).AnyTimes()
+			ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil, nil).AnyTimes()
 
 			m.retryStatus = &retryStatus{sessionID: "s1", attempt: 1, maxAttempt: 3, until: time.Now().Add(time.Minute)}
 
@@ -645,7 +646,7 @@ func TestSendMessageSetsOptimisticBusy(t *testing.T) {
 	require.True(t, m.isCanceling, "first esc press must arm cancellation")
 
 	// Second press must actually cancel.
-	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil)
+	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil, nil)
 	ws.EXPECT().AgentCancel(gomock.Any())
 	m.cancelAgent()
 }
@@ -662,7 +663,7 @@ func TestCancelAgentClearsQueueFromCachedCount(t *testing.T) {
 	m.promptQueue = 1
 	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "a"}}
 
-	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return([]message.QueuedPrompt{{Prompt: "a"}})
+	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return([]message.QueuedPrompt{{Prompt: "a"}}, nil)
 	// AgentQueuedPrompts/AgentQueuedPromptsList deliberately left
 	// unstubbed: the decision must use the cached count, not a probe.
 
@@ -713,7 +714,7 @@ func TestCancelAgentRestoresQueueOnActiveCancel(t *testing.T) {
 	// resume entry, if any), so the user prompts must be taken back
 	// first — asserted here via InOrder — or their text would be lost.
 	takeCall := ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).
-		Return([]message.QueuedPrompt{{Prompt: "queued follow-up"}})
+		Return([]message.QueuedPrompt{{Prompt: "queued follow-up"}}, nil)
 	cancelCall := ws.EXPECT().AgentCancel(gomock.Any())
 	gomock.InOrder(takeCall, cancelCall)
 
@@ -738,7 +739,7 @@ func TestCancelAgentRestoresQueueAheadOfDraft(t *testing.T) {
 	m.textarea.SetValue("still typing this")
 
 	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).
-		Return([]message.QueuedPrompt{{Prompt: "first queued"}, {Prompt: "second queued"}})
+		Return([]message.QueuedPrompt{{Prompt: "first queued"}, {Prompt: "second queued"}}, nil)
 
 	m.cancelAgent()
 	require.Equal(t, "first queued\n\nsecond queued\n\nstill typing this", m.textarea.Value())
@@ -760,7 +761,7 @@ func TestAgentRunFailedMsgRestoresQueuedPrompts(t *testing.T) {
 	m.textarea.SetValue("still typing this")
 
 	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).
-		Return([]message.QueuedPrompt{{Prompt: "first queued"}, {Prompt: "second queued"}})
+		Return([]message.QueuedPrompt{{Prompt: "first queued"}, {Prompt: "second queued"}}, nil)
 
 	_, cmd := m.Update(agentRunFailedMsg{sessionID: "s1", err: errors.New("500 Internal Server Error")})
 	runCmds(m, cmd)
@@ -769,6 +770,82 @@ func TestAgentRunFailedMsgRestoresQueuedPrompts(t *testing.T) {
 	require.Empty(t, m.promptQueueItems)
 	require.Equal(t, "first queued\n\nsecond queued\n\nstill typing this", m.textarea.Value(),
 		"prompts queued behind the failed turn must lead, with the half-typed draft kept intact after them")
+}
+
+// TestCancelAgentKeepsMirrorWhenTakeFails pins that a failed take must not
+// lose typed text: AgentCancel drops the backend queue regardless, so the
+// UI's own copy has to reach the editor, and the backend queue is cleared
+// so the same prompts are not also left to run.
+func TestCancelAgentKeepsMirrorWhenTakeFails(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.isCanceling = true
+	m.busyFetchInFlight = true
+	m.promptQueue = 1
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "queued follow-up"}}
+
+	gomock.InOrder(
+		ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil, errors.New("404 page not found")),
+		ws.EXPECT().AgentClearQueue("s1"),
+		ws.EXPECT().AgentCancel(gomock.Any()),
+	)
+
+	msgs := runCmds(m, m.cancelAgent())
+
+	require.Zero(t, m.promptQueue)
+	require.Equal(t, "queued follow-up", m.textarea.Value(),
+		"the local copy must reach the editor when the backend take fails")
+	var warned bool
+	for _, msg := range msgs {
+		if info, ok := msg.(util.InfoMsg); ok && info.Type == util.InfoTypeWarn {
+			warned = true
+		}
+	}
+	require.True(t, warned, "the user must be told the restore fell back to the local copy")
+}
+
+// TestRestoreQueueOnAgentErrorDoesNotBlockUpdate pins that the take runs
+// in a command: the MockWorkspace has no AgentTakeQueuedPrompts
+// expectation, so a synchronous call from Update would fail the test.
+func TestRestoreQueueOnAgentErrorDoesNotBlockUpdate(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.promptQueue = 1
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "queued follow-up"}}
+
+	cmd := m.restoreQueueOnAgentError("s1")
+	require.NotNil(t, cmd)
+	require.Equal(t, 1, m.promptQueue, "nothing may change until the take lands")
+
+	ws.EXPECT().AgentTakeQueuedPrompts("s1").
+		Return([]message.QueuedPrompt{{Prompt: "queued follow-up"}}, nil)
+	runCmds(m, cmd)
+	require.Zero(t, m.promptQueue)
+	require.Equal(t, "queued follow-up", m.textarea.Value())
+}
+
+// TestRestoreQueueOnAgentErrorTakeFailureLeavesQueue pins that when the
+// take after a failed turn errors, the backend queue is untouched, so the
+// UI must not zero its mirror or pretend the prompts were restored.
+func TestRestoreQueueOnAgentErrorTakeFailureLeavesQueue(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.promptQueue = 1
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "queued follow-up"}}
+
+	ws.EXPECT().AgentTakeQueuedPrompts("s1").Return(nil, errors.New("boom"))
+	msgs := runCmds(m, m.restoreQueueOnAgentError("s1"))
+
+	require.Equal(t, 1, m.promptQueue)
+	require.Len(t, m.promptQueueItems, 1)
+	require.Empty(t, m.textarea.Value())
+	require.NotEmpty(t, msgs, "the user must be told the queue was not recovered")
 }
 
 // TestBackstopRefreshesStaleCaches: when the memoized state outlives its TTL

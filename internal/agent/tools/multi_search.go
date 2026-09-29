@@ -46,7 +46,7 @@ func NewMultiSearchTool(router *websearch.Router) fantasy.AgentTool {
 
 			sessionID := GetSessionFromContext(ctx)
 			if sessionID == "" {
-				return Fail("session ID is required for creating a new file")
+				return Fail("session ID is required for multi-engine search")
 			}
 
 			engines, unknown := filterKnownEngines(router, params.Engines)

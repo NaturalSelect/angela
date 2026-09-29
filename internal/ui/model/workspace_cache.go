@@ -132,6 +132,14 @@ type agentRunFailedMsg struct {
 	err       error
 }
 
+// queuedPromptsTakenMsg carries the result of taking a session's queued
+// prompts off the Update goroutine after its turn failed.
+type queuedPromptsTakenMsg struct {
+	sessionID string
+	prompts   []message.QueuedPrompt
+	err       error
+}
+
 // agentModelChangedMsg reports that the agent a session runs on was
 // changed (agent switch, model selection, preset, thinking toggle) or
 // rebuilt, so the memoized ready/active state should be re-fetched

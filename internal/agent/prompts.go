@@ -46,9 +46,9 @@ var generateAgentPromptTmpl []byte
 
 // branchPreambleTmpl fronts the system prompt of every branch-mode agent,
 // the built-in plan, deep-research and sketch agents as well as any the
-// user defines. It is the only place the rules the fork machinery depends on are
-// guaranteed to be stated, so a custom branch prompt cannot drop them by
-// omission.
+// user defines. It is the only place the rules the fork machinery
+// depends on are guaranteed to be stated, so a custom branch prompt
+// cannot drop them by omission.
 //
 //go:embed templates/branch_preamble.md.tpl
 var branchPreambleTmpl []byte

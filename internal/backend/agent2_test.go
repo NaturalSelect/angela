@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -106,6 +107,15 @@ func TestBackend_SummarizeSession(t *testing.T) {
 		ws := insertAgentWorkspace(t, b, coord)
 
 		require.ErrorIs(t, b.SummarizeSession(t.Context(), ws.ID, "s1"), wantErr)
+	})
+
+	t.Run("swallows cancellation", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		coord := &fakeCoordinator{summarizeErr: errors.Join(context.Canceled, errors.New("delete failed"))}
+		ws := insertAgentWorkspace(t, b, coord)
+
+		require.NoError(t, b.SummarizeSession(t.Context(), ws.ID, "s1"))
 	})
 
 	t.Run("workspace not found", func(t *testing.T) {

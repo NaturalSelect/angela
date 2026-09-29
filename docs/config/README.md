@@ -382,6 +382,70 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
 > every project's system prompt with no config change. Only set
 > `global_context_paths` yourself to point at a different location.
 
+### Web search
+
+`tools.web_search` configures the engines behind the `web_search` and
+`multi_search` tools. Every key is optional; with no config at all, searching
+works without any API key.
+
+```jsonc
+{
+  "tools": {
+    "web_search": {
+      "engine": "bing",                 // engine web_search tries first
+      "timeout": 30000000000,           // fallback chain budget, in nanoseconds
+      "api_keys": {
+        "tavily": "$TAVILY_API_KEY",    // shell expansion works
+        "exa": "$EXA_API_KEY"
+      },
+      "bing_market": "en-US",           // locale for Bing results
+      "searxng_instances": ["https://searx.example.org"]
+    }
+  }
+}
+```
+
+The built-in engines, in the fixed order Angela registers them:
+
+| Engine      | Notes                                                        |
+| ----------- | ------------------------------------------------------------ |
+| `bing`      | No key needed. Honors `bing_market`.                         |
+| `ddg`       | DuckDuckGo HTML endpoint. No key needed.                     |
+| `exa`       | Keyless through Exa's MCP endpoint. A key adds date filters. |
+| `ddg-lite`  | DuckDuckGo Lite endpoint. No key needed.                     |
+| `anysearch` | Anonymous tier without a key.                                |
+| `tavily`    | Sends a keyless access header when no key is set.            |
+| `firecrawl` | Sends no credentials when no key is set.                     |
+| `searxng`   | Public instances, or the ones in `searxng_instances`.        |
+
+**`web_search`** tries `engine` first, then the rest in the order above, and
+returns the first engine that produces results. When the fallback engine was
+not the preferred one, or ignored a `time_range`, the result carries a note
+saying so. `timeout` caps the whole chain; a single engine attempt is capped
+at 15 seconds within it.
+
+**`multi_search`** queries several engines at once and merges the results by
+URL, ranking sources that more engines returned above the rest. Without an
+`engines` argument it queries the first three engines in the order above:
+`bing`, `ddg` and `exa`. This default ignores `engine`, so changing the
+preferred engine only affects `web_search`. The model can pass an explicit
+`engines` list to choose others; unknown ids are dropped and repeated ids
+are queried once.
+
+**API keys.** A key in `api_keys` wins. Otherwise these environment
+variables are read for the engines that use one:
+
+| Engine      | Environment variable |
+| ----------- | -------------------- |
+| `exa`       | `EXA_API_KEY`        |
+| `tavily`    | `TAVILY_API_KEY`     |
+| `firecrawl` | `FIRECRAWL_API_KEY`  |
+| `anysearch` | `ANYSEARCH_API_KEY`  |
+
+> [!NOTE]
+> `timeout` is parsed as a plain JSON number of nanoseconds, so a string such
+> as `"45s"` is rejected when the config loads. `45000000000` is 45 seconds.
+
 ## Composing configs
 
 A shared base config is just another layer: put the team's settings in the

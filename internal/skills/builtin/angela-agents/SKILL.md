@@ -23,6 +23,7 @@ is needed.
 | `general` | subagent | General-purpose; inherits coder's tools minus `todos`. |
 | `plan` | branch | Turns a request into an agreed implementation plan. Read-only. |
 | `deep-research` | branch | Investigates a hard question; has Bash but no edit/write. |
+| `sketch` | branch | Designs a change with the user as pseudo-code, piece by piece. Read-only; only forked when the user asks. |
 | `web-fetch` | subagent | Fetches and analyzes web pages or searches the web. |
 
 Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,

@@ -141,10 +141,11 @@ func TestResolveAgents_CustomBranchIsNotDowngraded(t *testing.T) {
 }
 
 // Branch mode suspends the caller until a human resolves it, so it is never
-// the right default for an agent the user did not ask for. plan and
-// deep-research are the deliberate exceptions; this keeps any other builtin
-// from drifting into it.
-func TestResolveAgents_BuiltinBranchesAreExactlyPlanAndDeepResearch(t *testing.T) {
+// the right default for an agent the user did not ask for. plan,
+// deep-research and sketch are the deliberate exceptions; sketch is never
+// forked on the model's own initiative, only when the user asks for it. This
+// keeps any other builtin from drifting into branch mode.
+func TestResolveAgents_BuiltinBranchesAreExactlyPlanDeepResearchAndSketch(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 
 	var branches []string
@@ -154,7 +155,7 @@ func TestResolveAgents_BuiltinBranchesAreExactlyPlanAndDeepResearch(t *testing.T
 		}
 	}
 	slices.Sort(branches)
-	require.Equal(t, []string{AgentDeepResearch, AgentPlan}, branches)
+	require.Equal(t, []string{AgentDeepResearch, AgentPlan, AgentSketch}, branches)
 }
 
 // deep-research is the one investigating agent that may run commands: a root

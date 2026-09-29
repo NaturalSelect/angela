@@ -95,6 +95,7 @@ const (
 	AgentExplore      string = "explore"
 	AgentGeneral      string = "general"
 	AgentPlan         string = "plan"
+	AgentSketch       string = "sketch"
 	AgentWebFetch     string = "web-fetch"
 
 	// The agents below back Angela's own auxiliary LLM calls. They are
@@ -1438,6 +1439,21 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// A plan is a proposal to settle with the user, not a
 			// license to hand the decision off again, so plan can only
 			// delegate the read-only legwork behind it.
+			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
+		},
+		AgentSketch: {
+			ID:          AgentSketch,
+			Name:        "Sketch",
+			Description: "Forks this conversation into a branch where you and the user design a change together as pseudo-code — its data structures, how they interact, and where they land in this repository. You probe what the user already knows about the code, transcribe their decisions, suggest your own, and check the result against the repository; nothing enters the sketch until the user has seen it as pseudo-code and accepted it, including the parts they delegate to you. It hands back a pseudo-code sketch the user has seen in full, for you to implement without deviating from it: what they saw is what gets built. Unlike plan, which hands back a finished document to approve, sketch builds the design piece by piece in front of the user: use it when the user wants to understand and shape a design, not just sign one off. Do not fork it on your own initiative. Dispatch it when the user asks to sketch a change or work out its design with you; before a change that adds a data structure, introduces a cross-module flow, or alters an existing interface or invariant, you may ask the user whether they want to sketch it first. When the user chooses sketch, it takes the place of plan for that change — do not fork both. Keep the dispatch prompt to the change the user wants to design. It is read-only.",
+			Mode:        AgentModeBranch,
+			Slot:        SlotMain,
+			// A sketch is checked against the conventions the code is
+			// written under, so it reads the same context files as plan.
+			ContextPaths: contextPaths,
+			// NOTE: Sketch shares plan's read-only set; both hand back a
+			// document and neither may run or write anything.
+			AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
+			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetScope},
 			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
 		},
 		AgentWebFetch: {

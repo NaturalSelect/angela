@@ -956,10 +956,10 @@ func (t ToolGlob) GetTimeout() time.Duration {
 
 // DefaultMaxImageSize is the largest image file, in bytes, the read tool
 // accepts when tools.read.max_image_size is unset.
-const DefaultMaxImageSize = 500 * 1024
+const DefaultMaxImageSize = 200 * 1024
 
 type ToolRead struct {
-	MaxImageSize *int `json:"max_image_size,omitempty" jsonschema:"description=Maximum size in bytes of an image file the read tool will return,default=512000,example=1048576"`
+	MaxImageSize *int `json:"max_image_size,omitempty" jsonschema:"description=Maximum size in bytes of an image file the read tool will return,default=204800,example=1048576"`
 }
 
 // GetMaxImageSize returns the user-defined image size limit or the default.

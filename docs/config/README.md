@@ -410,12 +410,12 @@ The built-in engines, in the fixed order Angela registers them:
 | Engine      | Notes                                                        |
 | ----------- | ------------------------------------------------------------ |
 | `bing`      | No key needed. Honors `bing_market`.                         |
-| `ddg`       | DuckDuckGo HTML endpoint. No key needed.                     |
+| `ddg`       | DuckDuckGo HTML endpoint. No key needed. SafeSearch is off.  |
 | `exa`       | Keyless through Exa's MCP endpoint. A key adds date filters. |
 | `ddg-lite`  | DuckDuckGo Lite endpoint. No key needed.                     |
 | `anysearch` | Anonymous tier without a key.                                |
 | `tavily`    | Sends a keyless access header when no key is set.            |
-| `firecrawl` | Sends no credentials when no key is set.                     |
+| `firecrawl` | Tried without a key first. Skipped if Firecrawl rejects it.  |
 | `searxng`   | Public instances, or the ones in `searxng_instances`.        |
 
 **`web_search`** tries `engine` first, then the rest in the order above, and
@@ -424,13 +424,21 @@ not the preferred one, or ignored a `time_range`, the result carries a note
 saying so. `timeout` caps the whole chain; a single engine attempt is capped
 at 15 seconds within it.
 
+> [!WARNING]
+> `engine` only chooses which engine goes first. If it returns nothing,
+> `web_search` sends the same query to the next engines in the list, which
+> are third-party services. Every engine in the table can receive a query, and
+> there is no setting to restrict the list. Avoid searching for proprietary
+> identifiers if that matters to you. The `ddg` engine also turns DuckDuckGo
+> SafeSearch off, and there is no setting to change that.
+
 **`multi_search`** queries several engines at once and merges the results by
 URL, ranking sources that more engines returned above the rest. Without an
 `engines` argument it queries the first three engines in the order above:
 `bing`, `ddg` and `exa`. This default ignores `engine`, so changing the
 preferred engine only affects `web_search`. The model can pass an explicit
 `engines` list to choose others; unknown ids are dropped and repeated ids
-are queried once.
+are queried once. Each queried engine receives the query at the same time.
 
 **API keys.** A key in `api_keys` wins. Only plain `$VAR` and `${VAR}` are
 expanded, in the global and project configs alike. `$(cmd)` and

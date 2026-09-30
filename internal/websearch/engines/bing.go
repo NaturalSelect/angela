@@ -2,6 +2,7 @@ package engines
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -105,7 +106,7 @@ func (e *bingEngine) Search(ctx context.Context, req websearch.Request) ([]webse
 		}
 		title := strings.TrimSpace(link.Text())
 		snippet := strings.TrimSpace(s.Find("p").First().Text())
-		sources = append(sources, websearch.Source{URL: href, Title: title, Snippet: snippet})
+		sources = append(sources, websearch.Source{URL: decodeBingRedirect(href), Title: title, Snippet: snippet})
 	})
 
 	// Bing serves a fully unrelated cached results page rather than an
@@ -120,6 +121,32 @@ func (e *bingEngine) Search(ctx context.Context, req websearch.Request) ([]webse
 		sources = sources[:req.MaxResults]
 	}
 	return sources, nil
+}
+
+// NOTE: Bing wraps organic links as /ck/a?u=a1<base64url(target)>.
+func decodeBingRedirect(href string) string {
+	parsed, err := url.Parse(href)
+	if err != nil || parsed.Path != "/ck/a" || !isBingHost(parsed.Hostname()) {
+		return href
+	}
+	encoded, ok := strings.CutPrefix(parsed.Query().Get("u"), "a1")
+	if !ok {
+		return href
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(encoded, "="))
+	if err != nil {
+		return href
+	}
+	target, err := url.Parse(string(decoded))
+	if err != nil || target.Host == "" || (target.Scheme != "http" && target.Scheme != "https") {
+		return href
+	}
+	return string(decoded)
+}
+
+func isBingHost(host string) bool {
+	host = strings.ToLower(host)
+	return host == "bing.com" || strings.HasSuffix(host, ".bing.com")
 }
 
 var cjkRunRe = regexp.MustCompile(`[\p{Han}]+`)

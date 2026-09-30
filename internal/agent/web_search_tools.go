@@ -38,7 +38,8 @@ func (c *coordinator) newWebSearchRouter() (*websearch.Router, error) {
 			return nil, fmt.Errorf("resolve web search api key for engine %q: %w", id, err)
 		}
 		if strings.Contains(resolved, "$(") {
-			// NOTE: Only $VAR and ${VAR} are expanded here; the value is never logged as it is a credential.
+			// NOTE: Only $VAR and ${VAR} are expanded here; the value is
+			// never logged as it is a credential.
 			slog.Warn("Web search api key still contains \"$(\" after expansion; command substitution is not supported",
 				"engine", id)
 		}

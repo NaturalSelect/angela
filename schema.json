@@ -1189,7 +1189,7 @@
         "max_image_size": {
           "type": "integer",
           "description": "Maximum size in bytes of an image file the read tool will return",
-          "default": 512000,
+          "default": 204800,
           "examples": [
             1048576
           ]

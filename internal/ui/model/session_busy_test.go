@@ -275,8 +275,8 @@ func TestAgentTerminalNotificationsRefreshBusy(t *testing.T) {
 			active := workspace.ActiveAgent{}
 			stubBusyProbe(ws, true, false, permission.ModeManual, &active) // agent now idle
 			ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
-			// A TypeAgentError iteration reaches restoreQueueOnAgentError, which
-			// now always takes the queue back; AnyTimes covers the
+			// A TypeAgentError iteration reaches restoreQueueOnAgentError,
+			// which now always takes the queue back; AnyTimes covers the
 			// TypeAgentFinished iteration, which never calls it.
 			ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil, nil).AnyTimes()
 			require.True(t, m.isAgentBusy())
@@ -424,8 +424,8 @@ func TestAgentTerminalNotificationClearsRetryStatus(t *testing.T) {
 			active := workspace.ActiveAgent{}
 			stubBusyProbe(ws, true, false, permission.ModeManual, &active)
 			ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
-			// A TypeAgentError iteration reaches restoreQueueOnAgentError, which
-			// now always takes the queue back; AnyTimes covers the
+			// A TypeAgentError iteration reaches restoreQueueOnAgentError,
+			// which now always takes the queue back; AnyTimes covers the
 			// TypeAgentFinished iteration, which never calls it.
 			ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil, nil).AnyTimes()
 

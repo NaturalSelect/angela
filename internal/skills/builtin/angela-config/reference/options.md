@@ -104,7 +104,7 @@ rather than aborting the load.
 | `ls.max_items`  | int  | `1000`  | Entry cap for the `ls` tool               |
 | `grep.timeout`  | int  | 5s      | Timeout for a `grep` tool call            |
 | `glob.timeout`  | int  | 30s     | Timeout for a `glob` tool call            |
-| `read.max_image_size` | int | `512000` | Largest image file in bytes the `read` tool returns (500KB) |
+| `read.max_image_size` | int | `204800` | Largest image file in bytes the `read` tool returns (200KB) |
 | `image.timeout` | int  | 10m     | Timeout for an `ImageGenerate`/`ImageEdit` call |
 
 The three timeouts are Go durations serialized as **integer nanoseconds** in

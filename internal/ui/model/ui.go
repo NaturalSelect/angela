@@ -5271,7 +5271,8 @@ func (m *UI) takeQueuedPromptsToEditorCmd(sessionID string, cancel bool) tea.Cmd
 		msg := queuedPromptsTakenMsg{sessionID: sessionID, cancelled: cancel}
 		prompts, err := ws.AgentTakeQueuedPrompts(sessionID)
 		if err != nil {
-			// NOTE: AgentCancel drops the backend queue, so fall back to the local copy.
+			// NOTE: AgentCancel drops the backend queue, so fall back to
+			// the local copy.
 			slog.Warn("Failed to take queued prompts; using the local copy",
 				"session", sessionID, "error", err)
 			prompts, msg.usedLocalCopy = localCopy, true
@@ -5369,7 +5370,8 @@ func (m *UI) applyQueuedPromptsTaken(msg queuedPromptsTakenMsg) tea.Cmd {
 			"session", msg.sessionID, "error", msg.err)
 		cmds = append(cmds, util.ReportWarn("Could not recover queued prompts; they are still queued."))
 	case msg.sessionID != m.currentSessionID():
-		// NOTE: The prompts already left the backend queue, so hold them until that session is shown again.
+		// NOTE: The prompts already left the backend queue, so hold them
+		// until that session is shown again.
 		m.stashRestoredPrompts(msg.sessionID, msg.prompts)
 	default:
 		if msg.usedLocalCopy && len(msg.prompts) > 0 {

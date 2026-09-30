@@ -79,6 +79,9 @@ func (e *firecrawlEngine) Search(ctx context.Context, req websearch.Request) ([]
 		return nil, fmt.Errorf("firecrawl: %w", err)
 	}
 	defer resp.Body.Close()
+	if e.apiKey == "" && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+		return nil, fmt.Errorf("firecrawl: HTTP %d without an API key: %w", resp.StatusCode, websearch.ErrNotConfigured)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("firecrawl: API error (HTTP %d)", resp.StatusCode)
 	}

@@ -102,6 +102,33 @@ func TestFirecrawlEngine_HTTPError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestFirecrawlEngine_RejectedWithoutKeyIsNotConfigured(t *testing.T) {
+	t.Parallel()
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+		}))
+		defer srv.Close()
+
+		e := &firecrawlEngine{client: http.DefaultClient, endpoint: srv.URL}
+		_, err := e.Search(context.Background(), websearch.Request{Query: "golang"})
+		require.ErrorIs(t, err, websearch.ErrNotConfigured)
+	}
+}
+
+func TestFirecrawlEngine_RejectedWithKeyIsFailure(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	e := &firecrawlEngine{client: http.DefaultClient, endpoint: srv.URL, apiKey: "bad-key"}
+	_, err := e.Search(context.Background(), websearch.Request{Query: "golang"})
+	require.Error(t, err)
+	require.NotErrorIs(t, err, websearch.ErrNotConfigured)
+}
+
 func TestFirecrawlEngine_SupportsTimeRangeIsTrue(t *testing.T) {
 	t.Parallel()
 	e := newFirecrawlEngine(Options{HTTPClient: http.DefaultClient})

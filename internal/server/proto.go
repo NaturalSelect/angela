@@ -1344,9 +1344,30 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionSideQuestion(w http.Respon
 //	@Failure		500		{object}	proto.Error
 //	@Router			/workspaces/{id}/agent/sessions/{sid}/commit-message [post]
 func (c *controllerV1) handlePostWorkspaceAgentSessionCommitMessage(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	sid := r.PathValue("sid")
+	c.writeCommitMessage(w, r, r.PathValue("id"), r.PathValue("sid"))
+}
 
+// handlePostWorkspaceAgentDefaultCommitMessage writes a commit message
+// for a staged diff when the caller has no session yet, as on the
+// landing screen. An empty session ID makes the commit agent fall back
+// to the workspace's configured model instead of a session's own.
+//
+//	@Summary		Generate commit message without a session
+//	@Tags			agent
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string							true	"Workspace ID"
+//	@Param			request	body		proto.CommitMessageRequest	true	"Staged diff"
+//	@Success		200		{object}	proto.CommitMessageResponse
+//	@Failure		400		{object}	proto.Error
+//	@Failure		404		{object}	proto.Error
+//	@Failure		500		{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/commit-message [post]
+func (c *controllerV1) handlePostWorkspaceAgentDefaultCommitMessage(w http.ResponseWriter, r *http.Request) {
+	c.writeCommitMessage(w, r, r.PathValue("id"), "")
+}
+
+func (c *controllerV1) writeCommitMessage(w http.ResponseWriter, r *http.Request, id, sid string) {
 	var req proto.CommitMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		c.server.logError(r, "Failed to decode request", "error", err)

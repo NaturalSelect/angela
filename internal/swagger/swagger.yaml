@@ -2033,6 +2033,44 @@ paths:
       summary: Edit the default active agent
       tags:
       - agent
+  /workspaces/{id}/agent/commit-message:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Staged diff
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.CommitMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.CommitMessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Generate commit message without a session
+      tags:
+      - agent
   /workspaces/{id}/agent/init:
     post:
       parameters:

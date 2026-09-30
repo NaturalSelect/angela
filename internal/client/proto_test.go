@@ -937,6 +937,17 @@ func TestProtoMethodsSuccessPaths(t *testing.T) {
 			},
 		},
 		{
+			name:       "AgentGenerateCommitMessage without session",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/agent/commit-message",
+			body:       mustJSON(t, proto.CommitMessageResponse{Message: "fix: correct the bug"}),
+			call: func(t *testing.T, c *Client) {
+				got, err := c.AgentGenerateCommitMessage(context.Background(), "ws1", "", "diff --git a/x b/x")
+				require.NoError(t, err)
+				require.Equal(t, "fix: correct the bug", got.Message)
+			},
+		},
+		{
 			name:       "InitiateAgentProcessing",
 			wantMethod: http.MethodPost,
 			wantPath:   "/v1/workspaces/ws1/agent/init",

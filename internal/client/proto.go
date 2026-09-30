@@ -642,7 +642,13 @@ func (c *Client) AgentAskSideQuestion(ctx context.Context, id, sessionID, questi
 // AgentGenerateCommitMessage asks the workspace to write a commit
 // message describing diff, the output of `git diff --cached`.
 func (c *Client) AgentGenerateCommitMessage(ctx context.Context, id, sessionID, diff string) (proto.CommitMessageResponse, error) {
-	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/commit-message", id, sessionID), nil, jsonBody(proto.CommitMessageRequest{
+	// NOTE: An empty sessionID has its own route; joining the empty segment
+	// into the session-scoped path collapses it and misses the handler.
+	path := fmt.Sprintf("/workspaces/%s/agent/commit-message", id)
+	if sessionID != "" {
+		path = fmt.Sprintf("/workspaces/%s/agent/sessions/%s/commit-message", id, sessionID)
+	}
+	rsp, err := c.post(ctx, path, nil, jsonBody(proto.CommitMessageRequest{
 		Diff: diff,
 	}), http.Header{"Content-Type": []string{"application/json"}})
 	if err != nil {

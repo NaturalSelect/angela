@@ -2416,7 +2416,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionCommit:
 		// Session-scoped, matching ActionSummarize: committing while a
 		// turn is running risks capturing a half-finished edit.
-		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
+		// NOTE: With no session yet (empty ID) there is no turn to wait on.
+		if msg.SessionID != "" && m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before committing..."))
 			break
 		}

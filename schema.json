@@ -1184,6 +1184,20 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "ToolRead": {
+      "properties": {
+        "max_image_size": {
+          "type": "integer",
+          "description": "Maximum size in bytes of an image file the read tool will return",
+          "default": 512000,
+          "examples": [
+            1048576
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "ToolWebSearch": {
       "properties": {
         "engine": {
@@ -1234,6 +1248,9 @@
         },
         "glob": {
           "$ref": "#/$defs/ToolGlob"
+        },
+        "read": {
+          "$ref": "#/$defs/ToolRead"
         },
         "image": {
           "$ref": "#/$defs/ToolImage"

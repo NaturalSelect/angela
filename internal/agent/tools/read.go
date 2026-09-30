@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/lsp"
@@ -91,8 +92,10 @@ func NewReadTool(
 	filetracker filetracker.Service,
 	skillTracker *skills.Tracker,
 	workingDir string,
+	cfg config.ToolRead,
 	skillsPaths ...string,
 ) fantasy.AgentTool {
+	maxImageSize := int64(cfg.GetMaxImageSize())
 	return NewTool(
 		toolnames.Read,
 		readDescription(),
@@ -168,9 +171,9 @@ func NewReadTool(
 
 			isSupportedImage, mimeType := getImageMimeType(filePath)
 			if isSupportedImage {
-				if fileInfo.Size() > MaxReadSize {
+				if fileInfo.Size() > maxImageSize {
 					return Failf("Image file is too large (%d bytes). Maximum size is %d bytes",
-						fileInfo.Size(), MaxReadSize)
+						fileInfo.Size(), maxImageSize)
 				}
 				if !GetSupportsImagesFromContext(ctx) {
 					modelName := GetModelNameFromContext(ctx)

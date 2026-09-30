@@ -113,7 +113,7 @@ func (r *Router) Search(ctx context.Context, req Request) (Result, error) {
 	chain, skippedReason := r.chain(req)
 	deadline := time.Now().Add(r.budget)
 
-	var lastErr error
+	var failures []error
 	var preferredFailure string
 	for _, engine := range chain {
 		remaining := time.Until(deadline)
@@ -129,14 +129,14 @@ func (r *Router) Search(ctx context.Context, req Request) (Result, error) {
 			if ctx.Err() != nil {
 				return Result{}, ctx.Err()
 			}
-			lastErr = err
+			failures = append(failures, engineFailure(engine.ID(), err))
 			if engine.ID() == r.preferred {
 				preferredFailure = err.Error()
 			}
 			continue
 		}
 		if len(sources) == 0 {
-			lastErr = fmt.Errorf("engine %q returned 0 results", engine.ID())
+			failures = append(failures, engineFailure(engine.ID(), errors.New("returned 0 results")))
 			if engine.ID() == r.preferred {
 				preferredFailure = "returned 0 results"
 			}
@@ -165,10 +165,21 @@ func (r *Router) Search(ctx context.Context, req Request) (Result, error) {
 		return Result{Sources: sources, Engine: engine.ID(), Note: note}, nil
 	}
 
-	if lastErr == nil {
-		lastErr = errors.New("websearch: all search engines failed")
+	if len(failures) == 0 {
+		return Result{}, errors.New("websearch: all search engines failed")
 	}
-	return Result{}, lastErr
+	return Result{}, fmt.Errorf("websearch: all search engines failed:\n%w", errors.Join(failures...))
+}
+
+// engineFailure attributes err to the engine that produced it. Engine
+// errors usually carry their own "id: " prefix already; the rest (such
+// as the shared DuckDuckGo rate-limit error) would otherwise be
+// anonymous in a multi-engine failure list.
+func engineFailure(id string, err error) error {
+	if strings.HasPrefix(err.Error(), id+":") {
+		return err
+	}
+	return fmt.Errorf("%s: %w", id, err)
 }
 
 // dedupAndClean cleans each source's snippet and drops later sources

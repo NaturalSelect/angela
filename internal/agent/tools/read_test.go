@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
@@ -159,7 +160,7 @@ func TestViewToolBlocksOversizedImages(t *testing.T) {
 
 	workingDir := t.TempDir()
 	filePath := filepath.Join(workingDir, "large.png")
-	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", MaxReadSize+1)), 0o644))
+	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", config.DefaultMaxImageSize+1)), 0o644))
 
 	tool := newViewToolForTest(t, workingDir)
 	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
@@ -170,6 +171,45 @@ func TestViewToolBlocksOversizedImages(t *testing.T) {
 
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "Image file is too large")
+	require.Contains(t, resp.Content, fmt.Sprintf("Maximum size is %d bytes", config.DefaultMaxImageSize))
+}
+
+func TestViewToolHonorsConfiguredMaxImageSize(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	filePath := filepath.Join(workingDir, "photo.png")
+	const imageSize = config.DefaultMaxImageSize * 2
+	require.NoError(t, os.WriteFile(filePath, []byte(strings.Repeat("a", imageSize)), 0o644))
+
+	ctx := context.WithValue(context.Background(), SessionIDContextKey, "test-session")
+	ctx = context.WithValue(ctx, SupportsImagesContextKey, true)
+
+	tests := []struct {
+		name         string
+		maxImageSize int
+		wantTooLarge bool
+	}{
+		{"raised limit admits the image", imageSize, false},
+		{"lowered limit rejects the image", imageSize - 1, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tool := newViewToolWithConfig(t, workingDir, config.ToolRead{MaxImageSize: &tt.maxImageSize})
+			resp := runViewTool(t, tool, ctx, ReadParams{FilePath: filePath})
+
+			if tt.wantTooLarge {
+				require.True(t, resp.IsError)
+				require.Contains(t, resp.Content, "Image file is too large")
+				require.Contains(t, resp.Content, fmt.Sprintf("Maximum size is %d bytes", tt.maxImageSize))
+				return
+			}
+			require.False(t, resp.IsError, resp.Content)
+		})
+	}
 }
 
 func TestReadTextFileEnforcesMaxContentSize(t *testing.T) {
@@ -275,7 +315,11 @@ func TestReadNoticesCombinesTruncationWithMoreLines(t *testing.T) {
 }
 
 func newViewToolForTest(t *testing.T, workingDir string) fantasy.AgentTool {
-	return NewReadTool(nil, newFileTracker(t, time.Time{}), nil, workingDir)
+	return newViewToolWithConfig(t, workingDir, config.ToolRead{})
+}
+
+func newViewToolWithConfig(t *testing.T, workingDir string, cfg config.ToolRead) fantasy.AgentTool {
+	return NewReadTool(nil, newFileTracker(t, time.Time{}), nil, workingDir, cfg)
 }
 
 func runViewTool(t *testing.T, tool fantasy.AgentTool, ctx context.Context, params ReadParams) fantasy.ToolResponse {

@@ -160,6 +160,27 @@ func TestRouter_TimeRangeNoNoteWhenPreferredHonorsFilter(t *testing.T) {
 	require.Empty(t, res.Note)
 }
 
+func TestRouter_AllEnginesFailReportsEveryFailure(t *testing.T) {
+	t.Parallel()
+	r, err := NewRouter([]Engine{
+		errEngine("bing", errors.New("bing: HTTP 429")),
+		errEngine("ddg", errors.New("DuckDuckGo is rate-limiting this machine. Do not retry or rephrase")),
+		errEngine("exa", errors.New("exa: MCP error (HTTP 503)")),
+		emptyEngine("searxng"),
+	}, "bing", 0)
+	require.NoError(t, err)
+
+	_, err = r.Search(context.Background(), Request{Query: "go"})
+	require.Error(t, err)
+	msg := err.Error()
+	require.Contains(t, msg, "all search engines failed")
+	require.Contains(t, msg, "bing: HTTP 429")
+	require.Contains(t, msg, "ddg: DuckDuckGo is rate-limiting this machine. Do not retry or rephrase")
+	require.Contains(t, msg, "exa: MCP error (HTTP 503)")
+	require.Contains(t, msg, "searxng: returned 0 results")
+	require.NotContains(t, msg, "bing: bing:")
+}
+
 func TestRouter_BudgetExhausted(t *testing.T) {
 	t.Parallel()
 	slow := &fakeEngine{id: "bing", searchFn: func(ctx context.Context, req Request) ([]Source, error) {

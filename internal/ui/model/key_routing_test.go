@@ -2,6 +2,7 @@ package model
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
@@ -160,10 +161,12 @@ func TestHandleKeyPressMsg_ChatCancelWhenEscapeCancelsTrue(t *testing.T) {
 	m.isCanceling = true
 	m.agentBusyCache.set(true)
 	m.busyFetchInFlight = true // keeps dispatchBusyRefresh's returned cmd nil
+	// NOTE: Keeps the TTL backstop in Update from probing LSP state.
+	m.lspCheckedAt = time.Now()
 	ws.EXPECT().AgentTakeQueuedPrompts("s1").Return(nil, nil)
 	ws.EXPECT().AgentCancel("s1")
 
-	m.handleKeyPressMsg(keyMsg("esc"))
+	runCmds(m, m.handleKeyPressMsg(keyMsg("esc")))
 
 	require.False(t, m.turnIsSpinning)
 }

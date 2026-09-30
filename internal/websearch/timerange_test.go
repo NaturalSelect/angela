@@ -48,13 +48,17 @@ func TestParseTimeRange(t *testing.T) {
 	}
 }
 
+// TestApproximateTier pins that a day count rounds up to the smallest
+// tier that still covers it, so a tiered engine never drops results
+// inside the requested window.
 func TestApproximateTier(t *testing.T) {
 	t.Parallel()
+	require.Equal(t, "day", ApproximateTier(0.5))
 	require.Equal(t, "day", ApproximateTier(1))
-	require.Equal(t, "day", ApproximateTier(2))
-	require.Equal(t, "week", ApproximateTier(3))
-	require.Equal(t, "week", ApproximateTier(14))
-	require.Equal(t, "month", ApproximateTier(15))
-	require.Equal(t, "month", ApproximateTier(90))
-	require.Equal(t, "year", ApproximateTier(91))
+	require.Equal(t, "week", ApproximateTier(2))
+	require.Equal(t, "week", ApproximateTier(7))
+	require.Equal(t, "month", ApproximateTier(10))
+	require.Equal(t, "month", ApproximateTier(30))
+	require.Equal(t, "year", ApproximateTier(60))
+	require.Equal(t, "year", ApproximateTier(365))
 }

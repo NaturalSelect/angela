@@ -395,7 +395,7 @@ works without any API key.
       "engine": "bing",                 // engine web_search tries first
       "timeout": 30000000000,           // fallback chain budget, in nanoseconds
       "api_keys": {
-        "tavily": "$TAVILY_API_KEY",    // shell expansion works
+        "tavily": "$TAVILY_API_KEY",    // only $VAR and ${VAR} are expanded
         "exa": "$EXA_API_KEY"
       },
       "bing_market": "en-US",           // locale for Bing results
@@ -432,8 +432,12 @@ preferred engine only affects `web_search`. The model can pass an explicit
 `engines` list to choose others; unknown ids are dropped and repeated ids
 are queried once.
 
-**API keys.** A key in `api_keys` wins. Otherwise these environment
-variables are read for the engines that use one:
+**API keys.** A key in `api_keys` wins. Only plain `$VAR` and `${VAR}` are
+expanded, in the global and project configs alike. `$(cmd)` and
+`${VAR:-default}` are not supported: `$(cmd)` is left as literal text, which
+Angela warns about in its log, and `${VAR:-default}` expands to an empty
+string. Without a key in `api_keys`, these environment variables are read for
+the engines that use one:
 
 | Engine      | Environment variable |
 | ----------- | -------------------- |

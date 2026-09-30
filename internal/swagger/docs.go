@@ -4972,6 +4972,14 @@ const docTemplate = `{
                 }
             }
         },
+        "config.ToolRead": {
+            "type": "object",
+            "properties": {
+                "max_image_size": {
+                    "type": "integer"
+                }
+            }
+        },
         "config.ToolSetKind": {
             "type": "integer",
             "format": "int32",
@@ -4985,6 +4993,41 @@ const docTemplate = `{
                 "ToolSetAll",
                 "ToolSetInherited"
             ]
+        },
+        "config.ToolWebSearch": {
+            "type": "object",
+            "properties": {
+                "api_keys": {
+                    "description": "APIKeys maps an engine id to its credential. Values support $VAR\nshell-style expansion; engines with a keyless mode work without\nan entry here.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "bing_market": {
+                    "description": "BingMarket is the market/locale Bing search results are scoped to.",
+                    "type": "string"
+                },
+                "engine": {
+                    "description": "Engine is the id tried first; the rest of the built-in engines\n(in a fixed order) serve as fallback.",
+                    "type": "string"
+                },
+                "searxng_instances": {
+                    "description": "SearxngInstances overrides the built-in list of public SearXNG\ninstances tried in order.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "timeout": {
+                    "description": "Timeout bounds the fallback chain's total wall-clock time across\nevery engine attempted for one search.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/time.Duration"
+                        }
+                    ]
+                }
+            }
         },
         "config.Tools": {
             "type": "object",
@@ -5000,6 +5043,12 @@ const docTemplate = `{
                 },
                 "ls": {
                     "$ref": "#/definitions/config.ToolLs"
+                },
+                "read": {
+                    "$ref": "#/definitions/config.ToolRead"
+                },
+                "web_search": {
+                    "$ref": "#/definitions/config.ToolWebSearch"
                 }
             }
         },

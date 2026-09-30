@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/env"
@@ -35,6 +36,11 @@ func (c *coordinator) newWebSearchRouter() (*websearch.Router, error) {
 		resolved, err := resolver.ResolveValue(raw)
 		if err != nil {
 			return nil, fmt.Errorf("resolve web search api key for engine %q: %w", id, err)
+		}
+		if strings.Contains(resolved, "$(") {
+			// NOTE: Only $VAR and ${VAR} are expanded here; the value is never logged as it is a credential.
+			slog.Warn("Web search api key still contains \"$(\" after expansion; command substitution is not supported",
+				"engine", id)
 		}
 		if resolved != "" {
 			apiKeys[id] = resolved

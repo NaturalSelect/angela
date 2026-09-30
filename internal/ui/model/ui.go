@@ -379,6 +379,9 @@ type UI struct {
 	// in-flight fetch captures it at dispatch and its result is discarded
 	// if the generation has moved on (see workspace_cache.go).
 	promptQueueGen uint64
+	// stashedPrompts holds prompts taken back for a session that is no
+	// longer on screen, restored when that session is loaded again.
+	stashedPrompts map[string][]message.QueuedPrompt
 	// agentBusyCache / permissionModeCache memoize the workspace busy and
 	// permission probes (synchronous HTTP round-trips in client/server
 	// mode). Reads never probe; refreshes happen off-thread (see
@@ -974,6 +977,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.promptQueue = 0
 		m.promptQueueItems = nil
 		m.promptQueueCheckedAt = time.Time{}
+		if cmd := m.restoreStashedPrompts(msg.session.ID); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		if cmd := m.dispatchBusyRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -5235,25 +5241,18 @@ func (m *UI) cancelAgent() tea.Cmd {
 			m.bangCancel = nil
 		}
 
-		// AgentCancel drops any prompts still waiting behind the active
-		// turn on the backend, so take them back into the editor first —
-		// cancelling must never silently lose typed text.
-		restoreCmd := m.takeQueuedPromptsToEditor(m.session.ID)
-		m.com.Workspace.AgentCancel(m.session.ID)
-		// Stop the spinning turn indicator and drop the memoized busy
-		// state the cancel just changed; the turn status re-renders from
-		// last-known state and again when the off-thread refresh (and
-		// the agent's own events) land.
+		// NOTE: AgentCancel drops the backend queue, so the take must run
+		// before it, in the same command; the busy refresh waits for the
+		// result so its probe cannot race the cancel.
 		m.turnIsSpinning = false
-		m.invalidateBusyCaches()
-		return tea.Batch(restoreCmd, m.dispatchBusyRefresh())
+		return m.takeQueuedPromptsToEditorCmd(m.session.ID, true)
 	}
 
 	// Queued prompts pending: esc pops them back into the editor instead
 	// of discarding them. Decide from the cached count (event-driven)
 	// instead of a synchronous workspace probe.
 	if m.promptQueue > 0 {
-		return m.takeQueuedPromptsToEditor(m.session.ID)
+		return m.takeQueuedPromptsToEditorCmd(m.session.ID, false)
 	}
 
 	// First escape press - set canceling state and start timer.
@@ -5261,35 +5260,30 @@ func (m *UI) cancelAgent() tea.Cmd {
 	return cancelTimerCmd()
 }
 
-// takeQueuedPromptsToEditor atomically removes every user-queued prompt
-// behind sessionID's turn on the backend (the internal resume-after-
-// summarize entry, if any, is left in place) and, if any were waiting,
-// restores their text and attachments into the editor and syncs the
-// transcript so the "queued" entries disappear along with them. Taking
-// from the backend directly — rather than clearing it separately and
-// restoring from the UI's mirror — is what lets attachment bytes survive
-// the round trip: the mirror strips them for cheap polling. Restored text
-// and attachments are placed ahead of whatever draft the user was already
-// composing, in queue order, so a half-typed follow-up is never clobbered
-// and nothing queued is ever silently lost.
-func (m *UI) takeQueuedPromptsToEditor(sessionID string) tea.Cmd {
-	items, err := m.com.Workspace.AgentTakeQueuedPrompts(sessionID)
-	if err == nil {
-		return m.restoreQueuedPrompts(items)
+// takeQueuedPromptsToEditorCmd takes every user-queued prompt behind
+// sessionID's turn off the Update goroutine and, when cancel is set,
+// cancels the turn right after. The result lands as queuedPromptsTakenMsg.
+func (m *UI) takeQueuedPromptsToEditorCmd(sessionID string, cancel bool) tea.Cmd {
+	ws := m.com.Workspace
+	localCopy := m.promptQueueItems
+	return func() tea.Msg {
+		msg := queuedPromptsTakenMsg{sessionID: sessionID, cancelled: cancel}
+		prompts, err := ws.AgentTakeQueuedPrompts(sessionID)
+		if err != nil {
+			// NOTE: AgentCancel drops the backend queue, so fall back to the local copy.
+			slog.Warn("Failed to take queued prompts; using the local copy",
+				"session", sessionID, "error", err)
+			prompts, msg.usedLocalCopy = localCopy, true
+			if len(localCopy) > 0 {
+				ws.AgentClearQueue(sessionID)
+			}
+		}
+		msg.prompts = prompts
+		if cancel {
+			ws.AgentCancel(sessionID)
+		}
+		return msg
 	}
-
-	// NOTE: AgentCancel will drop the backend queue, so use the mirror.
-	slog.Warn("Failed to take queued prompts; using the local copy",
-		"session", sessionID, "error", err)
-	items = m.promptQueueItems
-	if len(items) == 0 {
-		return nil
-	}
-	m.com.Workspace.AgentClearQueue(sessionID)
-	return tea.Batch(
-		util.ReportWarn("Could not fetch queued prompts from the server; restored the local copy (attachments may be missing)."),
-		m.restoreQueuedPrompts(items),
-	)
 }
 
 func (m *UI) restoreQueuedPrompts(items []message.QueuedPrompt) tea.Cmd {
@@ -5361,13 +5355,47 @@ func (m *UI) takeQueuedPromptsCmd(sessionID string) tea.Cmd {
 }
 
 func (m *UI) applyQueuedPromptsTaken(msg queuedPromptsTakenMsg) tea.Cmd {
-	if msg.err != nil {
+	var cmds []tea.Cmd
+	if msg.cancelled {
+		m.invalidateBusyCaches()
+		cmds = append(cmds, m.dispatchBusyRefresh())
+	}
+
+	switch {
+	case msg.err != nil:
 		// NOTE: The queue is still on the backend, so leave the mirror alone.
 		slog.Warn("Failed to take queued prompts after an agent error",
 			"session", msg.sessionID, "error", msg.err)
-		return util.ReportWarn("Could not recover queued prompts; they are still queued.")
+		cmds = append(cmds, util.ReportWarn("Could not recover queued prompts; they are still queued."))
+	case msg.sessionID != m.currentSessionID():
+		// NOTE: The prompts already left the backend queue, so hold them until that session is shown again.
+		m.stashRestoredPrompts(msg.sessionID, msg.prompts)
+	default:
+		if msg.usedLocalCopy && len(msg.prompts) > 0 {
+			cmds = append(cmds, util.ReportWarn("Could not fetch queued prompts from the server; restored the local copy (attachments may be missing)."))
+		}
+		cmds = append(cmds, m.restoreQueuedPrompts(msg.prompts))
 	}
-	return m.restoreQueuedPrompts(msg.prompts)
+	return tea.Batch(cmds...)
+}
+
+func (m *UI) stashRestoredPrompts(sessionID string, prompts []message.QueuedPrompt) {
+	if len(prompts) == 0 {
+		return
+	}
+	if m.stashedPrompts == nil {
+		m.stashedPrompts = make(map[string][]message.QueuedPrompt)
+	}
+	m.stashedPrompts[sessionID] = append(m.stashedPrompts[sessionID], prompts...)
+}
+
+func (m *UI) restoreStashedPrompts(sessionID string) tea.Cmd {
+	prompts, ok := m.stashedPrompts[sessionID]
+	if !ok {
+		return nil
+	}
+	delete(m.stashedPrompts, sessionID)
+	return m.restoreQueuedPrompts(prompts)
 }
 
 // prependToEditor places text ahead of whatever draft is being composed,

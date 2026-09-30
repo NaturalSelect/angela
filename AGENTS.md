@@ -108,7 +108,8 @@ internal/
 - **System prompts are Go templates**: `internal/agent/templates/*.md.tpl`
   with runtime data injected.
 - **Context files**: Angela reads AGENTS.md, ANGELA.md, CLAUDE.md, GEMINI.md
-  (and `.local` variants, except AGENTS.md) from the working directory for
+  (plus `CLAUDE.local.md`, `ANGELA.local.md`, `Angela.local.md` and
+  `angela.local.md`) from the working directory for
   project-specific instructions. It also reads `~/.config/angela/ANGELA.md`
   and `~/.config/AGENTS.md` by default for instructions that apply to every
   project (`options.global_context_paths`; see `internal/config/load.go`

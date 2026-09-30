@@ -104,10 +104,13 @@ rather than aborting the load.
 | `ls.max_items`  | int  | `1000`  | Entry cap for the `ls` tool               |
 | `grep.timeout`  | int  | 5s      | Timeout for a `grep` tool call            |
 | `glob.timeout`  | int  | 30s     | Timeout for a `glob` tool call            |
+| `read.max_image_size` | int | `512000` | Largest image file in bytes the `read` tool returns (500KB) |
 | `image.timeout` | int  | 10m     | Timeout for an `ImageGenerate`/`ImageEdit` call |
 
 The three timeouts are Go durations serialized as **integer nanoseconds** in
-JSON: `10000000000` is 10 seconds.
+JSON: `10000000000` is 10 seconds. `read.max_image_size` is a plain byte count:
+`1048576` is 1MB. It only raises Angela's own cap; the model provider can still
+reject an image it considers too large.
 
 Outside a git repository, unset `ls.max_depth`/`ls.max_items` (and the TUI's
 completion limits) default to `2`/`100` instead of unlimited, to avoid an
@@ -118,6 +121,7 @@ unbounded walk of a non-project directory.
   "tools": {
     "ls": { "max_depth": 10, "max_items": 500 },
     "grep": { "timeout": 10000000000 },
+    "read": { "max_image_size": 1048576 },
     "image": { "timeout": 900000000000 }
   }
 }

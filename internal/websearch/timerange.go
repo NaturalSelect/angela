@@ -78,16 +78,18 @@ func ParseTimeRange(s string) (*TimeRange, error) {
 	return nil, fmt.Errorf("websearch: unrecognized time_range %q: expected day/week/month/year, a relative offset like 3d or 2w, or an absolute date YYYY-MM-DD", s)
 }
 
-// ApproximateTier maps a custom day count onto the nearest of the fixed
-// day/week/month/year buckets, for engines that only support named
-// ranges (e.g. Tavily, SearXNG, DDG).
+// ApproximateTier maps a custom day count onto the smallest of the fixed
+// day/week/month/year buckets that fully covers it, for engines that only
+// support named ranges (e.g. Tavily, SearXNG, DDG). Rounding up means a
+// tier may return older results than asked for but never drops results
+// inside the requested window.
 func ApproximateTier(days float64) string {
 	switch {
-	case days <= 2:
+	case days <= namedRangeDays["day"]:
 		return "day"
-	case days <= 14:
+	case days <= namedRangeDays["week"]:
 		return "week"
-	case days <= 90:
+	case days <= namedRangeDays["month"]:
 		return "month"
 	default:
 		return "year"

@@ -87,9 +87,8 @@ var namedTierLetter = map[string]string{
 
 // tierDays returns the day count used to approximate a TimeRange to a
 // named day/week/month/year tier, for engines that only support fixed
-// tiers (DDG, Tavily, SearXNG). An absolute After date has no natural
-// day count, so it falls back to 7 (a "week" tier), matching the
-// reference implementation this was ported from.
+// tiers (DDG, Tavily, SearXNG). An absolute After date is converted to
+// the number of days between it and now.
 func tierDays(tr *websearch.TimeRange) float64 {
 	if tr == nil {
 		return 0
@@ -97,5 +96,5 @@ func tierDays(tr *websearch.TimeRange) float64 {
 	if tr.After.IsZero() {
 		return tr.Days
 	}
-	return 7
+	return time.Since(tr.After).Hours() / 24
 }

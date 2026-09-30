@@ -133,11 +133,14 @@ type agentRunFailedMsg struct {
 }
 
 // queuedPromptsTakenMsg carries the result of taking a session's queued
-// prompts off the Update goroutine after its turn failed.
+// prompts off the Update goroutine, either after its turn failed or when
+// the user pressed esc.
 type queuedPromptsTakenMsg struct {
-	sessionID string
-	prompts   []message.QueuedPrompt
-	err       error
+	sessionID     string
+	prompts       []message.QueuedPrompt
+	err           error
+	usedLocalCopy bool
+	cancelled     bool
 }
 
 // agentModelChangedMsg reports that the agent a session runs on was

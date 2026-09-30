@@ -648,7 +648,8 @@ func TestSendMessageSetsOptimisticBusy(t *testing.T) {
 	// Second press must actually cancel.
 	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil, nil)
 	ws.EXPECT().AgentCancel(gomock.Any())
-	m.cancelAgent()
+	stubBusyProbe(ws, true, false, permission.ModeManual, &workspace.ActiveAgent{})
+	runCmds(m, m.cancelAgent())
 }
 
 // TestCancelAgentClearsQueueFromCachedCount: the queue-clear decision must
@@ -667,10 +668,12 @@ func TestCancelAgentClearsQueueFromCachedCount(t *testing.T) {
 	// AgentQueuedPrompts/AgentQueuedPromptsList deliberately left
 	// unstubbed: the decision must use the cached count, not a probe.
 
-	m.cancelAgent()
-	require.Zero(t, m.promptQueue, "the cached count must be zeroed immediately")
-	require.Empty(t, m.promptQueueItems)
+	cmd := m.cancelAgent()
+	require.NotNil(t, cmd)
 	require.False(t, m.isCanceling, "clearing the queue must not arm cancellation")
+	runCmds(m, cmd)
+	require.Zero(t, m.promptQueue, "the cached count must be zeroed once the take lands")
+	require.Empty(t, m.promptQueueItems)
 	require.Equal(t, "a", m.textarea.Value(),
 		"the queued prompt must reappear in the editor instead of being lost")
 }
@@ -718,8 +721,11 @@ func TestCancelAgentRestoresQueueOnActiveCancel(t *testing.T) {
 	cancelCall := ws.EXPECT().AgentCancel(gomock.Any())
 	gomock.InOrder(takeCall, cancelCall)
 
-	m.cancelAgent()
-	require.Zero(t, m.promptQueue, "the cached count must be zeroed immediately")
+	cmd := m.cancelAgent()
+	require.NotNil(t, cmd)
+	require.Equal(t, 1, m.promptQueue, "nothing may change until the command runs off the Update goroutine")
+	runCmds(m, cmd)
+	require.Zero(t, m.promptQueue, "the cached count must be zeroed once the take lands")
 	require.Empty(t, m.promptQueueItems)
 	require.Equal(t, "queued follow-up", m.textarea.Value(),
 		"a prompt still queued behind the cancelled turn must reappear in the editor")
@@ -741,8 +747,41 @@ func TestCancelAgentRestoresQueueAheadOfDraft(t *testing.T) {
 	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).
 		Return([]message.QueuedPrompt{{Prompt: "first queued"}, {Prompt: "second queued"}}, nil)
 
-	m.cancelAgent()
+	runCmds(m, m.cancelAgent())
 	require.Equal(t, "first queued\n\nsecond queued\n\nstill typing this", m.textarea.Value())
+}
+
+// TestQueuedPromptsTakenForOtherSessionAreHeldUntilItIsShown pins the
+// session guard: prompts taken back for session s0 must not land in the
+// editor of session s1 nor wipe s1's queue mirror, and must reappear
+// once s0 is on screen again, since they already left the backend queue.
+func TestQueuedPromptsTakenForOtherSessionAreHeldUntilItIsShown(t *testing.T) {
+	pinTTLs(t)
+
+	m, _ := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.promptQueue = 1
+	m.promptQueueItems = []message.QueuedPrompt{{Prompt: "s1 still queued"}}
+	m.textarea.SetValue("s1 draft")
+
+	m.Update(queuedPromptsTakenMsg{
+		sessionID: "s0",
+		prompts:   []message.QueuedPrompt{{Prompt: "from s0"}},
+	})
+
+	require.Equal(t, "s1 draft", m.textarea.Value(),
+		"another session's prompts must not reach the visible editor")
+	require.Equal(t, 1, m.promptQueue, "the visible session's queue count must survive")
+	require.Equal(t, []message.QueuedPrompt{{Prompt: "s1 still queued"}}, m.promptQueueItems)
+
+	m.textarea.Reset()
+	m.Update(loadSessionMsg{session: &session.Session{ID: "s0"}})
+	require.Equal(t, "from s0", m.textarea.Value(),
+		"the held prompts must reappear when their session is shown")
+
+	m.textarea.Reset()
+	m.Update(loadSessionMsg{session: &session.Session{ID: "s0"}})
+	require.Empty(t, m.textarea.Value(), "held prompts must be restored only once")
 }
 
 // TestAgentRunFailedMsgRestoresQueuedPrompts pins the local (AppWorkspace)

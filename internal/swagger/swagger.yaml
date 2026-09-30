@@ -535,6 +535,11 @@ definitions:
       max_items:
         type: integer
     type: object
+  config.ToolRead:
+    properties:
+      max_image_size:
+        type: integer
+    type: object
   config.ToolSetKind:
     enum:
     - 0
@@ -546,6 +551,39 @@ definitions:
     - ToolSetScope
     - ToolSetAll
     - ToolSetInherited
+  config.ToolWebSearch:
+    properties:
+      api_keys:
+        additionalProperties:
+          type: string
+        description: |-
+          APIKeys maps an engine id to its credential. Values support $VAR
+          shell-style expansion; engines with a keyless mode work without
+          an entry here.
+        type: object
+      bing_market:
+        description: BingMarket is the market/locale Bing search results are scoped
+          to.
+        type: string
+      engine:
+        description: |-
+          Engine is the id tried first; the rest of the built-in engines
+          (in a fixed order) serve as fallback.
+        type: string
+      searxng_instances:
+        description: |-
+          SearxngInstances overrides the built-in list of public SearXNG
+          instances tried in order.
+        items:
+          type: string
+        type: array
+      timeout:
+        allOf:
+        - $ref: '#/definitions/time.Duration'
+        description: |-
+          Timeout bounds the fallback chain's total wall-clock time across
+          every engine attempted for one search.
+    type: object
   config.Tools:
     properties:
       glob:
@@ -556,6 +594,10 @@ definitions:
         $ref: '#/definitions/config.ToolImage'
       ls:
         $ref: '#/definitions/config.ToolLs'
+      read:
+        $ref: '#/definitions/config.ToolRead'
+      web_search:
+        $ref: '#/definitions/config.ToolWebSearch'
     type: object
   config.TrailerStyle:
     enum:

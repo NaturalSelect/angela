@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     # Ceiling for the whole job. Must stay above the review step's own
     # timeout below with room for checkout, build, and posting.
-    timeout-minutes: 120
+    timeout-minutes: 150
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -541,7 +541,7 @@ jobs:
         # open-ended loop), so runtime still scales with how much the PR
         # touches rather than with the repo. Headroom for a large PR;
         # raise this and the job ceiling together.
-        timeout-minutes: 90
+        timeout-minutes: 120
         env:
           REVIEW_MODEL: ${{ secrets.ANGELA_REVIEW_MODEL }}
         run: |

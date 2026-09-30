@@ -264,6 +264,35 @@ func TestCommitRefusesBusySession(t *testing.T) {
 	require.Equal(t, util.InfoTypeWarn, info.Type)
 }
 
+// TestCommitWithoutSessionSkipsBusyCheck pins that /commit works from
+// the landing screen: with no session there is no turn to wait on, so
+// the busy check is never consulted (the mock has no expectation for
+// it) and the empty session ID reaches message generation unchanged.
+func TestCommitWithoutSessionSkipsBusyCheck(t *testing.T) {
+	t.Parallel()
+
+	commitCmd, err := signedCommitCommand("fix: add y")
+	require.NoError(t, err)
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
+		Return(proto.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
+	ws.EXPECT().AgentGenerateCommitMessage(gomock.Any(), "", "diff --git a/x b/x\n+y").
+		Return("fix: add y", nil)
+	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", commitCmd, 0, nil, false).
+		Return(proto.ShellCommandResponse{ExitCode: 0}, nil)
+
+	m := newSummarizeGateUI(t, ws)
+
+	cmd := m.handleDialogMsg(dialog.ActionCommit{SessionID: ""})
+	require.NotNil(t, cmd)
+
+	msgs := collectInfoMsgs(cmd)
+	require.NotEmpty(t, msgs)
+	require.Equal(t, "Committed: fix: add y", msgs[len(msgs)-1].Msg)
+}
+
 // TestCommitDispatchesWhenIdle mirrors
 // TestSummarizeIgnoresUnrelatedSessionBusy: an idle session's commit
 // must actually run end to end through the dialog dispatch path, not

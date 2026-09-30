@@ -526,9 +526,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "export_image", "Export Image", "", ActionExportImage{}).WithAliases("image"))
 	}
 
-	if c.hasSession {
-		commands = append(commands, NewCommandItem(c.com.Styles, "commit", "Commit Staged Changes", "", ActionCommit{SessionID: c.sessionID}))
-	}
+	commands = append(commands, NewCommandItem(c.com.Styles, "commit", "Commit Staged Changes", "", ActionCommit{SessionID: c.sessionID}))
 
 	if c.hasSession && !c.viewingSubAgent() {
 		commands = append(commands, NewCommandItem(c.com.Styles, "undo", "Undo Last Turn", "", ActionUndo{SessionID: c.sessionID}).WithAliases("revert"))

@@ -157,6 +157,29 @@ func TestPostWorkspaceAgentSessionCommitMessage_Success(t *testing.T) {
 	require.Equal(t, "fix: correct the bug", resp.Message)
 }
 
+// TestPostWorkspaceAgentDefaultCommitMessage_Success pins that the
+// session-less route hands the coordinator an empty session ID, which
+// is what lets the landing screen commit before any session exists.
+func TestPostWorkspaceAgentDefaultCommitMessage_Success(t *testing.T) {
+	t.Parallel()
+
+	coord := NewMockCoordinator(gomock.NewController(t))
+	coord.EXPECT().GenerateCommitMessage(gomock.Any(), "", "diff --git a/x b/x").Return("fix: correct the bug", nil)
+
+	c, wsID := buildAgentWorkspace(t, coord)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/",
+		strings.NewReader(`{"diff":"diff --git a/x b/x"}`))
+	req.SetPathValue("id", wsID)
+	rec := httptest.NewRecorder()
+	c.handlePostWorkspaceAgentDefaultCommitMessage(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp proto.CommitMessageResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, "fix: correct the bug", resp.Message)
+}
+
 // TestPostWorkspaceAgentSessionCommitMessage_DecodeError pins that a
 // malformed request body is rejected before the coordinator is ever
 // consulted — the mock has no expectation set, so an unwanted call

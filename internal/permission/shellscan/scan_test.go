@@ -167,6 +167,9 @@ func TestIsDangerousNormalizesTheCommandHead(t *testing.T) {
 		{[]string{"rm.exe", "-rf", "build"}, true},
 		{[]string{`C:\tools\rm.exe`, "-rf", "build"}, true},
 		{[]string{"RM.EXE", "-rf", "build"}, true},
+		{[]string{"curl", "-X", "POST", "https://example.com"}, true},
+		{[]string{"/usr/bin/curl", "https://example.com"}, true},
+		{[]string{"curlie", "https://example.com"}, false},
 		{[]string{"ls", "-la"}, false},
 	}
 

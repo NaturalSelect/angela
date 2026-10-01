@@ -82,7 +82,7 @@ func TestResolveAgents_CustomAgentDefaultsToBaseTools(t *testing.T) {
 	reviewer, ok := agents["reviewer"]
 	require.True(t, ok)
 	require.NotEmpty(t, reviewer.AllowedTools.Tools)
-	require.ElementsMatch(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch", "MultiSearch", "Git"}, false), reviewer.AllowedTools.Tools)
+	require.ElementsMatch(t, filterSlice(allToolNames(), []string{"Git"}, false), reviewer.AllowedTools.Tools)
 }
 
 // TestResolveAgents_CustomPrimaryIsNotDowngraded pins that primary mode
@@ -418,7 +418,7 @@ func TestResolveAgents_CoderCannotInherit(t *testing.T) {
 	agents := cfg.ResolveAgents()
 	coder := agents[AgentCoder]
 	require.Equal(t, ToolSetScope, coder.AllowedTools.Kind)
-	require.ElementsMatch(t, filterSlice(allToolNames(), []string{"WebFetch", "WebSearch", "MultiSearch", "Git"}, false), coder.AllowedTools.Tools,
+	require.ElementsMatch(t, filterSlice(allToolNames(), []string{"Git"}, false), coder.AllowedTools.Tools,
 		"the inheritance root falls back to every tool rather than to nothing")
 	require.Equal(t, ToolSetAll, coder.AllowedMCP.Kind)
 }

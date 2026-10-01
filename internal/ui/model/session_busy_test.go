@@ -731,6 +731,43 @@ func TestCancelAgentRestoresQueueOnActiveCancel(t *testing.T) {
 		"a prompt still queued behind the cancelled turn must reappear in the editor")
 }
 
+// TestCancelAgentClearsRetryStatus pins that the second esc press drops the
+// retry banner of the turn it cancelled. A cancelled turn publishes no
+// terminal notification, so nothing else would clear it before the next
+// turn starts.
+func TestCancelAgentClearsRetryStatus(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.isCanceling = true
+	m.busyFetchInFlight = true
+	m.retryStatus = &retryStatus{sessionID: "s1", attempt: 3, maxAttempt: 5, until: time.Now().Add(time.Minute)}
+
+	ws.EXPECT().AgentTakeQueuedPrompts(gomock.Any()).Return(nil, nil)
+	ws.EXPECT().AgentCancel(gomock.Any())
+
+	runCmds(m, m.cancelAgent())
+
+	require.Nil(t, m.retryStatus, "cancelling the turn must drop its retry banner")
+}
+
+// TestCancelAgentKeepsOtherSessionsRetryStatus pins the session scoping of
+// that clear: a take that lands for one session must not wipe out the retry
+// banner of another.
+func TestCancelAgentKeepsOtherSessionsRetryStatus(t *testing.T) {
+	pinTTLs(t)
+
+	m, _ := newMockBusyUI(t)
+	warmCaches(m, true)
+	m.busyFetchInFlight = true
+	m.retryStatus = &retryStatus{sessionID: "s1", attempt: 3, maxAttempt: 5, until: time.Now().Add(time.Minute)}
+
+	m.Update(queuedPromptsTakenMsg{sessionID: "other-session", cancelled: true})
+
+	require.NotNil(t, m.retryStatus, "an unrelated session's retry banner must survive")
+}
+
 // TestCancelAgentRestoresQueueAheadOfDraft pins the merge order: restored
 // queue text must lead, in queue order, with whatever the user was
 // already typing kept intact after it — a cancel must never clobber a

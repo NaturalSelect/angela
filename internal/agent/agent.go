@@ -2535,7 +2535,11 @@ func (a *sessionAgent) convertToToolResult(result fantasy.ToolResultContent) mes
 //
 // Solution: For these providers, we:
 //  1. Replace the media in the tool result with a text placeholder
-//  2. Inject a user message immediately after with the image as a file attachment
+//  2. Inject a user message with the images as file attachments after the
+//     last tool message of the consecutive run, so every tool result of one
+//     assistant turn stays adjacent (Anthropic-style APIs reject a user
+//     block between tool results, and OpenAI-style APIs require them to be
+//     contiguous)
 //  3. This maintains the tool execution flow while working around API limitations
 //
 // Anthropic and Bedrock support images natively in tool results, so we skip
@@ -2558,14 +2562,26 @@ func (a *sessionAgent) workaroundProviderMediaLimitations(messages []fantasy.Mes
 
 	convertedMessages := make([]fantasy.Message, 0, len(messages))
 
+	var pendingMedia []fantasy.FilePart
+	flushPendingMedia := func() {
+		if len(pendingMedia) == 0 {
+			return
+		}
+		convertedMessages = append(convertedMessages, fantasy.NewUserMessage(
+			"Here is the media content from the tool result:",
+			pendingMedia...,
+		))
+		pendingMedia = nil
+	}
+
 	for _, msg := range messages {
 		if msg.Role != fantasy.MessageRoleTool {
+			flushPendingMedia()
 			convertedMessages = append(convertedMessages, msg)
 			continue
 		}
 
 		textParts := make([]fantasy.MessagePart, 0, len(msg.Content))
-		var mediaFiles []fantasy.FilePart
 
 		for _, part := range msg.Content {
 			toolResult, ok := fantasy.AsMessagePart[fantasy.ToolResultPart](part)
@@ -2602,7 +2618,7 @@ func (a *sessionAgent) workaroundProviderMediaLimitations(messages []fantasy.Mes
 					continue
 				}
 
-				mediaFiles = append(mediaFiles, fantasy.FilePart{
+				pendingMedia = append(pendingMedia, fantasy.FilePart{
 					Data:      decoded,
 					MediaType: media.MediaType,
 					Filename:  fmt.Sprintf("tool-result-%s", toolResult.ToolCallID),
@@ -2630,14 +2646,8 @@ func (a *sessionAgent) workaroundProviderMediaLimitations(messages []fantasy.Mes
 			Role:    fantasy.MessageRoleTool,
 			Content: textParts,
 		})
-
-		if len(mediaFiles) > 0 {
-			convertedMessages = append(convertedMessages, fantasy.NewUserMessage(
-				"Here is the media content from the tool result:",
-				mediaFiles...,
-			))
-		}
 	}
+	flushPendingMedia()
 
 	return convertedMessages
 }

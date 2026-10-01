@@ -1017,6 +1017,69 @@ func TestWorkaroundProviderMediaLimitations_VisionModel(t *testing.T) {
 	require.Equal(t, "image/png", file.MediaType)
 }
 
+// TestWorkaroundProviderMediaLimitations_ConsecutiveToolResultsStayAdjacent
+// guards against a synthetic user message landing between two tool results
+// of the same assistant turn. Providers reject that ordering: Anthropic
+// reports the later tool_use as missing its tool_result.
+func TestWorkaroundProviderMediaLimitations_ConsecutiveToolResultsStayAdjacent(t *testing.T) {
+	env := testEnv(t)
+	sa, _ := testSessionAgent(env, nil, nil, "test prompt")
+	agent := sa.(*sessionAgent)
+
+	pngBase64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
+	imageResult := func(id string) fantasy.Message {
+		return fantasy.Message{
+			Role: fantasy.MessageRoleTool,
+			Content: []fantasy.MessagePart{
+				fantasy.ToolResultPart{
+					ToolCallID: id,
+					Output: fantasy.ToolResultOutputContentMedia{
+						Data:      pngBase64,
+						MediaType: "image/png",
+					},
+				},
+			},
+		}
+	}
+
+	messages := []fantasy.Message{
+		fantasy.NewUserMessage("first"),
+		{Role: fantasy.MessageRoleAssistant},
+		imageResult("call_1"),
+		imageResult("call_2"),
+		fantasy.NewUserMessage("next"),
+	}
+
+	model := Model{
+		ModelCfg: config.SelectedModel{Provider: "openai"},
+		CatwalkCfg: config.ProviderModel{Model: catwalk.Model{
+			SupportsImages: true,
+		}},
+	}
+
+	result := agent.workaroundProviderMediaLimitations(messages, model)
+
+	roles := make([]fantasy.MessageRole, 0, len(result))
+	for _, msg := range result {
+		roles = append(roles, msg.Role)
+	}
+	require.Equal(t, []fantasy.MessageRole{
+		fantasy.MessageRoleUser,
+		fantasy.MessageRoleAssistant,
+		fantasy.MessageRoleTool,
+		fantasy.MessageRoleTool,
+		fantasy.MessageRoleUser,
+		fantasy.MessageRoleUser,
+	}, roles)
+
+	// Both images ride in the single synthetic message after the run.
+	require.Len(t, result[4].Content, 3)
+	for _, part := range result[4].Content[1:] {
+		_, ok := fantasy.AsMessagePart[fantasy.FilePart](part)
+		require.True(t, ok)
+	}
+}
+
 // TestWorkaroundProviderMediaLimitations_TextOnlyModelPreservesCaption
 // covers the "model doesn't support this media type" branch: the fixed
 // placeholder text must still appear, but a caption carried on the

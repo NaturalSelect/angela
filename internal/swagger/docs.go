@@ -5238,6 +5238,9 @@ const docTemplate = `{
                 "debug_lsp": {
                     "type": "boolean"
                 },
+                "disable_browser_tls": {
+                    "type": "boolean"
+                },
                 "disable_default_providers": {
                     "type": "boolean"
                 },

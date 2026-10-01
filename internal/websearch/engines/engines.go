@@ -7,38 +7,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"github.com/NaturalSelect/angela/internal/websearch"
 )
-
-// defaultHTTPTimeout bounds outbound requests made by every engine that
-// doesn't set a tighter per-request deadline of its own (SearXNG dials
-// each instance with its own shorter timeout instead).
-const defaultHTTPTimeout = 30 * time.Second
-
-// defaultIdleTimeout bounds how long an idle keep-alive connection stays
-// open before the transport closes it.
-const defaultIdleTimeout = 90 * time.Second
-
-// newDefaultHTTPClient returns an HTTP client tuned the same way as
-// Angela's internal/agent/tools default client. Duplicated here rather
-// than imported because internal/agent/tools will depend on this
-// package, not the other way around.
-func newDefaultHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = defaultIdleTimeout
-
-	return &http.Client{
-		Timeout:   defaultHTTPTimeout,
-		Transport: transport,
-	}
-}
 
 // Options configures the engines Default builds.
 type Options struct {
 	// HTTPClient is used for all outbound requests; nil builds a
-	// package-default client (see newDefaultHTTPClient).
+	// browserhttp client with its default timeout.
 	HTTPClient *http.Client
 	// APIKeys maps an engine id to its already-resolved credential
 	// ($VAR expansion and env-var fallback both happen upstream of
@@ -61,7 +37,7 @@ type Options struct {
 // second DuckDuckGo frontend and therefore sits after them).
 func Default(opts Options) []websearch.Engine {
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = newDefaultHTTPClient()
+		opts.HTTPClient = browserhttp.NewClient(browserhttp.Options{})
 	}
 	return []websearch.Engine{
 		newBingEngine(opts),

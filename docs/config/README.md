@@ -337,6 +337,7 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
     "disable_provider_auto_update": false,
     "disable_default_providers": false,
     "disable_image_tools": false,     // turns off ImageGenerate/ImageEdit
+    "disable_browser_tls": false,     // Go TLS instead of a Chrome handshake for fetch/search tools
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
     "subagent_branches": false,       // let sub-agents fork branch agents too

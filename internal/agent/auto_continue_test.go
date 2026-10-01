@@ -684,6 +684,78 @@ func TestRun_ResumeAfterCompactionUsesLatestFoldedMessage(t *testing.T) {
 		"the resumed prompt must not still quote the turn's original message once a later one was folded into the same turn")
 }
 
+// TestRun_ResumeAfterCompactionUsesLatestFoldedAttachments pins that the
+// resumed turn's attachments come from the same message as its quoted
+// prompt. Quoting the folded-in message's text while still attaching
+// the turn's original message's files showed the user a latest message
+// that did not match its attachment.
+func TestRun_ResumeAfterCompactionUsesLatestFoldedAttachments(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	sa.enqueueCall(SessionAgentCall{
+		SessionID: sess.ID,
+		Prompt:    "actually, use this screenshot instead",
+		Attachments: []message.Attachment{
+			{FileName: "folded.png", FilePath: "folded.png", MimeType: "image/png", Content: []byte("folded-png")},
+		},
+	})
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        config.AgentCoder,
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:   compact,
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "seed task",
+		Attachments: []message.Attachment{
+			{FileName: "seed.png", FilePath: "seed.png", MimeType: "image/png", Content: []byte("seed-png")},
+		},
+	})
+	require.NoError(t, err)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+
+	var resumed *message.Message
+	for i := range msgs {
+		if msgs[i].Role == message.User && strings.Contains(msgs[i].Content().Text, "The previous session was interrupted") {
+			resumed = &msgs[i]
+		}
+	}
+	require.NotNil(t, resumed, "the interrupted turn must resume with a wrapped prompt")
+	require.Contains(t, resumed.Content().Text, "actually, use this screenshot instead")
+
+	attachments := resumed.BinaryContent()
+	require.Len(t, attachments, 1)
+	require.Equal(t, "folded.png", attachments[0].Path,
+		"the resumed message must carry the folded-in message's attachment, not the original turn's")
+}
+
 // TestRun_EscPopDuringSummarizeKeepsResume pins the fix for the queue
 // visibility bug: while auto-summarize is in flight, the internal
 // resume-after-summarize entry it queued ahead of itself must be

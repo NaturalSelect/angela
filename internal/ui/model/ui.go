@@ -5359,6 +5359,10 @@ func (m *UI) takeQueuedPromptsCmd(sessionID string) tea.Cmd {
 func (m *UI) applyQueuedPromptsTaken(msg queuedPromptsTakenMsg) tea.Cmd {
 	var cmds []tea.Cmd
 	if msg.cancelled {
+		// NOTE: A cancelled turn publishes no terminal notification, so
+		// the retry banner would otherwise outlive it and show on the
+		// next turn until its backoff delay elapses.
+		m.clearRetryStatus(msg.sessionID)
 		m.invalidateBusyCaches()
 		cmds = append(cmds, m.dispatchBusyRefresh())
 	}
@@ -5829,10 +5833,7 @@ func (m *UI) handleAgentNotification(n notify.Notification) tea.Cmd {
 	// clears its active request before publishing precisely so observers
 	// can re-probe. Drop the memoized busy state and re-fetch it and the
 	// prompt queue off-thread.
-	if m.retryStatus != nil && m.retryStatus.sessionID == n.SessionID {
-		// The turn that was retrying just ended; nothing left to show.
-		m.retryStatus = nil
-	}
+	m.clearRetryStatus(n.SessionID)
 	m.invalidateBusyCaches()
 	m.invalidatePromptQueue()
 	if cmd := m.dispatchBusyRefresh(); cmd != nil {
@@ -5886,6 +5887,14 @@ func (m *UI) branchForkVisible(branchSessionID string) bool {
 		return false
 	}
 	return m.chat.MessageItem(toolCallID) != nil
+}
+
+// clearRetryStatus drops the retry banner when it belongs to sessionID,
+// so a turn ending elsewhere cannot wipe out another session's banner.
+func (m *UI) clearRetryStatus(sessionID string) {
+	if m.retryStatus != nil && m.retryStatus.sessionID == sessionID {
+		m.retryStatus = nil
+	}
 }
 
 // setRetryStatus records an in-progress provider retry so the turn

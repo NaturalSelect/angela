@@ -81,7 +81,6 @@ var bannedCommands = []string{
 	"aria2c",
 	"axel",
 	"chrome",
-	"curl",
 	"curlie",
 	"firefox",
 	"http-prompt",

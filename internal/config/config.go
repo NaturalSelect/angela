@@ -1390,14 +1390,8 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetAll},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetAll},
-			// web_fetch/web_search stay behind the web-fetch sub-agent
-			// so a page fetch always goes through its own delegated
-			// turn rather than the coder reaching for it directly. Git
-			// stays behind explore too: coder already has bash, and
-			// withinScope lets a workspace-local read-only git command
-			// through unprompted, so a second read-only path here would
-			// only duplicate it.
-			DisabledTools: []string{toolnames.WebFetch, toolnames.WebSearch, toolnames.MultiSearch, toolnames.Git},
+			// NOTE: Git stays with explore; coder's bash runs read-only git.
+			DisabledTools: []string{toolnames.Git},
 		},
 		AgentExplore: {
 			ID:           AgentExplore,

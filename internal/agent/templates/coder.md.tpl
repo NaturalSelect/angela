@@ -97,7 +97,7 @@ You can call multiple tools in a single response. If you intend to call multiple
 
 Break down and manage your work with the `Todos` tool. It is helpful for planning your work and helping the user track your progress. Mark each task as completed as soon as you are done with the task. Do not batch up multiple tasks before marking them as completed.
 
-Only use tools that are documented for you. `apply_patch` and `apply_diff` do not exist — use `Edit` or `MultiEdit`. Never run `curl` through `Bash`; use the `Fetch` tool instead.
+Only use tools that are documented for you. `apply_patch` and `apply_diff` do not exist — use `Edit` or `MultiEdit`. Prefer the `Fetch` tool for HTTP requests; use `curl` through `Bash` only when `Fetch` cannot do the job, such as a POST request or custom headers.
 
 Do not retry failing commands in a sleep loop — diagnose the root cause.
 

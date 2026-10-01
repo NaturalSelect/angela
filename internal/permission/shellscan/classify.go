@@ -6,14 +6,15 @@ import (
 	"strings"
 )
 
-// dangerousCommands destroy data, kill processes or publish code. A
-// segment matching one of them must always be shown to the user: no
-// stored grant and no allow rule may satisfy it.
+// dangerousCommands destroy data, kill processes, or publish code and
+// data off the machine. A segment matching one of them must always be
+// shown to the user: no stored grant and no allow rule may satisfy it.
 var dangerousCommands = []string{
 	"chattr",
 	"chgrp",
 	"chmod",
 	"chown",
+	"curl",
 	"dd",
 	"del",
 	"diskpart",

@@ -113,3 +113,49 @@ func TestMCPToolExpandedShowsBody(t *testing.T) {
 	out := ansi.Strip(item.Render(100))
 	require.Contains(t, out, "distinctive mcp result")
 }
+
+func TestMCPToolExpandedImageOnlyShowsImageLine(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	toolCall := message.ToolCall{ID: "m1", Name: toolnames.MCPPrefix + "xiaohongshu_get_login_qrcode", Input: `{}`, Finished: true}
+	result := &message.ToolResult{ToolCallID: "m1", Data: "aGVsbG8=", MIMEType: "image/png"}
+	item := NewMCPToolMessageItem(&sty, toolCall, result, false)
+
+	expandable, ok := item.(Expandable)
+	require.True(t, ok, "tool items must implement Expandable")
+	require.True(t, expandable.ToggleExpanded())
+
+	out := ansi.Strip(item.Render(100))
+	require.Contains(t, out, "Loaded Image")
+	require.Contains(t, out, "image/png")
+}
+
+func TestMCPToolExpandedTextAndImageShowsBoth(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	toolCall := message.ToolCall{ID: "m1", Name: toolnames.MCPPrefix + "xiaohongshu_get_login_qrcode", Input: `{}`, Finished: true}
+	result := &message.ToolResult{ToolCallID: "m1", Content: "scan before the deadline", Data: "aGVsbG8=", MIMEType: "image/png"}
+	item := NewMCPToolMessageItem(&sty, toolCall, result, false)
+
+	expandable, ok := item.(Expandable)
+	require.True(t, ok, "tool items must implement Expandable")
+	require.True(t, expandable.ToggleExpanded())
+
+	out := ansi.Strip(item.Render(100))
+	require.Contains(t, out, "scan before the deadline")
+	require.Contains(t, out, "Loaded Image")
+}
+
+func TestMCPToolCollapsedHidesImageLine(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	toolCall := message.ToolCall{ID: "m1", Name: toolnames.MCPPrefix + "xiaohongshu_get_login_qrcode", Input: `{}`, Finished: true}
+	result := &message.ToolResult{ToolCallID: "m1", Data: "aGVsbG8=", MIMEType: "image/png"}
+	item := NewMCPToolMessageItem(&sty, toolCall, result, false)
+
+	out := ansi.Strip(item.Render(100))
+	require.NotContains(t, out, "Loaded Image")
+}

@@ -3,8 +3,13 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"mime"
+	"os"
+	"path/filepath"
 
 	"charm.land/fantasy"
+
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -109,8 +114,73 @@ func (m *Tool) Run(ctx context.Context, params fantasy.ToolCall) (fantasy.ToolRe
 			response = fantasy.NewMediaResponse(result.Data, result.MediaType)
 		}
 		response.Content = result.Content
+		if savedPath, err := saveMCPMedia(m.cfg.Config().Options.DataDirectory, result.Data, result.MediaType); err != nil {
+			slog.Warn("Failed to save MCP media", "mcp", m.mcpName, "tool", m.tool.Name, "error", err)
+		} else {
+			response.Content = mediaSavedNote(result.Content, savedPath)
+		}
 		return response, nil
 	default:
 		return fantasy.NewTextResponse(result.Content), nil
 	}
+}
+
+// mcpMediaDirName is the subdirectory of the data directory that holds
+// image and media payloads returned by MCP tools.
+const mcpMediaDirName = "mcp-media"
+
+// saveMCPMedia writes data to a new file under the data directory and
+// returns its path. The file name is generated locally so nothing the
+// MCP server or the model supplied ends up in the path.
+func saveMCPMedia(dataDirectory string, data []byte, mediaType string) (string, error) {
+	dir := filepath.Join(dataDirectory, mcpMediaDirName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("creating media directory: %w", err)
+	}
+
+	f, err := os.CreateTemp(dir, "*"+mcpMediaExtension(mediaType))
+	if err != nil {
+		return "", fmt.Errorf("creating media file: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("writing media file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("closing media file: %w", err)
+	}
+	return f.Name(), nil
+}
+
+// mcpMediaExtension picks a predictable file extension for mediaType.
+func mcpMediaExtension(mediaType string) string {
+	base, _, err := mime.ParseMediaType(mediaType)
+	if err != nil {
+		return ".bin"
+	}
+	switch base {
+	case "image/png":
+		return ".png"
+	case "image/jpeg":
+		return ".jpg"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	}
+	if exts, err := mime.ExtensionsByType(base); err == nil && len(exts) > 0 {
+		return exts[0]
+	}
+	return ".bin"
+}
+
+// mediaSavedNote appends the saved file location to the tool's own text.
+func mediaSavedNote(text, savedPath string) string {
+	note := "The file is saved at " + savedPath + "."
+	if text == "" {
+		return note
+	}
+	return text + "\n\n" + note
 }

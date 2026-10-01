@@ -68,15 +68,21 @@ func (b *MCPToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *T
 		return joinToolParts(header, earlyState)
 	}
 
-	if !opts.HasResult() || opts.Result.Content == "" {
+	if !opts.HasResult() || !opts.ExpandedContent {
 		return header
 	}
 
-	if !opts.ExpandedContent {
-		return header
+	var parts []string
+	if opts.Result.Content != "" {
+		bodyWidth := cappedWidth - toolBodyLeftPaddingTotal
+		parts = append(parts, renderToolResultTextContent(sty, opts.Result.Content, toolResultContentWidths{Body: bodyWidth, Diff: cappedWidth}, opts.ExpandedContent))
+	}
+	if opts.Result.Data != "" && strings.HasPrefix(opts.Result.MIMEType, "image/") {
+		parts = append(parts, toolOutputImageContent(sty, opts.Result.Data, opts.Result.MIMEType))
 	}
 
-	bodyWidth := cappedWidth - toolBodyLeftPaddingTotal
-	body := renderToolResultTextContent(sty, opts.Result.Content, toolResultContentWidths{Body: bodyWidth, Diff: cappedWidth}, opts.ExpandedContent)
-	return joinToolParts(header, body)
+	if len(parts) == 0 {
+		return header
+	}
+	return joinToolParts(header, strings.Join(parts, "\n"))
 }

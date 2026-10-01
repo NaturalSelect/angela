@@ -22,6 +22,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/discover"
@@ -985,7 +986,17 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 			hooks.AgentIdentity{ID: agent.ID, Depth: depth})
 	}
 
-	webSearchRouter, err := c.newWebSearchRouter()
+	fingerprint := browserhttp.FingerprintChrome
+	if c.cfg.Config().Options.DisableBrowserTLS {
+		fingerprint = browserhttp.FingerprintGo
+	}
+	pageClient := browserhttp.NewClient(browserhttp.Options{Fingerprint: fingerprint})
+	downloadClient := browserhttp.NewClient(browserhttp.Options{
+		Fingerprint: fingerprint,
+		Timeout:     tools.DownloadHTTPTimeout,
+	})
+
+	webSearchRouter, err := c.newWebSearchRouter(pageClient)
 	if err != nil {
 		return nil, fmt.Errorf("build web search router: %w", err)
 	}
@@ -998,18 +1009,18 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 		tools.NewAngelaLogsTool(logFile),
 		tools.NewJobOutputTool(),
 		tools.NewJobKillTool(),
-		tools.NewDownloadTool(c.cfg.WorkingDir(), nil),
+		tools.NewDownloadTool(c.cfg.WorkingDir(), downloadClient),
 		tools.NewEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
 		tools.NewMultiEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
-		tools.NewFetchTool(c.cfg.WorkingDir(), nil),
-		tools.NewWebFetchTool(filepath.Join(c.cfg.Config().Options.DataDirectory, "webfetch"), nil),
+		tools.NewFetchTool(c.cfg.WorkingDir(), pageClient),
+		tools.NewWebFetchTool(filepath.Join(c.cfg.Config().Options.DataDirectory, "webfetch"), pageClient),
 		tools.NewWebSearchTool(webSearchRouter),
 		tools.NewMultiSearchTool(webSearchRouter),
 		tools.NewGlobTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Glob),
 		tools.NewGrepTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Grep),
 		tools.NewLoadReportTool(c.sessions, c.messages),
 		tools.NewLsTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Ls),
-		tools.NewSourcegraphTool(nil),
+		tools.NewSourcegraphTool(pageClient),
 		tools.NewTodosTool(c.sessions),
 		tools.NewReadTool(c.lspManager, c.filetracker, c.skillTracker, c.cfg.WorkingDir(), c.cfg.Config().Tools.Read, c.cfg.Config().Options.SkillsPaths...),
 		tools.NewWriteTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),

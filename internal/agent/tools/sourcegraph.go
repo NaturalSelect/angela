@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
@@ -48,7 +49,7 @@ func sourcegraphDescription() string {
 
 func NewSourcegraphTool(client *http.Client) fantasy.AgentTool {
 	if client == nil {
-		client = newDefaultHTTPClient(defaultToolHTTPTimeout)
+		client = browserhttp.NewClient(browserhttp.Options{})
 	}
 	return NewParallelTool(
 		toolnames.Sourcegraph,

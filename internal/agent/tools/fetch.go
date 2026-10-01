@@ -13,6 +13,7 @@ import (
 
 	"charm.land/fantasy"
 	md "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/PuerkitoBio/goquery"
 )
@@ -43,7 +44,7 @@ func fetchDescription() string {
 
 func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
-		client = newDefaultHTTPClient(defaultToolHTTPTimeout)
+		client = browserhttp.NewClient(browserhttp.Options{})
 	}
 
 	return NewParallelTool(
@@ -87,7 +88,7 @@ func NewFetchTool(workingDir string, client *http.Client) fantasy.AgentTool {
 				return FailErr("failed to create request", err)
 			}
 
-			req.Header.Set("User-Agent", "angela/1.0")
+			req.Header.Set("User-Agent", browserhttp.ChromeUserAgent)
 
 			resp, err := client.Do(req)
 			if err != nil {

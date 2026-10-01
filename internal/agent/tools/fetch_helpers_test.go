@@ -6,23 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
-
-func TestNewDefaultHTTPClient(t *testing.T) {
-	t.Parallel()
-
-	client := newDefaultHTTPClient(42 * time.Second)
-	require.Equal(t, 42*time.Second, client.Timeout)
-
-	transport, ok := client.Transport.(*http.Transport)
-	require.True(t, ok, "expected an *http.Transport")
-	require.Equal(t, 100, transport.MaxIdleConns)
-	require.Equal(t, 10, transport.MaxIdleConnsPerHost)
-	require.Equal(t, 90*time.Second, transport.IdleConnTimeout)
-}
 
 func TestFetchURLAndConvertNonOKStatus(t *testing.T) {
 	t.Parallel()

@@ -10,39 +10,12 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"golang.org/x/net/html"
 )
-
-// BrowserUserAgent is a realistic browser User-Agent for better compatibility.
-const BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
-// defaultToolHTTPTimeout bounds outbound requests made by tools that fetch
-// external content over HTTP.
-const defaultToolHTTPTimeout = 30 * time.Second
-
-// defaultToolHTTPIdleTimeout bounds how long an idle keep-alive connection
-// stays open before the transport closes it.
-const defaultToolHTTPIdleTimeout = 90 * time.Second
-
-// newDefaultHTTPClient returns an HTTP client tuned for tools that fetch
-// external content, shared by fetch/web_fetch/web_search/sourcegraph/download
-// so the transport tuning cannot drift between them. timeout is the only
-// axis those tools vary on (downloads allow far longer than a page fetch).
-func newDefaultHTTPClient(timeout time.Duration) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.MaxIdleConns = 100
-	transport.MaxIdleConnsPerHost = 10
-	transport.IdleConnTimeout = defaultToolHTTPIdleTimeout
-
-	return &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-	}
-}
 
 var multipleNewlinesRe = regexp.MustCompile(`\n{3,}`)
 
@@ -54,7 +27,7 @@ func FetchURLAndConvert(ctx context.Context, client *http.Client, url string) (s
 	}
 
 	// Use realistic browser headers for better compatibility.
-	req.Header.Set("User-Agent", BrowserUserAgent)
+	req.Header.Set("User-Agent", browserhttp.ChromeUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
 

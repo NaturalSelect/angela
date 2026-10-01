@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"github.com/NaturalSelect/angela/internal/filepathext"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
@@ -48,14 +49,14 @@ func downloadDescription() string {
 	})
 }
 
-// downloadHTTPTimeout bounds a download's total request time. It is far
-// looser than defaultToolHTTPTimeout because downloads move larger
+// DownloadHTTPTimeout bounds a download's total request time. It is far
+// looser than browserhttp.DefaultTimeout because downloads move larger
 // payloads than a page fetch or search.
-const downloadHTTPTimeout = 5 * time.Minute
+const DownloadHTTPTimeout = 5 * time.Minute
 
 func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
-		client = newDefaultHTTPClient(downloadHTTPTimeout)
+		client = browserhttp.NewClient(browserhttp.Options{Timeout: DownloadHTTPTimeout})
 	}
 	return NewParallelTool(
 		toolnames.Download,
@@ -99,7 +100,7 @@ func NewDownloadTool(workingDir string, client *http.Client) fantasy.AgentTool {
 				return FailErr("failed to create request", err)
 			}
 
-			req.Header.Set("User-Agent", "angela/1.0")
+			req.Header.Set("User-Agent", browserhttp.ChromeUserAgent)
 
 			resp, err := client.Do(req)
 			if err != nil {

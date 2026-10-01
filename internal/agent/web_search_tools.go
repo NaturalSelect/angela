@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/NaturalSelect/angela/internal/config"
@@ -26,7 +27,7 @@ var webSearchEnvKeyFallback = map[string]string{
 // WebSearch and MultiSearch tools. It performs no network requests
 // itself, so buildTools can call it on every invocation and pick up a
 // reloaded config for free.
-func (c *coordinator) newWebSearchRouter() (*websearch.Router, error) {
+func (c *coordinator) newWebSearchRouter(httpClient *http.Client) (*websearch.Router, error) {
 	cfg := c.cfg.Config().Tools.WebSearch
 	e := env.New()
 	resolver := config.NewEnvOnlyVariableResolver(e)
@@ -57,6 +58,7 @@ func (c *coordinator) newWebSearchRouter() (*websearch.Router, error) {
 	}
 
 	all := engines.Default(engines.Options{
+		HTTPClient:       httpClient,
 		APIKeys:          apiKeys,
 		BingMarket:       cfg.BingMarket,
 		SearxngInstances: cfg.SearxngInstances,

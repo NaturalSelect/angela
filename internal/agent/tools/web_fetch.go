@@ -11,6 +11,7 @@ import (
 	"text/template"
 
 	"charm.land/fantasy"
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
@@ -47,7 +48,7 @@ func WebFetchScratchDir(root, sessionID string) (string, error) {
 // discard one session's pages without touching a concurrent session's.
 func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
-		client = newDefaultHTTPClient(defaultToolHTTPTimeout)
+		client = browserhttp.NewClient(browserhttp.Options{})
 	}
 
 	return NewParallelTool(

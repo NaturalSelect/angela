@@ -70,6 +70,8 @@ internal/
   websearch/                       Web search engine abstraction: Router fallback chain,
                                     multi-engine merge, time range parsing (see engines/
                                     for the bing/ddg/exa/tavily/... implementations)
+  browserhttp/                     Browser-like HTTP client (uTLS Chrome ClientHello, ALPN h2/h1
+                                    dispatch) for fetch and web search tools
   diff/                            Unified diff text generation & line stats
   diffdetect/                      Detect unified diff format markers in text
   clipboard/                       Cross-platform clipboard read/write (text + PNG)

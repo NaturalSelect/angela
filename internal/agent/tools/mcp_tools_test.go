@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"charm.land/fantasy"
@@ -135,4 +137,85 @@ func TestTool_Run_MCPNotConfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
 	require.Contains(t, resp.Content, "not available")
+}
+
+func TestSaveMCPMedia(t *testing.T) {
+	t.Parallel()
+
+	t.Run("writes the bytes under the media directory with a matching extension", func(t *testing.T) {
+		t.Parallel()
+		dataDir := t.TempDir()
+		payload := []byte{0x89, 0x50, 0x4E, 0x47}
+
+		path, err := saveMCPMedia(dataDir, payload, "image/png")
+		require.NoError(t, err)
+
+		require.Equal(t, filepath.Join(dataDir, mcpMediaDirName), filepath.Dir(path))
+		require.Equal(t, ".png", filepath.Ext(path))
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, payload, got)
+	})
+
+	t.Run("each call produces a distinct file", func(t *testing.T) {
+		t.Parallel()
+		dataDir := t.TempDir()
+
+		first, err := saveMCPMedia(dataDir, []byte("a"), "image/png")
+		require.NoError(t, err)
+		second, err := saveMCPMedia(dataDir, []byte("b"), "image/png")
+		require.NoError(t, err)
+
+		require.NotEqual(t, first, second)
+	})
+
+	t.Run("hostile media type cannot escape the media directory", func(t *testing.T) {
+		t.Parallel()
+		dataDir := t.TempDir()
+
+		path, err := saveMCPMedia(dataDir, []byte("x"), "image/../../../etc/passwd")
+		require.NoError(t, err)
+
+		require.Equal(t, filepath.Join(dataDir, mcpMediaDirName), filepath.Dir(path))
+	})
+
+	t.Run("fails when the data directory is not usable", func(t *testing.T) {
+		t.Parallel()
+		blocker := filepath.Join(t.TempDir(), "file")
+		require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o600))
+
+		_, err := saveMCPMedia(blocker, []byte("x"), "image/png")
+		require.Error(t, err)
+	})
+}
+
+func TestMCPMediaExtension(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		mediaType string
+		want      string
+	}{
+		{"image/png", ".png"},
+		{"image/jpeg", ".jpg"},
+		{"image/gif", ".gif"},
+		{"image/webp", ".webp"},
+		{"image/png; charset=binary", ".png"},
+		{"", ".bin"},
+		{"not a media type", ".bin"},
+		{"application/x-unknown-zzz", ".bin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.mediaType, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, mcpMediaExtension(tt.mediaType))
+		})
+	}
+}
+
+func TestMediaSavedNote(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "The file is saved at /tmp/a.png.", mediaSavedNote("", "/tmp/a.png"))
+	require.Equal(t, "scan me\n\nThe file is saved at /tmp/a.png.", mediaSavedNote("scan me", "/tmp/a.png"))
 }

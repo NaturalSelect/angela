@@ -606,6 +606,19 @@ func TestDiscoverBuiltin(t *testing.T) {
 	}
 	require.True(t, foundWriteTests, "builtin-write-unit-tests builtin skill not found")
 
+	var foundWalkthrough bool
+	for _, s := range discovered {
+		if s.Name == "builtin-code-walkthrough" {
+			foundWalkthrough = true
+			require.Equal(t, "angela://skills/builtin-code-walkthrough/SKILL.md", s.SkillFilePath)
+			require.Equal(t, "angela://skills/builtin-code-walkthrough", s.Path)
+			require.NotEmpty(t, s.Description)
+			require.NotEmpty(t, s.Instructions)
+			require.True(t, s.Builtin)
+		}
+	}
+	require.True(t, foundWalkthrough, "builtin-code-walkthrough builtin skill not found")
+
 	// angela-config's field reference lives alongside its SKILL.md as
 	// separate files the agent loads on demand (see angela-config's
 	// "Reference index"). DiscoverBuiltinWithStates's fs.WalkDir only

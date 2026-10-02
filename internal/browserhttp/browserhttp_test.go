@@ -189,6 +189,101 @@ func TestChromeTransportSendsChromeClientHello(t *testing.T) {
 	require.Equal(t, []string{"h2", "http/1.1"}, alpn)
 }
 
+// tunnelTo answers a CONNECT request by splicing the client to
+// upstreamAddr, whatever host the request named.
+func tunnelTo(w http.ResponseWriter, r *http.Request, upstreamAddr string) {
+	upstream, err := (&net.Dialer{}).DialContext(r.Context(), "tcp", upstreamAddr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	client, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		_ = upstream.Close()
+		return
+	}
+	_, _ = io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n")
+	go func() {
+		_, _ = io.Copy(upstream, client)
+		_ = upstream.Close()
+	}()
+	_, _ = io.Copy(client, upstream)
+	_ = client.Close()
+}
+
+func TestChromeTransportReusesProbeConnectionForMixedCaseHost(t *testing.T) {
+	t.Parallel()
+
+	for name, enableHTTP2 := range map[string]bool{"h2": true, "h1": false} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			srv, connections := newTLSServer(t, enableHTTP2)
+			proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				tunnelTo(w, r, srv.Listener.Addr().String())
+			}))
+			t.Cleanup(proxySrv.Close)
+
+			proxyURL := mustParse(t, proxySrv.URL)
+			transport := newTestTransport(t, srv, func(*url.URL) (*url.URL, error) { return proxyURL, nil })
+			client := &http.Client{Transport: transport}
+
+			// NOTE: The httptest certificate is valid for example.com, and the
+			// proxy ignores the CONNECT host, so only the casing differs from
+			// a plain request.
+			_, port, err := net.SplitHostPort(srv.Listener.Addr().String())
+			require.NoError(t, err)
+			target := "https://Example.COM:" + port + "/"
+
+			get(t, client, target)
+			get(t, client, target)
+
+			require.Equal(t, int32(1), connections.Load())
+			var stranded []any
+			transport.handoff.Range(func(addr, _ any) bool {
+				stranded = append(stranded, addr)
+				return true
+			})
+			require.Empty(t, stranded)
+		})
+	}
+}
+
+func TestCanonicalHostAgreesAcrossDialerSpellings(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		host string
+		want string
+	}{
+		{"lowercase", "example.com", "example.com"},
+		{"mixed case", "Example.COM", "example.com"},
+		{"unicode", "BÜCHER.example", "xn--bcher-kva.example"},
+		{"http1 punycode spelling", "xn--bcher-kva.example", "xn--bcher-kva.example"},
+		{"http2 punycode spelling", "xn--BCHER-2pa.example", "xn--bcher-kva.example"},
+		{"ipv4", "127.0.0.1", "127.0.0.1"},
+		{"ipv6", "::1", "::1"},
+		{"ipv6 zone keeps its case", "fe80::1%Eth0", "fe80::1%Eth0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, canonicalHost(tt.host))
+		})
+	}
+}
+
+func TestDialAddrMatchesAuthority(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, authority(mustParse(t, "https://Example.COM/")), dialAddr("Example.COM:443"))
+	require.Equal(t, "example.com:8443", dialAddr("EXAMPLE.com:8443"))
+	require.Equal(t, "[::1]:443", dialAddr("[::1]:443"))
+	require.Equal(t, "not-an-address", dialAddr("not-an-address"))
+}
+
 func TestChromeTransportTunnelsThroughHTTPProxy(t *testing.T) {
 	t.Parallel()
 
@@ -205,23 +300,7 @@ func TestChromeTransportTunnelsThroughHTTPProxy(t *testing.T) {
 		connectTarget, proxyAuth = r.Host, r.Header.Get("Proxy-Authorization")
 		mu.Unlock()
 
-		upstream, err := (&net.Dialer{}).DialContext(r.Context(), "tcp", r.Host)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		client, _, err := w.(http.Hijacker).Hijack()
-		if err != nil {
-			_ = upstream.Close()
-			return
-		}
-		_, _ = io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n")
-		go func() {
-			_, _ = io.Copy(upstream, client)
-			_ = upstream.Close()
-		}()
-		_, _ = io.Copy(client, upstream)
-		_ = client.Close()
+		tunnelTo(w, r, r.Host)
 	}))
 	t.Cleanup(proxySrv.Close)
 

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,6 +188,7 @@ func (t *chromeTransport) dialForH2(ctx context.Context, _, addr string, _ *tls.
 }
 
 func (t *chromeTransport) dialExpecting(ctx context.Context, addr, want string) (net.Conn, error) {
+	addr = dialAddr(addr)
 	conn, ok := t.takeHandoff(addr)
 	if !ok {
 		var err error
@@ -225,16 +228,40 @@ func protocolOf(conn *utls.UConn) string {
 	return protocolHTTP
 }
 
-// authority returns the host:port that net/http hands to dial functions,
-// so cache keys line up with them.
+// authority returns the canonical host:port for u, the form every cache key
+// and dial uses.
 func authority(u *url.URL) string {
-	host := u.Hostname()
-	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
-		host = ascii
-	}
 	port := u.Port()
 	if port == "" {
 		port = "443"
 	}
-	return net.JoinHostPort(host, port)
+	return net.JoinHostPort(canonicalHost(u.Hostname()), port)
+}
+
+// dialAddr canonicalizes an address received by a dial function.
+//
+// NOTE: net/http keeps the casing of ASCII hosts and http2 skips IDNA
+// mapping, so neither passes the form authority produces.
+func dialAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return net.JoinHostPort(canonicalHost(host), port)
+}
+
+// canonicalHost decodes any A-label first because http2 builds one from the
+// original casing, which the Lookup profile rejects as a label but accepts
+// once it is back in Unicode.
+func canonicalHost(host string) string {
+	if _, err := netip.ParseAddr(host); err == nil {
+		return host
+	}
+	if unicodeHost, err := idna.Punycode.ToUnicode(host); err == nil {
+		host = unicodeHost
+	}
+	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
+		return ascii
+	}
+	return strings.ToLower(host)
 }

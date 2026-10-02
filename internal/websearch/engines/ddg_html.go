@@ -9,6 +9,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"github.com/NaturalSelect/angela/internal/websearch"
 )
 
@@ -16,13 +17,7 @@ import (
 // httptest server.
 var ddgHTMLEndpoint = "https://html.duckduckgo.com/html/"
 
-// ddgHTMLUserAgent and ddgHTMLAcceptLanguage are static (unlike
-// ddg-lite's rotating set) since html.duckduckgo.com is less
-// aggressive about rate-limiting a fixed client fingerprint.
-const (
-	ddgHTMLUserAgent      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-	ddgHTMLAcceptLanguage = "en-US,en;q=0.9"
-)
+const ddgHTMLAcceptLanguage = "en-US,en;q=0.9"
 
 type ddgHTMLEngine struct {
 	client   *http.Client
@@ -52,7 +47,7 @@ func (e *ddgHTMLEngine) Search(ctx context.Context, req websearch.Request) ([]we
 	if err != nil {
 		return nil, fmt.Errorf("ddg: %w", err)
 	}
-	httpReq.Header.Set("User-Agent", ddgHTMLUserAgent)
+	httpReq.Header.Set("User-Agent", browserhttp.ChromeUserAgent)
 	httpReq.Header.Set("Accept-Language", ddgHTMLAcceptLanguage)
 
 	resp, err := e.client.Do(httpReq)

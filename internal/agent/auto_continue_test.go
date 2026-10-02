@@ -756,6 +756,70 @@ func TestRun_ResumeAfterCompactionUsesLatestFoldedAttachments(t *testing.T) {
 		"the resumed message must carry the folded-in message's attachment, not the original turn's")
 }
 
+// TestRun_ResumeAfterCompactionQuotesPlaceholderForAttachmentOnlyFold
+// pins that a folded-in message carrying only attachments resumes with
+// the same placeholder prompt a fresh attachment-only turn uses, rather
+// than quoting an empty request.
+func TestRun_ResumeAfterCompactionQuotesPlaceholderForAttachmentOnlyFold(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	sa.enqueueCall(SessionAgentCall{
+		SessionID: sess.ID,
+		Attachments: []message.Attachment{
+			{FileName: "folded.png", FilePath: "folded.png", MimeType: "image/png", Content: []byte("folded-png")},
+		},
+	})
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        config.AgentCoder,
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:   compact,
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "seed task",
+	})
+	require.NoError(t, err)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+
+	var resumed *message.Message
+	for i := range msgs {
+		if msgs[i].Role == message.User && strings.Contains(msgs[i].Content().Text, "The previous session was interrupted") {
+			resumed = &msgs[i]
+		}
+	}
+	require.NotNil(t, resumed, "the interrupted turn must resume with a wrapped prompt")
+	require.Contains(t, resumed.Content().Text, "`"+attachmentOnlyPrompt+"`")
+	require.NotContains(t, resumed.Content().Text, "``", "the resumed prompt must not quote an empty request")
+	require.Len(t, resumed.BinaryContent(), 1)
+}
+
 // TestRun_EscPopDuringSummarizeKeepsResume pins the fix for the queue
 // visibility bug: while auto-summarize is in flight, the internal
 // resume-after-summarize entry it queued ahead of itself must be

@@ -12,16 +12,13 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 
+	"github.com/NaturalSelect/angela/internal/browserhttp"
 	"github.com/NaturalSelect/angela/internal/websearch"
 )
 
 // bingEndpoint is a package var so tests can point it at a local
 // httptest server.
 var bingEndpoint = "https://www.bing.com/search"
-
-// bingUserAgent is a realistic desktop browser UA; Bing serves a
-// degraded page (or blocks outright) to unrecognized clients.
-const bingUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
 // defaultBingMarket is used when Options.BingMarket is empty.
 const defaultBingMarket = "en-US"
@@ -76,7 +73,9 @@ func (e *bingEngine) Search(ctx context.Context, req websearch.Request) ([]webse
 	if err != nil {
 		return nil, fmt.Errorf("bing: %w", err)
 	}
-	httpReq.Header.Set("User-Agent", bingUserAgent)
+	// NOTE: Bing serves a degraded page, or blocks outright, for clients it
+	// does not recognize as a browser.
+	httpReq.Header.Set("User-Agent", browserhttp.ChromeUserAgent)
 	acceptLanguage, ok := bingMarketAcceptLanguage[e.market]
 	if !ok {
 		acceptLanguage = defaultBingAcceptLanguage

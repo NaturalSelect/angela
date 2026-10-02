@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
@@ -186,6 +187,64 @@ func TestSaveMCPMedia(t *testing.T) {
 
 		_, err := saveMCPMedia(blocker, []byte("x"), "image/png")
 		require.Error(t, err)
+	})
+}
+
+func TestPruneMCPMedia(t *testing.T) {
+	t.Parallel()
+
+	ageFile := func(t *testing.T, path string, age time.Duration) {
+		t.Helper()
+		when := time.Now().Add(-age)
+		require.NoError(t, os.Chtimes(path, when, when))
+	}
+
+	t.Run("removes only files older than the retention", func(t *testing.T) {
+		t.Parallel()
+		dataDir := t.TempDir()
+
+		stale, err := saveMCPMedia(dataDir, []byte("stale"), "image/png")
+		require.NoError(t, err)
+		fresh, err := saveMCPMedia(dataDir, []byte("fresh"), "image/png")
+		require.NoError(t, err)
+		ageFile(t, stale, 2*time.Hour)
+		ageFile(t, fresh, 30*time.Minute)
+
+		require.NoError(t, pruneMCPMedia(dataDir, time.Hour))
+
+		require.NoFileExists(t, stale)
+		require.FileExists(t, fresh)
+	})
+
+	t.Run("a missing media directory is not an error", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, pruneMCPMedia(t.TempDir(), time.Hour))
+	})
+
+	t.Run("leaves subdirectories alone", func(t *testing.T) {
+		t.Parallel()
+		dataDir := t.TempDir()
+		subdir := filepath.Join(dataDir, mcpMediaDirName, "nested")
+		require.NoError(t, os.MkdirAll(subdir, 0o700))
+		ageFile(t, subdir, 48*time.Hour)
+
+		require.NoError(t, pruneMCPMedia(dataDir, time.Hour))
+
+		require.DirExists(t, subdir)
+	})
+
+	t.Run("does not touch files outside the media directory", func(t *testing.T) {
+		t.Parallel()
+		dataDir := t.TempDir()
+		neighbour := filepath.Join(dataDir, "angela.db")
+		require.NoError(t, os.WriteFile(neighbour, []byte("db"), 0o600))
+		ageFile(t, neighbour, 48*time.Hour)
+		_, err := saveMCPMedia(dataDir, []byte("x"), "image/png")
+		require.NoError(t, err)
+
+		require.NoError(t, pruneMCPMedia(dataDir, time.Hour))
+
+		require.FileExists(t, neighbour)
 	})
 }
 

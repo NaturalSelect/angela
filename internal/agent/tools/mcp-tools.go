@@ -2,11 +2,13 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"mime"
 	"os"
 	"path/filepath"
+	"time"
 
 	"charm.land/fantasy"
 
@@ -114,7 +116,11 @@ func (m *Tool) Run(ctx context.Context, params fantasy.ToolCall) (fantasy.ToolRe
 			response = fantasy.NewMediaResponse(result.Data, result.MediaType)
 		}
 		response.Content = result.Content
-		if savedPath, err := saveMCPMedia(m.cfg.Config().Options.DataDirectory, result.Data, result.MediaType); err != nil {
+		dataDirectory := m.cfg.Config().Options.DataDirectory
+		if err := pruneMCPMedia(dataDirectory, mcpMediaRetention); err != nil {
+			slog.Warn("Failed to prune old MCP media", "mcp", m.mcpName, "error", err)
+		}
+		if savedPath, err := saveMCPMedia(dataDirectory, result.Data, result.MediaType); err != nil {
 			slog.Warn("Failed to save MCP media", "mcp", m.mcpName, "tool", m.tool.Name, "error", err)
 		} else {
 			response.Content = mediaSavedNote(result.Content, savedPath)
@@ -128,6 +134,46 @@ func (m *Tool) Run(ctx context.Context, params fantasy.ToolCall) (fantasy.ToolRe
 // mcpMediaDirName is the subdirectory of the data directory that holds
 // image and media payloads returned by MCP tools.
 const mcpMediaDirName = "mcp-media"
+
+// mcpMediaRetention is how long a saved payload stays on disk. The path is
+// handed to the model, so it has to outlive the turn that produced it, but
+// screenshots of authenticated pages should not accumulate indefinitely.
+const mcpMediaRetention = 24 * time.Hour
+
+// pruneMCPMedia removes saved payloads last written more than maxAge ago.
+// A missing media directory is not an error.
+func pruneMCPMedia(dataDirectory string, maxAge time.Duration) error {
+	dir := filepath.Join(dataDirectory, mcpMediaDirName)
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("listing media directory: %w", err)
+	}
+
+	cutoff := time.Now().Add(-maxAge)
+	var errs []error
+	for _, entry := range entries {
+		if !entry.Type().IsRegular() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		if info.ModTime().After(cutoff) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
 
 // saveMCPMedia writes data to a new file under the data directory and
 // returns its path. The file name is generated locally so nothing the

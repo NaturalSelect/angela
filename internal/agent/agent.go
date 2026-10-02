@@ -1395,6 +1395,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			if latestFolded != nil {
 				resumePrompt, resumeAttachments = latestFolded.Prompt, latestFolded.Attachments
 			}
+			if resumePrompt == "" {
+				resumePrompt = attachmentOnlyPrompt
+			}
 			call.Prompt = wrapInterruptedPrompt(resumePrompt)
 			call.Attachments = resumeAttachments
 			a.enqueueResumeBeforeSummarize(call)

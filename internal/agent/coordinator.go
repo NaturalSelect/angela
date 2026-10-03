@@ -404,7 +404,6 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 		return nil, err
 	}
 	resolved := target.resolved
-	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, sessionID)
 
 	model := resolved.Model
 	maxTokens := resolved.MaxTokens
@@ -1135,9 +1134,11 @@ func (c *coordinator) shouldEnableQuestionTool(agent config.Agent, isSubAgent bo
 }
 
 // removeWebFetchScratch clears the web_fetch pages cached for one
-// session, once that session's turn is done reading them. Sessions
-// that never triggered a large fetch never created the directory, so
-// this is a no-op for them.
+// delegated session, once its run is done reading them. A top-level
+// session keeps its pages across turns, since the model may reread
+// them later; the tool prunes those by age. Sessions that never
+// triggered a large fetch never created the directory, so this is a
+// no-op for them.
 func removeWebFetchScratch(dataDirectory, sessionID string) {
 	dir, err := tools.WebFetchScratchDir(filepath.Join(dataDirectory, "webfetch"), sessionID)
 	if err != nil {

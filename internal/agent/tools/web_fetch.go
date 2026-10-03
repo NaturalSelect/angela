@@ -3,12 +3,15 @@ package tools
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/browserhttp"
@@ -42,10 +45,49 @@ func WebFetchScratchDir(root, sessionID string) (string, error) {
 	return filepath.Join(root, sessionID), nil
 }
 
-// NewWebFetchTool creates a web fetch tool for sub-agents. scratchDir is
-// the root where large pages get saved for grep/read; each session gets
-// its own subdirectory under it, created on first use, so cleanup can
-// discard one session's pages without touching a concurrent session's.
+// NOTE: The path is handed to the model, so pages must outlive the turn
+// that saved them.
+const webFetchScratchRetention = 24 * time.Hour
+
+// pruneWebFetchScratch removes session directories under root whose last
+// page was written more than maxAge ago. A missing root is not an error.
+func pruneWebFetchScratch(root string, maxAge time.Duration) error {
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("listing web_fetch scratch root: %w", err)
+	}
+
+	cutoff := time.Now().Add(-maxAge)
+	var errs []error
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		if info.ModTime().After(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// NewWebFetchTool creates a web fetch tool. scratchDir is the root where
+// large pages get saved for grep/read; each session gets its own
+// subdirectory under it, created on first use, so cleanup can discard one
+// session's pages without touching a concurrent session's. Session
+// directories left untouched for a day are pruned on the next large save.
 func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		client = browserhttp.NewClient(browserhttp.Options{})
@@ -73,6 +115,9 @@ func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 			var result strings.Builder
 
 			if hasLargeContent {
+				if err := pruneWebFetchScratch(scratchDir, webFetchScratchRetention); err != nil {
+					slog.Warn("Failed to prune old web_fetch pages", "error", err)
+				}
 				sessionScratchDir, err := WebFetchScratchDir(scratchDir, sessionID)
 				if err != nil {
 					return Fail(err.Error())

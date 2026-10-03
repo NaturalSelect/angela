@@ -311,11 +311,9 @@ func TestDialerTCP(t *testing.T) {
 func TestDialerTCPUnreachable(t *testing.T) {
 	t.Parallel()
 
-	var lc net.ListenConfig
-	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := ln.Addr().String()
-	require.NoError(t, ln.Close())
+	// NOTE: Port 0 can never have a listener. A freed ephemeral port can be
+	// reclaimed by another parallel test before we dial it.
+	const addr = "127.0.0.1:0"
 
 	c, err := NewClient(t.TempDir(), "tcp", addr)
 	require.NoError(t, err)

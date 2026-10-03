@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -65,12 +66,94 @@ func TestWebFetchToolScopesLargePagesToSession(t *testing.T) {
 	require.Len(t, filesA, 1)
 
 	// Cleaning up one session's cache must not disturb another's, the
-	// way coordinator.removeWebFetchScratch does at the end of a turn.
+	// way coordinator.removeWebFetchScratch does at the end of a delegated run.
 	require.NoError(t, os.RemoveAll(dirA))
 	_, err = os.Stat(dirA)
 	require.True(t, os.IsNotExist(err))
 	_, err = os.Stat(dirB)
 	require.NoError(t, err, "session-b's page must survive session-a's cleanup")
+}
+
+// TestPruneWebFetchScratch pins the retention rule that replaces
+// per-turn deletion for top-level sessions: whole session directories go
+// once they have sat untouched past the retention, and nothing else does.
+func TestPruneWebFetchScratch(t *testing.T) {
+	t.Parallel()
+
+	ageDir := func(t *testing.T, path string, age time.Duration) {
+		t.Helper()
+		when := time.Now().Add(-age)
+		require.NoError(t, os.Chtimes(path, when, when))
+	}
+	makeSession := func(t *testing.T, root, id string) string {
+		t.Helper()
+		dir := filepath.Join(root, id)
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "page-1.md"), []byte("x"), 0o600))
+		return dir
+	}
+
+	t.Run("removes only session directories older than the retention", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		stale := makeSession(t, root, "stale")
+		fresh := makeSession(t, root, "fresh")
+		ageDir(t, stale, 2*time.Hour)
+		ageDir(t, fresh, 30*time.Minute)
+
+		require.NoError(t, pruneWebFetchScratch(root, time.Hour))
+
+		require.NoDirExists(t, stale)
+		require.DirExists(t, fresh)
+	})
+
+	t.Run("a missing root is not an error", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, pruneWebFetchScratch(filepath.Join(t.TempDir(), "absent"), time.Hour))
+	})
+
+	t.Run("leaves loose files alone", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		loose := filepath.Join(root, "notes.txt")
+		require.NoError(t, os.WriteFile(loose, []byte("x"), 0o600))
+		ageDir(t, loose, 48*time.Hour)
+
+		require.NoError(t, pruneWebFetchScratch(root, time.Hour))
+
+		require.FileExists(t, loose)
+	})
+}
+
+// TestWebFetchToolPrunesStaleSessionsOnLargeSave checks the prune is
+// wired into the tool: a large save clears a stale session's pages but
+// keeps the caller's own.
+func TestWebFetchToolPrunesStaleSessionsOnLargeSave(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Repeat("a", LargeContentThreshold+1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	scratchRoot := t.TempDir()
+	stale := filepath.Join(scratchRoot, "stale-session")
+	require.NoError(t, os.MkdirAll(stale, 0o700))
+	old := time.Now().Add(-2 * webFetchScratchRetention)
+	require.NoError(t, os.Chtimes(stale, old, old))
+
+	tool := NewWebFetchTool(scratchRoot, srv.Client())
+	ctx := context.WithValue(context.Background(), SessionIDContextKey, "live-session")
+	input, err := json.Marshal(WebFetchParams{URL: srv.URL})
+	require.NoError(t, err)
+	resp, err := tool.Run(ctx, fantasy.ToolCall{ID: "call-1", Name: toolnames.WebFetch, Input: string(input)})
+	require.NoError(t, err)
+	require.False(t, resp.IsError, resp.Content)
+
+	require.NoDirExists(t, stale)
+	require.DirExists(t, filepath.Join(scratchRoot, "live-session"))
 }
 
 // TestWebFetchScratchDirRejectsUnsafeSessionIDs pins the guard that

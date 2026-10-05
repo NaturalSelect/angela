@@ -23,10 +23,8 @@ import (
 )
 
 func main() {
-	// Must run before anything else: when Angela relaunches itself to
-	// restrict a sandboxed command's network access (see
-	// sandbox.WrapForChildNetworkRestriction), this process is that
-	// relaunch, not a normal Angela invocation, and never returns.
+	// NOTE: if we enter by a sub process with the appropriate sandboxing and network restrictions
+	// the main process will not continue past this point.
 	sandbox.RunChildExecLauncherIfRequested(os.Args)
 
 	if os.Getenv("ANGELA_PROFILE") != "" {

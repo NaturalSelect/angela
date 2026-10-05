@@ -87,7 +87,7 @@ func runChildExecLauncher(rest []string) {
 		os.Exit(127)
 	}
 
-	// Lock to the current OS thread before touching seccomp: exec
+	// NOTE: Lock to the current OS thread before touching seccomp: exec
 	// only carries the calling thread's filter into the new program
 	// image, and an unlocked goroutine could otherwise resume on a
 	// different thread between installing the filter and calling

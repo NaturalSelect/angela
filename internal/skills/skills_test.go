@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -643,6 +644,38 @@ func TestDiscoverBuiltin(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, angelaConfigCount, "reference/*.md files must not be discovered as their own skills")
+}
+
+func TestWalkthroughTemplate(t *testing.T) {
+	t.Parallel()
+
+	data, err := fs.ReadFile(BuiltinFS(), "builtin/builtin-code-walkthrough/template.html")
+	require.NoError(t, err, "walkthrough template must be embedded next to its SKILL.md")
+	html := string(data)
+
+	require.NotContains(t, html, "<script", "template must stay script-free so it works offline")
+	require.NotContains(t, html, "http://", "template must not make external requests")
+	require.NotContains(t, html, "https://", "template must not make external requests")
+
+	skill, err := fs.ReadFile(BuiltinFS(), "builtin/builtin-code-walkthrough/SKILL.md")
+	require.NoError(t, err)
+	require.Contains(t, string(skill), "template.html", "SKILL.md must tell the agent to load the template")
+
+	ids := map[string]bool{}
+	for _, m := range regexp.MustCompile(`<section id="([^"]+)"`).FindAllStringSubmatch(html, -1) {
+		ids[m[1]] = true
+	}
+	require.NotEmpty(t, ids)
+
+	navLinks := regexp.MustCompile(`<a href="#([^"]+)"`).FindAllStringSubmatch(html, -1)
+	require.Len(t, navLinks, len(ids), "every section needs exactly one nav link")
+	for _, m := range navLinks {
+		require.True(t, ids[m[1]], "nav link #%s has no matching section", m[1])
+	}
+
+	for id := range ids {
+		require.Contains(t, string(skill), "`"+id+"`", "SKILL.md content table must name section id %q", id)
+	}
 }
 
 func TestDeduplicate(t *testing.T) {

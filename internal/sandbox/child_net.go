@@ -36,14 +36,8 @@ func WrapForChildNetworkRestriction(path string, args []string) ([]string, error
 	return wrapped, nil
 }
 
-// RunChildExecLauncherIfRequested checks whether argv (os.Args)
-// requests the launcher path installed by
-// WrapForChildNetworkRestriction and, if so, never returns: it
-// installs the outbound-network filter on the current process and
-// execs into the real command, or exits the process with a
-// diagnostic on failure. Callers must invoke this before any normal
-// command-line handling, since argv[1] here is not a real Angela
-// flag.
+
+// NOTE: not returning to the caller if the child exec launcher is triggered.
 func RunChildExecLauncherIfRequested(argv []string) {
 	if len(argv) < 3 || argv[1] != childExecMarker {
 		return

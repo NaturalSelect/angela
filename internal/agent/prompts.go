@@ -23,9 +23,6 @@ var planPromptTmpl []byte
 //go:embed templates/deep_research.md.tpl
 var deepResearchPromptTmpl []byte
 
-//go:embed templates/sketch.md.tpl
-var sketchPromptTmpl []byte
-
 //go:embed templates/initialize.md.tpl
 var initializePromptTmpl []byte
 
@@ -45,7 +42,7 @@ var webFetchPromptTmpl []byte
 var generateAgentPromptTmpl []byte
 
 // branchPreambleTmpl fronts the system prompt of every branch-mode agent,
-// the built-in plan, deep-research and sketch agents as well as any the
+// the built-in plan and deep-research agents as well as any the
 // user defines. It is the only place the rules the fork machinery
 // depends on are guaranteed to be stated, so a custom branch prompt
 // cannot drop them by omission.
@@ -85,10 +82,6 @@ func deepResearchPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return prompt.NewPrompt(config.AgentDeepResearch, string(deepResearchPromptTmpl), opts...)
 }
 
-func sketchPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
-	return prompt.NewPrompt(config.AgentSketch, string(sketchPromptTmpl), opts...)
-}
-
 func titlePrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return prompt.NewPrompt(config.AgentTitle, string(titlePromptTmpl), opts...)
 }
@@ -122,7 +115,6 @@ var builtinPromptForAgent = map[string]func(...prompt.Option) (*prompt.Prompt, e
 	config.AgentExplore:       explorePrompt,
 	config.AgentGeneral:       generalPrompt,
 	config.AgentPlan:          planPrompt,
-	config.AgentSketch:        sketchPrompt,
 	config.AgentTitle:         titlePrompt,
 	config.AgentCompact:       compactPrompt,
 	config.AgentWebFetch:      webFetchPrompt,
@@ -142,7 +134,6 @@ var builtinPromptTemplateFile = map[string]string{
 	config.AgentExplore:       "explore.md.tpl",
 	config.AgentGeneral:       "general.md.tpl",
 	config.AgentPlan:          "plan.md.tpl",
-	config.AgentSketch:        "sketch.md.tpl",
 	config.AgentTitle:         "title.md",
 	config.AgentCompact:       "summary.md",
 	config.AgentWebFetch:      "web_fetch_prompt.md.tpl",

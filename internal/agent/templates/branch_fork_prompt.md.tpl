@@ -8,5 +8,5 @@ Your task:
 
 {{.Prompt}}
 
-Work with the user on this, then call `Merge` with a summary for the
-conversation you were forked from.
+Work with the user on this, then call `Merge` to hand your proposal back to
+the conversation you were forked from.

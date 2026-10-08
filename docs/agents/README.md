@@ -11,8 +11,7 @@ tasks to specialized sub-agents via the `agent` tool.
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
 | `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git (read-only), LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
-| `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. Read-only. |
-| `sketch`  | branch    | Designs a change with you as pseudo-code, one piece at a time, so you see and accept everything that gets built. Read-only. Only forked when you ask. |
+| `plan`    | branch    | Works out a change with you as pseudo-code, one piece at a time, and hands back an ordered implementation plan. Read-only. |
 | `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: Fetch, WebFetch, WebSearch, Glob, Grep, Read, Sourcegraph. |
 
 Every sub-agent additionally loses the interactive `question` tool at run
@@ -88,21 +87,41 @@ A **branch** agent turns a delegation into a conversation you take part in.
 When the coder dispatches one, Angela forks the current session, suspends
 the coder's turn, and drops you into the fork. You talk to the branch
 directly, the way you talk to the coder. When you are done, the branch hands
-a summary back and the coder's turn resumes where it left off.
+a proposal back and the coder's turn resumes where it left off.
 
 Use it for work the model cannot finish alone: a design decision only you
 can make, an exploration whose direction you have to steer, a discussion
 that has to happen before the task is even well-defined.
 
-Angela ships three branch agents, `plan`, `deep-research` and `sketch`, and
+Angela ships two branch agents, `plan` and `deep-research`, and
 you can configure your own with your own system prompt.
 
 ### `plan`
 
 The coder forks `plan` before non-trivial work — a new feature, a refactor, a
 change with several viable designs, or a request whose scope has to be pinned
-down first. You settle the approach together, and `plan` hands back an ordered,
-step-by-step plan for the coder to execute.
+down first. A change that adds no data structure, no cross-module flow, and no
+interface change has no design to work out, so `plan` says so and goes
+straight to a short ordered plan. Otherwise you and the agent work out the
+change's data structures, how they interact, and where they land in the
+repository, all as pseudo-code. `plan` hands back one ordered, step-by-step
+plan for the coder to execute, and that plan carries the pseudo-code design.
+
+It first asks whether you already know the code the change passes through. If
+you do not, it probes with a short quiz, then fills the gaps. From then on you
+state decisions in plain words and it writes each one back as pseudo-code for
+you to confirm. It does not design on its own initiative: where it thinks
+something is missing it asks, and it offers a design of its own only when you
+ask for one, marked as its own and entered only after you accept it. Finally
+it checks the design against the repository, reports where the two disagree,
+and orders the work into steps with the commands that verify them.
+
+The rule behind all of this is that what you see is what gets built. The plan
+it hands back holds only pseudo-code you have seen, and the coder that
+implements it must stop and tell you before deviating from any of it. Detail
+below the level of that pseudo-code, such as function bodies, is left to the
+coder. That is slower than signing a finished document, and it is the point:
+approving a plan does not repay the understanding you skip.
 
 `plan` is read-only. It reads, searches, and asks you questions, but it holds
 no `bash`, no `edit`, and no `write`: the plan is the only thing it produces.
@@ -149,31 +168,6 @@ history, or run the one test that separates two hypotheses. Every command asks
 your permission first, and it still holds no `edit` or `write`: the finding is
 its only product, and acting on it is the coder's job.
 
-### `sketch`
-
-`sketch` is for the times you want to understand a design, not only approve
-it. You and the agent work out a change's data structures, how they interact,
-and where they land in the repository, all as pseudo-code. It first probes what
-you already know about the code, then fills the gaps. From then on you state
-decisions in plain words and it writes each one back as pseudo-code for you to
-confirm. It may suggest additions of its own, but a suggestion is marked as
-its own and enters the sketch only after you accept it. Finally it checks the
-sketch against the repository and reports where the two disagree.
-
-The rule behind all of this is that what you see is what gets built. The
-sketch it hands back holds only pseudo-code you have seen, and the coder that
-implements it must stop and tell you before deviating from any of it.
-
-Unlike `plan`, which hands back a finished document to approve, `sketch` builds
-the design piece by piece in front of you. That is slower, and it is the point:
-signing a plan does not repay the understanding you skip. The coder never
-forks `sketch` on its own. Ask for it, or accept when the coder offers it
-before a change that adds a data structure, introduces a cross-module flow, or
-alters an existing interface.
-
-Like `plan`, `sketch` is read-only, holds no `bash`, and can only delegate to
-`explore`.
-
 ### Configuring one
 
 Add a branch agent in `angela.json` or as a markdown file in an agent
@@ -202,14 +196,16 @@ prompt follows and decides everything else.
    point of the call, then a message stating the task the coder gave it.
 2. **Talk.** You drive it. Everything works as usual — tools, permissions,
    `/` commands.
-3. **Merge.** When the work is settled, the branch calls the `merge` tool
-   with a summary. Merging always asks for your approval, even under an
-   allow-list, because the summary is what the coder will believe.
+3. **Merge.** While you talk, the branch drafts a proposal document in
+   memory. When the work is settled, it calls the `merge` tool, which takes
+   no arguments and hands that proposal back. Merging always asks for your
+   approval, even under an allow-list, because the proposal is what the
+   coder will believe.
    - **Approve** — the branch ends, you return to the parent conversation,
-     and the coder resumes with the summary as the `agent` tool's result.
+     and the coder resumes with the proposal as the `agent` tool's result.
    - **Deny** — nothing is merged and nothing is sent. The branch stays
-     open, so you can say what was wrong with the summary and have it try
-     again.
+     open and keeps the proposal, so you can say what was wrong with it and
+     have it revise and try again.
    - Under yolo mode (`--yolo`, or permissions set to skip requests), merge
      still asks for approval by default. Pass `--yolo-merge` at startup or
      use the "Enable Yolo Skip Merge" command to auto-approve merges too.
@@ -217,7 +213,7 @@ prompt follows and decides everything else.
      their config, which forces merge to prompt even when `--yolo-merge` is
      on.
 4. **Abandon.** If the branch led nowhere, drop it: the coder is told the
-   branch was abandoned and continues without a summary. That is a normal
+   branch was abandoned and continues without a proposal. That is a normal
    outcome, not an error.
 
 ### Ending a branch without merging
@@ -361,9 +357,9 @@ does.
   after a lower-priority layer narrowed it, since an unset field only ever
   keeps whatever a lower layer decided rather than clearing it.
 
-The built-in `plan`, `deep-research` and `sketch` agents all set
-`"allowed_agents": ["explore"]`: a plan, a sketch or a root-cause finding is
-only as trustworthy as the read-only legwork behind it, so none of them can
+The built-in `plan` and `deep-research` agents both set
+`"allowed_agents": ["explore"]`: a plan or a root-cause finding is
+only as trustworthy as the read-only legwork behind it, so neither of them can
 hand the decision off to `general` or to each other — they can only delegate
 the read-only search `explore` provides.
 

@@ -36,7 +36,6 @@ func WrapForChildNetworkRestriction(path string, args []string) ([]string, error
 	return wrapped, nil
 }
 
-
 // NOTE: not returning to the caller if the child exec launcher is triggered.
 func RunChildExecLauncherIfRequested(argv []string) {
 	if len(argv) < 3 || argv[1] != childExecMarker {

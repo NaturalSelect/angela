@@ -21,9 +21,8 @@ is needed.
 | `coder` | primary | Main agent; has access to all tools. Cannot be disabled. |
 | `explore` | subagent | Fast codebase explorer. Read-only: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, LSP. |
 | `general` | subagent | General-purpose; inherits coder's tools minus `todos`. |
-| `plan` | branch | Turns a request into an agreed implementation plan. Read-only. |
+| `plan` | branch | Works out a change with the user as pseudo-code, piece by piece, and hands back an ordered plan. Read-only. |
 | `deep-research` | branch | Investigates a hard question; has Bash but no edit/write. |
-| `sketch` | branch | Designs a change with the user as pseudo-code, piece by piece. Read-only; only forked when the user asks. |
 | `web-fetch` | subagent | Fetches and analyzes web pages or searches the web. |
 
 Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
@@ -34,7 +33,7 @@ Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
 - **primary** — Drives a session directly. Multiple primary agents are allowed.
 - **subagent** — Dispatched via the `agent` tool. Subject to `subagent_depth` budget.
 - **branch** — Dispatched like a subagent but forks the conversation and hands
-  it to the user. The user drives it; it ends by merging a summary back.
+  it to the user. The user drives it; it ends by merging its proposal back.
 - **compact** — Summarizes another agent's session. Never dispatched; referenced
   via `compact_agent`.
 
@@ -170,14 +169,15 @@ everything else.
 1. **Fork** — starts with a copy of the conversation up to the call, then the
    task the coder gave it.
 2. **Talk** — you drive it; tools, permissions, and `/` commands all work.
-3. **Merge** — the branch calls the `merge` tool with a summary. Always asks
-   for approval (even in yolo mode unless `--yolo-merge` was passed).
-   Per-agent `"allow_yolo_merge": false` also forces a prompt regardless
-   of `--yolo-merge`.
-   Approving ends the branch and returns the summary to the coder. Denying
+3. **Merge** — the branch drafts a proposal with `ProposalWrite`/`ProposalEdit`,
+   then calls `Merge`, which takes no arguments and hands that proposal back.
+   Always asks for approval (even in yolo mode unless `--yolo-merge` was
+   passed). Per-agent `"allow_yolo_merge": false` also forces a prompt
+   regardless of `--yolo-merge`.
+   Approving ends the branch and returns the proposal to the coder. Denying
    keeps the branch open so you can redirect it.
 4. **Abandon** — `/abort` drops the branch without merging; the coder is told
-   it was abandoned and continues without a summary.
+   it was abandoned and continues without a proposal.
 
 ## Markdown Agent Files
 

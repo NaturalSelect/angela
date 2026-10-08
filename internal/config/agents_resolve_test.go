@@ -141,11 +141,10 @@ func TestResolveAgents_CustomBranchIsNotDowngraded(t *testing.T) {
 }
 
 // Branch mode suspends the caller until a human resolves it, so it is never
-// the right default for an agent the user did not ask for. plan,
-// deep-research and sketch are the deliberate exceptions; sketch is never
-// forked on the model's own initiative, only when the user asks for it. This
-// keeps any other builtin from drifting into branch mode.
-func TestResolveAgents_BuiltinBranchesAreExactlyPlanDeepResearchAndSketch(t *testing.T) {
+// the right default for an agent the user did not ask for. plan and
+// deep-research are the deliberate exceptions. This keeps any other builtin
+// from drifting into branch mode.
+func TestResolveAgents_BuiltinBranchesAreExactlyPlanAndDeepResearch(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 
 	var branches []string
@@ -155,7 +154,38 @@ func TestResolveAgents_BuiltinBranchesAreExactlyPlanDeepResearchAndSketch(t *tes
 		}
 	}
 	slices.Sort(branches)
-	require.Equal(t, []string{AgentDeepResearch, AgentPlan, AgentSketch}, branches)
+	require.Equal(t, []string{AgentDeepResearch, AgentPlan}, branches)
+}
+
+// A config written for the removed sketch agent has no builtin left to merge
+// onto. Resolved as a fresh custom agent it would inherit every coder tool and
+// be offered for dispatch with no description, so it must be dropped loudly.
+func TestResolveAgents_RetiredSketchConfigIsIgnored(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T) *Config
+	}{
+		{"json", func(t *testing.T) *Config {
+			cfg := newAgentTestConfig(t, nil)
+			cfg.AgentConfigs = map[string]Agent{"sketch": {Slot: SlotMain}}
+			return cfg
+		}},
+		{"markdown", func(t *testing.T) *Config {
+			return newAgentTestConfig(t, map[string]string{
+				"sketch": "---\nmode: branch\n---\nYou sketch designs.",
+			})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := captureWarnings(t)
+
+			agents := tc.setup(t).ResolveAgents()
+
+			require.NotContains(t, agents, "sketch")
+			require.Contains(t, buf.String(), "no longer exists")
+			require.Contains(t, buf.String(), `"replacement":"plan"`)
+		})
+	}
 }
 
 // deep-research is the one investigating agent that may run commands: a root

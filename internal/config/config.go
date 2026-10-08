@@ -95,7 +95,6 @@ const (
 	AgentExplore      string = "explore"
 	AgentGeneral      string = "general"
 	AgentPlan         string = "plan"
-	AgentSketch       string = "sketch"
 	AgentWebFetch     string = "web-fetch"
 
 	// The agents below back Angela's own auxiliary LLM calls. They are
@@ -1436,7 +1435,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentPlan: {
 			ID:          AgentPlan,
 			Name:        "Plan",
-			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it proactively, without waiting to be asked, before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first — getting sign-off before code changes prevents wasted effort. It is read-only — it reads, searches, and asks, but never edits.",
+			Description: "Forks this conversation into a branch where you and the user work out a change together as pseudo-code — its data structures, how they interact, and where they land in this repository — and hands back an ordered, step-by-step plan to execute that carries that pseudo-code design. It probes what the user already knows about the code, transcribes their decisions, and checks the result against the repository; it designs nothing the user has not decided or asked it to, so what they saw is what gets built. Use it proactively, without waiting to be asked, before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first — deciding the design with the user before code changes keeps them understanding their own code and prevents wasted effort. A change with no design to work out comes back quickly as a short ordered plan. Keep the dispatch prompt to the change the user wants planned. It is read-only — it reads, searches, and asks, but never edits.",
 			Mode:        AgentModeBranch,
 			Slot:        SlotMain,
 			// The proposal is only worth as much as the conventions it
@@ -1448,21 +1447,6 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// A plan is a proposal to settle with the user, not a
 			// license to hand the decision off again, so plan can only
 			// delegate the read-only legwork behind it.
-			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
-		},
-		AgentSketch: {
-			ID:          AgentSketch,
-			Name:        "Sketch",
-			Description: "Forks this conversation into a branch where you and the user design a change together as pseudo-code — its data structures, how they interact, and where they land in this repository. You probe what the user already knows about the code, transcribe their decisions, suggest your own, and check the result against the repository; nothing enters the sketch until the user has seen it as pseudo-code and accepted it, including the parts they delegate to you. It hands back a pseudo-code sketch the user has seen in full, for you to implement without deviating from it: what they saw is what gets built. Unlike plan, which hands back a finished document to approve, sketch builds the design piece by piece in front of the user: use it when the user wants to understand and shape a design, not just sign one off. Do not fork it on your own initiative. Dispatch it when the user asks to sketch a change or work out its design with you; before a change that adds a data structure, introduces a cross-module flow, or alters an existing interface or invariant, you may ask the user whether they want to sketch it first. When the user chooses sketch, it takes the place of plan for that change — do not fork both. Keep the dispatch prompt to the change the user wants to design. It is read-only.",
-			Mode:        AgentModeBranch,
-			Slot:        SlotMain,
-			// A sketch is checked against the conventions the code is
-			// written under, so it reads the same context files as plan.
-			ContextPaths: contextPaths,
-			// NOTE: Sketch shares plan's read-only set; both hand back a
-			// document and neither may run or write anything.
-			AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
-			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetScope},
 			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
 		},
 		AgentWebFetch: {
@@ -1647,6 +1631,10 @@ func (c *Config) ResolveAgents() map[string]Agent {
 	// Layer 2: markdown agent files.
 	mdAgents := DiscoverAgentFiles(c.Options.AgentPaths)
 	for key, override := range mdAgents {
+		if replacement, retired := retiredAgentIDs[key]; retired {
+			warnRetiredAgent(key, replacement)
+			continue
+		}
 		existing, ok := agents[key]
 		if !ok {
 			existing = newCustomAgent(c.Options.ContextPaths)
@@ -1661,6 +1649,10 @@ func (c *Config) ResolveAgents() map[string]Agent {
 	// from JSON decoding, so they are validated here instead of being
 	// trusted.
 	for key, override := range c.AgentConfigs {
+		if replacement, retired := retiredAgentIDs[key]; retired {
+			warnRetiredAgent(key, replacement)
+			continue
+		}
 		if err := ValidateAgent(key, override); err != nil {
 			slog.Warn("Skipping invalid agent config", "agent", key, "error", err)
 			continue
@@ -1718,6 +1710,17 @@ func (c *Config) ResolveAgents() map[string]Agent {
 	}
 
 	return agents
+}
+
+// NOTE: Otherwise a stale override becomes an agent with every coder tool.
+var retiredAgentIDs = map[string]string{
+	"sketch": AgentPlan,
+}
+
+func warnRetiredAgent(id, replacement string) {
+	slog.Warn("Ignoring config for a built-in agent that no longer exists",
+		"agent", id, "replacement", replacement,
+		"hint", "move these settings to the replacement agent, or remove them")
 }
 
 // resolveCoderAgent materializes the coder agent in place and returns

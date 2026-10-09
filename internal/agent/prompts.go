@@ -23,6 +23,9 @@ var planPromptTmpl []byte
 //go:embed templates/deep_research.md.tpl
 var deepResearchPromptTmpl []byte
 
+//go:embed templates/co_design.md.tpl
+var coDesignPromptTmpl []byte
+
 //go:embed templates/initialize.md.tpl
 var initializePromptTmpl []byte
 
@@ -42,7 +45,7 @@ var webFetchPromptTmpl []byte
 var generateAgentPromptTmpl []byte
 
 // branchPreambleTmpl fronts the system prompt of every branch-mode agent,
-// the built-in plan and deep-research agents as well as any the
+// the built-in plan, co-design and deep-research agents as well as any the
 // user defines. It is the only place the rules the fork machinery
 // depends on are guaranteed to be stated, so a custom branch prompt
 // cannot drop them by omission.
@@ -82,6 +85,10 @@ func deepResearchPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return prompt.NewPrompt(config.AgentDeepResearch, string(deepResearchPromptTmpl), opts...)
 }
 
+func coDesignPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	return prompt.NewPrompt(config.AgentCoDesign, string(coDesignPromptTmpl), opts...)
+}
+
 func titlePrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return prompt.NewPrompt(config.AgentTitle, string(titlePromptTmpl), opts...)
 }
@@ -111,6 +118,7 @@ func commitPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 // general template.
 var builtinPromptForAgent = map[string]func(...prompt.Option) (*prompt.Prompt, error){
 	config.AgentCoder:         coderPrompt,
+	config.AgentCoDesign:      coDesignPrompt,
 	config.AgentDeepResearch:  deepResearchPrompt,
 	config.AgentExplore:       explorePrompt,
 	config.AgentGeneral:       generalPrompt,
@@ -130,6 +138,7 @@ var builtinPromptForAgent = map[string]func(...prompt.Option) (*prompt.Prompt, e
 // Adding a template without registering it here fails that test.
 var builtinPromptTemplateFile = map[string]string{
 	config.AgentCoder:         "coder.md.tpl",
+	config.AgentCoDesign:      "co_design.md.tpl",
 	config.AgentDeepResearch:  "deep_research.md.tpl",
 	config.AgentExplore:       "explore.md.tpl",
 	config.AgentGeneral:       "general.md.tpl",

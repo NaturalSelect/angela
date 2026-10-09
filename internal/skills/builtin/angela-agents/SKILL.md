@@ -21,7 +21,7 @@ is needed.
 | `coder` | primary | Main agent; has access to all tools. Cannot be disabled. |
 | `explore` | subagent | Fast codebase explorer. Read-only: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, LSP. |
 | `general` | subagent | General-purpose; inherits coder's tools minus `todos`. |
-| `plan` | branch | Works out a change with the user as pseudo-code, piece by piece, and hands back an ordered plan. Read-only. |
+| `plan` | branch | Turns a request into an agreed implementation plan. Read-only. |
 | `deep-research` | branch | Investigates a hard question; has Bash but no edit/write. |
 | `web-fetch` | subagent | Fetches and analyzes web pages or searches the web. |
 

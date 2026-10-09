@@ -11,7 +11,7 @@ tasks to specialized sub-agents via the `agent` tool.
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
 | `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git (read-only), LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
-| `plan`    | branch    | Works out a change with you as pseudo-code, one piece at a time, and hands back an ordered implementation plan. Read-only. |
+| `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. Read-only. |
 | `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: Fetch, WebFetch, WebSearch, Glob, Grep, Read, Sourcegraph. |
 
 Every sub-agent additionally loses the interactive `question` tool at run
@@ -100,28 +100,8 @@ you can configure your own with your own system prompt.
 
 The coder forks `plan` before non-trivial work — a new feature, a refactor, a
 change with several viable designs, or a request whose scope has to be pinned
-down first. A change that adds no data structure, no cross-module flow, and no
-interface change has no design to work out, so `plan` says so and goes
-straight to a short ordered plan. Otherwise you and the agent work out the
-change's data structures, how they interact, and where they land in the
-repository, all as pseudo-code. `plan` hands back one ordered, step-by-step
-plan for the coder to execute, and that plan carries the pseudo-code design.
-
-It first asks whether you already know the code the change passes through. If
-you do not, it probes with a short quiz, then fills the gaps. From then on you
-state decisions in plain words and it writes each one back as pseudo-code for
-you to confirm. It does not design on its own initiative: where it thinks
-something is missing it asks, and it offers a design of its own only when you
-ask for one, marked as its own and entered only after you accept it. Finally
-it checks the design against the repository, reports where the two disagree,
-and orders the work into steps with the commands that verify them.
-
-The rule behind all of this is that what you see is what gets built. The plan
-it hands back holds only pseudo-code you have seen, and the coder that
-implements it must stop and tell you before deviating from any of it. Detail
-below the level of that pseudo-code, such as function bodies, is left to the
-coder. That is slower than signing a finished document, and it is the point:
-approving a plan does not repay the understanding you skip.
+down first. You settle the approach together, and `plan` hands back an ordered,
+step-by-step plan for the coder to execute.
 
 `plan` is read-only. It reads, searches, and asks you questions, but it holds
 no `bash`, no `edit`, and no `write`: the plan is the only thing it produces.

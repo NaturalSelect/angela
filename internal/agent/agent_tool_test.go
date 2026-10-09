@@ -256,14 +256,14 @@ func TestAgentToolAllowedAgentsEmptyOmitsTheTool(t *testing.T) {
 }
 
 // TestBuiltinBranchesOnlyDispatchExplore pins the allowed_agents
-// restriction on the built-in branch agents: a plan or a
+// restriction on the built-in branch agents: a plan, a co-designed plan or a
 // root-cause finding is only as trustworthy as the read-only legwork
 // behind it, so none should be able to reach general, or hand the
 // decision off to another branch, through its own agent tool.
 func TestBuiltinBranchesOnlyDispatchExplore(t *testing.T) {
 	coord := newGateTestCoordinator(t, true)
 
-	for _, id := range []string{config.AgentPlan, config.AgentDeepResearch} {
+	for _, id := range []string{config.AgentPlan, config.AgentCoDesign, config.AgentDeepResearch} {
 		t.Run(id, func(t *testing.T) {
 			agentCfg := coord.cfg.Config().Agents[id]
 			toolList, err := coord.buildTools(agentCfg, config.ActiveAgent{}, "", 0)
@@ -284,6 +284,7 @@ func TestBuiltinBranchesOnlyDispatchExplore(t *testing.T) {
 			require.NotContains(t, agentTool.Info().Description, "- "+config.AgentGeneral+":")
 			require.NotContains(t, agentTool.Info().Description, "- "+config.AgentPlan+":")
 			require.NotContains(t, agentTool.Info().Description, "- "+config.AgentDeepResearch+":")
+			require.NotContains(t, agentTool.Info().Description, "- "+config.AgentCoDesign+":")
 
 			ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
 			ctx = context.WithValue(ctx, tools.MessageIDContextKey, "msg-1")

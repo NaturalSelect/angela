@@ -12,7 +12,7 @@ gives them tools to read, write, and execute code in your terminal.
 Key capabilities:
 
 - **Multi-provider** — Anthropic, OpenAI, Gemini, Bedrock, OpenRouter, Ollama, and any OpenAI-compatible API
-- **Multi-agent** — built-in `coder`, `explore`, `plan`, `deep-research` agents with configurable dispatch
+- **Multi-agent** — built-in `coder`, `explore`, `plan`, `co-design`, `deep-research` agents with configurable dispatch
 - **LSP integration** — uses language servers for code intelligence, just like your editor
 - **MCP support** — extend with Model Context Protocol servers (`stdio`, `http`, `sse`)
 - **Image input** — paste images from clipboard or attach files for vision-capable models

@@ -91,6 +91,7 @@ const (
 
 const (
 	AgentCoder        string = "coder"
+	AgentCoDesign     string = "co-design"
 	AgentDeepResearch string = "deep-research"
 	AgentExplore      string = "explore"
 	AgentGeneral      string = "general"
@@ -1449,6 +1450,19 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// delegate the read-only legwork behind it.
 			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
 		},
+		AgentCoDesign: {
+			ID:           AgentCoDesign,
+			Name:         "Co-design",
+			Description:  "Forks this conversation into a branch where you and the user design a change together as pseudo-code — its data structures, how they interact, and where they land in this repository. It probes what the user already knows about the code, transcribes their decisions, suggests its own, and checks the result against the repository; every piece of key design — data structures, interfaces, cross-module flows, ownership — enters only once the user has seen it as pseudo-code and accepted it, while the agent settles details itself and marks them. It hands back an ordered, step-by-step plan, like plan's, that carries that pseudo-code, for you to implement without deviating from the key design: what the user saw is what gets built. Unlike plan, which works out the approach for the user to settle, co-design builds the key design piece by piece with the user: use it when the user wants to understand and shape a design, not just sign one off. Do not fork it on your own initiative. Dispatch it only when the user asks to co-design a change or work out its design with you. When the user chooses co-design, it takes the place of plan for that change — do not fork both. Keep the dispatch prompt to the change the user wants to design. It is read-only.",
+			Mode:         AgentModeBranch,
+			Slot:         SlotMain,
+			ContextPaths: contextPaths,
+			// NOTE: Co-design shares plan's read-only set; both hand back a
+			// plan and neither may run or write anything.
+			AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
+			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetScope},
+			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
+		},
 		AgentWebFetch: {
 			ID:           AgentWebFetch,
 			Name:         "WebFetch",
@@ -1714,7 +1728,7 @@ func (c *Config) ResolveAgents() map[string]Agent {
 
 // NOTE: Otherwise a stale override becomes an agent with every coder tool.
 var retiredAgentIDs = map[string]string{
-	"sketch": AgentPlan,
+	"sketch": AgentCoDesign,
 }
 
 func warnRetiredAgent(id, replacement string) {

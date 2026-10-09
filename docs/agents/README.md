@@ -8,6 +8,7 @@ tasks to specialized sub-agents via the `agent` tool.
 | ID        | Mode      | Description                                                            |
 |-----------|-----------|------------------------------------------------------------------------|
 | `coder`   | primary   | Main agent for executing coding tasks. Has access to all tools.        |
+| `co-design` | branch | Designs a change with you as pseudo-code, one piece at a time, and hands back a plan that carries it. Read-only. Only forked when you ask. |
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
 | `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git (read-only), LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
@@ -93,8 +94,8 @@ Use it for work the model cannot finish alone: a design decision only you
 can make, an exploration whose direction you have to steer, a discussion
 that has to happen before the task is even well-defined.
 
-Angela ships two branch agents, `plan` and `deep-research`, and
-you can configure your own with your own system prompt.
+Angela ships three branch agents, `plan`, `co-design` and `deep-research`,
+and you can configure your own with your own system prompt.
 
 ### `plan`
 
@@ -128,6 +129,37 @@ prompt per command: a workspace-local read-only command already runs
 unprompted, so `git log` costs nothing extra either way. What `Bash` actually
 gives up is the structural guarantee, since yolo mode approves everything
 `Bash` runs, git included, without distinction.
+
+### `co-design`
+
+`co-design` is for the times you want to understand a design, not only approve
+it. You and the agent work out a change's data structures, how they interact,
+and where they land in the repository, all as pseudo-code. It first probes what
+you already know about the code, then fills the gaps. From then on you state
+the key decisions in plain words, and it writes each one back as pseudo-code
+for you to confirm. Key decisions are data structures, interfaces between
+modules, cross-module flows, and ownership. The agent settles the details
+itself, such as names, error handling, and step order, following the
+repository's existing patterns, and marks them in the plan without asking. It
+may suggest key design of its own, but a suggestion enters the design only
+after you accept it. Finally it checks the design against the repository,
+raises only the conflicts that change the design, and orders the work into
+steps.
+
+It hands back a plan in the same shape as `plan`'s: context, goal, ordered
+steps, verification, risks and key files. Each step also carries the
+pseudo-code of the key design you accepted, with the details marked
+separately. The coder that implements it must stop and tell you before
+deviating from the key design: what you see is what gets built.
+
+Unlike `plan`, which works out the approach for you to settle, `co-design`
+builds the key design piece by piece with you. That is slower, and it is the
+point: signing a plan does not repay the understanding you skip. The coder
+never forks `co-design` on its own. Ask for it when you want to shape the
+design yourself.
+
+Like `plan`, `co-design` is read-only, holds no `bash`, and can only delegate
+to `explore`.
 
 ### `deep-research`
 
@@ -337,9 +369,9 @@ does.
   after a lower-priority layer narrowed it, since an unset field only ever
   keeps whatever a lower layer decided rather than clearing it.
 
-The built-in `plan` and `deep-research` agents both set
+The built-in `plan`, `co-design` and `deep-research` agents all set
 `"allowed_agents": ["explore"]`: a plan or a root-cause finding is
-only as trustworthy as the read-only legwork behind it, so neither of them can
+only as trustworthy as the read-only legwork behind it, so none of them can
 hand the decision off to `general` or to each other — they can only delegate
 the read-only search `explore` provides.
 

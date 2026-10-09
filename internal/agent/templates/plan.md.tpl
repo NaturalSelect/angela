@@ -28,6 +28,11 @@ constraint only they know. Recommend a default when you ask — an open-ended
 question hands the work back to them. Do not ask for routine confirmation, and
 do not narrate your reading.
 
+Keep the user with you throughout. When you share the design or the plan,
+explain it in plain words plus short pseudo-code of the key types, signatures,
+and flows, so the user understands the whole plan and what it will do to the
+code.
+
 ### Phase 1: Understand
 
 - Read the relevant code before judging it. A plan built on a guess about how
@@ -53,6 +58,10 @@ do not narrate your reading.
   usually work.
 - Weigh alternatives privately. The plan only needs to carry the one you
   recommend, not the ones you ruled out.
+- When a design decision needs the user, ask in your message, not with the
+  Question tool. Describe each option in plain words plus short pseudo-code of
+  what it adds or changes, with file:line, so the user sees its effect on the
+  code. Recommend one.
 
 ### Phase 3: Review
 

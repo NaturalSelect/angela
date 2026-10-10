@@ -974,6 +974,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.session = msg.session
 		m.sessionIsBranch = isBranch
 		m.sessionFiles = msg.files
+		m.thinkingSince = time.Time{}
 		// Session switch: the memoized busy state and queued prompts
 		// belong to the previous session. Drop them and re-fetch
 		// off-thread so the queue pill and esc behavior track the new
@@ -2246,11 +2247,13 @@ func (m *UI) observeToolCall(tc message.ToolCall) {
 
 // isWritingText reports whether a child session message is the sub-agent
 // streaming reply text. Once the same message grows a tool call, the call
-// is what the sub-agent is doing, so text alone is the signal.
+// is what the sub-agent is doing, and once it finishes there is nothing
+// left to stream, so unfinished text alone is the signal.
 func isWritingText(msg message.Message) bool {
 	return msg.Role == message.Assistant &&
 		strings.TrimSpace(msg.Content().Text) != "" &&
-		len(msg.ToolCalls()) == 0
+		len(msg.ToolCalls()) == 0 &&
+		msg.FinishPart() == nil
 }
 
 // handleChildSessionMessage handles messages from child sessions (agent tools).
@@ -6051,6 +6054,7 @@ func (m *UI) newSession() tea.Cmd {
 	m.sessionFiles = nil
 	m.sessionFileReads = nil
 	m.sessionStack = nil
+	m.thinkingSince = time.Time{}
 	m.setState(uiLanding, uiFocusEditor)
 	m.textarea.Focus()
 	m.chat.Blur()

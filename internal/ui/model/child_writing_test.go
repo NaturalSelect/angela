@@ -51,6 +51,14 @@ func TestIsWritingText(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "a finished text-only message has stopped writing",
+			msg: message.Message{Role: message.Assistant, Parts: []message.ContentPart{
+				message.TextContent{Text: "Which option do you prefer?"},
+				message.Finish{Reason: message.FinishReasonEndTurn},
+			}},
+			expected: false,
+		},
+		{
 			name:     "reasoning alone is thinking, not writing",
 			msg:      message.Message{Role: message.Assistant, Parts: []message.ContentPart{message.ReasoningContent{Thinking: "hmm"}}},
 			expected: false,

@@ -105,6 +105,7 @@ specialized sub-agents:
 | `coder`         | Primary agent with all tools                 |
 | `explore`       | Fast read-only codebase search               |
 | `plan`          | Interactive implementation planning (branch) |
+| `co-design`     | Interactive design of a change (branch)      |
 | `deep-research` | Root cause analysis and design (branch)      |
 | `general`       | Multi-step tasks with inherited tools        |
 | `web-fetch`     | Web search and page fetching                 |

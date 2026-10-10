@@ -2236,14 +2236,18 @@ func (m *UI) observeToolCall(tc message.ToolCall) {
 	m.activeTool = &toolTiming{id: tc.ID, since: time.Now()}
 }
 
+// isWritingText reports whether a child session message is the sub-agent
+// streaming reply text. Once the same message grows a tool call, the call
+// is what the sub-agent is doing, so text alone is the signal.
+func isWritingText(msg message.Message) bool {
+	return msg.Role == message.Assistant &&
+		strings.TrimSpace(msg.Content().Text) != "" &&
+		len(msg.ToolCalls()) == 0
+}
+
 // handleChildSessionMessage handles messages from child sessions (agent tools).
 func (m *UI) handleChildSessionMessage(event pubsub.Event[message.Message]) tea.Cmd {
 	var cmds []tea.Cmd
-
-	// Only process messages with tool calls or results.
-	if len(event.Payload.ToolCalls()) == 0 && len(event.Payload.ToolResults()) == 0 {
-		return nil
-	}
 
 	// Check if this is an agent tool session and parse it.
 	childSessionID := event.Payload.SessionID
@@ -2260,6 +2264,15 @@ func (m *UI) handleChildSessionMessage(event pubsub.Event[message.Message]) tea.
 	}
 	agentItem, ok := item.(chat.NestedToolContainer)
 	if !ok {
+		return nil
+	}
+
+	// Reply text streams in as updates to a message with no tool call, so
+	// it has to be read before the tool-only filter below drops it.
+	agentItem.SetWriting(isWritingText(event.Payload))
+
+	// Only messages with tool calls or results change the nested tools.
+	if len(event.Payload.ToolCalls()) == 0 && len(event.Payload.ToolResults()) == 0 {
 		return nil
 	}
 

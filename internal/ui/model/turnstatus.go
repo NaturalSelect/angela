@@ -67,9 +67,18 @@ func (m *UI) syncTurnSpinner() tea.Cmd {
 	}
 	m.turnIsSpinning = busy
 	if !busy {
+		m.stopTurnSpinner()
 		return nil
 	}
 	return m.turnSpinner.Tick
+}
+
+// stopTurnSpinner marks the turn as over and forgets when it began thinking.
+//
+// NOTE: A summary or bang command restarts no clock, so it must start unset.
+func (m *UI) stopTurnSpinner() {
+	m.turnIsSpinning = false
+	m.thinkingSince = time.Time{}
 }
 
 // busyStatusFields builds the busy-state fields in drop order: the last entry

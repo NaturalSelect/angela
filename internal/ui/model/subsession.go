@@ -231,7 +231,7 @@ func (m *UI) escapeCancels() bool {
 // branch on purpose.
 func (m *UI) abortBranch(sessionID string) tea.Cmd {
 	m.com.Workspace.AgentAbandonBranch(sessionID)
-	m.turnIsSpinning = false
+	m.stopTurnSpinner()
 	m.invalidateBusyCaches()
 
 	cmds := []tea.Cmd{m.leaveSubSession()}

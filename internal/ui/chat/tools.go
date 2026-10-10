@@ -171,7 +171,8 @@ func newBaseToolMessageItem(
 	canceled bool,
 ) *baseToolMessageItem {
 	// we only do full width for diffs (as far as I know)
-	hasCappedWidth := toolCall.Name != toolnames.Edit && toolCall.Name != toolnames.MultiEdit
+	hasCappedWidth := toolCall.Name != toolnames.Edit && toolCall.Name != toolnames.MultiEdit &&
+		!isProposalDiffTool(toolCall.Name)
 
 	status := ToolStatusRunning
 	if canceled {
@@ -234,6 +235,8 @@ func NewToolMessageItem(
 		item = NewEditToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.MultiEdit:
 		item = NewMultiEditToolMessageItem(sty, toolCall, result, canceled)
+	case toolnames.ProposalWrite, toolnames.ProposalEdit:
+		item = NewProposalToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.Glob:
 		item = NewGlobToolMessageItem(sty, toolCall, result, canceled)
 	case toolnames.Grep:
@@ -589,7 +592,8 @@ func toolKindIcon(name string) string {
 	switch name {
 	case toolnames.Bash, toolnames.JobOutput, toolnames.JobKill:
 		return styles.ToolIconShell
-	case toolnames.Write, toolnames.Edit, toolnames.MultiEdit, toolnames.ImageGenerate, toolnames.ImageEdit:
+	case toolnames.Write, toolnames.Edit, toolnames.MultiEdit, toolnames.ImageGenerate, toolnames.ImageEdit,
+		toolnames.ProposalWrite, toolnames.ProposalEdit:
 		return styles.ToolIconWrite
 	case toolnames.Read, toolnames.Download:
 		return styles.ToolIconRead

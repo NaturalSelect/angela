@@ -32,6 +32,10 @@ const agentSummaryArrow = "↳ "
 // agentTitleSeparator sits between the sub-agent's name and its task.
 const agentTitleSeparator = " — "
 
+// agentWritingLabel stands in for the current tool while the sub-agent is
+// streaming text instead of calling one.
+const agentWritingLabel = "Writing..."
+
 // agentToolTitle names the sub-agent a call dispatches to, so the header
 // reads "Agent(explore)" rather than the bare tool name. Input that is
 // still streaming in cannot be parsed yet; an omitted subagent_type
@@ -60,6 +64,7 @@ type NestedToolContainer interface {
 	AddNestedTool(tool ToolMessageItem)
 	SetTiming(startedAt, endedAt int64)
 	MarkActivity(ts int64)
+	SetWriting(writing bool)
 }
 
 // AgentToolMessageItem is a message item that represents an agent tool call.
@@ -73,6 +78,11 @@ type AgentToolMessageItem struct {
 	// message.ToolCall and message.ToolResult carry none of their own.
 	startedAt int64
 	endedAt   int64
+
+	// writing is true while the sub-agent's newest message is text with no
+	// tool call behind it, so the last nested tool is no longer what it is
+	// doing.
+	writing bool
 }
 
 var (
@@ -188,9 +198,24 @@ func (a *AgentToolMessageItem) MarkActivity(ts int64) {
 	a.SetTiming(start, ts)
 }
 
-// currentAction names the newest nested tool — the one the sub-agent is
-// working on, or the one it just finished.
+// SetWriting records whether the sub-agent is streaming text rather than
+// working on a tool. Child text arrives token by token, so this dedupes to
+// keep every delta after the first from re-rendering the block.
+func (a *AgentToolMessageItem) SetWriting(writing bool) {
+	if a.writing == writing {
+		return
+	}
+	a.writing = writing
+	a.clearCache()
+	a.Bump()
+}
+
+// currentAction names what the sub-agent is doing right now: writing, or
+// else the newest nested tool, which it is working on or just finished.
 func (a *AgentToolMessageItem) currentAction() string {
+	if a.writing {
+		return agentWritingLabel
+	}
 	if len(a.nestedTools) == 0 {
 		return ""
 	}
@@ -215,7 +240,7 @@ func (a *AgentToolMessageItem) elapsed() string {
 // already lists every step, so the finished form reports totals rather
 // than repeating the last one.
 func (a *AgentToolMessageItem) summaryLine(sty *styles.Styles, done bool) string {
-	if len(a.nestedTools) == 0 {
+	if done && len(a.nestedTools) == 0 {
 		return ""
 	}
 

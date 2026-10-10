@@ -147,3 +147,58 @@ func TestAgentRenderToolRunningAppendsSpinnerToSummary(t *testing.T) {
 	require.Contains(t, out, agentSummaryArrow)
 	require.Contains(t, out, toolnames.Grep)
 }
+
+// Once the sub-agent stops calling tools and starts writing its report, the
+// last tool is stale. The summary has to say so rather than keep naming it.
+func TestAgentSummaryShowsWritingInsteadOfTheLastTool(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	item := newAgentItem(t, false, grepCall("t1", "LoadConfig"))
+	item.SetWriting(true)
+
+	line := ansi.Strip(item.summaryLine(&sty, false))
+	require.Contains(t, line, agentWritingLabel)
+	require.NotContains(t, line, toolnames.Grep)
+
+	item.SetWriting(false)
+	require.Contains(t, ansi.Strip(item.summaryLine(&sty, false)), toolnames.Grep)
+}
+
+// A sub-agent can write before it has called any tool at all, and the block
+// would otherwise sit on the bare spinner for the whole reply.
+func TestAgentSummaryShowsWritingBeforeAnyToolRuns(t *testing.T) {
+	t.Parallel()
+
+	item := newAgentItem(t, false)
+	item.SetWriting(true)
+
+	out := ansi.Strip(item.Render(100))
+	require.Contains(t, out, agentSummaryArrow+agentWritingLabel)
+}
+
+// The run is over once it has a result, whatever the last message looked
+// like, so the totals take over from the writing label.
+func TestAgentSummaryDropsWritingOnceDone(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	item := newAgentItem(t, true, grepCall("t1", "LoadConfig"))
+	item.SetWriting(true)
+
+	line := ansi.Strip(item.summaryLine(&sty, true))
+	require.Contains(t, line, "1 tool")
+	require.NotContains(t, line, agentWritingLabel)
+}
+
+// Child text arrives token by token. Re-rendering the block for every delta
+// after the first would be pure churn.
+func TestAgentSetWritingDedupes(t *testing.T) {
+	t.Parallel()
+
+	item := newAgentItem(t, false, grepCall("t1", "LoadConfig"))
+
+	requireBump(t, "SetWriting[true]", item, func() { item.SetWriting(true) })
+	requireNoBump(t, "SetWriting[repeat]", item, func() { item.SetWriting(true) })
+	requireBump(t, "SetWriting[false]", item, func() { item.SetWriting(false) })
+}

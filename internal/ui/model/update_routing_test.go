@@ -498,8 +498,9 @@ func TestUpdate_MessageEvent(t *testing.T) {
 
 	t.Run("a message for a different session routes to the child-session handler", func(t *testing.T) {
 		t.Parallel()
-		m, _ := newMockBusyUI(t)
+		m, ws := newMockBusyUI(t)
 		m.session = &session.Session{ID: "s1"}
+		ws.EXPECT().ParseAgentToolSessionID("child-session").Return("", "", false)
 
 		require.NotPanics(t, func() {
 			m.Update(pubsub.Event[message.Message]{

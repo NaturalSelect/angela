@@ -555,6 +555,20 @@ func TestThinkingClockResetsOnSessionSwitch(t *testing.T) {
 		require.True(t, m.thinkingSince.IsZero())
 	})
 
+	// Reconnects and a new session's first prompt reload the session on
+	// screen mid-turn, and that turn's clock must survive the reload.
+	t.Run("reload same session", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.session = &session.Session{ID: "s1"}
+		started := time.Now().Add(-4 * time.Minute)
+		m.thinkingSince = started
+
+		m.Update(loadSessionMsg{session: &session.Session{ID: "s1"}})
+
+		require.Equal(t, started, m.thinkingSince)
+	})
+
 	t.Run("new session", func(t *testing.T) {
 		t.Parallel()
 		m, _ := newMockBusyUI(t)

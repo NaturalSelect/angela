@@ -971,10 +971,12 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.Focus()
 		}
 		m.setState(uiChat, focus)
+		if !m.hasSession() || m.session.ID != msg.session.ID {
+			m.thinkingSince = time.Time{}
+		}
 		m.session = msg.session
 		m.sessionIsBranch = isBranch
 		m.sessionFiles = msg.files
-		m.thinkingSince = time.Time{}
 		// Session switch: the memoized busy state and queued prompts
 		// belong to the previous session. Drop them and re-fetch
 		// off-thread so the queue pill and esc behavior track the new

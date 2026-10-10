@@ -13,7 +13,7 @@ import (
 
 func runGitForTest(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	gitCmd := exec.Command("git", args...)
+	gitCmd := exec.CommandContext(t.Context(), "git", args...)
 	gitCmd.Dir = dir
 	out, err := gitCmd.CombinedOutput()
 	require.NoError(t, err, "git %s: %s", strings.Join(args, " "), out)

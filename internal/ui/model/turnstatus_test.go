@@ -567,6 +567,28 @@ func TestThinkingClockResetsOnSessionSwitch(t *testing.T) {
 	})
 }
 
+// Only a prompt or tool results restart the thinking clock, so a busy period
+// they did not start (a summary, a bang command on an idle session) must not
+// inherit the start time of a turn that ended long ago.
+func TestThinkingClockClearsWhenTheTurnEnds(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.syncTurnSpinner()
+	m.thinkingSince = time.Now().Add(-20 * time.Minute)
+
+	m.syncTurnSpinner()
+	require.False(t, m.thinkingSince.IsZero(), "a running turn keeps its clock")
+
+	m.agentBusyCache.set(false)
+	m.syncTurnSpinner()
+	require.True(t, m.thinkingSince.IsZero())
+
+	m.agentBusyCache.set(true)
+	m.syncTurnSpinner()
+	require.Equal(t, "Thinking", m.currentActivity())
+}
+
 // The Agent tool runs a whole nested turn, so a long duration there is
 // expected rather than a sign of stalling: the status line must never
 // attach a running-time suffix to it, even if activeTool's ID happens to

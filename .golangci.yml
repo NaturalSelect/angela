@@ -41,6 +41,10 @@ linters:
         text: "SA1019.*interp.ExecHandler"
         linters:
           - staticcheck
+      - path: internal/browserhttp/transport.go
+        text: "SA1019.*http2"
+        linters:
+          - staticcheck
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

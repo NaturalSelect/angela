@@ -5269,7 +5269,7 @@ func (m *UI) cancelAgent() tea.Cmd {
 		// NOTE: AgentCancel drops the backend queue, so the take must run
 		// before it, in the same command; the busy refresh waits for the
 		// result so its probe cannot race the cancel.
-		m.turnIsSpinning = false
+		m.stopTurnSpinner()
 		return m.takeQueuedPromptsToEditorCmd(m.session.ID, true)
 	}
 

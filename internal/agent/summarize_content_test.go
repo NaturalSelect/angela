@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -261,6 +263,45 @@ func TestSummarizeRejectsOutputMissingSummaryTags(t *testing.T) {
 	require.NoError(t, getErr)
 	require.Empty(t, updated.SummaryMessageID,
 		"a rejected summary must never become the session's SummaryMessageID — that would discard everything before it")
+}
+
+// TestRejectedSummaryIsExcludedFromModelContext pins that the text of a
+// summary attempt the session never adopted stays out of the history
+// sent to the model. The failed message is kept in the store so the UI
+// can show its error, but without this filter it is replayed as an
+// ordinary assistant turn on every later request.
+func TestRejectedSummaryIsExcludedFromModelContext(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sessID := seedSession(t, sa, env)
+
+	const junk = "Claude Opus 4.6 is no longer available. Please switch to Claude Opus 5.5."
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{junk}, fantasy.FinishReasonStop), nil)
+
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
+		SystemPrompt: "summarize",
+	}
+	require.Error(t, sa.Summarize(t.Context(), sessID, compact, nil, nil))
+
+	stored, err := env.messages.List(t.Context(), sessID)
+	require.NoError(t, err)
+	require.True(t, slices.ContainsFunc(stored, func(m message.Message) bool {
+		return m.IsSummaryMessage && m.Content().Text == junk
+	}), "the rejected attempt must stay stored so the UI can show its error")
+
+	sess, err := env.sessions.Get(t.Context(), sessID)
+	require.NoError(t, err)
+	msgs, err := sa.getSessionMessages(t.Context(), sess)
+	require.NoError(t, err)
+	require.NotEmpty(t, msgs)
+	for _, m := range msgs {
+		require.False(t, m.IsSummaryMessage, "an unadopted summary message must not be part of the model context")
+		require.NotContains(t, m.Content().Text, junk)
+	}
 }
 
 // TestSummarizeExtractsContentBetweenSummaryTags pins that a compliant

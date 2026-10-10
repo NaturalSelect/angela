@@ -47,6 +47,18 @@ Set API keys via environment variables to skip the manual step:
 
 See the [full provider list](./docs/config/) for all supported variables.
 
+### Committing from the command line
+
+`angela commit` writes a commit message for your staged changes and commits
+them, without opening the interactive UI. It is the command-line counterpart
+of `/commit`: the commit is signed off, repository git hooks are skipped,
+and it exits with an error if nothing is staged.
+
+```bash
+git add -p
+angela commit
+```
+
 ## Configuration
 
 Angela is configured with `angela.json`. No config is required to get started.

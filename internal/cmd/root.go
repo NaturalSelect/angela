@@ -83,6 +83,7 @@ func init() {
 
 	rootCmd.AddCommand(
 		runCmd,
+		commitCmd,
 		dirsCmd,
 		projectsCmd,
 		updateProvidersCmd,

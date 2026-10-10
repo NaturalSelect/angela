@@ -10,6 +10,8 @@ const (
 	idleConnTimeout = 90 * time.Second
 )
 
+// NOTE: The TLS handshake is Go's stock one, so sites that cross-check it
+// against this User-Agent can still flag requests as bots.
 const ChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 
 type Options struct {

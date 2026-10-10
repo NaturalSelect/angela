@@ -985,15 +985,8 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 			hooks.AgentIdentity{ID: agent.ID, Depth: depth})
 	}
 
-	fingerprint := browserhttp.FingerprintChrome
-	if c.cfg.Config().Options.DisableBrowserTLS {
-		fingerprint = browserhttp.FingerprintGo
-	}
-	pageClient := browserhttp.NewClient(browserhttp.Options{Fingerprint: fingerprint})
-	downloadClient := browserhttp.NewClient(browserhttp.Options{
-		Fingerprint: fingerprint,
-		Timeout:     tools.DownloadHTTPTimeout,
-	})
+	pageClient := browserhttp.NewClient(browserhttp.Options{})
+	downloadClient := browserhttp.NewClient(browserhttp.Options{Timeout: tools.DownloadHTTPTimeout})
 
 	webSearchRouter, err := c.newWebSearchRouter(pageClient)
 	if err != nil {

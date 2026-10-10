@@ -2267,6 +2267,13 @@ func (a *sessionAgent) getSessionMessages(ctx context.Context, session session.S
 		return nil, fmt.Errorf("failed to list messages: %w", err)
 	}
 
+	// NOTE: A summary message the session never adopted (a rejected,
+	// truncated or still-streaming attempt) stays stored so the UI can
+	// show its error, but its text must never reach the model.
+	msgs = slices.DeleteFunc(msgs, func(msg message.Message) bool {
+		return msg.IsSummaryMessage && msg.ID != session.SummaryMessageID
+	})
+
 	if session.SummaryMessageID != "" {
 		summaryMsgIndex := -1
 		for i, msg := range msgs {

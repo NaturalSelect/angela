@@ -56,6 +56,10 @@ const (
 // flat focus-index sequence (see focusTarget).
 const sandboxColCount = 3
 
+// sandboxHeightRatio is the share of the screen height the form may
+// take before the path rows start to scroll.
+const sandboxHeightRatio = 0.8
+
 // sandboxPathRow is one filesystem-access entry: an editable path and
 // whether it is read-only (false means read-write).
 type sandboxPathRow struct {
@@ -84,6 +88,15 @@ type Sandbox struct {
 	rows         []sandboxPathRow
 	focused      int // flat index into the focus-stop sequence; see focusTarget
 	allowNetwork bool
+
+	// Scroll state of the rows block (the path rows plus the add
+	// button, one line each). rowsHeight is the viewport height the
+	// last Draw resolved.
+	rowsOffset int
+	rowsHeight int
+	// NOTE: Only focus changes and typing scroll the focused line into
+	// view; the mouse wheel must be able to scroll it away.
+	followFocus bool
 
 	selectedNo bool // confirm stage: true selects "Cancel"
 
@@ -116,7 +129,7 @@ func NewSandbox(com *common.Common) *Sandbox {
 	cfg := sandboxDefaultConfig(com)
 
 	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork}
-	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64})
+	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
 
 	for _, p := range cfg.ReadWrite {
 		m.rows = append(m.rows, newSandboxRow(t, p, false))
@@ -228,8 +241,10 @@ func (m *Sandbox) setFocus(newIndex int) {
 
 // syncFocus blurs every row input, clamps m.focused to the current
 // stop count (which shrinks or grows as rows are added or removed),
-// and focuses the input it now points at, if any.
+// and focuses the input it now points at, if any. It also asks the
+// next Draw to scroll the focused line into view.
 func (m *Sandbox) syncFocus() {
+	m.followFocus = true
 	for i := range m.rows {
 		m.rows[i].input.Blur()
 	}
@@ -283,6 +298,48 @@ func (m *Sandbox) activateFocused() {
 func (m *Sandbox) submit() {
 	m.stage = sandboxStageConfirm
 	m.selectedNo = false
+}
+
+// rowsLineCount is the number of lines in the scrollable rows block:
+// one per path row, plus the add button.
+func (m *Sandbox) rowsLineCount() int {
+	return len(m.rows) + 1
+}
+
+// focusedRowsLine is the line of the rows block the focus sits on, or
+// -1 when focus is on a control outside the block.
+func (m *Sandbox) focusedRowsLine() int {
+	switch area, row, _ := m.focusTarget(m.focused); area {
+	case sandboxFocusRow:
+		return row
+	case sandboxFocusAdd:
+		return len(m.rows)
+	}
+	return -1
+}
+
+// lineVisible reports whether a line of the rows block is inside the
+// scrolled viewport.
+func (m *Sandbox) lineVisible(line int) bool {
+	return line >= m.rowsOffset && line < m.rowsOffset+m.rowsHeight
+}
+
+// layoutRowsViewport records the viewport height for the rows block,
+// scrolls the focused line into view if focus asked for it, and clamps
+// the offset to the content.
+func (m *Sandbox) layoutRowsViewport(height int) {
+	m.rowsHeight = height
+	if m.followFocus {
+		m.followFocus = false
+		if line := m.focusedRowsLine(); line >= 0 {
+			if line < m.rowsOffset {
+				m.rowsOffset = line
+			} else if line >= m.rowsOffset+height {
+				m.rowsOffset = line - height + 1
+			}
+		}
+	}
+	m.rowsOffset = min(max(0, m.rowsOffset), max(0, m.rowsLineCount()-height))
 }
 
 // hitTest returns the index into m.hitTargets whose rect contains
@@ -359,6 +416,7 @@ func (m *Sandbox) handleFormMsg(msg tea.Msg) Action {
 
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		m.followFocus = true
 		switch {
 		case key.Matches(msg, m.keyMap.Close):
 			return ActionClose{}
@@ -378,6 +436,7 @@ func (m *Sandbox) handleFormMsg(msg tea.Msg) Action {
 			}
 		}
 	case tea.PasteMsg:
+		m.followFocus = true
 		if onInput {
 			var cmd tea.Cmd
 			m.rows[row].input, cmd = m.rows[row].input.Update(msg)
@@ -391,6 +450,8 @@ func (m *Sandbox) handleFormMsg(msg tea.Msg) Action {
 		}
 	case tea.MouseMotionMsg:
 		m.hoverX, m.hoverY = msg.X, msg.Y
+	case common.CoalescedWheelMsg:
+		m.rowsOffset += int(msg.DeltaY)
 	}
 	return nil
 }
@@ -441,15 +502,6 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	innerWidth := m.metrics.ContentWidth - 2
 
 	rowLeftPad := t.Dialog.InputPrompt.GetMarginLeft()
-	toggleWidth := lipgloss.Width(common.Button(t, common.ButtonOpts{Text: "RW", Padding: 1, UnderlineIndex: -1}))
-	removeWidth := lipgloss.Width(common.Button(t, common.ButtonOpts{Text: "-", Padding: 1, UnderlineIndex: -1}))
-	const rowGaps = 2   // one space between input/toggle and toggle/remove
-	const cursorPad = 1 // room for the cursor past the last character
-	inputWidth := max(0, innerWidth-rowLeftPad-toggleWidth-removeWidth-rowGaps-cursorPad)
-	for i := range m.rows {
-		m.rows[i].input.SetWidth(inputWidth)
-	}
-
 	dialogStyle := t.Dialog.View.Width(m.metrics.Width)
 	helpView := m.frame.RenderHelp(&m.help, m, m.metrics.ContentWidth)
 
@@ -457,13 +509,33 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		t.Dialog.SecondaryText.Render("Limits filesystem access; blocks commands' network.")
 	sectionLabel := t.Dialog.Arguments.InputLabelBlurred.PaddingLeft(rowLeftPad).Render("FileSystem Access")
 	networkBlock, networkTarget := m.networkView(rowLeftPad)
+	continueBlock, continueTarget := m.continueView(rowLeftPad, false)
+
+	// Everything except the rows block is fixed height; the rows block
+	// gets whatever the frame has left and scrolls past that.
+	chromeHeight := lipgloss.Height(preamble) + lipgloss.Height(sectionLabel) +
+		lipgloss.Height(networkBlock) + 1 + // +1 for the blank separator line
+		lipgloss.Height(continueBlock) + lipgloss.Height(helpView)
+	m.layoutRowsViewport(min(m.rowsLineCount(), max(1, m.metrics.ContentHeight-chromeHeight)))
+
+	toggleWidth := lipgloss.Width(common.Button(t, common.ButtonOpts{Text: "RW", Padding: 1, UnderlineIndex: -1}))
+	removeWidth := lipgloss.Width(common.Button(t, common.ButtonOpts{Text: "-", Padding: 1, UnderlineIndex: -1}))
+	const rowGaps = 2   // one space between input/toggle and toggle/remove
+	const cursorPad = 1 // room for the cursor past the last character
+	scrollbarWidth := 0
+	if m.rowsLineCount() > m.rowsHeight {
+		scrollbarWidth = 1
+	}
+	inputWidth := max(0, innerWidth-rowLeftPad-toggleWidth-removeWidth-rowGaps-cursorPad-scrollbarWidth)
+	for i := range m.rows {
+		m.rows[i].input.SetWidth(inputWidth)
+	}
 
 	assemble := func(rowsBlock, continueBlock string) string {
 		return strings.Join([]string{preamble, sectionLabel, rowsBlock, networkBlock, "", continueBlock, helpView}, "\n")
 	}
 
 	rowsBlock, rowTargets := m.rowsView(rowLeftPad, -1)
-	continueBlock, continueTarget := m.continueView(rowLeftPad, false)
 	view := dialogStyle.Render(assemble(rowsBlock, continueBlock))
 	vw, vh := lipgloss.Size(view)
 	center := common.CenterRect(area, min(vw, area.Dx()), min(vh, area.Dy()))
@@ -498,7 +570,7 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	var cur *tea.Cursor
-	if focusArea, row, col := m.focusTarget(m.focused); focusArea == sandboxFocusRow && col == sandboxColInput {
+	if focusArea, row, col := m.focusTarget(m.focused); focusArea == sandboxFocusRow && col == sandboxColInput && m.lineVisible(row) {
 		cur = m.rows[row].input.Cursor()
 		if cur != nil {
 			// textinput.Cursor() offsets X by rune count, not display width;
@@ -509,7 +581,7 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 			cur.X += rowLeftPad + dialogStyle.GetBorderLeftSize() + dialogStyle.GetPaddingLeft() + dialogStyle.GetMarginLeft()
 			cur.Y += dialogStyle.GetBorderTopSize() + dialogStyle.GetPaddingTop() + dialogStyle.GetMarginTop()
-			cur.Y += linesBeforeRows + row
+			cur.Y += linesBeforeRows + row - m.rowsOffset
 		}
 	}
 
@@ -517,13 +589,15 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	return cur
 }
 
-// rowsView renders the filesystem-access rows and the add-row button.
-// It returns the block as a string plus the clickable regions within
-// it, relative to the block's own top-left corner: X in columns from
-// the block's left edge (already including the left inset shared with
-// the section labels), Y in lines from the block's first line.
-// hoverIdx is the index (into the returned targets, in the same order
-// they are appended here) of the target to render hovered, or -1.
+// rowsView renders the visible window of the filesystem-access rows
+// and the add-row button, with a scrollbar beside it when the block
+// overflows. It returns the block as a string plus the clickable
+// regions within it, relative to the block's own top-left corner: X in
+// columns from the block's left edge (already including the left inset
+// shared with the section labels), Y in lines from the block's first
+// visible line. Lines scrolled out of view have no targets. hoverIdx
+// is the index (into the returned targets, in the same order they are
+// appended here) of the target to render hovered, or -1.
 func (m *Sandbox) rowsView(rowLeftPad, hoverIdx int) (string, []sandboxHitTarget) {
 	t := m.com.Styles
 	lines := make([]string, 0, len(m.rows)+1)
@@ -531,6 +605,10 @@ func (m *Sandbox) rowsView(rowLeftPad, hoverIdx int) (string, []sandboxHitTarget
 	pad := strings.Repeat(" ", rowLeftPad)
 
 	for i, row := range m.rows {
+		if !m.lineVisible(i) {
+			continue
+		}
+		y := i - m.rowsOffset
 		inputView := row.input.View()
 
 		toggleText := "RW"
@@ -560,15 +638,15 @@ func (m *Sandbox) rowsView(rowLeftPad, hoverIdx int) (string, []sandboxHitTarget
 
 		targets = append(targets,
 			sandboxHitTarget{
-				rect: image.Rect(inputX, i, inputX+lipgloss.Width(inputView), i+1),
+				rect: image.Rect(inputX, y, inputX+lipgloss.Width(inputView), y+1),
 				area: sandboxFocusRow, row: i, col: sandboxColInput,
 			},
 			sandboxHitTarget{
-				rect: image.Rect(toggleX, i, toggleX+lipgloss.Width(toggle), i+1),
+				rect: image.Rect(toggleX, y, toggleX+lipgloss.Width(toggle), y+1),
 				area: sandboxFocusRow, row: i, col: sandboxColToggle,
 			},
 			sandboxHitTarget{
-				rect: image.Rect(removeX, i, removeX+lipgloss.Width(remove), i+1),
+				rect: image.Rect(removeX, y, removeX+lipgloss.Width(remove), y+1),
 				area: sandboxFocusRow, row: i, col: sandboxColRemove,
 			},
 		)
@@ -577,19 +655,32 @@ func (m *Sandbox) rowsView(rowLeftPad, hoverIdx int) (string, []sandboxHitTarget
 	}
 
 	addIdx := len(targets)
-	addBtn := common.Button(t, common.ButtonOpts{
-		Text:           "+ Add Path",
-		UnderlineIndex: -1,
-		Selected:       m.isFocused(sandboxFocusAdd, -1, 0),
-		Hovered:        hoverIdx == addIdx,
-	})
-	targets = append(targets, sandboxHitTarget{
-		rect: image.Rect(rowLeftPad, len(m.rows), rowLeftPad+lipgloss.Width(addBtn), len(m.rows)+1),
-		area: sandboxFocusAdd,
-	})
-	lines = append(lines, pad+addBtn)
+	if m.lineVisible(len(m.rows)) {
+		addBtn := common.Button(t, common.ButtonOpts{
+			Text:           "+ Add Path",
+			UnderlineIndex: -1,
+			Selected:       m.isFocused(sandboxFocusAdd, -1, 0),
+			Hovered:        hoverIdx == addIdx,
+		})
+		y := len(m.rows) - m.rowsOffset
+		targets = append(targets, sandboxHitTarget{
+			rect: image.Rect(rowLeftPad, y, rowLeftPad+lipgloss.Width(addBtn), y+1),
+			area: sandboxFocusAdd,
+		})
+		lines = append(lines, pad+addBtn)
+	}
 
-	return strings.Join(lines, "\n"), targets
+	block := strings.Join(lines, "\n")
+	if m.rowsLineCount() > m.rowsHeight {
+		// NOTE: Lines vary in width, so pad them to a common width or the
+		// scrollbar would hug the widest line instead of the dialog edge.
+		blockWidth := m.metrics.ContentWidth - 1
+		for i, line := range lines {
+			lines[i] = line + strings.Repeat(" ", max(0, blockWidth-lipgloss.Width(line)))
+		}
+		block = joinScrollbar(t, strings.Join(lines, "\n"), len(lines), m.rowsLineCount(), m.rowsHeight, m.rowsOffset)
+	}
+	return block, targets
 }
 
 // networkView renders the network-access toggle as a single clickable

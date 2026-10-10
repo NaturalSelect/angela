@@ -141,10 +141,11 @@ func TestResolveAgents_CustomBranchIsNotDowngraded(t *testing.T) {
 }
 
 // Branch mode suspends the caller until a human resolves it, so it is never
-// the right default for an agent the user did not ask for. plan and
-// deep-research are the deliberate exceptions. This keeps any other builtin
-// from drifting into branch mode.
-func TestResolveAgents_BuiltinBranchesAreExactlyPlanAndDeepResearch(t *testing.T) {
+// the right default for an agent the user did not ask for. plan,
+// co-design and deep-research are the deliberate exceptions; co-design is
+// never forked on the model's own initiative, only when the user asks for
+// it. This keeps any other builtin from drifting into branch mode.
+func TestResolveAgents_BuiltinBranchesAreExactlyPlanCoDesignAndDeepResearch(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 
 	var branches []string
@@ -154,7 +155,7 @@ func TestResolveAgents_BuiltinBranchesAreExactlyPlanAndDeepResearch(t *testing.T
 		}
 	}
 	slices.Sort(branches)
-	require.Equal(t, []string{AgentDeepResearch, AgentPlan}, branches)
+	require.Equal(t, []string{AgentCoDesign, AgentDeepResearch, AgentPlan}, branches)
 }
 
 // A config written for the removed sketch agent has no builtin left to merge
@@ -183,7 +184,7 @@ func TestResolveAgents_RetiredSketchConfigIsIgnored(t *testing.T) {
 
 			require.NotContains(t, agents, "sketch")
 			require.Contains(t, buf.String(), "no longer exists")
-			require.Contains(t, buf.String(), `"replacement":"plan"`)
+			require.Contains(t, buf.String(), `"replacement":"co-design"`)
 		})
 	}
 }

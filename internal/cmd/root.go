@@ -83,6 +83,7 @@ func init() {
 
 	rootCmd.AddCommand(
 		runCmd,
+		commitCmd,
 		dirsCmd,
 		projectsCmd,
 		updateProvidersCmd,
@@ -206,20 +207,6 @@ angela --continue
 	},
 }
 
-var heartbit = lipgloss.NewStyle().Foreground(charmtone.Dolly).SetString(`
-    ▄▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄▄
-  ███████████  ███████████
-████████████████████████████
-████████████████████████████
-██████████▀██████▀██████████
-██████████ ██████ ██████████
-▀▀██████▄████▄▄████▄██████▀▀
-  ████████████████████████
-    ████████████████████
-       ▀▀██████████▀▀
-           ▀▀▀▀▀▀
-`)
-
 // printSessionResume prints the session title and resume hint to stdout after
 // the TUI exits, so the user can resume the session with `angela -s <id>`.
 // Nothing is printed when there is no active session.
@@ -307,18 +294,24 @@ func Execute() {
 	slog.SetDefault(slog.New(slog.DiscardHandler))
 
 	// NOTE: very hacky: we create a colorprofile writer with STDOUT, then make
-	// it forward to a bytes.Buffer, write the colored heartbit to it, and then
+	// it forward to a bytes.Buffer, write the colored wordmark to it, and then
 	// finally prepend it in the version template.
 	// Unfortunately cobra doesn't give us a way to set a function to handle
 	// printing the version, and PreRunE runs after the version is already
 	// handled, so that doesn't work either.
 	// This is the only way I could find that works relatively well.
 	if term.IsTerminal(os.Stdout.Fd()) {
+		t := styles.AngelaTeal()
+		wordmark := logo.Render(t.Logo.GradCanvas, "", false, logo.Opts{
+			TitleColorA: t.Logo.TitleColorA,
+			TitleColorB: t.Logo.TitleColorB,
+		})
+
 		var b bytes.Buffer
 		w := colorprofile.NewWriter(os.Stdout, os.Environ())
 		w.Forward = &b
-		_, _ = w.WriteString(heartbit.String())
-		rootCmd.SetVersionTemplate(b.String() + "\n" + defaultVersionTemplate)
+		_, _ = w.WriteString("\n" + wordmark)
+		rootCmd.SetVersionTemplate(b.String() + "\n\n" + defaultVersionTemplate)
 	}
 	if err := fang.Execute(
 		context.Background(),

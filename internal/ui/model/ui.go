@@ -237,6 +237,12 @@ type UI struct {
 	// status line. Nil until this turn's first tool call is seen.
 	activeTool *toolTiming
 
+	// thinkingSince is when the model last started thinking: the user
+	// prompt arriving, or the tool results coming back. It backs the
+	// running time on the status line's "Thinking" label. Zero until
+	// one of those is seen.
+	thinkingSince time.Time
+
 	// sessionIsBranch memoizes whether the loaded session is a branch.
 	// Resolving it reads config through the workspace, which the status
 	// line renders too often to afford, so it is settled once per load.
@@ -965,6 +971,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.Focus()
 		}
 		m.setState(uiChat, focus)
+		if !m.hasSession() || m.session.ID != msg.session.ID {
+			m.thinkingSince = time.Time{}
+		}
 		m.session = msg.session
 		m.sessionIsBranch = isBranch
 		m.sessionFiles = msg.files
@@ -2042,6 +2051,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			return nil
 		}
 		m.lastUserMessageTime = msg.CreatedAt
+		m.thinkingSince = time.Now()
 		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir(), true)
 		for _, item := range items {
 			if animatable, ok := item.(chat.Animatable); ok {
@@ -2093,6 +2103,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			}
 		}
 	case message.Tool:
+		m.thinkingSince = time.Now()
 		for _, tr := range msg.ToolResults() {
 			toolItem := m.chat.MessageItem(tr.ToolCallID)
 			if toolItem == nil {
@@ -2236,14 +2247,20 @@ func (m *UI) observeToolCall(tc message.ToolCall) {
 	m.activeTool = &toolTiming{id: tc.ID, since: time.Now()}
 }
 
+// isWritingText reports whether a child session message is the sub-agent
+// streaming reply text. Once the same message grows a tool call, the call
+// is what the sub-agent is doing, and once it finishes there is nothing
+// left to stream, so unfinished text alone is the signal.
+func isWritingText(msg message.Message) bool {
+	return msg.Role == message.Assistant &&
+		strings.TrimSpace(msg.Content().Text) != "" &&
+		len(msg.ToolCalls()) == 0 &&
+		msg.FinishPart() == nil
+}
+
 // handleChildSessionMessage handles messages from child sessions (agent tools).
 func (m *UI) handleChildSessionMessage(event pubsub.Event[message.Message]) tea.Cmd {
 	var cmds []tea.Cmd
-
-	// Only process messages with tool calls or results.
-	if len(event.Payload.ToolCalls()) == 0 && len(event.Payload.ToolResults()) == 0 {
-		return nil
-	}
 
 	// Check if this is an agent tool session and parse it.
 	childSessionID := event.Payload.SessionID
@@ -2260,6 +2277,15 @@ func (m *UI) handleChildSessionMessage(event pubsub.Event[message.Message]) tea.
 	}
 	agentItem, ok := item.(chat.NestedToolContainer)
 	if !ok {
+		return nil
+	}
+
+	// Reply text streams in as updates to a message with no tool call, so
+	// it has to be read before the tool-only filter below drops it.
+	agentItem.SetWriting(isWritingText(event.Payload))
+
+	// Only messages with tool calls or results change the nested tools.
+	if len(event.Payload.ToolCalls()) == 0 && len(event.Payload.ToolResults()) == 0 {
 		return nil
 	}
 
@@ -5245,7 +5271,7 @@ func (m *UI) cancelAgent() tea.Cmd {
 		// NOTE: AgentCancel drops the backend queue, so the take must run
 		// before it, in the same command; the busy refresh waits for the
 		// result so its probe cannot race the cancel.
-		m.turnIsSpinning = false
+		m.stopTurnSpinner()
 		return m.takeQueuedPromptsToEditorCmd(m.session.ID, true)
 	}
 
@@ -6030,6 +6056,7 @@ func (m *UI) newSession() tea.Cmd {
 	m.sessionFiles = nil
 	m.sessionFileReads = nil
 	m.sessionStack = nil
+	m.thinkingSince = time.Time{}
 	m.setState(uiLanding, uiFocusEditor)
 	m.textarea.Focus()
 	m.chat.Blur()

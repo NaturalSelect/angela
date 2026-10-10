@@ -12,7 +12,7 @@ gives them tools to read, write, and execute code in your terminal.
 Key capabilities:
 
 - **Multi-provider** — Anthropic, OpenAI, Gemini, Bedrock, OpenRouter, Ollama, and any OpenAI-compatible API
-- **Multi-agent** — built-in `coder`, `explore`, `plan`, `deep-research` agents with configurable dispatch
+- **Multi-agent** — built-in `coder`, `explore`, `plan`, `co-design`, `deep-research` agents with configurable dispatch
 - **LSP integration** — uses language servers for code intelligence, just like your editor
 - **MCP support** — extend with Model Context Protocol servers (`stdio`, `http`, `sse`)
 - **Image input** — paste images from clipboard or attach files for vision-capable models
@@ -46,6 +46,18 @@ Set API keys via environment variables to skip the manual step:
 | `AWS_PROFILE`         | Amazon Bedrock  |
 
 See the [full provider list](./docs/config/) for all supported variables.
+
+### Committing from the command line
+
+`angela commit` writes a commit message for your staged changes and commits
+them, without opening the interactive UI. It is the command-line counterpart
+of `/commit`: the commit is signed off, repository git hooks are skipped,
+and it exits with an error if nothing is staged.
+
+```bash
+git add -p
+angela commit
+```
 
 ## Configuration
 
@@ -93,6 +105,7 @@ specialized sub-agents:
 | `coder`         | Primary agent with all tools                 |
 | `explore`       | Fast read-only codebase search               |
 | `plan`          | Interactive implementation planning (branch) |
+| `co-design`     | Interactive design of a change (branch)      |
 | `deep-research` | Root cause analysis and design (branch)      |
 | `general`       | Multi-step tasks with inherited tools        |
 | `web-fetch`     | Web search and page fetching                 |

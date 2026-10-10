@@ -825,3 +825,196 @@ func TestSandbox_CursorAccountsForWideRunes(t *testing.T) {
 	require.Equal(t, curASCII.X+3, curCJK.X,
 		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
 }
+
+const sandboxShortH = 20
+
+// newOverflowingSandbox returns a sandbox with far more rows than fit
+// in sandboxShortH lines, drawn once so the viewport is laid out.
+func newOverflowingSandbox(t *testing.T) *Sandbox {
+	t.Helper()
+
+	m := newTestSandbox(t)
+	for range 25 {
+		m.addRow()
+	}
+	m.setFocus(0)
+	drawSandboxShort(m)
+	return m
+}
+
+func drawSandboxShort(m *Sandbox) *tea.Cursor {
+	scr := uv.NewScreenBuffer(sandboxTestW, sandboxShortH)
+	return m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxShortH))
+}
+
+// TestSandbox_ManyRowsStayWithinScreen verifies that a form with more
+// rows than the screen can hold scrolls instead of growing past the
+// terminal: every control the form still shows must have a hit target
+// on screen, and the rows block must be shorter than its content.
+func TestSandbox_ManyRowsStayWithinScreen(t *testing.T) {
+	t.Parallel()
+
+	m := newOverflowingSandbox(t)
+
+	require.Less(t, m.rowsHeight, m.rowsLineCount(), "rows should scroll")
+	for _, tgt := range m.hitTargets {
+		require.GreaterOrEqual(t, tgt.rect.Min.Y, 0)
+		require.LessOrEqual(t, tgt.rect.Max.Y, sandboxShortH, "target %+v is below the screen", tgt)
+	}
+
+	var sawNetwork, sawContinue bool
+	for _, tgt := range m.hitTargets {
+		sawNetwork = sawNetwork || tgt.area == sandboxFocusNetwork
+		sawContinue = sawContinue || tgt.area == sandboxFocusContinue
+	}
+	require.True(t, sawNetwork, "network toggle must stay reachable")
+	require.True(t, sawContinue, "continue button must stay reachable")
+}
+
+// TestSandbox_FewRowsDoNotScroll verifies the default form fits and
+// shows no scrollbar-induced narrowing.
+func TestSandbox_FewRowsDoNotScroll(t *testing.T) {
+	t.Parallel()
+
+	m := newTestSandbox(t)
+	drawSandbox(m)
+
+	require.Equal(t, m.rowsLineCount(), m.rowsHeight)
+	require.Zero(t, m.rowsOffset)
+}
+
+// TestSandbox_FocusScrollsRowIntoView verifies that tabbing to a row
+// below the viewport scrolls it into view, and that every visible row
+// has a hit target while hidden rows have none.
+func TestSandbox_FocusScrollsRowIntoView(t *testing.T) {
+	t.Parallel()
+
+	m := newOverflowingSandbox(t)
+	last := len(m.rows) - 1
+
+	m.setFocus(last * sandboxColCount)
+	drawSandboxShort(m)
+
+	require.Positive(t, m.rowsOffset)
+	require.True(t, m.lineVisible(last))
+	require.NotPanics(t, func() { targetPoint(t, m, rowTarget(last, sandboxColToggle)) })
+
+	hidden := 0
+	for _, tgt := range m.hitTargets {
+		if tgt.area == sandboxFocusRow {
+			require.True(t, m.lineVisible(tgt.row), "row %d has a target but is scrolled out", tgt.row)
+		}
+	}
+	for i := range m.rows {
+		if !m.lineVisible(i) {
+			hidden++
+		}
+	}
+	require.Positive(t, hidden)
+}
+
+// TestSandbox_FocusAddScrollsToBottom verifies the add button, the last
+// line of the block, can be scrolled to and clicked.
+func TestSandbox_FocusAddScrollsToBottom(t *testing.T) {
+	t.Parallel()
+
+	m := newOverflowingSandbox(t)
+	before := len(m.rows)
+
+	m.setFocus(len(m.rows) * sandboxColCount)
+	drawSandboxShort(m)
+	require.Equal(t, m.rowsLineCount()-m.rowsHeight, m.rowsOffset)
+
+	x, y := targetPoint(t, m, addTarget())
+	m.HandleMsg(tea.MouseClickMsg{X: x, Y: y, Button: uv.MouseLeft})
+	require.Len(t, m.rows, before+1)
+}
+
+// TestSandbox_WheelScrollsAndClamps verifies the mouse wheel moves the
+// viewport without being snapped back to the focused row, and never
+// scrolls past either end.
+func TestSandbox_WheelScrollsAndClamps(t *testing.T) {
+	t.Parallel()
+
+	m := newOverflowingSandbox(t)
+	require.Zero(t, m.rowsOffset)
+
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 3})
+	drawSandboxShort(m)
+	require.Equal(t, 3, m.rowsOffset, "focus is on row 0, yet the wheel must be able to scroll it away")
+
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 1000})
+	drawSandboxShort(m)
+	require.Equal(t, m.rowsLineCount()-m.rowsHeight, m.rowsOffset)
+
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: -1000})
+	drawSandboxShort(m)
+	require.Zero(t, m.rowsOffset)
+}
+
+// TestSandbox_KeyPressScrollsFocusBackIntoView verifies typing in a
+// row that the wheel scrolled out of view brings it back.
+func TestSandbox_KeyPressScrollsFocusBackIntoView(t *testing.T) {
+	t.Parallel()
+
+	m := newOverflowingSandbox(t)
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 1000})
+	drawSandboxShort(m)
+	require.False(t, m.lineVisible(0))
+
+	m.HandleMsg(keyMsg('x'))
+	drawSandboxShort(m)
+	require.True(t, m.lineVisible(0))
+}
+
+// TestSandbox_CursorHiddenWhenFocusedRowScrolledOut verifies no cursor
+// is drawn for an input the wheel scrolled out of the viewport, and
+// that the cursor tracks the row's position when it is visible.
+func TestSandbox_CursorHiddenWhenFocusedRowScrolledOut(t *testing.T) {
+	t.Parallel()
+
+	m := newOverflowingSandbox(t)
+	visible := drawSandboxShort(m)
+	require.NotNil(t, visible)
+
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 2})
+	require.Nil(t, drawSandboxShort(m), "row 0 is scrolled out, so it can have no cursor")
+
+	m.setFocus(2 * sandboxColCount)
+	cur := drawSandboxShort(m)
+	require.NotNil(t, cur)
+	require.Less(t, cur.Y, sandboxShortH)
+}
+
+// TestSandbox_RemoveRowKeepsFocusVisible verifies removing a row while
+// scrolled to the bottom leaves a valid, in-range viewport.
+func TestSandbox_RemoveRowKeepsFocusVisible(t *testing.T) {
+	t.Parallel()
+
+	m := newOverflowingSandbox(t)
+	m.setFocus(len(m.rows) * sandboxColCount)
+	drawSandboxShort(m)
+
+	for range 10 {
+		m.removeRow(len(m.rows) - 1)
+		drawSandboxShort(m)
+		require.GreaterOrEqual(t, m.rowsOffset, 0)
+		require.LessOrEqual(t, m.rowsOffset+m.rowsHeight, m.rowsLineCount())
+	}
+}
+
+// TestSandbox_ClickHitsScrolledRow verifies hit targets follow the
+// scroll offset, so a click lands on the row actually drawn there.
+func TestSandbox_ClickHitsScrolledRow(t *testing.T) {
+	t.Parallel()
+
+	m := newOverflowingSandbox(t)
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 5})
+	drawSandboxShort(m)
+	require.Equal(t, 5, m.rowsOffset)
+
+	before := m.rows[5].readOnly
+	x, y := targetPoint(t, m, rowTarget(5, sandboxColToggle))
+	m.HandleMsg(tea.MouseClickMsg{X: x, Y: y, Button: uv.MouseLeft})
+	require.Equal(t, !before, m.rows[5].readOnly)
+}

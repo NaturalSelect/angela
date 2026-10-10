@@ -46,6 +46,7 @@ func (m *testContainerItem) AddNestedTool(tool chat.ToolMessageItem) {
 }
 func (m *testContainerItem) SetTiming(startedAt, endedAt int64) {}
 func (m *testContainerItem) MarkActivity(ts int64)              {}
+func (m *testContainerItem) SetWriting(writing bool)            {}
 
 var _ chat.NestedToolContainer = (*testContainerItem)(nil)
 

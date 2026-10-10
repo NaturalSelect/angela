@@ -105,6 +105,9 @@ func (m *UI) currentActivity() string {
 	}
 	tc, ok := m.chat.LastPendingTool()
 	if !ok {
+		if running := runningTime(m.thinkingSince); running != "" {
+			return "Thinking (" + running + ")"
+		}
 		return "Thinking"
 	}
 	label := tc.Name
@@ -149,10 +152,25 @@ func (m *UI) retryActivity() string {
 	return label + " (" + common.FormatDuration(remaining) + ")"
 }
 
-// toolSlowThreshold is how long a tool call must be pending before its own
-// running time is appended to the activity label. Most calls finish well
-// under this, so the label only grows for the ones actually worth flagging.
-const toolSlowThreshold = 5 * time.Second
+// activitySlowThreshold is how long a tool call or a thinking phase must
+// last before its own running time is appended to the activity label. Most
+// finish well under this, so the label only grows for the ones actually
+// worth flagging.
+const activitySlowThreshold = 5 * time.Second
+
+// runningTime formats how long an activity that began at since has been
+// going, once that exceeds activitySlowThreshold. A zero since means the
+// start was never observed, so nothing is reported.
+func runningTime(since time.Time) string {
+	if since.IsZero() {
+		return ""
+	}
+	elapsed := time.Since(since)
+	if elapsed < activitySlowThreshold {
+		return ""
+	}
+	return common.FormatDuration(elapsed)
+}
 
 // toolTiming remembers when the tool call currently named in the status
 // line was first observed by observeToolCall, so toolSlowness can report
@@ -163,7 +181,7 @@ type toolTiming struct {
 }
 
 // toolSlowness reports how long tc has been running once that exceeds
-// toolSlowThreshold, so a slow tool or MCP call reads as still working
+// activitySlowThreshold, so a slow tool or MCP call reads as still working
 // instead of hung — there is deliberately no timeout on tool calls, so this
 // running clock is the only signal the user gets. The Agent tool is
 // excluded: it runs a whole nested turn, so a long duration there is
@@ -175,11 +193,7 @@ func (m *UI) toolSlowness(tc message.ToolCall) string {
 	if m.activeTool == nil || m.activeTool.id != tc.ID {
 		return ""
 	}
-	elapsed := time.Since(m.activeTool.since)
-	if elapsed < toolSlowThreshold {
-		return ""
-	}
-	return common.FormatDuration(elapsed)
+	return runningTime(m.activeTool.since)
 }
 
 // renderTurnHint renders the right-hand escape hint. The three states mirror

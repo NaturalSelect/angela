@@ -8,6 +8,7 @@ import (
 	"charm.land/catwalk/pkg/catwalk"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
@@ -449,7 +450,7 @@ func TestTurnStatusRetryScopedToSession(t *testing.T) {
 }
 
 // There is deliberately no timeout on tool calls, so a tool call that has
-// been pending past toolSlowThreshold must report its own running time —
+// been pending past activitySlowThreshold must report its own running time —
 // otherwise a slow bash command or MCP server reads as a hang instead of
 // as still working.
 func TestTurnStatusShowsSlowToolCall(t *testing.T) {
@@ -468,7 +469,7 @@ func TestTurnStatusShowsSlowToolCall(t *testing.T) {
 	require.Contains(t, status, "10s")
 }
 
-// Most tool calls finish in well under toolSlowThreshold, so one that
+// Most tool calls finish in well under activitySlowThreshold, so one that
 // hasn't crossed it yet must not carry a running-time suffix: a clock on
 // every call would be noise rather than a signal.
 func TestTurnStatusHidesElapsedUnderThreshold(t *testing.T) {
@@ -485,6 +486,57 @@ func TestTurnStatusHidesElapsedUnderThreshold(t *testing.T) {
 	status := m.renderTurnStatus(200)
 	require.Contains(t, status, "Bash")
 	require.NotRegexp(t, `\(\d+s\)`, status)
+}
+
+// Thinking has no timeout either, so a long wait for the model must read as
+// still working: past activitySlowThreshold the label carries its own
+// running time, just like a slow tool call does.
+func TestTurnStatusShowsSlowThinking(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+	m.thinkingSince = time.Now().Add(-75 * time.Second)
+
+	require.Equal(t, "Thinking (1m 15s)", m.currentActivity())
+}
+
+// A model that answers quickly must not grow a clock, and a start that was
+// never observed (a session resumed mid-turn) has no time to report.
+func TestTurnStatusHidesThinkingTimeWhenFastOrUnknown(t *testing.T) {
+	t.Parallel()
+
+	m := busyStatusUI(t)
+
+	m.thinkingSince = time.Now().Add(-2 * time.Second)
+	require.Equal(t, "Thinking", m.currentActivity())
+
+	m.thinkingSince = time.Time{}
+	require.Equal(t, "Thinking", m.currentActivity())
+}
+
+// A user prompt and the tool results coming back are the two moments the
+// model starts thinking, so each must restart the thinking clock.
+func TestThinkingClockRestartsOnPromptAndToolResults(t *testing.T) {
+	t.Parallel()
+
+	for name, role := range map[string]message.MessageRole{
+		"user prompt":  message.User,
+		"tool results": message.Tool,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m, _ := newMockBusyUI(t)
+			m.session = &session.Session{ID: "s1"}
+			before := time.Now()
+
+			m.Update(pubsub.Event[message.Message]{
+				Type:    pubsub.CreatedEvent,
+				Payload: message.Message{ID: "m1", SessionID: "s1", Role: role},
+			})
+
+			require.False(t, m.thinkingSince.Before(before))
+		})
+	}
 }
 
 // The Agent tool runs a whole nested turn, so a long duration there is

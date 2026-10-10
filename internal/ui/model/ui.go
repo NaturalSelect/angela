@@ -237,6 +237,12 @@ type UI struct {
 	// status line. Nil until this turn's first tool call is seen.
 	activeTool *toolTiming
 
+	// thinkingSince is when the model last started thinking: the user
+	// prompt arriving, or the tool results coming back. It backs the
+	// running time on the status line's "Thinking" label. Zero until
+	// one of those is seen.
+	thinkingSince time.Time
+
 	// sessionIsBranch memoizes whether the loaded session is a branch.
 	// Resolving it reads config through the workspace, which the status
 	// line renders too often to afford, so it is settled once per load.
@@ -2042,6 +2048,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			return nil
 		}
 		m.lastUserMessageTime = msg.CreatedAt
+		m.thinkingSince = time.Now()
 		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir(), true)
 		for _, item := range items {
 			if animatable, ok := item.(chat.Animatable); ok {
@@ -2093,6 +2100,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			}
 		}
 	case message.Tool:
+		m.thinkingSince = time.Now()
 		for _, tr := range msg.ToolResults() {
 			toolItem := m.chat.MessageItem(tr.ToolCallID)
 			if toolItem == nil {

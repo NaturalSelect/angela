@@ -52,6 +52,28 @@ jobs:
           path: "."
           fail-build: true
           severity-cutoff: critical
+      - name: List blocking findings
+        if: failure()
+        env:
+          SARIF: ${{ steps.scan.outputs.sarif }}
+        run: |
+          file="${SARIF:-$(ls /tmp/grype-*/output 2>/dev/null | head -n 1)}"
+          if [ -z "$file" ] || [ ! -f "$file" ]; then
+            echo "No grype SARIF output found"
+            exit 0
+          fi
+          jq -r '
+            .runs[0] as $run
+            | ($run.tool.driver.rules // []
+               | map({key: .id, value: ((.properties["security-severity"] // "0") | tonumber)})
+               | from_entries) as $score
+            | [$run.results[]
+               | select(.level == "error")
+               | {score: ($score[.ruleId] // 0), id: .ruleId, text: (.message.text | split("\n")[0])}]
+            | sort_by(-.score)
+            | .[:30][]
+            | "\(.score)\t\(.id)\t\(.text)"
+          ' "$file"
       - uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}

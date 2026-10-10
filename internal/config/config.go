@@ -570,7 +570,6 @@ type Options struct {
 	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
 	SubagentBranches          bool         `json:"subagent_branches,omitempty" jsonschema:"description=Let a session other than the top-level one — a sub-agent or an existing branch — fork a branch agent of its own\\, within the same subagent_depth budget. Off by default: a branch hands the conversation to the user directly\\, and one forked by a background sub-agent is easy to miss. Requires an interactive session; angela run never allows it regardless of this setting.,default=false"`
 	DisableImageTools         bool         `json:"disable_image_tools,omitempty" jsonschema:"description=Disable the built-in image generation and editing tools,default=false"`
-	DisableBrowserTLS         bool         `json:"disable_browser_tls,omitempty" jsonschema:"description=Use Go's standard TLS handshake instead of a Chrome-like one for the fetch\\, web_fetch\\, download\\, sourcegraph and web search tools,default=false"`
 }
 
 // DefaultSubagentDepth is the effective subagent dispatch depth when

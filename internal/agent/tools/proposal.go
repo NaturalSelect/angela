@@ -8,6 +8,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/csync"
+	"github.com/NaturalSelect/angela/internal/diff"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
@@ -53,6 +54,26 @@ func (s *ProposalStore) Discard(sessionID string) {
 	s.docs.Del(sessionID)
 }
 
+// ProposalResponseMetadata carries the document before and after a
+// revision so the transcript can show what changed, as it does for a file
+// edit. The model never sees it; the reply text stays terse.
+type ProposalResponseMetadata struct {
+	Additions  int    `json:"additions"`
+	Removals   int    `json:"removals"`
+	OldContent string `json:"old_content,omitempty"`
+	NewContent string `json:"new_content,omitempty"`
+}
+
+func proposalChange(oldContent, newContent string) ProposalResponseMetadata {
+	_, additions, removals := diff.GenerateDiff(oldContent, newContent, ProposalDocumentName)
+	return ProposalResponseMetadata{
+		Additions:  additions,
+		Removals:   removals,
+		OldContent: oldContent,
+		NewContent: newContent,
+	}
+}
+
 type ProposalWriteParams struct {
 	Content string `json:"content" description:"The full text of the proposal, replacing whatever it held before"`
 }
@@ -81,6 +102,7 @@ func NewProposalWriteTool(store *ProposalStore) fantasy.AgentTool {
 				return Fail("content is required")
 			}
 
+			previous, _ := store.Get(sessionID)
 			store.Set(sessionID, params.Content)
 			// The proposal itself is deliberately absent from the reply:
 			// echoing it back would spend on the return path exactly what
@@ -88,7 +110,7 @@ func NewProposalWriteTool(store *ProposalStore) fantasy.AgentTool {
 			return Ok(fmt.Sprintf(
 				"Proposal saved, %d lines. Revise it with %s rather than writing it out again.",
 				lineCount(params.Content), toolnames.ProposalEdit,
-			))
+			)).WithMetadata(proposalChange(previous, params.Content))
 		},
 	)
 }
@@ -125,7 +147,7 @@ func NewProposalEditTool(store *ProposalStore) fantasy.AgentTool {
 			store.Set(sessionID, updated)
 			return Ok(withWhitespaceNote(fmt.Sprintf(
 				"Proposal updated, %d lines.", lineCount(updated),
-			), whitespaceCorrected))
+			), whitespaceCorrected)).WithMetadata(proposalChange(doc, updated))
 		},
 	)
 }

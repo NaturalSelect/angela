@@ -47,6 +47,8 @@ func TestToolKindIconGroupsAndFallback(t *testing.T) {
 
 	require.Equal(t, toolKindIcon(toolnames.Bash), toolKindIcon(toolnames.JobKill))
 	require.Equal(t, toolKindIcon(toolnames.Edit), toolKindIcon(toolnames.MultiEdit))
+	require.Equal(t, toolKindIcon(toolnames.Edit), toolKindIcon(toolnames.ProposalWrite))
+	require.Equal(t, toolKindIcon(toolnames.Edit), toolKindIcon(toolnames.ProposalEdit))
 	require.Equal(t, toolKindIcon(toolnames.Grep), toolKindIcon(toolnames.Glob))
 	require.Equal(t, toolKindIcon(toolnames.LSPDiagnostics), toolKindIcon(toolnames.LSPSymbols))
 

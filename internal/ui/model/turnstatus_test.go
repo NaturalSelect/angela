@@ -539,6 +539,34 @@ func TestThinkingClockRestartsOnPromptAndToolResults(t *testing.T) {
 	}
 }
 
+// The busy flag is process-wide while the thinking clock belongs to one
+// session's turn, so a clock left over from the session being left must not
+// be shown on the one being entered.
+func TestThinkingClockResetsOnSessionSwitch(t *testing.T) {
+	t.Parallel()
+
+	t.Run("load session", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.thinkingSince = time.Now().Add(-4 * time.Minute)
+
+		m.Update(loadSessionMsg{session: &session.Session{ID: "child1"}})
+
+		require.True(t, m.thinkingSince.IsZero())
+	})
+
+	t.Run("new session", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newMockBusyUI(t)
+		m.session = &session.Session{ID: "s1"}
+		m.thinkingSince = time.Now().Add(-4 * time.Minute)
+
+		m.newSession()
+
+		require.True(t, m.thinkingSince.IsZero())
+	})
+}
+
 // The Agent tool runs a whole nested turn, so a long duration there is
 // expected rather than a sign of stalling: the status line must never
 // attach a running-time suffix to it, even if activeTool's ID happens to

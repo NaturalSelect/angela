@@ -56,7 +56,6 @@ require (
 	github.com/posthog/posthog-go v1.23.0
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/qjebbs/go-jsons v1.0.0-alpha.6
-	github.com/refraction-networking/utls v1.8.2
 	github.com/rivo/uniseg v0.4.7
 	github.com/sahilm/fuzzy v0.1.3
 	github.com/sourcegraph/jsonrpc2 v0.2.2

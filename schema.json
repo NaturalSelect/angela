@@ -724,11 +724,6 @@
           "type": "boolean",
           "description": "Disable the built-in image generation and editing tools",
           "default": false
-        },
-        "disable_browser_tls": {
-          "type": "boolean",
-          "description": "Use Go's standard TLS handshake instead of a Chrome-like one for the fetch, web_fetch, download, sourcegraph and web search tools",
-          "default": false
         }
       },
       "additionalProperties": false,

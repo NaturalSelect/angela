@@ -146,16 +146,7 @@ func withReportHeader(resp fantasy.ToolResponse, reportID, agentType, task strin
 		return resp
 	}
 
-	var banner strings.Builder
-	fmt.Fprintf(&banner, "[report id=%s agent=%s", reportID, agentType)
-	if task != "" {
-		fmt.Fprintf(&banner, " task=%q", task)
-	}
-	banner.WriteString("]\nStored in full. If a later compaction drops this text, call ")
-	banner.WriteString(toolnames.LoadReport)
-	banner.WriteString(" with this id to get it back verbatim. Do not quote this banner back to the user.\n\n")
-
-	resp.Content = banner.String() + resp.Content
+	resp.Content = tools.ReportBanner(reportID, agentType, task) + resp.Content
 	return resp
 }
 

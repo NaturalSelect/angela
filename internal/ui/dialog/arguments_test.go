@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -204,6 +205,26 @@ func TestArguments_ExportImageSubmitPreservesPreSetImageID(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "img_1a2b3c4d5e6f", got.ImageID, "ImageID must survive a step with no IMAGE_ID field")
 	require.Equal(t, "/tmp/img_1a2b3c4d5e6f.png", got.Output)
+}
+
+// TestArguments_ExportReportSubmitPreservesPickedReport verifies that
+// confirming the OUTPUT-only step of the "Export Report" flow keeps the
+// report the picker already put on the result action.
+func TestArguments_ExportReportSubmitPreservesPickedReport(t *testing.T) {
+	t.Parallel()
+
+	picked := tools.Report{ID: "rpt_1a2b3c4d", AgentType: "explore", Task: "find it", Content: "body"}
+	a := newTestArguments(t, testArgumentList(
+		commands.Argument{ID: "OUTPUT", Title: "Output Path"},
+	), ActionExportReport{Report: picked})
+
+	a.SetValue("OUTPUT", "/tmp/rpt_1a2b3c4d.md")
+	action := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	got, ok := action.(ActionExportReport)
+	require.True(t, ok)
+	require.Equal(t, picked, got.Report, "the report must survive a step with no report field")
+	require.Equal(t, "/tmp/rpt_1a2b3c4d.md", got.Output)
 }
 
 // TestArguments_DefaultKeyForwardsToFocusedInput verifies that

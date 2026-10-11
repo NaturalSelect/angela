@@ -524,6 +524,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "export_image", "Export Image", "", ActionExportImage{}).WithAliases("image"))
+		commands = append(commands, NewCommandItem(c.com.Styles, "export_report", "Export Report", "", ActionExportReport{}).WithAliases("report", "reports"))
 	}
 
 	commands = append(commands, NewCommandItem(c.com.Styles, "commit", "Commit Staged Changes", "", ActionCommit{SessionID: c.sessionID}))

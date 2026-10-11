@@ -320,6 +320,19 @@ func TestReportHeaderFrontsSuccessfulOutput(t *testing.T) {
 		"the original output must be preserved verbatim behind a blank line")
 }
 
+// TestReportHeaderRoundTripsThroughBody: the export path strips the
+// banner by structure, so whatever withReportHeader writes must come
+// back out as exactly the original output.
+func TestReportHeaderRoundTripsThroughBody(t *testing.T) {
+	t.Parallel()
+
+	const id = "rpt_1a2b3c4d"
+	resp := withReportHeader(fantasy.NewTextResponse("the report body\n\nsecond paragraph"), id, "explore", "find it")
+
+	report := tools.Report{ID: id, Content: resp.Content}
+	require.Equal(t, "the report body\n\nsecond paragraph", report.Body())
+}
+
 // TestReportHeaderOmitsTheTaskWhenUnlabelled keeps the banner from
 // carrying an empty task="" that reads as a missing value.
 func TestReportHeaderOmitsTheTaskWhenUnlabelled(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/images"
@@ -163,6 +164,22 @@ type (
 	// without the picker doing any IO itself.
 	ActionSelectExportImage struct {
 		Image      images.Image
+		WorkingDir string
+	}
+	// ActionExportReport asks for an agent report to be written to disk as
+	// Markdown. A zero Report means the user picked the command from the
+	// palette but has not chosen one yet. The report travels in the action
+	// because it was already loaded to fill the picker.
+	ActionExportReport struct {
+		Report tools.Report
+		Output string
+	}
+	// ActionSelectExportReport is emitted when the user picks a report from
+	// the "Export Report" picker dialog. WorkingDir is passed through
+	// unchanged so the next step can default the output path without the
+	// picker doing any IO itself.
+	ActionSelectExportReport struct {
+		Report     tools.Report
 		WorkingDir string
 	}
 	// ActionCommit generates a commit message from the workspace's

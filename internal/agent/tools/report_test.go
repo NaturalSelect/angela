@@ -154,6 +154,108 @@ func TestCollectReportsDefaultsMissingSubagentTypeToExplore(t *testing.T) {
 		"an omitted subagent_type is dispatched to explore, so the report must say so")
 }
 
+// fixedNamer derives sub-session ids without a database, using the same
+// "<message>$$<call>" shape as the real session service.
+type fixedNamer struct{}
+
+func (fixedNamer) CreateAgentToolSessionID(messageID, toolCallID string) string {
+	return messageID + "$$" + toolCallID
+}
+
+func TestReportsFromMessagesPairsDispatchesWithTheirOutput(t *testing.T) {
+	t.Parallel()
+
+	input := `{"subagent_type":"plan","description":"design the fix"}`
+	msgs := []message.Message{
+		{
+			ID:   "msg-1",
+			Role: message.Assistant,
+			Parts: []message.ContentPart{
+				message.ToolCall{ID: "call-1", Name: toolnames.Agent, Input: input, Finished: true},
+				message.ToolCall{ID: "call-2", Name: toolnames.Grep, Input: `{}`, Finished: true},
+			},
+		},
+		{
+			ID:   "msg-2",
+			Role: message.Tool,
+			Parts: []message.ContentPart{
+				message.ToolResult{ToolCallID: "call-1", Name: toolnames.Agent, Content: "step 1, step 2"},
+				message.ToolResult{ToolCallID: "call-2", Name: toolnames.Grep, Content: "match"},
+			},
+		},
+	}
+
+	reports := ReportsFromMessages(fixedNamer{}, msgs)
+	require.Equal(t, []Report{{
+		ID:        ReportID(fixedNamer{}, "msg-1", "call-1"),
+		AgentType: "plan",
+		Task:      "design the fix",
+		Content:   "step 1, step 2",
+	}}, reports)
+}
+
+func TestReportsFromMessagesDropsDispatchesWithoutAUsableResult(t *testing.T) {
+	t.Parallel()
+
+	msgs := []message.Message{
+		{
+			ID:   "msg-1",
+			Role: message.Assistant,
+			Parts: []message.ContentPart{
+				message.ToolCall{ID: "running", Name: toolnames.Agent, Input: `{}`},
+				message.ToolCall{ID: "failed", Name: toolnames.Agent, Input: `{}`},
+				message.ToolCall{ID: "empty", Name: toolnames.Agent, Input: `{}`},
+			},
+		},
+		{
+			ID:   "msg-2",
+			Role: message.Tool,
+			Parts: []message.ContentPart{
+				message.ToolResult{ToolCallID: "failed", Name: toolnames.Agent, Content: "boom", IsError: true},
+				message.ToolResult{ToolCallID: "empty", Name: toolnames.Agent, Content: ""},
+			},
+		},
+	}
+
+	require.Empty(t, ReportsFromMessages(fixedNamer{}, msgs))
+}
+
+func TestReportBodyStripsTheBanner(t *testing.T) {
+	t.Parallel()
+
+	id := "rpt_1a2b3c4d"
+	cases := []struct {
+		name string
+		task string
+		body string
+	}{
+		{name: "with task", task: "websocket vs sse", body: "line one\n\nline two"},
+		{name: "without task", task: "", body: "just the body"},
+		{name: "task with a newline stays on the banner line", task: "first\nsecond", body: "body"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			report := Report{ID: id, Content: ReportBanner(id, "explore", tc.task) + tc.body}
+			require.Equal(t, tc.body, report.Body())
+		})
+	}
+}
+
+func TestReportBodyLeavesBannerlessContentAlone(t *testing.T) {
+	t.Parallel()
+
+	report := Report{ID: "rpt_1a2b3c4d", Content: "output stored before banners existed\n\nsecond paragraph"}
+	require.Equal(t, report.Content, report.Body())
+
+	otherBanner := Report{
+		ID:      "rpt_1a2b3c4d",
+		Content: ReportBanner("rpt_ffffffff", "explore", "") + "body",
+	}
+	require.Equal(t, otherBanner.Content, otherBanner.Body(),
+		"a banner naming a different report is not this report's banner")
+}
+
 func TestLoadReportReturnsTheStoredOutput(t *testing.T) {
 	t.Parallel()
 	env := newReportEnv(t)

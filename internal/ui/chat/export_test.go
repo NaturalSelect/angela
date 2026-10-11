@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -250,4 +251,63 @@ func TestUniqueExportPath(t *testing.T) {
 	got, err = UniqueExportPath(target)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "session-3.md"), got)
+}
+
+// TestResolveExportTarget covers every way a user can type an output
+// path: nothing, a directory, a bare file name, and an absolute file.
+func TestResolveExportTarget(t *testing.T) {
+	t.Parallel()
+
+	workingDir := t.TempDir()
+	existingDir := t.TempDir()
+	absFile := filepath.Join(t.TempDir(), "out.md")
+	sep := string(filepath.Separator)
+
+	tests := []struct {
+		name   string
+		output string
+		want   string
+	}{
+		{"empty uses the default name in the working dir", "", filepath.Join(workingDir, "rpt.md")},
+		{"trailing separator names a relative directory", "notes" + sep, filepath.Join(workingDir, "notes", "rpt.md")},
+		{"existing directory gets the default name", existingDir, filepath.Join(existingDir, "rpt.md")},
+		{"relative file is anchored at the working dir", "custom.md", filepath.Join(workingDir, "custom.md")},
+		{"absolute file is kept", absFile, absFile},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, ResolveExportTarget(tt.output, "rpt.md", workingDir))
+		})
+	}
+}
+
+// TestReportToMarkdown verifies the export drops the model-facing banner,
+// keeps the report body intact, and omits the task line when the dispatch
+// had no description.
+func TestReportToMarkdown(t *testing.T) {
+	t.Parallel()
+
+	const id = "rpt_1a2b3c4d"
+	body := "first paragraph\n\nsecond paragraph"
+
+	withTask := tools.Report{
+		ID:        id,
+		AgentType: "deep-research",
+		Task:      "websocket\nvs sse",
+		Content:   tools.ReportBanner(id, "deep-research", "websocket\nvs sse") + body + "\n\n",
+	}
+	require.Equal(t,
+		"# rpt_1a2b3c4d\n\n- Agent: deep-research\n- Task: websocket vs sse\n\n"+body+"\n",
+		ReportToMarkdown(withTask))
+	require.NotContains(t, ReportToMarkdown(withTask), "Stored in full")
+
+	unlabelled := tools.Report{
+		ID:        id,
+		AgentType: "explore",
+		Content:   tools.ReportBanner(id, "explore", "") + body,
+	}
+	require.Equal(t,
+		"# rpt_1a2b3c4d\n\n- Agent: explore\n\n"+body+"\n",
+		ReportToMarkdown(unlabelled))
 }

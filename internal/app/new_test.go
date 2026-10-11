@@ -214,7 +214,7 @@ func TestApp_RunNonInteractive_InvalidModelOverride(t *testing.T) {
 	require.NoError(t, err)
 	defer application.Shutdown()
 
-	err = application.RunNonInteractive(ctx, io.Discard, "prompt", "does-not-exist-model", "", true, "", false)
+	_, err = application.RunNonInteractive(ctx, io.Discard, "prompt", "does-not-exist-model", "", true, "", false)
 	require.ErrorContains(t, err, "failed to override models")
 }
 

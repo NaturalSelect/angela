@@ -703,7 +703,7 @@ func TestApp_RunNonInteractive_MissingCoderConfig(t *testing.T) {
 	t.Parallel()
 
 	app := &App{config: config.NewTestStore(&config.Config{})}
-	err := app.RunNonInteractive(t.Context(), io.Discard, "prompt", "", "", true, "", false)
+	_, err := app.RunNonInteractive(t.Context(), io.Discard, "prompt", "", "", true, "", false)
 	require.ErrorContains(t, err, "failed to reinitialize agent for non-interactive mode")
 }
 

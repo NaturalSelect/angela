@@ -1,11 +1,10 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -493,60 +492,67 @@ func TestRunNonInteractive_HappyPath(t *testing.T) {
 	c := newRunNonInteractiveServer(t, proto.RunComplete{SessionID: "sess-1", MessageID: "m1", Text: "final answer"})
 	ws := &proto.Workspace{ID: "ws1", Config: &config.Config{Options: &config.Options{}}}
 
-	err := runNonInteractive(t.Context(), c, ws, io.Discard, "prompt", "", "", true, "", false)
+	final, err := runNonInteractive(t.Context(), c, ws, "prompt", "", "", true, "", false)
 	require.NoError(t, err)
+	require.Equal(t, "final answer", final)
 }
 
-// TestRunNonInteractive_WritesToOutput verifies the run writes the final
-// answer to the supplied writer rather than to the process stdout.
-func TestRunNonInteractive_WritesToOutput(t *testing.T) {
-	c := newRunNonInteractiveServer(t, proto.RunComplete{SessionID: "sess-1", MessageID: "m1", Text: "final answer"})
+// TestRunNonInteractive_CancelledRunHasNoFinalText covers a cancelled
+// RunComplete: whatever text it carries is a partial turn, so it must
+// not be handed back as the run's result.
+func TestRunNonInteractive_CancelledRunHasNoFinalText(t *testing.T) {
+	c := newRunNonInteractiveServer(t, proto.RunComplete{SessionID: "sess-1", MessageID: "m1", Text: "partial", Cancelled: true})
 	ws := &proto.Workspace{ID: "ws1", Config: &config.Config{Options: &config.Options{}}}
 
-	var out bytes.Buffer
-	err := runNonInteractive(t.Context(), c, ws, &out, "prompt", "", "", true, "", false)
+	final, err := runNonInteractive(t.Context(), c, ws, "prompt", "", "", true, "", false)
 	require.NoError(t, err)
-	require.Equal(t, "final answer\n", out.String())
+	require.Empty(t, final)
 }
 
-// TestOpenRunOutput_WritesFile covers the --output path: the file is
-// created, truncated, and populated through the returned writer.
-func TestOpenRunOutput_WritesFile(t *testing.T) {
+// TestSaveRunResult_WritesOnlyFinalText covers the --output path: the
+// file holds the final response alone, replacing any earlier content.
+func TestSaveRunResult_WritesOnlyFinalText(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "out.md")
-	require.NoError(t, os.WriteFile(path, []byte("stale content that must not survive"), 0o644))
+	f, err := os.Create(path)
+	require.NoError(t, err)
 
-	w, closeOut, err := openRunOutput(path)
-	require.NoError(t, err)
-	_, err = io.WriteString(w, "fresh")
-	require.NoError(t, err)
-	require.NoError(t, closeOut())
+	require.NoError(t, saveRunResult(f, "  \nthe verdict\n\n", nil))
+	require.NoError(t, f.Close())
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.Equal(t, "fresh", string(got))
+	require.Equal(t, "the verdict\n", string(got))
 }
 
-// TestOpenRunOutput_EmptyPathUsesStdout covers the default: without
-// --output the writer is the process stdout and closing it is a no-op.
-func TestOpenRunOutput_EmptyPathUsesStdout(t *testing.T) {
+// TestSaveRunResult_FailedRunLeavesFileEmpty makes sure a failed run
+// neither writes a result nor swallows its error.
+func TestSaveRunResult_FailedRunLeavesFileEmpty(t *testing.T) {
 	t.Parallel()
 
-	w, closeOut, err := openRunOutput("")
+	path := filepath.Join(t.TempDir(), "out.md")
+	f, err := os.Create(path)
 	require.NoError(t, err)
-	require.Same(t, os.Stdout, w)
-	require.NoError(t, closeOut())
+
+	runErr := errors.New("model exploded")
+	require.ErrorIs(t, saveRunResult(f, "partial", runErr), runErr)
+	require.NoError(t, f.Close())
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Empty(t, got)
 }
 
-// TestOpenRunOutput_UncreatablePathErrors covers an unwritable
-// destination, which must fail before the run starts.
-func TestOpenRunOutput_UncreatablePathErrors(t *testing.T) {
+// TestSaveRunResult_NilFileIsNoop covers the default: without --output
+// there is nothing to write and the run's error passes straight through.
+func TestSaveRunResult_NilFileIsNoop(t *testing.T) {
 	t.Parallel()
 
-	_, _, err := openRunOutput(filepath.Join(t.TempDir(), "missing-dir", "out.md"))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to open output file")
+	require.NoError(t, saveRunResult(nil, "final", nil))
+
+	runErr := errors.New("boom")
+	require.ErrorIs(t, saveRunResult(nil, "final", runErr), runErr)
 }
 
 // TestRunNonInteractive_RunCompleteErrorPropagates covers a
@@ -556,7 +562,7 @@ func TestRunNonInteractive_RunCompleteErrorPropagates(t *testing.T) {
 	c := newRunNonInteractiveServer(t, proto.RunComplete{SessionID: "sess-1", MessageID: "m1", Error: "model exploded"})
 	ws := &proto.Workspace{ID: "ws1", Config: &config.Config{Options: &config.Options{}}}
 
-	err := runNonInteractive(t.Context(), c, ws, io.Discard, "prompt", "", "", true, "", false)
+	_, err := runNonInteractive(t.Context(), c, ws, "prompt", "", "", true, "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "model exploded")
 }
@@ -576,7 +582,7 @@ func TestRunNonInteractive_AgentNotReadyPropagatesError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
 
-	err := runNonInteractive(ctx, c, ws, io.Discard, "prompt", "", "", true, "", false)
+	_, err := runNonInteractive(ctx, c, ws, "prompt", "", "", true, "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "agent not ready")
 }
@@ -597,7 +603,7 @@ func TestRunNonInteractive_InvalidModelOverridePropagatesError(t *testing.T) {
 	})
 	ws := &proto.Workspace{ID: "ws1", Config: &config.Config{Options: &config.Options{}}}
 
-	err := runNonInteractive(t.Context(), c, ws, io.Discard, "prompt", "no-such-model", "", true, "", false)
+	_, err := runNonInteractive(t.Context(), c, ws, "prompt", "no-such-model", "", true, "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to override models")
 }
@@ -629,7 +635,7 @@ func TestRunNonInteractive_SetSessionUnattendedErrorPropagates(t *testing.T) {
 	})
 	ws := &proto.Workspace{ID: "ws1", Config: &config.Config{Options: &config.Options{}}}
 
-	err := runNonInteractive(t.Context(), c, ws, io.Discard, "prompt", "", "", true, "", false)
+	_, err := runNonInteractive(t.Context(), c, ws, "prompt", "", "", true, "", false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to mark the session unattended")
 	require.False(t, sendMessageCalled.Load(), "must not send the prompt once marking the session unattended failed")

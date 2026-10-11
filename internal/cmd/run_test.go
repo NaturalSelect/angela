@@ -441,6 +441,26 @@ func TestResolveSessionByID_ListErrorPropagates(t *testing.T) {
 // RunComplete event, mirroring how a real server correlates them.
 func newRunNonInteractiveServer(t *testing.T, complete proto.RunComplete) *client.Client {
 	t.Helper()
+	return newRunNonInteractiveStreamServer(t, func(w http.ResponseWriter, runID string) {
+		complete.RunID = runID
+		inner, err := json.Marshal(pubsub.Event[proto.RunComplete]{Type: pubsub.CreatedEvent, Payload: complete})
+		require.NoError(t, err)
+		env, err := json.Marshal(pubsub.Payload{Type: pubsub.PayloadTypeRunComplete, Payload: inner})
+		require.NoError(t, err)
+		_, err = fmt.Fprintf(w, "data: %s\n\n", env)
+		require.NoError(t, err)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	})
+}
+
+// newRunNonInteractiveStreamServer is newRunNonInteractiveServer with the
+// event stream left to the caller. serveEvents runs once the prompt has
+// been sent, with the RunID the client minted for it, and the stream
+// ends when it returns.
+func newRunNonInteractiveStreamServer(t *testing.T, serveEvents func(w http.ResponseWriter, runID string)) *client.Client {
+	t.Helper()
 	runIDCh := make(chan string, 1)
 
 	return newRunTestClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -468,16 +488,7 @@ func newRunNonInteractiveServer(t *testing.T, complete proto.RunComplete) *clien
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
-			complete.RunID = <-runIDCh
-			inner, err := json.Marshal(pubsub.Event[proto.RunComplete]{Type: pubsub.CreatedEvent, Payload: complete})
-			require.NoError(t, err)
-			env, err := json.Marshal(pubsub.Payload{Type: pubsub.PayloadTypeRunComplete, Payload: inner})
-			require.NoError(t, err)
-			_, err = fmt.Fprintf(w, "data: %s\n\n", env)
-			require.NoError(t, err)
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
+			serveEvents(w, <-runIDCh)
 		default:
 			w.WriteHeader(http.StatusOK)
 		}
@@ -498,15 +509,28 @@ func TestRunNonInteractive_HappyPath(t *testing.T) {
 	require.Equal(t, "final answer", final)
 }
 
-// TestRunNonInteractive_CancelledRunHasNoFinalText covers a cancelled
-// RunComplete: whatever text it carries is a partial turn, so it must
-// not be handed back as the run's result.
-func TestRunNonInteractive_CancelledRunHasNoFinalText(t *testing.T) {
+// TestRunNonInteractive_CancelledRunIsAnError covers a cancelled
+// RunComplete, such as another client cancelling the session. Whatever
+// text it carries is a partial turn, and an empty result without an error
+// would let --output wipe the file and exit 0, so the run must fail.
+func TestRunNonInteractive_CancelledRunIsAnError(t *testing.T) {
 	c := newRunNonInteractiveServer(t, proto.RunComplete{SessionID: "sess-1", MessageID: "m1", Text: "partial", Cancelled: true})
 	ws := &proto.Workspace{ID: "ws1", Config: &config.Config{Options: &config.Options{}}}
 
 	final, err := runNonInteractive(t.Context(), c, ws, "prompt", "", "", true, "", false)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errRunCancelled)
+	require.Empty(t, final, "a partial turn must not be handed back as the result")
+}
+
+// TestRunNonInteractive_StreamClosedEarlyIsAnError covers the server
+// dropping the event stream before the run's RunComplete arrives. The run
+// did not finish, so it must not look like one that finished empty.
+func TestRunNonInteractive_StreamClosedEarlyIsAnError(t *testing.T) {
+	c := newRunNonInteractiveStreamServer(t, func(http.ResponseWriter, string) {})
+	ws := &proto.Workspace{ID: "ws1", Config: &config.Config{Options: &config.Options{}}}
+
+	final, err := runNonInteractive(t.Context(), c, ws, "prompt", "", "", true, "", false)
+	require.ErrorContains(t, err, "event stream closed")
 	require.Empty(t, final)
 }
 
@@ -577,10 +601,31 @@ func TestSaveRunResult_FailedRunKeepsThePreviousFile(t *testing.T) {
 	require.Empty(t, warn.String())
 }
 
-// TestSaveRunResult_NoFinalTextClearsFileAndWarns covers a run that exits
-// 0 without a final response, such as a cancelled one. A script chained
-// with && must not carry on with an earlier run's text, and must be told
-// why the file is empty.
+// TestSaveRunResult_CancelledRunKeepsThePreviousFile pins that a cancelled
+// run is a failure for --output: the file keeps its earlier contents, which
+// `angela run -o notes.md "tighten notes.md"` would otherwise lose, and the
+// exit status says the run did not finish.
+func TestSaveRunResult_CancelledRunKeepsThePreviousFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "notes.md")
+	require.NoError(t, os.WriteFile(path, []byte("draft\n"), 0o644))
+	f := openOutputFile(t, path)
+
+	var warn bytes.Buffer
+	require.ErrorIs(t, saveRunResult(f, "", errRunCancelled, &warn), errRunCancelled)
+	require.NoError(t, f.Close())
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "draft\n", string(got))
+	require.Empty(t, warn.String())
+}
+
+// TestSaveRunResult_NoFinalTextClearsFileAndWarns covers a run that
+// finished with a blank final response. A script chained with && must not
+// carry on with an earlier run's text, and must be told why the file is
+// empty.
 func TestSaveRunResult_NoFinalTextClearsFileAndWarns(t *testing.T) {
 	t.Parallel()
 

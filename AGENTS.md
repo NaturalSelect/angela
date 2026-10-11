@@ -92,6 +92,7 @@ internal/
 lib/
   paintbrush/                      Vendored go-ansi-paintbrush (image to ANSI blocks), patched
                                     to wait for its result collector; keep upstream's MIT license
+                                    and the Fira Mono OFL license in assets/OFL.txt
 ```
 
 ### Key Dependency Roles

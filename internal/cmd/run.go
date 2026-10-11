@@ -48,7 +48,7 @@ angela run "What is this code doing?" <<< prrr.go
 # Redirect output to a file
 angela run "Generate a hot README for this project" > MY_HOT_README.md
 
-# Save the final response to a file
+# Save the final response to a file (stdout still shows the whole conversation)
 angela run --output MY_HOT_README.md "Generate a hot README for this project"
 
 # Run in quiet mode (hide the spinner)
@@ -191,10 +191,14 @@ angela run --continue "Follow up on your last response"
 	},
 }
 
+// errRunCancelled reports a run that was cancelled before it finished. It
+// is an error rather than an empty result so --output leaves its file alone.
+var errRunCancelled = errors.New("the run was cancelled")
+
 func init() {
 	runCmd.Flags().BoolP("quiet", "q", false, "Hide spinner")
 	runCmd.Flags().BoolP("verbose", "v", false, "Show logs on stderr; combine with --debug for debug level")
-	runCmd.Flags().StringP("output", "o", "", "Replace this file with the final response when the run succeeds")
+	runCmd.Flags().StringP("output", "o", "", "Replace this file with the final response when the run succeeds; stdout still streams the whole conversation")
 	runCmd.Flags().StringP("model", "m", "", "Model to use. Accepts 'model' or 'provider/model' to disambiguate models with the same name across providers")
 	runCmd.Flags().String("small-model", "", "Small model to use. If not provided, uses the default small model for the provider")
 	runCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
@@ -204,11 +208,11 @@ func init() {
 }
 
 // saveRunResult replaces the contents of f with a successful run's final
-// response. A failed run leaves f as it was, because its error already
-// tells a script not to use the file. A successful run always rewrites f,
-// so a zero exit status never leaves an earlier run's text behind as if
-// it were this one's. With no final text it empties f and warns on warn.
-// A nil f means --output was not given.
+// response. A failed or cancelled run leaves f as it was, because its error
+// already tells a script not to use the file. A successful run always
+// rewrites f, so a zero exit status never leaves an earlier run's text
+// behind as if it were this one's. A run that finished with nothing to say
+// empties f and warns on warn. A nil f means --output was not given.
 func saveRunResult(f *os.File, final string, runErr error, warn io.Writer) error {
 	if runErr != nil || f == nil {
 		return runErr
@@ -246,8 +250,10 @@ func logToStderr(debug bool) {
 }
 
 // runNonInteractive executes the agent via the server and streams output
-// to stdout. It returns the run's final response text, which is empty when
-// the run was cancelled or ended without one.
+// to stdout. It returns the run's final response text. A run that was
+// cancelled, or whose event stream ended before it finished, is an error,
+// so a caller never mistakes it for a run that completed with nothing to
+// say.
 func runNonInteractive(
 	ctx context.Context,
 	c *client.Client,
@@ -386,7 +392,7 @@ func runNonInteractive(
 		case ev, ok := <-events:
 			if !ok {
 				stopSpinner()
-				return "", nil
+				return "", errors.New("event stream closed before the run finished")
 			}
 
 			// Forward events to herdr if running inside a herdr pane.
@@ -399,6 +405,9 @@ func runNonInteractive(
 				return "", err
 			}
 			if done {
+				if stream.cancelled {
+					return "", errRunCancelled
+				}
 				return stream.final, nil
 			}
 
@@ -434,6 +443,9 @@ type runStream struct {
 	// RunComplete arrives uncancelled. Unlike out it is never reconciled
 	// piecemeal, so it is the text to persist for --output.
 	final string
+	// cancelled records that the run's RunComplete reported a cancel, in
+	// which case final stays empty because the turn is only partial.
+	cancelled bool
 }
 
 // handle processes one SSE event. Returns done=true when the run
@@ -503,7 +515,9 @@ func (s *runStream) handle(ev any, stopSpinner func()) (done bool, err error) {
 		if e.Payload.Error != "" && !e.Payload.Cancelled {
 			return true, fmt.Errorf("agent run failed: %s", e.Payload.Error)
 		}
-		if !e.Payload.Cancelled {
+		if e.Payload.Cancelled {
+			s.cancelled = true
+		} else {
 			s.final = e.Payload.Text
 		}
 		// Reconcile stdout against the authoritative final

@@ -175,9 +175,9 @@ func TestRunStream_CancelledRunCompleteIsClean(t *testing.T) {
 	}}, nil)
 	require.True(t, done)
 	require.NoError(t, err)
+	require.True(t, s.cancelled, "the caller needs to tell a cancel from a run that finished empty")
+	require.Empty(t, s.final)
 }
-
-// TestRunStream_LeadingWhitespaceTrimmedOnce mirrors the
 // pre-existing trim of leading whitespace on the first byte of
 // stdout: the trim must happen exactly once even when stdout is
 // first produced by the RunComplete reconciliation path rather

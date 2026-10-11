@@ -360,8 +360,9 @@ func (app *App) resolveSession(ctx context.Context, continueSessionID string, us
 
 // RunNonInteractive runs the application in non-interactive mode with the
 // given prompt, streaming every assistant message to output. It returns the
-// text of the run's final response, which is empty when the run was
-// cancelled.
+// text of the run's final response. A run that was cancelled, or that ended
+// without a result, is an error, so a caller never mistakes it for a run
+// that completed with nothing to say.
 func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt, largeModel, smallModel string, hideSpinner bool, continueSessionID string, useLast bool) (string, error) {
 	slog.Info("Running in non-interactive mode")
 
@@ -500,17 +501,10 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 		select {
 		case result := <-done:
 			stopSpinner()
-			if result.err != nil {
-				if errors.Is(result.err, context.Canceled) || errors.Is(result.err, agent.ErrRequestCancelled) {
-					slog.Debug("Non-interactive: agent processing cancelled", "session_id", sess.ID)
-					return "", nil
-				}
-				return "", fmt.Errorf("agent processing failed: %w", result.err)
+			if errors.Is(result.err, context.Canceled) || errors.Is(result.err, agent.ErrRequestCancelled) {
+				slog.Debug("Non-interactive: agent processing cancelled", "session_id", sess.ID)
 			}
-			if result.result == nil {
-				return "", nil
-			}
-			return result.result.Response.Content.Text(), nil
+			return finalResponseText(result.result, result.err)
 
 		case event := <-messageEvents:
 			msg := event.Payload
@@ -544,6 +538,25 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 			return "", ctx.Err()
 		}
 	}
+}
+
+// finalResponseText turns what the coordinator returned for a run into the
+// run's final response text. A cancelled run and a run with no result are
+// errors rather than empty text, so a caller never mistakes them for a run
+// that completed with nothing to say.
+func finalResponseText(result *fantasy.AgentResult, err error) (string, error) {
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, agent.ErrRequestCancelled) {
+			return "", agent.ErrRequestCancelled
+		}
+		return "", fmt.Errorf("agent processing failed: %w", err)
+	}
+	// NOTE: The coordinator returns a nil result without an error when the
+	// run was cancelled before it started or queued behind another turn.
+	if result == nil {
+		return "", errors.New("agent run ended without a result")
+	}
+	return result.Response.Content.Text(), nil
 }
 
 func (app *App) UpdateAgentModel(ctx context.Context) error {

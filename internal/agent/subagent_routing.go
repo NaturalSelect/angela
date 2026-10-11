@@ -316,12 +316,21 @@ func (c *coordinator) eachExecutor(fn func(SessionAgent)) {
 // Stats only count top-level sessions, and each sub-run rolls its child's cost
 // up one level as it finishes. A turn the user starts inside a child session
 // has no outer sub-run to do that, so it would vanish from the totals.
+func (c *coordinator) rollingUpCost(ctx context.Context, sessionID string, turn func() (*fantasy.AgentResult, error)) func() (*fantasy.AgentResult, error) {
+	return c.billedTurn(ctx, sessionID, turn, func(delta float64) error {
+		return c.addCostToAncestors(ctx, sessionID, delta)
+	})
+}
+
+// billedTurn wraps a turn so the cost it adds to sessionID is handed to
+// bill. rollingUpCost bills every ancestor; a caller whose turn an
+// enclosing sub-run will account for further up bills only its parent.
 //
 // The baseline is read inside the returned closure — right before the
 // turn runs — so that queued turns each read the cost their predecessor
 // left. Reading it outside would let two queued turns share a baseline
 // and double-count the first one's cost.
-func (c *coordinator) rollingUpCost(ctx context.Context, sessionID string, turn func() (*fantasy.AgentResult, error)) func() (*fantasy.AgentResult, error) {
+func (c *coordinator) billedTurn(ctx context.Context, sessionID string, turn func() (*fantasy.AgentResult, error), bill func(delta float64) error) func() (*fantasy.AgentResult, error) {
 	return func() (*fantasy.AgentResult, error) {
 		before, err := c.sessions.Get(ctx, sessionID)
 		if err != nil {
@@ -339,7 +348,7 @@ func (c *coordinator) rollingUpCost(ctx context.Context, sessionID string, turn 
 			return result, runErr
 		}
 		if delta := after.Cost - before.Cost; delta > 0 {
-			if err := c.addCostToAncestors(ctx, sessionID, delta); err != nil {
+			if err := bill(delta); err != nil {
 				slog.Warn("Failed to roll the sub-session cost up to its parents", "session", sessionID, "error", err)
 			}
 		}

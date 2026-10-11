@@ -2586,8 +2586,12 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 		})
 	}
 	// NOTE: This turn bypasses the session path that rolls cost up, so
-	// nothing else would bill it to the parent.
-	_, err := c.rollingUpCost(ctx, sessionID, run)()
+	// nothing else would bill it to the parent. Only the parent is billed:
+	// when it is a sub-agent, its own finish rolls its whole total up to
+	// the next level, this turn included.
+	_, err := c.billedTurn(ctx, sessionID, run, func(delta float64) error {
+		return c.sessions.AddCost(ctx, params.SessionID, delta)
+	})()
 	return err
 }
 

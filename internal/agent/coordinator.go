@@ -2564,22 +2564,27 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 	}
 
 	compact := c.compactFor(ctx, params.SessionID, params.Resolved.Host)
-	_, err := params.Agent.Run(ctx, SessionAgentCall{
-		SessionID:                sessionID,
-		Agent:                    params.Resolved,
-		Prompt:                   prompt,
-		MaxOutputTokens:          params.Resolved.MaxTokens,
-		ProviderOptions:          getProviderOptions(model, providerCfg, buildPromptCacheKey(sessionID, params.Resolved.ID)),
-		SummarizeProviderOptions: compact.options,
-		Compact:                  compact.agent,
-		SummarizeOnAuthRefresh:   compact.onAuthRefresh,
-		Temperature:              model.CatwalkCfg.Options.Temperature,
-		TopP:                     model.CatwalkCfg.Options.TopP,
-		TopK:                     model.CatwalkCfg.Options.TopK,
-		FrequencyPenalty:         model.CatwalkCfg.Options.FrequencyPenalty,
-		PresencePenalty:          model.CatwalkCfg.Options.PresencePenalty,
-		OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
-	})
+	run := func() (*fantasy.AgentResult, error) {
+		return params.Agent.Run(ctx, SessionAgentCall{
+			SessionID:                sessionID,
+			Agent:                    params.Resolved,
+			Prompt:                   prompt,
+			MaxOutputTokens:          params.Resolved.MaxTokens,
+			ProviderOptions:          getProviderOptions(model, providerCfg, buildPromptCacheKey(sessionID, params.Resolved.ID)),
+			SummarizeProviderOptions: compact.options,
+			Compact:                  compact.agent,
+			SummarizeOnAuthRefresh:   compact.onAuthRefresh,
+			Temperature:              model.CatwalkCfg.Options.Temperature,
+			TopP:                     model.CatwalkCfg.Options.TopP,
+			TopK:                     model.CatwalkCfg.Options.TopK,
+			FrequencyPenalty:         model.CatwalkCfg.Options.FrequencyPenalty,
+			PresencePenalty:          model.CatwalkCfg.Options.PresencePenalty,
+			OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
+		})
+	}
+	// NOTE: This turn bypasses the session path that rolls cost up, so
+	// nothing else would bill it to the parent.
+	_, err := c.rollingUpCost(ctx, sessionID, run)()
 	return err
 }
 

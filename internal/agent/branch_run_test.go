@@ -298,6 +298,42 @@ func TestRunBranchAgentReturnsTheMergedSummary(t *testing.T) {
 	require.Equal(t, "invalidate all but the current", resp.Content)
 }
 
+// The opening turn reads the whole inherited history, so it is usually the
+// costliest turn a branch runs. It starts outside the session path that
+// rolls cost up, so runBranchAgent has to bill it to the parent itself.
+func TestRunBranchAgentBillsTheOpeningTurnToTheParent(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	agent, resolved := newMockAgent(t, branchProviderID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		require.NoError(t, env.sessions.AddCost(ctx, call.SessionID, 0.75))
+		return agentResultWithText("hello"), nil
+	})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+
+	// The branch registers before its opening turn runs, and a merge that
+	// lands early is held for the wait. Either way the dispatch cannot
+	// return before the turn has finished and been billed.
+	branchID := requireBranchSession(t, c, parent.ID)
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+	wg.Wait()
+
+	updatedParent, err := env.sessions.Get(t.Context(), parent.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 0.75, updatedParent.Cost, 1e-9, "the opening turn's cost never reached the parent")
+}
+
 // A branch is easy to miss when a sub-agent forks it in the background
 // rather than in front of the user, so runBranchAgent announces every
 // branch it creates — including one forked from the top-level session

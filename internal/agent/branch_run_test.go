@@ -334,6 +334,49 @@ func TestRunBranchAgentBillsTheOpeningTurnToTheParent(t *testing.T) {
 	require.InDelta(t, 0.75, updatedParent.Cost, 1e-9, "the opening turn's cost never reached the parent")
 }
 
+// A sub-agent that forks a branch rolls its whole total up to the root
+// when it finishes, the branch's opening turn included. Billing that turn
+// to every ancestor as well would count it at the root twice.
+func TestRunBranchAgentBillsTheOpeningTurnOnlyToItsDirectParent(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	root, err := env.sessions.Create(t.Context(), "Root")
+	require.NoError(t, err)
+	subID := env.sessions.CreateAgentToolSessionID("msg-0", "call-0")
+	sub, err := env.sessions.CreateTaskSession(t.Context(), subID, root.ID, "Sub-agent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), sub.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	agent, resolved := newMockAgent(t, branchProviderID, 4096, func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		require.NoError(t, env.sessions.AddCost(ctx, call.SessionID, 0.75))
+		return agentResultWithText("hello"), nil
+	})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.runBranchAgent(t.Context(), branchParams(agent, resolved, sub.ID, forking.ID))
+	}()
+
+	branchID := requireBranchSession(t, c, sub.ID)
+	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+	wg.Wait()
+
+	// The sub-agent finishing is what carries its total up to the root.
+	require.NoError(t, c.updateParentSessionCost(t.Context(), sub.ID, root.ID))
+
+	updatedSub, err := env.sessions.Get(t.Context(), sub.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 0.75, updatedSub.Cost, 1e-9, "the opening turn's cost never reached its direct parent")
+
+	updatedRoot, err := env.sessions.Get(t.Context(), root.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 0.75, updatedRoot.Cost, 1e-9, "the opening turn was billed to the root more than once")
+}
+
 // A branch is easy to miss when a sub-agent forks it in the background
 // rather than in front of the user, so runBranchAgent announces every
 // branch it creates — including one forked from the top-level session

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,7 +103,7 @@ func TestSpillingTool_LeavesNonTextResponsesAlone(t *testing.T) {
 func TestWrapToolsWithSpill_SkipsExemptTools(t *testing.T) {
 	t.Parallel()
 
-	exempt := []string{toolnames.Read, toolnames.Agent, toolnames.LoadReport, toolnames.ProposalRead}
+	exempt := []string{toolnames.Read, toolnames.Agent, toolnames.LoadReport, toolnames.ProposalRead, toolnames.Merge}
 	var inputs []fantasy.AgentTool
 	for _, name := range append(exempt, toolnames.Bash) {
 		tool, _ := newFakeTool(t, name, fantasy.ToolResponse{})
@@ -120,4 +121,50 @@ func TestWrapToolsWithSpill_SkipsExemptTools(t *testing.T) {
 		}
 		require.False(t, wrapped, "%s must not be wrapped", tool.Info().Name)
 	}
+}
+
+// A result with one enormous line, such as minified JSON, is saved wrapped.
+// Read cuts a line at tools.MaxLineLength bytes and Grep at
+// tools.MaxGrepContentWidth columns, so without wrapping the middle of
+// that line could never be shown.
+func TestSpillingTool_WrapsLinesTooWideToPageThrough(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	var words []string
+	for i := range 20_000 {
+		words = append(words, fmt.Sprintf("item%d", i))
+	}
+	oneLine := strings.Join(words, ",")
+	require.NotContains(t, oneLine, "\n")
+
+	got := runSpilling(t, root, "session-a", fantasy.NewTextResponse(oneLine))
+
+	files, err := filepath.Glob(filepath.Join(root, "session-a", "output-*.txt"))
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	saved, err := os.ReadFile(files[0])
+	require.NoError(t, err)
+
+	lines := strings.Split(string(saved), "\n")
+	require.Greater(t, len(lines), 1, "the single line must have been broken up")
+	for _, line := range lines {
+		require.LessOrEqual(t, len(line), tools.MaxGrepContentWidth, "every saved line must fit what Grep shows")
+		require.LessOrEqual(t, len(line), tools.MaxLineLength, "every saved line must fit what Read shows")
+	}
+	require.Equal(t, oneLine, strings.ReplaceAll(string(saved), "\n", ""),
+		"wrapping must only add line breaks")
+
+	require.Contains(t, got.Content, "were wrapped in the saved file")
+	require.Contains(t, got.Content, fmt.Sprintf("%d lines", len(lines)),
+		"the line count must describe the saved file the model pages through")
+	require.NotContains(t, got.Content, "Do not re-run")
+}
+
+func TestSpillingTool_NoticeOmitsWrapRemarkForNormalLines(t *testing.T) {
+	t.Parallel()
+
+	got := runSpilling(t, t.TempDir(), "session-a", fantasy.NewTextResponse(oversizedOutput()))
+
+	require.NotContains(t, got.Content, "wrapped")
 }

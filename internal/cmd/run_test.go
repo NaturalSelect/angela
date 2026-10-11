@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -509,39 +510,99 @@ func TestRunNonInteractive_CancelledRunHasNoFinalText(t *testing.T) {
 	require.Empty(t, final)
 }
 
+// openOutputFile opens path the way the run command does for --output:
+// created if missing, never truncated.
+func openOutputFile(t *testing.T, path string) *os.File {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o644)
+	require.NoError(t, err)
+	return f
+}
+
 // TestSaveRunResult_WritesOnlyFinalText covers the --output path: the
-// file holds the final response alone, replacing any earlier content.
+// file holds the final response alone, replacing any earlier content,
+// including earlier content longer than the new text.
 func TestSaveRunResult_WritesOnlyFinalText(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "out.md")
-	f, err := os.Create(path)
-	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte("an earlier and much longer result\n"), 0o644))
+	f := openOutputFile(t, path)
 
-	require.NoError(t, saveRunResult(f, "  \nthe verdict\n\n", nil))
+	var warn bytes.Buffer
+	require.NoError(t, saveRunResult(f, "  \nthe verdict\n\n", nil, &warn))
 	require.NoError(t, f.Close())
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, "the verdict\n", string(got))
+	require.Empty(t, warn.String())
 }
 
-// TestSaveRunResult_FailedRunLeavesFileEmpty makes sure a failed run
-// neither writes a result nor swallows its error.
-func TestSaveRunResult_FailedRunLeavesFileEmpty(t *testing.T) {
+// TestSaveRunResult_OpeningDoesNotClearTheFile pins that the run can
+// still read the file it will replace. `angela run -o notes.md "tighten
+// notes.md"` would otherwise start from an empty file.
+func TestSaveRunResult_OpeningDoesNotClearTheFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "notes.md")
+	require.NoError(t, os.WriteFile(path, []byte("draft\n"), 0o644))
+
+	f := openOutputFile(t, path)
+	t.Cleanup(func() { _ = f.Close() })
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "draft\n", string(got))
+}
+
+// TestSaveRunResult_FailedRunKeepsThePreviousFile makes sure a failed or
+// cancelled run neither destroys the earlier contents nor swallows its
+// error. The non-zero exit status is what tells a script not to use it.
+func TestSaveRunResult_FailedRunKeepsThePreviousFile(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "out.md")
-	f, err := os.Create(path)
-	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, []byte("previous\n"), 0o644))
+	f := openOutputFile(t, path)
 
+	var warn bytes.Buffer
 	runErr := errors.New("model exploded")
-	require.ErrorIs(t, saveRunResult(f, "partial", runErr), runErr)
+	require.ErrorIs(t, saveRunResult(f, "partial", runErr, &warn), runErr)
 	require.NoError(t, f.Close())
 
 	got, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.Empty(t, got)
+	require.Equal(t, "previous\n", string(got))
+	require.Empty(t, warn.String())
+}
+
+// TestSaveRunResult_NoFinalTextClearsFileAndWarns covers a run that exits
+// 0 without a final response, such as a cancelled one. A script chained
+// with && must not carry on with an earlier run's text, and must be told
+// why the file is empty.
+func TestSaveRunResult_NoFinalTextClearsFileAndWarns(t *testing.T) {
+	t.Parallel()
+
+	for name, final := range map[string]string{"empty": "", "blank": " \n\t\n"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "out.md")
+			require.NoError(t, os.WriteFile(path, []byte("previous\n"), 0o644))
+			f := openOutputFile(t, path)
+
+			var warn bytes.Buffer
+			require.NoError(t, saveRunResult(f, final, nil, &warn))
+			require.NoError(t, f.Close())
+
+			got, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Empty(t, got)
+			require.Contains(t, warn.String(), "no final response")
+			require.Contains(t, warn.String(), path)
+		})
+	}
 }
 
 // TestSaveRunResult_NilFileIsNoop covers the default: without --output
@@ -549,10 +610,13 @@ func TestSaveRunResult_FailedRunLeavesFileEmpty(t *testing.T) {
 func TestSaveRunResult_NilFileIsNoop(t *testing.T) {
 	t.Parallel()
 
-	require.NoError(t, saveRunResult(nil, "final", nil))
+	var warn bytes.Buffer
+	require.NoError(t, saveRunResult(nil, "final", nil, &warn))
+	require.NoError(t, saveRunResult(nil, "", nil, &warn))
+	require.Empty(t, warn.String(), "no --output means nothing to warn about")
 
 	runErr := errors.New("boom")
-	require.ErrorIs(t, saveRunResult(nil, "final", runErr), runErr)
+	require.ErrorIs(t, saveRunResult(nil, "final", runErr, &warn), runErr)
 }
 
 // TestRunNonInteractive_RunCompleteErrorPropagates covers a

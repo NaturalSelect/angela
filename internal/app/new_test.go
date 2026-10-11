@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy/providers/openaicompat"
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/db"
@@ -216,6 +218,41 @@ func TestApp_RunNonInteractive_InvalidModelOverride(t *testing.T) {
 
 	_, err = application.RunNonInteractive(ctx, io.Discard, "prompt", "does-not-exist-model", "", true, "", false)
 	require.ErrorContains(t, err, "failed to override models")
+}
+
+// TestNew_SpilledToolOutputIsReadableWithoutPrompt pins the wiring in New:
+// the model is told to Read spilled tool output by path, and that read
+// must not prompt even though the data directory lies outside the
+// working directory.
+func TestNew_SpilledToolOutputIsReadableWithoutPrompt(t *testing.T) {
+	stubUpdateDefault(t)
+
+	dataDir := t.TempDir()
+	conn := mustConnectTestDB(t, dataDir)
+	store := newUnconfiguredStore(dataDir)
+	skillsMgr := skills.NewManager(nil, nil, nil)
+
+	application, err := New(t.Context(), conn, store, skillsMgr)
+	require.NoError(t, err)
+	defer application.Shutdown()
+
+	// An unattended session refuses what would need a prompt instead of
+	// blocking on one, which keeps the negative case below from hanging.
+	application.Permissions.SetSessionUnattended("s1", true)
+	gateRead := func(callID, path string) permission.Decision {
+		return application.Permissions.Gate(t.Context(), permission.GateRequest{
+			SessionID:  "s1",
+			ToolCallID: callID,
+			Access:     permission.Access{Tool: "read", Action: permission.ActionRead, Path: path},
+		})
+	}
+
+	spilled := filepath.Join(agent.ToolOutputRoot(dataDir), "s1", "output-1.txt")
+	require.True(t, gateRead("c1", spilled).Allowed(), "reading spilled output must not prompt")
+
+	elsewhere := filepath.Join(dataDir, "other", "file.txt")
+	require.False(t, gateRead("c2", elsewhere).Allowed(),
+		"the rest of the data directory must stay behind the prompt")
 }
 
 // TestNew_InvalidPermissionsPromptPolicy verifies New rejects an

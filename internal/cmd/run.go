@@ -104,12 +104,13 @@ angela run --continue "Follow up on your last response"
 			return fmt.Errorf("no prompt provided")
 		}
 
-		// NOTE: Created before the run so an unwritable path fails fast
-		// instead of after a long run, and opened before --cwd takes effect
-		// so a relative path resolves like a shell redirect.
+		// NOTE: Opened before the run so an unwritable path fails fast
+		// instead of after a long run, and before --cwd takes effect so a
+		// relative path resolves like a shell redirect. It is not truncated
+		// here: the run may need to read the file it is about to replace.
 		var resultFile *os.File
 		if outputPath != "" {
-			resultFile, err = os.Create(outputPath)
+			resultFile, err = os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE, 0o644)
 			if err != nil {
 				return fmt.Errorf("failed to open output file: %w", err)
 			}
@@ -156,7 +157,7 @@ angela run --continue "Follow up on your last response"
 			}
 
 			final, err := runNonInteractive(ctx, c, ws, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
-			return saveRunResult(resultFile, final, err)
+			return saveRunResult(resultFile, final, err, cmd.ErrOrStderr())
 		}
 
 		ws, cleanup, err := setupLocalWorkspace(cmd)
@@ -186,14 +187,14 @@ angela run --continue "Follow up on your last response"
 		}
 
 		final, err := appWs.App().RunNonInteractive(ctx, os.Stdout, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
-		return saveRunResult(resultFile, final, err)
+		return saveRunResult(resultFile, final, err, cmd.ErrOrStderr())
 	},
 }
 
 func init() {
 	runCmd.Flags().BoolP("quiet", "q", false, "Hide spinner")
 	runCmd.Flags().BoolP("verbose", "v", false, "Show logs on stderr; combine with --debug for debug level")
-	runCmd.Flags().StringP("output", "o", "", "Write the final response to this file")
+	runCmd.Flags().StringP("output", "o", "", "Replace this file with the final response when the run succeeds")
 	runCmd.Flags().StringP("model", "m", "", "Model to use. Accepts 'model' or 'provider/model' to disambiguate models with the same name across providers")
 	runCmd.Flags().String("small-model", "", "Small model to use. If not provided, uses the default small model for the provider")
 	runCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
@@ -202,16 +203,26 @@ func init() {
 	addSandboxFlags(runCmd)
 }
 
-// saveRunResult writes a successful run's final response to f. A failed
-// run leaves the already-truncated file empty, so a stale result from an
-// earlier run is never mistaken for this one. A nil f means --output was
-// not given.
-func saveRunResult(f *os.File, final string, runErr error) error {
+// saveRunResult replaces the contents of f with a successful run's final
+// response. A failed run leaves f as it was, because its error already
+// tells a script not to use the file. A successful run always rewrites f,
+// so a zero exit status never leaves an earlier run's text behind as if
+// it were this one's. With no final text it empties f and warns on warn.
+// A nil f means --output was not given.
+func saveRunResult(f *os.File, final string, runErr error, warn io.Writer) error {
 	if runErr != nil || f == nil {
 		return runErr
 	}
+	// NOTE: Only a regular file can be truncated. A device such as
+	// /dev/stdout is a valid target and has nothing to clear.
+	if info, err := f.Stat(); err == nil && info.Mode().IsRegular() {
+		if err := f.Truncate(0); err != nil {
+			return fmt.Errorf("failed to clear output file: %w", err)
+		}
+	}
 	final = strings.TrimSpace(final)
 	if final == "" {
+		fmt.Fprintf(warn, "Warning: the run produced no final response, so %s was left empty\n", f.Name())
 		return nil
 	}
 	if _, err := f.WriteString(final + "\n"); err != nil {

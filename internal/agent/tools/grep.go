@@ -88,7 +88,7 @@ type GrepResponseMetadata struct {
 }
 
 const (
-	MaxGrepContentWidth = 500
+	maxGrepContentWidth = 500
 )
 
 //go:embed grep.md.tpl
@@ -162,8 +162,8 @@ func NewGrepTool(workingDir string, config config.ToolGrep) fantasy.AgentTool {
 					}
 					if match.lineNum > 0 {
 						lineText := match.lineText
-						if ansi.StringWidth(lineText) > MaxGrepContentWidth {
-							lineText = ansi.Truncate(lineText, MaxGrepContentWidth, "...")
+						if ansi.StringWidth(lineText) > maxGrepContentWidth {
+							lineText = ansi.Truncate(lineText, maxGrepContentWidth, "...")
 						}
 						if match.charNum > 0 {
 							fmt.Fprintf(&output, "  Line %d, Char %d: %s\n", match.lineNum, match.charNum, lineText)

@@ -72,7 +72,6 @@ func NewJobOutputTool() fantasy.AgentTool {
 			}
 
 			output := strings.Join(outputParts, "\n")
-			output = TruncateOutput(output)
 
 			metadata := JobOutputResponseMetadata{
 				ShellID:          params.ShellID,

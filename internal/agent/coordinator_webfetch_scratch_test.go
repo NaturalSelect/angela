@@ -24,7 +24,7 @@ func TestRunKeepsWebFetchPagesAcrossTurns(t *testing.T) {
 	require.NoError(t, err)
 
 	scratchRoot := filepath.Join(coord.cfg.Config().Options.DataDirectory, "webfetch")
-	scratch, err := tools.WebFetchScratchDir(scratchRoot, sess.ID)
+	scratch, err := tools.SessionScratchDir(scratchRoot, sess.ID)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(scratch, 0o700))
 	page := filepath.Join(scratch, "page-1.md")

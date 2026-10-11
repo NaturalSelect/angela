@@ -3,15 +3,12 @@ package tools
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/template"
-	"time"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/browserhttp"
@@ -25,63 +22,6 @@ var webFetchDescriptionTpl = template.Must(
 	template.New("webFetchDescription").
 		Parse(string(webFetchDescriptionTmpl)),
 )
-
-// WebFetchScratchDir returns the scratch subdirectory for one
-// session's cached pages under root, or an error if sessionID is not
-// safe to use as a single path component.
-//
-// For delegated agents, sessionID is built from a provider-supplied
-// tool-call ID (coordinator.CreateAgentToolSessionID), which this
-// package cannot trust: filepath.Join normalizes rather than sandboxes,
-// so a value containing a path separator or a "." / ".." segment would
-// otherwise let a malicious provider response point the join outside
-// root. Both the tool that creates this directory and the coordinator
-// that later removes it call this, so neither can disagree with the
-// other about what counts as safe.
-func WebFetchScratchDir(root, sessionID string) (string, error) {
-	if sessionID == "" || sessionID == "." || sessionID == ".." || strings.ContainsAny(sessionID, `/\`) {
-		return "", fmt.Errorf("unsafe session id %q for web_fetch scratch directory", sessionID)
-	}
-	return filepath.Join(root, sessionID), nil
-}
-
-// NOTE: The path is handed to the model, so pages must outlive the turn
-// that saved them.
-const webFetchScratchRetention = 24 * time.Hour
-
-// pruneWebFetchScratch removes session directories under root whose last
-// page was written more than maxAge ago. A missing root is not an error.
-func pruneWebFetchScratch(root string, maxAge time.Duration) error {
-	entries, err := os.ReadDir(root)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("listing web_fetch scratch root: %w", err)
-	}
-
-	cutoff := time.Now().Add(-maxAge)
-	var errs []error
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				errs = append(errs, err)
-			}
-			continue
-		}
-		if info.ModTime().After(cutoff) {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
 
 // NewWebFetchTool creates a web fetch tool. scratchDir is the root where
 // large pages get saved for grep/read; each session gets its own
@@ -115,10 +55,10 @@ func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 			var result strings.Builder
 
 			if hasLargeContent {
-				if err := pruneWebFetchScratch(scratchDir, webFetchScratchRetention); err != nil {
+				if err := PruneSessionScratch(scratchDir, SessionScratchRetention); err != nil {
 					slog.Warn("Failed to prune old web_fetch pages", "error", err)
 				}
-				sessionScratchDir, err := WebFetchScratchDir(scratchDir, sessionID)
+				sessionScratchDir, err := SessionScratchDir(scratchDir, sessionID)
 				if err != nil {
 					return Fail(err.Error())
 				}

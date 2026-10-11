@@ -842,6 +842,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewImages(m.com, msg.images, msg.workingDir))
+	case exportReportsLoadedMsg:
+		// Drop a result for a session the user has already navigated
+		// away from while the fetch was in flight.
+		if msg.sessionID != m.currentSessionID() {
+			break
+		}
+		m.dialog.OpenDialog(dialog.NewReports(m.com, msg.reports, msg.workingDir))
 	case tpsComputedMsg:
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
@@ -1702,6 +1709,15 @@ type exportImagesLoadedMsg struct {
 	workingDir string
 }
 
+// exportReportsLoadedMsg carries a session's agent reports, collected
+// off the Update goroutine, so the "Export Report" picker dialog can be
+// opened with them once they arrive.
+type exportReportsLoadedMsg struct {
+	sessionID  string
+	reports    []agenttools.Report
+	workingDir string
+}
+
 // undoResultMsg carries the result of an executed undo, so its popped
 // text can be restored to the editor and the outcome reported.
 type undoResultMsg struct {
@@ -2540,15 +2556,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 				return util.ReportError(err)()
 			}
 
-			target := output
-			if target == "" || strings.HasSuffix(target, string(filepath.Separator)) {
-				target = filepath.Join(target, imageID+chat.ExtensionForMIME(img.MIMEType))
-			} else if info, statErr := os.Stat(target); statErr == nil && info.IsDir() {
-				target = filepath.Join(target, imageID+chat.ExtensionForMIME(img.MIMEType))
-			}
-			if !filepath.IsAbs(target) {
-				target = filepath.Join(workingDir, target)
-			}
+			target := chat.ResolveExportTarget(output, imageID+chat.ExtensionForMIME(img.MIMEType), workingDir)
 
 			outPath, err := chat.UniqueExportPath(target)
 			if err != nil {
@@ -2576,6 +2584,83 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			description,
 			[]commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}},
 			dialog.ActionExportImage{ImageID: msg.Image.ID},
+		)
+		argsDialog.SetValue("OUTPUT", defaultPath)
+		m.dialog.OpenDialog(argsDialog)
+	case dialog.ActionExportReport:
+		if msg.Report.ID == "" {
+			m.dialog.CloseDialog(dialog.CommandsID)
+			if m.session == nil {
+				cmds = append(cmds, util.ReportWarn("Open a session before exporting a report."))
+				break
+			}
+			sessionID := m.session.ID
+			cmds = append(cmds, func() tea.Msg {
+				msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
+				if err != nil {
+					return util.ReportError(err)()
+				}
+				reports := agenttools.ReportsFromMessages(m.com.Workspace, msgs)
+				if len(reports) == 0 {
+					return util.ReportWarn("No agent reports in this session")()
+				}
+
+				// The export always writes through this process's own
+				// filesystem, never the workspace's: in client-server
+				// mode Workspace.WorkingDir() names a path on the
+				// daemon host, which this client cannot write to and
+				// which may not even exist locally.
+				workingDir, err := os.Getwd()
+				if err != nil {
+					return util.ReportError(err)()
+				}
+
+				return exportReportsLoadedMsg{sessionID: sessionID, reports: reports, workingDir: workingDir}
+			})
+			break
+		}
+		m.dialog.CloseDialog(dialog.ArgumentsID)
+		report := msg.Report
+		output := msg.Output
+		cmds = append(cmds, func() tea.Msg {
+			// The export always writes through this process's own
+			// filesystem, never the workspace's: in client-server mode
+			// Workspace.WorkingDir() names a path on the daemon host,
+			// which this client cannot write to and which may not even
+			// exist locally.
+			workingDir, err := os.Getwd()
+			if err != nil {
+				return util.ReportError(err)()
+			}
+
+			target := chat.ResolveExportTarget(output, report.ID+".md", workingDir)
+
+			outPath, err := chat.UniqueExportPath(target)
+			if err != nil {
+				return util.ReportError(err)()
+			}
+			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+				return util.ReportError(err)()
+			}
+			if err := os.WriteFile(outPath, []byte(chat.ReportToMarkdown(report)), 0o644); err != nil {
+				return util.ReportError(err)()
+			}
+
+			return util.ReportInfo("Exported report to " + outPath)()
+		})
+	case dialog.ActionSelectExportReport:
+		m.dialog.CloseDialog(dialog.ReportsID)
+		defaultPath := filepath.Join(msg.WorkingDir, msg.Report.ID+".md")
+		description := "Writes the agent report to a Markdown file on disk."
+		if task := strings.Join(strings.Fields(msg.Report.Task), " "); task != "" {
+			description = fmt.Sprintf("Output path for %q.", ansi.Truncate(task, 60, "…"))
+		}
+		argsDialog := dialog.NewArguments(
+			m.com,
+			"Export Report",
+			description,
+			[]commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}},
+			dialog.ActionExportReport{Report: msg.Report},
 		)
 		argsDialog.SetValue("OUTPUT", defaultPath)
 		m.dialog.OpenDialog(argsDialog)

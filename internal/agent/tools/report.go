@@ -25,12 +25,50 @@ const reportIDPrefix = "rpt_"
 // through a compaction summary by hand.
 const reportIDHashLen = 8
 
+// reportBannerOpen starts the banner that ReportBanner puts in front of a
+// dispatch's output, and that Report.Body looks for to take it off again.
+const reportBannerOpen = "[report id="
+
+// reportBannerEnd closes the banner. The banner never contains a blank
+// line itself, because the task is quoted and so has no raw newlines.
+const reportBannerEnd = "\n\n"
+
 // Report is one completed agent dispatch and the text it produced.
 type Report struct {
 	ID        string
 	AgentType string
 	Task      string
 	Content   string
+}
+
+// Body returns the text the dispatch produced, without the banner that
+// ReportBanner put in front of it. Content stored before the banner
+// existed has none and is returned as is.
+func (r Report) Body() string {
+	if !strings.HasPrefix(r.Content, reportBannerOpen+r.ID) {
+		return r.Content
+	}
+	_, body, found := strings.Cut(r.Content, reportBannerEnd)
+	if !found {
+		return r.Content
+	}
+	return body
+}
+
+// ReportBanner is the header that stamps a dispatch's output with the
+// handle that loads it back after a compaction drops it from the
+// conversation.
+func ReportBanner(reportID, agentType, task string) string {
+	var banner strings.Builder
+	fmt.Fprintf(&banner, "%s%s agent=%s", reportBannerOpen, reportID, agentType)
+	if task != "" {
+		fmt.Fprintf(&banner, " task=%q", task)
+	}
+	banner.WriteString("]\nStored in full. If a later compaction drops this text, call ")
+	banner.WriteString(toolnames.LoadReport)
+	banner.WriteString(" with this id to get it back verbatim. Do not quote this banner back to the user.")
+	banner.WriteString(reportBannerEnd)
+	return banner.String()
 }
 
 // agentCallInput mirrors the fields of the agent tool's parameters that
@@ -41,11 +79,18 @@ type agentCallInput struct {
 	SubagentType string `json:"subagent_type"`
 }
 
+// AgentToolSessionNamer names the sub-session of an agent dispatch. Both
+// the session service and a UI workspace satisfy it, so either can derive
+// report handles.
+type AgentToolSessionNamer interface {
+	CreateAgentToolSessionID(messageID, toolCallID string) string
+}
+
 // ReportID derives the stable handle for the dispatch made by toolCallID
 // on messageID. It hashes the sub-session id so the handle changes
 // whenever the dispatch it names does, and stays the same across
 // restarts.
-func ReportID(sessions session.Service, messageID, toolCallID string) string {
+func ReportID(sessions AgentToolSessionNamer, messageID, toolCallID string) string {
 	hash := session.HashID(sessions.CreateAgentToolSessionID(messageID, toolCallID))
 	return reportIDPrefix + hash[:reportIDHashLen]
 }
@@ -59,7 +104,12 @@ func CollectReports(ctx context.Context, sessions session.Service, messages mess
 	if err != nil {
 		return nil, fmt.Errorf("list messages: %w", err)
 	}
+	return ReportsFromMessages(sessions, msgs), nil
+}
 
+// ReportsFromMessages pairs each agent dispatch in msgs with its
+// successful, non-empty result, in conversation order.
+func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message) []Report {
 	dispatches := make(map[string]Report)
 	var order []string
 	for _, msg := range msgs {
@@ -100,7 +150,7 @@ func CollectReports(ctx context.Context, sessions session.Service, messages mess
 			reports = append(reports, report)
 		}
 	}
-	return reports, nil
+	return reports
 }
 
 type LoadReportParams struct {

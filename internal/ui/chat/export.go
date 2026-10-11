@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -470,4 +471,36 @@ func UniqueExportPath(targetPath string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("chat: could not find a unique export path for %q", targetPath)
+}
+
+// ResolveExportTarget turns the path a user typed into the absolute file
+// path to write. An empty path, a trailing separator, or an existing
+// directory all name a directory, which defaultName is placed in; a
+// relative result is anchored at workingDir.
+func ResolveExportTarget(output, defaultName, workingDir string) string {
+	target := output
+	if target == "" || strings.HasSuffix(target, string(filepath.Separator)) {
+		target = filepath.Join(target, defaultName)
+	} else if info, err := os.Stat(target); err == nil && info.IsDir() {
+		target = filepath.Join(target, defaultName)
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(workingDir, target)
+	}
+	return target
+}
+
+// ReportToMarkdown renders one agent report as a standalone Markdown
+// document: a title and metadata header followed by the report body,
+// without the banner that is only meant for the model.
+func ReportToMarkdown(r tools.Report) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\n\n- Agent: %s\n", r.ID, r.AgentType)
+	if task := strings.Join(strings.Fields(r.Task), " "); task != "" {
+		fmt.Fprintf(&b, "- Task: %s\n", task)
+	}
+	b.WriteString("\n")
+	b.WriteString(strings.TrimRight(r.Body(), "\n"))
+	b.WriteString("\n")
+	return b.String()
 }

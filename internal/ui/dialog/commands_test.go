@@ -130,6 +130,18 @@ func TestNewCommands_SessionGatedCommands(t *testing.T) {
 	require.Contains(t, ids, "show_cache")
 }
 
+// TestNewCommands_ExportReportNeedsASession pins that the report
+// export only appears once a session exists to hold reports.
+func TestNewCommands_ExportReportNeedsASession(t *testing.T) {
+	t.Parallel()
+
+	withSession := visibleCommandIDs(newTestCommands(t, nil, "sess-1", true, nil, nil, nil))
+	require.Contains(t, withSession, "export_report")
+
+	withoutSession := visibleCommandIDs(newTestCommands(t, nil, "", false, nil, nil, nil))
+	require.NotContains(t, withoutSession, "export_report", "no session is open yet")
+}
+
 // TestDefaultCommands_ActiveAgentGating pins which of the thinking
 // toggle and the variant selector the menu offers, since they cover
 // overlapping ground: a model that reasons without named levels gets

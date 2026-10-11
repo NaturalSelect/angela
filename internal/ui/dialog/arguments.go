@@ -257,6 +257,12 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 					}
 					action.Output = args["OUTPUT"]
 					return action
+				case ActionExportReport:
+					// The picker-driven step 2 only has an OUTPUT field;
+					// the Report was already set by the picker and must
+					// survive here.
+					action.Output = args["OUTPUT"]
+					return action
 				}
 			}
 			a.focusInput(a.focused + 1)

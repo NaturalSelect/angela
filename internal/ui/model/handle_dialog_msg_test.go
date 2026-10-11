@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -18,6 +19,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
@@ -362,6 +364,121 @@ func TestHandleDialogMsg_ActionSelectExportImage_OpensArgumentsWithDefault(t *te
 	argsDialog, ok := m.dialog.Dialog(dialog.ArgumentsID).(*dialog.Arguments)
 	require.True(t, ok)
 	require.Equal(t, filepath.Join("/work", "img_1a2b3c4d5e6f.png"), argsDialog.Value("OUTPUT"))
+}
+
+// expectAgentToolSessionIDs makes the mock workspace name sub-sessions
+// the way the real one does, which report ids are derived from.
+func expectAgentToolSessionIDs(ws *MockWorkspace) {
+	ws.EXPECT().CreateAgentToolSessionID(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(messageID, toolCallID string) string { return messageID + "$$" + toolCallID }).
+		AnyTimes()
+}
+
+// agentDispatchMessages returns the assistant turn that dispatches one
+// agent and the tool turn carrying its output, plus the report id the
+// pair collects under.
+func agentDispatchMessages(ws *MockWorkspace, output string) ([]message.Message, string) {
+	const messageID, callID = "msg-1", "call-1"
+	input := `{"subagent_type":"explore","description":"find the parser"}`
+	msgs := []message.Message{
+		{
+			ID:    messageID,
+			Role:  message.Assistant,
+			Parts: []message.ContentPart{message.ToolCall{ID: callID, Name: toolnames.Agent, Input: input, Finished: true}},
+		},
+		{
+			ID:    "msg-2",
+			Role:  message.Tool,
+			Parts: []message.ContentPart{message.ToolResult{ToolCallID: callID, Name: toolnames.Agent, Content: output}},
+		},
+	}
+	return msgs, agenttools.ReportID(ws, messageID, callID)
+}
+
+// TestHandleDialogMsg_ActionExportReport_EmptyIDOpensPicker verifies
+// that picking "Export Report" from the command palette collects the
+// current session's reports and, once they land, opens the picker
+// dialog rather than the free-text arguments dialog.
+func TestHandleDialogMsg_ActionExportReport_EmptyIDOpensPicker(t *testing.T) {
+	t.Parallel()
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	expectAgentToolSessionIDs(ws)
+	msgs, _ := agentDispatchMessages(ws, "parser lives in parse.go")
+	ws.EXPECT().ListMessages(gomock.Any(), "s1").Return(msgs, nil)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionExportReport{})
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the picker opens")
+	require.NotNil(t, cmd)
+
+	m.Update(cmd())
+	require.True(t, m.dialog.ContainsDialog(dialog.ReportsID))
+}
+
+// TestHandleDialogMsg_ActionExportReport_NoSession verifies that picking
+// "Export Report" with no active session reports a warning instead of
+// asking the workspace for anything.
+func TestHandleDialogMsg_ActionExportReport_NoSession(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+	m.session = nil
+
+	cmd := m.handleDialogMsg(dialog.ActionExportReport{})
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID))
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeWarn, info.Type)
+}
+
+// TestHandleDialogMsg_ActionExportReport_NoReportsInSession verifies
+// that a session that never dispatched an agent reports a warning
+// instead of opening an empty picker.
+func TestHandleDialogMsg_ActionExportReport_NoReportsInSession(t *testing.T) {
+	t.Parallel()
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	expectAgentToolSessionIDs(ws)
+	ws.EXPECT().ListMessages(gomock.Any(), "s1").Return([]message.Message{
+		{ID: "msg-1", Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "hello"}}},
+	}, nil)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionExportReport{})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeWarn, info.Type)
+	require.False(t, m.dialog.ContainsDialog(dialog.ReportsID))
+}
+
+// TestHandleDialogMsg_ActionSelectExportReport_OpensArgumentsWithDefault
+// verifies that picking a report opens the output-path step with the
+// field already pre-filled with a Markdown path under the given working
+// directory.
+func TestHandleDialogMsg_ActionSelectExportReport_OpensArgumentsWithDefault(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+
+	report := agenttools.Report{ID: "rpt_1a2b3c4d", AgentType: "explore", Task: "find the parser"}
+	cmd := m.handleDialogMsg(dialog.ActionSelectExportReport{Report: report, WorkingDir: "/work"})
+	require.Nil(t, cmd)
+	require.True(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
+
+	argsDialog, ok := m.dialog.Dialog(dialog.ArgumentsID).(*dialog.Arguments)
+	require.True(t, ok)
+	require.Equal(t, filepath.Join("/work", "rpt_1a2b3c4d.md"), argsDialog.Value("OUTPUT"))
 }
 
 // TestHandleDialogMsg_ActionToggleMCPServer pins that toggling leaves
@@ -1244,4 +1361,49 @@ func TestHandleDialogMsg_ActionExportImage_WritesToLocalWorkingDirectory(t *test
 	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
 	require.NoError(t, err)
 	require.Equal(t, img.Data, data)
+}
+
+// TestHandleDialogMsg_ActionExportReport_WritesToLocalWorkingDirectory
+// mirrors the image export test above: the report must be written
+// relative to this test process's own current directory, as Markdown with
+// the model-facing banner stripped. This does not run in parallel because
+// it changes the process's working directory.
+func TestHandleDialogMsg_ActionExportReport_WritesToLocalWorkingDirectory(t *testing.T) {
+	ws := NewMockWorkspace(gomock.NewController(t))
+	expectAgentToolSessionIDs(ws)
+
+	const body = "parser lives in parse.go"
+	_, id := agentDispatchMessages(ws, body)
+	report := agenttools.Report{
+		ID:        id,
+		AgentType: "explore",
+		Task:      "find the parser",
+		Content:   agenttools.ReportBanner(id, "explore", "find the parser") + body,
+	}
+
+	m := newHandleDialogUI(t, ws)
+
+	dir := t.TempDir()
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(origWd)) })
+
+	cmd := m.handleDialogMsg(dialog.ActionExportReport{Report: report})
+	require.NotNil(t, cmd)
+	msg := cmd()
+
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "export must report success, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeInfo, info.Type)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the export must land in this process's own working directory, not a remote workspace path")
+	require.Equal(t, id+".md", entries[0].Name())
+
+	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	require.NoError(t, err)
+	require.Contains(t, string(data), body)
+	require.NotContains(t, string(data), "Stored in full", "the banner is for the model and must not be exported")
 }

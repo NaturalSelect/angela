@@ -862,11 +862,8 @@ func (s *permissionService) withinScope(access Access) (string, bool) {
 		if access.Path == "" {
 			return "reads state Angela already holds", true
 		}
-		resolved := resolvePath(access.Path, s.workingDir)
-		for _, root := range s.readRoots {
-			if withinResolvedDir(resolved, root) {
-				return "reads inside " + root, true
-			}
+		if root, ok := s.readRootOf(resolvePath(access.Path, s.workingDir)); ok {
+			return "reads inside " + root, true
 		}
 		return "", false
 
@@ -875,26 +872,38 @@ func (s *permissionService) withinScope(access Access) (string, bool) {
 			return "", false
 		}
 		// A command is only safe when every link in it is read-only and
-		// touches nothing outside the working directory — starting with
-		// the directory it runs in. Operands alone do not settle that:
-		// a command carrying none of them still reads whatever sits
-		// around it, so `git status` pointed at another checkout
-		// reports on a project the user never opened.
+		// touches nothing outside the read roots — starting with the
+		// directory it runs in, which must be the working directory
+		// itself. Operands alone do not settle that: a command carrying
+		// none of them still reads whatever sits around it, so
+		// `git status` pointed at another checkout reports on a project
+		// the user never opened.
 		cwd := s.commandDir(access)
 		if !withinResolvedDir(resolvePath(cwd, s.workingDir), s.workingDir) {
 			return "", false
 		}
 		inside := func(path string) bool {
-			return withinResolvedDir(resolvePath(path, cwd), s.workingDir)
+			_, ok := s.readRootOf(resolvePath(path, cwd))
+			return ok
 		}
 		if shellscan.Scan(access.Command, cwd).Safe(inside) {
-			return "read-only command inside the working directory", true
+			return "read-only command inside the read roots", true
 		}
 		return "", false
 
 	default:
 		return "", false
 	}
+}
+
+// readRootOf returns the read root that contains the resolved path.
+func (s *permissionService) readRootOf(resolved string) (string, bool) {
+	for _, root := range s.readRoots {
+		if withinResolvedDir(resolved, root) {
+			return root, true
+		}
+	}
+	return "", false
 }
 
 // commandDir is the directory a command runs in, which is the path the

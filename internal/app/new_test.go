@@ -1,16 +1,23 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
+	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openaicompat"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -61,12 +68,19 @@ func newUnconfiguredStore(dataDir string) *config.ConfigStore {
 // real coordinator without ever making network I/O. It mirrors the recipe
 // internal/agent/agenttest.NewCoordinator uses.
 func newOfflineConfiguredStore(dataDir string) *config.ConfigStore {
+	return newConfiguredStore(dataDir, "http://127.0.0.1:0/v1")
+}
+
+// newConfiguredStore is newOfflineConfiguredStore with the provider's base
+// URL left to the caller, for tests that serve the model from a local
+// httptest server.
+func newConfiguredStore(dataDir, baseURL string) *config.ConfigStore {
 	providers := csync.NewMap[string, config.ProviderConfig]()
 	providers.Set("test-openai-compat", config.ProviderConfig{
 		ID:      "test-openai-compat",
 		Name:    "Test",
 		Type:    openaicompat.Name,
-		BaseURL: "http://127.0.0.1:0/v1",
+		BaseURL: baseURL,
 		APIKey:  "test",
 		Models:  []config.ProviderModel{{Model: catwalk.Model{ID: "test-model", DefaultMaxTokens: 4096}}},
 	})
@@ -218,6 +232,152 @@ func TestApp_RunNonInteractive_InvalidModelOverride(t *testing.T) {
 
 	_, err = application.RunNonInteractive(ctx, io.Discard, "prompt", "does-not-exist-model", "", true, "", false)
 	require.ErrorContains(t, err, "failed to override models")
+}
+
+// newModelServer serves one chat-completions SSE reply carrying text for
+// every request. When started is non-nil it is closed once the first
+// request arrives, and every reply is held back until the request is
+// cancelled or the test ends, which lets a test cancel a run that is
+// mid-flight.
+func newModelServer(t *testing.T, text string, started chan<- struct{}) *httptest.Server {
+	t.Helper()
+	var once sync.Once
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if started != nil {
+			once.Do(func() { close(started) })
+			// NOTE: The session title is requested on a context the run's
+			// cancel does not reach, so that request outlives the run and
+			// must be let go for the server to close.
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+			return
+		}
+		encoded, err := json.Marshal(text)
+		require.NoError(t, err)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n\n")
+		fmt.Fprintf(w, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", encoded)
+		fmt.Fprint(w, `data: {"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`+"\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(func() {
+		close(release)
+		server.Close()
+	})
+	return server
+}
+
+// newRunApp builds an App whose coder agent talks to baseURL, the way
+// `angela run` does before RunNonInteractive.
+func newRunApp(t *testing.T, baseURL string) *App {
+	t.Helper()
+	stubUpdateDefault(t)
+
+	dataDir := t.TempDir()
+	conn := mustConnectTestDB(t, dataDir)
+	store := newConfiguredStore(dataDir, baseURL)
+	// NOTE: Loading a real config fills in the default attribution, which
+	// the Bash tool's description needs; the test store skips that step.
+	store.Config().Options.Attribution = &config.Attribution{
+		TrailerStyle:  config.TrailerStyleAssistedBy,
+		GeneratedWith: true,
+	}
+	application, err := New(t.Context(), conn, store, skills.NewManager(nil, nil, nil))
+	require.NoError(t, err)
+	t.Cleanup(application.Shutdown)
+	return application
+}
+
+// TestApp_RunNonInteractive_ReturnsTheFinalResponse drives the default,
+// in-process path of `angela run` against a fake model and checks the text
+// it hands back, which is what --output writes to its file.
+func TestApp_RunNonInteractive_ReturnsTheFinalResponse(t *testing.T) {
+	server := newModelServer(t, "the final answer", nil)
+	application := newRunApp(t, server.URL+"/v1")
+
+	var streamed bytes.Buffer
+	final, err := application.RunNonInteractive(t.Context(), &streamed, "prompt", "", "", true, "", false)
+	require.NoError(t, err)
+	require.Equal(t, "the final answer", final)
+	require.Contains(t, streamed.String(), "the final answer", "the conversation still streams to the output writer")
+}
+
+// TestApp_RunNonInteractive_CancelledRunIsAnError pins that a run cut short
+// reports an error instead of empty text. An empty result with no error
+// would let --output empty its file and exit 0.
+func TestApp_RunNonInteractive_CancelledRunIsAnError(t *testing.T) {
+	started := make(chan struct{})
+	server := newModelServer(t, "", started)
+	application := newRunApp(t, server.URL+"/v1")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		<-started
+		cancel()
+	}()
+
+	final, err := application.RunNonInteractive(ctx, io.Discard, "prompt", "", "", true, "", false)
+	require.Error(t, err)
+	require.Empty(t, final)
+}
+
+// TestFinalResponseText covers how a coordinator outcome becomes the text
+// of a run's final response.
+func TestFinalResponseText(t *testing.T) {
+	t.Parallel()
+
+	result := func(text string) *fantasy.AgentResult {
+		return &fantasy.AgentResult{Response: fantasy.Response{
+			Content: fantasy.ResponseContent{fantasy.TextContent{Text: text}},
+		}}
+	}
+
+	t.Run("text of the final response", func(t *testing.T) {
+		t.Parallel()
+		got, err := finalResponseText(result("done"), nil)
+		require.NoError(t, err)
+		require.Equal(t, "done", got)
+	})
+
+	t.Run("a response without text is an empty result, not an error", func(t *testing.T) {
+		t.Parallel()
+		got, err := finalResponseText(&fantasy.AgentResult{}, nil)
+		require.NoError(t, err)
+		require.Empty(t, got)
+	})
+
+	t.Run("cancellation", func(t *testing.T) {
+		t.Parallel()
+		for name, cancelled := range map[string]error{
+			"context canceled":  context.Canceled,
+			"wrapped":           fmt.Errorf("stream: %w", context.Canceled),
+			"request cancelled": agent.ErrRequestCancelled,
+		} {
+			got, err := finalResponseText(result("partial"), cancelled)
+			require.ErrorIs(t, err, agent.ErrRequestCancelled, name)
+			require.Empty(t, got, name)
+		}
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		t.Parallel()
+		boom := errors.New("boom")
+		got, err := finalResponseText(nil, boom)
+		require.ErrorIs(t, err, boom)
+		require.ErrorContains(t, err, "agent processing failed")
+		require.Empty(t, got)
+	})
+
+	t.Run("no result", func(t *testing.T) {
+		t.Parallel()
+		got, err := finalResponseText(nil, nil)
+		require.ErrorContains(t, err, "without a result")
+		require.Empty(t, got)
+	})
 }
 
 // TestNew_SpilledToolOutputIsReadableWithoutPrompt pins the wiring in New:

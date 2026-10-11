@@ -331,6 +331,70 @@ func TestPermissionService_SafeCommandNeedsNoPrompt(t *testing.T) {
 	assert.True(t, decision.Allowed(), "a read-only command should not prompt")
 }
 
+// TestPermissionService_ReadOnlyCommandsOnReadRootsNeedNoPrompt pins that
+// a read-only command may touch a read root outside the working
+// directory, such as the folder spilled tool output lives in, while
+// anything that writes there or reaches elsewhere still asks.
+func TestPermissionService_ReadOnlyCommandsOnReadRootsNeedNoPrompt(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	spill := t.TempDir()
+	elsewhere := t.TempDir()
+	service := NewPermissionService(dir, ModeManual, nil, spill)
+	spilled := filepath.Join(spill, "s1", "output-1.txt")
+
+	allowed := map[string]string{
+		"byte range": "tail -c +60001 " + spilled + " | head -c 2000",
+		"pattern":    "grep -oE '.{0,200}foo.{0,200}' " + spilled,
+		"plain read": "head -n 5 " + spilled,
+	}
+	for name, command := range allowed {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			decision := gate(t.Context(), service, "s1", "c-"+name, Access{
+				Tool: "bash", Action: ActionExecute, Command: command, Path: dir,
+			})
+			assert.True(t, decision.Allowed(), "a read-only command on a read root should not prompt")
+		})
+	}
+
+	asks := map[string]string{
+		"write to the root":     "tee " + spilled + " < /dev/null",
+		"remove from the root":  "rm " + spilled,
+		"read elsewhere":        "cat " + filepath.Join(elsewhere, "secret"),
+		"root plus elsewhere":   "cat " + spilled + " " + filepath.Join(elsewhere, "secret"),
+		"pipe into elsewhere":   "cat " + spilled + " | tee " + filepath.Join(elsewhere, "copy"),
+		"recursive over a root": "grep -r foo " + spill,
+	}
+	for name, command := range asks {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, ok := service.(*permissionService).withinScope(Access{
+				Tool: "bash", Action: ActionExecute, Command: command, Path: dir,
+			})
+			assert.False(t, ok, "this must still reach the user")
+		})
+	}
+}
+
+// TestPermissionService_CommandMustRunInTheWorkingDirectory pins that a
+// read root widens what a command may read, not where it may run: a
+// command started inside a read root is outside the directory the user
+// pointed Angela at.
+func TestPermissionService_CommandMustRunInTheWorkingDirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	spill := t.TempDir()
+	service := NewPermissionService(dir, ModeManual, nil, spill).(*permissionService)
+
+	_, ok := service.withinScope(Access{
+		Tool: "bash", Action: ActionExecute, Command: "ls", Path: spill,
+	})
+	assert.False(t, ok)
+}
+
 // TestPermissionService_ReadScope pins that reading inside the
 // working directory is free while reading outside it is not.
 func TestPermissionService_ReadScope(t *testing.T) {

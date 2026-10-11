@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -157,7 +158,10 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 
 	permissionMode := store.Overrides().PermissionMode
 
-	permissions := permission.NewPermissionService(store.WorkingDir(), permissionMode, policy, cfg.Options.SkillsPaths...)
+	// The model is told to Read spilled tool output by path, which must not
+	// prompt even when the data directory sits outside the working directory.
+	readRoots := append(slices.Clone(cfg.Options.SkillsPaths), agent.ToolOutputRoot(cfg.Options.DataDirectory))
+	permissions := permission.NewPermissionService(store.WorkingDir(), permissionMode, policy, readRoots...)
 	permissions.SetYoloSkipMerge(store.Overrides().YoloMerge)
 	if !store.Overrides().NoVSCodeDiff {
 		permissions.SetEditorReviewer(editorapproval.VSCodeMCP{

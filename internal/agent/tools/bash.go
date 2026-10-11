@@ -244,7 +244,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 					metadata := BashResponseMetadata{
 						StartTime:        startTime.UnixMilli(),
 						EndTime:          time.Now().UnixMilli(),
-						Output:           stdout,
+						Output:           TruncateOutput(stdout),
 						Description:      params.Description,
 						Background:       params.RunInBackground,
 						WorkingDirectory: bgShell.WorkingDir,
@@ -329,7 +329,7 @@ func NewBashTool(workingDir string, attribution *config.Attribution, modelName s
 				metadata := BashResponseMetadata{
 					StartTime:        startTime.UnixMilli(),
 					EndTime:          time.Now().UnixMilli(),
-					Output:           stdout,
+					Output:           TruncateOutput(stdout),
 					Description:      params.Description,
 					Background:       params.RunInBackground,
 					WorkingDirectory: bgShell.WorkingDir,
@@ -361,9 +361,6 @@ func formatOutput(stdout, stderr string, execErr error) string {
 	interrupted := shell.IsInterrupt(execErr)
 	exitCode := shell.ExitCode(execErr)
 
-	stdout = truncateOutput(stdout)
-	stderr = truncateOutput(stderr)
-
 	errorMessage := stderr
 	if errorMessage == "" && execErr != nil {
 		errorMessage = execErr.Error()
@@ -394,8 +391,13 @@ func formatOutput(stdout, stderr string, execErr error) string {
 	return stdout
 }
 
+// ExceedsOutputLimit reports whether TruncateOutput would cut content.
+func ExceedsOutputLimit(content string) bool {
+	return ansi.StringWidth(content) > MaxOutputLength
+}
+
 func TruncateOutput(content string) string {
-	if ansi.StringWidth(content) <= MaxOutputLength {
+	if !ExceedsOutputLimit(content) {
 		return content
 	}
 
@@ -405,10 +407,6 @@ func TruncateOutput(content string) string {
 
 	truncatedLinesCount := max(strings.Count(content, "\n")-strings.Count(start, "\n")-strings.Count(end, "\n"), 0)
 	return fmt.Sprintf("%s\n\n... [%d lines truncated] ...\n\n%s", start, truncatedLinesCount, end)
-}
-
-func truncateOutput(content string) string {
-	return TruncateOutput(content)
 }
 
 func normalizeWorkingDir(path string) string {

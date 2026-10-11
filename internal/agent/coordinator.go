@@ -1091,11 +1091,14 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 		return strings.Compare(a.Info().Name, b.Info().Name)
 	})
 
-	// The wrappers compose outside in as safety -> hooks -> permissions ->
-	// tool. A hook must run first so its allow decision is already on the
-	// context when the gate looks for one, and the gate must run before
-	// the tool so a tool cannot forget to ask.
+	// The wrappers compose outside in as safety -> hooks -> spill ->
+	// permissions -> tool. A hook must run first so its allow decision is
+	// already on the context when the gate looks for one, and the gate must
+	// run before the tool so a tool cannot forget to ask. Spill stays
+	// outside the gate because the gate type-asserts on the real tool.
 	filteredTools = wrapToolsWithPermissions(filteredTools, c.permissions, c.cfg.WorkingDir(), agent.AllowYoloMerge)
+
+	filteredTools = wrapToolsWithSpill(filteredTools, ToolOutputRoot(c.cfg.Config().Options.DataDirectory))
 
 	// Every tool call runs through the user's PreToolUse hooks, including
 	// the ones a sub-agent makes. A delegated `bash` is still a bash
@@ -1133,7 +1136,7 @@ func (c *coordinator) shouldEnableQuestionTool(agent config.Agent, isSubAgent bo
 // triggered a large fetch never created the directory, so this is a
 // no-op for them.
 func removeWebFetchScratch(dataDirectory, sessionID string) {
-	dir, err := tools.WebFetchScratchDir(filepath.Join(dataDirectory, "webfetch"), sessionID)
+	dir, err := tools.SessionScratchDir(filepath.Join(dataDirectory, "webfetch"), sessionID)
 	if err != nil {
 		slog.Warn("Refusing to remove web_fetch scratch directory", "session", sessionID, "error", err)
 		return

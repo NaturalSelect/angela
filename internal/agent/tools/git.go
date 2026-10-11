@@ -73,7 +73,7 @@ func NewGitTool(workingDir string) fantasy.AgentTool {
 			)
 
 			out, err := cmd.CombinedOutput()
-			output := truncateOutput(string(out))
+			output := string(out)
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				if output != "" {
 					output += "\n"

@@ -34,8 +34,6 @@ List every report whose content may still be needed for the remaining work — a
 
 Copy each id character by character. Never invent, abbreviate, or reformat one. Leave a report out only when you are confident this summary already captures everything it said. If none are still relevant, write "None".
 
-Also list, verbatim, every saved tool output path (a file named like `.../tool-output/<session>/output-*.txt`) that the remaining work may still need to Read or Grep. Tool output that was cut from the conversation can only be recovered from that file.
-
 ## 7. All User Messages
 
 List ALL user messages that are not tool results. These are critical for understanding the user's feedback and changing intent. Preserve any security-relevant instructions or constraints verbatim so they remain in effect after compaction.

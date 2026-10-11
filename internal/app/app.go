@@ -355,13 +355,15 @@ func (app *App) resolveSession(ctx context.Context, continueSessionID string, us
 }
 
 // RunNonInteractive runs the application in non-interactive mode with the
-// given prompt, printing to stdout.
-func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt, largeModel, smallModel string, hideSpinner bool, continueSessionID string, useLast bool) error {
+// given prompt, streaming every assistant message to output. It returns the
+// text of the run's final response, which is empty when the run was
+// cancelled.
+func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt, largeModel, smallModel string, hideSpinner bool, continueSessionID string, useLast bool) (string, error) {
 	slog.Info("Running in non-interactive mode")
 
 	// Re-initialize the coder agent without interactive-only tools.
 	if err := app.InitCoderAgentNonInteractive(ctx); err != nil {
-		return fmt.Errorf("failed to reinitialize agent for non-interactive mode: %w", err)
+		return "", fmt.Errorf("failed to reinitialize agent for non-interactive mode: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -372,7 +374,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 		var err error
 		mainOverride, err = app.applyModelOverrides(largeModel, smallModel)
 		if err != nil {
-			return fmt.Errorf("failed to override models: %w", err)
+			return "", fmt.Errorf("failed to override models: %w", err)
 		}
 	}
 
@@ -412,7 +414,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	// goes through); doing it here too surfaces the failure before we create a
 	// session, and lets the UpdateModels below see every MCP tool.
 	if err := mcp.WaitForInit(ctx); err != nil {
-		return fmt.Errorf("failed to wait for MCP initialization: %w", err)
+		return "", fmt.Errorf("failed to wait for MCP initialization: %w", err)
 	}
 
 	// force update of agent models before running so mcp tools are loaded
@@ -422,7 +424,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 
 	sess, err := app.resolveSession(ctx, continueSessionID, useLast)
 	if err != nil {
-		return fmt.Errorf("failed to create session for non-interactive mode: %w", err)
+		return "", fmt.Errorf("failed to create session for non-interactive mode: %w", err)
 	}
 
 	if continueSessionID != "" || useLast {
@@ -438,7 +440,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	if mainOverride != nil {
 		edit := config.ActiveAgentEdit{Model: mainOverride}
 		if _, err := app.AgentCoordinator.EditActiveAgent(ctx, sess.ID, edit); err != nil {
-			return fmt.Errorf("failed to apply the model override: %w", err)
+			return "", fmt.Errorf("failed to apply the model override: %w", err)
 		}
 	}
 
@@ -497,11 +499,14 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 			if result.err != nil {
 				if errors.Is(result.err, context.Canceled) || errors.Is(result.err, agent.ErrRequestCancelled) {
 					slog.Debug("Non-interactive: agent processing cancelled", "session_id", sess.ID)
-					return nil
+					return "", nil
 				}
-				return fmt.Errorf("agent processing failed: %w", result.err)
+				return "", fmt.Errorf("agent processing failed: %w", result.err)
 			}
-			return nil
+			if result.result == nil {
+				return "", nil
+			}
+			return result.result.Response.Content.Text(), nil
 
 		case event := <-messageEvents:
 			msg := event.Payload
@@ -513,7 +518,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 
 				if len(content) < readBytes {
 					slog.Error("Non-interactive: message content is shorter than read bytes", "message_length", len(content), "read_bytes", readBytes)
-					return fmt.Errorf("message content is shorter than read bytes: %d < %d", len(content), readBytes)
+					return "", fmt.Errorf("message content is shorter than read bytes: %d < %d", len(content), readBytes)
 				}
 
 				part := content[readBytes:]
@@ -532,7 +537,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 
 		case <-ctx.Done():
 			stopSpinner()
-			return ctx.Err()
+			return "", ctx.Err()
 		}
 	}
 }

@@ -48,7 +48,7 @@ angela run "What is this code doing?" <<< prrr.go
 # Redirect output to a file
 angela run "Generate a hot README for this project" > MY_HOT_README.md
 
-# Write the result to a file instead of stdout
+# Write only the final response to a file; stdout still streams everything
 angela run --output MY_HOT_README.md "Generate a hot README for this project"
 
 # Run in quiet mode (hide the spinner)
@@ -104,13 +104,17 @@ angela run --continue "Follow up on your last response"
 			return fmt.Errorf("no prompt provided")
 		}
 
-		// NOTE: Opened before --cwd takes effect, so a relative path
-		// resolves against the invoking directory like a shell redirect.
-		out, closeOut, err := openRunOutput(outputPath)
-		if err != nil {
-			return err
+		// NOTE: Created before the run so an unwritable path fails fast
+		// instead of after a long run, and opened before --cwd takes effect
+		// so a relative path resolves like a shell redirect.
+		var resultFile *os.File
+		if outputPath != "" {
+			resultFile, err = os.Create(outputPath)
+			if err != nil {
+				return fmt.Errorf("failed to open output file: %w", err)
+			}
+			defer func() { retErr = errors.Join(retErr, resultFile.Close()) }()
 		}
-		defer func() { retErr = errors.Join(retErr, closeOut()) }()
 
 		event.SetNonInteractive(true)
 
@@ -151,7 +155,8 @@ angela run --continue "Follow up on your last response"
 				logToStderr(debug)
 			}
 
-			return runNonInteractive(ctx, c, ws, out, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
+			final, err := runNonInteractive(ctx, c, ws, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
+			return saveRunResult(resultFile, final, err)
 		}
 
 		ws, cleanup, err := setupLocalWorkspace(cmd)
@@ -180,14 +185,15 @@ angela run --continue "Follow up on your last response"
 			sessionID = sess.ID
 		}
 
-		return appWs.App().RunNonInteractive(ctx, out, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
+		final, err := appWs.App().RunNonInteractive(ctx, os.Stdout, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
+		return saveRunResult(resultFile, final, err)
 	},
 }
 
 func init() {
 	runCmd.Flags().BoolP("quiet", "q", false, "Hide spinner")
 	runCmd.Flags().BoolP("verbose", "v", false, "Show logs on stderr; combine with --debug for debug level")
-	runCmd.Flags().StringP("output", "o", "", "Write the result to this file instead of stdout")
+	runCmd.Flags().StringP("output", "o", "", "Write only the final response to this file; stdout still streams every message")
 	runCmd.Flags().StringP("model", "m", "", "Model to use. Accepts 'model' or 'provider/model' to disambiguate models with the same name across providers")
 	runCmd.Flags().String("small-model", "", "Small model to use. If not provided, uses the default small model for the provider")
 	runCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
@@ -196,15 +202,22 @@ func init() {
 	addSandboxFlags(runCmd)
 }
 
-func openRunOutput(path string) (io.Writer, func() error, error) {
-	if path == "" {
-		return os.Stdout, func() error { return nil }, nil
+// saveRunResult writes a successful run's final response to f. A failed
+// run leaves the already-truncated file empty, so a stale result from an
+// earlier run is never mistaken for this one. A nil f means --output was
+// not given.
+func saveRunResult(f *os.File, final string, runErr error) error {
+	if runErr != nil || f == nil {
+		return runErr
 	}
-	f, err := os.Create(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open output file: %w", err)
+	final = strings.TrimSpace(final)
+	if final == "" {
+		return nil
 	}
-	return f, f.Close, nil
+	if _, err := f.WriteString(final + "\n"); err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+	return nil
 }
 
 // logToStderr sends logs to stderr, where a headless run's stdout is
@@ -222,17 +235,17 @@ func logToStderr(debug bool) {
 }
 
 // runNonInteractive executes the agent via the server and streams output
-// to out.
+// to stdout. It returns the run's final response text, which is empty when
+// the run was cancelled or ended without one.
 func runNonInteractive(
 	ctx context.Context,
 	c *client.Client,
 	ws *proto.Workspace,
-	out io.Writer,
 	prompt, largeModel, smallModel string,
 	hideSpinner bool,
 	continueSessionID string,
 	useLast bool,
-) error {
+) (string, error) {
 	slog.Info("Running in non-interactive mode")
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -243,7 +256,7 @@ func runNonInteractive(
 		var err error
 		mainOverride, err = applyModelOverrides(ctx, c, ws, largeModel, smallModel)
 		if err != nil {
-			return fmt.Errorf("failed to override models: %w", err)
+			return "", fmt.Errorf("failed to override models: %w", err)
 		}
 	}
 
@@ -279,7 +292,7 @@ func runNonInteractive(
 	// Wait for the agent to become ready (MCP init, etc).
 	if err := waitForAgent(ctx, c, ws.ID); err != nil {
 		stopSpinner()
-		return fmt.Errorf("agent not ready: %w", err)
+		return "", fmt.Errorf("agent not ready: %w", err)
 	}
 
 	// Force-update agent models so MCP tools are loaded.
@@ -291,7 +304,7 @@ func runNonInteractive(
 
 	sess, err := resolveSession(ctx, c, ws.ID, continueSessionID, useLast)
 	if err != nil {
-		return fmt.Errorf("failed to resolve session: %w", err)
+		return "", fmt.Errorf("failed to resolve session: %w", err)
 	}
 	if continueSessionID != "" || useLast {
 		slog.Info("Continuing session for non-interactive run", "session_id", sess.ID)
@@ -305,7 +318,7 @@ func runNonInteractive(
 	// on its own is refused rather than parked on a channel until this
 	// run's context dies.
 	if err := c.SetSessionUnattended(ctx, ws.ID, sess.ID, true); err != nil {
-		return fmt.Errorf("failed to mark the session unattended: %w", err)
+		return "", fmt.Errorf("failed to mark the session unattended: %w", err)
 	}
 
 	// The model override belongs to this run's session, not to the
@@ -315,13 +328,13 @@ func runNonInteractive(
 	if mainOverride != nil {
 		edit := config.ActiveAgentEdit{Model: mainOverride}
 		if _, err := c.AgentEditSessionActive(ctx, ws.ID, sess.ID, edit); err != nil {
-			return fmt.Errorf("failed to apply the model override: %w", err)
+			return "", fmt.Errorf("failed to apply the model override: %w", err)
 		}
 	}
 
 	events, err := c.SubscribeEvents(ctx, ws.ID)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to events: %w", err)
+		return "", fmt.Errorf("failed to subscribe to events: %w", err)
 	}
 
 	// Mint a per-call RunID so we can correlate the terminal
@@ -331,13 +344,13 @@ func runNonInteractive(
 	// the same session and drop the queued prompt's output.
 	runID := uuid.New().String()
 	if err := c.SendMessage(ctx, ws.ID, sess.ID, runID, prompt); err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
+		return "", fmt.Errorf("failed to send message: %w", err)
 	}
 
 	stream := &runStream{
 		sessionID: sess.ID,
 		runID:     runID,
-		out:       out,
+		out:       os.Stdout,
 		read:      make(map[string]int),
 	}
 
@@ -350,7 +363,7 @@ func runNonInteractive(
 		if progress && stderrTTY {
 			_, _ = fmt.Fprintf(os.Stderr, ansi.ResetProgressBar)
 		}
-		_, _ = fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(os.Stdout)
 	}()
 
 	for {
@@ -362,7 +375,7 @@ func runNonInteractive(
 		case ev, ok := <-events:
 			if !ok {
 				stopSpinner()
-				return nil
+				return "", nil
 			}
 
 			// Forward events to herdr if running inside a herdr pane.
@@ -372,15 +385,15 @@ func runNonInteractive(
 
 			done, err := stream.handle(ev, stopSpinner)
 			if err != nil {
-				return err
+				return "", err
 			}
 			if done {
-				return nil
+				return stream.final, nil
 			}
 
 		case <-ctx.Done():
 			stopSpinner()
-			return ctx.Err()
+			return "", ctx.Err()
 		}
 	}
 }
@@ -406,6 +419,10 @@ type runStream struct {
 	out       io.Writer
 	read      map[string]int
 	printed   bool
+	// final is the authoritative final response of the run, set once its
+	// RunComplete arrives uncancelled. Unlike out it is never reconciled
+	// piecemeal, so it is the text to persist for --output.
+	final string
 }
 
 // handle processes one SSE event. Returns done=true when the run
@@ -474,6 +491,9 @@ func (s *runStream) handle(ev any, stopSpinner func()) (done bool, err error) {
 		stop()
 		if e.Payload.Error != "" && !e.Payload.Cancelled {
 			return true, fmt.Errorf("agent run failed: %s", e.Payload.Error)
+		}
+		if !e.Payload.Cancelled {
+			s.final = e.Payload.Text
 		}
 		// Reconcile stdout against the authoritative final
 		// assistant text carried in the event. The pubsub fan-in

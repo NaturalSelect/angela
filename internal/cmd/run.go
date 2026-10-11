@@ -48,7 +48,7 @@ angela run "What is this code doing?" <<< prrr.go
 # Redirect output to a file
 angela run "Generate a hot README for this project" > MY_HOT_README.md
 
-# Write only the final response to a file; stdout still streams everything
+# Save the final response to a file
 angela run --output MY_HOT_README.md "Generate a hot README for this project"
 
 # Run in quiet mode (hide the spinner)
@@ -193,7 +193,7 @@ angela run --continue "Follow up on your last response"
 func init() {
 	runCmd.Flags().BoolP("quiet", "q", false, "Hide spinner")
 	runCmd.Flags().BoolP("verbose", "v", false, "Show logs on stderr; combine with --debug for debug level")
-	runCmd.Flags().StringP("output", "o", "", "Write only the final response to this file; stdout still streams every message")
+	runCmd.Flags().StringP("output", "o", "", "Write the final response to this file")
 	runCmd.Flags().StringP("model", "m", "", "Model to use. Accepts 'model' or 'provider/model' to disambiguate models with the same name across providers")
 	runCmd.Flags().String("small-model", "", "Small model to use. If not provided, uses the default small model for the provider")
 	runCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")

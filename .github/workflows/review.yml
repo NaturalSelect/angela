@@ -552,8 +552,8 @@ jobs:
             --cwd "${GITHUB_WORKSPACE}/pr" \
             --data-dir "${RUNNER_TEMP}/angela-data" \
             --model "$REVIEW_MODEL" \
-            < "${RUNNER_TEMP}/prompt.md" \
-            > "${RUNNER_TEMP}/review.md"
+            --output "${RUNNER_TEMP}/review.md" \
+            < "${RUNNER_TEMP}/prompt.md"
 
       - name: Post or update review comment
         env:

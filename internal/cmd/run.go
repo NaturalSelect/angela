@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -47,6 +48,9 @@ angela run "What is this code doing?" <<< prrr.go
 # Redirect output to a file
 angela run "Generate a hot README for this project" > MY_HOT_README.md
 
+# Write the result to a file instead of stdout
+angela run --output MY_HOT_README.md "Generate a hot README for this project"
+
 # Run in quiet mode (hide the spinner)
 angela run --quiet "Generate a README for this project"
 
@@ -72,7 +76,7 @@ angela run --session {session-id} "Follow up on your last response"
 angela run --continue "Follow up on your last response"
 
   `,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		var (
 			quiet, _      = cmd.Flags().GetBool("quiet")
 			verbose, _    = cmd.Flags().GetBool("verbose")
@@ -81,6 +85,7 @@ angela run --continue "Follow up on your last response"
 			smallModel, _ = cmd.Flags().GetString("small-model")
 			sessionID, _  = cmd.Flags().GetString("session")
 			useLast, _    = cmd.Flags().GetBool("continue")
+			outputPath, _ = cmd.Flags().GetString("output")
 		)
 
 		// Cancel on SIGINT or SIGTERM.
@@ -98,6 +103,14 @@ angela run --continue "Follow up on your last response"
 		if prompt == "" {
 			return fmt.Errorf("no prompt provided")
 		}
+
+		// NOTE: Opened before --cwd takes effect, so a relative path
+		// resolves against the invoking directory like a shell redirect.
+		out, closeOut, err := openRunOutput(outputPath)
+		if err != nil {
+			return err
+		}
+		defer func() { retErr = errors.Join(retErr, closeOut()) }()
 
 		event.SetNonInteractive(true)
 
@@ -138,7 +151,7 @@ angela run --continue "Follow up on your last response"
 				logToStderr(debug)
 			}
 
-			return runNonInteractive(ctx, c, ws, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
+			return runNonInteractive(ctx, c, ws, out, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
 		}
 
 		ws, cleanup, err := setupLocalWorkspace(cmd)
@@ -167,19 +180,31 @@ angela run --continue "Follow up on your last response"
 			sessionID = sess.ID
 		}
 
-		return appWs.App().RunNonInteractive(ctx, os.Stdout, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
+		return appWs.App().RunNonInteractive(ctx, out, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
 	},
 }
 
 func init() {
 	runCmd.Flags().BoolP("quiet", "q", false, "Hide spinner")
 	runCmd.Flags().BoolP("verbose", "v", false, "Show logs on stderr; combine with --debug for debug level")
+	runCmd.Flags().StringP("output", "o", "", "Write the result to this file instead of stdout")
 	runCmd.Flags().StringP("model", "m", "", "Model to use. Accepts 'model' or 'provider/model' to disambiguate models with the same name across providers")
 	runCmd.Flags().String("small-model", "", "Small model to use. If not provided, uses the default small model for the provider")
 	runCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
 	runCmd.Flags().BoolP("continue", "C", false, "Continue the most recent session")
 	runCmd.MarkFlagsMutuallyExclusive("session", "continue")
 	addSandboxFlags(runCmd)
+}
+
+func openRunOutput(path string) (io.Writer, func() error, error) {
+	if path == "" {
+		return os.Stdout, func() error { return nil }, nil
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open output file: %w", err)
+	}
+	return f, f.Close, nil
 }
 
 // logToStderr sends logs to stderr, where a headless run's stdout is
@@ -197,11 +222,12 @@ func logToStderr(debug bool) {
 }
 
 // runNonInteractive executes the agent via the server and streams output
-// to stdout.
+// to out.
 func runNonInteractive(
 	ctx context.Context,
 	c *client.Client,
 	ws *proto.Workspace,
+	out io.Writer,
 	prompt, largeModel, smallModel string,
 	hideSpinner bool,
 	continueSessionID string,
@@ -311,7 +337,7 @@ func runNonInteractive(
 	stream := &runStream{
 		sessionID: sess.ID,
 		runID:     runID,
-		out:       os.Stdout,
+		out:       out,
 		read:      make(map[string]int),
 	}
 
@@ -324,7 +350,7 @@ func runNonInteractive(
 		if progress && stderrTTY {
 			_, _ = fmt.Fprintf(os.Stderr, ansi.ResetProgressBar)
 		}
-		_, _ = fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(out)
 	}()
 
 	for {

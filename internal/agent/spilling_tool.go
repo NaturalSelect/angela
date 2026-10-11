@@ -12,7 +12,6 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/toolnames"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // spillingTool wraps a fantasy.AgentTool so a text result too large for the
@@ -87,27 +86,24 @@ func (s *spillingTool) Run(ctx context.Context, call fantasy.ToolCall) (fantasy.
 		return resp, err
 	}
 
-	saved := wrapLongLines(resp.Content)
-	path, spillErr := spillToolOutput(s.root, tools.GetSessionFromContext(ctx), saved)
+	path, spillErr := spillToolOutput(s.root, tools.GetSessionFromContext(ctx), resp.Content)
 	if spillErr != nil {
 		slog.Warn("Failed to save oversized tool output", "tool", call.Name, "error", spillErr)
 	}
-	resp.Content = tools.TruncateOutput(resp.Content) + spillNotice(resp.Content, saved, path)
+	resp.Content = tools.TruncateOutput(resp.Content) + spillNotice(resp.Content, path)
 	return resp, nil
 }
 
-// wrapLongLines breaks lines too wide for Grep to show whole. Read also
-// cuts long lines, at a byte limit, so a line Grep can show whole is one
-// Read can show too. Without this a single huge line, such as minified
-// JSON, would be unreachable past its first few hundred characters.
-// Content with no such line is returned untouched.
-func wrapLongLines(content string) string {
+// hasLineTooLongForRead reports whether Read would cut a line of content.
+// Such a line, minified JSON for one, cannot be paged through with Read or
+// Grep, which is why the notice sends the model to Bash for it.
+func hasLineTooLongForRead(content string) bool {
 	for line := range strings.Lines(content) {
-		if ansi.StringWidth(line) > tools.MaxGrepContentWidth {
-			return ansi.Hardwrap(content, tools.MaxGrepContentWidth, true)
+		if len(strings.TrimRight(line, "\r\n")) > tools.MaxLineLength {
+			return true
 		}
 	}
-	return content
+	return false
 }
 
 // spillToolOutput writes content to a new file under the session's
@@ -139,20 +135,21 @@ func spillToolOutput(root, sessionID, content string) (string, error) {
 	return file.Name(), nil
 }
 
-// spillNotice tells the model what it is looking at. original is what the
-// tool returned and saved is what went to the file; they differ only by
-// the line breaks wrapLongLines added. An empty path means the full text
-// could not be saved.
-func spillNotice(original, saved, path string) string {
+// longLineBashHint shows the model how to reach into a line that Read cuts.
+const longLineBashHint = "`tail -c +60001 FILE | head -c 2000` for a byte range, or `grep -oE '.{0,200}PATTERN.{0,200}' FILE` for the text around a match"
+
+// spillNotice tells the model what it is looking at. An empty path means
+// the full text could not be saved.
+func spillNotice(content, path string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n\n[Output truncated: %d lines, %d characters in total; showing the beginning and end.", strings.Count(saved, "\n")+1, utf8.RuneCountInString(original))
+	fmt.Fprintf(&b, "\n\n[Output truncated: %d lines, %d characters in total; showing the beginning and end.", strings.Count(content, "\n")+1, utf8.RuneCountInString(content))
 	if path == "" {
 		b.WriteString(" The full output could not be saved.]")
 		return b.String()
 	}
 	fmt.Fprintf(&b, " Full output saved to %s. Use Read with offset and limit, or Grep with path set to that file, to see the rest.", path)
-	if saved != original {
-		fmt.Fprintf(&b, " Lines wider than %d columns were wrapped in the saved file.", tools.MaxGrepContentWidth)
+	if hasLineTooLongForRead(content) {
+		fmt.Fprintf(&b, " Some lines are longer than the %d bytes Read shows, so use Bash on that file for them, for example %s.", tools.MaxLineLength, longLineBashHint)
 	}
 	b.WriteString(" Prefer reading that file over re-running the command.]")
 	return b.String()

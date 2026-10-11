@@ -123,11 +123,11 @@ func TestWrapToolsWithSpill_SkipsExemptTools(t *testing.T) {
 	}
 }
 
-// A result with one enormous line, such as minified JSON, is saved wrapped.
-// Read cuts a line at tools.MaxLineLength bytes and Grep at
-// tools.MaxGrepContentWidth columns, so without wrapping the middle of
-// that line could never be shown.
-func TestSpillingTool_WrapsLinesTooWideToPageThrough(t *testing.T) {
+// A result with one enormous line, such as minified JSON, cannot be paged
+// through with Read, which cuts a line at tools.MaxLineLength bytes. The
+// file must hold the text exactly as the tool returned it, and the notice
+// must send the model to Bash for the part Read cannot show.
+func TestSpillingTool_SavesLongLinesUnchangedAndPointsToBash(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -145,26 +145,20 @@ func TestSpillingTool_WrapsLinesTooWideToPageThrough(t *testing.T) {
 	require.Len(t, files, 1)
 	saved, err := os.ReadFile(files[0])
 	require.NoError(t, err)
+	require.Equal(t, oneLine, string(saved), "the saved file must not be modified")
 
-	lines := strings.Split(string(saved), "\n")
-	require.Greater(t, len(lines), 1, "the single line must have been broken up")
-	for _, line := range lines {
-		require.LessOrEqual(t, len(line), tools.MaxGrepContentWidth, "every saved line must fit what Grep shows")
-		require.LessOrEqual(t, len(line), tools.MaxLineLength, "every saved line must fit what Read shows")
-	}
-	require.Equal(t, oneLine, strings.ReplaceAll(string(saved), "\n", ""),
-		"wrapping must only add line breaks")
-
-	require.Contains(t, got.Content, "were wrapped in the saved file")
-	require.Contains(t, got.Content, fmt.Sprintf("%d lines", len(lines)),
-		"the line count must describe the saved file the model pages through")
+	require.Contains(t, got.Content, "use Bash on that file")
+	require.Contains(t, got.Content, "tail -c", "the notice must show a command that reaches a byte range")
+	require.Contains(t, got.Content, "grep -oE", "the notice must show a command that shows text around a match")
 	require.NotContains(t, got.Content, "Do not re-run")
 }
 
-func TestSpillingTool_NoticeOmitsWrapRemarkForNormalLines(t *testing.T) {
+func TestSpillingTool_NoticeOmitsBashHintWhenReadCanShowEveryLine(t *testing.T) {
 	t.Parallel()
 
 	got := runSpilling(t, t.TempDir(), "session-a", fantasy.NewTextResponse(oversizedOutput()))
 
-	require.NotContains(t, got.Content, "wrapped")
+	require.NotContains(t, got.Content, "use Bash on that file")
+	require.NotContains(t, got.Content, "tail -c")
+	require.Contains(t, got.Content, "Use Read with offset and limit")
 }

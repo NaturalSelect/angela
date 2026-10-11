@@ -406,8 +406,8 @@ jobs:
             --cwd "${GITHUB_WORKSPACE}/pr" \
             --data-dir "${RUNNER_TEMP}/angela-data" \
             --model "$DOCS_MODEL" \
-            < "${RUNNER_TEMP}/prompt.md" \
-            > "${RUNNER_TEMP}/docs.md"
+            --output "${RUNNER_TEMP}/docs.md" \
+            < "${RUNNER_TEMP}/prompt.md"
 
       - name: Post or update docs comment
         env:

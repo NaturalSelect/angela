@@ -39,6 +39,7 @@ angela run --session abc123 "next step"  # resume a specific session headlessly
 ```bash
 angela run "implement the feature described in TICKET-123"
 angela run --yolo "run the full test suite and fix failures"
+angela run --output result.md "summarize the open TODOs"   # write the result to a file instead of stdout
 ```
 
 Key differences from interactive mode:

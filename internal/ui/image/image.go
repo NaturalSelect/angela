@@ -12,8 +12,8 @@ import (
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/NaturalSelect/angela/internal/ui/image/paintbrush"
 	"github.com/NaturalSelect/angela/internal/ui/util"
+	"github.com/NaturalSelect/angela/lib/paintbrush"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/ansi/kitty"
 	"github.com/disintegration/imaging"

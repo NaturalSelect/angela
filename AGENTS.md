@@ -89,6 +89,9 @@ internal/
   stringext/                       String utilities (capitalize, normalize, base64 check)
   dns/                             Android/Termux DNS resolver fallback config
   herdr/                           herdr terminal multiplexer integration (status reporting)
+lib/
+  paintbrush/                      Vendored go-ansi-paintbrush (image to ANSI blocks), patched
+                                    to wait for its result collector; keep upstream's MIT license
 ```
 
 ### Key Dependency Roles

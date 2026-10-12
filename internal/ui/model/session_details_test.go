@@ -53,6 +53,7 @@ func detailsMockWorkspace(t *testing.T) (*MockWorkspace, *detailsSyncProbeCounts
 	ws.EXPECT().Config().Return(cfg).AnyTimes()
 	ws.EXPECT().AgentIsReady().DoAndReturn(func() bool { counts.ready++; return true }).AnyTimes()
 	ws.EXPECT().AgentIsBusy().DoAndReturn(func() bool { counts.agentBusy++; return false }).AnyTimes()
+	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(false).AnyTimes()
 	ws.EXPECT().AgentQueuedPrompts(gomock.Any()).DoAndReturn(func(string) int { counts.queued++; return 0 }).AnyTimes()
 	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).DoAndReturn(func(string) []string { counts.queueList++; return nil }).AnyTimes()
 	ws.EXPECT().PermissionMode().DoAndReturn(func() permission.PermissionMode { counts.perm++; return permission.ModeManual }).AnyTimes()

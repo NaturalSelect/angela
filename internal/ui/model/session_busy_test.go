@@ -98,6 +98,7 @@ func pinTTLs(t *testing.T) {
 // leave it.
 func warmCaches(m *UI, busy bool) {
 	m.agentBusyCache.set(busy)
+	m.sessionBusyCache.set(busy)
 	m.permissionModeCache.set(permission.ModeManual)
 	m.agentReady = true
 	m.agentActiveKnown = true
@@ -169,6 +170,7 @@ type plainMsg struct{}
 func stubBusyProbe(ws *MockWorkspace, ready, busy bool, mode permission.PermissionMode, active *workspace.ActiveAgent) {
 	ws.EXPECT().AgentIsReady().Return(ready).AnyTimes()
 	ws.EXPECT().AgentIsBusy().Return(busy).AnyTimes()
+	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(busy).AnyTimes()
 	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(context.Context, string) (workspace.ActiveAgent, error) {
 			return *active, nil
@@ -947,6 +949,7 @@ func TestBackstopRefreshesStaleCaches(t *testing.T) {
 	active := workspace.ActiveAgent{}
 	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 	ws.EXPECT().AgentIsBusy().DoAndReturn(func() bool { agentBusyCalls++; return true })
+	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(true).AnyTimes()
 	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(context.Context, string) (workspace.ActiveAgent, error) {
 			return active, nil
@@ -1017,7 +1020,8 @@ func TestStaleBusyRefreshDiscardedAndReDispatched(t *testing.T) {
 	m.busyFetchInFlight = true
 	staleGen := m.busyFetchGen
 	m.agentBusyCache.set(true) // optimistic busy
-	m.busyFetchGen++           // newer state transition
+	m.sessionBusyCache.set(true)
+	m.busyFetchGen++ // newer state transition
 
 	// The stale probe (agent reported idle) lands with the old
 	// generation. This is a direct applyBusyState call, so re-dispatch
@@ -1148,6 +1152,31 @@ func TestBusyRefreshCarriesReadyAndModel(t *testing.T) {
 	sel := m.activeAgent()
 	require.NotNil(t, sel)
 	require.Equal(t, "test-model", sel.ModelCfg.Model, "the probe must land the model in the cache")
+}
+
+// TestSessionBusyIgnoresOtherSessions pins that the status line, spinner and
+// esc follow the session on screen. A parent suspended on a branch keeps the
+// workspace busy after the branch's own turn stops, and that must not make
+// the branch read as still thinking.
+func TestSessionBusyIgnoresOtherSessions(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
+	ws.EXPECT().AgentIsBusy().Return(true).AnyTimes()
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false).AnyTimes()
+	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).Return(workspace.ActiveAgent{}, nil).AnyTimes()
+	ws.EXPECT().PermissionMode().Return(permission.ModeManual).AnyTimes()
+	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
+	ws.EXPECT().LSPGetStates().Return(nil).AnyTimes()
+
+	_, cmd := m.Update(plainMsg{})
+	runCmds(m, cmd)
+
+	require.True(t, m.isAgentBusy(), "the workspace is busy: another session has a turn running")
+	require.False(t, m.isSessionBusy(), "the session on screen has nothing running")
+	require.False(t, m.turnIsSpinning)
+	require.NotContains(t, m.renderTurnStatus(200), "Thinking")
 }
 
 // TestAgentModelChangedRefreshesModel: after a change to the session's

@@ -391,8 +391,10 @@ type UI struct {
 	// agentBusyCache / permissionModeCache memoize the workspace busy and
 	// permission probes (synchronous HTTP round-trips in client/server
 	// mode). Reads never probe; refreshes happen off-thread (see
-	// workspace_cache.go).
+	// workspace_cache.go). agentBusyCache covers every session in the
+	// workspace; sessionBusyCache only the one on screen.
 	agentBusyCache      ttlCache[bool]
+	sessionBusyCache    ttlCache[bool]
 	permissionModeCache ttlCache[permission.PermissionMode]
 	busyFetchInFlight   bool
 	// sandboxActive reports whether the workspace process is currently
@@ -1838,7 +1840,7 @@ func (m *UI) applySessionItems(items []chat.MessageItem) tea.Cmd {
 	// even though nothing is running. Starting animations for it here would
 	// leave a ghost "working" spinner (and a second one alongside any tool
 	// spinner) after the session is reloaded.
-	if m.isAgentBusy() {
+	if m.isSessionBusy() {
 		for _, item := range items {
 			if animatable, ok := item.(chat.Animatable); ok {
 				if cmd := animatable.StartAnimation(); cmd != nil {
@@ -4153,7 +4155,7 @@ func (m *UI) View() tea.View {
 	content = strings.Join(contentLines, "\n")
 
 	v.Content = content
-	if m.progressBarEnabled && m.sendProgressBar && m.isAgentBusy() {
+	if m.progressBarEnabled && m.sendProgressBar && m.isSessionBusy() {
 		// HACK: use a random percentage to prevent ghostty from hiding it
 		// after a timeout.
 		v.ProgressBar = tea.NewProgressBar(tea.ProgressBarIndeterminate, rand.Intn(100))
@@ -4256,7 +4258,7 @@ func (m *UI) ShortHelp() []key.Binding {
 	}
 
 	var binds []key.Binding
-	if m.state == uiChat && m.isAgentBusy() {
+	if m.state == uiChat && m.isSessionBusy() {
 		binds = append(binds, m.cancelHint())
 	}
 
@@ -4335,7 +4337,7 @@ func (m *UI) FullHelp() [][]key.Binding {
 	}
 
 	app := []key.Binding{k.CyclePermissionMode, k.Suspend, less, k.Quit}
-	if m.state == uiChat && m.isAgentBusy() {
+	if m.state == uiChat && m.isSessionBusy() {
 		app = append([]key.Binding{m.cancelHint()}, app...)
 	}
 
@@ -4980,6 +4982,18 @@ func (m *UI) isAgentBusy() bool {
 	return m.agentBusyCache.val
 }
 
+// isSessionBusy reports whether the session on screen has a turn running.
+// Unlike isAgentBusy it ignores every other session: a parent suspended on
+// a branch stays busy for as long as the branch lives, and must not make the
+// branch itself read as working once its own turn has stopped. Like
+// isAgentBusy it only reads the memoized state.
+func (m *UI) isSessionBusy() bool {
+	if m.bangCancel != nil {
+		return true
+	}
+	return m.sessionBusyCache.val
+}
+
 // hasSession returns true if there is an active session with a valid ID.
 func (m *UI) hasSession() bool {
 	return m.session != nil && m.session.ID != ""
@@ -5238,6 +5252,7 @@ func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.
 	// Bump the busy/queue generations so any probe started before this
 	// optimistic write is discarded rather than reverting us to idle.
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 	m.busyFetchGen++
 	m.invalidatePromptQueue()
 	cmds = append(cmds, func() tea.Msg {

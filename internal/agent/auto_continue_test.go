@@ -454,6 +454,8 @@ func TestRun_SubAgentStillResumesWhenNotDone(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, res)
+	require.Equal(t, "done", res.Response.Content.Text(),
+		"the caller must receive the resumed turn's answer, not the segment cut off by compaction")
 
 	updated, err := env.sessions.Get(t.Context(), sess.ID)
 	require.NoError(t, err)

@@ -1403,7 +1403,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			a.enqueueResumeBeforeSummarize(call)
 			hitMaxTokens = false
 		}
-		if summarizeErr := a.Summarize(genCtx, call.SessionID, call.Compact, call.SummarizeProviderOptions, call.SummarizeOnAuthRefresh); summarizeErr != nil {
+		resumed, summarizeErr := a.summarizeAndResume(genCtx, call.SessionID, call.Compact, call.SummarizeProviderOptions, call.SummarizeOnAuthRefresh)
+		if summarizeErr != nil {
 			// Summarize failed before reaching its own queue drain, so
 			// the resume call just prepended above would otherwise be
 			// left behind to fire as a stray turn later.
@@ -1411,6 +1412,11 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				a.popResumeOnSummarizeFailure(call.SessionID)
 			}
 			return nil, summarizeErr
+		}
+		// NOTE: The queue drain inside summarize already ran the resumed
+		// turn, so this run's own result is the stale pre-compaction segment.
+		if resumed != nil {
+			result = resumed
 		}
 	}
 	if hitMaxTokens {
@@ -1650,11 +1656,21 @@ func reresolve(ctx context.Context, call SessionAgentCall) SessionAgentCall {
 }
 
 func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact resolvedAgent, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
+	_, err := a.summarizeAndResume(ctx, sessionID, compact, opts, onAuthRefresh)
+	return err
+}
+
+// summarizeAndResume compacts the session, then runs the head of the
+// session's queue. It returns that resumed run's result, or nil when
+// nothing was queued, so a caller that is itself returning a run's
+// result can hand back the post-compaction answer instead of the
+// segment cut off by compaction.
+func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string, compact resolvedAgent, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) (*fantasy.AgentResult, error) {
 	if !compact.Available() {
 		if compact.Err != nil {
-			return fmt.Errorf("compact agent unavailable: %w", compact.Err)
+			return nil, fmt.Errorf("compact agent unavailable: %w", compact.Err)
 		}
-		return errors.New("compact agent unavailable")
+		return nil, errors.New("compact agent unavailable")
 	}
 
 	// Claim the session before doing any I/O. Run holds the same
@@ -1669,7 +1685,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 	if a.IsSessionBusy(sessionID) {
 		sessMu.Unlock()
 		cancel()
-		return ErrSessionBusy
+		return nil, ErrSessionBusy
 	}
 	a.activeRequests.Set(sessionID, ac)
 	sessMu.Unlock()
@@ -1681,11 +1697,11 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 
 	currentSession, err := a.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to get session: %w", err)
+		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	msgs, err := a.getSessionMessages(ctx, currentSession)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(msgs) == 0 {
 		// Nothing to summarize. Still drop any internal resume entry
@@ -1694,7 +1710,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 		// without this the entry would sit orphaned in the queue and
 		// later fire as a stray turn.
 		a.popResumeOnSummarizeFailure(sessionID)
-		return nil
+		return nil, nil
 	}
 
 	aiMsgs, _ := a.preparePrompt(msgs, compact.Model.CatwalkCfg.SupportsImages)
@@ -1721,7 +1737,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 		IsSummaryMessage: true,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	summaryPromptText := buildSummaryPrompt(currentSession.Todos)
@@ -1776,15 +1792,15 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 			// still pending, and (b) reports this turn's RunComplete
 			// as cancelled instead of a silent success.
 			deleteErr := a.messages.Delete(ctx, summaryMessage.ID)
-			return errors.Join(context.Canceled, deleteErr)
+			return nil, errors.Join(context.Canceled, deleteErr)
 		}
 		// Mark the summary message as finished with an error so the UI
 		// stops spinning.
 		summaryMessage.AddFinish(message.FinishReasonError, "Summarization Error", err.Error())
 		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
-			return updateErr
+			return nil, updateErr
 		}
-		return err
+		return nil, err
 	}
 
 	if resp.Response.FinishReason == fantasy.FinishReasonLength {
@@ -1793,9 +1809,9 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 		// the rest of the history the summary was supposed to preserve.
 		summaryMessage.AddFinish(message.FinishReasonMaxTokens, "Summarization Error", "the summary hit the output token limit before it finished")
 		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
-			return updateErr
+			return nil, updateErr
 		}
-		return errors.New("summarization hit the output token limit")
+		return nil, errors.New("summarization hit the output token limit")
 	}
 
 	extracted, ok := extractSummaryTag(summaryMessage.Content().Text)
@@ -1810,16 +1826,16 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 		// permanently discarding everything before it.
 		summaryMessage.AddFinish(message.FinishReasonError, "Summarization Error", "the model's response was not wrapped in "+summaryTagOpen+" tags")
 		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
-			return updateErr
+			return nil, updateErr
 		}
-		return errors.New("summarization output missing " + summaryTagOpen + " tags")
+		return nil, errors.New("summarization output missing " + summaryTagOpen + " tags")
 	}
 	summaryMessage.SetContent(extracted)
 
 	summaryMessage.AddFinish(message.FinishReasonEndTurn, "", "")
 	err = a.messages.Update(genCtx, summaryMessage)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var costOverride *float64
@@ -1844,7 +1860,7 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 	currentSession.EstimatedUsage = usageIsZero(usage)
 	_, err = a.sessions.Save(genCtx, currentSession)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Release the active request before processing queued messages so that
@@ -1863,13 +1879,12 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 	queuedMessages, ok := a.messageQueue.Get(sessionID)
 	if !ok || len(queuedMessages) == 0 {
 		mu.Unlock()
-		return nil
+		return nil, nil
 	}
 	firstQueuedMessage := queuedMessages[0]
 	a.messageQueue.Set(sessionID, queuedMessages[1:])
 	mu.Unlock()
-	_, qErr := a.Run(ctx, reresolve(ctx, firstQueuedMessage))
-	return qErr
+	return a.Run(ctx, reresolve(ctx, firstQueuedMessage))
 }
 
 // cacheBreakpointIndices picks which messages in this step's prompt get

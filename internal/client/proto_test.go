@@ -882,6 +882,14 @@ func TestProtoMethodsSuccessPaths(t *testing.T) {
 			},
 		},
 		{
+			name:       "AgentRegenerateSessionTitle",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/agent/sessions/sess1/title",
+			call: func(t *testing.T, c *Client) {
+				require.NoError(t, c.AgentRegenerateSessionTitle(context.Background(), "ws1", "sess1"))
+			},
+		},
+		{
 			name:       "AgentEditSessionActive",
 			wantMethod: http.MethodPost,
 			wantPath:   "/v1/workspaces/ws1/agent/sessions/sess1/active-agent",

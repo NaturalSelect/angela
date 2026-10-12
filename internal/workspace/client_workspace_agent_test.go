@@ -384,6 +384,41 @@ func TestClientWorkspace_AgentEditActive(t *testing.T) {
 	}
 }
 
+func TestClientWorkspace_AgentRegenerateTitle(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		wantErr bool
+	}{
+		{name: "success"},
+		{name: "server error", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, http.MethodPost, r.Method)
+				require.Equal(t, "/v1/workspaces/ws-1/agent/sessions/s1/title", r.URL.Path)
+				if tc.wantErr {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				w.WriteHeader(http.StatusOK)
+			})
+
+			err := ws.AgentRegenerateTitle(t.Context(), "s1")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestClientWorkspace_AgentSummarize(t *testing.T) {
 	t.Parallel()
 

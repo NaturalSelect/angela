@@ -514,6 +514,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "summarize", "Summarize Session", "", ActionSummarize{SessionID: c.sessionID}).WithAliases("compact"))
 	}
 
+	if c.hasSession && !c.viewingSubAgent() {
+		commands = append(commands, NewCommandItem(c.com.Styles, "generate_title", "Generate Session Title", "", ActionGenerateTitle{SessionID: c.sessionID}).WithAliases("title"))
+	}
+
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "export_session", "Export to Markdown", "", ActionExportSession{SessionID: c.sessionID}).WithAliases("export", "md"))
 	}

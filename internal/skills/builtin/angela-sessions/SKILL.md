@@ -22,6 +22,16 @@ angela session export <id> [--output file.json]
 
 All subcommands accept `--json` for machine-readable output.
 
+## Regenerating a Title
+
+A session's title is generated automatically from its first prompt. If that
+attempt fails the session keeps the placeholder "Untitled Session". In the
+TUI, open the command palette and run **Generate Session Title** (alias
+`title`) to ask the title model again. It reads the session's first user
+prompt, replaces the title on success, and leaves the current title untouched
+and reports the error on failure. It is not available on read-only sub-agent
+transcripts.
+
 ## Starting and Resuming Sessions
 
 | Flag | Notes |

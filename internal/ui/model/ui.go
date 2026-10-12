@@ -2455,6 +2455,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			return nil
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionGenerateTitle:
+		// NOTE: A title call is not a turn, so it needs no idle session;
+		// it only rewrites the title and adds to the session's usage.
+		cmds = append(cmds, m.generateSessionTitle(msg.SessionID))
+		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionCommit:
 		// Session-scoped, matching ActionSummarize: committing while a
 		// turn is running risks capturing a half-finished edit.

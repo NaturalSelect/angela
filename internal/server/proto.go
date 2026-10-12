@@ -1139,6 +1139,28 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionSummarize(w http.ResponseW
 	w.WriteHeader(http.StatusOK)
 }
 
+// handlePostWorkspaceAgentSessionTitle names a session again from the
+// prompt that opened it.
+//
+//	@Summary		Regenerate session title
+//	@Tags			agent
+//	@Param			id	path	string	true	"Workspace ID"
+//	@Param			sid	path	string	true	"Session ID"
+//	@Success		200
+//	@Failure		400	{object}	proto.Error
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/title [post]
+func (c *controllerV1) handlePostWorkspaceAgentSessionTitle(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+	if err := c.backend.RegenerateSessionTitle(r.Context(), id, sid); err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleGetWorkspaceAgentDefaultActiveAgent reports the agent a new
 // session would run. The landing screen has no session yet, and a
 // session-scoped path cannot express that: an empty path segment
@@ -1642,7 +1664,8 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 	case errors.Is(err, backend.ErrImageNotFound):
 		status = http.StatusNotFound
 	case errors.Is(err, backend.ErrAgentNotAvailable),
-		errors.Is(err, backend.ErrVariantNotAvailable):
+		errors.Is(err, backend.ErrVariantNotAvailable),
+		errors.Is(err, backend.ErrNoTitlePrompt):
 		// The request named something that does not fit, which the
 		// caller can correct. A 500 here would tell them to retry an
 		// edit that will never be accepted.

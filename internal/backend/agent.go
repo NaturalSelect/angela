@@ -269,6 +269,21 @@ func (b *Backend) SummarizeSession(ctx context.Context, workspaceID, sessionID s
 	return nil
 }
 
+// RegenerateSessionTitle names a session again from the prompt that
+// opened it.
+func (b *Backend) RegenerateSessionTitle(ctx context.Context, workspaceID, sessionID string) error {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return err
+	}
+
+	if ws.AgentCoordinator == nil {
+		return ErrAgentNotInitialized
+	}
+
+	return ws.AgentCoordinator.RegenerateTitle(ctx, sessionID)
+}
+
 // AskSideQuestion answers a one-off question from a session's existing
 // context, concurrently with any turn already running on it, without
 // adding the question or its answer to the session's message history.

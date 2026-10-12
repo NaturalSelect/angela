@@ -238,6 +238,9 @@ func (c *scriptedCoordinator) ActiveAgent(context.Context, string) (config.Activ
 }
 func (c *scriptedCoordinator) UpdateModels(context.Context) error            { return nil }
 func (c *scriptedCoordinator) GenerateTitle(context.Context, string, string) {}
+
+func (c *scriptedCoordinator) RegenerateTitle(context.Context, string) error { return nil }
+
 func (c *scriptedCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
 	return config.Agent{}, "", nil
 }

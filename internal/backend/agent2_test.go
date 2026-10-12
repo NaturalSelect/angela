@@ -125,6 +125,42 @@ func TestBackend_SummarizeSession(t *testing.T) {
 	})
 }
 
+func TestBackend_RegenerateSessionTitle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil coordinator", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		ws := insertAgentWorkspace(t, b, nil)
+		require.ErrorIs(t, b.RegenerateSessionTitle(t.Context(), ws.ID, "s1"), ErrAgentNotInitialized)
+	})
+
+	t.Run("delegates to coordinator", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		coord := &fakeCoordinator{}
+		ws := insertAgentWorkspace(t, b, coord)
+
+		require.NoError(t, b.RegenerateSessionTitle(t.Context(), ws.ID, "s1"))
+		require.Equal(t, []string{"s1"}, coord.regenerateTitleCalls)
+	})
+
+	t.Run("propagates coordinator error", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		coord := &fakeCoordinator{regenerateTitleErr: agent.ErrNoTitlePrompt}
+		ws := insertAgentWorkspace(t, b, coord)
+
+		require.ErrorIs(t, b.RegenerateSessionTitle(t.Context(), ws.ID, "s1"), ErrNoTitlePrompt)
+	})
+
+	t.Run("workspace not found", func(t *testing.T) {
+		t.Parallel()
+		b, _ := newTestBackend(t)
+		require.ErrorIs(t, b.RegenerateSessionTitle(t.Context(), "nope", "s1"), ErrWorkspaceNotFound)
+	})
+}
+
 func TestBackend_QueueOperations(t *testing.T) {
 	t.Parallel()
 

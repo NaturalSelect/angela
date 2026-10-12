@@ -252,6 +252,20 @@ func (mr *MockWorkspaceMockRecorder) AgentReadyErr() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentReadyErr", reflect.TypeOf((*MockWorkspace)(nil).AgentReadyErr))
 }
 
+// AgentRegenerateTitle mocks base method.
+func (m *MockWorkspace) AgentRegenerateTitle(ctx context.Context, sessionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AgentRegenerateTitle", ctx, sessionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AgentRegenerateTitle indicates an expected call of AgentRegenerateTitle.
+func (mr *MockWorkspaceMockRecorder) AgentRegenerateTitle(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentRegenerateTitle", reflect.TypeOf((*MockWorkspace)(nil).AgentRegenerateTitle), ctx, sessionID)
+}
+
 // AgentRun mocks base method.
 func (m *MockWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error {
 	m.ctrl.T.Helper()

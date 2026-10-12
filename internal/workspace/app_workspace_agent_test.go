@@ -41,6 +41,7 @@ func TestAppWorkspace_Agent_NilCoordinator(t *testing.T) {
 	fx.ws.AgentClearQueue("sess-1")
 
 	require.Error(t, fx.ws.AgentSummarize(t.Context(), "sess-1"))
+	require.Error(t, fx.ws.AgentRegenerateTitle(t.Context(), "sess-1"))
 
 	_, err = fx.ws.AgentAskSideQuestion(t.Context(), "sess-1", "hi")
 	require.Error(t, err)
@@ -176,6 +177,27 @@ func TestAppWorkspace_AgentSummarize(t *testing.T) {
 		fx.coord.EXPECT().Summarize(gomock.Any(), "sess-1").Return(boom)
 
 		require.ErrorIs(t, fx.ws.AgentSummarize(t.Context(), "sess-1"), boom)
+	})
+}
+
+func TestAppWorkspace_AgentRegenerateTitle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		fx.coord.EXPECT().RegenerateTitle(gomock.Any(), "sess-1").Return(nil)
+
+		require.NoError(t, fx.ws.AgentRegenerateTitle(t.Context(), "sess-1"))
+	})
+
+	t.Run("propagates coordinator error", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		boom := errors.New("title failed")
+		fx.coord.EXPECT().RegenerateTitle(gomock.Any(), "sess-1").Return(boom)
+
+		require.ErrorIs(t, fx.ws.AgentRegenerateTitle(t.Context(), "sess-1"), boom)
 	})
 }
 

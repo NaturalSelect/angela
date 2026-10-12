@@ -76,6 +76,9 @@ func (c *blockingCoordinator) ActiveAgent(context.Context, string) (config.Activ
 }
 func (c *blockingCoordinator) UpdateModels(context.Context) error            { return nil }
 func (c *blockingCoordinator) GenerateTitle(context.Context, string, string) {}
+
+func (c *blockingCoordinator) RegenerateTitle(context.Context, string) error { return nil }
+
 func (c *blockingCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
 	return config.Agent{}, "", nil
 }

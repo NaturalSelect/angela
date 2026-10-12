@@ -199,6 +199,9 @@ type Workspace interface {
 	AgentTakeQueuedPrompts(sessionID string) ([]message.QueuedPrompt, error)
 	AgentClearQueue(sessionID string)
 	AgentSummarize(ctx context.Context, sessionID string) error
+	// AgentRegenerateTitle names a session again from the prompt that
+	// opened it. A failure leaves the current title in place.
+	AgentRegenerateTitle(ctx context.Context, sessionID string) error
 	// AgentAskSideQuestion answers a one-off question from a
 	// session's existing context, concurrently with any turn
 	// already running on it, without adding the question or its

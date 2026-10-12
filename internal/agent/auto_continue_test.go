@@ -473,6 +473,68 @@ func TestRun_SubAgentStillResumesWhenNotDone(t *testing.T) {
 	require.Contains(t, userPrompts[2], "do the thing", "the resumed prompt must still carry the original request")
 }
 
+// TestRun_ResumeAfterCompactionPublishesOneRunComplete guards the
+// terminal event of a turn that crossed the compaction threshold with a
+// tool call pending. The resumed turn carries the same RunID and the
+// same completion hook, so it owns the terminal event. A second event
+// from the outer Run would overwrite it with the pre-compaction message
+// and an empty text, which is what `angela run` prints as its answer.
+func TestRun_ResumeAfterCompactionPublishesOneRunComplete(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
+		Times(1)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+
+	var events []notify.RunComplete
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        config.AgentCoder,
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact:    compact,
+		SessionID:  sess.ID,
+		RunID:      "run-1",
+		Prompt:     "do the thing",
+		OnComplete: func(rc notify.RunComplete) { events = append(events, rc) },
+	})
+	require.NoError(t, err)
+
+	require.Len(t, events, 1, "the resumed turn owns the run's terminal event; the outer Run must not publish another")
+	require.Equal(t, "run-1", events[0].RunID)
+	require.Equal(t, "done", events[0].Text)
+
+	msgs, err := env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	var lastAssistantID string
+	for _, m := range msgs {
+		if m.Role == message.Assistant {
+			lastAssistantID = m.ID
+		}
+	}
+	require.Equal(t, lastAssistantID, events[0].MessageID, "the event must describe the resumed turn's reply, not the cut-off segment")
+}
+
 // TestRun_SubAgentSummarizesOnMaxTokensWithNoToolCalls guards the fix
 // against treating a response merely truncated by the output-token
 // limit as "done": with no tool calls of its own it looks the same as

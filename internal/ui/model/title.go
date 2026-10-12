@@ -23,8 +23,12 @@ func (m *UI) generateSessionTitle(sessionID string) tea.Cmd {
 		}),
 		func() tea.Msg {
 			err := m.com.Workspace.AgentRegenerateTitle(context.Background(), sessionID)
-			// NOTE: A cancelled request is the user's choice, not a failure.
-			if err != nil && !errors.Is(err, context.Canceled) {
+			switch {
+			case errors.Is(err, context.Canceled):
+				// NOTE: A cancelled request is neither a failure nor an update;
+				// only the "Generating" toast is left to clear.
+				return util.ClearStatusMsg{}
+			case err != nil:
 				return util.ReportError(fmt.Errorf("failed to generate session title: %w", err))()
 			}
 			return util.ReportInfo("Session title updated")()

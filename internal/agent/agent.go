@@ -1415,8 +1415,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		}
 		// NOTE: The queue drain inside summarize already ran the resumed
 		// turn, so this run's own result is the stale pre-compaction segment.
+		// The resume shares this run's RunID and completion hook, so it
+		// published the terminal event; a second one would carry the stale
+		// message. An unrelated follow-up at the queue head has its own RunID.
 		if resumed != nil {
 			result = resumed
+			skipRunComplete = queuedResume
 		}
 	}
 	if hitMaxTokens {

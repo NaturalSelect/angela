@@ -24,29 +24,42 @@ func newGenerateTitleUI(ws *MockWorkspace) *UI {
 	return m
 }
 
-// runTitleCmd runs the command batch the title action returns and
-// collects the status messages it reports, in the order they arrive.
-func runTitleCmd(t *testing.T, m *UI) []util.InfoMsg {
+// runTitleCmdMsgs runs the command batch the title action returns and
+// collects every message it produces, in the order they arrive.
+func runTitleCmdMsgs(t *testing.T, m *UI) []tea.Msg {
 	t.Helper()
 
 	cmd := m.handleDialogMsg(dialog.ActionGenerateTitle{SessionID: "current"})
 	require.NotNil(t, cmd)
 
-	var infos []util.InfoMsg
+	var msgs []tea.Msg
 	var collect func(msg tea.Msg)
 	collect = func(msg tea.Msg) {
-		switch msg := msg.(type) {
-		case util.InfoMsg:
-			infos = append(infos, msg)
-		case tea.BatchMsg:
-			for _, sub := range msg {
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, sub := range batch {
 				if sub != nil {
 					collect(sub())
 				}
 			}
+			return
 		}
+		msgs = append(msgs, msg)
 	}
 	collect(cmd())
+	return msgs
+}
+
+// runTitleCmd is runTitleCmdMsgs narrowed to the status messages the
+// command reports.
+func runTitleCmd(t *testing.T, m *UI) []util.InfoMsg {
+	t.Helper()
+
+	var infos []util.InfoMsg
+	for _, msg := range runTitleCmdMsgs(t, m) {
+		if info, ok := msg.(util.InfoMsg); ok {
+			infos = append(infos, info)
+		}
+	}
 	return infos
 }
 
@@ -57,6 +70,7 @@ func TestGenerateTitleReportsSuccess(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
 	ws.EXPECT().AgentRegenerateTitle(gomock.Any(), "current").Return(nil)
 
 	infos := runTitleCmd(t, newGenerateTitleUI(ws))
@@ -74,6 +88,7 @@ func TestGenerateTitleReportsFailure(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
 	ws.EXPECT().AgentRegenerateTitle(gomock.Any(), "current").Return(errors.New("provider unreachable"))
 
 	infos := runTitleCmd(t, newGenerateTitleUI(ws))
@@ -83,16 +98,39 @@ func TestGenerateTitleReportsFailure(t *testing.T) {
 	require.Contains(t, last.Msg, "provider unreachable")
 }
 
-// TestGenerateTitleCancelledIsNotAnError pins that a user-cancelled
-// request does not raise an error toast.
+// TestGenerateTitleCancelledIsNotAnError pins that a cancelled request
+// neither raises an error toast nor claims the title was updated, and
+// that the "Generating" toast is cleared afterwards.
 func TestGenerateTitleCancelledIsNotAnError(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
 	ws.EXPECT().AgentRegenerateTitle(gomock.Any(), "current").Return(context.Canceled)
 
-	for _, info := range runTitleCmd(t, newGenerateTitleUI(ws)) {
-		require.NotEqual(t, util.InfoTypeError, info.Type)
+	msgs := runTitleCmdMsgs(t, newGenerateTitleUI(ws))
+	for _, msg := range msgs {
+		if info, ok := msg.(util.InfoMsg); ok {
+			require.NotEqual(t, util.InfoTypeError, info.Type)
+			require.NotEqual(t, "Session title updated", info.Msg)
+		}
 	}
+	require.Equal(t, util.ClearStatusMsg{}, msgs[len(msgs)-1], "the Generating toast must be cleared")
+}
+
+// TestGenerateTitleRefusedWhileSessionBusy pins that a running turn or
+// compaction blocks regeneration. Compaction writes the whole session
+// row back when it finishes and would revert the new title.
+func TestGenerateTitleRefusedWhileSessionBusy(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentIsSessionBusy("current").Return(true)
+
+	infos := runTitleCmd(t, newGenerateTitleUI(ws))
+	require.Len(t, infos, 1)
+	require.Equal(t, util.InfoTypeWarn, infos[0].Type)
+	require.Contains(t, infos[0].Msg, "busy")
 }

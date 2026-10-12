@@ -2458,8 +2458,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionGenerateTitle:
-		// NOTE: A title call is not a turn, so it needs no idle session;
-		// it only rewrites the title and adds to the session's usage.
+		// NOTE: Compaction rewrites the whole session row when it ends, so a
+		// title saved during a turn or a compact would be overwritten.
+		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
+			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before generating a title..."))
+			break
+		}
 		cmds = append(cmds, m.generateSessionTitle(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionCommit:

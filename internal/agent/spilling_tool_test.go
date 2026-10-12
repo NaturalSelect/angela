@@ -10,6 +10,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/permission/shellscan"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
@@ -151,6 +152,29 @@ func TestSpillingTool_SavesLongLinesUnchangedAndPointsToBash(t *testing.T) {
 	require.Contains(t, got.Content, "tail -c", "the notice must show a command that reaches a byte range")
 	require.Contains(t, got.Content, "grep -oE", "the notice must show a command that shows text around a match")
 	require.NotContains(t, got.Content, "Do not re-run")
+}
+
+// A delegated session's ID is messageID$$toolCallID. The notice sends the
+// model to Bash with this path, where an unquoted $$ expands to the shell's
+// process ID, and the permission scanner refuses to judge the command.
+func TestSpillingTool_DelegatedSessionPathIsSafeInUnquotedShellCommand(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	got := runSpilling(t, root, "msg-37$$call_1", fantasy.NewTextResponse(oversizedOutput()))
+
+	match := spilledPathPattern.FindStringSubmatch(got.Content)
+	require.NotNil(t, match, "the result must say where the full output went")
+	path := match[1]
+
+	saved, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, oversizedOutput(), string(saved))
+
+	require.NotContains(t, path, "$")
+	command := "tail -c +60001 " + path + " | head -c 2000"
+	scan := shellscan.Scan(command, root)
+	require.False(t, scan.Opaque, "an unquoted path must be analyzable: %s", scan.Reason)
 }
 
 func TestSpillingTool_NoticeOmitsBashHintWhenReadCanShowEveryLine(t *testing.T) {

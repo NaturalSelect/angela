@@ -695,6 +695,20 @@ func (c *Client) AgentSummarizeSession(ctx context.Context, id string, sessionID
 	return nil
 }
 
+// AgentRegenerateSessionTitle asks the workspace to name a session again
+// from the prompt that opened it.
+func (c *Client) AgentRegenerateSessionTitle(ctx context.Context, id string, sessionID string) error {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/title", id, sessionID), nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to regenerate session title: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return fmt.Errorf("failed to regenerate session title: %w", err)
+	}
+	return nil
+}
+
 // AgentEditSessionActive changes the agent instance a session runs:
 // its agent, model, parameter preset or thinking flag, in any
 // combination. It answers with the instance the session ends up on, so

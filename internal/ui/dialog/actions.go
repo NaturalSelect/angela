@@ -136,6 +136,11 @@ type (
 	ActionSummarize                   struct {
 		SessionID string
 	}
+	// ActionGenerateTitle asks for the session to be titled again from
+	// the prompt that opened it, for when the automatic attempt failed.
+	ActionGenerateTitle struct {
+		SessionID string
+	}
 	// ActionExportSession asks for the session's transcript to be
 	// rendered to a Markdown file on disk.
 	ActionExportSession struct {

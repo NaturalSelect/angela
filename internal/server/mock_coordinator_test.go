@@ -310,6 +310,20 @@ func (mr *MockCoordinatorMockRecorder) QueuedPromptsList(sessionID any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "QueuedPromptsList", reflect.TypeOf((*MockCoordinator)(nil).QueuedPromptsList), sessionID)
 }
 
+// RegenerateTitle mocks base method.
+func (m *MockCoordinator) RegenerateTitle(ctx context.Context, sessionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RegenerateTitle", ctx, sessionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RegenerateTitle indicates an expected call of RegenerateTitle.
+func (mr *MockCoordinatorMockRecorder) RegenerateTitle(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegenerateTitle", reflect.TypeOf((*MockCoordinator)(nil).RegenerateTitle), ctx, sessionID)
+}
+
 // Run mocks base method.
 func (m *MockCoordinator) Run(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error) {
 	m.ctrl.T.Helper()

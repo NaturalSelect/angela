@@ -66,6 +66,10 @@ var (
 	ErrAgentNotAvailable   = agent.ErrAgentNotAvailable
 	ErrVariantNotAvailable = agent.ErrVariantNotAvailable
 
+	// ErrNoTitlePrompt is a title request for a session that holds no
+	// prompt to title, which the caller cannot fix by retrying.
+	ErrNoTitlePrompt = agent.ErrNoTitlePrompt
+
 	// The three below are a "switch agent model" override naming an
 	// agent, model or variant that does not resolve. Also the
 	// caller's to correct.

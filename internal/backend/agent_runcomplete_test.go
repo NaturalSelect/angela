@@ -65,6 +65,9 @@ func (c *errorCoordinator) ActiveAgent(context.Context, string) (config.ActiveAg
 }
 func (c *errorCoordinator) UpdateModels(context.Context) error            { return nil }
 func (c *errorCoordinator) GenerateTitle(context.Context, string, string) {}
+
+func (c *errorCoordinator) RegenerateTitle(context.Context, string) error { return nil }
+
 func (c *errorCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
 	return config.Agent{}, "", nil
 }

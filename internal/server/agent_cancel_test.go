@@ -96,6 +96,9 @@ func (s *runCoordinator) ActiveAgent(context.Context, string) (config.ActiveAgen
 }
 func (s *runCoordinator) UpdateModels(context.Context) error            { return nil }
 func (s *runCoordinator) GenerateTitle(context.Context, string, string) {}
+
+func (s *runCoordinator) RegenerateTitle(context.Context, string) error { return nil }
+
 func (s *runCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
 	return config.Agent{}, "", nil
 }

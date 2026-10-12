@@ -39,6 +39,9 @@ type fakeCoordinator struct {
 	summarizeErr   error
 	summarizeCalls []string
 
+	regenerateTitleErr   error
+	regenerateTitleCalls []string
+
 	sideQuestionAnswer string
 	sideQuestionErr    error
 	sideQuestionCalls  []string
@@ -116,6 +119,11 @@ func (c *fakeCoordinator) ActiveAgent(context.Context, string) (config.ActiveAge
 
 func (c *fakeCoordinator) UpdateModels(context.Context) error            { return nil }
 func (c *fakeCoordinator) GenerateTitle(context.Context, string, string) {}
+
+func (c *fakeCoordinator) RegenerateTitle(ctx context.Context, sessionID string) error {
+	c.regenerateTitleCalls = append(c.regenerateTitleCalls, sessionID)
+	return c.regenerateTitleErr
+}
 
 func (c *fakeCoordinator) GenerateAgent(context.Context, string) (config.Agent, string, error) {
 	return config.Agent{}, "", nil

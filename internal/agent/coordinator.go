@@ -184,6 +184,10 @@ type Coordinator interface {
 
 	UpdateModels(ctx context.Context) error
 	GenerateTitle(ctx context.Context, sessionID, prompt string)
+	// RegenerateTitle names sessionID again from the prompt that opened
+	// it, for when the automatic attempt failed. Unlike GenerateTitle it
+	// reports failure and keeps the current title when it does.
+	RegenerateTitle(ctx context.Context, sessionID string) error
 	GenerateAgent(ctx context.Context, description string) (config.Agent, string, error)
 
 	// SwitchAgent points the session at a different primary agent from

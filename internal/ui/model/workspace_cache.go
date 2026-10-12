@@ -75,10 +75,13 @@ type busyStateMsg struct {
 	// before a newer state transition (optimistic send, invalidation,
 	// session switch, ...) and is discarded, then re-fetched, so the
 	// authoritative refresh is never lost to an older in-flight request.
-	gen       uint64
-	ready     bool
-	agentBusy bool
-	mode      permission.PermissionMode
+	gen   uint64
+	ready bool
+	// agentBusy reports that any session in the workspace has a turn
+	// running. sessionBusy asks the same question of forSession alone.
+	agentBusy   bool
+	sessionBusy bool
+	mode        permission.PermissionMode
 	// forSession is the session the agent probe was scoped to. The agent
 	// instance belongs to a session, so a result that raced a session
 	// switch describes the wrong one; applyBusyState stamps it and the
@@ -169,6 +172,7 @@ func (m *UI) currentSessionID() string {
 // state.
 func (m *UI) invalidateBusyCaches() {
 	m.agentBusyCache.invalidate()
+	m.sessionBusyCache.invalidate()
 	m.permissionModeCache.invalidate()
 	m.busyFetchGen++
 }
@@ -198,6 +202,9 @@ func (m *UI) dispatchBusyRefresh() tea.Cmd {
 		if ws.AgentIsReady() {
 			st.ready = true
 			st.agentBusy = ws.AgentIsBusy()
+			if sessionID != "" {
+				st.sessionBusy = ws.AgentIsSessionBusy(sessionID)
+			}
 			active, err := ws.AgentActive(context.Background(), sessionID)
 			if err != nil {
 				// Leaving activeKnown false renders as blank and keeps
@@ -240,6 +247,7 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 	}
 	prevMode := m.permissionModeCached()
 	m.agentBusyCache.set(msg.agentBusy)
+	m.sessionBusyCache.set(msg.sessionBusy)
 	m.permissionModeCache.set(msg.mode)
 	m.agentReady = msg.ready
 	m.agentActive = msg.active
@@ -376,7 +384,7 @@ func (m *UI) staleWorkspaceRefreshCmds() []tea.Cmd {
 		return nil
 	}
 	var cmds []tea.Cmd
-	if !m.agentBusyCache.fresh(busyCacheTTL) || !m.permissionModeCache.fresh(busyCacheTTL) {
+	if !m.agentBusyCache.fresh(busyCacheTTL) || !m.sessionBusyCache.fresh(busyCacheTTL) || !m.permissionModeCache.fresh(busyCacheTTL) {
 		if cmd := m.dispatchBusyRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}

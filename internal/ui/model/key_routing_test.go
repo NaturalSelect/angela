@@ -160,6 +160,7 @@ func TestHandleKeyPressMsg_ChatCancelWhenEscapeCancelsTrue(t *testing.T) {
 	m.agentReady = true
 	m.isCanceling = true
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 	m.busyFetchInFlight = true // keeps dispatchBusyRefresh's returned cmd nil
 	// NOTE: Keeps the TTL backstop in Update from probing LSP state.
 	m.lspCheckedAt = time.Now()
@@ -292,6 +293,7 @@ func TestHandleKeyPressMsg_GlobalSuspend(t *testing.T) {
 		t.Parallel()
 		m, _ := newMockBusyUI(t)
 		m.agentBusyCache.set(true)
+		m.sessionBusyCache.set(true)
 
 		cmd := m.handleKeyPressMsg(ctrlKey('z'))
 
@@ -547,6 +549,7 @@ func TestHandleKeyPressMsg_NewSession(t *testing.T) {
 		t.Parallel()
 		m, _ := newMockBusyUI(t)
 		m.agentBusyCache.set(true)
+		m.sessionBusyCache.set(true)
 
 		cmd := m.handleKeyPressMsg(ctrlKey('n'))
 
@@ -573,6 +576,7 @@ func TestHandleKeyPressMsg_OpenEditor(t *testing.T) {
 		t.Parallel()
 		m, _ := newMockBusyUI(t)
 		m.agentBusyCache.set(true)
+		m.sessionBusyCache.set(true)
 
 		cmd := m.handleKeyPressMsg(ctrlKey('o'))
 
@@ -783,6 +787,7 @@ func TestHandleKeyPressMsg_MainFocusNewSession(t *testing.T) {
 	m, _ := newMockBusyUI(t)
 	m.focus = uiFocusMain
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 
 	cmd := m.handleKeyPressMsg(ctrlKey('n'))
 

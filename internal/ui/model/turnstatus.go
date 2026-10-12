@@ -36,7 +36,7 @@ func (m *UI) renderTurnStatus(width int) string {
 	if width <= 0 || !m.hasSession() {
 		return ""
 	}
-	if !m.isAgentBusy() {
+	if !m.isSessionBusy() {
 		return m.renderIdleStatus(width)
 	}
 
@@ -61,7 +61,7 @@ func (m *UI) turnSpinnerFrame() string {
 // no-op while the spinner already matches the busy state, which is what keeps
 // a second tick chain from starting.
 func (m *UI) syncTurnSpinner() tea.Cmd {
-	busy := m.isAgentBusy()
+	busy := m.isSessionBusy()
 	if busy == m.turnIsSpinning {
 		return nil
 	}

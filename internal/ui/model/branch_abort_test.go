@@ -34,6 +34,7 @@ func newIdleMockWorkspace(t *testing.T) *MockWorkspace {
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentIsReady().Return(false).AnyTimes()
 	ws.EXPECT().AgentIsBusy().Return(false).AnyTimes()
+	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(false).AnyTimes()
 	ws.EXPECT().PermissionMode().Return(permission.ModeManual).AnyTimes()
 	return ws
 }
@@ -95,6 +96,7 @@ func newBranchCancelUI(t *testing.T, busy bool) (*UI, *cancelCalls) {
 	}
 	ui.sessionIsBranch = true
 	ui.agentBusyCache.set(busy)
+	ui.sessionBusyCache.set(busy)
 	return ui, calls
 }
 
@@ -140,6 +142,7 @@ func TestEscapeCancelsGate(t *testing.T) {
 			agentReady: true,
 		}
 		ui.agentBusyCache.set(false)
+		ui.sessionBusyCache.set(false)
 		require.False(t, ui.escapeCancels(),
 			"escape must still fall through to navigation on an ordinary session")
 	})
@@ -154,6 +157,7 @@ func TestEscapeCancelsGate(t *testing.T) {
 			agentReady:   true,
 		}
 		ui.agentBusyCache.set(false)
+		ui.sessionBusyCache.set(false)
 		require.False(t, ui.escapeCancels(),
 			"escape must still leave a sub-agent transcript rather than cancel")
 	})
@@ -172,6 +176,7 @@ func TestEscapeCancelsGate(t *testing.T) {
 			agentReady:   true,
 		}
 		ui.agentBusyCache.set(true)
+		ui.sessionBusyCache.set(true)
 		require.False(t, ui.escapeCancels(),
 			"escape must leave a running sub-agent transcript, not cancel the parent turn")
 	})
@@ -185,6 +190,7 @@ func TestEscapeCancelsGate(t *testing.T) {
 			agentReady: true,
 		}
 		ui.agentBusyCache.set(true)
+		ui.sessionBusyCache.set(true)
 		require.True(t, ui.escapeCancels(), "regression: busy sessions always cancelled")
 	})
 }
@@ -220,6 +226,7 @@ func TestEscOnAnOrdinarySessionNeverNavigates(t *testing.T) {
 		isCanceling: true,
 	}
 	ui.agentBusyCache.set(true)
+	ui.sessionBusyCache.set(true)
 
 	drain(ui.cancelAgent())
 	require.Equal(t, []string{"root"}, calls.cancelled)
@@ -289,6 +296,7 @@ func TestAbortBranchWithNoStackStillReachesTheParent(t *testing.T) {
 	}
 	ui.sessionIsBranch = true
 	ui.agentBusyCache.set(true)
+	ui.sessionBusyCache.set(true)
 	require.False(t, ui.inSubSession(), "the fixture must start with nothing on the stack")
 
 	drain(ui.abortBranch("branch-1"))

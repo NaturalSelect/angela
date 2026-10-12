@@ -217,7 +217,7 @@ func (m *UI) escapeCancels() bool {
 	if m.viewingSubAgent() || m.completionsOpen {
 		return false
 	}
-	return m.isAgentBusy()
+	return m.isSessionBusy()
 }
 
 // abortBranch abandons a branch without merging and returns to the

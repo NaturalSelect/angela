@@ -22,6 +22,7 @@ func busyStatusUI(t *testing.T) *UI {
 	ws, _ := detailsMockWorkspace(t)
 	m := newBusyUIWithWorkspace(ws)
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 	m.session = &session.Session{
 		ID:               "s1",
 		Title:            "t",
@@ -49,6 +50,7 @@ func TestTurnStatusNeverExceedsWidth(t *testing.T) {
 	}
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	for width := 1; width <= 200; width++ {
 		require.LessOrEqual(t, ansi.StringWidth(m.renderTurnStatus(width)), width,
 			"idle status overflows at width %d", width)
@@ -109,6 +111,7 @@ func TestTurnStatusShowsTokensAndContextTogether(t *testing.T) {
 	require.Contains(t, busy, "3.2k/10.0k", "busy status must show the current tokens over the window size")
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "32%", "idle status must show the context percentage")
 	require.Contains(t, idle, "3.2k/10.0k", "idle status must show the current tokens over the window size")
@@ -126,6 +129,7 @@ func TestTurnStatusTokenUsageWithoutContextWindow(t *testing.T) {
 	require.NotContains(t, busy, "%")
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "3.2k")
 	require.NotContains(t, idle, "%")
@@ -153,6 +157,7 @@ func TestTurnStatusCapsContextPercentAt100(t *testing.T) {
 	require.Contains(t, busy, "3.2k/1.0k", "the raw figures must still show the true overshoot")
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "100%")
 }
@@ -179,6 +184,7 @@ func TestTurnStatusNeverExceedsWidthWhenOverContextWindow(t *testing.T) {
 	}
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	for width := 1; width <= 200; width++ {
 		require.LessOrEqual(t, ansi.StringWidth(m.renderTurnStatus(width)), width,
 			"idle status overflows at width %d", width)
@@ -199,6 +205,7 @@ func TestTurnStatusShowsTokensPerSecondForQualifyingStep(t *testing.T) {
 	require.Contains(t, busy, "20 tok/s")
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "20 tok/s")
 }
@@ -254,6 +261,7 @@ func TestTurnStatusShowsCumulativeInputTokensForSession(t *testing.T) {
 	require.Contains(t, busy, "in 1.5k")
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "in 1.5k")
 }
@@ -283,6 +291,7 @@ func TestTurnStatusShowsCumulativeOutputTokensForSession(t *testing.T) {
 	require.Contains(t, busy, "out 1.5k")
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "out 1.5k")
 }
@@ -312,6 +321,7 @@ func TestTurnStatusShowsCacheHitRateForSession(t *testing.T) {
 	require.Contains(t, busy, "75.00% cache hit")
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	idle := ansi.Strip(m.renderTurnStatus(200))
 	require.Contains(t, idle, "75.00% cache hit")
 }
@@ -367,14 +377,17 @@ func TestTurnStatusDoesNotProbeWorkspace(t *testing.T) {
 	m.agentActiveKnown = true
 	m.agentActiveSession = m.currentSessionID()
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 	m.session = &session.Session{ID: "s1", PromptTokens: 10, Cost: 0.5}
 	*counts = detailsSyncProbeCounts{}
 
 	for range 20 {
 		m.renderTurnStatus(120)
 		m.agentBusyCache.set(false)
+		m.sessionBusyCache.set(false)
 		m.renderTurnStatus(120)
 		m.agentBusyCache.set(true)
+		m.sessionBusyCache.set(true)
 	}
 
 	require.Zero(t, counts.sum(), "turn status must never probe the workspace")
@@ -595,10 +608,12 @@ func TestThinkingClockClearsWhenTheTurnEnds(t *testing.T) {
 	require.False(t, m.thinkingSince.IsZero(), "a running turn keeps its clock")
 
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 	m.syncTurnSpinner()
 	require.True(t, m.thinkingSince.IsZero())
 
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 	m.syncTurnSpinner()
 	require.Equal(t, "Thinking", m.currentActivity())
 }

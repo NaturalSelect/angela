@@ -214,6 +214,7 @@ func TestHandleDialogMsg_ActionNewSession_BusyIsRefusedAndDialogStays(t *testing
 	ws := NewMockWorkspace(ctrl)
 	m := newHandleDialogUI(t, ws)
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 
 	cmd := m.handleDialogMsg(dialog.ActionNewSession{})
 	require.NotNil(t, cmd)
@@ -230,6 +231,7 @@ func TestHandleDialogMsg_ActionNewSession_WithoutSessionIsNoOpButClosesPalette(t
 	ws := NewMockWorkspace(ctrl)
 	m := newHandleDialogUI(t, ws)
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 
 	m.handleDialogMsg(dialog.ActionNewSession{})
 	require.False(t, m.dialog.HasDialogs(), "the palette must close even when there was no session to clear")
@@ -573,6 +575,7 @@ func TestHandleDialogMsg_ActionExternalEditor_BusyIsRefusedAndDialogStays(t *tes
 
 	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 
 	cmd := m.handleDialogMsg(dialog.ActionExternalEditor{})
 	require.NotNil(t, cmd)
@@ -755,6 +758,7 @@ func TestHandleDialogMsg_ActionSuspend(t *testing.T) {
 
 		m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
 		m.agentBusyCache.set(false)
+		m.sessionBusyCache.set(false)
 
 		cmd := m.handleDialogMsg(dialog.ActionSuspend{})
 		require.NotNil(t, cmd)
@@ -766,6 +770,7 @@ func TestHandleDialogMsg_ActionSuspend(t *testing.T) {
 
 		m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
 		m.agentBusyCache.set(true)
+		m.sessionBusyCache.set(true)
 
 		cmd := m.handleDialogMsg(dialog.ActionSuspend{})
 		require.NotNil(t, cmd)
@@ -844,6 +849,7 @@ func TestHandleDialogMsg_ActionInitializeProject_BusyIsRefusedAndDialogStays(t *
 
 	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 
 	cmd := m.handleDialogMsg(dialog.ActionInitializeProject{})
 	require.NotNil(t, cmd)
@@ -857,6 +863,7 @@ func TestHandleDialogMsg_ActionSelectModel_BusyIsRefused(t *testing.T) {
 
 	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 
 	cmd := m.handleDialogMsg(dialog.ActionSelectModel{})
 	require.NotNil(t, cmd)
@@ -872,6 +879,7 @@ func TestHandleDialogMsg_ActionSelectModel_MissingConfigReportsError(t *testing.
 	ws.EXPECT().Config().Return(nil)
 	m := newHandleDialogUI(t, ws)
 	m.agentBusyCache.set(false)
+	m.sessionBusyCache.set(false)
 
 	cmd := m.handleDialogMsg(dialog.ActionSelectModel{})
 	require.NotNil(t, cmd)

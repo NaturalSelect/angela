@@ -112,6 +112,7 @@ func TestShortHelpFitsOneRow(t *testing.T) {
 						m.session = &session.Session{ID: "s1", Title: "t"}
 					}
 					m.agentBusyCache.set(busy)
+					m.sessionBusyCache.set(busy)
 					m.updateLayoutAndSize()
 
 					binds := m.ShortHelp()

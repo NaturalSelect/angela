@@ -127,6 +127,7 @@ func TestBuildSessionItemsAsksPerSession(t *testing.T) {
 	// A stale global cache claiming the process is busy must not leak
 	// into the per-session answer.
 	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
 
 	items, _ := m.buildSessionItems("s1", []message.Message{
 		assistantWithCall("m1", "c1"),

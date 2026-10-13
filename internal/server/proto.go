@@ -1695,6 +1695,7 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 		// workspace recovery.
 		status = http.StatusConflict
 	case errors.Is(err, backend.ErrWorkspaceClosing),
+		errors.Is(err, backend.ErrSessionBusy),
 		errors.Is(err, backend.ErrServerNotIdle),
 		errors.Is(err, backend.ErrClientRetired):
 		status = http.StatusConflict

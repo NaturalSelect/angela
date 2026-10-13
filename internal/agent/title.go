@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"charm.land/fantasy"
@@ -28,6 +29,35 @@ type sessionTitle struct {
 	cost             float64
 }
 
+// titleClaims records the sessions whose title is being written, so the
+// automatic first-prompt title and a manual regeneration never run for
+// the same session at once. The zero value is ready to use.
+type titleClaims struct {
+	mu   sync.Mutex
+	held map[string]struct{}
+}
+
+// claim reports whether the caller now owns sessionID's title. A caller
+// that gets true must call release.
+func (t *titleClaims) claim(sessionID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, taken := t.held[sessionID]; taken {
+		return false
+	}
+	if t.held == nil {
+		t.held = make(map[string]struct{})
+	}
+	t.held[sessionID] = struct{}{}
+	return true
+}
+
+func (t *titleClaims) release(sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.held, sessionID)
+}
+
 // generateSessionTitle is the callback a session agent fires on the
 // first user prompt of a session. The session agent decides when a
 // title is needed; which model and prompt produce it stays here.
@@ -40,6 +70,12 @@ func (c *coordinator) generateSessionTitle(ctx context.Context, sessionID, userP
 	if userPrompt == "" {
 		return
 	}
+	// NOTE: A regeneration in flight owns the title, and the fallback rename
+	// below would undo it.
+	if !c.titles.claim(sessionID) {
+		return
+	}
+	defer c.titles.release(sessionID)
 
 	// Ensure the session always gets a title even if every path below
 	// fails or the context is cancelled before we finish.
@@ -75,6 +111,12 @@ func (c *coordinator) generateSessionTitle(ctx context.Context, sessionID, userP
 // leaves the current title untouched, so a retry can never replace a
 // good title with the placeholder.
 func (c *coordinator) RegenerateTitle(ctx context.Context, sessionID string) error {
+	// NOTE: Refusing up front spares a model call whose result could not be saved.
+	if c.IsSessionBusy(sessionID) || !c.titles.claim(sessionID) {
+		return ErrSessionBusy
+	}
+	defer c.titles.release(sessionID)
+
 	msgs, err := c.messages.List(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("list session messages: %w", err)
@@ -88,8 +130,34 @@ func (c *coordinator) RegenerateTitle(ctx context.Context, sessionID string) err
 	if err != nil {
 		return err
 	}
-	if err := c.sessions.UpdateTitleAndUsage(ctx, sessionID, title.text, title.promptTokens, title.completionTokens, title.cost); err != nil {
+	return c.saveRegeneratedTitle(ctx, sessionID, title)
+}
+
+// saveRegeneratedTitle stores a regenerated title and the cost of
+// producing it.
+//
+// NOTE: The write happens under the session's dispatch lock because a turn
+// or a compaction saves the whole session row when it finishes, so a title
+// written while one is running would be reverted. The lock keeps one from
+// starting between the busy check and the write.
+//
+// NOTE: The token counters are not touched. They hold the session's current
+// context size, which the title call has no part in.
+func (c *coordinator) saveRegeneratedTitle(ctx context.Context, sessionID string, title sessionTitle) error {
+	if unlock, ok := c.LockSession(ctx, sessionID); ok {
+		defer unlock()
+	}
+	if c.IsSessionBusy(sessionID) {
+		return ErrSessionBusy
+	}
+	if err := c.sessions.Rename(ctx, sessionID, title.text); err != nil {
 		return fmt.Errorf("save session title: %w", err)
+	}
+	if title.cost == 0 {
+		return nil
+	}
+	if err := c.sessions.AddCost(ctx, sessionID, title.cost); err != nil {
+		return fmt.Errorf("save session title cost: %w", err)
 	}
 	return nil
 }

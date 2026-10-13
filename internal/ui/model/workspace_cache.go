@@ -246,6 +246,7 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 		return nil
 	}
 	prevMode := m.permissionModeCached()
+	wasSessionBusy := m.sessionBusyCache.val
 	m.agentBusyCache.set(msg.agentBusy)
 	m.sessionBusyCache.set(msg.sessionBusy)
 	m.permissionModeCache.set(msg.mode)
@@ -264,6 +265,13 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 	var cmds []tea.Cmd
 	if cmd := m.syncTurnSpinner(); cmd != nil {
 		cmds = append(cmds, cmd)
+	}
+	if !wasSessionBusy && msg.sessionBusy {
+		// NOTE: A transcript that loaded before this answer landed was
+		// built while the session read as idle, so its items never started.
+		if cmd := m.chat.StartAnimations(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	}
 	if cmd := m.drainPendingReAuth(); cmd != nil {
 		cmds = append(cmds, cmd)

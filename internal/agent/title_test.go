@@ -399,3 +399,76 @@ func TestRegenerateTitleWaitsForTheAutomaticTitle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Manual title", after.Title)
 }
+
+// TestAutomaticTitleWaitsForARegeneration pins that the first-prompt title
+// is not dropped because a manual regeneration is running. That
+// regeneration can still fail, here because a turn starts, and then
+// nothing else would ever name the session.
+func TestAutomaticTitleWaitsForARegeneration(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseRequest := func() { releaseOnce.Do(func() { close(release) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(entered)
+			<-release
+			writeTitleCompletion(w, "Manual title", 1, 1)
+			return
+		}
+		writeTitleCompletion(w, "Automatic title", 1, 1)
+	}))
+	// NOTE: Deferred after server.Close so it runs first; Close blocks on the parked request.
+	defer server.Close()
+	defer releaseRequest()
+
+	coord := newModelPrefTestCoordinator(t, nil)
+	setMockProviderBaseURL(t, coord, server.URL)
+	sess, err := coord.sessions.Create(t.Context(), DefaultSessionName)
+	require.NoError(t, err)
+	createUserPrompt(t, coord, sess.ID, "the login form rejects valid passwords")
+
+	regenerated := make(chan error, 1)
+	go func() { regenerated <- coord.RegenerateTitle(t.Context(), sess.ID) }()
+	<-entered
+	defer markBusy(t, coord, sess.ID)()
+
+	automatic := make(chan struct{})
+	go func() {
+		defer close(automatic)
+		coord.generateSessionTitle(t.Context(), sess.ID, "the login form rejects valid passwords")
+	}()
+	select {
+	case <-automatic:
+		require.FailNow(t, "the automatic title must wait for the regeneration instead of giving up")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseRequest()
+	require.ErrorIs(t, <-regenerated, ErrSessionBusy, "the turn that started meanwhile makes the regeneration lose")
+	<-automatic
+
+	after, err := coord.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Automatic title", after.Title)
+}
+
+// TestTitleClaimsAwaitGivesUpWhenTheContextEnds pins that waiting for a
+// session's title never outlives the caller.
+func TestTitleClaimsAwaitGivesUpWhenTheContextEnds(t *testing.T) {
+	t.Parallel()
+
+	var claims titleClaims
+	require.True(t, claims.claim("s1"))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, claims.await(ctx, "s1"), context.Canceled)
+
+	claims.release("s1")
+	require.NoError(t, claims.await(t.Context(), "s1"), "a released session can be claimed again")
+	require.False(t, claims.claim("s1"), "the second owner holds it now")
+}

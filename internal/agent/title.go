@@ -32,30 +32,60 @@ type sessionTitle struct {
 // titleClaims records the sessions whose title is being written, so the
 // automatic first-prompt title and a manual regeneration never run for
 // the same session at once. The zero value is ready to use.
+//
+// Each held session maps to a channel that release closes, which is what
+// lets await sleep until the owner is done.
 type titleClaims struct {
 	mu   sync.Mutex
-	held map[string]struct{}
+	held map[string]chan struct{}
 }
 
-// claim reports whether the caller now owns sessionID's title. A caller
-// that gets true must call release.
+// claim reports whether the caller now owns sessionID's title, without
+// waiting. A caller that gets true must call release.
 func (t *titleClaims) claim(sessionID string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.claimLocked(sessionID)
+}
+
+// await blocks until the caller owns sessionID's title or ctx ends. A
+// caller that gets nil must call release.
+func (t *titleClaims) await(ctx context.Context, sessionID string) error {
+	for {
+		t.mu.Lock()
+		if t.claimLocked(sessionID) {
+			t.mu.Unlock()
+			return nil
+		}
+		owner := t.held[sessionID]
+		t.mu.Unlock()
+
+		select {
+		case <-owner:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (t *titleClaims) claimLocked(sessionID string) bool {
 	if _, taken := t.held[sessionID]; taken {
 		return false
 	}
 	if t.held == nil {
-		t.held = make(map[string]struct{})
+		t.held = make(map[string]chan struct{})
 	}
-	t.held[sessionID] = struct{}{}
+	t.held[sessionID] = make(chan struct{})
 	return true
 }
 
 func (t *titleClaims) release(sessionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.held, sessionID)
+	if owner, ok := t.held[sessionID]; ok {
+		close(owner)
+		delete(t.held, sessionID)
+	}
 }
 
 // generateSessionTitle is the callback a session agent fires on the
@@ -70,9 +100,11 @@ func (c *coordinator) generateSessionTitle(ctx context.Context, sessionID, userP
 	if userPrompt == "" {
 		return
 	}
-	// NOTE: A regeneration in flight owns the title, and the fallback rename
-	// below would undo it.
-	if !c.titles.claim(sessionID) {
+	// NOTE: A regeneration in flight owns the title and may still fail, so
+	// this waits its turn instead of giving up. Running afterwards keeps the
+	// fallback rename from undoing a title the regeneration saved.
+	if err := c.titles.await(ctx, sessionID); err != nil {
+		slog.Warn("Gave up waiting to title the session", "sessionID", sessionID, "error", err)
 		return
 	}
 	defer c.titles.release(sessionID)

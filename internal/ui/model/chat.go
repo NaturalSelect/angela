@@ -636,6 +636,21 @@ func (m *Chat) RestartPausedVisibleAnimations() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// StartAnimations starts the animation of every item that has work in
+// flight. Items with nothing to animate return no command, and starting an
+// item that already animates supersedes its old tick chain.
+func (m *Chat) StartAnimations() tea.Cmd {
+	var cmds []tea.Cmd
+	for i := range m.list.Len() {
+		if animatable, ok := m.list.ItemAt(i).(chat.Animatable); ok {
+			if cmd := animatable.StartAnimation(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
 // Focus sets the focus state of the chat component.
 func (m *Chat) Focus() {
 	m.list.Focus()

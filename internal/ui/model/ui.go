@@ -980,7 +980,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.Focus()
 		}
 		m.setState(uiChat, focus)
-		if !m.hasSession() || m.session.ID != msg.session.ID {
+		switched := !m.hasSession() || m.session.ID != msg.session.ID
+		if switched {
 			m.thinkingSince = time.Time{}
 		}
 		m.session = msg.session
@@ -991,6 +992,12 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// off-thread so the queue pill and esc behavior track the new
 		// session instead of a stale one.
 		m.invalidateBusyCaches()
+		if switched {
+			// NOTE: Invalidating keeps the value, and the probe for the new
+			// session may be a cycle away. Until it lands the old session's
+			// answer would gate the new transcript's animations.
+			m.sessionBusyCache = ttlCache[bool]{}
+		}
 		m.invalidatePromptQueue()
 		m.promptQueue = 0
 		m.promptQueueItems = nil
@@ -2458,8 +2465,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionGenerateTitle:
-		// NOTE: Compaction rewrites the whole session row when it ends, so a
-		// title saved during a turn or a compact would be overwritten.
+		// NOTE: Fast path only. The coordinator refuses a busy session too,
+		// but only after this has spared the user a dialog round trip.
 		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before generating a title..."))
 			break

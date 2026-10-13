@@ -186,7 +186,9 @@ type Coordinator interface {
 	GenerateTitle(ctx context.Context, sessionID, prompt string)
 	// RegenerateTitle names sessionID again from the prompt that opened
 	// it, for when the automatic attempt failed. Unlike GenerateTitle it
-	// reports failure and keeps the current title when it does.
+	// reports failure and keeps the current title when it does. It
+	// returns ErrSessionBusy while the session runs a turn or is being
+	// titled, since a compaction would otherwise save over the new title.
 	RegenerateTitle(ctx context.Context, sessionID string) error
 	GenerateAgent(ctx context.Context, description string) (config.Agent, string, error)
 
@@ -240,6 +242,10 @@ type coordinator struct {
 	// user changes at runtime lands here, never in cfg. The zero value
 	// is ready to use.
 	active activeAgentStore
+
+	// titles serializes the automatic and the manual title writers per
+	// session. The zero value is ready to use.
+	titles titleClaims
 
 	// Skills discovery results (session-start snapshot).
 	allSkills    []*skills.Skill // Pre-filter: all discovered after dedup.

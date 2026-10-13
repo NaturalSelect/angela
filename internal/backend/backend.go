@@ -70,6 +70,11 @@ var (
 	// prompt to title, which the caller cannot fix by retrying.
 	ErrNoTitlePrompt = agent.ErrNoTitlePrompt
 
+	// ErrSessionBusy is a request the session cannot take while a turn
+	// or a title is in flight, which is a conflict the caller can retry
+	// once the session is idle.
+	ErrSessionBusy = agent.ErrSessionBusy
+
 	// The three below are a "switch agent model" override naming an
 	// agent, model or variant that does not resolve. Also the
 	// caller's to correct.

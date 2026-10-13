@@ -2,6 +2,12 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,4 +218,184 @@ func TestRegenerateTitleReplacesThePlaceholder(t *testing.T) {
 	require.Equal(t, "Fix login bug", after.Title)
 	require.Contains(t, string(body), "the login form rejects valid passwords")
 	require.NotContains(t, string(body), "a later message that must not be titled")
+}
+
+// writeTitleCompletion answers a chat-completions request with a streamed
+// reply carrying content and a final usage chunk, so the title call has
+// tokens to report.
+func writeTitleCompletion(w http.ResponseWriter, content string, promptTokens, completionTokens int) {
+	encoded, _ := json.Marshal(content)
+	w.Header().Set("Content-Type", "text/event-stream")
+	fmt.Fprint(w, "data: "+`{"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n\n")
+	fmt.Fprintf(w, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":%s}}]}\n\n", encoded)
+	fmt.Fprint(w, "data: "+`{"id":"c1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`+"\n\n")
+	fmt.Fprintf(w, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"choices\":[],\"usage\":{\"prompt_tokens\":%d,\"completion_tokens\":%d,\"total_tokens\":%d}}\n\n",
+		promptTokens, completionTokens, promptTokens+completionTokens)
+	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+// priceMockModels gives every model of the shared mock provider a price,
+// so a title call has a cost to report.
+func priceMockModels(t *testing.T, coord *coordinator) {
+	t.Helper()
+	p, ok := coord.cfg.Config().Providers.Get("mock")
+	require.True(t, ok)
+	for i := range p.Models {
+		p.Models[i].CostPer1MIn = 1000
+		p.Models[i].CostPer1MOut = 1000
+	}
+	coord.cfg.Config().Providers.Set("mock", p)
+}
+
+// markBusy registers a running turn for sessionID on the coordinator's
+// primary agent and returns a func that ends it.
+func markBusy(t *testing.T, coord *coordinator, sessionID string) func() {
+	t.Helper()
+	sa, ok := coord.currentAgent.(*sessionAgent)
+	require.True(t, ok)
+	ac := &activeCancel{cancel: func() {}}
+	sa.activeRequests.Set(sessionID, ac)
+	return func() { sa.activeRequests.CompareAndDelete(sessionID, ac) }
+}
+
+// TestRegenerateTitleLeavesTheContextCountersAlone pins that the title
+// call's tokens are not added to the session's token counters. Those hold
+// the current context size, so adding to them on an idle session in the
+// middle of its life inflates the context figure until the next turn.
+func TestRegenerateTitleLeavesTheContextCountersAlone(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeTitleCompletion(w, "Fix login bug", 120, 7)
+	}))
+	defer server.Close()
+
+	coord := newModelPrefTestCoordinator(t, nil)
+	setMockProviderBaseURL(t, coord, server.URL)
+	priceMockModels(t, coord)
+
+	sess, err := coord.sessions.Create(t.Context(), DefaultSessionName)
+	require.NoError(t, err)
+	sess.PromptTokens = 50000
+	sess.CompletionTokens = 300
+	_, err = coord.sessions.Save(t.Context(), sess)
+	require.NoError(t, err)
+	createUserPrompt(t, coord, sess.ID, "the login form rejects valid passwords")
+
+	require.NoError(t, coord.RegenerateTitle(t.Context(), sess.ID))
+
+	after, err := coord.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Fix login bug", after.Title)
+	require.Equal(t, int64(50000), after.PromptTokens, "the title call must not grow the context size")
+	require.Equal(t, int64(300), after.CompletionTokens, "the title call must not grow the context size")
+	require.Positive(t, after.Cost, "the title call is still paid for, so its cost is recorded")
+}
+
+// TestRegenerateTitleRefusedWhileTheSessionIsBusy pins the guard at the
+// coordinator, so a client that skips the UI check cannot bypass it. The
+// refusal must come before the model call, which would be wasted.
+func TestRegenerateTitleRefusedWhileTheSessionIsBusy(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		writeTitleCompletion(w, "Fix login bug", 1, 1)
+	}))
+	defer server.Close()
+
+	coord := newModelPrefTestCoordinator(t, nil)
+	setMockProviderBaseURL(t, coord, server.URL)
+
+	sess, err := coord.sessions.Create(t.Context(), "Original Title")
+	require.NoError(t, err)
+	createUserPrompt(t, coord, sess.ID, "the login form rejects valid passwords")
+	defer markBusy(t, coord, sess.ID)()
+
+	require.ErrorIs(t, coord.RegenerateTitle(t.Context(), sess.ID), ErrSessionBusy)
+	require.Zero(t, requests.Load(), "a refused request must not pay for a model call")
+
+	after, err := coord.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Original Title", after.Title)
+}
+
+// TestRegenerateTitleLosesTheRaceToATurn covers the window the up-front
+// check cannot: the session is idle when the request starts and busy by
+// the time the model answers. Compaction writes the whole session row
+// back when it finishes, so saving the title now would be undone.
+func TestRegenerateTitleLosesTheRaceToATurn(t *testing.T) {
+	t.Parallel()
+
+	var endTurn func()
+	coord := newModelPrefTestCoordinator(t, nil)
+	sess, err := coord.sessions.Create(t.Context(), "Original Title")
+	require.NoError(t, err)
+	createUserPrompt(t, coord, sess.ID, "the login form rejects valid passwords")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		endTurn = markBusy(t, coord, sess.ID)
+		writeTitleCompletion(w, "Fix login bug", 1, 1)
+	}))
+	defer server.Close()
+	setMockProviderBaseURL(t, coord, server.URL)
+
+	require.ErrorIs(t, coord.RegenerateTitle(t.Context(), sess.ID), ErrSessionBusy)
+	require.NotNil(t, endTurn, "the model must have been called before the session turned busy")
+	endTurn()
+
+	after, err := coord.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Original Title", after.Title)
+}
+
+// TestRegenerateTitleWaitsForTheAutomaticTitle pins that a regeneration
+// cannot land while the first-prompt title call is still running. That
+// call is detached from the turn and renames the session to the
+// placeholder if it fails, which would undo the regenerated title.
+func TestRegenerateTitleWaitsForTheAutomaticTitle(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseRequest := func() { releaseOnce.Do(func() { close(release) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(entered)
+			<-release
+			writeTitleCompletion(w, "Automatic title", 1, 1)
+			return
+		}
+		writeTitleCompletion(w, "Manual title", 1, 1)
+	}))
+	// NOTE: Deferred after server.Close so it runs first; Close blocks on the parked request.
+	defer server.Close()
+	defer releaseRequest()
+
+	coord := newModelPrefTestCoordinator(t, nil)
+	setMockProviderBaseURL(t, coord, server.URL)
+	sess, err := coord.sessions.Create(t.Context(), DefaultSessionName)
+	require.NoError(t, err)
+	createUserPrompt(t, coord, sess.ID, "the login form rejects valid passwords")
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		coord.generateSessionTitle(t.Context(), sess.ID, "the login form rejects valid passwords")
+	}()
+	<-entered
+
+	require.ErrorIs(t, coord.RegenerateTitle(t.Context(), sess.ID), ErrSessionBusy)
+	require.Equal(t, int32(1), requests.Load(), "a refused request must not pay for a model call")
+
+	releaseRequest()
+	<-done
+
+	require.NoError(t, coord.RegenerateTitle(t.Context(), sess.ID), "the automatic title is finished, so the session is free again")
+	after, err := coord.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Manual title", after.Title)
 }

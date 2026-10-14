@@ -77,6 +77,8 @@ angela run --continue "Follow up on your last response"
 
   `,
 	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
+		defer serveProfiles()()
+
 		var (
 			quiet, _      = cmd.Flags().GetBool("quiet")
 			verbose, _    = cmd.Flags().GetBool("verbose")

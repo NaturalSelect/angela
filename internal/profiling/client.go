@@ -31,14 +31,30 @@ type Profile struct {
 	Timed bool
 }
 
+// DefaultSeconds is how long a timed profile records unless told otherwise.
+const DefaultSeconds = 30
+
 // Profiles lists every exportable profile.
 var Profiles = []Profile{
-	{Name: "goroutine", Short: "Stack traces of all current goroutines"},
-	{Name: "heap", Short: "Live memory allocations as of the last GC"},
-	{Name: "allocs", Short: "All past memory allocations"},
-	{Name: "threadcreate", Short: "Stack traces that led to the creation of OS threads"},
-	{Name: "cpu", Short: "CPU profile recorded over a duration", Timed: true},
-	{Name: "trace", Short: "Execution trace recorded over a duration", Timed: true},
+	{Name: "goroutine", Short: "Stacks of all goroutines"},
+	{Name: "heap", Short: "Live memory as of the last GC"},
+	{Name: "allocs", Short: "All past allocations"},
+	{Name: "threadcreate", Short: "Stacks that created OS threads"},
+	{Name: "cpu", Short: "CPU time over a duration", Timed: true},
+	{Name: "trace", Short: "Execution trace over a duration", Timed: true},
+}
+
+// Extension is the file extension of the profile in its binary format.
+func (p Profile) Extension() string {
+	if p.Name == "trace" {
+		return "trace"
+	}
+	return "pb.gz"
+}
+
+// FileName names an export of p taken from process pid at the given time.
+func (p Profile) FileName(pid int, at time.Time, extension string) string {
+	return fmt.Sprintf("%s-%d-%s.%s", p.Name, pid, at.Format("20060102-150405"), extension)
 }
 
 // Request selects a profile of a serving process.

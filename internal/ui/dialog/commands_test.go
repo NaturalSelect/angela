@@ -904,3 +904,16 @@ func TestCommands_CursorAccountsForWideRunes(t *testing.T) {
 	require.Equal(t, curASCII.X+3, curCJK.X,
 		"three double-width runes should land the cursor 3 columns further right than three single-width runes")
 }
+
+// TestNewCommands_ExportProfileNeedsNoSession pins that exporting a profile
+// is offered even before a session exists, since it describes the process
+// rather than a conversation.
+func TestNewCommands_ExportProfileNeedsNoSession(t *testing.T) {
+	t.Parallel()
+
+	withoutSession := visibleCommandIDs(newTestCommands(t, nil, "", false, nil, nil, nil))
+	require.Contains(t, withoutSession, "export_profile")
+
+	withSession := visibleCommandIDs(newTestCommands(t, nil, "sess-1", true, nil, nil, nil))
+	require.Contains(t, withSession, "export_profile")
+}

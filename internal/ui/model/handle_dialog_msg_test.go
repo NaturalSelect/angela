@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -17,6 +19,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/profiling"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -1414,4 +1417,165 @@ func TestHandleDialogMsg_ActionExportReport_WritesToLocalWorkingDirectory(t *tes
 	require.NoError(t, err)
 	require.Contains(t, string(data), body)
 	require.NotContains(t, string(data), "Stored in full", "the banner is for the model and must not be exported")
+}
+
+// TestHandleDialogMsg_ActionExportProfile_EmptyProfileOpensPicker verifies
+// that picking "Export Profile" from the command palette closes the palette
+// and, once the working directory is resolved, opens the profile picker. It
+// needs no session and asks the workspace for nothing.
+func TestHandleDialogMsg_ActionExportProfile_EmptyProfileOpensPicker(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+	m.session = nil
+
+	cmd := m.handleDialogMsg(dialog.ActionExportProfile{})
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the picker opens")
+	require.NotNil(t, cmd)
+
+	m.Update(cmd())
+	require.True(t, m.dialog.ContainsDialog(dialog.ProfilesID))
+}
+
+// TestHandleDialogMsg_ActionSelectExportProfile_Snapshot verifies a snapshot
+// profile opens a path-only step, pre-filled under the given directory.
+func TestHandleDialogMsg_ActionSelectExportProfile_Snapshot(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+
+	cmd := m.handleDialogMsg(dialog.ActionSelectExportProfile{
+		Profile:    profiling.Profile{Name: "heap"},
+		WorkingDir: "/work",
+	})
+	require.Nil(t, cmd)
+	require.False(t, m.dialog.ContainsDialog(dialog.ProfilesID))
+	require.True(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
+
+	args, ok := m.dialog.Dialog(dialog.ArgumentsID).(*dialog.Arguments)
+	require.True(t, ok)
+	output := args.Value("OUTPUT")
+	require.Equal(t, "/work", filepath.Dir(output))
+	require.Contains(t, filepath.Base(output), "heap-")
+	require.True(t, strings.HasSuffix(output, ".pb.gz"), output)
+	require.Empty(t, args.Value("SECONDS"), "a snapshot has no duration to ask for")
+}
+
+// TestHandleDialogMsg_ActionSelectExportProfile_Timed verifies a timed
+// profile also asks how long to record, pre-filled with the default.
+func TestHandleDialogMsg_ActionSelectExportProfile_Timed(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+
+	cmd := m.handleDialogMsg(dialog.ActionSelectExportProfile{
+		Profile:    profiling.Profile{Name: "trace", Timed: true},
+		WorkingDir: "/work",
+	})
+	require.Nil(t, cmd)
+
+	args, ok := m.dialog.Dialog(dialog.ArgumentsID).(*dialog.Arguments)
+	require.True(t, ok)
+	require.Equal(t, strconv.Itoa(profiling.DefaultSeconds), args.Value("SECONDS"))
+	require.True(t, strings.HasSuffix(args.Value("OUTPUT"), ".trace"), "an execution trace is read by go tool trace")
+}
+
+// TestHandleDialogMsg_ActionExportProfile_WritesToLocalWorkingDirectory
+// mirrors the image export test above: the profile must land relative to
+// this test process's own current directory. This does not run in parallel
+// because it changes the process's working directory.
+func TestHandleDialogMsg_ActionExportProfile_WritesToLocalWorkingDirectory(t *testing.T) {
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+
+	dir := t.TempDir()
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(origWd)) })
+
+	cmd := m.handleDialogMsg(dialog.ActionExportProfile{
+		Profile: profiling.Profile{Name: "goroutine"},
+		Output:  "stacks.pb.gz",
+	})
+	require.NotNil(t, cmd)
+
+	info, ok := cmd().(util.InfoMsg)
+	require.True(t, ok, "export must report an outcome")
+	require.Equal(t, util.InfoTypeInfo, info.Type, info.Msg)
+
+	data, err := os.ReadFile(filepath.Join(dir, "stacks.pb.gz"))
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x1f, 0x8b}, data[:2])
+}
+
+// TestHandleDialogMsg_ActionExportProfile_KeepsExistingFile verifies a
+// repeated export gets a numbered sibling instead of overwriting.
+func TestHandleDialogMsg_ActionExportProfile_KeepsExistingFile(t *testing.T) {
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+
+	dir := t.TempDir()
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(origWd)) })
+	require.NoError(t, os.WriteFile("stacks.pb.gz", []byte("earlier"), 0o600))
+
+	cmd := m.handleDialogMsg(dialog.ActionExportProfile{
+		Profile: profiling.Profile{Name: "goroutine"},
+		Output:  "stacks.pb.gz",
+	})
+	info, ok := cmd().(util.InfoMsg)
+	require.True(t, ok)
+	require.Equal(t, util.InfoTypeInfo, info.Type, info.Msg)
+
+	earlier, err := os.ReadFile("stacks.pb.gz")
+	require.NoError(t, err)
+	require.Equal(t, "earlier", string(earlier))
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 2, "the second export must be saved next to the first")
+}
+
+// TestExportProfile_TimedProfileShowsAnimatedToastWhileRecording verifies a
+// profile that records over time announces itself with an animated toast
+// before the outcome arrives.
+func TestExportProfile_TimedProfileShowsAnimatedToastWhileRecording(t *testing.T) {
+	t.Parallel()
+
+	timed := exportProfile(dialog.ActionExportProfile{
+		Profile: profiling.Profile{Name: "cpu", Timed: true},
+		Seconds: 1,
+	})
+	batch, ok := timed().(tea.BatchMsg)
+	require.True(t, ok, "a timed export is a batch of the toast and the recording")
+	require.Len(t, batch, 2)
+	toast, ok := batch[0]().(util.InfoMsg)
+	require.True(t, ok)
+	require.True(t, toast.Animated)
+	require.Contains(t, toast.Msg, "cpu")
+}
+
+// TestExportProfile_SnapshotReportsOnlyTheOutcome verifies a snapshot, which
+// finishes at once, sends no in-progress toast: the first and only message
+// is the outcome. This does not run in parallel because it changes the
+// process's working directory.
+func TestExportProfile_SnapshotReportsOnlyTheOutcome(t *testing.T) {
+	dir := t.TempDir()
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(origWd)) })
+
+	msg := exportProfile(dialog.ActionExportProfile{
+		Profile: profiling.Profile{Name: "heap"},
+		Output:  "heap.pb.gz",
+	})()
+
+	_, isBatch := msg.(tea.BatchMsg)
+	require.False(t, isBatch, "a snapshot must not queue an in-progress toast")
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "got %T", msg)
+	require.False(t, info.Animated)
+	require.Equal(t, util.InfoTypeInfo, info.Type, info.Msg)
 }

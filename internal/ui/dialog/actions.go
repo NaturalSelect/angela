@@ -16,6 +16,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/profiling"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
@@ -185,6 +186,24 @@ type (
 	// picker doing any IO itself.
 	ActionSelectExportReport struct {
 		Report     tools.Report
+		WorkingDir string
+	}
+	// ActionExportProfile asks for a runtime profile of this process to be
+	// written to disk. A zero Profile means the user picked the command from
+	// the palette but has not chosen one yet. Seconds only applies to timed
+	// profiles, and the profile travels in the action because the picker
+	// already chose it.
+	ActionExportProfile struct {
+		Profile profiling.Profile
+		Output  string
+		Seconds int
+	}
+	// ActionSelectExportProfile is emitted when the user picks a profile from
+	// the "Export Profile" picker dialog. WorkingDir is passed through
+	// unchanged so the next step can default the output path without the
+	// picker doing any IO itself.
+	ActionSelectExportProfile struct {
+		Profile    profiling.Profile
 		WorkingDir string
 	}
 	// ActionCommit generates a commit message from the workspace's

@@ -42,6 +42,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/profiling"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/sandbox"
@@ -851,6 +852,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewReports(m.com, msg.reports, msg.workingDir))
+	case exportProfilesLoadedMsg:
+		m.dialog.OpenDialog(dialog.NewProfiles(m.com, profiling.Profiles, msg.workingDir))
 	case tpsComputedMsg:
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
@@ -1724,6 +1727,13 @@ type exportImagesLoadedMsg struct {
 type exportReportsLoadedMsg struct {
 	sessionID  string
 	reports    []agenttools.Report
+	workingDir string
+}
+
+// exportProfilesLoadedMsg carries the working directory the "Export Profile"
+// picker defaults its output path to, resolved off the Update goroutine, so
+// the picker can be opened once it arrives.
+type exportProfilesLoadedMsg struct {
 	workingDir string
 }
 
@@ -2675,6 +2685,44 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			dialog.ActionExportReport{Report: msg.Report},
 		)
 		argsDialog.SetValue("OUTPUT", defaultPath)
+		m.dialog.OpenDialog(argsDialog)
+	case dialog.ActionExportProfile:
+		if msg.Profile.Name == "" {
+			m.dialog.CloseDialog(dialog.CommandsID)
+			cmds = append(cmds, func() tea.Msg {
+				// Profiles describe this process, so they are written
+				// through its own filesystem, never the workspace's.
+				workingDir, err := os.Getwd()
+				if err != nil {
+					return util.ReportError(err)()
+				}
+				return exportProfilesLoadedMsg{workingDir: workingDir}
+			})
+			break
+		}
+		m.dialog.CloseDialog(dialog.ArgumentsID)
+		cmds = append(cmds, exportProfile(msg))
+	case dialog.ActionSelectExportProfile:
+		m.dialog.CloseDialog(dialog.ProfilesID)
+		profile := msg.Profile
+		defaultName := profile.FileName(os.Getpid(), time.Now(), profile.Extension())
+		arguments := []commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}}
+		description := "Writes a snapshot of this process to a file for `go tool pprof`."
+		if profile.Timed {
+			arguments = append(arguments, commands.Argument{ID: "SECONDS", Title: "Seconds to Record", Required: true})
+			description = "Records this process for a while, then writes the result to a file."
+		}
+		argsDialog := dialog.NewArguments(
+			m.com,
+			"Export Profile: "+profile.Name,
+			description,
+			arguments,
+			dialog.ActionExportProfile{Profile: profile},
+		)
+		argsDialog.SetValue("OUTPUT", filepath.Join(msg.WorkingDir, defaultName))
+		if profile.Timed {
+			argsDialog.SetValue("SECONDS", strconv.Itoa(profiling.DefaultSeconds))
+		}
 		m.dialog.OpenDialog(argsDialog)
 	case dialog.ActionUndo:
 		// Session-scoped, matching ActionSummarize: the busy cache

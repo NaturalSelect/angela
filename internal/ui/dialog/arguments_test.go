@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/commands"
+	"github.com/NaturalSelect/angela/internal/profiling"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -425,4 +426,69 @@ func TestArguments_ShortAndFullHelp(t *testing.T) {
 	require.Len(t, full, 2)
 	require.Len(t, full[0], 3)
 	require.Len(t, full[1], 1)
+}
+
+// TestArguments_ExportProfileSubmitKeepsPickedProfileAndParsesSeconds
+// verifies the "Export Profile" step keeps the profile the picker chose and
+// turns the SECONDS field into a number.
+func TestArguments_ExportProfileSubmitKeepsPickedProfileAndParsesSeconds(t *testing.T) {
+	t.Parallel()
+
+	picked := profiling.Profile{Name: "cpu", Timed: true}
+	a := newTestArguments(t, testArgumentList(
+		commands.Argument{ID: "OUTPUT", Title: "Output Path"},
+		commands.Argument{ID: "SECONDS", Title: "Seconds"},
+	), ActionExportProfile{Profile: picked})
+
+	a.SetValue("OUTPUT", "/tmp/cpu.pb.gz")
+	a.SetValue("SECONDS", " 12 ")
+	a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	action := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	got, ok := action.(ActionExportProfile)
+	require.True(t, ok, "got %T", action)
+	require.Equal(t, picked, got.Profile)
+	require.Equal(t, "/tmp/cpu.pb.gz", got.Output)
+	require.Equal(t, 12, got.Seconds)
+}
+
+// TestArguments_ExportProfileSnapshotHasNoSeconds verifies a snapshot
+// profile, whose step has only an OUTPUT field, submits with no duration.
+func TestArguments_ExportProfileSnapshotHasNoSeconds(t *testing.T) {
+	t.Parallel()
+
+	picked := profiling.Profile{Name: "heap"}
+	a := newTestArguments(t, testArgumentList(
+		commands.Argument{ID: "OUTPUT", Title: "Output Path"},
+	), ActionExportProfile{Profile: picked})
+
+	a.SetValue("OUTPUT", "/tmp/heap.pb.gz")
+	got, ok := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter}).(ActionExportProfile)
+	require.True(t, ok)
+	require.Equal(t, picked, got.Profile)
+	require.Zero(t, got.Seconds)
+}
+
+// TestArguments_ExportProfileRejectsBadSeconds verifies a duration that is
+// not a positive whole number keeps the dialog open with a warning instead
+// of starting a recording.
+func TestArguments_ExportProfileRejectsBadSeconds(t *testing.T) {
+	t.Parallel()
+
+	for _, bad := range []string{"abc", "0", "-5", "1.5", ""} {
+		t.Run(bad, func(t *testing.T) {
+			t.Parallel()
+			a := newTestArguments(t, testArgumentList(
+				commands.Argument{ID: "OUTPUT", Title: "Output Path"},
+				commands.Argument{ID: "SECONDS", Title: "Seconds"},
+			), ActionExportProfile{Profile: profiling.Profile{Name: "cpu", Timed: true}})
+
+			a.SetValue("OUTPUT", "/tmp/cpu.pb.gz")
+			a.SetValue("SECONDS", bad)
+			a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+			action := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+			require.IsType(t, ActionCmd{}, action, "a bad duration must not produce an export action")
+		})
+	}
 }

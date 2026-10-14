@@ -2465,12 +2465,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionGenerateTitle:
-		// NOTE: Fast path only. The coordinator refuses a busy session too,
-		// but only after this has spared the user a dialog round trip.
-		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
-			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before generating a title..."))
-			break
-		}
 		cmds = append(cmds, m.generateSessionTitle(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionCommit:

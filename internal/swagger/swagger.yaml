@@ -2555,6 +2555,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/proto.Error'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/proto.Error'
         "500":
           description: Internal Server Error
           schema:

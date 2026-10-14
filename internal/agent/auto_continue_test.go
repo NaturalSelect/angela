@@ -535,6 +535,177 @@ func TestRun_ResumeAfterCompactionPublishesOneRunComplete(t *testing.T) {
 	require.Equal(t, lastAssistantID, events[0].MessageID, "the event must describe the resumed turn's reply, not the cut-off segment")
 }
 
+// compactionAgents returns a coder agent and a compact agent sized so a
+// reported input of 900 tokens crosses the compaction threshold.
+func compactionAgents(model, compactModel fantasy.LanguageModel) (coder, compact resolvedAgent) {
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	coder = resolvedAgent{
+		ID:        config.AgentCoder,
+		Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+		MaxTokens: catwalkCfg.DefaultMaxTokens,
+	}
+	compact = resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+		SystemPrompt: "summarize",
+	}
+	return coder, compact
+}
+
+// TestRun_ResumeAfterCompactionReturnsItsOwnAnswerNotAQueuedFollowUp
+// guards the result of a turn that crossed the compaction threshold
+// with a tool call pending while another prompt was already queued. The
+// resumed turn runs that prompt when it finishes, but the prompt has a
+// caller of its own, so the original caller must get the resumed turn's
+// answer. Sub-agents and `angela run` print that result as the answer.
+func TestRun_ResumeAfterCompactionReturnsItsOwnAnswerNotAQueuedFollowUp(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"follow-up answer"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
+		Times(1)
+
+	coder, compact := compactionAgents(model, compactModel)
+
+	// A RunID keeps the prompt out of the active turn, so it waits in the
+	// queue behind the resume that compaction prepends.
+	sa.enqueueCall(SessionAgentCall{
+		Agent:     coder,
+		SessionID: sess.ID,
+		RunID:     "run-follow",
+		Prompt:    "follow-up",
+	})
+
+	res, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     coder,
+		Compact:   compact,
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "do the thing",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.Equal(t, "done", res.Response.Content.Text(),
+		"the caller must get the resumed turn's answer, not the queued prompt's")
+}
+
+// TestRun_CompactionWithoutAResumeKeepsItsOwnAnswer guards the other
+// half: a turn that finished its answer before compacting queued no
+// resume, so the prompt the compaction then runs belongs to someone
+// else, and this turn's caller still gets its own answer.
+func TestRun_CompactionWithoutAResumeKeepsItsOwnAnswer(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(textThenFinish("here is your answer", fantasy.FinishReasonStop, fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"follow-up answer"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
+		Times(1)
+
+	coder, compact := compactionAgents(model, compactModel)
+
+	sa.enqueueCall(SessionAgentCall{
+		Agent:     coder,
+		SessionID: sess.ID,
+		RunID:     "run-follow",
+		Prompt:    "follow-up",
+	})
+
+	res, err := sa.Run(t.Context(), SessionAgentCall{
+		Agent:     coder,
+		Compact:   compact,
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "hello",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.Equal(t, "here is your answer", res.Response.Content.Text(),
+		"the queued prompt has a caller of its own; this turn must keep its answer")
+}
+
+// TestRun_ResumeAfterCompactionSendsOneFinishedNotification guards the
+// desktop notification of a turn that crossed the compaction threshold
+// with a tool call pending. The resumed turn sends it when the work is
+// really done; a second one from the outer Run would announce a turn
+// that had only been cut short.
+func TestRun_ResumeAfterCompactionSendsOneFinishedNotification(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	notifications := pubsub.NewBroker[notify.Notification]()
+	t.Cleanup(notifications.Shutdown)
+	sa.notify = notifications
+	events := notifications.Subscribe(t.Context())
+
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
+		Times(1)
+
+	coder, compact := compactionAgents(model, compactModel)
+
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent:     coder,
+		Compact:   compact,
+		SessionID: sess.ID,
+		RunID:     "run-1",
+		Prompt:    "do the thing",
+	})
+	require.NoError(t, err)
+
+	// Run publishes synchronously, so everything it sent is buffered.
+	var finished int
+	for {
+		select {
+		case ev := <-events:
+			if ev.Payload.Type == notify.TypeAgentFinished {
+				finished++
+			}
+			continue
+		default:
+		}
+		break
+	}
+	require.Equal(t, 1, finished, "only the resumed turn announces that the work is done")
+}
+
 // TestRun_SubAgentSummarizesOnMaxTokensWithNoToolCalls guards the fix
 // against treating a response merely truncated by the output-token
 // limit as "done": with no tool calls of its own it looks the same as

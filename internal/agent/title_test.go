@@ -371,7 +371,8 @@ func TestRegenerateTitleWaitsForTheAutomaticTitle(t *testing.T) {
 		}
 		writeTitleCompletion(w, "Manual title", 1, 1)
 	}))
-	// NOTE: Deferred after server.Close so it runs first; Close blocks on the parked request.
+	// NOTE: Deferred after server.Close so it runs first, because Close
+	// blocks on the parked request.
 	defer server.Close()
 	defer releaseRequest()
 
@@ -421,7 +422,8 @@ func TestAutomaticTitleWaitsForARegeneration(t *testing.T) {
 		}
 		writeTitleCompletion(w, "Automatic title", 1, 1)
 	}))
-	// NOTE: Deferred after server.Close so it runs first; Close blocks on the parked request.
+	// NOTE: Deferred after server.Close so it runs first, because Close
+	// blocks on the parked request.
 	defer server.Close()
 	defer releaseRequest()
 
@@ -456,6 +458,63 @@ func TestAutomaticTitleWaitsForARegeneration(t *testing.T) {
 	require.Equal(t, "Automatic title", after.Title)
 }
 
+// TestAutomaticTitleKeepsARegeneratedTitleWhenItFails pins that an
+// automatic title which had to wait for a regeneration does not undo it.
+// The regeneration succeeds, then the automatic call fails, and its
+// placeholder fallback would rename the session back to the default.
+func TestAutomaticTitleKeepsARegeneratedTitleWhenItFails(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseRequest := func() { releaseOnce.Do(func() { close(release) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(entered)
+			<-release
+			writeTitleCompletion(w, "Manual title", 1, 1)
+			return
+		}
+		http.Error(w, "boom", http.StatusBadRequest)
+	}))
+	// NOTE: Deferred after server.Close so it runs first, because Close
+	// blocks on the parked request.
+	defer server.Close()
+	defer releaseRequest()
+
+	coord := newModelPrefTestCoordinator(t, nil)
+	setMockProviderBaseURL(t, coord, server.URL)
+	sess, err := coord.sessions.Create(t.Context(), DefaultSessionName)
+	require.NoError(t, err)
+	createUserPrompt(t, coord, sess.ID, "the login form rejects valid passwords")
+
+	regenerated := make(chan error, 1)
+	go func() { regenerated <- coord.RegenerateTitle(t.Context(), sess.ID) }()
+	<-entered
+
+	automatic := make(chan struct{})
+	go func() {
+		defer close(automatic)
+		coord.generateSessionTitle(t.Context(), sess.ID, "the login form rejects valid passwords")
+	}()
+	select {
+	case <-automatic:
+		require.FailNow(t, "the automatic title must wait for the regeneration")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseRequest()
+	require.NoError(t, <-regenerated)
+	<-automatic
+	require.GreaterOrEqual(t, requests.Load(), int32(2), "the automatic title must have tried and failed")
+
+	after, err := coord.sessions.Get(t.Context(), sess.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Manual title", after.Title)
+}
+
 // TestTitleClaimsAwaitGivesUpWhenTheContextEnds pins that waiting for a
 // session's title never outlives the caller.
 func TestTitleClaimsAwaitGivesUpWhenTheContextEnds(t *testing.T) {
@@ -466,9 +525,13 @@ func TestTitleClaimsAwaitGivesUpWhenTheContextEnds(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	require.ErrorIs(t, claims.await(ctx, "s1"), context.Canceled)
+	waited, err := claims.await(ctx, "s1")
+	require.ErrorIs(t, err, context.Canceled)
+	require.True(t, waited, "the session was held, so the caller did have to wait")
 
 	claims.release("s1")
-	require.NoError(t, claims.await(t.Context(), "s1"), "a released session can be claimed again")
+	waited, err = claims.await(t.Context(), "s1")
+	require.NoError(t, err, "a released session can be claimed again")
+	require.False(t, waited, "nobody held it, so there was nothing to wait for")
 	require.False(t, claims.claim("s1"), "the second owner holds it now")
 }

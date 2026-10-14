@@ -191,6 +191,7 @@ func (s *runState) enqueueAutoContinue(call SessionAgentCall, prompt string) {
 	}
 	call.Prompt = prompt
 	call.Attachments = nil
+	call.continuation = true
 	existing = append(existing, call)
 	s.messageQueue.Set(call.SessionID, existing)
 }

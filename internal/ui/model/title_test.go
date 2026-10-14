@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
@@ -70,7 +71,6 @@ func TestGenerateTitleReportsSuccess(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
-	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
 	ws.EXPECT().AgentRegenerateTitle(gomock.Any(), "current").Return(nil)
 
 	infos := runTitleCmd(t, newGenerateTitleUI(ws))
@@ -88,7 +88,6 @@ func TestGenerateTitleReportsFailure(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
-	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
 	ws.EXPECT().AgentRegenerateTitle(gomock.Any(), "current").Return(errors.New("provider unreachable"))
 
 	infos := runTitleCmd(t, newGenerateTitleUI(ws))
@@ -106,7 +105,6 @@ func TestGenerateTitleCancelledIsNotAnError(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
-	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
 	ws.EXPECT().AgentRegenerateTitle(gomock.Any(), "current").Return(context.Canceled)
 
 	msgs := runTitleCmdMsgs(t, newGenerateTitleUI(ws))
@@ -119,18 +117,21 @@ func TestGenerateTitleCancelledIsNotAnError(t *testing.T) {
 	require.Equal(t, util.ClearStatusMsg{}, msgs[len(msgs)-1], "the Generating toast must be cleared")
 }
 
-// TestGenerateTitleRefusedWhileSessionBusy pins that a running turn or
-// compaction blocks regeneration. Compaction writes the whole session
-// row back when it finishes and would revert the new title.
-func TestGenerateTitleRefusedWhileSessionBusy(t *testing.T) {
+// TestGenerateTitleReportsABusySession pins that the UI leaves the busy
+// check to the coordinator, which refuses a session that is running a
+// turn. Probing in Update would block it on a network round trip, and the
+// refusal reaches the user as an error toast all the same. The mock has
+// no expectation for AgentIsSessionBusy, so any probe fails the test.
+func TestGenerateTitleReportsABusySession(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
-	ws.EXPECT().AgentIsSessionBusy("current").Return(true)
+	ws.EXPECT().AgentRegenerateTitle(gomock.Any(), "current").Return(agent.ErrSessionBusy)
 
 	infos := runTitleCmd(t, newGenerateTitleUI(ws))
-	require.Len(t, infos, 1)
-	require.Equal(t, util.InfoTypeWarn, infos[0].Type)
-	require.Contains(t, infos[0].Msg, "busy")
+	require.NotEmpty(t, infos)
+	last := infos[len(infos)-1]
+	require.Equal(t, util.InfoTypeError, last.Type)
+	require.Contains(t, last.Msg, agent.ErrSessionBusy.Error())
 }

@@ -810,6 +810,9 @@ func applyModelOverride(cfg *Config, fallback, override SelectedModel) (resolved
 	if override.Provider != "" {
 		resolved.Provider = override.Provider
 	}
+	if override.Variant != "" {
+		resolved.Variant = override.Variant
+	}
 
 	if cfg.GetModel(resolved.Provider, resolved.Model) == nil {
 		return fallback, true
@@ -854,6 +857,9 @@ func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (reso
 		if !isKnownProvider {
 			slog.Warn("Using main model as chore model for unknown provider", "provider", main.Provider, "model", main.Model)
 			chore = main
+			// NOTE: The variant is main's own default, not part of
+			// the model chore reuses.
+			chore.Variant = ""
 		}
 	}
 

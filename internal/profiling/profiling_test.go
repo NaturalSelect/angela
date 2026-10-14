@@ -145,6 +145,24 @@ func TestServeSecuresRegistryDirectory(t *testing.T) {
 	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
 }
 
+// TestServeSamePIDInDifferentDirectories pins that endpoints are told apart by
+// directory as well as by pid. Windows pipe names are machine-wide, so a name
+// built from the pid alone makes the second listener fail.
+func TestServeSamePIDInDifferentDirectories(t *testing.T) {
+	t.Parallel()
+
+	pid := os.Getpid()
+	first, second := shortDir(t), shortDir(t)
+	startTestEndpoint(t, first, pid)
+	startTestEndpoint(t, second, pid)
+
+	for _, dir := range []string{first, second} {
+		procs, err := running(t.Context(), dir)
+		require.NoError(t, err)
+		require.Len(t, procs, 1)
+	}
+}
+
 func TestStopRemovesEndpoint(t *testing.T) {
 	t.Parallel()
 

@@ -1986,8 +1986,8 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 
 		cfg := &Config{
 			Slots: map[SlotName]SelectedModel{
-				SlotMain:  {Provider: "openai", Model: "this-model-does-not-exist"},
-				SlotChore: {Provider: "openai", Model: "also-does-not-exist"},
+				SlotMain:  {Provider: "ghost", Model: "this-model-does-not-exist"},
+				SlotChore: {Provider: "ghost", Model: "also-does-not-exist"},
 			},
 		}
 		cfg.setDefaults(dir, "")
@@ -2121,12 +2121,73 @@ func TestConfig_resolveSelectedModels_KeepsTheSlotVariant(t *testing.T) {
 
 	t.Run("a variant of a model that fell back is dropped", func(t *testing.T) {
 		resolved := resolve(t, map[SlotName]SelectedModel{
-			SlotMain: {Provider: "openai", Model: "missing", Variant: "deep"},
+			SlotMain: {Provider: "ghost", Model: "missing", Variant: "deep"},
 		})
 		require.True(t, resolved.MainFallback)
 		require.Equal(t, "large-model", resolved.Main.Model)
 		require.Empty(t, resolved.Main.Variant,
 			"the name belongs to the model that does not exist, not to the default that replaced it")
+	})
+}
+
+// TestConfig_resolveSelectedModels_RejectsAMissingModel pins that a slot
+// naming a configured provider but a model it does not offer is a
+// startup error rather than a silent swap for the default.
+func TestConfig_resolveSelectedModels_RejectsAMissingModel(t *testing.T) {
+	knownProviders := []catwalk.Provider{
+		{
+			ID:                  "openai",
+			APIKey:              "abc",
+			DefaultLargeModelID: "large-model",
+			DefaultSmallModelID: "small-model",
+			Models: []catwalk.Model{
+				{ID: "large-model", DefaultMaxTokens: 1000},
+				{ID: "small-model", DefaultMaxTokens: 500},
+			},
+		},
+	}
+	resolve := func(t *testing.T, slots map[SlotName]SelectedModel) error {
+		t.Helper()
+		cfg := &Config{Slots: slots}
+		cfg.setDefaults(t.TempDir(), "")
+		e := env.NewFromMap(map[string]string{})
+		require.NoError(t, cfg.configureProviders(
+			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders))
+		_, err := resolveSelectedModels(cfg, knownProviders)
+		return err
+	}
+
+	t.Run("main", func(t *testing.T) {
+		err := resolve(t, map[SlotName]SelectedModel{
+			SlotMain: {Provider: "openai", Model: "no-such-model"},
+		})
+		require.ErrorIs(t, err, ErrSlotModelNotFound)
+		require.ErrorContains(t, err, "openai/no-such-model")
+		require.ErrorContains(t, err, `"main"`)
+	})
+
+	t.Run("chore", func(t *testing.T) {
+		err := resolve(t, map[SlotName]SelectedModel{
+			SlotMain:  {Provider: "openai", Model: "large-model"},
+			SlotChore: {Provider: "openai", Model: "no-such-model"},
+		})
+		require.ErrorIs(t, err, ErrSlotModelNotFound)
+		require.ErrorContains(t, err, `"chore"`)
+	})
+
+	t.Run("a model-only override of main is checked against the default provider", func(t *testing.T) {
+		err := resolve(t, map[SlotName]SelectedModel{
+			SlotMain: {Model: "no-such-model"},
+		})
+		require.ErrorIs(t, err, ErrSlotModelNotFound)
+	})
+
+	t.Run("a slot other than main and chore is not checked", func(t *testing.T) {
+		err := resolve(t, map[SlotName]SelectedModel{
+			SlotMain:  {Provider: "openai", Model: "large-model"},
+			SlotImage: {Provider: "openai", Model: "gpt-image-1"},
+		})
+		require.NoError(t, err)
 	})
 }
 

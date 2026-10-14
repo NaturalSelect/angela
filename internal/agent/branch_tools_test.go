@@ -359,6 +359,64 @@ func TestBuildToolsGivesBranchesMerge(t *testing.T) {
 	})
 }
 
+// A primary and a branch both carry report ids in their conversation, so
+// both hold LoadReport whatever their allowed_tools say, and hold it once.
+// A subagent is never handed one.
+func TestBuildToolsGivesPrimariesAndBranchesLoadReport(t *testing.T) {
+	t.Parallel()
+
+	count := func(t *testing.T, agent config.Agent) int {
+		t.Helper()
+		c := newTestCoordinator(t, testEnv(t), "test", config.ProviderConfig{})
+
+		tooling, err := c.buildTools(agent, config.ActiveAgent{}, "test-model", 0)
+		require.NoError(t, err)
+
+		n := 0
+		for _, tool := range tooling {
+			if tool.Info().Name == toolnames.LoadReport {
+				n++
+			}
+		}
+		return n
+	}
+
+	narrow := &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.Read}}
+	noMCP := &config.AllowedMCPSet{Kind: config.ToolSetScope}
+
+	for _, mode := range []config.AgentMode{config.AgentModePrimary, config.AgentModeBranch} {
+		t.Run(string(mode)+" holds it once with every tool", func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, 1, count(t, config.Agent{
+				ID: "agent", Mode: mode,
+				AllowedTools: &config.AllowedToolSet{Kind: config.ToolSetAll},
+				AllowedMCP:   noMCP,
+			}))
+		})
+
+		t.Run(string(mode)+" keeps it when narrowed", func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, 1, count(t, config.Agent{
+				ID: "agent", Mode: mode,
+				AllowedTools: narrow,
+				AllowedMCP:   noMCP,
+			}))
+		})
+	}
+
+	t.Run("a subagent does not get it", func(t *testing.T) {
+		t.Parallel()
+
+		require.Zero(t, count(t, config.Agent{
+			ID: "general", Mode: config.AgentModeSubagent,
+			AllowedTools: narrow,
+			AllowedMCP:   noMCP,
+		}))
+	})
+}
+
 // No tool may let the model end a branch on its own: that decision is
 // the user's, and a model that could abandon would strand the parent
 // with an answer nobody approved.

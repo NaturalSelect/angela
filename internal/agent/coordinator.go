@@ -1020,7 +1020,6 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 		tools.NewMultiSearchTool(webSearchRouter),
 		tools.NewGlobTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Glob),
 		tools.NewGrepTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Grep),
-		tools.NewLoadReportTool(c.sessions, c.messages),
 		tools.NewLsTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Ls),
 		tools.NewSourcegraphTool(pageClient),
 		tools.NewTodosTool(c.sessions),
@@ -1074,6 +1073,11 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 		if agent.AllowedTools.Allows(tool.Info().Name) {
 			filteredTools = append(filteredTools, tool)
 		}
+	}
+
+	// NOTE: Past the whitelist so no allowed_tools can strand a report id.
+	if agent.Mode == config.AgentModePrimary || agent.Mode == config.AgentModeBranch {
+		filteredTools = append(filteredTools, tools.NewLoadReportTool(c.sessions, c.messages))
 	}
 
 	// Appended past the whitelist rather than through it: these are the

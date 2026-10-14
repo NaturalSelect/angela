@@ -70,10 +70,13 @@ const (
 	Agent      = "Agent"
 	AngelaInfo = "AngelaInfo"
 	AngelaLogs = "AngelaLogs"
-	LoadReport = "LoadReport"
 	Question   = "Question"
 	Todos      = "Todos"
 )
+
+// LoadReport is not part of the default tool set; the coordinator appends
+// it for agents in primary and branch mode, past any allowed_tools.
+const LoadReport = "LoadReport"
 
 // Branch-mode tools. These are not part of the default tool set; the
 // coordinator appends them for agents running in branch mode.

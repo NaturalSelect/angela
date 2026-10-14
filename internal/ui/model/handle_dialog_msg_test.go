@@ -1455,7 +1455,7 @@ func TestHandleDialogMsg_ActionSelectExportProfile_Snapshot(t *testing.T) {
 	args, ok := m.dialog.Dialog(dialog.ArgumentsID).(*dialog.Arguments)
 	require.True(t, ok)
 	output := args.Value("OUTPUT")
-	require.Equal(t, "/work", filepath.Dir(output))
+	require.Equal(t, filepath.Clean("/work"), filepath.Dir(output))
 	require.Contains(t, filepath.Base(output), "heap-")
 	require.True(t, strings.HasSuffix(output, ".pb.gz"), output)
 	require.Empty(t, args.Value("SECONDS"), "a snapshot has no duration to ask for")

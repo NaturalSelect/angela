@@ -798,11 +798,25 @@ type resolvedModels struct {
 	ChoreFallback bool // true if Chore was corrected to a default
 }
 
+// ErrSlotModelNotFound is returned when a slot selects a model that its
+// configured provider does not offer.
+var ErrSlotModelNotFound = fmt.Errorf("slot model not offered by its provider")
+
+// slotModelError reports whether selected names a model that provider
+// does not offer. The provider must already be known to be configured.
+func (c *Config) slotModelError(slot SlotName, selected SelectedModel) error {
+	if c.GetModel(selected.Provider, selected.Model) != nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %s/%s in slot %q", ErrSlotModelNotFound, selected.Provider, selected.Model, slot)
+}
+
 // applyModelOverride layers a user-configured selection on top of a
 // default one, resolving the result against the provider catalog. It
 // returns the default untouched and fellBack=true when the requested
-// model does not exist in the catalog.
-func applyModelOverride(cfg *Config, fallback, override SelectedModel) (resolved SelectedModel, fellBack bool) {
+// provider is not configured, and an error when the provider is
+// configured but does not offer the requested model.
+func applyModelOverride(cfg *Config, slot SlotName, fallback, override SelectedModel) (resolved SelectedModel, fellBack bool, err error) {
 	resolved = fallback
 	if override.Model != "" {
 		resolved.Model = override.Model
@@ -814,18 +828,24 @@ func applyModelOverride(cfg *Config, fallback, override SelectedModel) (resolved
 		resolved.Variant = override.Variant
 	}
 
-	if cfg.GetModel(resolved.Provider, resolved.Model) == nil {
-		return fallback, true
+	if _, configured := cfg.Providers.Get(resolved.Provider); !configured {
+		return fallback, true, nil
+	}
+	if err := cfg.slotModelError(slot, resolved); err != nil {
+		return SelectedModel{}, false, err
 	}
 
-	return resolved, false
+	return resolved, false, nil
 }
 
-// resolveSelectedModels validates the user's configured model selections
-// against the provider catalog, falling back to defaults when a model ID is
-// invalid. It is pure resolution logic: it does not mutate the store or
-// touch disk. The caller assigns the results to c.Models and persists any
-// fallback corrections as appropriate.
+// resolveSelectedModels validates the user's main and chore selections
+// against the provider catalog. A selection whose provider is not
+// configured falls back to the default; a selection whose provider does
+// not offer the model is an error. Other slots are left alone because
+// some, like the image slot, name models no chat catalog lists. It is
+// pure resolution logic: it does not mutate the store or touch disk.
+// The caller assigns the results to c.Models and persists any fallback
+// corrections as appropriate.
 func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (resolvedModels, error) {
 	var result resolvedModels
 	defaultMain, defaultChore, err := cfg.defaultModelSelection(knownProviders)
@@ -835,11 +855,17 @@ func resolveSelectedModels(cfg *Config, knownProviders []catwalk.Provider) (reso
 	main, chore := defaultMain, defaultChore
 
 	if override, configured := cfg.Slots[SlotMain]; configured {
-		main, result.MainFallback = applyModelOverride(cfg, defaultMain, override)
+		main, result.MainFallback, err = applyModelOverride(cfg, SlotMain, defaultMain, override)
+		if err != nil {
+			return result, err
+		}
 	}
 	override, choreConfigured := cfg.Slots[SlotChore]
 	if choreConfigured {
-		chore, result.ChoreFallback = applyModelOverride(cfg, defaultChore, override)
+		chore, result.ChoreFallback, err = applyModelOverride(cfg, SlotChore, defaultChore, override)
+		if err != nil {
+			return result, err
+		}
 	}
 
 	// When chore isn't explicitly configured and the provider isn't a

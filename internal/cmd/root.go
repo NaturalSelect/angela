@@ -158,6 +158,8 @@ angela --session {session-id}
 angela --continue
   `,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		defer serveProfiles()()
+
 		sessionID, _ := cmd.Flags().GetString("session")
 		continueLast, _ := cmd.Flags().GetBool("continue")
 

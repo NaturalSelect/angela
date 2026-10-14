@@ -89,6 +89,8 @@ internal/
   stringext/                       String utilities (capitalize, normalize, base64 check)
   dns/                             Android/Termux DNS resolver fallback config
   herdr/                           herdr terminal multiplexer integration (status reporting)
+  profiling/                       Per-process pprof endpoint on a private Unix socket / named
+                                    pipe, plus the client behind `angela pprof` (no TCP port)
 lib/
   paintbrush/                      Vendored go-ansi-paintbrush (image to ANSI blocks), patched
                                     to wait for its result collector; keep upstream's MIT license

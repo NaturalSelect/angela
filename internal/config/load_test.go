@@ -2044,6 +2044,92 @@ func TestConfig_configureSelectedModels(t *testing.T) {
 	})
 }
 
+// TestConfig_resolveSelectedModels_KeepsTheSlotVariant pins that
+// resolving a slot against the provider catalog hands back the variant
+// the user configured on it. The resolved selection is written back over
+// the slot, so a variant dropped here is gone for the whole session and
+// the setting silently does nothing.
+func TestConfig_resolveSelectedModels_KeepsTheSlotVariant(t *testing.T) {
+	knownProviders := []catwalk.Provider{
+		{
+			ID:                  "openai",
+			APIKey:              "abc",
+			DefaultLargeModelID: "large-model",
+			DefaultSmallModelID: "small-model",
+			Models: []catwalk.Model{
+				{ID: "large-model", DefaultMaxTokens: 1000},
+				{ID: "small-model", DefaultMaxTokens: 500},
+			},
+		},
+	}
+	resolve := func(t *testing.T, slots map[SlotName]SelectedModel) resolvedModels {
+		t.Helper()
+		cfg := &Config{Slots: slots}
+		cfg.setDefaults(t.TempDir(), "")
+		e := env.NewFromMap(map[string]string{})
+		require.NoError(t, cfg.configureProviders(
+			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders))
+		resolved, err := resolveSelectedModels(cfg, knownProviders)
+		require.NoError(t, err)
+		return resolved
+	}
+
+	t.Run("main and chore keep their own variants", func(t *testing.T) {
+		resolved := resolve(t, map[SlotName]SelectedModel{
+			SlotMain:  {Provider: "openai", Model: "large-model", Variant: "deep"},
+			SlotChore: {Provider: "openai", Model: "small-model", Variant: "quick"},
+		})
+		require.False(t, resolved.MainFallback)
+		require.Equal(t, "deep", resolved.Main.Variant)
+		require.Equal(t, "quick", resolved.Chore.Variant)
+	})
+
+	t.Run("a variant alone keeps the default model", func(t *testing.T) {
+		resolved := resolve(t, map[SlotName]SelectedModel{
+			SlotMain: {Variant: "deep"},
+		})
+		require.Equal(t, "large-model", resolved.Main.Model)
+		require.Equal(t, "deep", resolved.Main.Variant)
+	})
+
+	t.Run("an unconfigured chore does not borrow the main variant", func(t *testing.T) {
+		resolved := resolve(t, map[SlotName]SelectedModel{
+			SlotMain: {Provider: "openai", Model: "large-model", Variant: "deep"},
+		})
+		require.Empty(t, resolved.Chore.Variant,
+			"the variant is the main slot's own default, not part of the model chore falls back to")
+	})
+
+	t.Run("a chore that reuses main for an unknown provider does not take its variant", func(t *testing.T) {
+		cfg := &Config{Slots: map[SlotName]SelectedModel{
+			SlotMain: {Provider: "openai", Model: "large-model", Variant: "deep"},
+		}}
+		cfg.setDefaults(t.TempDir(), "")
+		e := env.NewFromMap(map[string]string{})
+		require.NoError(t, cfg.configureProviders(
+			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders))
+
+		// An empty built-in list makes openai a custom provider, which is
+		// the case where chore reuses the main model.
+		resolved, err := resolveSelectedModels(cfg, nil)
+		require.NoError(t, err)
+		require.Equal(t, resolved.Main.Model, resolved.Chore.Model, "chore must reuse the main model here")
+		require.Equal(t, "deep", resolved.Main.Variant)
+		require.Empty(t, resolved.Chore.Variant,
+			"the variant is main's own default; chore's quick jobs must not inherit it")
+	})
+
+	t.Run("a variant of a model that fell back is dropped", func(t *testing.T) {
+		resolved := resolve(t, map[SlotName]SelectedModel{
+			SlotMain: {Provider: "openai", Model: "missing", Variant: "deep"},
+		})
+		require.True(t, resolved.MainFallback)
+		require.Equal(t, "large-model", resolved.Main.Model)
+		require.Empty(t, resolved.Main.Variant,
+			"the name belongs to the model that does not exist, not to the default that replaced it")
+	})
+}
+
 // TestSelectedModelVariantsSurviveResolution pins the whole point of
 // declaring a variant in config: model resolution rewrites the entry it
 // resolves, so anything it forgets to carry over is gone before the

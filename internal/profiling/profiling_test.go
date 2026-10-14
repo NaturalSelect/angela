@@ -87,7 +87,6 @@ func TestServeRecordsTimedProfiles(t *testing.T) {
 
 	for _, name := range []string{"cpu", "trace"} {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 			req := Request{PID: pid, Profile: Profile{Name: name, Timed: true}, Seconds: 1}
 			start := time.Now()
 			rc, err := open(t.Context(), dir, pid, req.url())

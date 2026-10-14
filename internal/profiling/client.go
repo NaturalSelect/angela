@@ -150,8 +150,12 @@ func probe(ctx context.Context, dir string, pid int) (string, error) {
 }
 
 // isStale reports whether err means the endpoint file outlived its process.
+// Dialing a file that is no longer a socket fails with ECONNREFUSED on Linux
+// but with ENOTSOCK on the BSDs and macOS.
 func isStale(err error) bool {
-	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, fs.ErrNotExist)
+	return errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ENOTSOCK) ||
+		errors.Is(err, fs.ErrNotExist)
 }
 
 func open(ctx context.Context, dir string, pid int, rawURL string) (io.ReadCloser, error) {

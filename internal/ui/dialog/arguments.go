@@ -2,6 +2,7 @@ package dialog
 
 import (
 	"cmp"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/help"
@@ -262,6 +263,18 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 					// the Report was already set by the picker and must
 					// survive here.
 					action.Output = args["OUTPUT"]
+					return action
+				case ActionExportProfile:
+					// Like the report step, the Profile was already set by
+					// the picker. Only timed profiles have a SECONDS field.
+					action.Output = args["OUTPUT"]
+					if raw, ok := args["SECONDS"]; ok {
+						seconds, err := strconv.Atoi(strings.TrimSpace(raw))
+						if err != nil || seconds <= 0 {
+							return ActionCmd{Cmd: util.ReportWarn("Seconds must be a positive whole number.")}
+						}
+						action.Seconds = seconds
+					}
 					return action
 				}
 			}

@@ -16,10 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	defaultProfileSeconds = 30
-	stdoutOutput          = "-"
-)
+const stdoutOutput = "-"
 
 // profileFormat is how a snapshot profile is encoded.
 type profileFormat string
@@ -134,17 +131,13 @@ func newProfileCmd(p profiling.Profile) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			req := profiling.Request{Profile: p}
-			ext := "pb.gz"
-			switch {
-			case p.Name == "trace":
-				ext = "trace"
-				fallthrough
-			case p.Timed:
+			ext := p.Extension()
+			if p.Timed {
 				if seconds <= 0 {
 					return fmt.Errorf("--seconds must be positive, got %d", seconds)
 				}
 				req.Seconds = seconds
-			default:
+			} else {
 				f, err := parseProfileFormat(p, format)
 				if err != nil {
 					return err
@@ -178,7 +171,7 @@ func newProfileCmd(p profiling.Profile) *cobra.Command {
 				return err
 			}
 			if output == "" {
-				output = fmt.Sprintf("%s-%d-%s.%s", p.Name, req.PID, time.Now().Format("20060102-150405"), ext)
+				output = req.Profile.FileName(req.PID, time.Now(), ext)
 			}
 			if err := writeProfileFile(output, body); err != nil {
 				return err
@@ -191,7 +184,7 @@ func newProfileCmd(p profiling.Profile) *cobra.Command {
 	c.Flags().IntVarP(&pid, "pid", "p", 0, "Process to export from; may be omitted when only one is running")
 	c.Flags().StringVarP(&output, "output", "o", "", `File to write; "-" writes to stdout (default: <profile>-<pid>-<time> in the current directory)`)
 	if p.Timed {
-		c.Flags().IntVar(&seconds, "seconds", defaultProfileSeconds, "How long to record, in seconds")
+		c.Flags().IntVar(&seconds, "seconds", profiling.DefaultSeconds, "How long to record, in seconds")
 	} else {
 		c.Flags().StringVar(&format, "format", string(formatProto), "Output format: proto (for go tool pprof), text, or full (goroutine only: complete stack dump)")
 	}

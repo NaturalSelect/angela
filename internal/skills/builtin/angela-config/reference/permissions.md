@@ -22,7 +22,9 @@ return its result to the conversation that forked it. That tool, plus the
 `ProposalWrite`/`ProposalEdit`/`ProposalRead` tools a branch drafts with, is
 appended to a branch agent's toolset *after* `allowed_tools`/`disabled_tools`
 filtering runs — neither field can take it away, since a branch that could
-draft a result but never return it would strand the conversation. `auto`
+draft a result but never return it would strand the conversation. `LoadReport`
+is appended the same way for `primary` and `branch` agents, so neither field
+can remove it from them either. `auto`
 resolves to `path` for `read`/`list`/`edit` and to `free` for everything
 else; `domain` applies only to `network` and matches subdomains too (a rule
 for `example.com` also covers `sub.example.com`). A shell command is judged

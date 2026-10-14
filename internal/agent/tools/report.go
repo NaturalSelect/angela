@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/fantasy"
@@ -71,6 +72,21 @@ func ReportBanner(reportID, agentType, task string) string {
 	return banner.String()
 }
 
+// bannerReportID returns the id ReportBanner stamped at the front of
+// content. The stamped id is the one the model was shown, so it stays
+// valid in a session whose message ids were rewritten by a fork.
+func bannerReportID(content string) (string, bool) {
+	rest, ok := strings.CutPrefix(content, reportBannerOpen)
+	if !ok {
+		return "", false
+	}
+	id, _, _ := strings.Cut(rest, " ")
+	if !strings.HasPrefix(id, reportIDPrefix) || len(id) != len(reportIDPrefix)+reportIDHashLen {
+		return "", false
+	}
+	return id, true
+}
+
 // agentCallInput mirrors the fields of the agent tool's parameters that
 // identify a dispatch. It is redeclared here because internal/agent
 // imports this package, so the original type cannot be imported back.
@@ -95,20 +111,49 @@ func ReportID(sessions AgentToolSessionNamer, messageID, toolCallID string) stri
 	return reportIDPrefix + hash[:reportIDHashLen]
 }
 
-// CollectReports returns every successful agent dispatch in sessionID, in
-// conversation order. It reads the parent session's own tool-result rows
-// rather than the sub-sessions, so a caller can only ever reach reports
-// produced for the session it is running in.
+// CollectReports returns every successful agent dispatch in sessionID and
+// in the sessions it descends from, oldest first. It reads each session's
+// own tool-result rows rather than the sub-sessions, so a caller reaches
+// only reports from its own conversation and the ones it was forked from.
+//
+// The ancestors are needed because a fork copies a compacted parent's
+// messages only from its summary on. The summary still names reports from
+// before that point, and the parent's rows are the only place their text
+// survives.
 func CollectReports(ctx context.Context, sessions session.Service, messages message.Service, sessionID string) ([]Report, error) {
-	msgs, err := messages.List(ctx, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("list messages: %w", err)
+	var lineage []string
+	for id := sessionID; id != ""; {
+		lineage = append(lineage, id)
+		sess, err := sessions.Get(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("get session %s: %w", id, err)
+		}
+		id = sess.ParentSessionID
 	}
-	return ReportsFromMessages(sessions, msgs), nil
+
+	var reports []Report
+	seen := make(map[string]bool)
+	for _, id := range slices.Backward(lineage) {
+		msgs, err := messages.List(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("list messages of %s: %w", id, err)
+		}
+		for _, report := range ReportsFromMessages(sessions, msgs) {
+			// A fork copies the messages after its summary, banner and all,
+			// so the same report turns up in the branch and its parent.
+			if !seen[report.ID] {
+				seen[report.ID] = true
+				reports = append(reports, report)
+			}
+		}
+	}
+	return reports, nil
 }
 
 // ReportsFromMessages pairs each agent dispatch in msgs with its
-// successful, non-empty result, in conversation order.
+// successful, non-empty result, in conversation order. A result that
+// carries a banner keeps the id on it; only one stored before banners
+// existed falls back to the id derived from its message.
 func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message) []Report {
 	dispatches := make(map[string]Report)
 	var order []string
@@ -142,6 +187,9 @@ func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message)
 				continue
 			}
 			dispatch.Content = result.Content
+			if id, ok := bannerReportID(result.Content); ok {
+				dispatch.ID = id
+			}
 			dispatches[result.ToolCallID] = dispatch
 		}
 	}

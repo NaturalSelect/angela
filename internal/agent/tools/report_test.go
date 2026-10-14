@@ -78,6 +78,40 @@ func (e reportEnv) dispatchNamed(t *testing.T, sessionID, toolName, callID, suba
 	return ReportID(e.sessions, assistant.ID, callID)
 }
 
+// dispatchBannered is dispatch for a result stamped with the banner a real
+// dispatch carries, which is where the id the model cites comes from.
+func (e reportEnv) dispatchBannered(t *testing.T, sessionID, callID, subagentType, description, body string) string {
+	t.Helper()
+
+	input, err := json.Marshal(map[string]string{
+		"subagent_type": subagentType,
+		"description":   description,
+	})
+	require.NoError(t, err)
+
+	assistant, err := e.messages.Create(t.Context(), sessionID, message.CreateMessageParams{
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.ToolCall{ID: callID, Name: toolnames.Agent, Input: string(input), Finished: true},
+		},
+	})
+	require.NoError(t, err)
+
+	id := ReportID(e.sessions, assistant.ID, callID)
+	_, err = e.messages.Create(t.Context(), sessionID, message.CreateMessageParams{
+		Role: message.Tool,
+		Parts: []message.ContentPart{
+			message.ToolResult{
+				ToolCallID: callID,
+				Name:       toolnames.Agent,
+				Content:    ReportBanner(id, subagentType, description) + body,
+			},
+		},
+	})
+	require.NoError(t, err)
+	return id
+}
+
 func loadReport(t *testing.T, env reportEnv, sessionID, id string) fantasy.ToolResponse {
 	t.Helper()
 	tool := NewLoadReportTool(env.sessions, env.messages)
@@ -305,6 +339,62 @@ func TestLoadReportCannotReachAnotherSession(t *testing.T) {
 	require.NotContains(t, resp.Content, "their secret body",
 		"a report from another session must not leak through the error path either")
 	require.NotContains(t, resp.Content, "their task")
+}
+
+// A branch starts from a copy of its parent's messages under new ids, so the
+// id derived from a copied message differs from the one the banner shows.
+// The banner's id is the one the model can cite, and it must still load.
+func TestLoadReportFindsAReportCopiedIntoAForkedSession(t *testing.T) {
+	t.Parallel()
+	env := newReportEnv(t)
+	parent := env.newSession(t, "parent")
+	branch := env.newSession(t, "branch")
+
+	id := env.dispatchBannered(t, parent, "call-1", "explore", "find the parser", "parser lives in parse.go")
+	forkPoint, err := env.messages.Create(t.Context(), parent, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+	require.NoError(t, env.messages.FlushAll(t.Context()))
+
+	_, err = env.messages.ForkSession(t.Context(), parent, branch, "", forkPoint.ID)
+	require.NoError(t, err)
+
+	reports, err := CollectReports(t.Context(), env.sessions, env.messages, branch)
+	require.NoError(t, err)
+	require.Len(t, reports, 1)
+	require.Equal(t, id, reports[0].ID)
+	require.Equal(t, "parser lives in parse.go", reports[0].Body())
+
+	resp := loadReport(t, env, branch, id)
+	require.False(t, resp.IsError, resp.Content)
+}
+
+// A parent that was compacted before it forked hands its branch only the
+// summary and what came after. The summary names report ids, and those ids
+// are the only way back to text that sits before the summary, so the branch
+// must still be able to load them.
+func TestLoadReportReachesReportsBeforeAForkedSummary(t *testing.T) {
+	t.Parallel()
+	env := newReportEnv(t)
+	parent := env.newSession(t, "parent")
+
+	id := env.dispatchBannered(t, parent, "call-1", "explore", "find the parser", "parser lives in parse.go")
+	summary, err := env.messages.Create(t.Context(), parent, message.CreateMessageParams{
+		Role:             message.Assistant,
+		IsSummaryMessage: true,
+	})
+	require.NoError(t, err)
+	forkPoint, err := env.messages.Create(t.Context(), parent, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+	require.NoError(t, env.messages.FlushAll(t.Context()))
+
+	branch, err := env.sessions.CreateTaskSession(t.Context(), "branch-1", parent, "branch")
+	require.NoError(t, err)
+	_, err = env.messages.ForkSession(t.Context(), parent, branch.ID, summary.ID, forkPoint.ID)
+	require.NoError(t, err)
+
+	resp := loadReport(t, env, branch.ID, id)
+	require.False(t, resp.IsError, resp.Content)
+	require.Contains(t, resp.Content, "parser lives in parse.go")
 }
 
 func TestLoadReportRequiresASession(t *testing.T) {

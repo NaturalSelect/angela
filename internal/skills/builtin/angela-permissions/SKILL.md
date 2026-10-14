@@ -90,7 +90,8 @@ MCP tool calls use the `mcp` action category. The tool name in a rule is
 Branch tools (`ProposalWrite`, `ProposalEdit`, `ProposalRead`) are appended to
 a branch agent's toolset after `allowed_tools`/`disabled_tools` filtering —
 they cannot be removed, since a branch that cannot return its result would
-strand the conversation.
+strand the conversation. `LoadReport`, which reloads an agent report after a
+compaction drops it, is appended the same way for `primary` and `branch` agents.
 
 ## Hooks and Permissions
 

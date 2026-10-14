@@ -234,6 +234,13 @@ type SessionAgentCall struct {
 	// differs. It is cleared once a call becomes the active turn in
 	// Run's Idle branch, so it never leaks into enqueueAutoContinue.
 	internal bool
+	// continuation marks a queue entry that carries on the turn which
+	// queued it: the auto-continue after a max-tokens cutoff. Only such
+	// an entry's result belongs to the caller of the turn that drains it,
+	// because it finishes the answer that turn started. Any other queued
+	// prompt has a caller of its own. Like internal, it is cleared once
+	// the call becomes the active turn.
+	continuation bool
 }
 
 type SessionAgent interface {
@@ -677,6 +684,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// leaving it set) keeps it from leaking into enqueueAutoContinue if
 	// this same turn is later re-queued for a max-tokens continuation.
 	call.internal = false
+	call.continuation = false
 	sessMu.Unlock()
 
 	defer cancel()
@@ -1416,11 +1424,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		// NOTE: The queue drain inside summarize already ran the resumed
 		// turn, so this run's own result is the stale pre-compaction segment.
 		// The resume shares this run's RunID and completion hook, so it
-		// published the terminal event; a second one would carry the stale
-		// message. An unrelated follow-up at the queue head has its own RunID.
-		if resumed != nil {
+		// published the terminal event and the finished notification; a
+		// second of either would carry the stale message and title.
+		// Without a queued resume the drain ran an unrelated prompt, which
+		// has its own result and RunID, so this run keeps its own.
+		if queuedResume && resumed != nil {
 			result = resumed
-			skipRunComplete = queuedResume
+			skipRunComplete = true
 		}
 	}
 	if hitMaxTokens {
@@ -1461,8 +1471,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	cancel()
 
 	// Send notification that agent has finished its turn (skip for
-	// nested/non-interactive sessions).
-	if !call.NonInteractive && a.notify != nil {
+	// nested/non-interactive sessions, and when a resumed turn already
+	// sent it).
+	if !skipRunComplete && !call.NonInteractive && a.notify != nil {
 		a.notify.Publish(pubsub.CreatedEvent, notify.Notification{
 			SessionID:    call.SessionID,
 			SessionTitle: currentSession.Title,
@@ -1570,7 +1581,19 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		}
 		a.publishRunComplete(ctx, call, complete)
 	}
-	return a.Run(ctx, reresolve(ctx, firstQueuedMessage))
+	// NOTE: Only a continuation of this turn hands its result back. The
+	// caller of an unrelated queued prompt has no use for this turn's
+	// answer, and this turn's caller has none for that prompt's. A failure
+	// still travels up, since nobody else would report a failed queued
+	// prompt.
+	next, err := a.Run(ctx, reresolve(ctx, firstQueuedMessage))
+	switch {
+	case err != nil:
+		return nil, err
+	case firstQueuedMessage.continuation:
+		return next, nil
+	}
+	return result, nil
 }
 
 // wrapInterruptedPrompt marks prompt as belonging to a turn that got
@@ -1665,10 +1688,10 @@ func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact 
 }
 
 // summarizeAndResume compacts the session, then runs the head of the
-// session's queue. It returns that resumed run's result, or nil when
-// nothing was queued, so a caller that is itself returning a run's
-// result can hand back the post-compaction answer instead of the
-// segment cut off by compaction.
+// session's queue. It returns the result of the run it started, or nil
+// when nothing was queued. That run belongs to its own caller unless it
+// is the resume of the turn that asked for the compaction, so a caller
+// adopts the result only when it queued that resume itself.
 func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string, compact resolvedAgent, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) (*fantasy.AgentResult, error) {
 	if !compact.Available() {
 		if compact.Err != nil {

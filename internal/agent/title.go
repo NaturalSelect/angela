@@ -48,22 +48,24 @@ func (t *titleClaims) claim(sessionID string) bool {
 	return t.claimLocked(sessionID)
 }
 
-// await blocks until the caller owns sessionID's title or ctx ends. A
-// caller that gets nil must call release.
-func (t *titleClaims) await(ctx context.Context, sessionID string) error {
+// await blocks until the caller owns sessionID's title or ctx ends. It
+// reports whether another owner held the title first. A caller that gets
+// a nil error must call release.
+func (t *titleClaims) await(ctx context.Context, sessionID string) (waited bool, err error) {
 	for {
 		t.mu.Lock()
 		if t.claimLocked(sessionID) {
 			t.mu.Unlock()
-			return nil
+			return waited, nil
 		}
 		owner := t.held[sessionID]
 		t.mu.Unlock()
 
+		waited = true
 		select {
 		case <-owner:
 		case <-ctx.Done():
-			return ctx.Err()
+			return waited, ctx.Err()
 		}
 	}
 }
@@ -101,9 +103,9 @@ func (c *coordinator) generateSessionTitle(ctx context.Context, sessionID, userP
 		return
 	}
 	// NOTE: A regeneration in flight owns the title and may still fail, so
-	// this waits its turn instead of giving up. Running afterwards keeps the
-	// fallback rename from undoing a title the regeneration saved.
-	if err := c.titles.await(ctx, sessionID); err != nil {
+	// this waits its turn instead of giving up.
+	waited, err := c.titles.await(ctx, sessionID)
+	if err != nil {
 		slog.Warn("Gave up waiting to title the session", "sessionID", sessionID, "error", err)
 		return
 	}
@@ -113,12 +115,16 @@ func (c *coordinator) generateSessionTitle(ctx context.Context, sessionID, userP
 	// fails or the context is cancelled before we finish.
 	var titleSaved bool
 	defer func() {
-		if !titleSaved {
-			fallbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-			defer cancel()
-			if err := c.sessions.Rename(fallbackCtx, sessionID, DefaultSessionName); err != nil {
-				slog.Error("Failed to save fallback session title", "error", err)
-			}
+		// NOTE: Whoever held the title first already left it named or on
+		// the placeholder, so a placeholder written now could only replace
+		// a title they saved.
+		if titleSaved || waited {
+			return
+		}
+		fallbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := c.sessions.Rename(fallbackCtx, sessionID, DefaultSessionName); err != nil {
+			slog.Error("Failed to save fallback session title", "error", err)
 		}
 	}()
 
@@ -143,7 +149,8 @@ func (c *coordinator) generateSessionTitle(ctx context.Context, sessionID, userP
 // leaves the current title untouched, so a retry can never replace a
 // good title with the placeholder.
 func (c *coordinator) RegenerateTitle(ctx context.Context, sessionID string) error {
-	// NOTE: Refusing up front spares a model call whose result could not be saved.
+	// NOTE: Refusing up front spares a model call whose result could not
+	// be saved.
 	if c.IsSessionBusy(sessionID) || !c.titles.claim(sessionID) {
 		return ErrSessionBusy
 	}

@@ -1149,6 +1149,7 @@ func (c *controllerV1) handlePostWorkspaceAgentSessionSummarize(w http.ResponseW
 //	@Success		200
 //	@Failure		400	{object}	proto.Error
 //	@Failure		404	{object}	proto.Error
+//	@Failure		409	{object}	proto.Error
 //	@Failure		500	{object}	proto.Error
 //	@Router			/workspaces/{id}/agent/sessions/{sid}/title [post]
 func (c *controllerV1) handlePostWorkspaceAgentSessionTitle(w http.ResponseWriter, r *http.Request) {

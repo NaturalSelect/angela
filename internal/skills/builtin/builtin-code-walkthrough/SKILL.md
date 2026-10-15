@@ -211,24 +211,44 @@ width, and prints cleanly.
    `git branch --show-current`. If `git status --short` is not empty, say the
    page also reflects uncommitted changes. Finish sections 2 to 4 before you
    write any HTML.
-3. **Write the page** with the Write tool in one pass. Start from the whole
-   template and replace each `<!-- SLOT: ... -->` marker plus the placeholder
-   content after it. Every placeholder is wrapped in `«` and `»`.
-   Keep the `<style>` block and the section structure. Delete a whole section
-   and its `NAV` entry when it would be empty. Repeat a block as often as the
-   content needs, such as table rows, steps, parts, and bullets.
-4. **Translate the template's own text** into the user's language: eyebrow,
-   headings, table headers, nav labels, the `Data now` label, the footer, and
-   the `inferred` and `unknown` tag words. Set the `lang` attribute to match.
-5. **Save it** to the path the user gave. Otherwise use
-   `.angela/walkthroughs/<target-slug>.html` under the project. That
-   directory is Angela's default data directory, which ignores itself in git,
-   so the page does not dirty the working tree. If `options.data_directory`
-   points elsewhere, use that directory instead. Never write the page into a
-   tracked source directory unless the user asked for it there.
-6. **Run the self-check** in section 7, then tell the user the file path and
-   give a short chat summary: the core idea in two or three sentences and the
-   reading order. Do not paste the whole page into the chat.
+3. **Pick the save path and the section list.** Save to the path the user
+   gave. Otherwise use `.angela/walkthroughs/<target-slug>.html` under the
+   project. That directory is Angela's default data directory, which ignores
+   itself in git, so the page does not dirty the working tree. If
+   `options.data_directory` points elsewhere, use that directory instead.
+   Never write the page into a tracked source directory unless the user asked
+   for it there. Then decide which template sections the page will keep, in
+   page order, so the navigation is final before anything is written.
+4. **Write the skeleton** with the Write tool. It holds everything except the
+   sections: the template from `<!DOCTYPE html>` through `<main>` with the
+   `<style>` block untouched, the header and `NAV` filled in for exactly the
+   sections you kept, then a line containing only `<!-- NEXT-SECTION -->`,
+   then `</main>` and the rest of the template down to `</html>`. Fill the
+   `LANG`, `TITLE`, `VERSION`, and `SUMMARY` slots now. Every placeholder is
+   wrapped in `«` and `»`.
+5. **Add one section at a time.** For each kept section in page order, finish
+   its HTML, then use the Edit tool to replace `<!-- NEXT-SECTION -->` with
+   that section followed by `<!-- NEXT-SECTION -->` again. Inside the section,
+   replace each `<!-- SLOT: ... -->` marker plus the placeholder content after
+   it, and repeat a block as often as the content needs, such as table rows,
+   steps, parts, and bullets. One Edit adds one complete section. Never
+   combine several sections into one call, and never leave a section half
+   filled to come back to it. If a section turns out to be empty, skip it and
+   remove its `NAV` entry with an Edit. Tell the user in a few words which
+   section you just added, so they can follow the page growing.
+6. **Translate the template's own text** into the user's language as you go:
+   eyebrow, headings, table headers, nav labels, the `Data now` label, the
+   footer, and the `inferred` and `unknown` tag words. Set the `lang`
+   attribute to match.
+7. **Close the page.** After the last section, use the Edit tool to delete the
+   `<!-- NEXT-SECTION -->` line. Run the self-check in section 7, then tell
+   the user the file path and give a short chat summary: the core idea in two
+   or three sentences and the reading order. Do not paste the whole page into
+   the chat.
+
+Building the page in pieces keeps each tool call small, shows progress while
+it happens, and means a failed call costs one section instead of the whole
+page.
 
 When the user asks for a change to an existing page, edit that file directly.
 Do not rebuild it from the template, and keep its commit line accurate.
@@ -327,8 +347,9 @@ Run this pass on the draft. Fix what fails; do not just note it.
 
 **HTML file** (skip for a quick, in-chat walkthrough)
 
-- **No leftovers**: search the saved file for `SLOT:`, `«`, and `»`. Any hit
-  is an unfilled placeholder. Fix every one.
+- **No leftovers**: search the saved file for `SLOT:`, `NEXT-SECTION`, `«`,
+  and `»`. Any hit is an unfilled placeholder or a forgotten marker. Fix every
+  one.
 - **Navigation**: each nav link matches an `id` that exists, and no section
   without a nav entry remains.
 - **Balanced markup**: every opened tag is closed, and each `<pre>` and
@@ -355,4 +376,6 @@ Run this pass on the draft. Fix what fails; do not just note it.
   still in it.
 - A page that is mostly prose with no snippet, or mostly snippets with no
   explanation of what the reader should notice.
+- Writing the whole page in a single tool call instead of a skeleton plus one
+  section per edit.
 - Pasting the full HTML into the chat instead of saving the file.

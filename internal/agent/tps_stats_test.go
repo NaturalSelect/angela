@@ -65,7 +65,7 @@ func TestRun_RecordsPreciseGenDurationForSingleStep(t *testing.T) {
 		Return(delayedTextThenFinish("the answer", delay, fantasy.FinishReasonStop, fantasy.Usage{OutputTokens: 50}), nil)
 
 	_, err = sa.Run(t.Context(), SessionAgentCall{
-		Agent:     autoContinueAgent(model),
+		Agent:     largeWindowAgent(model),
 		SessionID: sess.ID,
 		RunID:     "run-1",
 		Prompt:    "hello",
@@ -117,7 +117,7 @@ func TestRun_AccumulatesGenStatsAcrossStepsIncludingToolCalls(t *testing.T) {
 	)
 
 	_, err = sa.Run(t.Context(), SessionAgentCall{
-		Agent:     autoContinueAgent(model),
+		Agent:     largeWindowAgent(model),
 		SessionID: sess.ID,
 		RunID:     "run-1",
 		Prompt:    "do the thing",

@@ -48,7 +48,7 @@ func TestCacheBreakpointIndices_SkipsWholeTrailingUserRun(t *testing.T) {
 }
 
 // TestCacheBreakpointIndices_PreviousTipStaysStableAcrossRounds replays
-// several rounds of an auto-continue-style chain, where every round
+// several rounds of a chain, where every round
 // persists its own reminder(s) and prompt by appending to the session
 // (never rewriting what is already there, exactly like agent.go now
 // does), and checks that the breakpoint each round places on "the

@@ -160,42 +160,6 @@ func (s *runState) enqueueCall(call SessionAgentCall) {
 	s.messageQueue.Set(call.SessionID, existing)
 }
 
-// enqueueAutoContinue re-queues call with a follow-up prompt so a
-// turn whose output was cut off by the model's own output token
-// limit resumes automatically instead of leaving a truncated response
-// as the final answer. The caller supplies the prompt to use because
-// the appropriate wording differs by stage: a text-generation cutoff
-// uses autoContinuePrompt while a thinking/reasoning cutoff uses
-// autoContinueThinkingPrompt. It reuses call as-is (same RunID,
-// same Agent) so the continuation is treated as part of the same turn
-// rather than a new queued prompt, the same way the tool-calls-pending
-// continuation does. Attachments are dropped: they were already
-// delivered to the model on the turn being resumed, so carrying them
-// over would resend the same files on every synthetic continuation.
-//
-// Unlike enqueueCall, whose only caller already holds the per-session
-// dispatch mutex for its own busy-check, the caller here runs after
-// that mutex has long been released, once streaming for the turn has
-// finished. It takes the lock itself so the Get-append-Set stays
-// atomic against a concurrent enqueueCall or dispatch handoff for the
-// same session; without it, a prompt submitted while this continuation
-// is being queued can read the queue before this Set lands and then
-// overwrite it, silently dropping one of the two.
-func (s *runState) enqueueAutoContinue(call SessionAgentCall, prompt string) {
-	mu := s.sessionMu(call.SessionID)
-	mu.Lock()
-	defer mu.Unlock()
-	existing, ok := s.messageQueue.Get(call.SessionID)
-	if !ok {
-		existing = []SessionAgentCall{}
-	}
-	call.Prompt = prompt
-	call.Attachments = nil
-	call.continuation = true
-	existing = append(existing, call)
-	s.messageQueue.Set(call.SessionID, existing)
-}
-
 // enqueueResumeBeforeSummarize re-queues call, with its prompt already
 // wrapped by the caller to explain the interruption, ahead of any prompt
 // already queued for the same session. It must run before Summarize so
@@ -205,10 +169,9 @@ func (s *runState) enqueueAutoContinue(call SessionAgentCall, prompt string) {
 // instead of prepending would let that follow-up run before the resumed
 // turn ever gets its continuation prompt.
 //
-// It takes the per-session lock itself, for the same reason
-// enqueueAutoContinue does: without it, a prompt submitted concurrently
-// could read the queue before this Set lands and then overwrite it,
-// dropping one of the two.
+// It takes the per-session lock itself: without it, a prompt submitted
+// concurrently could read the queue before this Set lands and then
+// overwrite it, dropping one of the two.
 func (s *runState) enqueueResumeBeforeSummarize(call SessionAgentCall) {
 	// This entry is a harness-synthesized continuation, not something
 	// the user queued. Mark it internal so QueuedPrompts/

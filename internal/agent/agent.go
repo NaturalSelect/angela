@@ -65,34 +65,6 @@ const (
 	// 5+10+20+40+80 = 155s before the error reaches the user.
 	streamMaxRetries = 5
 
-	// autoContinuePrompt is the fixed follow-up sent when a turn's
-	// text output is cut off by the output token limit, so the model
-	// resumes instead of leaving a truncated response as the final
-	// answer.
-	autoContinuePrompt = "Your previous response was cut off by the output token limit. Continue generating from exactly where it was interrupted. Do not repeat any content already provided."
-
-	// autoContinueThinkingPrompt is sent instead of autoContinuePrompt
-	// when the output token limit is hit while the model is still in
-	// its extended thinking (reasoning) phase — i.e. the turn produced
-	// reasoning content but no text output yet. Asking the model to
-	// "continue from exactly where it was interrupted" makes no sense
-	// for a cut-off reasoning block, so we ask it to restart its
-	// reasoning and produce a complete response instead.
-	autoContinueThinkingPrompt = "Your extended thinking was cut off by the output token limit before you produced a response. Please continue your reasoning and provide a complete response."
-
-	// autoContinueSubSessionPrompt is sent instead of autoContinuePrompt
-	// when a non-interactive (sub-agent) session's text output is cut off
-	// by the output token limit. Unlike the interactive case — where the
-	// model can safely continue from the truncation point because the
-	// parent reads the last continuation segment via finalResponse() —
-	// the parent agent receives only the final segment's text, losing
-	// everything before it. Asking the model to regenerate the full
-	// response from scratch is therefore more reliable than asking it to
-	// continue from an invisible truncation point. The "or make it
-	// shorter" hint nudges the model to consider whether its answer
-	// genuinely needs to be this long.
-	autoContinueSubSessionPrompt = "Your previous response was cut off by the output token limit. Please regenerate your complete response from the beginning, or make it shorter if possible. Do not reference the truncated output."
-
 	// attachmentOnlyPrompt substitutes for the current turn's prompt text
 	// when the user sends attachments with no typed message: fantasy's
 	// Agent.Stream rejects an empty prompt whenever files are attached.
@@ -232,15 +204,8 @@ type SessionAgentCall struct {
 	// auto-compaction. Cancel/ClearQueue still remove internal entries
 	// from the queue like any other; only their visibility to the user
 	// differs. It is cleared once a call becomes the active turn in
-	// Run's Idle branch, so it never leaks into enqueueAutoContinue.
+	// Run's Idle branch.
 	internal bool
-	// continuation marks a queue entry that carries on the turn which
-	// queued it: the auto-continue after a max-tokens cutoff. Only such
-	// an entry's result belongs to the caller of the turn that drains it,
-	// because it finishes the answer that turn started. Any other queued
-	// prompt has a caller of its own. Like internal, it is cleared once
-	// the call becomes the active turn.
-	continuation bool
 }
 
 type SessionAgent interface {
@@ -680,11 +645,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		call.Accepted.Close()
 	}
 	// This call is now the active turn rather than a queue entry, so the
-	// internal marker no longer applies. Clearing it here (rather than
-	// leaving it set) keeps it from leaking into enqueueAutoContinue if
-	// this same turn is later re-queued for a max-tokens continuation.
+	// internal marker no longer applies.
 	call.internal = false
-	call.continuation = false
 	sessMu.Unlock()
 
 	defer cancel()
@@ -1381,11 +1343,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		return handOffAfterCancel(nil)
 	}
 
-	// hitMaxTokens is re-checked once after a possible summarize below:
-	// a turn interrupted mid-tool-use takes the existing
-	// too-long-resume path instead, so the two continuations never
-	// both fire for the same turn.
-	hitMaxTokens := currentAssistant.FinishReason() == message.FinishReasonMaxTokens
 	// A pending tool call only means the turn was cut short — and
 	// needs resuming — when nothing already resolved it on purpose.
 	// haltedByTool means a tool result ended the turn deliberately (a
@@ -1397,13 +1354,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// non-interactive (sub-agent) session is created fresh for every
 	// Task/Agent tool call and is never resumed later (see
 	// CreateAgentToolSessionID), so when it already ended with no
-	// pending tool calls and wasn't merely cut off by the output-token
-	// limit, it is genuinely done; or the turn ended because a branch
-	// just merged, which resolves the branch's own rendezvous and
+	// pending tool calls it is genuinely done; or the turn ended because
+	// a branch just merged, which resolves the branch's own rendezvous and
 	// leaves no later turn a compacted history could ever help. Either
 	// way, summarizing now would only add a wasted round trip in front
 	// of a result that is about to be returned anyway.
-	nothingLeftToCompact := sessionEnded || (call.NonInteractive && !hitMaxTokens && !pendingToolUse)
+	nothingLeftToCompact := sessionEnded || (call.NonInteractive && !pendingToolUse)
 	if shouldSummarize && !nothingLeftToCompact {
 		// Release only our own entry, for the same reason the deferred
 		// cleanup above is conditional: a plain Del here would drop
@@ -1432,7 +1388,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			call.Prompt = wrapInterruptedPrompt(resumePrompt)
 			call.Attachments = resumeAttachments
 			a.enqueueResumeBeforeSummarize(call)
-			hitMaxTokens = false
 		}
 		resumed, summarizeErr := a.summarizeAndResume(genCtx, call.SessionID, call.Compact, call.SummarizeProviderOptions, call.SummarizeOnAuthRefresh)
 		if summarizeErr != nil {
@@ -1455,32 +1410,6 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			result = resumed
 			skipRunComplete = true
 		}
-	}
-	if hitMaxTokens {
-		// Choose the continuation prompt based on two dimensions:
-		// stage (thinking vs text generation) and session type
-		// (interactive vs non-interactive sub-agent).
-		//
-		// Thinking stage: reasoning content is present but no text output
-		// yet — the model was cut off during its reasoning phase. Asking
-		// it to "continue from exactly where it left off" makes no sense
-		// for a truncated reasoning block; ask it to restart instead.
-		//
-		// Sub-agent text stage: in a non-interactive session the parent
-		// caller receives only result.Response (the last segment), so
-		// asking the model to continue from an invisible truncation point
-		// would produce a fragment the parent can't join. Asking for a
-		// full regeneration from scratch is more reliable.
-		//
-		// Interactive text stage: the user sees the conversation in full,
-		// so continuing from the truncation point is correct.
-		continuePrompt := autoContinuePrompt
-		if currentAssistant.Content().Text == "" && currentAssistant.ReasoningContent().Thinking != "" {
-			continuePrompt = autoContinueThinkingPrompt
-		} else if call.NonInteractive {
-			continuePrompt = autoContinueSubSessionPrompt
-		}
-		a.enqueueAutoContinue(call, continuePrompt)
 	}
 
 	// Release active request before publishing the notification.
@@ -1513,17 +1442,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// (named-return clobbering through the return below) against this
 	// turn's MessageID/Text and publish a mixed, racing event.
 	skipRunComplete = true
-	// NOTE: Only a continuation of this turn hands its result back. The
-	// caller of an unrelated queued prompt has no use for this turn's
-	// answer, and this turn's caller has none for that prompt's. A failure
-	// still travels up, since nobody else would report a failed queued
-	// prompt.
-	next, err := a.runQueued(ctx, call, currentAssistant, nil, handoff)
-	switch {
-	case err != nil:
-		return nil, err
-	case handoff.next.continuation:
-		return next, nil
+	// NOTE: The caller of an unrelated queued prompt has no use for this
+	// turn's answer, and this turn's caller has none for that prompt's. A
+	// failure still travels up, since nobody else would report a failed
+	// queued prompt.
+	if _, runErr := a.runQueued(ctx, call, currentAssistant, nil, handoff); runErr != nil {
+		return nil, runErr
 	}
 	return result, nil
 }

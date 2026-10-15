@@ -159,17 +159,19 @@ func TestRunStatePopResumeOnSummarizeFailureNoopWithoutInternalEntry(t *testing.
 	require.Equal(t, "only user prompt", remaining[0].Prompt)
 }
 
-// for a bug where enqueueAutoContinue read, appended to, and wrote back
+// TestRunStateEnqueueResumeRaceWithEnqueueCall is the regression for a
+// bug where a self-locking enqueue read, appended to, and wrote back
 // the message queue without holding the per-session dispatch mutex.
 // enqueueCall itself does not lock either: its only production caller
 // (the busy-check branch of Run) already holds sessionMu across the
 // call, so this test reproduces that same convention by locking around
-// enqueueCall the way Run does. Before the fix, enqueueAutoContinue's
-// unlocked Get-append-Set could interleave with that locked section: it
-// could read the queue before the locked Set lands and then overwrite
-// it, silently dropping the concurrently-queued user prompt. Run with
-// -race to also catch the underlying data race on the queue slice.
-func TestRunStateEnqueueAutoContinueRaceWithEnqueueCall(t *testing.T) {
+// enqueueCall the way Run does. Without its own lock,
+// enqueueResumeBeforeSummarize's unlocked Get-prepend-Set could
+// interleave with that locked section: it could read the queue before
+// the locked Set lands and then overwrite it, silently dropping the
+// concurrently-queued user prompt. Run with -race to also catch the
+// underlying data race on the queue slice.
+func TestRunStateEnqueueResumeRaceWithEnqueueCall(t *testing.T) {
 	t.Parallel()
 
 	const sessionID = "session-race"
@@ -188,7 +190,7 @@ func TestRunStateEnqueueAutoContinueRaceWithEnqueueCall(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			s.enqueueAutoContinue(SessionAgentCall{SessionID: sessionID}, autoContinuePrompt)
+			s.enqueueResumeBeforeSummarize(SessionAgentCall{SessionID: sessionID})
 		}()
 		wg.Wait()
 

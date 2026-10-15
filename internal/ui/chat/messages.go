@@ -459,7 +459,7 @@ func ShouldRenderAssistantMessage(msg *message.Message) bool {
 	thinking := strings.TrimSpace(msg.ReasoningContent().Thinking)
 	isCancelled := msg.FinishReason() == message.FinishReasonCanceled
 	hasToolCalls := len(msg.ToolCalls()) > 0
-	return !hasToolCalls || content != "" || thinking != "" || msg.IsThinking() || msg.IsErrorLike() || isCancelled
+	return !hasToolCalls || content != "" || thinking != "" || msg.IsThinking() || msg.IsErrorLike() || msg.IsTruncated() || isCancelled
 }
 
 // BuildToolResultMap creates a map of tool call IDs to their results from a list of messages.

@@ -59,17 +59,17 @@ const (
 	refusalDetails  = "The provider's safety classifier stopped this response before any usable content was produced. Rephrase the request, start a fresh session, or try a different model."
 )
 
-// Default copy for the thinking-truncated banner. The agent persists
-// only the FinishReasonMaxTokens reason; the TUI owns this text for the
-// case where the cutoff landed before any reply text was produced (see
-// message.IsThinkingTruncated and autoContinueThinkingPrompt). Auto-continue
-// already resends the request, but since the model has to restart its
-// reasoning rather than resume it, the same cutoff can repeat — this
-// banner tells the user why and how to avoid it.
+// Default copy for the truncated banner. The agent persists only the
+// FinishReasonMaxTokens reason; the TUI owns this text. The agent never
+// resumes a truncated turn on its own, so the banner tells the user how
+// to avoid the cutoff. A cutoff that landed before any reply text was
+// produced (see message.IsThinkingTruncated) gets its own title.
 const (
-	thinkingTruncatedTagLabel = "TRUNCATED"
-	thinkingTruncatedTitle    = "Thinking was cut off before a response"
-	thinkingTruncatedDetails  = "The model hit its output token limit while still reasoning. It will retry automatically, but the same model may need more room to finish. Consider raising max output tokens for this model."
+	truncatedTagLabel        = "TRUNCATED"
+	truncatedTitle           = "Response was cut off by the output token limit"
+	thinkingTruncatedTitle   = "Thinking was cut off before a response"
+	truncatedDetails         = "The model hit its max output tokens before it finished. Raise max tokens for this model (default_max_tokens on the model, or max_tokens on its variant or agent) and ask again."
+	thinkingTruncatedDetails = "The model hit its max output tokens while still reasoning, so it never produced a reply. Raise max tokens for this model (default_max_tokens on the model, or max_tokens on its variant or agent) and ask again."
 )
 
 // maxExpandedThinkingTailLines is the F5 tail-window cap. When the user
@@ -461,7 +461,7 @@ func (a *AssistantMessageItem) renderMessageContent(width int) (string, int) {
 		switch {
 		case a.message.FinishReason() == message.FinishReasonCanceled:
 			messageParts = append(messageParts, a.sty.Messages.AssistantCanceled.Render("Canceled"))
-		case a.message.IsErrorLike(), a.message.IsThinkingTruncated():
+		case a.message.IsErrorLike(), a.message.IsTruncated():
 			messageParts = append(messageParts, a.cachedError(width))
 		}
 	}
@@ -543,7 +543,7 @@ func (a *AssistantMessageItem) contentKey() (uint64, uint64) {
 // error / refusal section. Returns (0, 0) when no error-like finish
 // is present so the cache stays a no-op for normal messages.
 func (a *AssistantMessageItem) errorKey() (uint64, uint64) {
-	if !a.message.IsFinished() || (!a.message.IsErrorLike() && !a.message.IsThinkingTruncated()) {
+	if !a.message.IsFinished() || (!a.message.IsErrorLike() && !a.message.IsTruncated()) {
 		return 0, 0
 	}
 	finishPart := a.message.FinishPart()
@@ -684,7 +684,7 @@ func (a *AssistantMessageItem) renderSpinning() string {
 	return a.anim.Render()
 }
 
-// renderError renders an error or provider-refusal banner.
+// renderError renders an error, provider-refusal or truncation banner.
 func (a *AssistantMessageItem) renderError(width int) string {
 	finishPart := a.message.FinishPart()
 	tagLabel := "ERROR"
@@ -696,9 +696,13 @@ func (a *AssistantMessageItem) renderError(width int) string {
 		titleText = cmp.Or(titleText, refusalTitle)
 		detailsText = cmp.Or(detailsText, refusalDetails)
 	case a.message.IsThinkingTruncated():
-		tagLabel = thinkingTruncatedTagLabel
+		tagLabel = truncatedTagLabel
 		titleText = cmp.Or(titleText, thinkingTruncatedTitle)
 		detailsText = cmp.Or(detailsText, thinkingTruncatedDetails)
+	case a.message.IsTruncated():
+		tagLabel = truncatedTagLabel
+		titleText = cmp.Or(titleText, truncatedTitle)
+		detailsText = cmp.Or(detailsText, truncatedDetails)
 	}
 	errTag := a.sty.Messages.ErrorTag.Render(tagLabel)
 	truncated := ansi.Truncate(titleText, width-2-lipgloss.Width(errTag), "...")

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -18,11 +17,10 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// autoContinueAgent builds a resolvedAgent around model with a large
+// largeWindowAgent builds a resolvedAgent around model with a large
 // enough context window that the compaction StopWhen condition never
-// fires, isolating the max-tokens auto-continue path from
-// auto-summarization.
-func autoContinueAgent(model fantasy.LanguageModel) resolvedAgent {
+// fires, isolating the turn under test from auto-summarization.
+func largeWindowAgent(model fantasy.LanguageModel) resolvedAgent {
 	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}
 	return resolvedAgent{
 		ID:        config.AgentCoder,
@@ -31,10 +29,12 @@ func autoContinueAgent(model fantasy.LanguageModel) resolvedAgent {
 	}
 }
 
-// TestRun_AutoContinuesOnMaxTokens verifies that a turn cut off by the
-// model's own output token limit is automatically resumed with a fixed
-// follow-up prompt, so the final answer isn't left visibly truncated.
-func TestRun_AutoContinuesOnMaxTokens(t *testing.T) {
+// TestRun_DoesNotContinueAfterMaxTokens verifies that a turn cut off by
+// the model's own output token limit ends there. The user is told to
+// raise max tokens instead of the harness silently asking the model to
+// carry on. The mock allows exactly one model call, so a second
+// synthetic turn fails the test.
+func TestRun_DoesNotContinueAfterMaxTokens(t *testing.T) {
 	t.Parallel()
 
 	sa, env := summarizeGomockEnv(t)
@@ -42,14 +42,11 @@ func TestRun_AutoContinuesOnMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 
 	model := newMockLanguageModel(t)
-	truncated := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
 		Return(streamOf([]string{"partial answer, got cut off"}, fantasy.FinishReasonLength), nil)
-	finished := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"...and the rest of the answer."}, fantasy.FinishReasonStop), nil)
-	gomock.InOrder(truncated, finished)
 
 	res, err := sa.Run(t.Context(), SessionAgentCall{
-		Agent:     autoContinueAgent(model),
+		Agent:     largeWindowAgent(model),
 		SessionID: sess.ID,
 		RunID:     "run-1",
 		Prompt:    "hello",
@@ -59,132 +56,14 @@ func TestRun_AutoContinuesOnMaxTokens(t *testing.T) {
 
 	msgs, err := env.messages.List(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Len(t, msgs, 4, "user prompt, truncated reply, synthetic continue prompt, final reply")
-
-	require.Equal(t, message.User, msgs[0].Role)
-	require.Equal(t, "hello", msgs[0].Content().Text)
-
+	require.Len(t, msgs, 2, "user prompt and the truncated reply, with no synthetic follow-up")
 	require.Equal(t, message.Assistant, msgs[1].Role)
 	require.Equal(t, message.FinishReasonMaxTokens, msgs[1].FinishReason())
+	require.True(t, msgs[1].IsTruncated())
 	require.Contains(t, msgs[1].Content().Text, "partial answer")
 
-	require.Equal(t, message.User, msgs[2].Role)
-	require.Equal(t, autoContinuePrompt, msgs[2].Content().Text,
-		"the synthetic follow-up must be the fixed auto-continue prompt")
-
-	require.Equal(t, message.Assistant, msgs[3].Role)
-	require.Equal(t, message.FinishReasonEndTurn, msgs[3].FinishReason())
-	require.Contains(t, msgs[3].Content().Text, "rest of the answer")
-
 	_, queued := sa.messageQueue.Get(sess.ID)
-	require.False(t, queued, "the queue must be drained once the turn ends cleanly")
-}
-
-// TestRun_AutoContinueDoesNotResendAttachments is the regression for a
-// bug where the synthetic continuation reused the original call's
-// Attachments verbatim, so every auto-continue round re-sent the same
-// files/images the user attached to their original prompt.
-func TestRun_AutoContinueDoesNotResendAttachments(t *testing.T) {
-	t.Parallel()
-
-	sa, env := summarizeGomockEnv(t)
-	sess, err := env.sessions.Create(t.Context(), "session")
-	require.NoError(t, err)
-
-	model := newMockLanguageModel(t)
-	truncated := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"partial answer, got cut off"}, fantasy.FinishReasonLength), nil)
-	finished := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"...and the rest of the answer."}, fantasy.FinishReasonStop), nil)
-	gomock.InOrder(truncated, finished)
-
-	res, err := sa.Run(t.Context(), SessionAgentCall{
-		Agent:     autoContinueAgent(model),
-		SessionID: sess.ID,
-		RunID:     "run-1",
-		Prompt:    "hello",
-		Attachments: []message.Attachment{
-			{FileName: "photo.png", FilePath: "photo.png", MimeType: "image/png", Content: []byte("fake-png")},
-		},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, res)
-
-	msgs, err := env.messages.List(t.Context(), sess.ID)
-	require.NoError(t, err)
-	require.Len(t, msgs, 4, "user prompt, truncated reply, synthetic continue prompt, final reply")
-
-	require.Equal(t, message.User, msgs[0].Role)
-	require.Len(t, msgs[0].BinaryContent(), 1, "the original turn keeps its attachment")
-
-	require.Equal(t, message.User, msgs[2].Role)
-	require.Equal(t, autoContinuePrompt, msgs[2].Content().Text)
-	require.Empty(t, msgs[2].BinaryContent(),
-		"the synthetic continuation must not resend the original turn's attachments")
-}
-
-// TestRun_AutoContinuesMultipleTimes verifies the auto-continue
-// mechanism keeps resuming across more than one truncation in a row,
-// since there is no cap on how many times a turn can be resumed.
-func TestRun_AutoContinuesMultipleTimes(t *testing.T) {
-	t.Parallel()
-
-	sa, env := summarizeGomockEnv(t)
-	sess, err := env.sessions.Create(t.Context(), "session")
-	require.NoError(t, err)
-
-	const truncations = 3
-	model := newMockLanguageModel(t)
-	var calls []any
-	for i := range truncations {
-		calls = append(calls, model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-			Return(streamOf([]string{fmt.Sprintf("chunk %d, ", i)}, fantasy.FinishReasonLength), nil))
-	}
-	calls = append(calls, model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"the end."}, fantasy.FinishReasonStop), nil))
-	gomock.InOrder(calls...)
-
-	res, err := sa.Run(t.Context(), SessionAgentCall{
-		Agent:     autoContinueAgent(model),
-		SessionID: sess.ID,
-		RunID:     "run-multi",
-		Prompt:    "hello",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, res)
-
-	msgs, err := env.messages.List(t.Context(), sess.ID)
-	require.NoError(t, err)
-
-	var assistantMsgs, userMsgs int
-	for _, m := range msgs {
-		switch m.Role {
-		case message.Assistant:
-			assistantMsgs++
-		case message.User:
-			// Persisted reminders (e.g. todo recency, once enough
-			// assistant turns pile up across truncations) are also
-			// User-role messages but are not a follow-up prompt.
-			if m.IsReminder() {
-				continue
-			}
-			userMsgs++
-			if userMsgs > 1 {
-				require.Equal(t, autoContinuePrompt, m.Content().Text,
-					"every follow-up after the first user prompt must be the fixed auto-continue prompt")
-			}
-		}
-	}
-	require.Equal(t, truncations+1, assistantMsgs, "one assistant reply per truncation plus the final clean one")
-	require.Equal(t, truncations+1, userMsgs, "the original prompt plus one synthetic continue per truncation")
-
-	last := msgs[len(msgs)-1]
-	require.Equal(t, message.Assistant, last.Role)
-	require.Equal(t, message.FinishReasonEndTurn, last.FinishReason())
-	require.Contains(t, last.Content().Text, "the end.")
-
-	_, queued := sa.messageQueue.Get(sess.ID)
-	require.False(t, queued, "the queue must be drained once the turn ends cleanly")
+	require.False(t, queued, "a truncated turn must not queue a follow-up of its own")
 }
 
 // toolCallThenFinish streams a single pending tool call followed
@@ -706,58 +585,6 @@ func TestRun_ResumeAfterCompactionSendsOneFinishedNotification(t *testing.T) {
 	require.Equal(t, 1, finished, "only the resumed turn announces that the work is done")
 }
 
-// TestRun_SubAgentSummarizesOnMaxTokensWithNoToolCalls guards the fix
-// against treating a response merely truncated by the output-token
-// limit as "done": with no tool calls of its own it looks the same as
-// a natural finish, but the turn is not actually complete, so it must
-// still go through the compact-and-resume path instead of being
-// silently skipped.
-func TestRun_SubAgentSummarizesOnMaxTokensWithNoToolCalls(t *testing.T) {
-	t.Parallel()
-
-	sa, env := summarizeGomockEnv(t)
-	sess, err := env.sessions.Create(t.Context(), "session")
-	require.NoError(t, err)
-
-	model := newMockLanguageModel(t)
-	gomock.InOrder(
-		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-			Return(textThenFinish("partial answer, cut off", fantasy.FinishReasonLength, fantasy.Usage{InputTokens: 900}), nil),
-		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-			Return(streamOf([]string{"...rest of the answer."}, fantasy.FinishReasonStop), nil),
-	)
-
-	compactModel := newMockLanguageModel(t)
-	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil).
-		Times(1)
-
-	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
-	compact := resolvedAgent{
-		Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
-		SystemPrompt: "summarize",
-	}
-
-	res, err := sa.Run(t.Context(), SessionAgentCall{
-		Agent: resolvedAgent{
-			ID:        "task",
-			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
-			MaxTokens: catwalkCfg.DefaultMaxTokens,
-		},
-		Compact:        compact,
-		SessionID:      sess.ID,
-		RunID:          "run-1",
-		Prompt:         "do the thing",
-		NonInteractive: true,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, res)
-
-	updated, err := env.sessions.Get(t.Context(), sess.ID)
-	require.NoError(t, err)
-	require.NotEmpty(t, updated.SummaryMessageID, "a max-tokens cutoff must still be compacted even with no tool calls of its own")
-}
-
 // pendingToolCallThenMaxTokens streams a tool call whose input starts
 // but never receives its closing event before the step hits the
 // output token limit, the same way Anthropic ends a stream when
@@ -779,8 +606,8 @@ func pendingToolCallThenMaxTokens() fantasy.StreamResponse {
 // bug where a tool call whose arguments were still streaming when the
 // model hit its output token limit never fired the provider's
 // tool-call-finished event. The call stayed unfinished forever: its
-// card was stuck pending in the UI, and the auto-continue follow-up
-// would have carried a tool_use with no matching tool_result.
+// card was stuck pending in the UI, and the next request would have
+// carried a tool_use with no matching tool_result.
 func TestRun_FinalizesToolCallTruncatedByMaxTokens(t *testing.T) {
 	t.Parallel()
 
@@ -789,14 +616,11 @@ func TestRun_FinalizesToolCallTruncatedByMaxTokens(t *testing.T) {
 	require.NoError(t, err)
 
 	model := newMockLanguageModel(t)
-	truncated := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
 		Return(pendingToolCallThenMaxTokens(), nil)
-	finished := model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil)
-	gomock.InOrder(truncated, finished)
 
 	res, err := sa.Run(t.Context(), SessionAgentCall{
-		Agent:     autoContinueAgent(model),
+		Agent:     largeWindowAgent(model),
 		SessionID: sess.ID,
 		RunID:     "run-1",
 		Prompt:    "hello",
@@ -806,7 +630,7 @@ func TestRun_FinalizesToolCallTruncatedByMaxTokens(t *testing.T) {
 
 	msgs, err := env.messages.List(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Len(t, msgs, 5, "user prompt, truncated reply, synthetic error result, synthetic continue prompt, final reply")
+	require.Len(t, msgs, 3, "user prompt, truncated reply, synthetic error result, and no automatic follow-up")
 
 	require.Equal(t, message.User, msgs[0].Role)
 
@@ -827,15 +651,8 @@ func TestRun_FinalizesToolCallTruncatedByMaxTokens(t *testing.T) {
 	require.True(t, foundResult, "a synthetic tool_result must exist so the next turn isn't sent with a dangling tool_use")
 	require.True(t, resultIsError)
 
-	require.Equal(t, message.User, msgs[3].Role)
-	require.Equal(t, autoContinuePrompt, msgs[3].Content().Text)
-
-	require.Equal(t, message.Assistant, msgs[4].Role)
-	require.Equal(t, message.FinishReasonEndTurn, msgs[4].FinishReason())
-	require.Contains(t, msgs[4].Content().Text, "done")
-
 	_, queued := sa.messageQueue.Get(sess.ID)
-	require.False(t, queued, "the queue must be drained once the turn ends cleanly")
+	require.False(t, queued, "a truncated turn must not queue a follow-up of its own")
 }
 
 // TestRun_ResumeAfterCompactionUsesLatestFoldedMessage is the

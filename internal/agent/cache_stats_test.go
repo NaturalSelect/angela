@@ -28,7 +28,7 @@ func TestRun_RecordsCacheStatsForSingleStep(t *testing.T) {
 		}), nil)
 
 	_, err = sa.Run(t.Context(), SessionAgentCall{
-		Agent:     autoContinueAgent(model),
+		Agent:     largeWindowAgent(model),
 		SessionID: sess.ID,
 		RunID:     "run-1",
 		Prompt:    "hello",
@@ -89,7 +89,7 @@ func TestRun_AccumulatesCacheStatsAcrossStepsIncludingToolCalls(t *testing.T) {
 	)
 
 	_, err = sa.Run(t.Context(), SessionAgentCall{
-		Agent:     autoContinueAgent(model),
+		Agent:     largeWindowAgent(model),
 		SessionID: sess.ID,
 		RunID:     "run-1",
 		Prompt:    "do the thing",

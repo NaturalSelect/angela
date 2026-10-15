@@ -1238,6 +1238,29 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			"error", err.Error(),
 			"error_type", fmt.Sprintf("%T", err),
 			"is_cancel", isCancelErr)
+		// NOTE: A user cancel clears the queue under the dispatch lock, so
+		// whatever is queued now arrived while this turn was still
+		// cleaning up. No later code path would run it, so hand off like a
+		// normal finish. A cancelled ctx is workspace shutdown, not a user
+		// cancel: nothing may start then.
+		handOffAfterCancel := func(res *fantasy.AgentResult) (*fantasy.AgentResult, error) {
+			if !isCancelErr || ctx.Err() != nil {
+				return res, err
+			}
+			// Release the session first so the queued prompt's Run does not
+			// see it busy and re-queue itself.
+			a.activeRequests.CompareAndDelete(call.SessionID, ac)
+			cancel()
+			handoff := a.dequeueNext(call)
+			if handoff == nil {
+				return res, err
+			}
+			skipRunComplete = true
+			if _, runErr := a.runQueued(ctx, call, currentAssistant, err, handoff); runErr != nil {
+				return nil, runErr
+			}
+			return res, err
+		}
 		if currentAssistant == nil {
 			// Cancel-before-assistant-creation window: the run was
 			// canceled after activeRequests.Set but before PrepareStep
@@ -1251,7 +1274,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 					return nil, persistErr
 				}
 			}
-			return result, err
+			return handOffAfterCancel(result)
 		}
 		// Persist final state with a context detached from the run
 		// context. The run context (ctx) is derived from the
@@ -1355,7 +1378,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		if updateErr != nil {
 			return nil, updateErr
 		}
-		return nil, err
+		return handOffAfterCancel(nil)
 	}
 
 	// hitMaxTokens is re-checked once after a possible summarize below:
@@ -1481,20 +1504,56 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		})
 	}
 
-	// Hand off to the next queued prompt (if any) under dispatchMu so
-	// the transition from this finished run to the queued run is atomic
-	// against a concurrent Cancel. activeRequests for this session was
-	// just deleted above, so without the lock there is a window in
-	// which the session looks idle and a cancel becomes a no-op that
-	// fails to stop the queued prompt. Holding the lock lets us observe
-	// a pending cancel recorded against the session and drop the queue
-	// instead of running it, and (for the recursion) hand a fresh
-	// accept reservation to the dequeued call so acceptedRuns stays > 0
-	// across the recursive Run's own dispatch handoff — keeping the
-	// session observable to Cancel for the entire transition and
-	// closing the dequeue -> re-register window.
+	handoff := a.dequeueNext(call)
+	if handoff == nil {
+		return result, err
+	}
+	// There are queued messages, restart the loop. Suppress the outer
+	// defer's emit: it would otherwise observe the recursive Run's retErr
+	// (named-return clobbering through the return below) against this
+	// turn's MessageID/Text and publish a mixed, racing event.
+	skipRunComplete = true
+	// NOTE: Only a continuation of this turn hands its result back. The
+	// caller of an unrelated queued prompt has no use for this turn's
+	// answer, and this turn's caller has none for that prompt's. A failure
+	// still travels up, since nobody else would report a failed queued
+	// prompt.
+	next, err := a.runQueued(ctx, call, currentAssistant, nil, handoff)
+	switch {
+	case err != nil:
+		return nil, err
+	case handoff.next.continuation:
+		return next, nil
+	}
+	return result, nil
+}
+
+// queuedHandoff is the next prompt a finished turn passes the session to.
+type queuedHandoff struct {
+	next SessionAgentCall
+	// ownerOwesRunComplete reports that the finished turn has not published
+	// its own terminal RunComplete and must do so before next runs.
+	ownerOwesRunComplete bool
+}
+
+// dequeueNext pops the next prompt to run once call's turn has released
+// the session, or returns nil when nothing is left to run.
+//
+// It hands off under dispatchMu so the transition from this finished run
+// to the queued run is atomic against a concurrent Cancel. activeRequests
+// for this session was just deleted by the caller, so without the lock
+// there is a window in which the session looks idle and a cancel becomes
+// a no-op that fails to stop the queued prompt. Holding the lock lets us
+// observe a pending cancel recorded against the session and drop the
+// queue instead of running it, and (for the recursion) hand a fresh
+// accept reservation to the dequeued call so acceptedRuns stays > 0
+// across the recursive Run's own dispatch handoff — keeping the
+// session observable to Cancel for the entire transition and
+// closing the dequeue -> re-register window.
+func (a *sessionAgent) dequeueNext(call SessionAgentCall) *queuedHandoff {
 	mu := a.sessionMu(call.SessionID)
 	mu.Lock()
+	defer mu.Unlock()
 	queuedMessages, _ := a.messageQueue.Get(call.SessionID)
 	if mark, ok := a.cancelMark.Get(call.SessionID); ok && mark > 0 && len(queuedMessages) > 0 {
 		// A cancel was recorded for this session (e.g. it arrived while
@@ -1534,14 +1593,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		if inFlight == 0 {
 			a.cancelMark.Del(call.SessionID)
 		}
-		mu.Unlock()
-		return result, err
+		return nil
 	}
-	// There are queued messages, restart the loop. Suppress the outer
-	// defer's emit: it would otherwise observe the recursive Run's retErr
-	// (named-return clobbering through the return below) against this
-	// turn's MessageID/Text and publish a mixed, racing event.
-	skipRunComplete = true
 	// Decide whether this turn still owes its own terminal RunComplete.
 	// Each submitted prompt with a RunID has its own lifecycle, so a turn
 	// that is finished and handing off to a *different* queued prompt must
@@ -1551,16 +1604,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// which re-queues this same call (same RunID) to resume after a
 	// summary; in that case the eventual terminal turn for this RunID
 	// publishes, so publishing now would double-emit.
-	outerOwesRunComplete := call.RunID != ""
-	if outerOwesRunComplete {
+	ownerOwesRunComplete := call.RunID != ""
+	if ownerOwesRunComplete {
 		for _, q := range queuedMessages {
 			if q.RunID == call.RunID {
-				outerOwesRunComplete = false
+				ownerOwesRunComplete = false
 				break
 			}
 		}
 	}
-	firstQueuedMessage := queuedMessages[0]
+	next := queuedMessages[0]
 	a.messageQueue.Set(call.SessionID, queuedMessages[1:])
 	// Reserve a fresh accept for the dequeued prompt before dropping the
 	// lock so acceptedRuns > 0 across the handoff into the recursive
@@ -1568,32 +1621,30 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// Run registering its activeRequests entry: a cancel arriving in
 	// that window now records a pending cancel (acceptedRuns > 0) that
 	// the recursive Run's accepted path observes as cancel-on-entry.
-	firstQueuedMessage.Accepted = a.BeginAccepted(call.SessionID)
-	mu.Unlock()
-	if outerOwesRunComplete {
+	next.Accepted = a.BeginAccepted(call.SessionID)
+	return &queuedHandoff{next: next, ownerOwesRunComplete: ownerOwesRunComplete}
+}
+
+// runQueued publishes the terminal RunComplete call's own turn still owes,
+// then runs the handed-off prompt as its own turn. turnErr is how call's
+// turn ended, nil for a normal finish.
+func (a *sessionAgent) runQueued(ctx context.Context, call SessionAgentCall, currentAssistant *message.Message, turnErr error, handoff *queuedHandoff) (*fantasy.AgentResult, error) {
+	if handoff.ownerOwesRunComplete {
 		complete := notify.RunComplete{SessionID: call.SessionID, RunID: call.RunID}
 		if currentAssistant != nil {
 			complete.MessageID = currentAssistant.ID
 			complete.Text = currentAssistant.Content().String()
 		}
-		if ctx.Err() != nil {
+		switch {
+		case turnErr != nil:
+			complete.Error = turnErr.Error()
+			complete.Cancelled = errors.Is(turnErr, context.Canceled)
+		case ctx.Err() != nil:
 			complete.Cancelled = true
 		}
 		a.publishRunComplete(ctx, call, complete)
 	}
-	// NOTE: Only a continuation of this turn hands its result back. The
-	// caller of an unrelated queued prompt has no use for this turn's
-	// answer, and this turn's caller has none for that prompt's. A failure
-	// still travels up, since nobody else would report a failed queued
-	// prompt.
-	next, err := a.Run(ctx, reresolve(ctx, firstQueuedMessage))
-	switch {
-	case err != nil:
-		return nil, err
-	case firstQueuedMessage.continuation:
-		return next, nil
-	}
-	return result, nil
+	return a.Run(ctx, reresolve(ctx, handoff.next))
 }
 
 // wrapInterruptedPrompt marks prompt as belonging to a turn that got

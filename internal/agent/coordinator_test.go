@@ -118,6 +118,34 @@ func agentResultWithText(text string) *fantasy.AgentResult {
 	}
 }
 
+// truncatedAgentResult is a run whose last step stopped on the output token
+// limit after producing text.
+func truncatedAgentResult(text string) *fantasy.AgentResult {
+	response := fantasy.Response{FinishReason: fantasy.FinishReasonLength}
+	if text != "" {
+		response.Content = fantasy.ResponseContent{fantasy.TextContent{Text: text}}
+	}
+	return &fantasy.AgentResult{
+		Steps:    []fantasy.StepResult{{Response: response}},
+		Response: response,
+	}
+}
+
+func TestOutputTruncated(t *testing.T) {
+	t.Parallel()
+
+	stopped := fantasy.StepResult{Response: fantasy.Response{FinishReason: fantasy.FinishReasonStop}}
+	cutOff := fantasy.StepResult{Response: fantasy.Response{FinishReason: fantasy.FinishReasonLength}}
+
+	assert.False(t, OutputTruncated(nil))
+	assert.False(t, OutputTruncated(&fantasy.AgentResult{}))
+	assert.False(t, OutputTruncated(&fantasy.AgentResult{Steps: []fantasy.StepResult{stopped}}))
+	assert.True(t, OutputTruncated(&fantasy.AgentResult{Steps: []fantasy.StepResult{cutOff}}))
+	assert.True(t, OutputTruncated(&fantasy.AgentResult{Steps: []fantasy.StepResult{stopped, cutOff}}))
+	assert.False(t, OutputTruncated(&fantasy.AgentResult{Steps: []fantasy.StepResult{cutOff, stopped}}),
+		"only the last step decides: an earlier cut-off was followed by a normal finish")
+}
+
 func TestRunSubAgent(t *testing.T) {
 	const providerID = "test-provider"
 	providerCfg := config.ProviderConfig{ID: providerID}
@@ -239,6 +267,55 @@ func TestRunSubAgent(t *testing.T) {
 		}).Response()
 		assert.True(t, resp.IsError)
 		assert.Equal(t, "Sub-agent completed but produced no text output.", resp.Content)
+	})
+
+	t.Run("output cut off by the token limit is an error carrying the partial text", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		agent, resolved := newMockAgent(t, providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+			return truncatedAgentResult("report that stops mid-sen"), nil
+		})
+
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			Resolved:       resolved,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "test",
+			SessionTitle:   "Test",
+		}).Response()
+		assert.True(t, resp.IsError)
+		assert.Contains(t, resp.Content, "cut off by the output token limit")
+		assert.Contains(t, resp.Content, "report that stops mid-sen")
+	})
+
+	t.Run("truncated output without text still reports the cut-off", func(t *testing.T) {
+		env := testEnv(t)
+		coord := newTestCoordinator(t, env, providerID, providerCfg)
+
+		parentSession, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+
+		agent, resolved := newMockAgent(t, providerID, 4096, func(_ context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+			return truncatedAgentResult(""), nil
+		})
+
+		resp := coord.runSubAgent(t.Context(), subAgentParams{
+			Agent:          agent,
+			Resolved:       resolved,
+			SessionID:      parentSession.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "test",
+			SessionTitle:   "Test",
+		}).Response()
+		assert.True(t, resp.IsError)
+		assert.Contains(t, resp.Content, "cut off by the output token limit")
 	})
 
 	t.Run("agent MaxTokens overrides the catalog default", func(t *testing.T) {

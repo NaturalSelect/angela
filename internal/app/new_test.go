@@ -372,6 +372,21 @@ func TestFinalResponseText(t *testing.T) {
 		require.Empty(t, got)
 	})
 
+	t.Run("output cut off by the token limit is an error", func(t *testing.T) {
+		t.Parallel()
+		response := fantasy.Response{
+			Content:      fantasy.ResponseContent{fantasy.TextContent{Text: "stops mid-sen"}},
+			FinishReason: fantasy.FinishReasonLength,
+		}
+		truncated := &fantasy.AgentResult{
+			Steps:    []fantasy.StepResult{{Response: response}},
+			Response: response,
+		}
+		got, err := finalResponseText(truncated, nil)
+		require.ErrorIs(t, err, agent.ErrOutputTruncated)
+		require.Empty(t, got)
+	})
+
 	t.Run("no result", func(t *testing.T) {
 		t.Parallel()
 		got, err := finalResponseText(nil, nil)

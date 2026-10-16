@@ -68,8 +68,8 @@ const (
 	truncatedTagLabel        = "TRUNCATED"
 	truncatedTitle           = "Response was cut off by the output token limit"
 	thinkingTruncatedTitle   = "Thinking was cut off before a response"
-	truncatedDetails         = "The model hit its max output tokens before it finished. Raise max tokens for this model (default_max_tokens on the model, or max_tokens on its variant or agent) and ask again."
-	thinkingTruncatedDetails = "The model hit its max output tokens while still reasoning, so it never produced a reply. Raise max tokens for this model (default_max_tokens on the model, or max_tokens on its variant or agent) and ask again."
+	truncatedDetails         = "The model hit its max output tokens before it finished. Raise max tokens for this model (max_tokens on the model, its variant, or the agent) and ask again."
+	thinkingTruncatedDetails = "The model hit its max output tokens while still reasoning, so it never produced a reply. Raise max tokens for this model (max_tokens on the model, its variant, or the agent) and ask again."
 )
 
 // maxExpandedThinkingTailLines is the F5 tail-window cap. When the user

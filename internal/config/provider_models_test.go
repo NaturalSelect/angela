@@ -18,11 +18,11 @@ func readProviderModels(t *testing.T, path, providerID string) []catwalk.Model {
 
 	var out struct {
 		Providers map[string]struct {
-			Models []catwalk.Model `json:"models"`
+			Models []ProviderModel `json:"models"`
 		} `json:"providers"`
 	}
 	require.NoError(t, json.Unmarshal(b, &out))
-	return out.Providers[providerID].Models
+	return providerModelsToCatwalk(out.Providers[providerID].Models)
 }
 
 func newUpsertStore(t *testing.T, providers ...string) *ConfigStore {

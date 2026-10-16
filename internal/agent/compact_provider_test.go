@@ -28,10 +28,10 @@ func newSplitProviderCoordinator(t *testing.T) *coordinator {
   "providers": {
     "mock": {"id": "mock", "name": "Mock", "type": "openai",
       "base_url": "http://127.0.0.1:9/v1", "api_key": "test-key",
-      "models": [{"id": "large-model", "name": "Large", "context_window": 8192, "default_max_tokens": 128}]},
+      "models": [{"id": "large-model", "name": "Large", "context_window": 8192, "max_tokens": 128}]},
     "other": {"id": "other", "name": "Other", "type": "openai",
       "base_url": "http://127.0.0.1:10/v1", "api_key": "other-key",
-      "models": [{"id": "tiny-model", "name": "Tiny", "context_window": 8192, "default_max_tokens": 128}]}},
+      "models": [{"id": "tiny-model", "name": "Tiny", "context_window": 8192, "max_tokens": 128}]}},
   "slots": {"main": {"provider": "mock", "model": "large-model"},
              "chore": {"provider": "other", "model": "tiny-model"}}
 }`

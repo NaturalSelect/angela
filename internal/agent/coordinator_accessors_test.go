@@ -36,7 +36,7 @@ func TestNewCoordinatorBuildsAReadyCoordinator(t *testing.T) {
   "options": {"disable_default_providers": true, "disable_provider_auto_update": true},
   "providers": {"mock": {"id": "mock", "name": "Mock", "type": "openai",
     "base_url": "http://127.0.0.1:9/v1", "api_key": "test-key",
-    "models": [{"id": "mock-model", "name": "Mock", "context_window": 8192, "default_max_tokens": 128}]}},
+    "models": [{"id": "mock-model", "name": "Mock", "context_window": 8192, "max_tokens": 128}]}},
   "slots": {"main": {"provider": "mock", "model": "mock-model"},
              "chore": {"provider": "mock", "model": "mock-model"}}
 }`

@@ -87,6 +87,31 @@ func TestSkillsEventToProto_RoundTrip(t *testing.T) {
 	require.Equal(t, "bad frontmatter", decoded.Payload.States[1].Error)
 }
 
+// TestRunCompleteToProto_Truncated verifies that the output-limit flag
+// survives the SSE envelope. Without it a client of the daemon, such as
+// `angela run`, cannot tell a cut-off answer from a finished one.
+func TestRunCompleteToProto_Truncated(t *testing.T) {
+	t.Parallel()
+
+	src := pubsub.Event[notify.RunComplete]{
+		Type: pubsub.UpdatedEvent,
+		Payload: notify.RunComplete{
+			SessionID: "S",
+			RunID:     "run-42",
+			MessageID: "M",
+			Text:      "VERDICT: APP",
+			Truncated: true,
+		},
+	}
+
+	env := wrapEvent(src)
+	require.NotNil(t, env)
+
+	var decoded pubsub.Event[proto.RunComplete]
+	require.NoError(t, json.Unmarshal(env.Payload, &decoded))
+	require.True(t, decoded.Payload.Truncated)
+}
+
 // TestRunCompleteToProto_RoundTrip verifies that the authoritative
 // per-run completion event survives the SSE envelope conversion with
 // all reconciliation fields intact. SessionID, MessageID, and Text

@@ -761,6 +761,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			complete.Cancelled = errors.Is(retErr, context.Canceled)
 		} else if ctx.Err() != nil {
 			complete.Cancelled = true
+		} else {
+			complete.Truncated = OutputTruncated(result)
 		}
 		// Prefer the per-call hook when supplied so the coordinator
 		// can coalesce retries (e.g. unauthorized → re-auth → retry)
@@ -1218,7 +1220,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				return res, err
 			}
 			skipRunComplete = true
-			if _, runErr := a.runQueued(ctx, call, currentAssistant, err, handoff); runErr != nil {
+			if _, runErr := a.runQueued(ctx, call, currentAssistant, res, err, handoff); runErr != nil {
 				return nil, runErr
 			}
 			return res, err
@@ -1446,7 +1448,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// turn's answer, and this turn's caller has none for that prompt's. A
 	// failure still travels up, since nobody else would report a failed
 	// queued prompt.
-	if _, runErr := a.runQueued(ctx, call, currentAssistant, nil, handoff); runErr != nil {
+	if _, runErr := a.runQueued(ctx, call, currentAssistant, result, nil, handoff); runErr != nil {
 		return nil, runErr
 	}
 	return result, nil
@@ -1551,8 +1553,8 @@ func (a *sessionAgent) dequeueNext(call SessionAgentCall) *queuedHandoff {
 
 // runQueued publishes the terminal RunComplete call's own turn still owes,
 // then runs the handed-off prompt as its own turn. turnErr is how call's
-// turn ended, nil for a normal finish.
-func (a *sessionAgent) runQueued(ctx context.Context, call SessionAgentCall, currentAssistant *message.Message, turnErr error, handoff *queuedHandoff) (*fantasy.AgentResult, error) {
+// turn ended, nil for a normal finish, and turnResult is what it produced.
+func (a *sessionAgent) runQueued(ctx context.Context, call SessionAgentCall, currentAssistant *message.Message, turnResult *fantasy.AgentResult, turnErr error, handoff *queuedHandoff) (*fantasy.AgentResult, error) {
 	if handoff.ownerOwesRunComplete {
 		complete := notify.RunComplete{SessionID: call.SessionID, RunID: call.RunID}
 		if currentAssistant != nil {
@@ -1565,6 +1567,8 @@ func (a *sessionAgent) runQueued(ctx context.Context, call SessionAgentCall, cur
 			complete.Cancelled = errors.Is(turnErr, context.Canceled)
 		case ctx.Err() != nil:
 			complete.Cancelled = true
+		default:
+			complete.Truncated = OutputTruncated(turnResult)
 		}
 		a.publishRunComplete(ctx, call, complete)
 	}

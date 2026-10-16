@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/client"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
@@ -520,6 +521,19 @@ func TestRunNonInteractive_CancelledRunIsAnError(t *testing.T) {
 	final, err := runNonInteractive(t.Context(), c, ws, "prompt", "", "", true, "", false)
 	require.ErrorIs(t, err, errRunCancelled)
 	require.Empty(t, final, "a partial turn must not be handed back as the result")
+}
+
+// TestRunNonInteractive_TruncatedRunIsAnError covers a RunComplete that
+// reports the output token limit. The daemon path never sees the agent's
+// result, only this event, so a cut-off answer must fail here or `angela
+// run` exits 0 and writes it to --output as if it were complete.
+func TestRunNonInteractive_TruncatedRunIsAnError(t *testing.T) {
+	c := newRunNonInteractiveServer(t, proto.RunComplete{SessionID: "sess-1", MessageID: "m1", Text: "stops mid-sen", Truncated: true})
+	ws := &proto.Workspace{ID: "ws1", Config: &config.Config{Options: &config.Options{}}}
+
+	final, err := runNonInteractive(t.Context(), c, ws, "prompt", "", "", true, "", false)
+	require.ErrorIs(t, err, agent.ErrOutputTruncated)
+	require.Empty(t, final, "a cut-off answer must not be handed back as the result")
 }
 
 // TestRunNonInteractive_StreamClosedEarlyIsAnError covers the server

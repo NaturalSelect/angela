@@ -84,7 +84,8 @@ type Notification struct {
 // is non-empty when the run terminated with an error; Cancelled is
 // true when the run terminated due to context cancellation. The two
 // are mutually exclusive in the success case but may overlap when a
-// cancel triggers a downstream error.
+// cancel triggers a downstream error. Truncated is true when the run
+// ended on the output token limit, so Text stops short of the answer.
 //
 // RunID identifies the specific request that produced this event.
 // It is the value the caller set on `proto.AgentMessage.RunID` (or
@@ -100,4 +101,5 @@ type RunComplete struct {
 	Text      string
 	Error     string
 	Cancelled bool
+	Truncated bool
 }

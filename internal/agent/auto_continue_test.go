@@ -66,6 +66,66 @@ func TestRun_DoesNotContinueAfterMaxTokens(t *testing.T) {
 	require.False(t, queued, "a truncated turn must not queue a follow-up of its own")
 }
 
+// TestRun_TruncatedTurnPublishesTruncatedRunComplete pins that a turn cut
+// off by the output token limit says so on its terminal event. The run
+// returns (result, nil), so without the flag a client that only reads the
+// event, such as `angela run` against a daemon, takes the cut-off text for
+// a finished answer.
+func TestRun_TruncatedTurnPublishesTruncatedRunComplete(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"partial answer, got cut off"}, fantasy.FinishReasonLength), nil)
+
+	var events []notify.RunComplete
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent:      largeWindowAgent(model),
+		SessionID:  sess.ID,
+		RunID:      "run-1",
+		Prompt:     "hello",
+		OnComplete: func(rc notify.RunComplete) { events = append(events, rc) },
+	})
+	require.NoError(t, err)
+
+	require.Len(t, events, 1)
+	require.True(t, events[0].Truncated)
+	require.Empty(t, events[0].Error)
+	require.False(t, events[0].Cancelled)
+	require.Contains(t, events[0].Text, "partial answer")
+}
+
+// TestRun_CompleteTurnIsNotTruncated is the control for the test above: a
+// turn that ends normally must not carry the flag.
+func TestRun_CompleteTurnIsNotTruncated(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	model := newMockLanguageModel(t)
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"all of it"}, fantasy.FinishReasonStop), nil)
+
+	var events []notify.RunComplete
+	_, err = sa.Run(t.Context(), SessionAgentCall{
+		Agent:      largeWindowAgent(model),
+		SessionID:  sess.ID,
+		RunID:      "run-1",
+		Prompt:     "hello",
+		OnComplete: func(rc notify.RunComplete) { events = append(events, rc) },
+	})
+	require.NoError(t, err)
+
+	require.Len(t, events, 1)
+	require.False(t, events[0].Truncated)
+}
+
 // toolCallThenFinish streams a single pending tool call followed
 // immediately by a finish carrying usage, so a StopWhen condition
 // evaluated right after this step sees the reported usage while the

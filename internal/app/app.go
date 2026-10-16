@@ -559,7 +559,7 @@ func finalResponseText(result *fantasy.AgentResult, err error) (string, error) {
 	// NOTE: The partial text already streamed to the output; failing keeps a
 	// script from treating a cut-off answer as complete.
 	if agent.OutputTruncated(result) {
-		return "", fmt.Errorf("%w: raise max tokens for the model and run again", agent.ErrOutputTruncated)
+		return "", agent.ErrOutputTruncated
 	}
 	return result.Response.Content.Text(), nil
 }

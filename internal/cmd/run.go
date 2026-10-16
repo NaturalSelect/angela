@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"charm.land/log/v2"
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/client"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/event"
@@ -410,6 +411,9 @@ func runNonInteractive(
 				if stream.cancelled {
 					return "", errRunCancelled
 				}
+				if stream.truncated {
+					return "", agent.ErrOutputTruncated
+				}
 				return stream.final, nil
 			}
 
@@ -448,6 +452,10 @@ type runStream struct {
 	// cancelled records that the run's RunComplete reported a cancel, in
 	// which case final stays empty because the turn is only partial.
 	cancelled bool
+	// truncated records that the run's RunComplete reported an output
+	// token cut-off, in which case final stays empty because the answer
+	// stops short.
+	truncated bool
 }
 
 // handle processes one SSE event. Returns done=true when the run
@@ -519,6 +527,8 @@ func (s *runStream) handle(ev any, stopSpinner func()) (done bool, err error) {
 		}
 		if e.Payload.Cancelled {
 			s.cancelled = true
+		} else if e.Payload.Truncated {
+			s.truncated = true
 		} else {
 			s.final = e.Payload.Text
 		}

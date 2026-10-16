@@ -122,6 +122,7 @@ type RunComplete struct {
 	Text      string `json:"text,omitempty"`
 	Error     string `json:"error,omitempty"`
 	Cancelled bool   `json:"cancelled,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 // SkillInfo describes a visible skill exposed to a frontend.

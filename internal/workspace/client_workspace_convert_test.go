@@ -610,7 +610,7 @@ func TestTranslateEvent(t *testing.T) {
 				Type: pubsub.UpdatedEvent,
 				Payload: proto.RunComplete{
 					SessionID: "s1", RunID: "r1", MessageID: "m1",
-					Text: "done", Error: "oops", Cancelled: true,
+					Text: "done", Error: "oops", Cancelled: true, Truncated: true,
 				},
 			},
 			check: func(t *testing.T, out tea.Msg) {
@@ -622,6 +622,7 @@ func TestTranslateEvent(t *testing.T) {
 				require.Equal(t, "done", got.Payload.Text)
 				require.Equal(t, "oops", got.Payload.Error)
 				require.True(t, got.Payload.Cancelled)
+				require.True(t, got.Payload.Truncated)
 			},
 		},
 		{

@@ -179,6 +179,29 @@ func TestRunStream_CancelledRunCompleteIsClean(t *testing.T) {
 	require.Empty(t, s.final)
 }
 
+// TestRunStream_TruncatedRunCompleteIsRecorded ensures a RunComplete that
+// reports the output token limit is flagged, and that its cut-off text is
+// not kept as the final answer. The text still reaches stdout, as the
+// user watching the run sees what the model did produce.
+func TestRunStream_TruncatedRunCompleteIsRecorded(t *testing.T) {
+	t.Parallel()
+
+	buf := &bytes.Buffer{}
+	s := &runStream{sessionID: "S", out: buf, read: map[string]int{}}
+	done, err := s.handle(pubsub.Event[proto.RunComplete]{Payload: proto.RunComplete{
+		SessionID: "S",
+		MessageID: "m1",
+		Text:      "stops mid-sen",
+		Truncated: true,
+	}}, nil)
+	require.True(t, done)
+	require.NoError(t, err)
+	require.True(t, s.truncated, "the caller needs to tell a cut-off answer from a finished one")
+	require.False(t, s.cancelled)
+	require.Empty(t, s.final)
+	require.Equal(t, "stops mid-sen", buf.String())
+}
+
 // pre-existing trim of leading whitespace on the first byte of
 // stdout: the trim must happen exactly once even when stdout is
 // first produced by the RunComplete reconciliation path rather

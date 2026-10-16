@@ -1348,6 +1348,7 @@ func (w *ClientWorkspace) translateEvent(ev any) tea.Msg {
 				Text:      e.Payload.Text,
 				Error:     e.Payload.Error,
 				Cancelled: e.Payload.Cancelled,
+				Truncated: e.Payload.Truncated,
 			},
 		}
 	case pubsub.Event[proto.SkillsEvent]:

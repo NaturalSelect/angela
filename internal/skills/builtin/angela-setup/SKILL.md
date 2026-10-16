@@ -108,7 +108,7 @@ along with the variants, or the resolved model loses that data:
           "id": "claude-sonnet-4-20250514",
           "name": "Claude Sonnet 4",
           "context_window": 200000,
-          "default_max_tokens": 16384,
+          "max_tokens": 16384,
           "cost_per_1m_in": 3,
           "cost_per_1m_out": 15,
           "cost_per_1m_in_cached": 0.3,

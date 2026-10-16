@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Angela 一次请求怎么走：数据结构与它们的关系</title>
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #59636e;
+    --bg: #ffffff;
+    --panel: #f6f8fa;
+    --border: #d1d9e0;
+    --accent: #0969da;
+    --warn-bg: #fff8c5;
+    --warn-border: #d4a72c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e6edf3;
+      --muted: #9198a1;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #3d444d;
+      --accent: #4493f8;
+      --warn-bg: #272115;
+      --warn-border: #9e6a03;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.7 -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+  }
+  .layout { display: flex; max-width: 1200px; margin: 0 auto; }
+  nav {
+    position: sticky; top: 0; align-self: flex-start;
+    width: 240px; height: 100vh; overflow-y: auto;
+    padding: 32px 16px; border-right: 1px solid var(--border);
+    font-size: 14px;
+  }
+  nav ol { padding-left: 18px; margin: 0; }
+  nav li { margin: 4px 0; }
+  nav a { color: var(--muted); text-decoration: none; }
+  nav a:hover { color: var(--accent); }
+  main { flex: 1; min-width: 0; padding: 32px 48px 96px; }
+  h1 { font-size: 30px; margin-top: 0; }
+  h2 { font-size: 23px; margin-top: 48px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 18px; margin-top: 32px; }
+  h4 { font-size: 16px; margin-top: 24px; }
+  a { color: var(--accent); }
+  code {
+    font: 13.5px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 5px;
+  }
+  pre {
+    font: 13px/1.55 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 14px 18px; overflow-x: auto;
+  }
+  pre code { background: none; border: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 15px; }
+  th, td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); }
+  .meta { color: var(--muted); font-size: 14px; }
+  .summary {
+    background: var(--panel); border-left: 4px solid var(--accent);
+    padding: 12px 18px; border-radius: 0 6px 6px 0;
+  }
+  .note {
+    background: var(--warn-bg); border-left: 4px solid var(--warn-border);
+    padding: 10px 16px; border-radius: 0 6px 6px 0; margin: 14px 0;
+  }
+  .tag {
+    display: inline-block; font-size: 12px; padding: 0 6px; border-radius: 10px;
+    border: 1px solid var(--border); color: var(--muted); margin-left: 4px;
+  }
+  @media (max-width: 860px) {
+    nav { display: none; }
+    main { padding: 24px 18px 64px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav>
+  <ol>
+    <li><a href="#summary">一句话概括</a></li>
+    <li><a href="#terms">术语表</a></li>
+    <li><a href="#map">全景图：一轮里的对象</a></li>
+    <li><a href="#data">核心数据结构</a>
+      <ol>
+        <li><a href="#d-message">消息</a></li>
+        <li><a href="#d-session">会话</a></li>
+        <li><a href="#d-call">一轮的调用参数</a></li>
+        <li><a href="#d-runstate">运行状态</a></li>
+      </ol>
+    </li>
+    <li><a href="#flow">一次请求，一步一步</a>
+      <ol>
+        <li><a href="#s1">界面发出请求</a></li>
+        <li><a href="#s2">协调器解析智能体</a></li>
+        <li><a href="#s3">抢占会话或排队</a></li>
+        <li><a href="#s4">准备上下文</a></li>
+        <li><a href="#s5">交给大模型</a></li>
+        <li><a href="#s6">每一步的回调</a></li>
+        <li><a href="#s7">这一轮结束</a></li>
+        <li><a href="#s8">回到屏幕</a></li>
+      </ol>
+    </li>
+    <li><a href="#timeline">数据库里留下了什么</a></li>
+    <li><a href="#special">特殊情况</a></li>
+    <li><a href="#invariants">不变量与约定</a></li>
+    <li><a href="#pitfalls">容易踩坑的地方</a></li>
+    <li><a href="#reading">建议阅读顺序</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>Angela 一次请求怎么走：数据结构与它们的关系</h1>
+<p class="meta">本文描述提交 c789ff55 的代码，是《启动过程》的续篇。行号可能随代码演进而漂移，以函数名为准。</p>
+
+<h2 id="summary">一句话概括</h2>
+<div class="summary">
+  <p>你按下回车后，这句话会依次经过下面几站，最后变成屏幕上的回答：</p>
+  <ol>
+    <li>界面把它交给工作区，工作区交给协调器。</li>
+    <li>协调器为这个会话现场组装好智能体，再交给会话执行器。</li>
+    <li>执行器把你的话存成一条消息，连同历史一起发给大模型。</li>
+    <li>大模型每吐出一点内容，执行器就更新数据库里的消息。消息服务随即发出事件，界面据此刷新。</li>
+    <li>大模型请求工具时，工具执行的结果也存成消息，再发回给大模型。如此往复，直到大模型说完。</li>
+  </ol>
+  <p>整个过程中，<strong>数据库里的消息是唯一的事实来源</strong>。界面看到的一切，都是消息被创建或更新时发出的事件。</p>
+</div>
+<p>本文以本地模式为准。工具调用经过的三层关卡在前面的讲解里已经介绍过，这里只讲它们在一轮对话里的位置。</p>
+
+<h2 id="terms">术语表</h2>
+<table>
+  <tr><th>术语</th><th>在本项目中的含义</th><th>定义位置</th></tr>
+  <tr><td>一轮</td><td>从你发出一句话，到大模型不再请求工具、给出最终回答为止</td><td><code>internal/agent/agent.go:591</code></td></tr>
+  <tr><td>一步</td><td>一轮里对大模型的一次请求。请求了工具，就会有下一步</td><td><code>agent.go:897</code> 的 <code>PrepareStep</code></td></tr>
+  <tr><td>消息</td><td>对话记录里的一条，有角色和若干内容片段</td><td><code>internal/message/content.go:226</code></td></tr>
+  <tr><td>内容片段</td><td>消息的组成部分，比如一段文字、一次工具调用、一个结束标记</td><td><code>content.go:62</code></td></tr>
+  <tr><td>会话执行器</td><td>真正跑一轮对话的对象，类型是 <code>sessionAgent</code></td><td><code>agent.go:298</code></td></tr>
+  <tr><td>fantasy</td><td>第三方库，屏蔽各家大模型的协议差异，负责"请求、调工具、再请求"的循环</td><td><code>charm.land/fantasy</code></td></tr>
+</table>
+
+<h2 id="map">全景图：一轮里的对象</h2>
+<p>下图是一轮对话中涉及的对象和它们之间的调用。每条线都在代码里核对过。</p>
+<pre><code>ui.UI.sendMessage
+  │ 调用 Workspace.AgentRun
+  ▼
+AppWorkspace.AgentRun
+  │ 调用 coordinator.Run
+  ▼
+coordinator.run
+  │ 1. turnExecutorFor 得到 turnTarget
+  │      ├─ executor：会话执行器 sessionAgent
+  │      └─ resolved：本轮的 resolvedAgent（模型、工具、系统提示）
+  │ 2. 把它们装进 SessionAgentCall
+  ▼
+sessionAgent.Run(SessionAgentCall)
+  │ 读写 runState：活动请求表、排队表
+  │ 读写 message.Service 和 session.Service
+  │ 调用 fantasy.Agent.Stream，并注册一组回调
+  ▼
+fantasy 的循环（第三方库内部）
+  ├─ 每一步开始：PrepareStep       创建一条空的助手消息
+  ├─ 流式输出：  OnTextDelta 等    往助手消息里追加内容
+  ├─ 请求工具：  OnToolCall        往助手消息里加工具调用
+  ├─ 执行工具：  工具的 Run        经过安全、钩子、权限三层
+  ├─ 工具结果：  OnToolResult      创建一条工具消息
+  └─ 每一步结束：OnStepFinish      加结束标记，更新会话用量
+
+message.Service 每次写库后发布事件
+  → App.events → App.Subscribe → 界面刷新</code></pre>
+
+<h2 id="data">核心数据结构</h2>
+<p>先认识四个数据结构，后面的流程都围绕它们转。</p>
+
+<h3 id="d-message">消息 Message</h3>
+<p>定义在 <code>internal/message/content.go:226</code>。</p>
+<table>
+  <tr><th>字段</th><th>含义</th></tr>
+  <tr><td><code>ID</code></td><td>唯一编号，创建时生成的 UUID</td></tr>
+  <tr><td><code>Role</code></td><td>谁说的话，见下表</td></tr>
+  <tr><td><code>SessionID</code></td><td>属于哪个会话</td></tr>
+  <tr><td><code>Parts</code></td><td>内容片段列表，见下表</td></tr>
+  <tr><td><code>Model</code> <code>Provider</code> <code>Agent</code></td><td>由哪个模型、哪家服务商、哪个智能体产生</td></tr>
+  <tr><td><code>CreatedAt</code> <code>UpdatedAt</code></td><td>时间戳，单位毫秒</td></tr>
+  <tr><td><code>IsSummaryMessage</code></td><td>是否为压缩上下文时生成的摘要</td></tr>
+</table>
+
+<p><strong>角色</strong>有四种，定义在 <code>content.go:23</code> 到 <code>28</code>。</p>
+<table>
+  <tr><th>角色</th><th>含义</th></tr>
+  <tr><td><code>user</code></td><td>你说的话。系统提醒也用这个角色存储</td></tr>
+  <tr><td><code>assistant</code></td><td>大模型说的话，包括它请求的工具调用</td></tr>
+  <tr><td><code>tool</code></td><td>一次工具调用的结果</td></tr>
+  <tr><td><code>system</code></td><td>程序插入的说明，比如"已切换到某某智能体"</td></tr>
+</table>
+
+<p><strong>内容片段</strong>是一个接口 <code>ContentPart</code>，定义在 <code>content.go:62</code>。它只有一个私有方法，作用是把下面这些类型标记为"可以放进消息里"。</p>
+<table>
+  <tr><th>类型</th><th>内容</th><th>出现在</th></tr>
+  <tr><td><code>TextContent</code></td><td>一段文字</td><td>用户消息、助手消息</td></tr>
+  <tr><td><code>ReasoningContent</code></td><td>模型的思考过程，以及部分服务商要求回传的签名</td><td>助手消息</td></tr>
+  <tr><td><code>BinaryContent</code></td><td>附件，比如你粘贴的图片</td><td>用户消息</td></tr>
+  <tr><td><code>ImageURLContent</code></td><td>图片链接</td><td>用户消息</td></tr>
+  <tr><td><code>ToolCall</code></td><td>工具调用：编号、工具名、参数 JSON、是否已接收完整</td><td>助手消息</td></tr>
+  <tr><td><code>ToolResult</code></td><td>工具结果：对应的调用编号、内容、是否出错</td><td>工具消息</td></tr>
+  <tr><td><code>Finish</code></td><td>结束标记：结束原因、时间、本步的 token 用量</td><td>每条消息的末尾</td></tr>
+  <tr><td><code>ShellCommand</code></td><td>你在输入框里直接执行的 shell 命令及输出</td><td>用户消息</td></tr>
+</table>
+<p>定义见 <code>content.go:66</code> 到 <code>175</code>。</p>
+
+<p><strong>结束原因</strong>定义在 <code>content.go:46</code> 到 <code>60</code>。</p>
+<table>
+  <tr><th>取值</th><th>含义</th></tr>
+  <tr><td><code>end_turn</code></td><td>模型说完了</td></tr>
+  <tr><td><code>tool_use</code></td><td>模型请求了工具，还会有下一步</td></tr>
+  <tr><td><code>max_tokens</code></td><td>输出长度到了上限，被截断</td></tr>
+  <tr><td><code>canceled</code></td><td>你按了取消</td></tr>
+  <tr><td><code>error</code></td><td>出错，比如服务商返回错误</td></tr>
+  <tr><td><code>content_filter</code></td><td>服务商的安全过滤拒绝回答</td></tr>
+</table>
+
+<h4>消息在数据库里的样子</h4>
+<p>消息表建于 <code>internal/db/migrations/20250424200609_initial.sql:47</code>。内容片段不拆成多列，而是整体序列化成 JSON 存在 <code>parts</code> 这一列里。每个片段被包成 <code>{"type": ..., "data": ...}</code> 的形式，类型标签定义在 <code>internal/message/message.go:638</code> 到 <code>647</code>，序列化函数是 <code>marshalParts</code>，见 <code>message.go:654</code>。</p>
+<p>例如，模型请求读取一个文件时，助手消息的 <code>parts</code> 列大致如下。字段名来自结构体的 JSON 标签，具体数值是示意。</p>
+<pre><code>[
+  {"type": "text",
+   "data": {"text": "我先看一下 README。"}},
+  {"type": "tool_call",
+   "data": {"id": "toolu_01", "name": "Read",
+            "input": "{\"file_path\":\"/home/me/shop/README.md\"}",
+            "provider_executed": false, "finished": true}},
+  {"type": "finish",
+   "data": {"reason": "tool_use", "time": 1791273600,
+            "output_tokens": 58}}
+]</code></pre>
+
+<h3 id="d-session">会话 Session</h3>
+<p>定义在 <code>internal/session/session.go:59</code>。一轮对话中会读写的字段如下。</p>
+<table>
+  <tr><th>字段</th><th>含义</th></tr>
+  <tr><td><code>ID</code> <code>Title</code></td><td>编号和标题。标题由第一句话自动生成</td></tr>
+  <tr><td><code>ParentSessionID</code></td><td>子智能体的会话会指向派它出去的父会话</td></tr>
+  <tr><td><code>ActiveAgent</code></td><td>这个会话选了哪个智能体和模型，上一轮讲解里讲过</td></tr>
+  <tr><td><code>PromptTokens</code> <code>CompletionTokens</code></td><td>当前上下文用了多少 token，用来判断是否需要压缩</td></tr>
+  <tr><td><code>Cost</code></td><td>累计花费</td></tr>
+  <tr><td><code>SummaryMessageID</code></td><td>最近一次压缩生成的摘要消息。加载历史时从这条开始</td></tr>
+  <tr><td><code>Todos</code></td><td>智能体维护的待办列表</td></tr>
+  <tr><td><code>MessageCount</code></td><td>消息数，由数据库触发器自动维护</td></tr>
+</table>
+<p><code>MessageCount</code> 不需要代码手动加减。插入或删除消息时，数据库触发器会自动更新它，见 <code>initial.sql:68</code> 到 <code>82</code>。</p>
+
+<h3 id="d-call">一轮的调用参数 SessionAgentCall</h3>
+<p>定义在 <code>internal/agent/agent.go:147</code>。协调器把一轮需要的一切装进这个结构体，交给会话执行器。</p>
+<table>
+  <tr><th>字段</th><th>含义</th></tr>
+  <tr><td><code>SessionID</code></td><td>在哪个会话里跑</td></tr>
+  <tr><td><code>Prompt</code> <code>Attachments</code></td><td>你说的话和附件</td></tr>
+  <tr><td><code>Agent</code></td><td>本轮的智能体，包含模型、工具列表、系统提示。整轮不可变</td></tr>
+  <tr><td><code>Compact</code></td><td>上下文快满时用来做摘要的智能体</td></tr>
+  <tr><td><code>RunID</code></td><td>调用方给的编号，本轮结束事件会原样带回</td></tr>
+  <tr><td><code>ProviderOptions</code> 和采样参数</td><td>温度、TopP 等，发给大模型的参数</td></tr>
+</table>
+<div class="note"><strong>本轮的智能体不可变。</strong> 注释写明，<code>Agent</code> 字段在一轮开始时解析好，整轮都不能改。配置变化只在下一轮生效，见 <code>agent.go:149</code> 到 <code>151</code>。</div>
+
+<h3 id="d-runstate">运行状态 runState</h3>
+<p>定义在 <code>internal/agent/run_state.go:18</code>，内嵌在会话执行器里。它记录每个会话"现在能不能跑"。注释说明这里不做任何数据库或大模型调用，只管并发状态，见 <code>run_state.go:14</code> 到 <code>17</code>。</p>
+<table>
+  <tr><th>字段</th><th>含义</th></tr>
+  <tr><td><code>activeRequests</code></td><td>会话编号到"取消函数"的映射。有条目就说明这个会话正在跑</td></tr>
+  <tr><td><code>messageQueue</code></td><td>会话编号到排队调用列表的映射。会话忙时，新消息排在这里</td></tr>
+  <tr><td><code>dispatchMu</code></td><td>每个会话一把锁，保证"判断忙不忙"和"登记为正在跑"是原子的</td></tr>
+  <tr><td><code>cancelMark</code> <code>acceptedRuns</code></td><td>客户端/服务器模式下处理"取消和排队同时发生"的记账，本地模式可以先忽略</td></tr>
+</table>
+
+<h2 id="flow">一次请求，一步一步</h2>
+<p>下面跟踪一个具体场景：你在项目 <code>~/code/shop</code> 里新开一个会话，输入"README 里有拼写错误，帮我改掉"。模型会先读文件，再改文件，最后回答。</p>
+
+<h3 id="s1">第 1 步：界面发出请求</h3>
+<p>入口是 <code>internal/ui/model/ui.go:5076</code> 的 <code>sendMessage</code>。</p>
+<ol>
+  <li>如果你正在看子智能体的记录，拒绝发送，见 <code>ui.go:5077</code>。</li>
+  <li>如果后端还没准备好，比如没有配置模型，报错，见 <code>ui.go:5080</code>。</li>
+  <li><strong>没有会话就先建一个</strong>，标题暂定为 "New Session"，见 <code>ui.go:5092</code> 到 <code>5105</code>。</li>
+  <li>先把界面标记为"忙"，这样你紧接着按 Esc 能正确取消，见 <code>ui.go:5124</code>。</li>
+  <li>在后台调用 <code>Workspace.AgentRun</code>，见 <code>ui.go:5136</code>。</li>
+</ol>
+<p>本地模式下，<code>AgentRun</code> 会一直阻塞到这一轮结束。注释说明，这就是它放在后台命令里执行的原因，见 <code>ui.go:5128</code> 到 <code>5135</code>。成功返回 <code>agentRunSubmittedMsg</code>，失败返回 <code>agentRunFailedMsg</code>。</p>
+<p>这一步没有把你的话直接画到屏幕上。屏幕上出现你的话，要等第 4 步消息写进数据库并发出事件之后。</p>
+<p class="meta">数据此时是：一个会话编号、一段文字 "README 里有拼写错误，帮我改掉"、空的附件列表。</p>
+
+<h3 id="s2">第 2 步：协调器解析智能体</h3>
+<p><code>AppWorkspace.AgentRun</code> 直接调用 <code>coordinator.Run</code>，见 <code>internal/workspace/app_workspace.go:152</code>。真正的逻辑在 <code>internal/agent/coordinator.go:375</code> 的 <code>run</code>。</p>
+<ol>
+  <li>交互模式不等 MCP 连完。还在连接的 MCP 服务器这一轮看不到，见 <code>coordinator.go:376</code> 到 <code>394</code> 的注释。</li>
+  <li>让子智能体登记表和当前配置保持一致，见 <code>coordinator.go:400</code>。</li>
+  <li>调用 <code>turnExecutorFor</code>，得到执行器和本轮的智能体，见 <code>coordinator.go:402</code>。这一步读出会话选的智能体，再现场构建模型、工具和系统提示。上一轮讲解已经讲过。</li>
+  <li>合并采样参数，准备压缩用的智能体，必要时刷新登录令牌，见 <code>coordinator.go:416</code> 到 <code>423</code>。</li>
+  <li>把一切装进 <code>SessionAgentCall</code>，调用执行器的 <code>Run</code>，见 <code>coordinator.go:450</code>。</li>
+</ol>
+<p class="meta">数据此时是：一个 <code>SessionAgentCall</code>，里面的 <code>Agent</code> 已经包含 coder 的模型、完整的工具列表和系统提示。</p>
+
+<h3 id="s3">第 3 步：抢占会话或排队</h3>
+<p>进入 <code>internal/agent/agent.go:591</code> 的 <code>sessionAgent.Run</code>。</p>
+<ol>
+  <li>检查参数：必须有文字或附件，必须有会话编号，见 <code>agent.go:592</code>。</li>
+  <li>拿到这个会话的派发锁，见 <code>agent.go:613</code> 到 <code>614</code>。</li>
+  <li><strong>如果会话正忙</strong>，把这次调用放进 <code>messageQueue</code>，解锁，直接返回，见 <code>agent.go:645</code> 到 <code>663</code>。排队的消息之后会被处理，见第 7 步。</li>
+  <li><strong>如果会话空闲</strong>，创建一个可取消的上下文，把取消函数登记进 <code>activeRequests</code>，再解锁，见 <code>agent.go:665</code> 到 <code>680</code>。从这一刻起，会话就是"忙"的。</li>
+</ol>
+<div class="note"><strong>为什么要在锁里登记。</strong> 注释解释，"判断忙不忙"和"登记为正在跑"必须是一个整体。否则两条几乎同时到达的消息可能都认为会话空闲，在同一个会话上开出两轮，见 <code>agent.go:605</code> 到 <code>612</code>。</div>
+<p>函数退出时会撤销登记。撤销用的是"比较后删除"，只删自己登记的那一条，避免误删下一轮的登记，见 <code>agent.go:683</code> 到 <code>687</code>。</p>
+
+<h3 id="s4">第 4 步：准备上下文</h3>
+<p>仍在 <code>Run</code> 里，按顺序执行：</p>
+<ol>
+  <li><strong>拼系统提示。</strong> 把已连接 MCP 服务器提供的说明附在系统提示末尾，见 <code>agent.go:695</code> 到 <code>707</code>。</li>
+  <li><strong>创建 fantasy 智能体。</strong> 传入模型、系统提示和工具列表，见 <code>agent.go:714</code> 到 <code>719</code>。</li>
+  <li><strong>读会话和历史消息。</strong> 见 <code>agent.go:722</code> 到 <code>730</code>。如果会话压缩过，只从摘要那条开始读，见 <code>agent.go:2264</code> 的 <code>getSessionMessages</code>。</li>
+  <li><strong>后台生成标题。</strong> 如果这是会话里第一句真正的用户输入，开一条协程去生成标题。它用的上下文不随本轮取消，因为生成标题可能要几十秒，见 <code>agent.go:732</code> 到 <code>739</code>。</li>
+  <li><strong>登记收尾动作。</strong> 用 <code>defer</code> 注册第 7 步的收尾，见 <code>agent.go:771</code>。</li>
+  <li><strong>转换历史。</strong> 把数据库里的消息转换成 fantasy 能理解的格式，见 <code>agent.go:805</code>。转换时会丢掉缺了另一半的工具调用或结果。如果模型不支持图片，还会去掉图片。<span class="tag">后两点来自代理报告，未逐行核对</span></li>
+  <li><strong>插入系统提醒。</strong> 比如"你很久没更新待办了"，存成 <code>user</code> 角色的消息，见 <code>agent.go:816</code> 到 <code>837</code>。</li>
+  <li><strong>存下你的话。</strong> 调用 <code>createUserMessage</code>，见 <code>agent.go:842</code>。它创建一条 <code>user</code> 消息，内容是一个文字片段，每个附件再加一个二进制片段，见 <code>agent.go:1993</code> 到 <code>2003</code>。</li>
+</ol>
+<p>第 8 步的写库会触发一次"消息已创建"事件，你的话就在这时出现在屏幕上。</p>
+<div class="note"><strong>系统提醒为什么要存进数据库。</strong> 注释解释，如果只在内存里临时拼进去，下一轮重算时位置可能不同。发给大模型的前缀一变，服务商那边的提示缓存就失效了。存进数据库后位置固定，前缀每轮都一样，见 <code>agent.go:807</code> 到 <code>815</code>。</div>
+<p>非助手消息在写库时会被自动补上一个结束标记，见 <code>internal/message/message.go:194</code> 到 <code>198</code>。所以你在数据库里看到的每条用户消息末尾都有一个 <code>finish</code> 片段。</p>
+
+<h3 id="s5">第 5 步：交给大模型</h3>
+<p>调用 <code>agent.Stream</code>，见 <code>agent.go:885</code>。传入的东西有：</p>
+<ul>
+  <li><strong>本轮的话</strong>，加上文本附件的内容。</li>
+  <li><strong>历史消息</strong>，也就是第 4 步转换好的列表。</li>
+  <li><strong>采样参数</strong>和服务商专属选项。</li>
+  <li><strong>最多重试次数</strong>，取自常量 <code>streamMaxRetries</code>，见 <code>agent.go:877</code>。</li>
+  <li><strong>一组回调函数</strong>，见下一步。</li>
+</ul>
+<p>从这里开始，"请求模型、执行工具、再请求模型"的循环由 fantasy 库驱动。Angela 自己的代码只通过回调参与。fantasy 内部怎么调度，本文没有展开，因为它不在这个仓库里。</p>
+
+<h3 id="s6">第 6 步：每一步的回调</h3>
+<p>拿前面的场景举例，这一轮会有三步：读文件、改文件、回答。每一步都会触发下面这些回调。</p>
+
+<h4>步开始：PrepareStep</h4>
+<p>见 <code>agent.go:897</code> 到 <code>965</code>。</p>
+<ol>
+  <li>使用最新的工具列表，见 <code>agent.go:904</code>。</li>
+  <li><strong>把排队的消息并进来。</strong> 如果你在模型干活时又发了一句话，它会在这里被存成用户消息，加进本步要发的消息列表，见 <code>agent.go:917</code> 到 <code>926</code>。</li>
+  <li>标记提示缓存的断点，见 <code>agent.go:930</code> 到 <code>932</code>。</li>
+  <li><strong>创建一条空的助手消息</strong>，见 <code>agent.go:943</code> 到 <code>949</code>。之后这一步的所有输出都追加到它上面。</li>
+  <li>把这条消息的编号放进上下文，工具执行时可以取到，见 <code>agent.go:953</code>。</li>
+</ol>
+<p><strong>每一步都有自己的助手消息。</strong> 所以三步就会产生三条助手消息，而不是一条越写越长的消息。</p>
+
+<h4>流式输出：OnTextDelta 和 OnReasoning 系列</h4>
+<p>模型每吐出一小段文字，<code>OnTextDelta</code> 就把它追加到当前助手消息的文字片段上，然后调用 <code>messages.Update</code>，见 <code>agent.go:994</code> 到 <code>1004</code>。思考过程走 <code>OnReasoningStart</code>、<code>OnReasoningDelta</code>、<code>OnReasoningEnd</code>，追加到思考片段上，见 <code>agent.go:966</code> 到 <code>993</code>。</p>
+
+<h4>请求工具：OnToolInputStart 和 OnToolCall</h4>
+<ol>
+  <li>模型刚开始写工具参数时，<code>OnToolInputStart</code> 先加一个未完成的工具调用片段，让界面能立刻显示"正在调用 Read"，见 <code>agent.go:1005</code> 到 <code>1016</code>。</li>
+  <li>参数接收完整后，<code>OnToolCall</code> 把它更新为完成状态，并带上参数 JSON，见 <code>agent.go:1064</code> 到 <code>1085</code>。参数不是合法 JSON 时会先被清理，并记下这次调用，结果会被替换成错误提示，见 <code>agent.go:1065</code> 到 <code>1068</code> 和 <code>1088</code> 到 <code>1091</code>。</li>
+</ol>
+<p>这两个回调写库时用的是外层上下文，不是本轮可取消的上下文。注释说明，这样即使你中途取消，工具调用也能写进数据库，见 <code>agent.go:1013</code> 到 <code>1015</code>。</p>
+
+<h4>执行工具</h4>
+<p>fantasy 调用工具的 <code>Run</code> 方法。工具外面套着安全、钩子、权限三层，在 <code>internal/agent/coordinator.go:1101</code> 到 <code>1119</code> 组装。需要你确认的操作会在这里弹窗，并一直等到你回答。</p>
+<p>工具通过上下文拿到会话编号和消息编号。键定义在 <code>internal/agent/tools/tools.go:21</code> 到 <code>30</code>，取值函数是 <code>GetSessionFromContext</code> 和 <code>GetMessageFromContext</code>，见 <code>tools.go:46</code> 和 <code>51</code>。</p>
+
+<h4>工具结果：OnToolResult</h4>
+<p>把 fantasy 的结果转换成 <code>ToolResult</code> 片段，<strong>创建一条新的 <code>tool</code> 角色消息</strong>，见 <code>agent.go:1086</code> 到 <code>1101</code>。工具结果不追加到助手消息上，而是独立成一条消息。</p>
+
+<h4>步结束：OnStepFinish</h4>
+<p>见 <code>agent.go:1108</code> 到 <code>1197</code>。</p>
+<ol>
+  <li>把 fantasy 的结束原因翻译成 Angela 的结束原因，见 <code>agent.go:1112</code> 到 <code>1131</code>。</li>
+  <li>如果某个工具要求停止本轮，比如钩子叫停，就把结束原因改成 <code>end_turn</code>，见 <code>agent.go:1132</code> 到 <code>1149</code>。</li>
+  <li>给助手消息加上结束标记，见 <code>agent.go:1155</code>。</li>
+  <li>记录本步的 token 用量，累加到会话上，然后保存会话，见 <code>agent.go:1159</code> 到 <code>1195</code>。</li>
+  <li>最后更新一次助手消息，见 <code>agent.go:1196</code>。</li>
+</ol>
+
+<h4>停止条件：StopWhen</h4>
+<p>fantasy 每步结束后会检查两个条件，满足任何一个就不再继续，见 <code>agent.go:1198</code> 到 <code>1222</code>。</p>
+<ul>
+  <li><strong>上下文快满了。</strong> 剩余空间小于预留值且开启了自动压缩，就停下来，标记需要压缩。</li>
+  <li><strong>模型在原地打转。</strong> 检测到重复的工具调用，就停下来。</li>
+</ul>
+
+<h4>Update 的防抖</h4>
+<p>流式输出时 <code>Update</code> 被调用得非常频繁。消息服务不会每次都写库，而是把最新状态攒在内存里，最多等 33 毫秒再一次性写入并发出事件，见 <code>internal/message/message.go:22</code> 和 <code>308</code> 到 <code>364</code>。</p>
+<p>结构性的变化不等待，会立刻写库。按注释的说法，这包括结束一条消息、增加或完成工具调用、结束一段思考，见 <code>message.go:35</code> 到 <code>41</code>。</p>
+
+<h3 id="s7">第 7 步：这一轮结束</h3>
+<p><code>Stream</code> 返回后，<code>Run</code> 根据结果收尾。</p>
+
+<h4>出错或取消</h4>
+<p>如果 <code>Stream</code> 返回错误，代码会把残局收拾干净，见 <code>agent.go:1227</code> 起：</p>
+<ul>
+  <li><strong>补全未完成的工具调用。</strong> 已经发起但还没完成的工具调用，会被标记为完成。</li>
+  <li><strong>补上缺失的结果。</strong> 有调用却没有结果的，会补一条错误结果。</li>
+  <li><strong>写上结束原因。</strong> 取消记为 <code>canceled</code>，服务商出错记为 <code>error</code>。</li>
+</ul>
+<p>这样数据库里的对话记录始终是成对完整的，下一轮转换历史时不会出错。未完成的调用参数会被填成空对象，补上的结果内容会注明是出错还是被你取消，见 <code>agent.go:1265</code> 到 <code>1311</code>。这些写库操作用一个不受取消影响的上下文，最多等 5 秒，见 <code>agent.go:1248</code> 到 <code>1256</code>。</p>
+
+<h4>需要压缩</h4>
+<p>如果停止原因是上下文快满，<code>Run</code> 会调用 <code>Summarize</code> 生成摘要，见 <code>agent.go:1376</code> 到 <code>1406</code>。如果被打断时模型还有工具没调用完，代码会先把"继续刚才的请求"排进队列，摘要做完后接着跑，见 <code>agent.go:1388</code> 到 <code>1405</code>。摘要消息的编号会记到会话上，下次加载历史就从摘要开始。<span class="tag">最后一句来自代理报告</span></p>
+
+<h4>处理排队的消息</h4>
+<p>见 <code>agent.go:1475</code> 到 <code>1563</code>。</p>
+<ol>
+  <li>拿到派发锁，看排队表里还有没有这个会话的消息。</li>
+  <li>没有就清空排队表，返回。</li>
+  <li>有就取出第一条，<strong>递归调用 <code>Run</code></strong> 跑下一轮，见 <code>agent.go:1563</code>。</li>
+</ol>
+<p>排队的消息有两种去向。在第 6 步的 <code>PrepareStep</code> 里，没有 <code>RunID</code> 的排队消息会被并进当前这一轮。带 <code>RunID</code> 的则留在队列里，等这一轮结束后单独跑一轮，见 <code>agent.go:913</code> 到 <code>916</code> 的注释。本地界面发的消息不带 <code>RunID</code>，所以通常会被并进当前轮。原因是界面传入的是空白上下文，见 <code>ui.go:5136</code>；而 <code>RunID</code> 只从上下文里取，见 <code>coordinator.go:448</code>。</p>
+
+<h4>延迟的收尾动作</h4>
+<p>第 4 步登记的 <code>defer</code> 在 <code>Run</code> 退出时执行，见 <code>agent.go:771</code> 到 <code>803</code>：</p>
+<ol>
+  <li>把所有攒着的消息更新写进数据库，最多等 5 秒。</li>
+  <li>发布一个"本轮结束"事件 <code>RunComplete</code>，里面有会话编号、最后一条助手消息的编号和文字，以及是否出错或取消。</li>
+</ol>
+<p>注释解释了这个顺序：先写库再发结束事件，界面就更有可能先看到最后的消息，再看到"结束了"，见 <code>agent.go:762</code> 到 <code>770</code>。如果是递归去跑排队消息，外层不发结束事件，由递归的那一轮来发，见 <code>agent.go:745</code> 到 <code>749</code>。</p>
+
+<h3 id="s8">第 8 步：回到屏幕</h3>
+<p>每次消息被创建或更新，消息服务都会发布事件。消息服务在 <code>Create</code> 写库后发布"已创建"事件，见 <code>internal/message/message.go:226</code>。事件经过《启动过程》第 7 步讲的事件总线，到达界面的 <code>Update</code> 方法。</p>
+<p>界面的处理在 <code>internal/ui/model/ui.go:1066</code> 到 <code>1103</code>：</p>
+<ul>
+  <li><strong>别的会话的消息</strong>，通常是子智能体的，交给专门的函数处理，见 <code>ui.go:1071</code> 到 <code>1076</code>。</li>
+  <li><strong>已创建</strong>：在聊天列表末尾加一项，并重新查询会话是否忙、有没有排队消息，见 <code>ui.go:1079</code> 到 <code>1094</code>。</li>
+  <li><strong>已更新</strong>：刷新对应的那一项，见 <code>ui.go:1095</code> 到 <code>1096</code>。</li>
+  <li><strong>已删除</strong>：从列表里移除，见 <code>ui.go:1097</code> 到 <code>1098</code>。</li>
+</ul>
+<p>注释特别说明，"已更新"事件不触发忙碌状态的查询。流式输出时每个字都会触发一次更新，每次都查询会太浪费，见 <code>ui.go:1081</code> 到 <code>1086</code>。</p>
+
+<h2 id="timeline">数据库里留下了什么</h2>
+<p>前面的场景跑完后，这个会话在消息表里新增了这些行。顺序就是创建的顺序。</p>
+<table>
+  <tr><th>序号</th><th>角色</th><th>内容片段</th><th>何时创建</th></tr>
+  <tr><td>1</td><td><code>user</code></td><td>系统提醒文字、结束标记</td><td>第 4 步，可能有零到多条</td></tr>
+  <tr><td>2</td><td><code>user</code></td><td>"README 里有拼写错误，帮我改掉"、结束标记</td><td>第 4 步</td></tr>
+  <tr><td>3</td><td><code>assistant</code></td><td>思考、文字、Read 工具调用、结束标记 <code>tool_use</code></td><td>第一步的 PrepareStep</td></tr>
+  <tr><td>4</td><td><code>tool</code></td><td>Read 的结果，即 README 的内容</td><td>第一步的 OnToolResult</td></tr>
+  <tr><td>5</td><td><code>assistant</code></td><td>文字、Edit 工具调用、结束标记 <code>tool_use</code></td><td>第二步的 PrepareStep</td></tr>
+  <tr><td>6</td><td><code>tool</code></td><td>Edit 的结果</td><td>第二步的 OnToolResult</td></tr>
+  <tr><td>7</td><td><code>assistant</code></td><td>"已修正两处拼写错误……"、结束标记 <code>end_turn</code></td><td>第三步的 PrepareStep</td></tr>
+</table>
+<p>同时，会话表里这一行的 token 用量和花费被更新了三次，每步一次。会话标题也被后台协程改成了根据第一句话生成的标题。</p>
+<p>思考片段只在模型支持并开启思考时出现。场景中模型具体说了什么是示意，消息的角色和片段结构以代码为准。</p>
+
+<h2 id="special">特殊情况</h2>
+<table>
+  <tr><th>情况</th><th>会发生什么</th><th>在哪里</th></tr>
+  <tr><td>模型干活时你又发了一句</td><td>进入排队表，在下一步开始时并入当前这一轮</td><td><code>agent.go:645</code>、<code>917</code></td></tr>
+  <tr><td>你按了取消</td><td>本轮上下文被取消，残局被补全，结束原因记为 <code>canceled</code></td><td><code>agent.go:1227</code> 起</td></tr>
+  <tr><td>服务商暂时出错</td><td>自动重试。重试前清掉这次失败的半截输出，并通知界面"正在重试"</td><td><code>agent.go:1024</code> 到 <code>1059</code></td></tr>
+  <tr><td>你拒绝了权限请求</td><td>工具返回一条错误结果，模型看到后可以换个办法</td><td><code>permissioned_tool.go:86</code> 到 <code>88</code></td></tr>
+  <tr><td>钩子要求叫停</td><td>工具结果带停止标记，本轮以 <code>end_turn</code> 结束</td><td><code>agent.go:1132</code> 到 <code>1149</code></td></tr>
+  <tr><td>上下文快满</td><td>停下来生成摘要，之后从摘要继续</td><td><code>agent.go:1198</code> 到 <code>1218</code></td></tr>
+  <tr><td>输出被截断</td><td>结束原因记为 <code>max_tokens</code>，被截断的工具调用会被收尾</td><td><code>agent.go:1150</code> 到 <code>1154</code></td></tr>
+</table>
+
+<h2 id="invariants">不变量与约定</h2>
+<ul>
+  <li><strong>数据库是唯一的事实来源。</strong> 界面不自己记录对话，只根据消息事件渲染。</li>
+  <li><strong>一个会话同一时刻只跑一轮。</strong> 由派发锁和活动请求表共同保证，见 <code>agent.go:605</code>。</li>
+  <li><strong>一步对应一条助手消息。</strong> 在 <code>PrepareStep</code> 里创建，见 <code>agent.go:943</code>。</li>
+  <li><strong>工具结果是独立的消息。</strong> 角色是 <code>tool</code>，靠调用编号和助手消息里的工具调用配对。</li>
+  <li><strong>工具调用和结果必须成对。</strong> 出错时会补齐，转换历史时会丢掉落单的。</li>
+  <li><strong>本轮的智能体整轮不变。</strong> 见 <code>agent.go:149</code>。</li>
+  <li><strong>每一轮恰好发布一次结束事件。</strong> 递归处理排队消息时，外层不发，见 <code>agent.go:745</code>。</li>
+  <li><strong>读消息之前要先刷新缓冲。</strong> <code>Update</code> 是最终一致的，直接读数据库可能读到旧状态，见 <code>message.go:43</code> 到 <code>47</code> 的注释。</li>
+</ul>
+
+<h2 id="pitfalls">容易踩坑的地方</h2>
+<ul>
+  <li><strong>本地模式下 AgentRun 是同步的。</strong> 它要等整轮跑完才返回。客户端/服务器模式下则是发出即返回。两种模式的错误处理路径不同，见 <code>ui.go:5128</code> 到 <code>5135</code> 的注释。</li>
+  <li><strong>你的话不是发送时画上屏幕的。</strong> 它要等写进数据库、发出事件后才出现。如果写库失败，屏幕上不会有这句话。</li>
+  <li><strong>系统提醒在数据库里是 user 消息。</strong> 查数据库时会看到一些不是你写的 <code>user</code> 消息。界面用 <code>IsReminder</code> 把它们和真正的输入区分开，见 <code>content.go:206</code>。</li>
+  <li><strong>写库用的上下文不一样。</strong> 文字增量用本轮可取消的上下文，工具调用和工具结果用外层上下文。改代码时如果换错，取消时会丢数据，见 <code>agent.go:1013</code>。</li>
+  <li><strong>MCP 工具可能这一轮还没有。</strong> 交互模式不等 MCP 连完，刚启动时发的第一句话可能看不到 MCP 工具，见 <code>coordinator.go:376</code>。</li>
+  <li><strong>fantasy 的内部不在本仓库。</strong> 重试、步与步之间怎么衔接、工具是否并行执行，都由 fantasy 决定。想深究要去读那个库的源码。</li>
+</ul>
+
+<h2 id="reading">建议阅读顺序</h2>
+<ol>
+  <li><code>internal/message/content.go:226</code> 的 <code>Message</code> 和上面的各种片段：先认识数据，后面才看得懂代码在改什么。</li>
+  <li><code>internal/agent/agent.go:591</code> 到 <code>885</code>：<code>Run</code> 的前半段，从抢占会话到发给大模型。</li>
+  <li><code>internal/agent/agent.go:897</code> 到 <code>1222</code>：所有回调。对照第 6 步一个一个看。</li>
+  <li><code>internal/message/message.go:308</code> 的 <code>Update</code>：理解防抖，以及事件什么时候发出。</li>
+  <li><code>internal/agent/agent.go:1475</code> 到 <code>1563</code>：排队消息的处理和递归。</li>
+</ol>
+
+</main>
+</div>
+</body>
+</html>

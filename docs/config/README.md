@@ -130,7 +130,7 @@ All configuration is done through `angela.json`. For the complete schema, see
           "id": "deepseek-chat",
           "name": "DeepSeek Chat",
           "context_window": 128000,
-          "default_max_tokens": 8192,
+          "max_tokens": 8192,
           "can_reason": false,
           "supports_images": false,
           "price_input": 0.27,        // per 1M tokens

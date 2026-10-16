@@ -100,7 +100,7 @@ OpenCode `models` is a dictionary; Angela `models` is an array:
     "id": "my-model",
     "name": "My Model",
     "context_window": 128000,
-    "default_max_tokens": 8192,
+    "max_tokens": 8192,
     "can_reason": false,
     "supports_attachments": false,
     "cost_per_1m_in": 0,

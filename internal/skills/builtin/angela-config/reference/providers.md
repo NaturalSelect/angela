@@ -36,7 +36,7 @@ slot's `provider` field references.
           "id": "deepseek-chat",
           "name": "DeepSeek Chat",
           "context_window": 128000,
-          "default_max_tokens": 8192,
+          "max_tokens": 8192,
           "cost_per_1m_in": 0.27,
           "cost_per_1m_out": 1.1,
           "cost_per_1m_in_cached": 0.27,
@@ -65,13 +65,13 @@ slot's `provider` field references.
 | Field                                             | Type   | Notes                                       |
 | ------------------------------------------------- | ------ | ------------------------------------------- |
 | `id`, `name`                                      | string | Required; `id` is the provider's model ID   |
-| `context_window`, `default_max_tokens`            | int    | Required                                    |
+| `context_window`, `max_tokens`            | int    | Required                                    |
 | `cost_per_1m_in`, `cost_per_1m_out`               | number | Required; USD per 1M tokens                 |
 | `cost_per_1m_in_cached`, `cost_per_1m_out_cached` | number | Required                                    |
 | `can_reason`                                      | bool   | Required                                    |
 | `supports_attachments`                            | bool   | Required                                    |
 | `reasoning_levels`                                | array  | Effort levels the model accepts. A `reasoning_effort` outside this list is not sent |
-| `default_reasoning_effort`                        | string | Default effort for this model               |
+| `reasoning_effort`                        | string | Default effort for this model               |
 | `options`                                         | object | `temperature`, `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options` |
 | `think`                                           | bool   | Default thinking mode for Anthropic reasoners |
 | `use_responses`                                   | bool   | Force the OpenAI Responses API on or off for this model only; overrides the provider-level setting |
@@ -104,7 +104,7 @@ failing the whole config load.
           "id": "claude-sonnet-4-20250514",
           "name": "Claude Sonnet 4",
           "context_window": 200000,
-          "default_max_tokens": 16384,
+          "max_tokens": 16384,
           "cost_per_1m_in": 3,
           "cost_per_1m_out": 15,
           "cost_per_1m_in_cached": 0.3,

@@ -902,7 +902,7 @@
         "context_window": {
           "type": "integer"
         },
-        "default_max_tokens": {
+        "max_tokens": {
           "type": "integer"
         },
         "can_reason": {
@@ -914,7 +914,7 @@
           },
           "type": "array"
         },
-        "default_reasoning_effort": {
+        "reasoning_effort": {
           "type": "string"
         },
         "supports_attachments": {
@@ -949,7 +949,7 @@
         "cost_per_1m_in_cached",
         "cost_per_1m_out_cached",
         "context_window",
-        "default_max_tokens",
+        "max_tokens",
         "can_reason",
         "supports_attachments"
       ]

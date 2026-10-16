@@ -2447,10 +2447,34 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) to
 	}
 
 	output := subAgentOutput(result)
+	if OutputTruncated(result) {
+		return tools.Fail(subAgentTruncatedNotice(output))
+	}
 	if output == "" {
 		return tools.Fail("Sub-agent completed but produced no text output.")
 	}
 	return tools.Ok(output)
+}
+
+// OutputTruncated reports whether a run ended because the model hit its
+// output token limit, so its text stops short of what the model meant to say.
+func OutputTruncated(result *fantasy.AgentResult) bool {
+	if result == nil || len(result.Steps) == 0 {
+		return false
+	}
+	// NOTE: Read the last step, not result.Response, which falls back to an
+	// earlier step's text when the last step produced none.
+	return result.Steps[len(result.Steps)-1].FinishReason == fantasy.FinishReasonLength
+}
+
+// subAgentTruncatedNotice is what the parent model reads when a sub-agent
+// stopped on the output token limit, with whatever text it did produce.
+func subAgentTruncatedNotice(partial string) string {
+	const notice = "Sub-agent output was cut off by the output token limit; narrow the task or raise max tokens for its model."
+	if partial == "" {
+		return notice
+	}
+	return notice + " Partial output follows.\n\n" + partial
 }
 
 // subAgentOutput extracts the final text answer from a sub-agent run.

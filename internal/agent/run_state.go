@@ -345,6 +345,13 @@ func (s *runState) IsBusy() bool {
 	return busy
 }
 
+// hasAccepted reports whether a dispatched prompt for sessionID has not
+// yet reached its dispatch decision in Run.
+func (s *runState) hasAccepted(sessionID string) bool {
+	count, _ := s.acceptedRuns.Get(sessionID)
+	return count > 0
+}
+
 func (s *runState) IsSessionBusy(sessionID string) bool {
 	_, busy := s.activeRequests.Get(sessionID)
 	return busy

@@ -154,6 +154,9 @@ type baseToolMessageItem struct {
 	// spinningFunc allows tools to override the default spinning logic.
 	// If nil, uses the default: !toolCall.Finished && !canceled.
 	spinningFunc SpinningFunc
+	// statusFunc lets a tool take its status from more than its result.
+	// It reports false to fall back to the default derivation.
+	statusFunc func() (ToolStatus, bool)
 
 	sty             *styles.Styles
 	anim            *anim.Anim
@@ -467,6 +470,11 @@ func (t *baseToolMessageItem) SetStatus(status ToolStatus) {
 // status line's "what is running now") see completion immediately instead
 // of whatever status a call was left in when SetResult was last called.
 func (t *baseToolMessageItem) Status() ToolStatus {
+	if t.statusFunc != nil {
+		if status, ok := t.statusFunc(); ok {
+			return status
+		}
+	}
 	if t.result != nil {
 		if t.result.IsError {
 			return ToolStatusError

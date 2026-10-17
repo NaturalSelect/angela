@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/agent"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -35,6 +36,9 @@ const agentTitleSeparator = " — "
 // agentWritingLabel stands in for the current tool while the sub-agent is
 // streaming text instead of calling one.
 const agentWritingLabel = "Writing..."
+
+// agentBackgroundTag marks a call that launched a background agent.
+const agentBackgroundTag = " · background"
 
 // agentToolTitle names the sub-agent a call dispatches to, so the header
 // reads "Agent(explore)" rather than the bare tool name. Input that is
@@ -92,6 +96,14 @@ type AgentToolMessageItem struct {
 	// tool call behind it, so the last nested tool is no longer what it is
 	// doing.
 	writing bool
+
+	// background and agentID come from the launch receipt: the call's own
+	// result only says the agent started, so the run is still going.
+	background bool
+	agentID    string
+	// outcome is how the notification said the agent ended. It stays empty
+	// while the agent runs.
+	outcome agenttools.BackgroundAgentStatus
 }
 
 var (
@@ -108,11 +120,100 @@ func NewAgentToolMessageItem(
 ) *AgentToolMessageItem {
 	t := &AgentToolMessageItem{}
 	t.baseToolMessageItem = newBaseToolMessageItem(sty, toolCall, result, &AgentToolRenderContext{agent: t}, canceled)
+	t.readLaunchReceipt(result)
 	// For the agent tool we keep spinning until the tool call is finished.
+	// A background launch has its result at once, but its run goes on until
+	// the outcome arrives. Cancelling the parent's turn marks the call
+	// canceled too, yet leaves the agent running, so that mark is ignored.
 	t.spinningFunc = func(state SpinningState) bool {
+		if t.background && state.HasResult() {
+			return t.BackgroundRunning()
+		}
 		return !state.HasResult() && !state.IsCanceled()
 	}
+	t.statusFunc = t.backgroundStatus
 	return t
+}
+
+// SetResult records the call's result. A background launch is recognized by
+// the metadata its receipt carries.
+func (a *AgentToolMessageItem) SetResult(res *message.ToolResult) {
+	a.readLaunchReceipt(res)
+	a.baseToolMessageItem.SetResult(res)
+}
+
+func (a *AgentToolMessageItem) readLaunchReceipt(res *message.ToolResult) {
+	if res == nil {
+		return
+	}
+	meta := agenttools.ParseAgentResponseMetadata(res.Metadata)
+	a.background, a.agentID = meta.Background, meta.AgentID
+}
+
+// IsBackground reports whether the call launched a background agent.
+func (a *AgentToolMessageItem) IsBackground() bool {
+	return a.background
+}
+
+// AgentID is the handle of the background agent the call launched. It is
+// empty for any other call.
+func (a *AgentToolMessageItem) AgentID() string {
+	return a.agentID
+}
+
+// BackgroundRunning reports whether the call launched a background agent
+// that has not ended yet.
+func (a *AgentToolMessageItem) BackgroundRunning() bool {
+	return a.background && !a.outcome.Terminal()
+}
+
+// BackgroundOutcome is how the background agent ended, or empty while it
+// runs or when the call did not launch one.
+func (a *AgentToolMessageItem) BackgroundOutcome() agenttools.BackgroundAgentStatus {
+	return a.outcome
+}
+
+// SetBackgroundOutcome records how the background agent ended. The latest
+// word wins, because a guess made while loading a transcript must give way
+// to the notification when it arrives.
+func (a *AgentToolMessageItem) SetBackgroundOutcome(status agenttools.BackgroundAgentStatus) {
+	if !a.background || a.outcome == status {
+		return
+	}
+	a.outcome = status
+	a.clearCache()
+	a.Bump()
+}
+
+// backgroundTag labels the header of a background launch. An agent that
+// ended badly says how, since its icon alone cannot tell stopped from failed.
+func (a *AgentToolMessageItem) backgroundTag() string {
+	switch {
+	case !a.background:
+		return ""
+	case a.outcome == agenttools.BackgroundAgentFailed, a.outcome == agenttools.BackgroundAgentStopped:
+		return agentBackgroundTag + " " + string(a.outcome)
+	default:
+		return agentBackgroundTag
+	}
+}
+
+// backgroundStatus is the call's status once its outcome is known to differ
+// from what the launch receipt alone would say.
+func (a *AgentToolMessageItem) backgroundStatus() (ToolStatus, bool) {
+	if !a.background || a.result == nil {
+		return 0, false
+	}
+	switch a.outcome {
+	case agenttools.BackgroundAgentCompleted:
+		return ToolStatusSuccess, true
+	case agenttools.BackgroundAgentFailed:
+		return ToolStatusError, true
+	case agenttools.BackgroundAgentStopped:
+		return ToolStatusCanceled, true
+	default:
+		return ToolStatusRunning, true
+	}
 }
 
 // SubagentName is the sub-agent this call dispatches to, or empty while the
@@ -134,7 +235,7 @@ func (a *AgentToolMessageItem) Task() string {
 // routing branch has been removed: nested tools no longer start
 // independent tick chains (see internal/ui/model/ui.go).
 func (a *AgentToolMessageItem) Animate(msg anim.StepMsg) tea.Cmd {
-	if a.result != nil || a.Status() == ToolStatusCanceled {
+	if !a.isSpinning() {
 		return nil
 	}
 	if msg.ID != a.ID() {
@@ -313,6 +414,9 @@ func (r *AgentToolRenderContext) agentHeader(sty *styles.Styles, width int, opts
 		nameStyle = sty.Tool.NameNested
 	}
 	prefix := icon + " " + nameStyle.Render(agentToolTitle(opts.ToolCall))
+	if tag := r.agent.backgroundTag(); tag != "" {
+		prefix += sty.Tool.AgentPrompt.Render(tag)
+	}
 
 	desc := agentToolDescription(opts.ToolCall)
 	if desc == "" {
@@ -342,11 +446,17 @@ func (r *AgentToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 		return header
 	}
 
-	summary := r.agent.summaryLine(sty, opts.HasResult() || opts.IsCanceled())
+	// A background launch has its result at once, so a result alone no
+	// longer means the agent is done: that waits for the outcome.
+	done := opts.IsCanceled() || (opts.HasResult() && !r.agent.BackgroundRunning())
+	summary := r.agent.summaryLine(sty, done)
 	if summary == "" {
+		if !done && r.agent.background {
+			return header + " " + opts.Anim.Render()
+		}
 		return header
 	}
-	if !opts.HasResult() && !opts.IsCanceled() {
+	if !done {
 		// The shimmer rides on the same line as the current step, mirroring
 		// pendingTool's icon+name+anim layout instead of a detached third
 		// row — the block stays exactly two lines while the sub-agent runs.

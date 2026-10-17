@@ -205,6 +205,8 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 
 	toolNames := []string{
 		toolnames.Agent,
+		toolnames.AgentStatus,
+		toolnames.AgentStop,
 		toolnames.AngelaInfo,
 		toolnames.AngelaLogs,
 		toolnames.Bash,

@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
@@ -188,21 +189,28 @@ func (m *UI) subSessionEntries() []dialog.SubSessionEntry {
 			continue
 		}
 		agentName := item.SubagentName()
+		state := subSessionState(item, isBranchAgent(cfg, agentName))
 		entries = append(entries, dialog.SubSessionEntry{
 			SessionID: m.com.Workspace.CreateAgentToolSessionID(item.MessageID(), item.ToolCall().ID),
 			Agent:     agentName,
 			Task:      item.Task(),
-			State:     subSessionState(item.Status(), isBranchAgent(cfg, agentName)),
+			State:     state,
+			Stoppable: item.IsBackground() && state == dialog.SubSessionRunning,
 		})
 	}
 	return entries
 }
 
-// subSessionState maps the status of the dispatching tool call to what the
-// user cares about. A branch whose call has no result is waiting on the user
-// rather than working on its own.
-func subSessionState(status chat.ToolStatus, branch bool) dialog.SubSessionState {
-	switch status {
+// subSessionState maps a dispatch to what the user cares about. A branch
+// whose call has no result is waiting on the user rather than working on its
+// own. A background agent's call has its result at once, so its state comes
+// from how the agent ended instead; a stop is told apart from a failure
+// because the user chose it.
+func subSessionState(item *chat.AgentToolMessageItem, branch bool) dialog.SubSessionState {
+	if item.IsBackground() && item.BackgroundOutcome() == agenttools.BackgroundAgentStopped {
+		return dialog.SubSessionStopped
+	}
+	switch item.Status() {
 	case chat.ToolStatusSuccess:
 		return dialog.SubSessionDone
 	case chat.ToolStatusError, chat.ToolStatusCanceled:

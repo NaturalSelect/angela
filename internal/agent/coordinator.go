@@ -234,6 +234,20 @@ type coordinator struct {
 	// suspended on a branch session.
 	branches *branchController
 
+	// background tracks the agents launched with run_in_background and
+	// notices holds what they have to tell the session that launched
+	// them. Both are nil on a coordinator built without them, which
+	// then does not offer background agents (see
+	// backgroundAgentsAvailable); every use outside the launch path is
+	// nil-safe.
+	background *backgroundAgents
+	notices    *noticeInbox
+
+	// lifetime outlives any single turn. A wake runs on it, because the
+	// turn that happens to be finishing is not the one that owns the
+	// work. Nil on a hand-built coordinator, which never wakes.
+	lifetime context.Context
+
 	// proposals holds the document each branch is drafting, which is
 	// what its merge hands back.
 	proposals *tools.ProposalStore
@@ -310,6 +324,9 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		subagents:      newSubagentRegistry(),
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 		branches:       newBranchController(),
+		background:     newBackgroundAgents(),
+		notices:        newNoticeInbox(),
+		lifetime:       ctx,
 		proposals:      tools.NewProposalStore(),
 		allSkills:      allSkills,
 		activeSkills:   activeSkills,
@@ -362,6 +379,8 @@ func (c *coordinator) forgetDeletedSessions(ctx context.Context, events <-chan p
 			if ev.Type == pubsub.DeletedEvent {
 				c.active.forget(ev.Payload.ID)
 				c.forgetSubagentRoute(ev.Payload.ID)
+				c.background.sessionDeleted(ev.Payload.ID)
+				c.notices.Forget(ev.Payload.ID)
 			}
 		}
 	}
@@ -477,6 +496,7 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 			Accepted:                 accept,
 			OnAuthRefresh:            c.makeAuthRefreshCallback(providerCfg),
 			Resolve:                  target.resolve,
+			noticeWake:               noticeWakeFromContext(ctx),
 		})
 	}
 	if target.child {
@@ -952,6 +972,12 @@ func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
 		GenerateTitle: c.generateSessionTitle,
 		SkillTracker:  c.skillTracker,
 		Reminders:     c.cfg.Config().Options.Reminders,
+
+		Notices:        c.notices,
+		WakeForNotices: c.wakeForNotices,
+		RunningBackgroundAgents: func(sessionID string) []backgroundAgentInfo {
+			return c.background.running(sessionID)
+		},
 	})
 }
 
@@ -983,6 +1009,11 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 			slog.Info("No subagents available; omitting the agent tool")
 		} else {
 			allTools = append(allTools, agentTool)
+			// NOTE: Offered with the agent tool and filtered like any other
+			// built-in, so allowed_tools and disabled_tools can remove them.
+			if c.backgroundAgentsAvailable(depth) {
+				allTools = append(allTools, c.agentStatusTool(), c.agentStopTool())
+			}
 		}
 	}
 
@@ -2007,6 +2038,7 @@ func (c *coordinator) LockSession(ctx context.Context, sessionID string) (func()
 const branchAbandonedMessage = "The user ended this branch without merging it."
 
 func (c *coordinator) Cancel(sessionID string) {
+	c.background.stopChild(sessionID)
 	// Reaching through to a parent's branches below never abandons them:
 	// interruptBranchTree only interrupts whatever turn each one has
 	// running, the same as the branch directly in front of the user gets
@@ -2082,7 +2114,12 @@ func (c *coordinator) AbandonBranch(sessionID string) bool {
 	return true
 }
 
+// CancelAll is the shutdown hook, so it also ends the background agents,
+// which a plain Cancel of their parent deliberately leaves running. They
+// go first: once the registry is closed, an agent unwinding under the
+// cancel below reports nothing and wakes nobody.
 func (c *coordinator) CancelAll() {
+	c.background.shutdown()
 	c.eachExecutor(SessionAgent.CancelAll)
 }
 
@@ -2371,23 +2408,49 @@ type subAgentParams struct {
 // It creates a sub-session, runs the agent with the given prompt, and propagates
 // the cost to the parent session.
 func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) tools.Result {
-	// Create sub-session
-	agentToolSessionID := c.sessions.CreateAgentToolSessionID(params.AgentMessageID, params.ToolCallID)
-	session, err := c.sessions.CreateTaskSession(ctx, agentToolSessionID, params.SessionID, params.SessionTitle)
+	sess, err := c.prepareSubAgentSession(ctx, params)
 	if err != nil {
 		return tools.FailErr("create session", err)
 	}
-	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)
+	return c.executeSubAgent(ctx, sess, params).result()
+}
 
-	c.registerSubagentRoute(session.ID, params.Resolved.ID, params.Agent)
+// subAgentOutcome is how a sub-agent run ended. Failure is the text a
+// parent model reads when it did not produce a usable answer, and is empty
+// exactly when Text is the answer. Err is the run's own error, kept apart
+// so a caller can tell a cancelled run from a failed one.
+type subAgentOutcome struct {
+	Text    string
+	Failure string
+	Err     error
+}
+
+func (o subAgentOutcome) result() tools.Result {
+	if o.Failure != "" {
+		return tools.Fail(o.Failure)
+	}
+	return tools.Ok(o.Text)
+}
+
+// prepareSubAgentSession creates the sub-session a sub-agent runs in and
+// wires up everything a later turn in it relies on: its route, its
+// recorded owner, and its permission chain.
+func (c *coordinator) prepareSubAgentSession(ctx context.Context, params subAgentParams) (session.Session, error) {
+	agentToolSessionID := c.sessions.CreateAgentToolSessionID(params.AgentMessageID, params.ToolCallID)
+	sess, err := c.sessions.CreateTaskSession(ctx, agentToolSessionID, params.SessionID, params.SessionTitle)
+	if err != nil {
+		return session.Session{}, err
+	}
+
+	c.registerSubagentRoute(sess.ID, params.Resolved.ID, params.Agent)
 
 	// Record which sub-agent owns this session. Without it the session is
 	// only addressable for as long as this process lives, and a later one
 	// has no identity to resume it under.
-	if err := c.sessions.UpdateActiveAgent(ctx, session.ID, params.Resolved.Host.State()); err != nil {
+	if err := c.sessions.UpdateActiveAgent(ctx, sess.ID, params.Resolved.Host.State()); err != nil {
 		slog.Warn(
 			"Failed to record the sub-agent on its session",
-			"session", session.ID,
+			"session", sess.ID,
 			"agent", params.Resolved.ID,
 			"error", err,
 		)
@@ -2399,21 +2462,29 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) to
 	// RegisterChild only lets that judgment resolve grants and
 	// attendedness by walking up to this session, rather than copying
 	// them once here and leaving the copy to go stale.
-	c.permissions.RegisterChild(session.ID, params.SessionID)
+	c.permissions.RegisterChild(sess.ID, params.SessionID)
+	return sess, nil
+}
+
+// executeSubAgent runs params.Prompt in sess to completion and rolls the
+// cost up to the parent. It owns the sub-session's scratch space, so it
+// must run exactly once per prepared session.
+func (c *coordinator) executeSubAgent(ctx context.Context, sess session.Session, params subAgentParams) subAgentOutcome {
+	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, sess.ID)
 
 	model := params.Resolved.Model
 	maxTokens := params.Resolved.MaxTokens
 
 	providerCfg, ok := c.cfg.Config().Providers.Get(model.ModelCfg.Provider)
 	if !ok {
-		return tools.Fail(errModelProviderNotConfigured.Error())
+		return subAgentOutcome{Failure: errModelProviderNotConfigured.Error(), Err: errModelProviderNotConfigured}
 	}
 
 	// Run the agent
 	compact := c.compactFor(ctx, params.SessionID, params.Resolved.Host)
 	run := func() (*fantasy.AgentResult, error) {
 		return params.Agent.Run(ctx, SessionAgentCall{
-			SessionID:                session.ID,
+			SessionID:                sess.ID,
 			Agent:                    params.Resolved,
 			Prompt:                   params.Prompt,
 			MaxOutputTokens:          maxTokens,
@@ -2432,15 +2503,15 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) to
 	}
 	result, err := run()
 	if err != nil {
-		return tools.Failf("Failed to generate response: %s", err)
+		return subAgentOutcome{Failure: fmt.Sprintf("Failed to generate response: %s", err), Err: err}
 	}
 
 	// Update parent session cost on a best-effort basis. A failure here must
 	// not discard the sub-agent output that was already produced.
-	if err := c.updateParentSessionCost(ctx, session.ID, params.SessionID); err != nil {
+	if err := c.updateParentSessionCost(ctx, sess.ID, params.SessionID); err != nil {
 		slog.Warn(
 			"Failed to update parent session cost",
-			"child_session", session.ID,
+			"child_session", sess.ID,
 			"parent_session", params.SessionID,
 			"error", err,
 		)
@@ -2448,12 +2519,12 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) to
 
 	output := subAgentOutput(result)
 	if OutputTruncated(result) {
-		return tools.Fail(subAgentTruncatedNotice(output))
+		return subAgentOutcome{Failure: subAgentTruncatedNotice(output)}
 	}
 	if output == "" {
-		return tools.Fail("Sub-agent completed but produced no text output.")
+		return subAgentOutcome{Failure: "Sub-agent completed but produced no text output."}
 	}
-	return tools.Ok(output)
+	return subAgentOutcome{Text: output}
 }
 
 // OutputTruncated reports whether a run ended because the model hit its

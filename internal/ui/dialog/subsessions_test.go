@@ -164,3 +164,106 @@ func TestSubSessionsCommandSurvivesViewingASubAgent(t *testing.T) {
 
 	require.Contains(t, commandIDs(c.defaultCommands()), "sub_sessions")
 }
+
+func backgroundSubSessions() []SubSessionEntry {
+	return []SubSessionEntry{
+		{SessionID: "bg-stopped", Agent: "explore", Task: "scan deps", State: SubSessionStopped},
+		{SessionID: "bg-run", Agent: "explore", Task: "map the repo", State: SubSessionRunning, Stoppable: true},
+		{SessionID: "plain-run", Agent: "explore", Task: "trace login", State: SubSessionRunning},
+	}
+}
+
+func ctrlX() tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}
+}
+
+// A stop is the user's own choice, so it reads differently from a failure
+// and no longer asks for attention.
+func TestSubSessionItemRendersAStoppedAgent(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, []SubSessionEntry{
+		{SessionID: "a", Agent: "explore", Task: "scan deps", State: SubSessionStopped},
+	})
+
+	out := ansi.Strip(s.list.FilteredItems()[0].Render(80))
+
+	require.Contains(t, out, "■")
+	require.Contains(t, out, "stopped")
+	require.NotContains(t, out, "✗")
+	require.False(t, SubSessionStopped.active())
+}
+
+func TestSubSessionsListStoppedAgentsAfterTheActiveOnes(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, backgroundSubSessions())
+
+	require.Equal(t, []string{"plain-run", "bg-run", "bg-stopped"}, subSessionIDs(s))
+}
+
+func TestSubSessionsFilterMatchesStopped(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, backgroundSubSessions())
+	for _, r := range "stopped" {
+		s.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	require.Equal(t, []string{"bg-stopped"}, subSessionIDs(s))
+}
+
+func TestSubSessionsCtrlXStopsTheSelectedBackgroundAgent(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, backgroundSubSessions())
+	s.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+	require.Equal(t, "bg-run", s.list.SelectedItem().(*SubSessionItem).ID())
+
+	action := s.HandleMsg(ctrlX())
+
+	require.Equal(t, ActionStopSubSession{SessionID: "bg-run"}, action)
+}
+
+// Only a running background agent can be stopped; the key does nothing on
+// any other row, and does not reach the filter box.
+func TestSubSessionsCtrlXIgnoresRowsThatCannotBeStopped(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		down int
+	}{
+		{"a running agent that is not in the background", 0},
+		{"an agent that was already stopped", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newTestSubSessions(t, backgroundSubSessions())
+			for range tt.down {
+				s.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+			}
+
+			action := s.HandleMsg(ctrlX())
+
+			require.Nil(t, action)
+			require.Empty(t, s.input.Value())
+			require.Len(t, subSessionIDs(s), 3, "the list must not be filtered")
+		})
+	}
+}
+
+func TestSubSessionsHelpOffersStopOnlyOnAStoppableRow(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, backgroundSubSessions())
+
+	require.NotContains(t, helpKeys(s.ShortHelp()), "ctrl+x", "the first row is not stoppable")
+	require.NotContains(t, helpKeys(s.FullHelp()[0]), "ctrl+x")
+
+	s.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+
+	require.Contains(t, helpKeys(s.ShortHelp()), "ctrl+x")
+	require.Contains(t, helpKeys(s.FullHelp()[0]), "ctrl+x")
+}

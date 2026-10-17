@@ -351,6 +351,11 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		// the calls a subagent goes on to make.
 		access.Action = permission.ActionRead
 
+	case toolnames.AgentStatus, toolnames.AgentStop:
+		// Both only reach background agents this very conversation
+		// launched, each of which was gated when it was started.
+		access.Action = permission.ActionRead
+
 	default:
 		return access, false
 	}

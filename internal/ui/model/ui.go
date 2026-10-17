@@ -1811,12 +1811,21 @@ func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat
 		lastUserMessageTime = msgPtrs[0].CreatedAt
 	}
 
+	var outcomes map[string]agenttools.BackgroundAgentStatus
 	items := make([]chat.MessageItem, 0, len(msgs)*2)
 	for i, msg := range msgPtrs {
 		msgRunActive := runActive && i == lastAssistant
 		switch msg.Role {
 		case message.User:
 			if msg.IsReminder() {
+				// Hidden from the transcript, but a notice inside it
+				// says how a background agent ended.
+				for id, status := range noticeOutcomes(msg) {
+					if outcomes == nil {
+						outcomes = make(map[string]agenttools.BackgroundAgentStatus)
+					}
+					outcomes[id] = status
+				}
 				continue
 			}
 			lastUserMessageTime = msg.CreatedAt
@@ -1832,6 +1841,7 @@ func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat
 		}
 	}
 
+	m.settleBackgroundAgents(items, outcomes)
 	m.loadNestedToolCalls(items)
 	return items, lastUserMessageTime
 }
@@ -1848,12 +1858,17 @@ func (m *UI) applySessionItems(items []chat.MessageItem) tea.Cmd {
 	// even though nothing is running. Starting animations for it here would
 	// leave a ghost "working" spinner (and a second one alongside any tool
 	// spinner) after the session is reloaded.
-	if m.isSessionBusy() {
-		for _, item := range items {
-			if animatable, ok := item.(chat.Animatable); ok {
-				if cmd := animatable.StartAnimation(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
+	//
+	// A running background agent is the exception: it works while the
+	// session is idle, so its spinner starts whatever the busy state says.
+	busy := m.isSessionBusy()
+	for _, item := range items {
+		if !busy && !backgroundAgentRunning(item) {
+			continue
+		}
+		if animatable, ok := item.(chat.Animatable); ok {
+			if cmd := animatable.StartAnimation(); cmd != nil {
+				cmds = append(cmds, cmd)
 			}
 		}
 	}
@@ -2062,6 +2077,10 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 		// transcript for prompt caching; they were never typed by the
 		// user and must not render as a message from them.
 		if msg.IsReminder() {
+			// A notice inside it says a background agent ended. The busy
+			// probe that follows every created message covers the wake
+			// turn this may have started.
+			applyBackgroundOutcomes(m.chat.AgentToolItems(), noticeOutcomes(&msg))
 			return nil
 		}
 		// Shell commands are rendered live via shellResultMsg; skip
@@ -2412,6 +2431,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionEnterSubSession:
 		m.dialog.CloseDialog(dialog.SubSessionsID)
 		cmds = append(cmds, m.enterSubSessionByID(msg.SessionID))
+
+	case dialog.ActionStopSubSession:
+		m.dialog.CloseDialog(dialog.SubSessionsID)
+		cmds = append(cmds, m.stopSubSessionCmd(msg.SessionID))
 
 	// Open dialog message.
 	case dialog.ActionOpenDialog:

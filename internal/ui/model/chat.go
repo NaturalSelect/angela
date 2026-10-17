@@ -1023,10 +1023,12 @@ func (m *Chat) MessageItem(id string) chat.MessageItem {
 
 // LastPendingTool returns the most recent tool call still running or awaiting
 // permission. It backs the turn status line's "what is it doing right now".
+// A background agent is passed over: its call already returned, and what it
+// is doing is not what the turn is waiting on.
 func (m *Chat) LastPendingTool() (message.ToolCall, bool) {
 	for i := m.list.Len() - 1; i >= 0; i-- {
 		item, ok := m.list.ItemAt(i).(chat.ToolMessageItem)
-		if !ok {
+		if !ok || backgroundAgentRunning(item) {
 			continue
 		}
 		switch item.Status() {

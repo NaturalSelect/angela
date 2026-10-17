@@ -1,0 +1,7 @@
+<system-reminder>
+The following background agents were launched before the conversation was summarized and are still running:
+- agentId agt_1a2b3c4d (explore): find callers of Foo
+- agentId agt_5e6f7a8b (general): audit the migration
+
+Each one reports back with a notification when it ends, and that notification is not something the user said. Do not launch them again, and do not poll for them with AgentStatus. Continue other work, or end your turn if their results are all you are waiting for. To cancel one, pass its agent_id to AgentStop.
+</system-reminder>

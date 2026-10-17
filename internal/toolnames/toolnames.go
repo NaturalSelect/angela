@@ -67,11 +67,13 @@ const (
 
 // Session and introspection tools.
 const (
-	Agent      = "Agent"
-	AngelaInfo = "AngelaInfo"
-	AngelaLogs = "AngelaLogs"
-	Question   = "Question"
-	Todos      = "Todos"
+	Agent       = "Agent"
+	AgentStatus = "AgentStatus"
+	AgentStop   = "AgentStop"
+	AngelaInfo  = "AngelaInfo"
+	AngelaLogs  = "AngelaLogs"
+	Question    = "Question"
+	Todos       = "Todos"
 )
 
 // LoadReport is not part of the default tool set; the coordinator appends

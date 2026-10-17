@@ -238,12 +238,6 @@ type UI struct {
 	// status line. Nil until this turn's first tool call is seen.
 	activeTool *toolTiming
 
-	// thinkingSince is when the model last started thinking: the user
-	// prompt arriving, or the tool results coming back. It backs the
-	// running time on the status line's "Thinking" label. Zero until
-	// one of those is seen.
-	thinkingSince time.Time
-
 	// sessionIsBranch memoizes whether the loaded session is a branch.
 	// Resolving it reads config through the workspace, which the status
 	// line renders too often to afford, so it is settled once per load.
@@ -984,9 +978,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setState(uiChat, focus)
 		switched := !m.hasSession() || m.session.ID != msg.session.ID
-		if switched {
-			m.thinkingSince = time.Time{}
-		}
 		m.session = msg.session
 		m.sessionIsBranch = isBranch
 		m.sessionFiles = msg.files
@@ -2086,7 +2077,6 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			return nil
 		}
 		m.lastUserMessageTime = msg.CreatedAt
-		m.thinkingSince = time.Now()
 		items := chat.ExtractMessageItems(m.com.Styles, &msg, nil, m.com.Workspace.WorkingDir(), true)
 		for _, item := range items {
 			if animatable, ok := item.(chat.Animatable); ok {
@@ -2138,7 +2128,6 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			}
 		}
 	case message.Tool:
-		m.thinkingSince = time.Now()
 		for _, tr := range msg.ToolResults() {
 			toolItem := m.chat.MessageItem(tr.ToolCallID)
 			if toolItem == nil {
@@ -2419,6 +2408,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		// rather than carry text typed for the old session into the new
 		// one.
 		cmds = append(cmds, m.loadSession(msg.Session.ID, loadSessionOpt{clearStack: true, draftAfter: &editorDraft{}}))
+
+	case dialog.ActionEnterSubSession:
+		m.dialog.CloseDialog(dialog.SubSessionsID)
+		cmds = append(cmds, m.enterSubSessionByID(msg.SessionID))
 
 	// Open dialog message.
 	case dialog.ActionOpenDialog:
@@ -5611,6 +5604,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openSessionsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.SubSessionsID:
+		if cmd := m.openSubSessionsDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.ModelsID:
 		if cmd := m.openModelsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -5832,6 +5829,27 @@ func (m *UI) openSessionsDialog() tea.Cmd {
 	}
 
 	m.dialog.OpenDialog(dialog)
+	return nil
+}
+
+// openSubSessionsDialog opens the picker for the sub-sessions of the session
+// in view. A session that has dispatched none gets a notice instead of an
+// empty dialog.
+func (m *UI) openSubSessionsDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.SubSessionsID) {
+		m.dialog.BringToFront(dialog.SubSessionsID)
+		return nil
+	}
+	if m.session == nil {
+		return nil
+	}
+
+	entries := m.subSessionEntries()
+	if len(entries) == 0 {
+		return util.ReportInfo("No sub-sessions in this session.")
+	}
+
+	m.dialog.OpenDialog(dialog.NewSubSessions(m.com, entries))
 	return nil
 }
 
@@ -6214,7 +6232,6 @@ func (m *UI) newSession() tea.Cmd {
 	m.sessionFiles = nil
 	m.sessionFileReads = nil
 	m.sessionStack = nil
-	m.thinkingSince = time.Time{}
 	m.setState(uiLanding, uiFocusEditor)
 	m.textarea.Focus()
 	m.chat.Blur()

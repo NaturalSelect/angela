@@ -267,6 +267,30 @@ type activeCancel struct {
 	cancel context.CancelFunc
 }
 
+// setThinkingStart records when the model began the step now running in the
+// session; the zero time clears it.
+//
+// NOTE: A failed write only costs the status line its clock, so it is
+// logged and never interrupts the run. It detaches from ctx's cancellation
+// so a canceled run still clears its clock.
+func (a *sessionAgent) setThinkingStart(ctx context.Context, sessionID string, at time.Time) {
+	err := a.sessions.SetThinkingStartedAt(context.WithoutCancel(ctx), sessionID, at)
+	if err != nil && !errors.Is(err, session.ErrSessionNotFound) {
+		slog.Warn("Failed to record thinking start", "session_id", sessionID, "error", err)
+	}
+}
+
+// endThinking clears the session's thinking clock while ac still owns it.
+//
+// NOTE: A run that handed the session over must not wipe the clock of the
+// run that took it.
+func (a *sessionAgent) endThinking(ctx context.Context, sessionID string, ac *activeCancel) {
+	if cur, ok := a.activeRequests.Get(sessionID); !ok || cur != ac {
+		return
+	}
+	a.setThinkingStart(ctx, sessionID, time.Time{})
+}
+
 type sessionAgent struct {
 	isSubAgent  bool
 	agentID     string
@@ -655,6 +679,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// concurrent run registers in the completion window, silently wiping
 	// the new run's cancel and breaking cancellation.
 	defer a.activeRequests.CompareAndDelete(call.SessionID, ac)
+	defer a.endThinking(ctx, call.SessionID, ac)
 
 	agentTools := call.Agent.Tools
 	runModel := call.Agent.Model
@@ -991,6 +1016,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			stepStart = time.Now()
 			stepGenDuration = 0
 			retryAttempt = 0
+			a.setThinkingStart(ctx, call.SessionID, stepStart)
 			return nil
 		},
 		OnRetry: func(err *fantasy.ProviderError, delay time.Duration) {
@@ -1213,6 +1239,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			}
 			// Release the session first so the queued prompt's Run does not
 			// see it busy and re-queue itself.
+			a.endThinking(ctx, call.SessionID, ac)
 			a.activeRequests.CompareAndDelete(call.SessionID, ac)
 			cancel()
 			handoff := a.dequeueNext(call)
@@ -1366,6 +1393,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		// Release only our own entry, for the same reason the deferred
 		// cleanup above is conditional: a plain Del here would drop
 		// whatever a concurrent run has since registered.
+		a.endThinking(ctx, call.SessionID, ac)
 		a.activeRequests.CompareAndDelete(call.SessionID, ac)
 		// If the agent wasn't done, queue its resume ahead of Summarize
 		// so Summarize's own post-summary queue drain (which recurses
@@ -1421,6 +1449,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// Conditional for the same reason as the deferred cleanup: after an
 	// auto-summarize this turn no longer owns the entry, and a plain Del
 	// would cancel whichever run took it over.
+	a.endThinking(ctx, call.SessionID, ac)
 	a.activeRequests.CompareAndDelete(call.SessionID, ac)
 	cancel()
 
@@ -1697,7 +1726,9 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 	sessMu.Unlock()
 
 	defer a.activeRequests.CompareAndDelete(sessionID, ac)
+	defer a.endThinking(ctx, sessionID, ac)
 	defer cancel()
+	a.setThinkingStart(ctx, sessionID, time.Now())
 
 	systemPromptPrefix := compact.SystemPromptPrefix
 
@@ -1872,6 +1903,7 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 	// Release the active request before processing queued messages so that
 	// Run() does not see the session as busy. Conditional so a run that
 	// has already taken the session over is not cancelled.
+	a.endThinking(ctx, sessionID, ac)
 	a.activeRequests.CompareAndDelete(sessionID, ac)
 	cancel()
 

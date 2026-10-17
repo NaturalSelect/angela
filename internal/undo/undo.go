@@ -36,14 +36,14 @@ var ErrNothingToUndo = errors.New("nothing to undo")
 // outdated data.
 var ErrStale = errors.New("session changed since the preview was taken")
 
-// ErrSessionBusy reports that a session in scope for this turn — the
-// one undo was asked about, or a subagent session its last turn
-// spawned — still has agent activity this process is holding open: a
-// turn in progress, or a branch whose parent tool call is suspended
-// waiting on it. Undoing it would race that activity or delete a
-// session out from under its suspended parent, so the whole plan is
-// refused rather than computed against a turn that has not actually
-// finished.
+// ErrSessionBusy reports that a session in scope for this turn still
+// has agent activity this process is holding open. For the session
+// undo was asked about that means a turn in progress. For a subagent
+// session its last turn spawned it also means a branch whose parent
+// tool call is suspended waiting on it. Undoing either would race that
+// activity or delete a session out from under its suspended parent, so
+// the whole plan is refused rather than computed against a turn that
+// has not actually finished.
 var ErrSessionBusy = errors.New("session has agent activity in progress")
 
 // SkippedFile is a file undo left untouched, and why.
@@ -190,10 +190,27 @@ func NewService(
 	}
 }
 
-// checkBusy refuses to compute or apply a plan touching sessionID
-// while this process still has agent activity open on it.
+// checkBusy refuses to compute or apply a plan touching the session
+// undo was asked about while a turn is running on it. Being a live
+// branch does not count: the user drives a branch directly, and
+// undoing its own turns disturbs nothing its suspended parent is
+// waiting on.
 func (s *service) checkBusy(sessionID string) error {
-	if s.busy.IsSessionBusy(sessionID) || s.busy.IsSessionBranch(sessionID) {
+	if s.busy.IsSessionBusy(sessionID) {
+		return fmt.Errorf("%w: %s", ErrSessionBusy, sessionID)
+	}
+	return nil
+}
+
+// checkChildBusy is checkBusy for a subagent session a turn spawned.
+// Such a session is also off limits while it is a live branch, since
+// deleting it would pull it out from under the parent tool call still
+// suspended on it.
+func (s *service) checkChildBusy(sessionID string) error {
+	if err := s.checkBusy(sessionID); err != nil {
+		return err
+	}
+	if s.busy.IsSessionBranch(sessionID) {
 		return fmt.Errorf("%w: %s", ErrSessionBusy, sessionID)
 	}
 	return nil
@@ -354,7 +371,8 @@ type turnPlan struct {
 }
 
 // plan locates sessionID's last turn and walks it for file actions.
-// It returns ErrNothingToUndo if the session holds no user message.
+// It returns ErrNothingToUndo if the session holds no user message
+// past its starting point (see firstUndoable).
 // reserve is nil for Preview's read-only path; Undo passes its
 // reservation so every subagent session found while walking is locked
 // against a concurrent turn start the moment it is discovered, and
@@ -364,11 +382,17 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 	if err != nil {
 		return turnPlan{}, err
 	}
+	sess, err := s.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return turnPlan{}, err
+	}
 
-	cut := findCut(msgs)
+	first := firstUndoable(msgs, sess.BaseMessageID)
+	cut := findCut(msgs[first:])
 	if cut < 0 {
 		return turnPlan{}, ErrNothingToUndo
 	}
+	cut += first
 
 	toDelete := msgs[cut:]
 	deletedIDs := make(map[string]bool, len(toDelete))
@@ -393,6 +417,29 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 		childSessions:     walk.childSessions,
 		files:             walk.actions,
 	}, nil
+}
+
+// firstUndoable returns the index of the first message undo may
+// remove. An ordinary session starts at 0. A branch starts after the
+// history it inherited from its parent and after its opening turn:
+// the run of user messages right behind baseMessageID, which holds the
+// fork prompt the branch was started from. Removing that turn would
+// leave the branch with nothing to continue from, and the next undo
+// would start eating the parent's history. A base message that is not
+// in msgs imposes no limit.
+func firstUndoable(msgs []message.Message, baseMessageID string) int {
+	if baseMessageID == "" {
+		return 0
+	}
+	base := slices.IndexFunc(msgs, func(m message.Message) bool { return m.ID == baseMessageID })
+	if base < 0 {
+		return 0
+	}
+	i := base + 1
+	for i < len(msgs) && msgs[i].Role == message.User {
+		i++
+	}
+	return i
 }
 
 // findCut returns the index of the earliest message in the trailing
@@ -486,7 +533,7 @@ func (s *service) walkMessages(ctx context.Context, ownerSessionID string, msgs 
 				continue
 			}
 			reserve.acquire(ctx, child.ID)
-			if err := s.checkBusy(child.ID); err != nil {
+			if err := s.checkChildBusy(child.ID); err != nil {
 				return err
 			}
 			childMsgs, err := s.messages.List(ctx, child.ID)

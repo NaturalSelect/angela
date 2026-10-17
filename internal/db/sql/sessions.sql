@@ -51,6 +51,7 @@ SET
     prompt_tokens = ?,
     completion_tokens = ?,
     summary_message_id = ?,
+    base_message_id = ?,
     cost = ?,
     gen_output_tokens = ?,
     gen_duration_ms = ?,

@@ -986,6 +986,8 @@ definitions:
         type: integer
       summary_message_id:
         type: string
+      thinking_started_at:
+        type: integer
       title:
         type: string
       todos:
@@ -1486,6 +1488,8 @@ definitions:
         type: integer
       summary_message_id:
         type: string
+      thinking_started_at:
+        type: integer
       title:
         type: string
       todos:

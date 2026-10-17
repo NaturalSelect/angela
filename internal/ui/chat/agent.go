@@ -41,20 +41,29 @@ const agentWritingLabel = "Writing..."
 // still streaming in cannot be parsed yet; an omitted subagent_type
 // dispatches to explore, mirroring the agent tool itself.
 func agentToolTitle(toolCall message.ToolCall) string {
-	var params agent.AgentParams
-	if err := json.Unmarshal([]byte(toolCall.Input), &params); err != nil {
+	name := agentToolSubagentName(toolCall)
+	if name == "" {
 		return toolnames.Agent
 	}
-	name := params.SubagentType
-	if name == "" {
-		// The field may simply not have streamed in yet, so only assume
-		// the tool's own default once the input is complete.
-		if !toolCall.Finished {
-			return toolnames.Agent
-		}
-		name = config.AgentExplore
-	}
 	return toolnames.Agent + "(" + name + ")"
+}
+
+// agentToolSubagentName resolves the sub-agent a call dispatches to. It is
+// empty while the input is still streaming in and cannot be trusted yet.
+func agentToolSubagentName(toolCall message.ToolCall) string {
+	var params agent.AgentParams
+	if err := json.Unmarshal([]byte(toolCall.Input), &params); err != nil {
+		return ""
+	}
+	if params.SubagentType != "" {
+		return params.SubagentType
+	}
+	// The field may simply not have streamed in yet, so only assume
+	// the tool's own default once the input is complete.
+	if !toolCall.Finished {
+		return ""
+	}
+	return config.AgentExplore
 }
 
 // NestedToolContainer is an interface for tool items that can contain nested tool calls.
@@ -104,6 +113,17 @@ func NewAgentToolMessageItem(
 		return !state.HasResult() && !state.IsCanceled()
 	}
 	return t
+}
+
+// SubagentName is the sub-agent this call dispatches to, or empty while the
+// call's input is still streaming in.
+func (a *AgentToolMessageItem) SubagentName() string {
+	return agentToolSubagentName(a.ToolCall())
+}
+
+// Task is the short label of the work handed to the sub-agent.
+func (a *AgentToolMessageItem) Task() string {
+	return agentToolDescription(a.ToolCall())
 }
 
 // Animate progresses the message animation if it should be spinning.

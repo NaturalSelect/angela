@@ -5675,6 +5675,9 @@ const docTemplate = `{
                 "summary_message_id": {
                     "type": "string"
                 },
+                "thinking_started_at": {
+                    "type": "integer"
+                },
                 "title": {
                     "type": "string"
                 },
@@ -6429,6 +6432,9 @@ const docTemplate = `{
                 },
                 "summary_message_id": {
                     "type": "string"
+                },
+                "thinking_started_at": {
+                    "type": "integer"
                 },
                 "title": {
                     "type": "string"

@@ -105,6 +105,12 @@ func TestRunBranchAgentForkBoundary(t *testing.T) {
 	}
 	require.Equal(t, message.User, msgs[0].Role)
 	require.Equal(t, message.Assistant, msgs[1].Role)
+
+	// The last inherited message is the branch's starting point, so undo
+	// can tell where the parent's history ends and the branch's own begins.
+	branch, err := env.sessions.Get(t.Context(), branchID)
+	require.NoError(t, err)
+	require.Equal(t, msgs[1].ID, branch.BaseMessageID)
 }
 
 // TestRunBranchAgentForkBoundaryAfterCompaction pins the same boundary as

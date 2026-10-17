@@ -40,6 +40,13 @@ type ActionSelectSession struct {
 	Session session.Session
 }
 
+// ActionEnterSubSession is a message asking to drill into a sub-session of
+// the session in view. Unlike [ActionSelectSession] it keeps the breadcrumb
+// stack, so the user can climb back out the way they came in.
+type ActionEnterSubSession struct {
+	SessionID string
+}
+
 // ActionSelectModel is a message indicating a model has been selected.
 type ActionSelectModel struct {
 	Provider       catwalk.Provider

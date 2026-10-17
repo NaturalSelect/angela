@@ -999,6 +999,7 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 	var allTools []fantasy.AgentTool
 	isSubAgent := depth > 0
 	canDelegate := depth < c.cfg.Config().Options.SubagentMaxDepth()
+	var manageBackgroundAgents bool
 
 	if canDelegate && agent.AllowedTools.Allows(toolnames.Agent) {
 		agentTool, err := c.agentTool(depth, agent.AllowedAgents, parent)
@@ -1009,11 +1010,7 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 			slog.Info("No subagents available; omitting the agent tool")
 		} else {
 			allTools = append(allTools, agentTool)
-			// NOTE: Offered with the agent tool and filtered like any other
-			// built-in, so allowed_tools and disabled_tools can remove them.
-			if c.backgroundAgentsAvailable(depth) {
-				allTools = append(allTools, c.agentStatusTool(), c.agentStopTool())
-			}
+			manageBackgroundAgents = c.backgroundAgentsAvailable(depth)
 		}
 	}
 
@@ -1109,6 +1106,12 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 	// NOTE: Past the whitelist so no allowed_tools can strand a report id.
 	if agent.Mode == config.AgentModePrimary || agent.Mode == config.AgentModeBranch {
 		filteredTools = append(filteredTools, tools.NewLoadReportTool(c.sessions, c.messages))
+	}
+
+	// NOTE: Past the whitelist, and offered only with an agent tool that
+	// survived it, so allowed_tools cannot strand an agent it let launch.
+	if manageBackgroundAgents {
+		filteredTools = append(filteredTools, c.agentStatusTool(), c.agentStopTool())
 	}
 
 	// Appended past the whitelist rather than through it: these are the

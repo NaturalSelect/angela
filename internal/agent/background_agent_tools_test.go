@@ -293,16 +293,16 @@ func builtToolNames(t *testing.T, coord *coordinator, agent config.Agent, depth 
 	return names
 }
 
-func TestDisabledToolsRemoveTheBackgroundAgentTools(t *testing.T) {
+func TestDisablingTheAgentToolRemovesTheBackgroundAgentTools(t *testing.T) {
 	coord := newBackgroundTestCoordinator(t)
 	coder := func() config.Agent { return coord.cfg.Config().Agents[config.AgentCoder] }
 	require.Contains(t, builtToolNames(t, coord, coder(), 0), toolnames.AgentStatus)
 
-	coord.cfg.Config().Options.DisabledTools = []string{toolnames.AgentStatus, toolnames.AgentStop}
+	coord.cfg.Config().Options.DisabledTools = []string{toolnames.Agent}
 	coord.cfg.SetupAgents()
 
 	names := builtToolNames(t, coord, coder(), 0)
-	require.Contains(t, names, toolnames.Agent, "the agent tool itself stays")
+	require.NotContains(t, names, toolnames.Agent)
 	require.NotContains(t, names, toolnames.AgentStatus)
 	require.NotContains(t, names, toolnames.AgentStop)
 }
@@ -316,11 +316,6 @@ func TestBackgroundAgentToolsComeWithTheAgentToolWhereBackgroundAgentsWork(t *te
 	coder := interactive.cfg.Config().Agents[config.AgentCoder]
 	narrow := coder
 	narrow.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.Agent}}
-	managed := coder
-	managed.AllowedTools = &config.AllowedToolSet{
-		Kind:  config.ToolSetScope,
-		Tools: []string{toolnames.Agent, toolnames.AgentStatus, toolnames.AgentStop},
-	}
 	noAgentTool := coder
 	noAgentTool.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.Read}}
 
@@ -332,8 +327,7 @@ func TestBackgroundAgentToolsComeWithTheAgentToolWhereBackgroundAgentsWork(t *te
 		want  bool
 	}{
 		{"the coder of an interactive coordinator", interactive, coder, 0, true},
-		{"an allowed_tools list that names them keeps them", interactive, managed, 0, true},
-		{"an allowed_tools list that leaves them out removes them like any built-in", interactive, narrow, 0, false},
+		{"an allowed_tools list that only names the agent tool cannot strand an agent", interactive, narrow, 0, true},
 		{"no agent tool, so nothing to launch from", interactive, noAgentTool, 0, false},
 		{"a sub-agent has no user to wait on", interactive, coder, 1, false},
 		{"angela run exits when its turn does", nonInteractive, nonInteractive.cfg.Config().Agents[config.AgentCoder], 0, false},

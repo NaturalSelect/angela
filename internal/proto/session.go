@@ -17,6 +17,9 @@ import (
 // currentSessionID equals this session's ID and which have at least one
 // live SSE stream. Hold-only clients (streams == 0) do not contribute.
 // Like IsBusy, it is computed on read by REST handlers.
+//
+// ThinkingStartedAt is not persisted either: it is the Unix-millisecond start
+// of the model step now running, and 0 while none is.
 type Session struct {
 	ID                  string                  `json:"id"`
 	ParentSessionID     string                  `json:"parent_session_id"`
@@ -36,6 +39,7 @@ type Session struct {
 	Todos               []Todo                  `json:"todos,omitempty"`
 	CreatedAt           int64                   `json:"created_at"`
 	UpdatedAt           int64                   `json:"updated_at"`
+	ThinkingStartedAt   int64                   `json:"thinking_started_at,omitempty"`
 	IsBusy              bool                    `json:"is_busy"`
 	AttachedClients     int                     `json:"attached_clients"`
 }

@@ -1434,6 +1434,7 @@ func protoToSession(s proto.Session) session.Session {
 		Todos:               protoToTodos(s.Todos),
 		CreatedAt:           s.CreatedAt,
 		UpdatedAt:           s.UpdatedAt,
+		ThinkingStartedAt:   s.ThinkingStartedAt,
 	}
 }
 
@@ -1600,6 +1601,7 @@ func sessionToProto(s session.Session) proto.Session {
 		Todos:               todosToProto(s.Todos),
 		CreatedAt:           s.CreatedAt,
 		UpdatedAt:           s.UpdatedAt,
+		ThinkingStartedAt:   s.ThinkingStartedAt,
 	}
 }
 

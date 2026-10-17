@@ -12,6 +12,7 @@ package app
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	config "github.com/NaturalSelect/angela/internal/config"
 	pubsub "github.com/NaturalSelect/angela/internal/pubsub"
@@ -217,6 +218,20 @@ func (m *MockSessionService) Save(ctx context.Context, arg1 session.Session) (se
 func (mr *MockSessionServiceMockRecorder) Save(ctx, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Save", reflect.TypeOf((*MockSessionService)(nil).Save), ctx, arg1)
+}
+
+// SetThinkingStartedAt mocks base method.
+func (m *MockSessionService) SetThinkingStartedAt(ctx context.Context, id string, at time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetThinkingStartedAt", ctx, id, at)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetThinkingStartedAt indicates an expected call of SetThinkingStartedAt.
+func (mr *MockSessionServiceMockRecorder) SetThinkingStartedAt(ctx, id, at any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetThinkingStartedAt", reflect.TypeOf((*MockSessionService)(nil).SetThinkingStartedAt), ctx, id, at)
 }
 
 // Subscribe mocks base method.

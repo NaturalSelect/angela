@@ -508,113 +508,63 @@ func TestTurnStatusShowsSlowThinking(t *testing.T) {
 	t.Parallel()
 
 	m := busyStatusUI(t)
-	m.thinkingSince = time.Now().Add(-75 * time.Second)
+	m.session.ThinkingStartedAt = time.Now().Add(-75 * time.Second).UnixMilli()
 
 	require.Equal(t, "Thinking (1m 15s)", m.currentActivity())
 }
 
-// A model that answers quickly must not grow a clock, and a start that was
-// never observed (a session resumed mid-turn) has no time to report.
+// A model that answers quickly must not grow a clock, and a session with no
+// running step has no time to report.
 func TestTurnStatusHidesThinkingTimeWhenFastOrUnknown(t *testing.T) {
 	t.Parallel()
 
 	m := busyStatusUI(t)
 
-	m.thinkingSince = time.Now().Add(-2 * time.Second)
+	m.session.ThinkingStartedAt = time.Now().Add(-2 * time.Second).UnixMilli()
 	require.Equal(t, "Thinking", m.currentActivity())
 
-	m.thinkingSince = time.Time{}
+	m.session.ThinkingStartedAt = 0
 	require.Equal(t, "Thinking", m.currentActivity())
 }
 
-// A user prompt and the tool results coming back are the two moments the
-// model starts thinking, so each must restart the thinking clock.
-func TestThinkingClockRestartsOnPromptAndToolResults(t *testing.T) {
+// The clock belongs to the session, so entering a session mid-turn, such as
+// a sub-agent that has been thinking for a while, shows its time at once
+// instead of waiting for the next tool result.
+func TestTurnStatusShowsThinkingTimeOfASessionEnteredMidTurn(t *testing.T) {
 	t.Parallel()
 
-	for name, role := range map[string]message.MessageRole{
-		"user prompt":  message.User,
-		"tool results": message.Tool,
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			m, _ := newMockBusyUI(t)
-			m.session = &session.Session{ID: "s1"}
-			before := time.Now()
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, true)
+	stubSessionSwitch(ws, true)
 
-			m.Update(pubsub.Event[message.Message]{
-				Type:    pubsub.CreatedEvent,
-				Payload: message.Message{ID: "m1", SessionID: "s1", Role: role},
-			})
+	m.Update(loadSessionMsg{session: &session.Session{
+		ID:                "child1",
+		ThinkingStartedAt: time.Now().Add(-75 * time.Second).UnixMilli(),
+	}})
 
-			require.False(t, m.thinkingSince.Before(before))
-		})
-	}
+	require.Equal(t, "Thinking (1m 15s)", m.currentActivity())
 }
 
-// The busy flag is process-wide while the thinking clock belongs to one
-// session's turn, so a clock left over from the session being left must not
-// be shown on the one being entered.
-func TestThinkingClockResetsOnSessionSwitch(t *testing.T) {
-	t.Parallel()
-
-	t.Run("load session", func(t *testing.T) {
-		t.Parallel()
-		m, _ := newMockBusyUI(t)
-		m.thinkingSince = time.Now().Add(-4 * time.Minute)
-
-		m.Update(loadSessionMsg{session: &session.Session{ID: "child1"}})
-
-		require.True(t, m.thinkingSince.IsZero())
-	})
-
-	// Reconnects and a new session's first prompt reload the session on
-	// screen mid-turn, and that turn's clock must survive the reload.
-	t.Run("reload same session", func(t *testing.T) {
-		t.Parallel()
-		m, _ := newMockBusyUI(t)
-		m.session = &session.Session{ID: "s1"}
-		started := time.Now().Add(-4 * time.Minute)
-		m.thinkingSince = started
-
-		m.Update(loadSessionMsg{session: &session.Session{ID: "s1"}})
-
-		require.Equal(t, started, m.thinkingSince)
-	})
-
-	t.Run("new session", func(t *testing.T) {
-		t.Parallel()
-		m, _ := newMockBusyUI(t)
-		m.session = &session.Session{ID: "s1"}
-		m.thinkingSince = time.Now().Add(-4 * time.Minute)
-
-		m.newSession()
-
-		require.True(t, m.thinkingSince.IsZero())
-	})
-}
-
-// Only a prompt or tool results restart the thinking clock, so a busy period
-// they did not start (a summary, a bang command on an idle session) must not
-// inherit the start time of a turn that ended long ago.
-func TestThinkingClockClearsWhenTheTurnEnds(t *testing.T) {
+// The server announces every step boundary as a session update, so the
+// label follows the clock as it restarts and clears.
+func TestTurnStatusFollowsSessionUpdates(t *testing.T) {
 	t.Parallel()
 
 	m := busyStatusUI(t)
-	m.syncTurnSpinner()
-	m.thinkingSince = time.Now().Add(-20 * time.Minute)
 
-	m.syncTurnSpinner()
-	require.False(t, m.thinkingSince.IsZero(), "a running turn keeps its clock")
+	m.Update(pubsub.Event[session.Session]{
+		Type: pubsub.UpdatedEvent,
+		Payload: session.Session{
+			ID:                "s1",
+			ThinkingStartedAt: time.Now().Add(-30 * time.Second).UnixMilli(),
+		},
+	})
+	require.Equal(t, "Thinking (30s)", m.currentActivity())
 
-	m.agentBusyCache.set(false)
-	m.sessionBusyCache.set(false)
-	m.syncTurnSpinner()
-	require.True(t, m.thinkingSince.IsZero())
-
-	m.agentBusyCache.set(true)
-	m.sessionBusyCache.set(true)
-	m.syncTurnSpinner()
+	m.Update(pubsub.Event[session.Session]{
+		Type:    pubsub.UpdatedEvent,
+		Payload: session.Session{ID: "s1"},
+	})
 	require.Equal(t, "Thinking", m.currentActivity())
 }
 

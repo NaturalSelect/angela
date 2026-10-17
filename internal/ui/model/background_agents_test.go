@@ -382,7 +382,8 @@ func TestSubSessionStateOfAnOrdinaryAgentIsUnchanged(t *testing.T) {
 }
 
 // ctrl+x in the list ends the agent by cancelling its own session, the road
-// the rest of the UI already takes to stop a sub-agent, and closes the list.
+// the rest of the UI already takes to stop a sub-agent. The list stays open
+// so several agents can be stopped in one visit.
 func TestStoppingARunningBackgroundAgentFromTheListCancelsItsSession(t *testing.T) {
 	t.Parallel()
 	m, ws := newSubSessionListUI(t)
@@ -393,7 +394,7 @@ func TestStoppingARunningBackgroundAgentFromTheListCancelsItsSession(t *testing.
 	cmd := m.handleDialogMsg(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
 	runCmds(m, cmd)
 
-	require.False(t, m.dialog.ContainsDialog(dialog.SubSessionsID), "the list closes once the stop is requested")
+	require.True(t, m.dialog.ContainsDialog(dialog.SubSessionsID), "the list stays open so several agents can be stopped")
 }
 
 // Cancelling must not run on the Update goroutine: in client/server mode it

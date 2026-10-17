@@ -498,7 +498,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
-		commands = append(commands, NewCommandItem(c.com.Styles, "sub_sessions", "Sub-sessions", "", ActionOpenDialog{SubSessionsID}).WithAliases("subs", "children", "subsessions"))
+		commands = append(commands, NewCommandItem(c.com.Styles, "sub_sessions", "Sub-sessions", "", ActionOpenDialog{SubSessionsID}).WithAliases("subs", "children", "subsessions", "stop", "background", "kill"))
 	}
 
 	if c.hasSession {

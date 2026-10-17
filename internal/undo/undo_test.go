@@ -416,6 +416,30 @@ func TestUndoRefusesWhenASubagentSessionIsAnActiveBranch(t *testing.T) {
 	require.NoError(t, err, "a busy child session must survive a refused undo")
 }
 
+// A branch the user is driving is a live branch for as long as its
+// parent tool call stays suspended on it, so being one must not stop
+// undo from running on the branch itself.
+func TestUndoWorksOnTheSessionItselfBeingALiveBranch(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	sessionID := f.newSession(t)
+
+	f.userMessage(t, sessionID, "first turn")
+	path := filepath.Join(f.workingDir, "branch.txt")
+	f.editCall(t, sessionID, path, "", "first\n", true)
+
+	f.busy.branch[sessionID] = true
+
+	preview, err := f.svc.Preview(t.Context(), sessionID)
+	require.NoError(t, err)
+
+	_, err = f.svc.Undo(t.Context(), sessionID, preview.CutMessageID)
+	require.NoError(t, err)
+
+	_, err = os.Stat(path)
+	require.True(t, os.IsNotExist(err), "the file the turn created must be deleted")
+}
+
 // TestUndoHoldsTheSessionReservedForTheWholeOperation is the
 // regression test for the race the fix closes: checkBusy alone only
 // observes one instant, so a turn that starts on the session right

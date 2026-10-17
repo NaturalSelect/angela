@@ -2532,10 +2532,17 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	if err != nil {
 		return tools.FailErr("fork conversation into branch", err)
 	}
-	if summaryID != "" {
+	copied, err := c.messages.List(ctx, session.ID)
+	if err != nil {
+		return tools.FailErr("read forked conversation", err)
+	}
+	if len(copied) > 0 {
+		session.BaseMessageID = copied[len(copied)-1].ID
+	}
+	if summaryID != "" || session.BaseMessageID != "" {
 		session.SummaryMessageID = summaryID
 		if session, err = c.sessions.Save(ctx, session); err != nil {
-			return tools.FailErr("record branch summary point", err)
+			return tools.FailErr("record branch starting point", err)
 		}
 	}
 

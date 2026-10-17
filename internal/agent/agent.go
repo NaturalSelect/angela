@@ -206,6 +206,12 @@ type SessionAgentCall struct {
 	// differs. It is cleared once a call becomes the active turn in
 	// Run's Idle branch.
 	internal bool
+	// noticeWake marks a call that carries no prompt of its own and
+	// exists only to deliver pending background-agent notices. Run drops
+	// it unless the session is idle, since a busy or about-to-run session
+	// delivers the notices itself, and fills in the prompt from the inbox
+	// when it does run.
+	noticeWake bool
 }
 
 type SessionAgent interface {
@@ -315,6 +321,16 @@ type sessionAgent struct {
 	// when the agent is built, the same way compaction is.
 	reminders []string
 
+	// notices holds background-agent notices not yet shown to a model.
+	// May be nil.
+	notices *noticeInbox
+	// wakeForNotices starts a notice-only turn for a session. May be nil.
+	wakeForNotices func(sessionID string)
+	// runningBackgroundAgents lists the background agents a session still
+	// has running, so a summary can carry their ids across compaction.
+	// May be nil.
+	runningBackgroundAgents func(sessionID string) []backgroundAgentInfo
+
 	// runState carries everything keyed by session ID that decides
 	// whether a prompt runs now, queues, or is dropped by a cancel.
 	*runState
@@ -339,24 +355,40 @@ type SessionAgentOptions struct {
 
 	// Reminders holds the user's standing notices from config.
 	Reminders []string
+
+	// Notices holds the background-agent notices awaiting delivery. It is
+	// shared by every executor of a coordinator. Nil means the feature is
+	// off and no notice is ever delivered.
+	Notices *noticeInbox
+	// WakeForNotices, when non-nil, starts a turn for an idle session
+	// that still has notices waiting once a turn ends normally.
+	WakeForNotices func(sessionID string)
+	// RunningBackgroundAgents reports the agents a session launched that
+	// have not finished. Nil means none are ever reported.
+	RunningBackgroundAgents func(sessionID string) []backgroundAgentInfo
 }
 
 func NewSessionAgent(
 	opts SessionAgentOptions,
 ) SessionAgent {
 	return &sessionAgent{
-		isSubAgent:    opts.IsSubAgent,
-		agentID:       opts.AgentID,
-		sessions:      opts.Sessions,
-		messages:      opts.Messages,
-		compaction:    opts.Compaction,
-		isYolo:        opts.IsYolo,
-		notify:        opts.Notify,
-		runComplete:   opts.RunComplete,
-		generateTitle: opts.GenerateTitle,
-		skillTracker:  opts.SkillTracker,
-		reminders:     opts.Reminders,
-		runState:      newRunState(),
+		isSubAgent:     opts.IsSubAgent,
+		agentID:        opts.AgentID,
+		sessions:       opts.Sessions,
+		messages:       opts.Messages,
+		compaction:     opts.Compaction,
+		isYolo:         opts.IsYolo,
+		notify:         opts.Notify,
+		runComplete:    opts.RunComplete,
+		generateTitle:  opts.GenerateTitle,
+		skillTracker:   opts.SkillTracker,
+		reminders:      opts.Reminders,
+		notices:        opts.Notices,
+		wakeForNotices: opts.WakeForNotices,
+
+		runningBackgroundAgents: opts.RunningBackgroundAgents,
+
+		runState: newRunState(),
 	}
 }
 
@@ -575,7 +607,7 @@ func (a *sessionAgent) publishRunComplete(ctx context.Context, call SessionAgent
 // dispatching it (e.g. backend.SendMessage) can apply the same checks and
 // keep the error contract consistent.
 func ValidateCall(call SessionAgentCall) error {
-	if call.Prompt == "" && len(call.Attachments) == 0 {
+	if call.Prompt == "" && len(call.Attachments) == 0 && !call.noticeWake {
 		return ErrEmptyPrompt
 	}
 	if call.SessionID == "" {
@@ -638,6 +670,14 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		return nil, nil
 	}
 
+	if call.noticeWake && (a.IsSessionBusy(call.SessionID) || a.hasAccepted(call.SessionID)) {
+		// NOTE: A busy session delivers pending notices at its next step,
+		// and an accepted prompt delivers them when its turn starts, so a
+		// wake that finds either has nothing left to do.
+		sessMu.Unlock()
+		return nil, nil
+	}
+
 	if a.IsSessionBusy(call.SessionID) {
 		// Busy: an earlier prompt is active. Queue this call so it is
 		// folded into (or sequenced after) the active turn, and release any
@@ -656,6 +696,19 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		}
 		sessMu.Unlock()
 		return nil, nil
+	}
+
+	// A wake turn's prompt is the notices themselves. They are taken
+	// under the lock so the decision to run and the claim on them are one
+	// step.
+	var wakeNotices []string
+	if call.noticeWake {
+		wakeNotices = a.notices.Take(call.SessionID)
+		if len(wakeNotices) == 0 {
+			sessMu.Unlock()
+			return nil, nil
+		}
+		call.Prompt = wrapNotices(wakeNotices)
 	}
 
 	// Idle: become the active run. Register the cancel func before dropping
@@ -680,6 +733,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// the new run's cancel and breaking cancellation.
 	defer a.activeRequests.CompareAndDelete(call.SessionID, ac)
 	defer a.endThinking(ctx, call.SessionID, ac)
+	// A wake that fails before its prompt is stored must not swallow the
+	// results it was sent to deliver.
+	defer func() {
+		if !userMsgCreated {
+			a.notices.Requeue(call.SessionID, wakeNotices)
+		}
+	}()
 
 	agentTools := call.Agent.Tools
 	runModel := call.Agent.Model
@@ -801,6 +861,10 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	history, files := a.preparePrompt(msgs, runModel.CatwalkCfg.SupportsImages, call.Attachments...)
 	failedMCP, pendingMCP := unavailableMCPServers()
+	var runningBackground []string
+	if a.runningBackgroundAgents != nil {
+		runningBackground = describeRunningBackgroundAgents(a.runningBackgroundAgents(call.SessionID))
+	}
 	// Reminders are persisted as ordinary User-role messages ahead of
 	// this turn's prompt instead of only appended to history in
 	// memory. Once written they never move, so replaying the session
@@ -821,6 +885,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		UserReminders:        a.reminders,
 		CanDispatch:          hasAgentTool(agentTools),
 		CanUseTodos:          hasTodosTool(agentTools),
+
+		RunningBackgroundAgents: runningBackground,
 	}) {
 		slog.Debug("Injecting system reminder", "source", notice.Source, "session_id", call.SessionID)
 		reminderMsg, createErr := a.messages.Create(ctx, call.SessionID, message.CreateMessageParams{
@@ -831,6 +897,22 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			return nil, fmt.Errorf("failed to persist system reminder: %w", createErr)
 		}
 		history = append(history, reminderMsg.ToAIMessage()...)
+	}
+
+	// Background-agent notices that arrived while the session was idle or
+	// between turns go in one reminder ahead of the prompt, for the same
+	// replay-stability reason as the reminders above. A wake turn already
+	// carries its notices as the prompt, so this finds nothing for it.
+	if pending := a.notices.Take(call.SessionID); len(pending) > 0 {
+		noticeMsg, createErr := a.messages.Create(ctx, call.SessionID, message.CreateMessageParams{
+			Role:  message.User,
+			Parts: []message.ContentPart{message.TextContent{Text: wrapNotices(pending)}},
+		})
+		if createErr != nil {
+			a.notices.Requeue(call.SessionID, pending)
+			return nil, fmt.Errorf("failed to persist background agent notices: %w", createErr)
+		}
+		history = append(history, noticeMsg.ToAIMessage()...)
 	}
 
 	// Add the user message to the session, after any reminders above
@@ -920,6 +1002,21 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				}
 				prepared.Messages = append(prepared.Messages, userMessage.ToAIMessage()...)
 				latestFolded = &queued
+			}
+
+			// Notices that arrived since the last step reach the model now
+			// rather than after the turn: a finished agent is exactly what
+			// the model may be waiting on.
+			if pending := a.notices.Take(call.SessionID); len(pending) > 0 {
+				noticeMsg, createErr := a.messages.Create(callContext, call.SessionID, message.CreateMessageParams{
+					Role:  message.User,
+					Parts: []message.ContentPart{message.TextContent{Text: wrapNotices(pending)}},
+				})
+				if createErr != nil {
+					a.notices.Requeue(call.SessionID, pending)
+					return callContext, prepared, createErr
+				}
+				prepared.Messages = append(prepared.Messages, noticeMsg.ToAIMessage()...)
 			}
 
 			prepared.Messages = a.workaroundProviderMediaLimitations(prepared.Messages, runModel)
@@ -1449,6 +1546,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// Conditional for the same reason as the deferred cleanup: after an
 	// auto-summarize this turn no longer owns the entry, and a plain Del
 	// would cancel whichever run took it over.
+	turnCanceled := genCtx.Err() != nil
 	a.endThinking(ctx, call.SessionID, ac)
 	a.activeRequests.CompareAndDelete(call.SessionID, ac)
 	cancel()
@@ -1466,6 +1564,14 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	handoff := a.dequeueNext(call)
 	if handoff == nil {
+		// NOTE: Only a turn that ended normally gets here. A cancelled or
+		// failed turn leaves its notices for the next turn, so Esc is never
+		// answered by a new run the user did not ask for. turnCanceled is
+		// read before cancel() above, because a Cancel stops genCtx only
+		// and ctx alone would not show it.
+		if a.wakeForNotices != nil && !turnCanceled && ctx.Err() == nil && a.notices.Has(call.SessionID) {
+			a.wakeForNotices(call.SessionID)
+		}
 		return result, err
 	}
 	// There are queued messages, restart the loop. Suppress the outer
@@ -1778,6 +1884,9 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 	}
 
 	summaryPromptText := buildSummaryPrompt(currentSession.Todos)
+	if a.runningBackgroundAgents != nil {
+		summaryPromptText += buildRunningBackgroundAgentsNote(a.runningBackgroundAgents(sessionID))
+	}
 
 	retryModel := &atomic.Pointer[fantasy.LanguageModel]{}
 	retryModel.Store(&compact.Model.Model)
@@ -2728,6 +2837,36 @@ func buildSummaryPrompt(todos []session.Todo) string {
 		sb.WriteString("Instruct the resuming assistant to use the `todos` tool to continue tracking progress on these tasks.")
 	}
 	return sb.String()
+}
+
+// buildRunningBackgroundAgentsNote asks the summary to carry background
+// agents that are still running across the compaction. Their completion
+// notices arrive by agent id, so a summary that drops the ids leaves the
+// resumed assistant unable to tell which result answers which request,
+// and likely to launch the same work again.
+func buildRunningBackgroundAgentsNote(running []backgroundAgentInfo) string {
+	if len(running) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("\n\n## Running Background Agents\n\n")
+	for _, info := range running {
+		fmt.Fprintf(&sb, "- agentId %s (%s): %s\n", info.ID, info.AgentType, info.Task)
+	}
+	sb.WriteString("\nThese agents are still running. Record each agentId and what it was asked to find out, ")
+	sb.WriteString("and tell the resuming assistant that every result will arrive in a notification on its own. ")
+	sb.WriteString("The resuming assistant must not launch them again, wait for them, or poll for them.")
+	return sb.String()
+}
+
+// describeRunningBackgroundAgents renders one line per running agent for
+// the reminder that follows a compaction.
+func describeRunningBackgroundAgents(running []backgroundAgentInfo) []string {
+	lines := make([]string, len(running))
+	for i, info := range running {
+		lines[i] = fmt.Sprintf("agentId %s (%s): %s", info.ID, info.AgentType, info.Task)
+	}
+	return lines
 }
 
 func providerRetryLogFields(err *fantasy.ProviderError, delay time.Duration) []any {

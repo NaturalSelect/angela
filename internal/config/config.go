@@ -1215,6 +1215,8 @@ const maxRecentModelsPerType = 5
 func allToolNames() []string {
 	return []string{
 		toolnames.Agent,
+		toolnames.AgentStatus,
+		toolnames.AgentStop,
 		toolnames.Bash,
 		toolnames.Git,
 		toolnames.AngelaInfo,

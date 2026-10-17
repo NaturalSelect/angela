@@ -37,6 +37,9 @@ const (
 	SubSessionDone
 	// SubSessionFailed means the sub-agent errored or was canceled.
 	SubSessionFailed
+	// SubSessionStopped means a background sub-agent was stopped on purpose,
+	// which is neither a success nor a failure of its own.
+	SubSessionStopped
 )
 
 // active reports whether the sub-session still needs attention.
@@ -52,6 +55,8 @@ func (s SubSessionState) marker() string {
 		return "◆"
 	case SubSessionDone:
 		return "✓"
+	case SubSessionStopped:
+		return "■"
 	default:
 		return "✗"
 	}
@@ -65,6 +70,8 @@ func (s SubSessionState) label() string {
 		return "waiting for you"
 	case SubSessionDone:
 		return "done"
+	case SubSessionStopped:
+		return "stopped"
 	default:
 		return "failed"
 	}
@@ -80,6 +87,9 @@ type SubSessionEntry struct {
 	// Task is the short description of the work it was given.
 	Task  string
 	State SubSessionState
+	// Stoppable is true for a running background agent, the only kind the
+	// user can end from the list.
+	Stoppable bool
 }
 
 // SubSessions is a dialog for picking one of the current session's
@@ -95,6 +105,7 @@ type SubSessions struct {
 
 	keyMap struct {
 		Select   key.Binding
+		Stop     key.Binding
 		Next     key.Binding
 		Previous key.Binding
 		UpDown   key.Binding
@@ -146,6 +157,10 @@ func NewSubSessions(com *common.Common, entries []SubSessionEntry) *SubSessions 
 	s.keyMap.Select = key.NewBinding(
 		key.WithKeys("enter", "ctrl+y"),
 		key.WithHelp("enter", "enter sub-session"),
+	)
+	s.keyMap.Stop = key.NewBinding(
+		key.WithKeys("ctrl+x"),
+		key.WithHelp("ctrl+x", "stop agent"),
 	)
 	s.keyMap.Next = key.NewBinding(
 		key.WithKeys("down", "ctrl+n"),
@@ -202,6 +217,13 @@ func (s *SubSessions) HandleMsg(msg tea.Msg) Action {
 				break
 			}
 			return ActionEnterSubSession{SessionID: item.entry.SessionID}
+		case key.Matches(msg, s.keyMap.Stop):
+			// A row that cannot be stopped swallows the key: handing it to
+			// the filter box would type nothing, but it would also move the
+			// cursor for a key the user meant as a command.
+			if item := s.selectedStoppable(); item != nil {
+				return ActionStopSubSession{SessionID: item.entry.SessionID}
+			}
 		default:
 			var cmd tea.Cmd
 			s.input, cmd = s.input.Update(msg)
@@ -253,23 +275,32 @@ func (s *SubSessions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	return s.frame.Draw(scr, area, view, s.Cursor())
 }
 
+// selectedStoppable returns the highlighted row when the user can end it
+// from the list, and nil otherwise.
+func (s *SubSessions) selectedStoppable() *SubSessionItem {
+	item, ok := s.list.SelectedItem().(*SubSessionItem)
+	if !ok || !item.entry.Stoppable {
+		return nil
+	}
+	return item
+}
+
 // ShortHelp implements [help.KeyMap].
 func (s *SubSessions) ShortHelp() []key.Binding {
-	return []key.Binding{
-		s.keyMap.UpDown,
-		s.keyMap.Select,
-		s.keyMap.Close,
+	bindings := []key.Binding{s.keyMap.UpDown, s.keyMap.Select}
+	if s.selectedStoppable() != nil {
+		bindings = append(bindings, s.keyMap.Stop)
 	}
+	return append(bindings, s.keyMap.Close)
 }
 
 // FullHelp implements [help.KeyMap].
 func (s *SubSessions) FullHelp() [][]key.Binding {
-	return [][]key.Binding{{
-		s.keyMap.Select,
-		s.keyMap.Next,
-		s.keyMap.Previous,
-		s.keyMap.Close,
-	}}
+	bindings := []key.Binding{s.keyMap.Select}
+	if s.selectedStoppable() != nil {
+		bindings = append(bindings, s.keyMap.Stop)
+	}
+	return [][]key.Binding{append(bindings, s.keyMap.Next, s.keyMap.Previous, s.keyMap.Close)}
 }
 
 func (s *SubSessions) setItems(entries []SubSessionEntry) {

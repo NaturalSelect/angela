@@ -107,8 +107,7 @@ type AgentToolSessionNamer interface {
 // whenever the dispatch it names does, and stays the same across
 // restarts.
 func ReportID(sessions AgentToolSessionNamer, messageID, toolCallID string) string {
-	hash := session.HashID(sessions.CreateAgentToolSessionID(messageID, toolCallID))
-	return reportIDPrefix + hash[:reportIDHashLen]
+	return reportIDPrefix + dispatchHash(sessions, messageID, toolCallID)
 }
 
 // CollectReports returns every successful agent dispatch in sessionID and
@@ -154,8 +153,14 @@ func CollectReports(ctx context.Context, sessions session.Service, messages mess
 // successful, non-empty result, in conversation order. A result that
 // carries a banner keeps the id on it; only one stored before banners
 // existed falls back to the id derived from its message.
+//
+// A background dispatch has no result of its own: the launch result is
+// only a receipt, and the output arrives later in a completion notice.
+// The report is taken from that notice and sits where the dispatch was
+// made.
 func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message) []Report {
 	dispatches := make(map[string]Report)
+	backgroundCalls := make(map[string]string)
 	var order []string
 	for _, msg := range msgs {
 		for _, call := range msg.ToolCalls() {
@@ -179,11 +184,14 @@ func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message)
 		}
 	}
 
-	reports := make([]Report, 0, len(order))
 	for _, msg := range msgs {
 		for _, result := range msg.ToolResults() {
 			dispatch, ok := dispatches[result.ToolCallID]
 			if !ok || result.IsError || result.Content == "" {
+				continue
+			}
+			if meta := ParseAgentResponseMetadata(result.Metadata); meta.Background {
+				backgroundCalls[meta.AgentID] = result.ToolCallID
 				continue
 			}
 			dispatch.Content = result.Content
@@ -193,6 +201,28 @@ func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message)
 			dispatches[result.ToolCallID] = dispatch
 		}
 	}
+
+	for _, msg := range msgs {
+		if !msg.IsReminder() {
+			continue
+		}
+		for _, notice := range ParseBackgroundAgentNotices(msg.Content().Text) {
+			callID, ok := backgroundCalls[notice.AgentID]
+			if !ok || notice.Status != BackgroundAgentCompleted {
+				continue
+			}
+			id, ok := bannerReportID(notice.Result)
+			if !ok {
+				continue
+			}
+			dispatch := dispatches[callID]
+			dispatch.ID = id
+			dispatch.Content = notice.Result
+			dispatches[callID] = dispatch
+		}
+	}
+
+	reports := make([]Report, 0, len(order))
 	for _, callID := range order {
 		if report := dispatches[callID]; report.Content != "" {
 			reports = append(reports, report)

@@ -29,6 +29,9 @@ type State struct {
 	TurnsSinceCompaction int
 	// LoadedSkills names the skills read during this session.
 	LoadedSkills []string
+	// RunningBackgroundAgents describes the background agents of this
+	// session that have not yet reported, one human-readable line each.
+	RunningBackgroundAgents []string
 	// FailedMCPServers and PendingMCPServers describe servers whose tools
 	// are absent from this turn, one human-readable line each.
 	FailedMCPServers  []string
@@ -65,6 +68,7 @@ func DefaultSources() []Source {
 		mcpUnavailable{},
 		resumeAfterCompaction{},
 		skillsAfterCompaction{},
+		backgroundAgentsAfterCompaction{},
 		dispatch{},
 	}
 }

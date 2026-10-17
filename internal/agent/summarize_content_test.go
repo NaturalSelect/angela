@@ -335,6 +335,49 @@ func TestSummarizeExtractsContentBetweenSummaryTags(t *testing.T) {
 		"only the content between the tags must survive, not any preamble or trailing chatter around them")
 }
 
+// TestSummarizeCarriesRunningBackgroundAgentsIntoThePrompt pins the wiring
+// between the summarize call and the session's running background agents:
+// the model writing the summary must be told which agent ids are still
+// out, or the resumed assistant cannot match their notices to its requests.
+func TestSummarizeCarriesRunningBackgroundAgentsIntoThePrompt(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sessID := seedSession(t, sa, env)
+	asked := ""
+	sa.runningBackgroundAgents = func(sessionID string) []backgroundAgentInfo {
+		asked = sessionID
+		return []backgroundAgentInfo{{ID: "agent-7", AgentType: "explore", Task: "Map the auth flow"}}
+	}
+
+	var gotPrompt string
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+			for _, m := range call.Prompt {
+				if m.Role == fantasy.MessageRoleSystem {
+					continue
+				}
+				for _, part := range m.Content {
+					if text, ok := part.(fantasy.TextPart); ok {
+						gotPrompt += text.Text + "\n"
+					}
+				}
+			}
+			return streamOf([]string{"<summary>ok</summary>"}, fantasy.FinishReasonStop), nil
+		})
+
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
+		SystemPrompt: "summarize",
+	}
+	require.NoError(t, sa.Summarize(t.Context(), sessID, compact, nil, nil))
+
+	require.Equal(t, sessID, asked, "the agents asked for are those of the session being summarized")
+	require.Contains(t, gotPrompt, "## Running Background Agents")
+	require.Contains(t, gotPrompt, "agent-7")
+}
+
 // TestSummarizeAppendsSummaryTagInstructionForAnyCompactAgent pins that
 // the <summary> requirement is enforced by Summarize itself, not left
 // to summary.md alone: a host agent's CompactAgent can point at any

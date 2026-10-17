@@ -47,6 +47,12 @@ type ActionEnterSubSession struct {
 	SessionID string
 }
 
+// ActionStopSubSession is a message asking to stop the background agent
+// running in a sub-session of the session in view.
+type ActionStopSubSession struct {
+	SessionID string
+}
+
 // ActionSelectModel is a message indicating a model has been selected.
 type ActionSelectModel struct {
 	Provider       catwalk.Provider

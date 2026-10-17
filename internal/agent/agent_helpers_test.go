@@ -97,3 +97,28 @@ func TestBuildSummaryPrompt(t *testing.T) {
 		require.Contains(t, prompt, "`todos` tool")
 	})
 }
+
+// TestBuildRunningBackgroundAgentsNote pins that a summary is told about
+// running background agents only when there are some, and that the note
+// carries what the resumed assistant needs: each id and the instruction
+// not to relaunch or wait.
+func TestBuildRunningBackgroundAgentsNote(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nothing running adds nothing", func(t *testing.T) {
+		t.Parallel()
+		require.Empty(t, buildRunningBackgroundAgentsNote(nil))
+	})
+
+	t.Run("names every running agent", func(t *testing.T) {
+		t.Parallel()
+		note := buildRunningBackgroundAgentsNote([]backgroundAgentInfo{
+			{ID: "agent-1", AgentType: "explore", Task: "Map the auth flow"},
+			{ID: "agent-2", AgentType: "general", Task: "Port the parser"},
+		})
+		require.Contains(t, note, "## Running Background Agents")
+		require.Contains(t, note, "- agentId agent-1 (explore): Map the auth flow")
+		require.Contains(t, note, "- agentId agent-2 (general): Port the parser")
+		require.Contains(t, note, "must not launch them again, wait for them, or poll for them")
+	})
+}

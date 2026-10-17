@@ -34,6 +34,8 @@ List every report whose content may still be needed for the remaining work — a
 
 Copy each id character by character. Never invent, abbreviate, or reformat one. Leave a report out only when you are confident this summary already captures everything it said. If none are still relevant, write "None".
 
+Background agents launched with `run_in_background` have an `agentId` (it starts with `agt_`) instead of a report until they finish. For every one that was launched but has not yet delivered its completion notification, list its `agentId`, its type, and what it was asked to find out. State that its result will arrive in a notification on its own, so the resuming assistant keeps waiting for it instead of redoing the work.
+
 ## 7. All User Messages
 
 List ALL user messages that are not tool results. These are critical for understanding the user's feedback and changing intent. Preserve any security-relevant instructions or constraints verbatim so they remain in effect after compaction.

@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -23,6 +24,25 @@ type AgentParams struct {
 	Description  string `json:"description,omitempty" description:"A short (3-5 words) description of the task"`
 	Prompt       string `json:"prompt" description:"The task for the agent to perform. For a branch agent, keep it short — state the decision or question, not background it already has."`
 	SubagentType string `json:"subagent_type,omitempty" description:"The type of specialized agent to use for this task"`
+	// RunInBackground is offered to the model only where
+	// backgroundAgentsAvailable allows it; see withoutParameter.
+	RunInBackground bool `json:"run_in_background,omitempty" description:"Set to true to run this agent in the background. The call returns at once and you are notified when the agent finishes. Use it only when you can keep working without the result."`
+}
+
+const runInBackgroundParameter = "run_in_background"
+
+// withoutParameter wraps a tool so its schema does not offer one
+// parameter. The tool still accepts it if a model sends it anyway.
+type withoutParameter struct {
+	fantasy.AgentTool
+	name string
+}
+
+func (t withoutParameter) Info() fantasy.ToolInfo {
+	info := t.AgentTool.Info()
+	delete(info.Parameters, t.name)
+	info.Required = slices.DeleteFunc(slices.Clone(info.Required), func(name string) bool { return name == t.name })
+	return info
 }
 
 // agentTool builds the agent dispatch tool from the coordinator's
@@ -50,7 +70,8 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, pare
 		return nil, nil
 	}
 
-	description, err := renderAgentToolDescription(metadata)
+	background := c.backgroundAgentsAvailable(depth)
+	description, err := renderAgentToolDescription(metadata, background)
 	if err != nil {
 		return nil, fmt.Errorf("render agent tool description: %w", err)
 	}
@@ -60,7 +81,7 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, pare
 		availableIDs[i] = a.ID
 	}
 
-	return tools.NewParallelTool(
+	tool := tools.NewParallelTool(
 		toolnames.Agent,
 		description,
 		func(ctx context.Context, params AgentParams, call fantasy.ToolCall) tools.Result {
@@ -113,6 +134,9 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, pare
 
 			run := c.runSubAgent
 			if entry.cfg.Mode == config.AgentModeBranch {
+				if params.RunInBackground {
+					return tools.Failf("Agent %q is a branch agent: it hands the conversation to the user and suspends this call, so it cannot run in the background.", agentType)
+				}
 				// Checked after the agent is built so that a
 				// misconfigured branch still reports the build failure
 				// rather than a refusal that hides it.
@@ -122,7 +146,7 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, pare
 				run = c.runBranchAgent
 			}
 
-			result := run(ctx, subAgentParams{
+			subParams := subAgentParams{
 				Agent:          agent,
 				Resolved:       resolved,
 				SessionID:      sessionID,
@@ -130,11 +154,24 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, pare
 				ToolCallID:     call.ID,
 				Prompt:         params.Prompt,
 				SessionTitle:   title,
-			})
+			}
+			// NOTE: A model that sends run_in_background where the schema
+			// never offered it gets the result in the call instead: nothing
+			// is lost, and it is not promised a notification that cannot
+			// come.
+			if params.RunInBackground && background {
+				return c.launchBackgroundAgent(ctx, subParams, agentType, params.Description)
+			}
+
+			result := run(ctx, subParams)
 			reportID := tools.ReportID(c.sessions, agentMessageID, call.ID)
 			return tools.FromResponse(withReportHeader(result.Response(), reportID, agentType, params.Description))
 		},
-	), nil
+	)
+	if !background {
+		return withoutParameter{AgentTool: tool, name: runInBackgroundParameter}, nil
+	}
+	return tool, nil
 }
 
 // withReportHeader stamps a dispatch's output with the handle that loads
@@ -154,7 +191,15 @@ func withReportHeader(resp fantasy.ToolResponse, reportID, agentType, task strin
 // description template.
 type agentToolDescription struct {
 	Agents []agentToolDescriptionAgent
+	// Background reports whether this tool offers run_in_background.
+	Background bool
 }
+
+// AgentStatusTool and AgentStopTool name the tools the background section
+// points at, so the prompt cannot drift from the registered names.
+func (agentToolDescription) AgentStatusTool() string { return toolnames.AgentStatus }
+
+func (agentToolDescription) AgentStopTool() string { return toolnames.AgentStop }
 
 // HasBranch reports whether any agent needs the branch section rendered.
 func (d agentToolDescription) HasBranch() bool {
@@ -187,14 +232,14 @@ type agentToolDescriptionAgent struct {
 	Branch bool
 }
 
-func renderAgentToolDescription(agents []agentToolDescriptionAgent) (string, error) {
+func renderAgentToolDescription(agents []agentToolDescriptionAgent, background bool) (string, error) {
 	tmpl, err := template.New("agent_tool").Parse(agentToolDescriptionTmpl)
 	if err != nil {
 		return "", err
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, agentToolDescription{Agents: agents}); err != nil {
+	if err := tmpl.Execute(&buf, agentToolDescription{Agents: agents, Background: background}); err != nil {
 		return "", err
 	}
 	return buf.String(), nil

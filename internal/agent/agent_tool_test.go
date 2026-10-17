@@ -154,9 +154,9 @@ func TestSubagentRegistryMetadataIsStable(t *testing.T) {
 
 	require.Equal(t, []string{"alpha", "mid", "zeta"}, reg.IDs())
 
-	first, err := renderAgentToolDescription(reg.Metadata())
+	first, err := renderAgentToolDescription(reg.Metadata(), false)
 	require.NoError(t, err)
-	second, err := renderAgentToolDescription(reg.Metadata())
+	second, err := renderAgentToolDescription(reg.Metadata(), false)
 	require.NoError(t, err)
 
 	require.Equal(t, first, second)
@@ -183,7 +183,7 @@ func TestAgentToolDescriptionSeparatesBranches(t *testing.T) {
 		"pairing":  {Description: "thinks it through with you", Mode: config.AgentModeBranch},
 	}, nil)
 
-	desc, err := renderAgentToolDescription(reg.Metadata())
+	desc, err := renderAgentToolDescription(reg.Metadata(), false)
 	require.NoError(t, err)
 
 	branchAt := strings.Index(desc, "Branch agents:")
@@ -211,7 +211,7 @@ func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
 		"research": {Description: "reads code", Mode: config.AgentModeSubagent},
 	}, nil)
 
-	desc, err := renderAgentToolDescription(reg.Metadata())
+	desc, err := renderAgentToolDescription(reg.Metadata(), false)
 	require.NoError(t, err)
 
 	require.NotContains(t, desc, "Branch agents:")

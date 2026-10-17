@@ -2433,7 +2433,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, m.enterSubSessionByID(msg.SessionID))
 
 	case dialog.ActionStopSubSession:
-		m.dialog.CloseDialog(dialog.SubSessionsID)
+		// NOTE: The list stays open, with the row already showing the
+		// stop, so several agents can be stopped in one visit.
 		cmds = append(cmds, m.stopSubSessionCmd(msg.SessionID))
 
 	// Open dialog message.

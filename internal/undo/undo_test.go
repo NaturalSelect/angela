@@ -235,6 +235,109 @@ func TestFindCut(t *testing.T) {
 	}
 }
 
+func TestFirstUndoable(t *testing.T) {
+	t.Parallel()
+
+	msg := func(id string, role message.MessageRole) message.Message {
+		return message.Message{ID: id, Role: role}
+	}
+
+	tests := []struct {
+		name string
+		msgs []message.Message
+		base string
+		want int
+	}{
+		{
+			name: "no base means the whole session is undoable",
+			msgs: []message.Message{msg("u1", message.User), msg("a1", message.Assistant)},
+			base: "",
+			want: 0,
+		},
+		{
+			name: "a base that is not in the session imposes no limit",
+			msgs: []message.Message{msg("u1", message.User), msg("a1", message.Assistant)},
+			base: "gone",
+			want: 0,
+		},
+		{
+			name: "the opening turn behind the base is protected too",
+			msgs: []message.Message{
+				msg("u0", message.User), msg("a0", message.Assistant),
+				msg("remind", message.User), msg("fork", message.User), msg("a1", message.Assistant),
+				msg("u2", message.User), msg("a2", message.Assistant),
+			},
+			base: "a0",
+			want: 4,
+		},
+		{
+			name: "a branch with only its inherited history and a pending opening prompt",
+			msgs: []message.Message{
+				msg("u0", message.User), msg("a0", message.Assistant), msg("fork", message.User),
+			},
+			base: "a0",
+			want: 3,
+		},
+		{
+			name: "a base at the very end leaves nothing to undo",
+			msgs: []message.Message{msg("u0", message.User), msg("a0", message.Assistant)},
+			base: "a0",
+			want: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, firstUndoable(tt.msgs, tt.base))
+		})
+	}
+}
+
+// A branch inherits its parent's history and then runs an opening turn
+// from the fork prompt. Neither is the user's to undo: removing them
+// would leave the branch with nothing to continue from, and the next
+// undo would start deleting what belongs to the parent.
+func TestUndoStopsAtABranchStartingPoint(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := t.Context()
+	sessionID := f.newSession(t)
+
+	f.userMessage(t, sessionID, "parent question")
+	base, err := f.messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+	sess, err := f.sessions.Get(ctx, sessionID)
+	require.NoError(t, err)
+	sess.BaseMessageID = base.ID
+	_, err = f.sessions.Save(ctx, sess)
+	require.NoError(t, err)
+
+	f.userMessage(t, sessionID, "fork prompt")
+	_, err = f.messages.Create(ctx, sessionID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	_, err = f.svc.Preview(ctx, sessionID)
+	require.ErrorIs(t, err, ErrNothingToUndo, "the opening turn must not be undoable")
+
+	f.userMessage(t, sessionID, "second turn")
+	path := filepath.Join(f.workingDir, "branch.txt")
+	f.editCall(t, sessionID, path, "", "second\n", true)
+
+	preview, err := f.svc.Preview(ctx, sessionID)
+	require.NoError(t, err)
+	require.Equal(t, "second turn", preview.PoppedText)
+
+	_, err = f.svc.Undo(ctx, sessionID, preview.CutMessageID)
+	require.NoError(t, err)
+
+	remaining, err := f.messages.List(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, remaining, 4, "the inherited history and the opening turn must survive")
+
+	_, err = f.svc.Preview(ctx, sessionID)
+	require.ErrorIs(t, err, ErrNothingToUndo)
+}
+
 func TestUndoRevertsTheLastTurnAndPopsItsText(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

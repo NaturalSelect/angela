@@ -73,4 +73,5 @@ type Session struct {
 	CacheReadTokens     int64          `json:"cache_read_tokens"`
 	CacheCreationTokens int64          `json:"cache_creation_tokens"`
 	UncachedInputTokens int64          `json:"uncached_input_tokens"`
+	BaseMessageID       sql.NullString `json:"base_message_id"`
 }

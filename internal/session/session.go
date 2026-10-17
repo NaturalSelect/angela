@@ -77,7 +77,13 @@ type Session struct {
 	CompletionTokens int64
 	EstimatedUsage   bool
 	SummaryMessageID string
-	Cost             float64
+
+	// BaseMessageID is set on a branch session to the last message copied
+	// in from its parent when it forked. That message and the opening
+	// turn after it are the branch's starting point, which undo never
+	// removes. Empty on every other session.
+	BaseMessageID string
+	Cost          float64
 
 	// GenOutputTokens and GenDurationMs are cumulative totals accumulated
 	// across every model-generation step for the session's entire
@@ -266,6 +272,10 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 			String: session.SummaryMessageID,
 			Valid:  session.SummaryMessageID != "",
 		},
+		BaseMessageID: sql.NullString{
+			String: session.BaseMessageID,
+			Valid:  session.BaseMessageID != "",
+		},
 		Cost:                session.Cost,
 		GenOutputTokens:     session.GenOutputTokens,
 		GenDurationMs:       session.GenDurationMs,
@@ -448,6 +458,7 @@ func (s *service) sessionFromRow(item db.Session) Session {
 		PromptTokens:        item.PromptTokens,
 		CompletionTokens:    item.CompletionTokens,
 		SummaryMessageID:    item.SummaryMessageID.String,
+		BaseMessageID:       item.BaseMessageID.String,
 		Cost:                item.Cost,
 		GenOutputTokens:     item.GenOutputTokens,
 		GenDurationMs:       item.GenDurationMs,

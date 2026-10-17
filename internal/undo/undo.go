@@ -371,7 +371,8 @@ type turnPlan struct {
 }
 
 // plan locates sessionID's last turn and walks it for file actions.
-// It returns ErrNothingToUndo if the session holds no user message.
+// It returns ErrNothingToUndo if the session holds no user message
+// past its starting point (see firstUndoable).
 // reserve is nil for Preview's read-only path; Undo passes its
 // reservation so every subagent session found while walking is locked
 // against a concurrent turn start the moment it is discovered, and
@@ -381,11 +382,17 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 	if err != nil {
 		return turnPlan{}, err
 	}
+	sess, err := s.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return turnPlan{}, err
+	}
 
-	cut := findCut(msgs)
+	first := firstUndoable(msgs, sess.BaseMessageID)
+	cut := findCut(msgs[first:])
 	if cut < 0 {
 		return turnPlan{}, ErrNothingToUndo
 	}
+	cut += first
 
 	toDelete := msgs[cut:]
 	deletedIDs := make(map[string]bool, len(toDelete))
@@ -410,6 +417,29 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 		childSessions:     walk.childSessions,
 		files:             walk.actions,
 	}, nil
+}
+
+// firstUndoable returns the index of the first message undo may
+// remove. An ordinary session starts at 0. A branch starts after the
+// history it inherited from its parent and after its opening turn:
+// the run of user messages right behind baseMessageID, which holds the
+// fork prompt the branch was started from. Removing that turn would
+// leave the branch with nothing to continue from, and the next undo
+// would start eating the parent's history. A base message that is not
+// in msgs imposes no limit.
+func firstUndoable(msgs []message.Message, baseMessageID string) int {
+	if baseMessageID == "" {
+		return 0
+	}
+	base := slices.IndexFunc(msgs, func(m message.Message) bool { return m.ID == baseMessageID })
+	if base < 0 {
+		return 0
+	}
+	i := base + 1
+	for i < len(msgs) && msgs[i].Role == message.User {
+		i++
+	}
+	return i
 }
 
 // findCut returns the index of the earliest message in the trailing

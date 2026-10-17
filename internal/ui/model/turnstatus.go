@@ -73,12 +73,9 @@ func (m *UI) syncTurnSpinner() tea.Cmd {
 	return m.turnSpinner.Tick
 }
 
-// stopTurnSpinner marks the turn as over and forgets when it began thinking.
-//
-// NOTE: A summary or bang command restarts no clock, so it must start unset.
+// stopTurnSpinner marks the turn as over.
 func (m *UI) stopTurnSpinner() {
 	m.turnIsSpinning = false
-	m.thinkingSince = time.Time{}
 }
 
 // busyStatusFields builds the busy-state fields in drop order: the last entry
@@ -114,7 +111,7 @@ func (m *UI) currentActivity() string {
 	}
 	tc, ok := m.chat.LastPendingTool()
 	if !ok {
-		if running := runningTime(m.thinkingSince); running != "" {
+		if running := runningTime(thinkingStart(m.session)); running != "" {
 			return "Thinking (" + running + ")"
 		}
 		return "Thinking"
@@ -166,6 +163,16 @@ func (m *UI) retryActivity() string {
 // finish well under this, so the label only grows for the ones actually
 // worth flagging.
 const activitySlowThreshold = 5 * time.Second
+
+// thinkingStart is when the model began the step now running in s, or the
+// zero time when none is or s is not known. The server owns this clock, so
+// it is right for a session entered mid-turn.
+func thinkingStart(s *session.Session) time.Time {
+	if s == nil || s.ThinkingStartedAt == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(s.ThinkingStartedAt)
+}
 
 // runningTime formats how long an activity that began at since has been
 // going, once that exceeds activitySlowThreshold. A zero since means the

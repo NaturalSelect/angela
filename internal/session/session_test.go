@@ -3,8 +3,10 @@ package session
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -247,4 +249,102 @@ func TestConcurrentAddCostKeepsEveryIncrement(t *testing.T) {
 	require.NoError(t, err)
 	require.InDelta(t, writers*0.01, after.Cost, 1e-9,
 		"concurrent increments overwrote each other")
+}
+
+func newThinkingTestService(t *testing.T) Service {
+	t.Helper()
+	dataDir := t.TempDir()
+	t.Cleanup(func() {
+		require.NoError(t, db.Release(dataDir))
+		db.ResetPool()
+	})
+
+	conn, err := db.Connect(t.Context(), dataDir)
+	require.NoError(t, err)
+
+	return NewService(db.New(conn), conn)
+}
+
+func TestThinkingStartedAtIsReadBackAndCleared(t *testing.T) {
+	sessions := newThinkingTestService(t)
+	created, err := sessions.Create(t.Context(), "test")
+	require.NoError(t, err)
+	require.Zero(t, created.ThinkingStartedAt)
+
+	startedAt := time.UnixMilli(1_700_000_000_123)
+	require.NoError(t, sessions.SetThinkingStartedAt(t.Context(), created.ID, startedAt))
+
+	fetched, err := sessions.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.Equal(t, startedAt.UnixMilli(), fetched.ThinkingStartedAt)
+
+	listed, err := sessions.List(t.Context())
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, startedAt.UnixMilli(), listed[0].ThinkingStartedAt)
+
+	require.NoError(t, sessions.SetThinkingStartedAt(t.Context(), created.ID, time.Time{}))
+	cleared, err := sessions.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+	require.Zero(t, cleared.ThinkingStartedAt)
+}
+
+// A run holds one copy of its session for its whole length and saves it at
+// the end of every step, so a Save carrying a stale clock must not win.
+func TestThinkingStartedAtSurvivesSaveOfStaleCopy(t *testing.T) {
+	sessions := newThinkingTestService(t)
+	stale, err := sessions.Create(t.Context(), "test")
+	require.NoError(t, err)
+
+	startedAt := time.UnixMilli(1_700_000_000_123)
+	require.NoError(t, sessions.SetThinkingStartedAt(t.Context(), stale.ID, startedAt))
+
+	stale.Title = "renamed"
+	saved, err := sessions.Save(t.Context(), stale)
+	require.NoError(t, err)
+	require.Equal(t, startedAt.UnixMilli(), saved.ThinkingStartedAt)
+
+	fetched, err := sessions.Get(t.Context(), stale.ID)
+	require.NoError(t, err)
+	require.Equal(t, startedAt.UnixMilli(), fetched.ThinkingStartedAt)
+}
+
+func TestSetThinkingStartedAtPublishesTheSession(t *testing.T) {
+	sessions := newThinkingTestService(t)
+	created, err := sessions.Create(t.Context(), "test")
+	require.NoError(t, err)
+
+	events := sessions.Subscribe(t.Context())
+	startedAt := time.UnixMilli(1_700_000_000_123)
+	require.NoError(t, sessions.SetThinkingStartedAt(t.Context(), created.ID, startedAt))
+
+	select {
+	case event := <-events:
+		require.Equal(t, pubsub.UpdatedEvent, event.Type)
+		require.Equal(t, startedAt.UnixMilli(), event.Payload.ThinkingStartedAt)
+	case <-time.After(2 * time.Second):
+		t.Fatal("no session update was published")
+	}
+}
+
+func TestSetThinkingStartedAtReportsAMissingSession(t *testing.T) {
+	sessions := newThinkingTestService(t)
+
+	err := sessions.SetThinkingStartedAt(t.Context(), "missing", time.Now())
+	require.ErrorIs(t, err, ErrSessionNotFound)
+}
+
+func TestDeletedSessionDoesNotLeaveItsThinkingClockBehind(t *testing.T) {
+	sessions := newThinkingTestService(t)
+	created, err := sessions.Create(t.Context(), "test")
+	require.NoError(t, err)
+	require.NoError(t, sessions.SetThinkingStartedAt(t.Context(), created.ID, time.Now()))
+
+	require.NoError(t, sessions.Delete(t.Context(), created.ID))
+
+	impl, ok := sessions.(*service)
+	require.True(t, ok)
+	impl.thinkingMu.RLock()
+	defer impl.thinkingMu.RUnlock()
+	require.NotContains(t, impl.thinkingStartedAt, created.ID)
 }

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/db"
@@ -78,6 +79,12 @@ type Session struct {
 	EstimatedUsage   bool
 	SummaryMessageID string
 
+	// ThinkingStartedAt is the Unix-millisecond time the model began the
+	// step now running in this session, or 0 while no step is running.
+	// It is never persisted: it lives in the service's memory, so a
+	// restart cannot leave a stale clock behind.
+	ThinkingStartedAt int64
+
 	// BaseMessageID is set on a branch session to the last message copied
 	// in from its parent when it forked. That message and the opening
 	// turn after it are the branch's starting point, which undo never
@@ -126,6 +133,11 @@ type Service interface {
 	UpdateTitleAndUsage(ctx context.Context, sessionID, title string, promptTokens, completionTokens int64, cost float64) error
 	AddCost(ctx context.Context, sessionID string, delta float64) error
 	UpdateActiveAgent(ctx context.Context, id string, state config.ActiveAgentState) error
+
+	// SetThinkingStartedAt records when the model began the step now
+	// running in id; the zero time clears it. It is kept out of Save so a
+	// stale copy of the session can never overwrite it.
+	SetThinkingStartedAt(ctx context.Context, id string, at time.Time) error
 	Rename(ctx context.Context, id string, title string) error
 	Delete(ctx context.Context, id string) error
 
@@ -145,6 +157,11 @@ type service struct {
 	// SQLite and incorrectly clear the UI "~" marker.
 	estimatedUsageMu sync.RWMutex
 	estimatedUsage   map[string]bool
+
+	// The thinking clock stays in memory for the same reason, and because
+	// it only means something while a run holds the session.
+	thinkingMu        sync.RWMutex
+	thinkingStartedAt map[string]int64
 }
 
 func (s *service) Create(ctx context.Context, title string) (Session, error) {
@@ -213,6 +230,7 @@ func (s *service) Delete(ctx context.Context, id string) error {
 	// every listener holding it forever.
 	session := s.sessionFromRow(dbSession)
 	s.clearEstimatedUsageState(dbSession.ID)
+	s.clearThinkingState(dbSession.ID)
 	s.Publish(pubsub.DeletedEvent, session)
 	event.SessionDeleted()
 	return nil
@@ -228,6 +246,7 @@ func (s *service) Get(ctx context.Context, id string) (Session, error) {
 		return Session{}, err
 	}
 	s.applyEstimatedUsageState(&session)
+	s.applyThinkingState(&session)
 	return session, nil
 }
 
@@ -241,6 +260,7 @@ func (s *service) GetLast(ctx context.Context) (Session, error) {
 		return Session{}, err
 	}
 	s.applyEstimatedUsageState(&session)
+	s.applyThinkingState(&session)
 	return session, nil
 }
 
@@ -297,6 +317,7 @@ func (s *service) Save(ctx context.Context, session Session) (Session, error) {
 		return Session{}, err
 	}
 	session.EstimatedUsage = estimatedUsage
+	s.applyThinkingState(&session)
 	s.Publish(pubsub.UpdatedEvent, session)
 	return session, nil
 }
@@ -363,6 +384,25 @@ func (s *service) UpdateActiveAgent(ctx context.Context, id string, state config
 	return nil
 }
 
+// SetThinkingStartedAt records the start of the step now running in id.
+// It is deliberately its own method: Save writes the caller's whole
+// in-memory session back, and a run holds one copy for its entire
+// length, so folding the clock into Save would let that copy clobber it.
+func (s *service) SetThinkingStartedAt(ctx context.Context, id string, at time.Time) error {
+	session, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	var startedAt int64
+	if !at.IsZero() {
+		startedAt = at.UnixMilli()
+	}
+	s.setThinkingState(id, startedAt)
+	session.ThinkingStartedAt = startedAt
+	s.Publish(pubsub.UpdatedEvent, session)
+	return nil
+}
+
 // Rename updates only the title of a session without touching updated_at or
 // usage fields.
 func (s *service) Rename(ctx context.Context, id string, title string) error {
@@ -388,6 +428,7 @@ func (s *service) List(ctx context.Context) ([]Session, error) {
 			return nil, err
 		}
 		s.applyEstimatedUsageState(&sessions[i])
+		s.applyThinkingState(&sessions[i])
 	}
 	return sessions, nil
 }
@@ -423,6 +464,26 @@ func (s *service) clearEstimatedUsageState(sessionID string) {
 	s.estimatedUsageMu.Lock()
 	delete(s.estimatedUsage, sessionID)
 	s.estimatedUsageMu.Unlock()
+}
+
+func (s *service) applyThinkingState(session *Session) {
+	s.thinkingMu.RLock()
+	session.ThinkingStartedAt = s.thinkingStartedAt[session.ID]
+	s.thinkingMu.RUnlock()
+}
+
+func (s *service) setThinkingState(sessionID string, startedAt int64) {
+	s.thinkingMu.Lock()
+	defer s.thinkingMu.Unlock()
+	if startedAt == 0 {
+		delete(s.thinkingStartedAt, sessionID)
+		return
+	}
+	s.thinkingStartedAt[sessionID] = startedAt
+}
+
+func (s *service) clearThinkingState(sessionID string) {
+	s.setThinkingState(sessionID, 0)
 }
 
 // fromDBItem rebuilds a session from its row. A stored active agent
@@ -518,10 +579,11 @@ func unmarshalTodos(data string) ([]Todo, error) {
 func NewService(q *db.Queries, conn *sql.DB) Service {
 	broker := pubsub.NewBroker[Session]()
 	return &service{
-		Broker:         broker,
-		db:             conn,
-		q:              q,
-		estimatedUsage: make(map[string]bool),
+		Broker:            broker,
+		db:                conn,
+		q:                 q,
+		estimatedUsage:    make(map[string]bool),
+		thinkingStartedAt: make(map[string]int64),
 	}
 }
 

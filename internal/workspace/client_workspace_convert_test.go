@@ -137,8 +137,9 @@ func TestProtoToSession(t *testing.T) {
 		Todos: []proto.Todo{
 			{Content: "do it", Status: "pending", ActiveForm: "doing it"},
 		},
-		CreatedAt: 100,
-		UpdatedAt: 200,
+		CreatedAt:         100,
+		UpdatedAt:         200,
+		ThinkingStartedAt: 1700000000000,
 		// IsBusy and AttachedClients are wire-only and must not survive.
 		IsBusy:          true,
 		AttachedClients: 3,
@@ -163,8 +164,9 @@ func TestProtoToSession(t *testing.T) {
 		Todos: []session.Todo{
 			{Content: "do it", Status: session.TodoStatusPending, ActiveForm: "doing it"},
 		},
-		CreatedAt: 100,
-		UpdatedAt: 200,
+		CreatedAt:         100,
+		UpdatedAt:         200,
+		ThinkingStartedAt: 1700000000000,
 	}
 
 	require.Equal(t, want, protoToSession(src))

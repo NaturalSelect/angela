@@ -2420,6 +2420,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		// one.
 		cmds = append(cmds, m.loadSession(msg.Session.ID, loadSessionOpt{clearStack: true, draftAfter: &editorDraft{}}))
 
+	case dialog.ActionEnterSubSession:
+		m.dialog.CloseDialog(dialog.SubSessionsID)
+		cmds = append(cmds, m.enterSubSessionByID(msg.SessionID))
+
 	// Open dialog message.
 	case dialog.ActionOpenDialog:
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -5611,6 +5615,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openSessionsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.SubSessionsID:
+		if cmd := m.openSubSessionsDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.ModelsID:
 		if cmd := m.openModelsDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -5832,6 +5840,27 @@ func (m *UI) openSessionsDialog() tea.Cmd {
 	}
 
 	m.dialog.OpenDialog(dialog)
+	return nil
+}
+
+// openSubSessionsDialog opens the picker for the sub-sessions of the session
+// in view. A session that has dispatched none gets a notice instead of an
+// empty dialog.
+func (m *UI) openSubSessionsDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.SubSessionsID) {
+		m.dialog.BringToFront(dialog.SubSessionsID)
+		return nil
+	}
+	if m.session == nil {
+		return nil
+	}
+
+	entries := m.subSessionEntries()
+	if len(entries) == 0 {
+		return util.ReportInfo("No sub-sessions in this session.")
+	}
+
+	m.dialog.OpenDialog(dialog.NewSubSessions(m.com, entries))
 	return nil
 }
 

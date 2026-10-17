@@ -498,6 +498,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	}
 
 	if c.hasSession {
+		commands = append(commands, NewCommandItem(c.com.Styles, "sub_sessions", "Sub-sessions", "", ActionOpenDialog{SubSessionsID}).WithAliases("subs", "children", "subsessions"))
+	}
+
+	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "show_todos", "Show Todos", "", ActionShowTodos{}).WithAliases("todo", "todos"))
 	}
 

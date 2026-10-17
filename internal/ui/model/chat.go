@@ -385,6 +385,19 @@ func (m *Chat) Len() int {
 	return m.list.Len()
 }
 
+// AgentToolItems returns the top-level agent tool calls in transcript order.
+// Calls nested inside another agent's run are left out: they belong to the
+// sub-session behind that agent, not to this one.
+func (m *Chat) AgentToolItems() []*chat.AgentToolMessageItem {
+	var items []*chat.AgentToolMessageItem
+	for i := range m.list.Len() {
+		if item, ok := m.list.ItemAt(i).(*chat.AgentToolMessageItem); ok {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
 // InvalidateRenderCaches drops cached rendered output on every message
 // item so the next draw re-renders with the current styles.
 func (m *Chat) InvalidateRenderCaches() {

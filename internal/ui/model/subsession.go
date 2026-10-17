@@ -4,8 +4,10 @@ import (
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
 )
 
 // sessionStackFrame remembers a level the view drilled down from. The title is
@@ -147,7 +149,15 @@ func (m *UI) enterSubSession(item *chat.AgentToolMessageItem) tea.Cmd {
 	if m.session == nil {
 		return nil
 	}
-	childID := m.com.Workspace.CreateAgentToolSessionID(item.MessageID(), item.ToolCall().ID)
+	return m.enterSubSessionByID(m.com.Workspace.CreateAgentToolSessionID(item.MessageID(), item.ToolCall().ID))
+}
+
+// enterSubSessionByID is enterSubSession for a child whose session ID is
+// already known, such as one picked from the sub-session list.
+func (m *UI) enterSubSessionByID(childID string) tea.Cmd {
+	if m.session == nil {
+		return nil
+	}
 	draft := m.captureDraft()
 	frame := sessionStackFrame{
 		id:               m.session.ID,
@@ -159,6 +169,58 @@ func (m *UI) enterSubSession(item *chat.AgentToolMessageItem) tea.Cmd {
 	// belongs to the parent, and comes back on the way out rather than
 	// sitting in a transcript it was never composed for.
 	return m.loadSession(childID, loadSessionOpt{enterFrame: &frame, draftAfter: &editorDraft{}})
+}
+
+// subSessionEntries lists the direct children of the session in view, in
+// transcript order. It reads only what the transcript already holds: the
+// list is built while handling a key press, where asking the workspace
+// whether a child is still running could mean a network round trip.
+func (m *UI) subSessionEntries() []dialog.SubSessionEntry {
+	if m.chat == nil || m.session == nil {
+		return nil
+	}
+	cfg := m.com.Config()
+	var entries []dialog.SubSessionEntry
+	for _, item := range m.chat.AgentToolItems() {
+		// Until the input has streamed in, the child session does not
+		// exist yet and there is nothing to enter.
+		if !item.ToolCall().Finished {
+			continue
+		}
+		agentName := item.SubagentName()
+		entries = append(entries, dialog.SubSessionEntry{
+			SessionID: m.com.Workspace.CreateAgentToolSessionID(item.MessageID(), item.ToolCall().ID),
+			Agent:     agentName,
+			Task:      item.Task(),
+			State:     subSessionState(item.Status(), isBranchAgent(cfg, agentName)),
+		})
+	}
+	return entries
+}
+
+// subSessionState maps the status of the dispatching tool call to what the
+// user cares about. A branch whose call has no result is waiting on the user
+// rather than working on its own.
+func subSessionState(status chat.ToolStatus, branch bool) dialog.SubSessionState {
+	switch status {
+	case chat.ToolStatusSuccess:
+		return dialog.SubSessionDone
+	case chat.ToolStatusError, chat.ToolStatusCanceled:
+		return dialog.SubSessionFailed
+	default:
+		if branch {
+			return dialog.SubSessionWaiting
+		}
+		return dialog.SubSessionRunning
+	}
+}
+
+// isBranchAgent reports whether the named agent is configured as a branch.
+func isBranchAgent(cfg *config.Config, name string) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Agents[name].Mode == config.AgentModeBranch
 }
 
 // leaveSubSession pops back one level. The parent is reloaded from the

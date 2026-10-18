@@ -462,7 +462,6 @@ func (b *Backend) CreateWorkspace(args proto.Workspace) (*Workspace, proto.Works
 	cfg.Overrides().YoloMerge = args.YoloMerge
 	cfg.Overrides().NoVSCodeDiff = args.NoVSCodeDiff
 	cfg.Overrides().DisableImageTools = args.DisableImageTools
-	cfg.Overrides().SubagentBranches = args.SubagentBranches
 	// Overrides().Env lets app.New see the connecting client's
 	// environment instead of this daemon process's own, so a check
 	// like TERM_PROGRAM reflects the terminal the user is sitting at.
@@ -1189,7 +1188,6 @@ func workspaceToProto(ws *Workspace) proto.Workspace {
 		YoloMerge:         ws.Cfg.Overrides().YoloMerge,
 		NoVSCodeDiff:      ws.Cfg.Overrides().NoVSCodeDiff,
 		DisableImageTools: ws.Cfg.Overrides().DisableImageTools,
-		SubagentBranches:  ws.Cfg.Overrides().SubagentBranches,
 		Channels:          ws.Cfg.Overrides().EnabledChannels,
 		DataDir:           cfg.Options.DataDirectory,
 		Debug:             cfg.Options.Debug,
@@ -1221,7 +1219,6 @@ func logFirstWinsMismatch(existing *Workspace, args proto.Workspace) {
 		existing.Cfg.Overrides().YoloMerge == args.YoloMerge &&
 		existing.Cfg.Overrides().NoVSCodeDiff == args.NoVSCodeDiff &&
 		existing.Cfg.Overrides().DisableImageTools == args.DisableImageTools &&
-		existing.Cfg.Overrides().SubagentBranches == args.SubagentBranches &&
 		existingCfg.Options.Debug == args.Debug &&
 		existingCfg.Options.DataDirectory == args.DataDir &&
 		stringSlicesEqual(existing.Env, args.Env) &&

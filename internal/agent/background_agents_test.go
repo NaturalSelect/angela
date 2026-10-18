@@ -586,7 +586,7 @@ func TestWakeForNoticesWithoutALifetimeDoesNothing(t *testing.T) {
 func agentToolInfo(t *testing.T, coord *coordinator, depth int) fantasy.ToolInfo {
 	t.Helper()
 
-	tool, err := coord.agentTool(depth, nil, config.ActiveAgent{})
+	tool, err := coord.agentTool(depth, config.Agent{}, config.ActiveAgent{})
 	require.NoError(t, err)
 	require.NotNil(t, tool)
 	return tool.Info()
@@ -637,7 +637,7 @@ func containsAll(s string, parts ...string) bool {
 func TestWithoutParameterDoesNotMutateTheInnerSchema(t *testing.T) {
 	coord := newHermeticTestCoordinator(t, false, false)
 
-	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
+	tool, err := coord.agentTool(0, config.Agent{}, config.ActiveAgent{})
 	require.NoError(t, err)
 	hidden, ok := tool.(withoutParameter)
 	require.True(t, ok)

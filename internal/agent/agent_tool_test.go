@@ -19,7 +19,7 @@ import (
 func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
+	tool, err := coord.agentTool(0, config.Agent{}, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -38,7 +38,7 @@ func TestAgentToolRejectsAnEmptyPrompt(t *testing.T) {
 func TestAgentToolRequiresAgentMessageID(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
+	tool, err := coord.agentTool(0, config.Agent{}, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
@@ -63,7 +63,7 @@ func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
 		"ghost": {ID: "ghost", Mode: config.AgentModeSubagent, Description: "no longer configured"},
 	}, nil)
 
-	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
+	tool, err := coord.agentTool(0, config.Agent{}, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
@@ -88,7 +88,7 @@ func TestAgentToolReportsWhenDispatchFailsAfterTheTypeResolves(t *testing.T) {
 func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
+	tool, err := coord.agentTool(0, config.Agent{}, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -107,7 +107,7 @@ func TestAgentToolDefaultsToTaskWhenSubagentTypeOmitted(t *testing.T) {
 func TestAgentToolUnknownSubagentTypeListsAvailable(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, nil, config.ActiveAgent{})
+	tool, err := coord.agentTool(0, config.Agent{}, config.ActiveAgent{})
 	require.NoError(t, err)
 
 	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
@@ -211,11 +211,15 @@ func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
 		"research": {Description: "reads code", Mode: config.AgentModeSubagent},
 	}, nil)
 
-	desc, err := renderAgentToolDescription(reg.Metadata(), false)
-	require.NoError(t, err)
+	for _, background := range []bool{false, true} {
+		desc, err := renderAgentToolDescription(reg.Metadata(), background)
+		require.NoError(t, err)
 
-	require.NotContains(t, desc, "Branch agents:")
-	require.Contains(t, desc, "research")
+		require.NotContains(t, desc, "Branch agents:")
+		require.NotContains(t, strings.ToLower(desc), "branch agent",
+			"a caller that cannot fork must not read about branches at all")
+		require.Contains(t, desc, "research")
+	}
 }
 
 // TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch pins the
@@ -226,7 +230,7 @@ func TestAgentToolDescriptionOmitsTheBranchSection(t *testing.T) {
 func TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, &config.AllowedAgentSet{Kind: config.ToolSetScope, Agents: []string{config.AgentExplore}}, config.ActiveAgent{})
+	tool, err := coord.agentTool(0, config.Agent{AllowedAgents: &config.AllowedAgentSet{Kind: config.ToolSetScope, Agents: []string{config.AgentExplore}}}, config.ActiveAgent{})
 	require.NoError(t, err)
 	require.Contains(t, tool.Info().Description, config.AgentExplore)
 	require.NotContains(t, tool.Info().Description, config.AgentGeneral)
@@ -250,7 +254,7 @@ func TestAgentToolAllowedAgentsFiltersDescriptionAndDispatch(t *testing.T) {
 func TestAgentToolAllowedAgentsEmptyOmitsTheTool(t *testing.T) {
 	coord := newGateTestCoordinator(t, false)
 
-	tool, err := coord.agentTool(0, &config.AllowedAgentSet{Kind: config.ToolSetScope}, config.ActiveAgent{})
+	tool, err := coord.agentTool(0, config.Agent{AllowedAgents: &config.AllowedAgentSet{Kind: config.ToolSetScope}}, config.ActiveAgent{})
 	require.NoError(t, err)
 	require.Nil(t, tool)
 }
@@ -298,6 +302,186 @@ func TestBuiltinBranchesOnlyDispatchExplore(t *testing.T) {
 			require.Contains(t, resp.Content, "not available")
 		})
 	}
+}
+
+// callerLike returns the coder's config recast as another kind of caller, so
+// buildTools sees a resolved tool whitelist that allows the agent tool.
+func callerLike(coord *coordinator, mode config.AgentMode, allowed *config.AllowedAgentSet) config.Agent {
+	caller := coord.cfg.Config().Agents[config.AgentCoder]
+	caller.Mode = mode
+	caller.AllowedAgents = allowed
+	return caller
+}
+
+func scopeOf(ids ...string) *config.AllowedAgentSet {
+	return &config.AllowedAgentSet{Kind: config.ToolSetScope, Agents: ids}
+}
+
+// buildAgentTool builds caller's tools at depth and returns the agent tool,
+// or nil when it was left out. It also pins that the background management
+// tools never outlive the agent tool they serve.
+func buildAgentTool(t *testing.T, coord *coordinator, caller config.Agent, depth int) fantasy.AgentTool {
+	t.Helper()
+
+	toolList, err := coord.buildTools(caller, config.ActiveAgent{}, "", depth)
+	require.NoError(t, err)
+
+	var agentTool fantasy.AgentTool
+	var names []string
+	for _, tool := range toolList {
+		names = append(names, tool.Info().Name)
+		if tool.Info().Name == toolnames.Agent {
+			agentTool = tool
+		}
+	}
+	if agentTool == nil {
+		require.NotContains(t, names, toolnames.AgentStatus)
+		require.NotContains(t, names, toolnames.AgentStop)
+	}
+	return agentTool
+}
+
+// TestBranchTypesAreOfferedOnlyToCallersThatMayFork pins that the agent
+// tool's description lists branch agents to exactly the callers that can
+// fork one: the top-level conversation and a branch, in an interactive
+// session. Anyone else would be offered a call that is always refused.
+func TestBranchTypesAreOfferedOnlyToCallersThatMayFork(t *testing.T) {
+	interactive := newGateTestCoordinator(t, true)
+
+	// The default budget of 2 leaves a branch at depth 2 with no agent tool
+	// at all, so a branch nested under a branch needs a budget of 3.
+	deeper := newGateTestCoordinator(t, true)
+	budget := 3
+	deeper.cfg.Config().Options.SubagentDepth = &budget
+
+	tests := []struct {
+		name   string
+		coord  *coordinator
+		caller config.Agent
+		depth  int
+		branch bool
+	}{
+		{"the top-level conversation", interactive, callerLike(interactive, config.AgentModePrimary, nil), 0, true},
+		{"a branch", interactive, callerLike(interactive, config.AgentModeBranch, nil), 1, true},
+		{"a branch under a branch", deeper, callerLike(deeper, config.AgentModeBranch, nil), 2, true},
+		{"a subagent", interactive, callerLike(interactive, config.AgentModeSubagent, nil), 1, false},
+		{"an agent with no mode", interactive, callerLike(interactive, "", nil), 1, false},
+		{"a headless top-level conversation", newGateTestCoordinator(t, false), callerLike(interactive, config.AgentModePrimary, nil), 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agentTool := buildAgentTool(t, tt.coord, tt.caller, tt.depth)
+			require.NotNil(t, agentTool, "ordinary subagents are still reachable")
+
+			desc := agentTool.Info().Description
+			require.Contains(t, desc, "- "+config.AgentExplore+":")
+			if tt.branch {
+				require.Contains(t, desc, "Branch agents:")
+				require.Contains(t, desc, "- "+config.AgentPlan+":")
+			} else {
+				require.NotContains(t, desc, "Branch agents:")
+				require.NotContains(t, desc, "- "+config.AgentPlan+":")
+				require.NotContains(t, strings.ToLower(desc), "branch agent")
+			}
+		})
+	}
+}
+
+// TestAgentToolIsOmittedWhenNothingIsDispatchable pins that the agent tool
+// exists only for a caller with something it can really dispatch. A tool
+// whose every target is refused at call time is worse than no tool: the
+// model keeps trying it.
+func TestAgentToolIsOmittedWhenNothingIsDispatchable(t *testing.T) {
+	interactive := newGateTestCoordinator(t, true)
+	headless := newGateTestCoordinator(t, false)
+
+	onlyBranches := scopeOf(config.AgentPlan, config.AgentCoDesign)
+
+	omitted := []struct {
+		name   string
+		coord  *coordinator
+		caller config.Agent
+		depth  int
+	}{
+		{"a subagent allowed only branches", interactive, callerLike(interactive, config.AgentModeSubagent, onlyBranches), 1},
+		{"an agent with no mode allowed only branches", interactive, callerLike(interactive, "", onlyBranches), 1},
+		{"a headless top-level conversation allowed only branches", headless, callerLike(headless, config.AgentModePrimary, onlyBranches), 0},
+	}
+	for _, tt := range omitted {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Nil(t, buildAgentTool(t, tt.coord, tt.caller, tt.depth))
+
+			tool, err := tt.coord.agentTool(tt.depth, tt.caller, config.ActiveAgent{})
+			require.NoError(t, err)
+			require.Nil(t, tool)
+		})
+	}
+
+	t.Run("the same top-level conversation keeps it when interactive", func(t *testing.T) {
+		agentTool := buildAgentTool(t, interactive, callerLike(interactive, config.AgentModePrimary, onlyBranches), 0)
+		require.NotNil(t, agentTool)
+		require.Contains(t, agentTool.Info().Description, "- "+config.AgentPlan+":")
+	})
+
+	t.Run("a subagent that is also allowed explore keeps it, minus the branches", func(t *testing.T) {
+		agentTool := buildAgentTool(t, interactive,
+			callerLike(interactive, config.AgentModeSubagent, scopeOf(config.AgentExplore, config.AgentPlan)), 1)
+		require.NotNil(t, agentTool)
+		require.Contains(t, agentTool.Info().Description, "- "+config.AgentExplore+":")
+		require.NotContains(t, agentTool.Info().Description, "- "+config.AgentPlan+":")
+	})
+}
+
+// TestAgentToolIsOmittedWhenOnlyBranchesAreRegistered covers the same rule
+// when the registry itself, not allowed_agents, is what leaves only branch
+// agents: a headless session has nobody to hand a branch to.
+func TestAgentToolIsOmittedWhenOnlyBranchesAreRegistered(t *testing.T) {
+	for _, interactive := range []bool{false, true} {
+		t.Run(map[bool]string{false: "headless", true: "interactive"}[interactive], func(t *testing.T) {
+			coord := newGateTestCoordinator(t, interactive)
+			agents := coord.cfg.Config().Agents
+			for id, agentCfg := range agents {
+				if agentCfg.Mode != config.AgentModePrimary && agentCfg.Mode != config.AgentModeBranch {
+					delete(agents, id)
+				}
+			}
+			coord.reconcileSubagents()
+			require.NotZero(t, coord.subagents.Len(), "test premise: branch agents remain registered")
+
+			agentTool := buildAgentTool(t, coord, agents[config.AgentCoder], 0)
+			if interactive {
+				require.NotNil(t, agentTool)
+			} else {
+				require.Nil(t, agentTool)
+			}
+		})
+	}
+}
+
+// TestSubagentCallingABranchIsRefusedWithoutDispatching pins the call-time
+// half of the rule: a model that names a branch it was never offered gets a
+// refusal that points at ordinary subagents, and no child session is made.
+func TestSubagentCallingABranchIsRefusedWithoutDispatching(t *testing.T) {
+	coord := newGateTestCoordinator(t, true)
+
+	agentTool := buildAgentTool(t, coord, coord.cfg.Config().Agents[config.AgentGeneral], 1)
+	require.NotNil(t, agentTool)
+
+	ctx := context.WithValue(context.Background(), tools.SessionIDContextKey, "session-1")
+	ctx = context.WithValue(ctx, tools.MessageIDContextKey, "msg-1")
+	resp, err := agentTool.Run(ctx, fantasy.ToolCall{
+		ID:    "call-1",
+		Name:  toolnames.Agent,
+		Input: `{"prompt":"x","subagent_type":"plan"}`,
+	})
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, "subagent")
+	require.Contains(t, resp.Content, "Only the top-level conversation or another branch")
+
+	sessions, err := coord.sessions.List(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, sessions, "a refused fork must not create a child session")
 }
 
 // TestReportHeaderFrontsSuccessfulOutput pins the banner shape: the id

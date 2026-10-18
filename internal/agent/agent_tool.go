@@ -54,18 +54,23 @@ func (t withoutParameter) Info() fantasy.ToolInfo {
 // depth is the dispatch depth of the agent this tool instance belongs
 // to; a dispatch through it runs the new subagent at depth+1.
 //
-// allowed is the dispatching agent's own config.Agent.AllowedAgents:
-// nil or ToolSetAll means every dispatchable agent is available, and
-// ToolSetScope (including an empty Agents list) narrows both the
-// description and the dispatch itself to those IDs. Filtering the
-// description here rather than only refusing in the run closure keeps
-// it honest about what a call can actually reach.
+// caller is the dispatching agent's own config. Its AllowedAgents (nil
+// or ToolSetAll means every dispatchable agent, ToolSetScope including
+// an empty Agents list narrows to those IDs) and branchForkRefusal
+// together decide which agents the caller can reach. That one set
+// drives the description, the "Available" list in errors and the
+// dispatch itself, so the description stays honest about what a call can
+// actually reach. A caller that can reach none gets no tool.
 //
 // parent is the dispatching agent's own instance, carried so a
 // dispatch whose slot is "inherited" can inherit parent's live model
 // instead of the coder's.
-func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, parent config.ActiveAgent) (fantasy.AgentTool, error) {
-	metadata := allowedAgentsOnly(c.subagents.Metadata(), allowed)
+func (c *coordinator) agentTool(depth int, caller config.Agent, parent config.ActiveAgent) (fantasy.AgentTool, error) {
+	branchRefusal := c.branchForkRefusal(caller, depth)
+	metadata := allowedAgentsOnly(c.subagents.Metadata(), caller.AllowedAgents)
+	if branchRefusal != "" {
+		metadata = slices.DeleteFunc(metadata, func(a agentToolDescriptionAgent) bool { return a.Branch })
+	}
 	if len(metadata) == 0 {
 		return nil, nil
 	}
@@ -102,7 +107,12 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, pare
 					agentType, strings.Join(availableIDs, ", "))
 			}
 
-			if !allowed.Allows(agentType) {
+			if !slices.Contains(availableIDs, agentType) {
+				// NOTE: A branch refused only by the fork rule says so, since
+				// the model can act on that and "not available" would not tell it why.
+				if branchRefusal != "" && entry.cfg.Mode == config.AgentModeBranch && caller.AllowedAgents.Allows(agentType) {
+					return tools.Fail(branchRefusal)
+				}
 				return tools.Failf("Agent %q is not available from here. Available: %s",
 					agentType, strings.Join(availableIDs, ", "))
 			}
@@ -136,12 +146,6 @@ func (c *coordinator) agentTool(depth int, allowed *config.AllowedAgentSet, pare
 			if entry.cfg.Mode == config.AgentModeBranch {
 				if params.RunInBackground {
 					return tools.Failf("Agent %q is a branch agent: it hands the conversation to the user and suspends this call, so it cannot run in the background.", agentType)
-				}
-				// Checked after the agent is built so that a
-				// misconfigured branch still reports the build failure
-				// rather than a refusal that hides it.
-				if refusal := c.branchDispatchRefusal(ctx, sessionID); refusal != "" {
-					return tools.Fail(refusal)
 				}
 				run = c.runBranchAgent
 			}

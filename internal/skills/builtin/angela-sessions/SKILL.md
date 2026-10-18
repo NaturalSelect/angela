@@ -54,8 +54,7 @@ angela run --output result.md "summarize the open TODOs"   # save the final resp
 
 Key differences from interactive mode:
 
-- Branch agents are never dispatched, regardless of `subagent_branches` —
-  there's no user to hand a branch to.
+- Branch agents are never dispatched — there's no user to hand a branch to.
 - Because prompts can't be answered, pair `angela run` with `--yolo` (or
   narrow `permissions.rules` allow entries) for anything beyond read-only
   work, or it will stall on the first prompt.
@@ -103,7 +102,6 @@ Daemon mode has some restrictions that don't apply to local mode:
 | `-y, --yolo` | Auto-approve every prompt. |
 | `--auto-accept-edits` | Auto-approve file edits only. Mutually exclusive with `--yolo`. |
 | `--yolo-merge` | Under `--yolo`, also auto-approve branch merges (by default, merge still prompts). |
-| `--subagent-branches` | Allow sub-agents (not just the top-level session) to dispatch branch agents. No effect on `angela run`. |
 
 ## Recipes
 

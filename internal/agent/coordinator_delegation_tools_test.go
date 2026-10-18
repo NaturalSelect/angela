@@ -203,12 +203,11 @@ func TestSubagentDepthBudget(t *testing.T) {
 	}
 }
 
-// TestOutOfBudgetSubagentGetsNoToolWithoutTheOption pins the default: a
-// sub-agent that has spent its delegation budget (depth 2, the default)
-// gets no agent tool at all, whether or not options.subagent_branches is
-// on — that option only lifts branchDispatchRefusal's depth check, not the
-// delegation budget itself.
-func TestOutOfBudgetSubagentGetsNoToolWithoutTheOption(t *testing.T) {
+// TestOutOfBudgetSubagentGetsNoAgentTool pins that a sub-agent that has
+// spent its delegation budget (depth 2, the default) gets no agent tool at
+// all: the budget is checked by buildTools, apart from who may fork a
+// branch.
+func TestOutOfBudgetSubagentGetsNoAgentTool(t *testing.T) {
 	coord := newGateTestCoordinator(t, true)
 	generalCfg := coord.cfg.Config().Agents[config.AgentGeneral]
 

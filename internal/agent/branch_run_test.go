@@ -223,7 +223,7 @@ func TestParallelBranchDispatchesBothLand(t *testing.T) {
 	for _, callID := range []string{"call-1", "call-2"} {
 		go func() {
 			<-start
-			if refusal := c.branchDispatchRefusal(t.Context(), parent.ID); refusal != "" {
+			if refusal := c.branchForkRefusal(config.Agent{Mode: config.AgentModePrimary}, 0); refusal != "" {
 				t.Errorf("a parallel branch dispatch was refused: %s", refusal)
 				return
 			}
@@ -941,86 +941,86 @@ func TestRunBranchAgentSurvivesATransportErrorOnOpeningTurn(t *testing.T) {
 // TestBranchDispatchRefusals covers the two ways a fork is turned down, and
 // the case that looks like a third but is not. Each refusal has to explain
 // itself: the model can only act on it if it says what to do instead.
-func TestBranchDispatchRefusals(t *testing.T) {
+// TestBranchForkRefusal covers who may fork a branch. The chain it allows is
+// primary -> branch* -> subagent*, decided by the caller's own type. Each
+// refusal has to explain itself: the model can only act on it if it says what
+// to do instead.
+func TestBranchForkRefusal(t *testing.T) {
 	t.Parallel()
 
-	t.Run("a headless run cannot fork", func(t *testing.T) {
-		t.Parallel()
+	tests := []struct {
+		name        string
+		interactive bool
+		caller      config.Agent
+		depth       int
+		refused     []string
+	}{
+		{
+			name:        "a headless run cannot fork",
+			interactive: false,
+			caller:      config.Agent{Mode: config.AgentModePrimary},
+			depth:       0,
+			refused:     []string{"interactive", "subagent instead"},
+		},
+		{
+			name:        "a headless branch cannot fork either",
+			interactive: false,
+			caller:      config.Agent{Mode: config.AgentModeBranch},
+			depth:       1,
+			refused:     []string{"interactive", "subagent instead"},
+		},
+		{
+			name:        "the top-level conversation may fork",
+			interactive: true,
+			caller:      config.Agent{Mode: config.AgentModePrimary},
+			depth:       0,
+		},
+		{
+			name:        "a subagent cannot fork",
+			interactive: true,
+			caller:      config.Agent{Mode: config.AgentModeSubagent},
+			depth:       1,
+			refused:     []string{"only the top-level conversation or another branch", "subagent instead"},
+		},
+		{
+			name:        "an agent with no mode is dispatched as a subagent and cannot fork",
+			interactive: true,
+			caller:      config.Agent{},
+			depth:       1,
+			refused:     []string{"only the top-level conversation or another branch", "subagent instead"},
+		},
+		{
+			name:        "a branch may fork",
+			interactive: true,
+			caller:      config.Agent{Mode: config.AgentModeBranch},
+			depth:       1,
+		},
+		{
+			name:        "a branch under a branch may fork",
+			interactive: true,
+			caller:      config.Agent{Mode: config.AgentModeBranch},
+			depth:       2,
+		},
+	}
 
-		env := testEnv(t)
-		c := branchCoordinator(t, env)
-		c.interactive = false
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-		parent, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
+			env := testEnv(t)
+			c := branchCoordinator(t, env)
+			c.interactive = tt.interactive
 
-		refusal := c.branchDispatchRefusal(t.Context(), parent.ID)
-		require.Contains(t, refusal, "interactive")
-		require.Contains(t, strings.ToLower(refusal), "subagent instead")
-	})
-
-	t.Run("only a top-level conversation can fork", func(t *testing.T) {
-		t.Parallel()
-
-		env := testEnv(t)
-		c := branchCoordinator(t, env)
-
-		parent, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
-		child, err := env.sessions.CreateTaskSession(t.Context(), "child-1", parent.ID, "Child")
-		require.NoError(t, err)
-
-		refusal := c.branchDispatchRefusal(t.Context(), child.ID)
-		require.Contains(t, refusal, "top-level")
-		require.Contains(t, strings.ToLower(refusal), "subagent instead")
-	})
-
-	t.Run("a sub-agent may fork once options.subagent_branches is on", func(t *testing.T) {
-		t.Parallel()
-
-		env := testEnv(t)
-		c := branchCoordinator(t, env)
-		c.cfg.Config().Options.SubagentBranches = true
-
-		parent, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
-		child, err := env.sessions.CreateTaskSession(t.Context(), "child-1", parent.ID, "Child")
-		require.NoError(t, err)
-
-		require.Empty(t, c.branchDispatchRefusal(t.Context(), child.ID))
-	})
-
-	t.Run("a sub-agent may fork once the runtime override is on", func(t *testing.T) {
-		t.Parallel()
-
-		env := testEnv(t)
-		c := branchCoordinator(t, env)
-		c.cfg.Overrides().SubagentBranches = true
-
-		parent, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
-		child, err := env.sessions.CreateTaskSession(t.Context(), "child-1", parent.ID, "Child")
-		require.NoError(t, err)
-
-		require.Empty(t, c.branchDispatchRefusal(t.Context(), child.ID))
-	})
-
-	t.Run("a headless run still cannot fork even with the option on", func(t *testing.T) {
-		t.Parallel()
-
-		env := testEnv(t)
-		c := branchCoordinator(t, env)
-		c.interactive = false
-		c.cfg.Config().Options.SubagentBranches = true
-
-		parent, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
-		child, err := env.sessions.CreateTaskSession(t.Context(), "child-1", parent.ID, "Child")
-		require.NoError(t, err)
-
-		refusal := c.branchDispatchRefusal(t.Context(), child.ID)
-		require.Contains(t, refusal, "interactive")
-	})
+			refusal := strings.ToLower(c.branchForkRefusal(tt.caller, tt.depth))
+			if len(tt.refused) == 0 {
+				require.Empty(t, refusal)
+				return
+			}
+			for _, want := range tt.refused {
+				require.Contains(t, refusal, want)
+			}
+		})
+	}
 
 	t.Run("an outstanding branch does not block another", func(t *testing.T) {
 		t.Parallel()
@@ -1032,79 +1032,26 @@ func TestBranchDispatchRefusals(t *testing.T) {
 		require.NoError(t, err)
 		c.branches.Register("branch-1", parent.ID)
 
-		require.Empty(t, c.branchDispatchRefusal(t.Context(), parent.ID))
-	})
-
-	t.Run("a top-level interactive conversation may fork", func(t *testing.T) {
-		t.Parallel()
-
-		env := testEnv(t)
-		c := branchCoordinator(t, env)
-
-		parent, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
-
-		require.Empty(t, c.branchDispatchRefusal(t.Context(), parent.ID))
-	})
-
-	t.Run("a branch cannot fork another branch without the option", func(t *testing.T) {
-		t.Parallel()
-
-		env := testEnv(t)
-		c := branchCoordinator(t, env)
-		c.cfg.Config().Agents = map[string]config.Agent{
-			"pairing": {ID: "pairing", Mode: config.AgentModeBranch},
-		}
-
-		parent, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
-		branch, err := env.sessions.CreateTaskSession(t.Context(), "branch-1", parent.ID, "Branch")
-		require.NoError(t, err)
-		require.NoError(t, env.sessions.UpdateActiveAgent(t.Context(), branch.ID, config.ActiveAgentState{Agent: "pairing"}))
-
-		// dispatchDepth counts the branch hop like any other, so a branch
-		// sits at depth 1 and faces the same refusal a sub-agent would.
-		refusal := c.branchDispatchRefusal(t.Context(), branch.ID)
-		require.Contains(t, refusal, "top-level")
-		require.Contains(t, strings.ToLower(refusal), "subagent instead")
-	})
-
-	t.Run("a branch may fork another branch once options.subagent_branches is on", func(t *testing.T) {
-		t.Parallel()
-
-		env := testEnv(t)
-		c := branchCoordinator(t, env)
-		c.cfg.Config().Options.SubagentBranches = true
-		c.cfg.Config().Agents = map[string]config.Agent{
-			"pairing": {ID: "pairing", Mode: config.AgentModeBranch},
-		}
-
-		parent, err := env.sessions.Create(t.Context(), "Parent")
-		require.NoError(t, err)
-		branch, err := env.sessions.CreateTaskSession(t.Context(), "branch-1", parent.ID, "Branch")
-		require.NoError(t, err)
-		require.NoError(t, env.sessions.UpdateActiveAgent(t.Context(), branch.ID, config.ActiveAgentState{Agent: "pairing"}))
-
-		require.Empty(t, c.branchDispatchRefusal(t.Context(), branch.ID))
+		require.Empty(t, c.branchForkRefusal(config.Agent{Mode: config.AgentModePrimary}, 0))
 	})
 }
 
-// A branch forked by a sub-agent must still be able to prompt the user.
+// A branch forked by another branch must still be able to prompt the user.
 // Attendedness threads through the same RegisterChild chain a regular
 // subagent dispatch already builds (see runBranchAgent), so being reached
 // one hop further away must not make a branch auto-reject prompts as if
 // it were part of a headless run.
-func TestBranchForkedBySubagentStaysAttended(t *testing.T) {
+func TestBranchForkedByBranchStaysAttended(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
 
 	root, err := env.sessions.Create(t.Context(), "Root")
 	require.NoError(t, err)
-	sub, err := env.sessions.CreateTaskSession(t.Context(), "sub-1", root.ID, "Sub")
+	outer, err := env.sessions.CreateTaskSession(t.Context(), "branch-1", root.ID, "Outer")
 	require.NoError(t, err)
-	env.permissions.RegisterChild(sub.ID, root.ID)
+	env.permissions.RegisterChild(outer.ID, root.ID)
 
-	forking, err := env.messages.Create(t.Context(), sub.ID, message.CreateMessageParams{Role: message.Assistant})
+	forking, err := env.messages.Create(t.Context(), outer.ID, message.CreateMessageParams{Role: message.Assistant})
 	require.NoError(t, err)
 
 	seen := make(chan string, 1)
@@ -1114,13 +1061,13 @@ func TestBranchForkedBySubagentStaysAttended(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.runBranchAgent(t.Context(), branchParams(agent, resolved, sub.ID, forking.ID))
+		c.runBranchAgent(t.Context(), branchParams(agent, resolved, outer.ID, forking.ID))
 	}()
 
 	requireBranchStarted(t, seen)
-	branchID := requireBranchSession(t, c, sub.ID)
+	branchID := requireBranchSession(t, c, outer.ID)
 	require.False(t, env.permissions.SessionUnattended(branchID),
-		"a branch forked by a sub-agent under an attended session must still be able to prompt the user")
+		"a branch forked by a branch under an attended session must still be able to prompt the user")
 
 	require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
 	wg.Wait()

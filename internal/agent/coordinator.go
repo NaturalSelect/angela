@@ -1002,7 +1002,7 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 	var manageBackgroundAgents bool
 
 	if canDelegate && agent.AllowedTools.Allows(toolnames.Agent) {
-		agentTool, err := c.agentTool(depth, agent.AllowedAgents, parent)
+		agentTool, err := c.agentTool(depth, agent, parent)
 		if err != nil {
 			return nil, err
 		}
@@ -2102,7 +2102,9 @@ func (c *coordinator) interruptBranchTree(sessionID string) {
 // nothing else is left to resolve them. Its children are read before it is
 // touched, because cancelling it can race with its own dispatch unwinding
 // and forgetting them first; losing that race would leave a nested branch
-// waiting on a parent that no longer exists.
+// waiting on a parent that no longer exists. A branch only ever hangs under
+// the top-level session or another branch, never under a subagent, so
+// following branchesOf reaches every nested branch.
 func (c *coordinator) AbandonBranch(sessionID string) bool {
 	children := c.branches.branchesOf(sessionID)
 	if !c.branches.Signal(sessionID, branchOutcome{Payload: branchAbandonedMessage}) {
@@ -2714,47 +2716,31 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 	return err
 }
 
-// subagentBranchesEnabled reports whether a session other than the
-// top-level one — a sub-agent or an existing branch — may fork a branch
-// of its own. It is off by default: a branch forked from a background
-// sub-agent is easy for the user to miss, since nothing about the
-// primary conversation changes when it happens.
+// NOTE: branchForkRefusal is the one branch gate: it reports why caller, at
+// the given dispatch depth, may not fork a branch, or "" when it may. The
+// agent tool's description filter and the call-time refusal both read it, so
+// the two cannot disagree. The chain it allows is primary -> branch* ->
+// subagent*.
 //
-// The runtime override (--subagent-branches) is OR'd with the config option
-// rather than replacing it, matching every other override in
-// RuntimeOverrides: the flag can only turn the behavior on for this
-// process, never override an angela.json that already turned it on.
-func (c *coordinator) subagentBranchesEnabled() bool {
-	return c.cfg.Overrides().SubagentBranches || c.cfg.Config().Options.SubagentBranches
-}
-
-// branchDispatchRefusal reports why this caller may not fork a branch, or an
-// empty string when it may. Each refusal names the alternative, because the
-// model has to be able to act on it without guessing.
-//
-// Being suspended on a branch already is not a refusal: forking several at
-// once is the point. It lets the user hold alternative directions of one
-// question, or several unrelated questions, side by side and resolve each on
-// its own. The rendezvous keeps a waiter per branch, so the dispatches stay
-// independent however many are outstanding.
-//
-// Only a top-level conversation can fork by default, because the user has
-// to be able to take a branch over and a sub-agent's turn usually runs in
-// the background where a forked branch would go unnoticed.
-// subagentBranchesEnabled lifts that for callers who have decided their
-// sub-agents are supervised closely enough for this to be safe. Because
-// dispatchDepth counts a branch hop like any other, this same check also
-// gates a branch forking a second branch of its own: it sits at depth 1 or
-// deeper, exactly like a sub-agent would, so the same option and the same
-// options.subagent_depth budget bound how far a chain of branches can nest.
-func (c *coordinator) branchDispatchRefusal(ctx context.Context, sessionID string) string {
+// A subagent cannot fork because a branch hands the conversation to the user,
+// and a subagent's turn usually runs where a forked branch would go unnoticed.
+// The test is Mode == branch rather than Mode != subagent, since an agent
+// with no Mode is dispatched as a subagent too. Being suspended on a branch
+// already is not a refusal: several outstanding branches let the user hold
+// alternative directions side by side. Every refusal names the alternative so
+// the model can act on it. Budget is not checked here: dispatchDepth counts a
+// branch hop like any other, and buildTools already withholds the agent tool
+// once options.subagent_depth is used up. Backgrounding needs an interactive
+// session at depth 0, which is stricter than this gate, so a caller that can
+// background can always fork.
+func (c *coordinator) branchForkRefusal(caller config.Agent, depth int) string {
 	if !c.interactive {
 		return "A branch hands the conversation to the user, so it needs an interactive session. " +
 			"Dispatch a regular subagent instead."
 	}
-	if c.dispatchDepth(ctx, sessionID) != 0 && !c.subagentBranchesEnabled() {
-		return "Only a top-level conversation can fork a branch by default, because the user has to be able to take it over. " +
-			"Dispatch a regular subagent instead, or enable options.subagent_branches to let a sub-agent or branch fork one."
+	if depth > 0 && caller.Mode != config.AgentModeBranch {
+		return "Only the top-level conversation or another branch can fork a branch; a subagent can only dispatch subagents. " +
+			"Dispatch a regular subagent instead."
 	}
 	return ""
 }

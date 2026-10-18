@@ -25,16 +25,13 @@ type Workspace struct {
 	NoVSCodeDiff bool `json:"no_vscode_diff,omitempty"`
 	// DisableImageTools disables the built-in image generation and
 	// editing tools (from the --disable-image-tools flag).
-	DisableImageTools bool `json:"disable_image_tools,omitempty"`
-	// SubagentBranches lets sub-agents dispatch branch agents, not just
-	// the top-level session (from the --subagent-branches flag).
-	SubagentBranches bool           `json:"subagent_branches,omitempty"`
-	Debug            bool           `json:"debug,omitempty"`
-	DataDir          string         `json:"data_dir,omitempty"`
-	Version          string         `json:"version,omitempty"`
-	ClientID         string         `json:"client_id,omitempty"`
-	Config           *config.Config `json:"config,omitempty"`
-	Env              []string       `json:"env,omitempty"`
+	DisableImageTools bool           `json:"disable_image_tools,omitempty"`
+	Debug             bool           `json:"debug,omitempty"`
+	DataDir           string         `json:"data_dir,omitempty"`
+	Version           string         `json:"version,omitempty"`
+	ClientID          string         `json:"client_id,omitempty"`
+	Config            *config.Config `json:"config,omitempty"`
+	Env               []string       `json:"env,omitempty"`
 	// Channels lists the MCP servers opted in as channels for this workspace
 	// (from the --channels flag).
 	Channels []string `json:"channels,omitempty"`

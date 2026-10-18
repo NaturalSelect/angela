@@ -91,9 +91,9 @@ hop.
 { "options": { "subagent_depth": 3 } }
 ```
 
-`options.subagent_branches` (default `false`) controls whether sub-agents (not
-just the top-level session) can dispatch branch agents. Also settable with
-`--subagent-branches` at startup; has no effect on `angela run`.
+Dispatch runs one way: the top-level session and branches can dispatch
+branches and sub-agents, while a sub-agent can only dispatch sub-agents. Branch
+agents are never dispatched by `angela run`.
 
 ## Sub-agent Tool Constraints
 

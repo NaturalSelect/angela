@@ -37,9 +37,10 @@ below.
 - **subagent** — Only launched via the `agent` tool. Whether it can dispatch
   further sub-agents depends on `options.subagent_depth`; by default the
   budget is 2, so a sub-agent can delegate one further level before running
-  out of room.
+  out of room. It can only dispatch sub-agents, never branches.
 - **branch** — Launched via the `agent` tool like a sub-agent, but instead of
-  working on its own it forks the conversation and hands it to you. See
+  working on its own it forks the conversation and hands it to you. A branch
+  can itself dispatch branches and sub-agents. See
   [Branch Agents](#branch-agents).
 - **compact** — Never dispatched via the `agent` tool and never drives a
   session; only used to generate a session summary. An agent picks its own
@@ -259,22 +260,26 @@ resolved, so an abandoned branch still has to be abandoned explicitly.
 
 ### Limits
 
-- Only the top-level conversation can open a branch by default: a sub-agent
-  or an existing branch cannot, since there is no user attached to its turn.
-  Setting `options.subagent_branches` (or passing `--subagent-branches`)
-  lifts this for a sub-agent or branch at any depth, within the same
-  `subagent_depth` budget as everything else it dispatches — a branch forked
-  this way still needs its own leftover budget to delegate any further. The
-  branch continues that session's own transcript, and you get a toast plus a
-  desktop notification when one is forked from a session you are not
-  currently looking at.
-- Branches are unavailable in non-interactive runs (`angela run`) no matter
-  how `subagent_branches` is set: there is nobody to hand the conversation
-  to.
+- Dispatch runs one way: the top-level conversation can dispatch a branch
+  or a sub-agent, a branch can dispatch both again, and a sub-agent can only
+  dispatch sub-agents. A sub-agent never sees branch agents in its `agent`
+  tool, and asking for one anyway is refused. The reason is that a branch
+  hands the conversation to you, and a sub-agent's turn usually runs where a
+  forked branch would go unnoticed. A branch forked by a branch continues
+  that session's own transcript, and you get a toast plus a desktop
+  notification when one is forked from a session you are not currently
+  looking at.
+- Branches are unavailable in non-interactive runs (`angela run`): there is
+  nobody to hand the conversation to.
 - A branch consumes a `subagent_depth` hop exactly like a sub-agent dispatch
   does. Once a session is out of budget, its `agent` tool disappears
   entirely — there is no branch-only fallback — so it can neither dispatch a
-  further sub-agent nor fork a branch of its own.
+  further sub-agent nor fork a branch of its own. With the default budget of
+  2, a branch forked by a branch has no room left to delegate; raise
+  `options.subagent_depth` to 3 for that.
+- The built-in `plan`, `co-design` and `deep-research` branches are limited
+  to dispatching `explore`, so nested branches only arise from custom branch
+  agents.
 
 ## Configuration
 
@@ -358,8 +363,9 @@ all still depends on `allowed_tools` and the `subagent_depth` budget, and
 `allowed_agents` only filters which `subagent_type` values are valid once it
 does.
 
-- Unset (the default) — every agent that dispatch depth and
-  `subagent_branches` would otherwise allow is reachable.
+- Unset (the default) — every agent that dispatch depth and the caller's
+  type would otherwise allow is reachable. A sub-agent never reaches branch
+  agents.
 - A list of agent IDs — the `agent` tool's description and its dispatch are
   both narrowed to exactly those IDs; asking for anything else is refused
   with the list of what is actually available. An empty list removes the

@@ -16,6 +16,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/reminder"
 )
 
 func TestNoticeInboxKeepsPerSessionOrder(t *testing.T) {
@@ -82,6 +83,22 @@ func TestNoticeInboxCloseKeepsRequeuedNoticesOut(t *testing.T) {
 	inbox.Requeue("s1", taken)
 
 	require.False(t, inbox.Has("s1"), "a failed delivery must not resurrect a closed session's inbox")
+}
+
+func TestWrapNoticesSaysTheNoticesAreNotFromTheUser(t *testing.T) {
+	t.Parallel()
+
+	text := wrapNotices([]string{"<agent-notification>one</agent-notification>", "<agent-notification>two</agent-notification>"})
+
+	require.True(t, reminder.IsWrapped(text), "notices still travel as one reminder")
+	require.Contains(t, text, "not a message from the user")
+	require.Less(t, strings.Index(text, "not a message from the user"), strings.Index(text, "<agent-notification>"),
+		"the source is stated before the first notice")
+	require.Equal(t, 2, strings.Count(text, "<agent-notification>"))
+	require.Equal(t,
+		[]tools.BackgroundAgentNotice(nil),
+		tools.ParseBackgroundAgentNotices(noticeSourceStatement),
+		"the statement must not parse as a notice")
 }
 
 // noticeAgentEnv wires a sessionAgent that shares an inbox with the test

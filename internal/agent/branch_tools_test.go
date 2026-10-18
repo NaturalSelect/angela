@@ -104,6 +104,72 @@ func TestMergeToolRejectsAnEmptyProposal(t *testing.T) {
 	require.True(t, c.branches.Waiting("s1"))
 }
 
+// Merging ends the branch, and ending it stops the background agents it
+// launched and drops their notices, so merge is refused while any is still
+// outstanding. The branch stays open: the model waits for them or stops them.
+func TestMergeToolWaitsForBackgroundAgents(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		arrange  func(c *coordinator)
+		contains string
+	}{
+		{"an agent is still running", func(c *coordinator) {
+			require.NoError(t, c.background.start(backgroundAgentInfo{ID: "bg-1", ParentSessionID: "s1"}, func() {}))
+		}, "bg-1"},
+		{"an agent was asked to stop but has not unwound", func(c *coordinator) {
+			stopped := false
+			require.NoError(t, c.background.start(backgroundAgentInfo{ID: "bg-1", ParentSessionID: "s1"}, func() { stopped = true }))
+			require.Equal(t, stopRequested, c.background.stop("s1", "bg-1"))
+			require.True(t, stopped)
+		}, toolnames.AgentStop},
+		{"a result has arrived but not been read", func(c *coordinator) {
+			require.True(t, c.notices.Post("s1", "<agent-notification>done</agent-notification>"))
+		}, "not read yet"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := mergeCoordinator(t)
+			c.background = newBackgroundAgents()
+			c.notices = newNoticeInbox()
+			done := c.branches.Register("s1", "parent-1")
+			c.proposals.Set("s1", "found the leak")
+			tc.arrange(c)
+
+			resp, err := c.mergeTool().Run(sessionCtx(t.Context()), mergeCall())
+			require.NoError(t, err)
+			require.True(t, resp.IsError)
+			require.False(t, resp.StopTurn, "the branch keeps going so it can read the result or stop the agent")
+			require.Contains(t, resp.Content, tc.contains)
+			require.Empty(t, done, "a refused merge must not resolve the branch")
+			require.True(t, c.branches.Waiting("s1"))
+		})
+	}
+}
+
+func TestMergeToolProceedsOnceBackgroundAgentsHaveReported(t *testing.T) {
+	t.Parallel()
+
+	c := mergeCoordinator(t)
+	c.background = newBackgroundAgents()
+	c.notices = newNoticeInbox()
+	done := c.branches.Register("s1", "parent-1")
+	c.proposals.Set("s1", "found the leak")
+
+	require.NoError(t, c.background.start(backgroundAgentInfo{ID: "bg-1", ParentSessionID: "s1"}, func() {}))
+	require.True(t, c.background.finish("bg-1", tools.BackgroundAgentCompleted))
+	require.True(t, c.notices.Post("s1", "<agent-notification>done</agent-notification>"))
+	require.NotEmpty(t, c.notices.Take("s1"), "the result is read")
+
+	resp, err := c.mergeTool().Run(sessionCtx(t.Context()), mergeCall())
+	require.NoError(t, err)
+	require.False(t, resp.IsError)
+	require.True(t, (<-done).Merged)
+}
+
 // TestMergeToolPlans pins that merge reaches the gate as a planner. The
 // decorator picks the plan path by type assertion, so a merge that
 // stopped satisfying the interface would ask the user to approve a

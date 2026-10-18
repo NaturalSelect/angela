@@ -52,6 +52,36 @@ func TestNilNoticeInboxHasNothing(t *testing.T) {
 	require.False(t, inbox.Has("s1"))
 	require.Empty(t, inbox.Take("s1"))
 	inbox.Requeue("s1", []string{"x"})
+	require.NotPanics(t, func() { inbox.Close("s1") })
+}
+
+func TestNoticeInboxCloseDropsPendingAndRefusesFurtherNotices(t *testing.T) {
+	t.Parallel()
+
+	inbox := newNoticeInbox()
+	require.True(t, inbox.Post("s1", "before"))
+	require.True(t, inbox.Post("s2", "other"))
+
+	inbox.Close("s1")
+
+	require.False(t, inbox.Has("s1"), "closing drops what was pending")
+	require.False(t, inbox.Post("s1", "after"), "a closed session reports nobody to tell")
+	require.False(t, inbox.Has("s1"))
+	require.Empty(t, inbox.Take("s1"))
+	require.True(t, inbox.Has("s2"), "another session is untouched")
+	require.True(t, inbox.Post("s2", "still open"))
+}
+
+func TestNoticeInboxCloseKeepsRequeuedNoticesOut(t *testing.T) {
+	t.Parallel()
+
+	inbox := newNoticeInbox()
+	inbox.Post("s1", "one")
+	taken := inbox.Take("s1")
+	inbox.Close("s1")
+	inbox.Requeue("s1", taken)
+
+	require.False(t, inbox.Has("s1"), "a failed delivery must not resurrect a closed session's inbox")
 }
 
 // noticeAgentEnv wires a sessionAgent that shares an inbox with the test

@@ -318,6 +318,12 @@ func TestBackgroundAgentToolsComeWithTheAgentToolWhereBackgroundAgentsWork(t *te
 	narrow.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.Agent}}
 	noAgentTool := coder
 	noAgentTool.AllowedTools = &config.AllowedToolSet{Kind: config.ToolSetScope, Tools: []string{toolnames.Read}}
+	branch := coder
+	branch.Mode = config.AgentModeBranch
+	subagent := coder
+	subagent.Mode = config.AgentModeSubagent
+	nonInteractiveBranch := nonInteractive.cfg.Config().Agents[config.AgentCoder]
+	nonInteractiveBranch.Mode = config.AgentModeBranch
 
 	tests := []struct {
 		name  string
@@ -329,7 +335,11 @@ func TestBackgroundAgentToolsComeWithTheAgentToolWhereBackgroundAgentsWork(t *te
 		{"the coder of an interactive coordinator", interactive, coder, 0, true},
 		{"an allowed_tools list that only names the agent tool cannot strand an agent", interactive, narrow, 0, true},
 		{"no agent tool, so nothing to launch from", interactive, noAgentTool, 0, false},
-		{"a sub-agent has no user to wait on", interactive, coder, 1, false},
+		{"a branch faces the user and is woken after its turn", interactive, branch, 1, true},
+		{"a branch with no dispatch budget left has no agent tool to launch from", interactive, branch, 2, false},
+		{"a sub-agent has no user to wait on", interactive, subagent, 1, false},
+		{"an agent that is not a branch has no user to wait on", interactive, coder, 1, false},
+		{"a branch of a non-interactive coordinator", nonInteractive, nonInteractiveBranch, 1, false},
 		{"angela run exits when its turn does", nonInteractive, nonInteractive.cfg.Config().Agents[config.AgentCoder], 0, false},
 	}
 	for _, tc := range tests {

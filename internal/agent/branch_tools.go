@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	_ "embed"
+	"fmt"
+	"strings"
 
 	"charm.land/fantasy"
 
@@ -72,6 +74,15 @@ func (t *mergeTool) plan(ctx context.Context) tools.Plan {
 		return tools.Plan{Response: &result}
 	}
 
+	// NOTE: Merging ends the branch, and ending it stops its background
+	// agents and drops their notices. Refusing here keeps their work from
+	// being thrown away unread. A result that lands while the user is still
+	// approving the merge is lost with the branch, which is the accepted cost.
+	if refusal := t.backgroundAgentsRefusal(sessionID); refusal != "" {
+		result := tools.Fail(refusal)
+		return tools.Plan{Response: &result}
+	}
+
 	return tools.Plan{
 		Preview: permission.Preview{
 			Description: "Merge this branch and hand back its proposal:",
@@ -88,6 +99,29 @@ func (t *mergeTool) plan(ctx context.Context) tools.Plan {
 			return t.apply(sessionID, doc)
 		},
 	}
+}
+
+// backgroundAgentsRefusal explains why the branch cannot merge yet, or
+// returns "" when nothing it launched is still outstanding. A stopped agent
+// still counts until it has unwound and reported, so the model is told to
+// wait for that report instead of retrying at once.
+func (t *mergeTool) backgroundAgentsRefusal(sessionID string) string {
+	if running := t.c.background.running(sessionID); len(running) > 0 {
+		ids := make([]string, len(running))
+		for i, info := range running {
+			ids[i] = info.ID
+		}
+		return fmt.Sprintf(
+			"Cannot merge while background agents launched from this branch are still running: %s. "+
+				"Wait for their completion notices, or end them with %s and wait for the stop notice, then merge.",
+			strings.Join(ids, ", "), toolnames.AgentStop,
+		)
+	}
+	if t.c.notices.Has(sessionID) {
+		return "A background agent's result has arrived that you have not read yet. " +
+			"It is shown to you at your next step; read it, then merge."
+	}
+	return ""
 }
 
 func (t *mergeTool) apply(sessionID, doc string) tools.Result {

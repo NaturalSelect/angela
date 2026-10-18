@@ -75,7 +75,7 @@ func (c *coordinator) agentTool(depth int, caller config.Agent, parent config.Ac
 		return nil, nil
 	}
 
-	background := c.backgroundAgentsAvailable(depth)
+	background := c.backgroundAgentsAvailable(caller, depth)
 	description, err := renderAgentToolDescription(metadata, background)
 	if err != nil {
 		return nil, fmt.Errorf("render agent tool description: %w", err)
@@ -117,6 +117,10 @@ func (c *coordinator) agentTool(depth int, caller config.Agent, parent config.Ac
 					agentType, strings.Join(availableIDs, ", "))
 			}
 
+			if entry.cfg.Mode == config.AgentModeBranch && params.RunInBackground {
+				return tools.Failf("Agent %q is a branch agent: it hands the conversation to the user and suspends this call, so it cannot run in the background.", agentType)
+			}
+
 			sessionID := tools.GetSessionFromContext(ctx)
 			if sessionID == "" {
 				return tools.Fail("session id missing from context")
@@ -144,9 +148,6 @@ func (c *coordinator) agentTool(depth int, caller config.Agent, parent config.Ac
 
 			run := c.runSubAgent
 			if entry.cfg.Mode == config.AgentModeBranch {
-				if params.RunInBackground {
-					return tools.Failf("Agent %q is a branch agent: it hands the conversation to the user and suspends this call, so it cannot run in the background.", agentType)
-				}
 				run = c.runBranchAgent
 			}
 

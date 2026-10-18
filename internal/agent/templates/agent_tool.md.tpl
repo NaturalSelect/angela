@@ -18,7 +18,9 @@ When NOT to use the Agent tool:
 - The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters in a concise summary.
 - Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.
 - Each ordinary agent invocation starts with a fresh context and has no memory of prior runs, so the prompt must be self-contained and highly detailed.
+{{- if .HasBranch}}
 - A branch agent is the exception: it forks with this whole conversation already behind it, so keep its prompt short — state the decision or question, not background it already has.
+{{- end}}
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches), since a fresh agent is not aware of the user's intent.
 - If an agent's description says it should be used proactively, try your best to use it without the user having to ask for it first.
 - Each agent type's model and tool access come from its definition; you cannot override them per call.
@@ -29,7 +31,11 @@ When NOT to use the Agent tool:
 - **Foreground vs background**: leave `run_in_background` off when your very next action depends on the agent's result and nothing else could usefully happen while it runs — e.g. a research agent whose finding gates the edit you are about to make. Use it for fire-and-forget work, independent investigations, and anything where the user might hand you something else in the meantime. Wanting the result "next" is not enough on its own.
 - **Don't race**: after launching a background agent, you know nothing about its results. Never fabricate or predict them in any format — not as prose, summary, or structured output. The completion notification arrives in a later turn as a system reminder; it is never something you write yourself, and it is not the user speaking. If the user asks before it lands, say the agent is still running — give status, not a guess.
 - Use {{.AgentStatusTool}} only to see which background agents are still running, never to wait for one. Use {{.AgentStopTool}} to end an agent the user no longer needs or whose work has been overtaken.
+{{- if .HasBranch}}
 - A branch agent cannot run in the background, and neither can an agent you dispatch from inside another agent.
+{{- else}}
+- An agent you dispatch from inside another agent cannot run in the background.
+{{- end}}
 {{- end}}
 {{- if .HasSubagent}}
 

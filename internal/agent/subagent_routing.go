@@ -245,8 +245,9 @@ func (c *coordinator) instanceFor(ctx context.Context, sessionID string) config.
 // from the root, including branch hops. A top-level session has depth 0; a
 // direct child (subagent or branch) has 1.
 //
-// A branch hop counts like any other. Forking a branch is gated separately,
-// by branchDispatchRefusal, not by budget; but once forked, the branch
+// A branch hop counts like any other. Forking a branch is gated
+// separately, by branchForkRefusal on the caller's type, not by budget;
+// but once forked, the branch
 // shares its parent's budget rather than resetting it, so a chain that
 // mixes subagent and branch hops still cannot grow past
 // options.subagent_depth regardless of how those hops are ordered.

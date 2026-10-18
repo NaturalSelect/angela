@@ -73,7 +73,6 @@ func init() {
 	rootCmd.Flags().Bool("no-vscode-diff", false, "Do not open edit diffs in VS Code even when running inside its terminal")
 	rootCmd.Flags().Bool("disable-image-tools", false, "Disable the built-in image generation and editing tools")
 	rootCmd.Flags().Bool("kitty-placeholders", false, "Force Kitty graphics Unicode placeholder support on or off (needed for inline images and the ImageGenerate/ImageEdit tools); omit to use options.tui.kitty_placeholders or auto-detection")
-	rootCmd.Flags().Bool("subagent-branches", false, "Let sub-agents, not just the top-level session, dispatch branch agents (also settable via options.subagent_branches); has no effect on angela run")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
 	_ = rootCmd.PersistentFlags().MarkHidden("channels")
 	rootCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
@@ -138,9 +137,6 @@ angela --no-vscode-diff
 
 # Force-enable inline images in a terminal Angela doesn't recognize
 angela --kitty-placeholders
-
-# Let sub-agents fork branch agents too, not just the top-level session
-angela --subagent-branches
 
 # Run inside an OS-level sandbox instead of relying on prompts
 angela --sandbox
@@ -392,7 +388,6 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	debug, _ := cmd.Flags().GetBool("debug")
 	yoloMerge, _ := cmd.Flags().GetBool("yolo-merge")
 	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
-	subagentBranches, _ := cmd.Flags().GetBool("subagent-branches")
 	disableImageTools, _ := cmd.Flags().GetBool("disable-image-tools")
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
@@ -415,7 +410,6 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	store.Overrides().NoDockerSandbox = noDockerSandbox
 	store.Overrides().YoloMerge = yoloMerge
 	store.Overrides().NoVSCodeDiff = noVSCodeDiff
-	store.Overrides().SubagentBranches = subagentBranches
 	store.Overrides().DisableImageTools = disableImageTools
 
 	if err := os.MkdirAll(cfg.Options.DataDirectory, 0o700); err != nil {
@@ -568,7 +562,6 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 	debug, _ := cmd.Flags().GetBool("debug")
 	yoloMerge, _ := cmd.Flags().GetBool("yolo-merge")
 	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
-	subagentBranches, _ := cmd.Flags().GetBool("subagent-branches")
 	disableImageTools, _ := cmd.Flags().GetBool("disable-image-tools")
 	mode := permissionModeFromFlags(cmd)
 	channels, _ := cmd.Flags().GetStringSlice("channels")
@@ -591,7 +584,6 @@ func connectToServer(cmd *cobra.Command) (*client.Client, *proto.Workspace, func
 		PermissionMode:    mode.String(),
 		YoloMerge:         yoloMerge,
 		NoVSCodeDiff:      noVSCodeDiff,
-		SubagentBranches:  subagentBranches,
 		DisableImageTools: disableImageTools,
 		Channels:          channels,
 		Version:           version.Version,

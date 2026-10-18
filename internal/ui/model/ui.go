@@ -6093,7 +6093,7 @@ func (m *UI) handleBranchForked(n notify.Notification) tea.Cmd {
 		util.CmdHandler(util.NewInfoMsg(fmt.Sprintf("Branch %q is waiting for you", n.SessionTitle))),
 		m.sendNotification(notification.Notification{
 			Title:   "Angela is waiting...",
-			Message: fmt.Sprintf("A sub-agent forked branch %q and needs your input", n.SessionTitle),
+			Message: fmt.Sprintf("Branch %q is waiting for your input", n.SessionTitle),
 		}),
 	)
 }

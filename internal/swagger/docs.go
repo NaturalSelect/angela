@@ -5342,9 +5342,6 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "subagent_branches": {
-                    "type": "boolean"
-                },
                 "subagent_depth": {
                     "type": "integer"
                 },
@@ -6732,10 +6729,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/proto.SkillState"
                     }
-                },
-                "subagent_branches": {
-                    "description": "SubagentBranches lets sub-agents dispatch branch agents, not just\nthe top-level session (from the --subagent-branches flag).",
-                    "type": "boolean"
                 },
                 "version": {
                     "type": "string"

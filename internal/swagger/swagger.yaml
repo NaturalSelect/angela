@@ -741,8 +741,6 @@ definitions:
         items:
           type: string
         type: array
-      subagent_branches:
-        type: boolean
       subagent_depth:
         type: integer
       tui:
@@ -1699,11 +1697,6 @@ definitions:
         items:
           $ref: '#/definitions/proto.SkillState'
         type: array
-      subagent_branches:
-        description: |-
-          SubagentBranches lets sub-agents dispatch branch agents, not just
-          the top-level session (from the --subagent-branches flag).
-        type: boolean
       version:
         type: string
       yolo_merge:

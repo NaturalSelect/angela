@@ -525,7 +525,7 @@ func TestCreateSession_ResolutionFailureUpdatesState(t *testing.T) {
 			states.Del(tc.mcpName)
 			t.Cleanup(func() { states.Del(tc.mcpName) })
 
-			sess, err := createSession(t.Context(), nil, tc.mcpName, tc.cfg, r, false)
+			sess, err := createSession(t.Context(), nil, tc.mcpName, tc.cfg, currentGen(tc.mcpName), r, false)
 			require.Error(t, err)
 			require.Nil(t, sess)
 			require.Contains(t, err.Error(), tc.wantErrContains)
@@ -782,8 +782,9 @@ func setDistinct(typ reflect.Type, field reflect.Value) {
 }
 
 // TestRemoveServer proves removeServer fully tears down a server: the live
-// session is closed and removed, and unlike DisableSingle both the state and
-// generation entries are deleted rather than left behind as StateDisabled.
+// session is closed and removed, and unlike DisableSingle the state entry is
+// deleted rather than left behind as StateDisabled. The generation is kept and
+// bumped so a stale in-flight attempt can never match a reset counter.
 func TestRemoveServer(t *testing.T) {
 	t.Parallel()
 
@@ -808,8 +809,9 @@ func TestRemoveServer(t *testing.T) {
 	require.False(t, ok)
 	_, ok = states.Get(name)
 	require.False(t, ok, "removeServer must delete the state entry entirely")
-	_, ok = gens.Get(name)
-	require.False(t, ok, "removeServer must delete the generation entry entirely")
+	gen, ok := gens.Get(name)
+	require.True(t, ok, "removeServer must keep the generation entry")
+	require.Equal(t, uint64(3), gen, "removeServer must bump the generation")
 }
 
 // TestReconcileOnce_RemovesServerGoneFromConfig exercises reconcileOnce's

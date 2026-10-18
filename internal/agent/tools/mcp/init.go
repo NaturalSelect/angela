@@ -530,7 +530,7 @@ func initClient(ctx context.Context, cfg *config.ConfigStore, name string, m con
 // newer attempt is doing. This is what makes a config change that lands
 // mid-connect converge on the latest config rather than a stale one.
 func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, gen uint64, resolver config.VariableResolver, channelOptIn bool) (*ClientSession, error) {
-	session, err := createSession(ctx, cfg, name, m, resolver, channelOptIn)
+	session, err := createSession(ctx, cfg, name, m, gen, resolver, channelOptIn)
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +547,7 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 	toolCount, err := registerSessionTools(ctx, cfg, name, session)
 	if err != nil {
 		slog.Error("Error listing tools", "error", err)
-		updateState(name, StateError, err, nil, Counts{})
+		failIfCurrent(name, gen, err)
 		closeSession(name, session)
 		return nil, err
 	}
@@ -555,7 +555,7 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 	prompts, err := getPrompts(ctx, session)
 	if err != nil {
 		slog.Error("Error listing prompts", "error", err)
-		updateState(name, StateError, err, nil, Counts{})
+		failIfCurrent(name, gen, err)
 		closeSession(name, session)
 		return nil, err
 	}
@@ -698,7 +698,7 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 	// Capture the generation so a reconcile teardown that lands mid-renewal
 	// invalidates this rebuild instead of letting it clobber the newer one.
 	gen := currentGen(name)
-	newSess, err := newSession(ctx, cfg, name, m, cfg.Resolver(), channelEnabled(cfg.Overrides().EnabledChannels, name))
+	newSess, err := newSession(ctx, cfg, name, m, gen, cfg.Resolver(), channelEnabled(cfg.Overrides().EnabledChannels, name))
 	if err != nil {
 		clearMCPData(name)
 		// If an OAuth MCP fails to reconnect because the token is no
@@ -865,14 +865,22 @@ func updateState(name string, state State, err error, client *ClientSession, cou
 	})
 }
 
-func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, resolver config.VariableResolver, channelOptIn bool) (*ClientSession, error) {
+// NOTE: A stale attempt must not record StateError, or it resurrects a server that teardown already removed.
+func failIfCurrent(name string, gen uint64, err error) {
+	if currentGen(name) != gen {
+		return
+	}
+	updateState(name, StateError, err, nil, Counts{})
+}
+
+func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, gen uint64, resolver config.VariableResolver, channelOptIn bool) (*ClientSession, error) {
 	timeout := mcpTimeout(ctx, m)
 	mcpCtx, cancel := context.WithCancel(ctx)
 	cancelTimer := time.AfterFunc(timeout, cancel)
 
 	transport, oauthHandler, err := createTransport(mcpCtx, cfg, name, m, resolver)
 	if err != nil {
-		updateState(name, StateError, err, nil, Counts{})
+		failIfCurrent(name, gen, err)
 		slog.Error("Error creating MCP client", "error", err, "name", name)
 		cancel()
 		cancelTimer.Stop()
@@ -932,7 +940,7 @@ func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m 
 	session, err := client.Connect(mcpCtx, transport, nil)
 	if err != nil {
 		err = maybeStdioErr(err, transport, stdioCheckDefaultTimeout)
-		updateState(name, StateError, maybeTimeoutErr(err, timeout), nil, Counts{})
+		failIfCurrent(name, gen, maybeTimeoutErr(err, timeout))
 		slog.Error("MCP client failed to initialize", "error", err, "name", name)
 		cancel()
 		cancelTimer.Stop()

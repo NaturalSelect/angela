@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -816,37 +817,271 @@ func TestFailIfCurrent(t *testing.T) {
 	})
 }
 
-// TestInitClient_StaleAttemptSkipsOAuthRecovery pins that an attempt
+// awaitSignal fails the test instead of hanging it when a goroutine the test
+// is choreographing never reaches its checkpoint.
+func awaitSignal(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the in-flight call to reach its checkpoint")
+	}
+}
+
+// stubNewSession swaps the session constructor for the test's duration.
+func stubNewSession(t *testing.T, fn func() (*ClientSession, error)) {
+	t.Helper()
+	orig := newSession
+	newSession = func(context.Context, *config.ConfigStore, string, config.MCPConfig, uint64, config.VariableResolver, bool) (*ClientSession, error) {
+		return fn()
+	}
+	t.Cleanup(func() { newSession = orig })
+}
+
+// requireNothingRegistered asserts that no trace of the server is left in any
+// shared registry, which is what a removed server must look like.
+func requireNothingRegistered(t *testing.T, name string) {
+	t.Helper()
+	_, ok := allTools.Get(name)
+	require.False(t, ok, "tools of a removed server must not be registered")
+	_, ok = allPrompts.Get(name)
+	require.False(t, ok, "prompts of a removed server must not be registered")
+	_, ok = allResources.Get(name)
+	require.False(t, ok, "resources of a removed server must not be registered")
+	_, ok = sessions.Get(name)
+	require.False(t, ok, "a removed server must have no session")
+	_, ok = states.Get(name)
+	require.False(t, ok, "a removed server must have no state entry")
+}
+
+func cleanupServerGlobals(t *testing.T, name string) {
+	t.Helper()
+	t.Cleanup(func() {
+		if s, ok := sessions.Take(name); ok {
+			_ = s.Close()
+		}
+		allTools.Del(name)
+		allPrompts.Del(name)
+		allResources.Del(name)
+		states.Del(name)
+		gens.Del(name)
+	})
+}
+
+// TestInitClient_SupersededMidConnectSkipsOAuthRecovery pins that an attempt
 // superseded mid-connect does not run the OAuth recovery path. That path
 // writes StateNeedsAuth and clears the saved token, which for a removed
 // server would conjure a phantom entry and for a restarted one would wipe
 // the token the newer attempt is relying on.
-func TestInitClient_StaleAttemptSkipsOAuthRecovery(t *testing.T) {
-	t.Parallel()
-
+func TestInitClient_SupersededMidConnectSkipsOAuthRecovery(t *testing.T) {
 	const name = "test-init-client-stale-oauth"
-	t.Cleanup(func() { states.Del(name); gens.Del(name) })
+	cleanupServerGlobals(t, name)
 
-	// NOTE: The invalid_grant text in the URL template makes the resolver
-	// failure read as a revoked token, which triggers OAuth recovery.
 	m := config.MCPConfig{
 		Type:       config.MCPHttp,
-		URL:        "https://$(false)/invalid_grant",
+		URL:        "https://example.com/mcp",
 		OAuth:      true,
 		OAuthToken: &oauth.Token{AccessToken: "stale"},
 	}
 	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: m}})
 
-	staleGen := currentGen(name)
-	gens.Set(name, staleGen+1)
+	stubNewSession(t, func() (*ClientSession, error) {
+		removeServer(name)
+		return nil, errors.New("invalid_grant")
+	})
 
-	err := initClient(t.Context(), cfg, name, m, staleGen, shellResolverWithPath(t, nil))
+	err := initClient(t.Context(), cfg, name, m, currentGen(name), cfg.Resolver())
 	require.Error(t, err, "a stale attempt reports its failure instead of swallowing it")
 	require.True(t, isOAuthInitErr(err), "the failure must look like an OAuth error for this test to mean anything: %v", err)
 
-	info, ok := states.Get(name)
-	require.True(t, ok)
-	require.NotEqual(t, StateNeedsAuth, info.State, "a stale attempt must not move the server to needs-auth")
+	_, ok := states.Get(name)
+	require.False(t, ok, "a stale attempt must not write state for a removed server")
+}
+
+// TestInitClient_StaleOnEntryLeavesNoState covers the window between a
+// goroutine being launched and it starting to run: a removal landing there
+// must not be undone by the attempt's opening StateStarting write, which
+// nothing would ever clear.
+func TestInitClient_StaleOnEntryLeavesNoState(t *testing.T) {
+	const name = "test-init-client-stale-entry"
+	cleanupServerGlobals(t, name)
+
+	m := config.MCPConfig{Type: config.MCPStdio}
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: m}})
+
+	launchedGen := currentGen(name)
+	removeServer(name)
+
+	stubNewSession(t, func() (*ClientSession, error) {
+		t.Error("a stale attempt must not build a session")
+		return nil, errors.New("unexpected")
+	})
+
+	err := initClient(t.Context(), cfg, name, m, launchedGen, cfg.Resolver())
+	require.ErrorIs(t, err, context.Canceled)
+	requireNothingRegistered(t, name)
+}
+
+// TestConnectAndRegister_RemovedWhileListing holds the server inside its
+// tools/list reply while the server is removed. The reply must not land in
+// the registries afterwards: nothing would ever clear it, and the model
+// would be offered tools of a server that no longer exists.
+func TestConnectAndRegister_RemovedWhileListing(t *testing.T) {
+	tests := []struct {
+		name         string
+		removeDuring bool
+	}{
+		{"removed while listing registers nothing", true},
+		{"untouched server registers its tools", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			const name = "test-connect-removed-listing"
+			cleanupServerGlobals(t, name)
+
+			listing, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			sess := liveSessionIntercept(t, "send_message", "a_prompt", "res://thing",
+				func(ctx context.Context, method string) error {
+					if method != "tools/list" {
+						return nil
+					}
+					once.Do(func() { close(listing) })
+					select {
+					case <-release:
+					case <-ctx.Done():
+					}
+					return nil
+				})
+			stubNewSession(t, func() (*ClientSession, error) { return sess, nil })
+
+			m := config.MCPConfig{Type: config.MCPStdio}
+			cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: m}})
+
+			gen := currentGen(name)
+			done := make(chan error, 1)
+			go func() {
+				_, err := connectAndRegister(t.Context(), cfg, name, m, gen, cfg.Resolver(), false)
+				done <- err
+			}()
+
+			awaitSignal(t, listing)
+			if tc.removeDuring {
+				removeServer(name)
+			}
+			close(release)
+			err := <-done
+
+			if !tc.removeDuring {
+				require.NoError(t, err)
+				tools, ok := allTools.Get(name)
+				require.True(t, ok)
+				require.Len(t, tools, 1)
+				return
+			}
+			require.ErrorIs(t, err, context.Canceled)
+			requireNothingRegistered(t, name)
+		})
+	}
+}
+
+// TestGetOrRenewClient_RemovedWhileListing is the renewal-side counterpart:
+// the rebuilt session lists tools, prompts, and resources while the server is
+// removed, and none of those replies may reach the registries.
+func TestGetOrRenewClient_RemovedWhileListing(t *testing.T) {
+	const name = "test-renew-removed-listing"
+	cleanupServerGlobals(t, name)
+
+	m := config.MCPConfig{Type: config.MCPStdio}
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: m}})
+
+	dead, _ := liveSession(t, "send_message")
+	require.NoError(t, dead.Close())
+	sessions.Set(name, dead)
+	updateState(name, StateConnected, nil, dead, Counts{})
+
+	listing, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	replacement := liveSessionIntercept(t, "send_message", "a_prompt", "res://thing",
+		func(ctx context.Context, method string) error {
+			if method != "tools/list" {
+				return nil
+			}
+			once.Do(func() { close(listing) })
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return nil
+		})
+	stubNewSession(t, func() (*ClientSession, error) { return replacement, nil })
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := getOrRenewClient(t.Context(), cfg, name)
+		done <- err
+	}()
+
+	awaitSignal(t, listing)
+	removeServer(name)
+	close(release)
+
+	require.ErrorIs(t, <-done, context.Canceled)
+	requireNothingRegistered(t, name)
+}
+
+// TestGetOrRenewClient_RemovedDuringPing removes the server while the
+// renewal's own health check is in flight. The failed ping must not write
+// StateError, which would recreate the entry removeServer just deleted, and
+// the renewal must not then rebuild a session from the removed config.
+func TestGetOrRenewClient_RemovedDuringPing(t *testing.T) {
+	const name = "test-renew-removed-ping"
+	cleanupServerGlobals(t, name)
+
+	m := config.MCPConfig{Type: config.MCPStdio}
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: m}})
+
+	inPing, release := make(chan struct{}), make(chan struct{})
+	var pings atomic.Int32
+	sick := liveSessionIntercept(t, "send_message", "a_prompt", "res://thing",
+		func(ctx context.Context, method string) error {
+			if method != "ping" {
+				return nil
+			}
+			// NOTE: The first ping is the lock-free fast path. The second is
+			// the one under the renewal lock, which is held open here.
+			if pings.Add(1) == 1 {
+				return errors.New("ping failed")
+			}
+			close(inPing)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return errors.New("ping failed")
+		})
+	sessions.Set(name, sick)
+	updateState(name, StateConnected, nil, sick, Counts{})
+
+	var rebuilt atomic.Bool
+	stubNewSession(t, func() (*ClientSession, error) {
+		rebuilt.Store(true)
+		return nil, errors.New("must not rebuild a removed server")
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := getOrRenewClient(t.Context(), cfg, name)
+		done <- err
+	}()
+
+	awaitSignal(t, inPing)
+	removeServer(name)
+	close(release)
+
+	require.Error(t, <-done)
+	require.False(t, rebuilt.Load(), "a removed server must not be rebuilt")
+	requireNothingRegistered(t, name)
 }
 
 // TestGetOrRenewClient_StaleRebuildSkipsOAuthRecovery is the renewal-side

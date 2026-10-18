@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -409,6 +410,39 @@ func TestBackend_InitAgent(t *testing.T) {
 			require.NotNil(t, ws.AgentCoordinator, "InitAgent must install a real coordinator")
 		})
 	}
+}
+
+// TestBackend_InitAgent_OutlivesRequestContext pins that the coordinator
+// InitAgent installs is not bound to the request that asked for it. The HTTP
+// server cancels that context as soon as the handler returns, and the
+// coordinator runs background-agent wakes and its session-deletion listener
+// on the context it was built with. Bound to the request, both would die
+// right after startup and finished background agents would never wake the
+// session.
+//
+// The session-deletion listener holds a subscription to session events for as
+// long as its context lives, which makes the subscriber count an observable
+// stand-in for that context.
+//
+// Not parallel: newPublishingWorkspace isolates HOME/XDG_* via
+// t.Setenv, which panics if the test tree uses t.Parallel().
+func TestBackend_InitAgent_OutlivesRequestContext(t *testing.T) {
+	b, ws, _ := newPublishingWorkspace(t)
+
+	counter, ok := ws.Sessions.(interface{ GetSubscriberCount() int })
+	require.True(t, ok, "session service must expose its subscriber count")
+	before := counter.GetSubscriberCount()
+
+	reqCtx, endRequest := context.WithCancel(t.Context())
+	require.NoError(t, b.InitAgent(reqCtx, ws.ID, true))
+	require.Equal(t, before+1, counter.GetSubscriberCount(),
+		"the coordinator must subscribe to session events")
+
+	endRequest()
+
+	require.Never(t, func() bool { return counter.GetSubscriberCount() < before+1 },
+		300*time.Millisecond, 10*time.Millisecond,
+		"ending the request must not tear down the coordinator's listener")
 }
 
 // TestBackend_InitAgent_WorkspaceNotFound is split out from

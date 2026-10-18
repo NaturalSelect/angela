@@ -200,6 +200,33 @@ func TestAgentToolDescriptionSeparatesBranches(t *testing.T) {
 	require.Contains(t, section, "merged")
 }
 
+// TestAgentToolDescriptionTellsWhereAResultGoes pins that the description
+// never promises a notification the caller cannot receive, and that a
+// caller who can background an agent is told neither result reaches the
+// user on its own.
+func TestAgentToolDescriptionTellsWhereAResultGoes(t *testing.T) {
+	t.Parallel()
+
+	reg := newSubagentRegistry()
+	reg.Reconcile(map[string]config.Agent{
+		"research": {Description: "reads code", Mode: config.AgentModeSubagent},
+	}, nil)
+
+	foreground, err := renderAgentToolDescription(reg.Metadata(), false)
+	require.NoError(t, err)
+	require.Contains(t, foreground, "returned to you as the tool result")
+	require.NotContains(t, foreground, "notification")
+	require.NotContains(t, foreground, "run_in_background")
+
+	background, err := renderAgentToolDescription(reg.Metadata(), true)
+	require.NoError(t, err)
+	require.Contains(t, background, "arrives later in a notification")
+	require.Contains(t, background, "Neither is shown to the user")
+	require.Contains(t, background, "end your turn")
+	require.Contains(t, background, toolnames.AgentStatus)
+	require.Contains(t, background, toolnames.AgentStop)
+}
+
 // TestAgentToolDescriptionOmitsTheBranchSection pins that the explanation
 // stays out of the prompt when no branch agent is configured. There is no
 // builtin one, so this is the default shape.

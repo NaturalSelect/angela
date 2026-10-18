@@ -15,7 +15,11 @@ When NOT to use the Agent tool:
 ## Usage notes
 
 - Always include a short description summarizing what the agent will do.
+{{- if .Background}}
+- A foreground agent's final message is returned to you as the tool result, and a background agent's arrives later in a notification. Neither is shown to the user — relay what matters in a concise summary.
+{{- else}}
 - The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters in a concise summary.
+{{- end}}
 - Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.
 - Each ordinary agent invocation starts with a fresh context and has no memory of prior runs, so the prompt must be self-contained and highly detailed.
 {{- if .HasBranch}}
@@ -27,7 +31,7 @@ When NOT to use the Agent tool:
 - If the user asks you to run agents "in parallel", send a single message with multiple Agent tool use blocks.
 - Once you have delegated work to an agent, do not duplicate that work yourself while it runs.
 {{- if .Background}}
-- **Background agents**: an agent runs in the background only if you pass `run_in_background: true`. The call then returns at once with a receipt instead of the agent's report, and you will be automatically notified when the agent completes — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead.
+- **Background agents**: an agent runs in the background only if you pass `run_in_background: true`. The call then returns at once with a receipt instead of the agent's report, and you will be automatically notified when the agent ends — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead. If nothing else is left to do, tell the user what is running and end your turn: the notification starts a new turn.
 - **Foreground vs background**: leave `run_in_background` off when your very next action depends on the agent's result and nothing else could usefully happen while it runs — e.g. a research agent whose finding gates the edit you are about to make. Use it for fire-and-forget work, independent investigations, and anything where the user might hand you something else in the meantime. Wanting the result "next" is not enough on its own.
 - **Don't race**: after launching a background agent, you know nothing about its results. Never fabricate or predict them in any format — not as prose, summary, or structured output. The completion notification arrives in a later turn as a system reminder; it is never something you write yourself, and it is not the user speaking. If the user asks before it lands, say the agent is still running — give status, not a guess.
 - Use {{.AgentStatusTool}} only to see which background agents are still running, never to wait for one. Use {{.AgentStopTool}} to end an agent the user no longer needs or whose work has been overtaken.

@@ -94,7 +94,7 @@ var (
 	suppressMus = csync.NewMap[string, *sync.Mutex]()
 
 	// newSession creates a client session. It is a seam so tests can exercise
-	// renewal concurrency without spawning a real transport.
+	// connect and renewal races without spawning a real transport.
 	newSession = createSession
 )
 
@@ -483,6 +483,12 @@ func suppressLock(name string) *sync.Mutex {
 // resulting session is only committed if the generation is still current, so
 // a config change that restarts the server mid-connect discards this attempt.
 func initClient(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, gen uint64, resolver config.VariableResolver) error {
+	// NOTE: A removal can land between launching this attempt and it running.
+	// The state writes below would then recreate an entry nothing clears.
+	if currentGen(name) != gen {
+		return context.Canceled
+	}
+
 	// OAuth MCPs without a usable cached token require user interaction
 	// (browser auth). If a cached token exists with an access token
 	// (even if expired), try connecting first so the SDK can attempt a
@@ -536,7 +542,7 @@ func initClient(ctx context.Context, cfg *config.ConfigStore, name string, m con
 // newer attempt is doing. This is what makes a config change that lands
 // mid-connect converge on the latest config rather than a stale one.
 func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, gen uint64, resolver config.VariableResolver, channelOptIn bool) (*ClientSession, error) {
-	session, err := createSession(ctx, cfg, name, m, gen, resolver, channelOptIn)
+	session, err := newSession(ctx, cfg, name, m, gen, resolver, channelOptIn)
 	if err != nil {
 		return nil, err
 	}
@@ -550,7 +556,7 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 		return nil, context.Canceled
 	}
 
-	toolCount, err := registerSessionTools(ctx, cfg, name, session)
+	toolList, err := getTools(ctx, session)
 	if err != nil {
 		slog.Error("Error listing tools", "error", err)
 		failIfCurrent(name, gen, err)
@@ -566,15 +572,16 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 		return nil, err
 	}
 
-	// Re-check before publishing: if a teardown landed during registration a
-	// newer attempt owns the registries now, so leave them and our session
-	// alone rather than overwriting its state.
+	// NOTE: Listing is read-only on purpose. A teardown that lands during
+	// the network calls above must find nothing of ours to clean up, so check
+	// the generation once and then publish everything together.
 	if currentGen(name) != gen {
 		slog.Debug("Discarding stale MCP session after config change", "name", name)
 		closeSession(name, session)
 		return nil, context.Canceled
 	}
 
+	toolCount := updateTools(cfg, name, toolList)
 	updatePrompts(name, prompts)
 	sessions.Set(name, session)
 
@@ -659,6 +666,11 @@ func teardown(name string) {
 }
 
 func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string) (*ClientSession, error) {
+	// NOTE: The generation is captured with the config it belongs to, before
+	// any ping. A teardown landing during a ping or while waiting for the
+	// renewal lock then reads as stale instead of becoming the baseline,
+	// which would let this call rebuild a removed server from its old config.
+	gen := currentGen(name)
 	m := cfg.Config().MCP[name]
 	timeout := mcpTimeout(ctx, m)
 
@@ -696,14 +708,17 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 		return sess, nil
 	}
 
+	// NOTE: The server was removed or restarted while we were pinging.
+	// Recording StateError now would recreate an entry the teardown deleted.
+	if currentGen(name) != gen {
+		return nil, context.Canceled
+	}
+
 	state, _ := states.Get(name)
 	// StateError closes the dead session and clears its tools, prompts, and
 	// resources from the registry.
 	updateState(name, StateError, maybeTimeoutErr(pingErr, timeout), nil, state.Counts)
 
-	// Capture the generation so a reconcile teardown that lands mid-renewal
-	// invalidates this rebuild instead of letting it clobber the newer one.
-	gen := currentGen(name)
 	newSess, err := newSession(ctx, cfg, name, m, gen, cfg.Resolver(), channelEnabled(cfg.Overrides().EnabledChannels, name))
 	if err != nil {
 		// NOTE: A teardown ran while rebuilding; the newer attempt owns the
@@ -734,13 +749,11 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 	}
 
 	// StateError cleared this server's tools, prompts, and resources from the
-	// registry. Re-list and re-register them all on the fresh session and
-	// recompute the counts from what actually registered; otherwise the agent
-	// reconnects but the registries stay empty (the next tool call fails with
-	// "tool not found") while the reported counts still advertise capabilities
-	// that are no longer there.
-	var counts Counts
-	counts.Tools, err = registerSessionTools(ctx, cfg, name, newSess)
+	// registry. Re-list them on the fresh session and recompute the counts
+	// from what actually registered. Otherwise the agent reconnects with
+	// empty registries (the next tool call fails with "tool not found") while
+	// the reported counts still advertise capabilities that are gone.
+	toolList, err := getTools(ctx, newSess)
 	if err != nil {
 		failIfCurrent(name, gen, err)
 		closeSession(name, newSess)
@@ -753,8 +766,6 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 		closeSession(name, newSess)
 		return nil, err
 	}
-	updatePrompts(name, prompts)
-	counts.Prompts = len(prompts)
 
 	resources, err := getResources(ctx, newSess)
 	if err != nil {
@@ -762,15 +773,20 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 		closeSession(name, newSess)
 		return nil, err
 	}
-	counts.Resources = updateResources(name, resources)
 
-	// Re-check before publishing: if a teardown landed during registration a
-	// newer attempt owns the registries now, so leave them and our session
-	// alone rather than overwriting its state.
+	// NOTE: Listing is read-only on purpose. A teardown that lands during
+	// the network calls above must find nothing of ours to clean up, so check
+	// the generation once and then publish everything together.
 	if currentGen(name) != gen {
 		closeSession(name, newSess)
 		return nil, context.Canceled
 	}
+
+	var counts Counts
+	counts.Tools = updateTools(cfg, name, toolList)
+	updatePrompts(name, prompts)
+	counts.Prompts = len(prompts)
+	counts.Resources = updateResources(name, resources)
 
 	sessions.Set(name, newSess)
 	updateState(name, StateConnected, nil, newSess, counts, withConfig(m))

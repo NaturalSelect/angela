@@ -383,7 +383,10 @@ func TestJobToolsRefuseAnotherSessionsShell(t *testing.T) {
 
 		require.True(t, resp.IsError)
 		require.Contains(t, resp.Content, "not found")
-		require.False(t, victim.IsDone(), "a foreign job_kill must not stop the job")
+		stdout, stderr, done, exitErr := victim.GetOutput()
+		require.False(t, done,
+			"a foreign job_kill must not stop the job: stdout=%q stderr=%q exitErr=%v",
+			stdout, stderr, exitErr)
 	})
 
 	t.Run("the owner still reaches its own job", func(t *testing.T) {

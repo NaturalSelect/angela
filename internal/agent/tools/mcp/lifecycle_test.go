@@ -47,6 +47,15 @@ func liveSession(t *testing.T, toolName string) (*ClientSession, context.Context
 // (re)connect.
 func liveSessionWithCapabilities(t *testing.T, toolName, promptName, resourceURI string) *ClientSession {
 	t.Helper()
+	return liveSessionIntercept(t, toolName, promptName, resourceURI, nil)
+}
+
+// liveSessionIntercept is liveSessionWithCapabilities with a server-side
+// hook. The before func runs for every incoming request and may block it, or
+// fail it by returning an error. Tests use it to hold a call in flight while
+// a teardown lands.
+func liveSessionIntercept(t *testing.T, toolName, promptName, resourceURI string, before func(ctx context.Context, method string) error) *ClientSession {
+	t.Helper()
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	server := mcp.NewServer(&mcp.Implementation{Name: "srv"}, nil)
@@ -69,6 +78,16 @@ func liveSessionWithCapabilities(t *testing.T, toolName, promptName, resourceURI
 			return &mcp.ReadResourceResult{}, nil
 		},
 	)
+	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if before != nil {
+				if err := before(ctx, method); err != nil {
+					return nil, err
+				}
+			}
+			return next(ctx, method, req)
+		}
+	})
 	serverSession, err := server.Connect(context.Background(), serverTransport, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = serverSession.Close() })
@@ -288,10 +307,19 @@ func TestGetOrRenewClient_SerializesConcurrentRenewals(t *testing.T) {
 	}
 }
 
-// TestRegisterSessionTools_PopulatesRegistry pins that registerSessionTools —
-// the single seam through which a (re)connected session's tools enter the
-// registry — lists a live session's tools and writes them to allTools.
-func TestRegisterSessionTools_PopulatesRegistry(t *testing.T) {
+// registerTools lists a live session's tools and publishes them, the same two
+// steps connectAndRegister and getOrRenewClient perform once their generation
+// check passes.
+func registerTools(t *testing.T, cfg *config.ConfigStore, name string, sess *ClientSession) int {
+	t.Helper()
+	tools, err := getTools(context.Background(), sess)
+	require.NoError(t, err)
+	return updateTools(cfg, name, tools)
+}
+
+// TestUpdateTools_PopulatesRegistry pins that a live session's listed tools
+// are written to allTools.
+func TestUpdateTools_PopulatesRegistry(t *testing.T) {
 	const name = "test-register-tools"
 	t.Cleanup(func() { allTools.Del(name) })
 
@@ -300,9 +328,7 @@ func TestRegisterSessionTools_PopulatesRegistry(t *testing.T) {
 
 	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: {Type: config.MCPStdio}}})
 
-	count, err := registerSessionTools(context.Background(), cfg, name, sess)
-	require.NoError(t, err)
-	require.Equal(t, 1, count)
+	require.Equal(t, 1, registerTools(t, cfg, name, sess))
 
 	got, ok := allTools.Get(name)
 	require.True(t, ok, "a live session's tools must be registered")
@@ -332,8 +358,7 @@ func TestSessionErrorThenRenew_RestoresTools(t *testing.T) {
 	// 1. Initial connect registers the tool (mirrors initClient).
 	sess1, _ := liveSession(t, "send_message")
 	sessions.Set(name, sess1)
-	_, err := registerSessionTools(context.Background(), cfg, name, sess1)
-	require.NoError(t, err)
+	registerTools(t, cfg, name, sess1)
 	_, ok := allTools.Get(name)
 	require.True(t, ok, "tool should be registered after the initial connect")
 
@@ -349,8 +374,7 @@ func TestSessionErrorThenRenew_RestoresTools(t *testing.T) {
 	//    tools. The bug was that it never did: the LLM's tool list stayed empty
 	//    and every subsequent call returned "tool not found".
 	sess2, _ := liveSession(t, "send_message")
-	count, err := registerSessionTools(context.Background(), cfg, name, sess2)
-	require.NoError(t, err)
+	count := registerTools(t, cfg, name, sess2)
 	sessions.Set(name, sess2)
 	require.Equal(t, 1, count)
 

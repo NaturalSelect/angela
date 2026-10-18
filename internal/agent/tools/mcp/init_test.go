@@ -1076,12 +1076,177 @@ func TestGetOrRenewClient_RemovedDuringPing(t *testing.T) {
 	}()
 
 	awaitSignal(t, inPing)
-	removeServer(name)
+	gen := currentGen(name)
+	removed := make(chan struct{})
+	go func() {
+		removeServer(name)
+		close(removed)
+	}()
+	// NOTE: Removal closes the session, and closing waits for the held
+	// ping. Release it only once the generation has moved.
+	require.Eventually(t, func() bool { return currentGen(name) != gen },
+		5*time.Second, time.Millisecond)
 	close(release)
+	awaitSignal(t, removed)
 
 	require.Error(t, <-done)
 	require.False(t, rebuilt.Load(), "a removed server must not be rebuilt")
 	requireNothingRegistered(t, name)
+}
+
+// TestTeardown_WaitsForInFlightPublish pins that a publish is atomic with
+// respect to teardown. If teardown could run between a publish's generation
+// check and its writes, it would find nothing to clear and the writes would
+// then resurrect the removed server for good.
+func TestTeardown_WaitsForInFlightPublish(t *testing.T) {
+	const name = "test-teardown-vs-publish"
+	cleanupServerGlobals(t, name)
+
+	publishing, release := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+
+	gen := currentGen(name)
+	committed := make(chan bool, 1)
+	go func() {
+		committed <- commitIfCurrent(name, gen, func() {
+			allTools.Set(name, []*Tool{{Name: "t"}})
+			states.Set(name, ClientInfo{Name: name, State: StateConnected})
+			close(publishing)
+			<-release
+		})
+	}()
+	awaitSignal(t, publishing)
+
+	removed := make(chan struct{})
+	go func() {
+		removeServer(name)
+		close(removed)
+	}()
+
+	select {
+	case <-removed:
+		t.Fatal("teardown must wait for a publish that already passed its generation check")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+	awaitSignal(t, removed)
+	require.True(t, <-committed)
+	requireNothingRegistered(t, name)
+}
+
+// TestCommitIfCurrent_RejectsStaleGeneration covers the other side of the
+// ordering: a publish that starts after the teardown must not run at all.
+func TestCommitIfCurrent_RejectsStaleGeneration(t *testing.T) {
+	const name = "test-commit-stale"
+	cleanupServerGlobals(t, name)
+
+	gen := currentGen(name)
+	removeServer(name)
+
+	ran := commitIfCurrent(name, gen, func() {
+		t.Error("a stale publish must not run")
+	})
+	require.False(t, ran)
+	requireNothingRegistered(t, name)
+}
+
+// TestTeardown_ConcurrentBumpsAreNotLost pins that every teardown advances
+// the generation. Staleness checks rely on it as a fence, so a bump lost to
+// a read-modify-write race would let an attempt that should read as stale
+// pass.
+func TestTeardown_ConcurrentBumpsAreNotLost(t *testing.T) {
+	const name = "test-teardown-concurrent"
+	cleanupServerGlobals(t, name)
+
+	const teardowns = 64
+	start := currentGen(name)
+
+	var wg sync.WaitGroup
+	for range teardowns {
+		wg.Go(func() { teardown(name) })
+	}
+	wg.Wait()
+
+	require.Equal(t, start+teardowns, currentGen(name))
+}
+
+// TestRefresh_RemovedWhileListing holds the refreshed list in flight while
+// the server is removed. A list-changed refresh finishing afterwards must
+// not write state or registries for a server that no longer exists.
+func TestRefresh_RemovedWhileListing(t *testing.T) {
+	tests := []struct {
+		label   string
+		method  string
+		refresh func(ctx context.Context, cfg *config.ConfigStore, name string)
+	}{
+		{"tools", "tools/list", func(ctx context.Context, cfg *config.ConfigStore, name string) {
+			RefreshTools(ctx, cfg, name)
+		}},
+		{"prompts", "prompts/list", func(ctx context.Context, _ *config.ConfigStore, name string) {
+			RefreshPrompts(ctx, name)
+		}},
+		{"resources", "resources/list", func(ctx context.Context, _ *config.ConfigStore, name string) {
+			RefreshResources(ctx, name)
+		}},
+		{"list-resources", "resources/list", func(ctx context.Context, cfg *config.ConfigStore, name string) {
+			_, _ = ListResources(ctx, cfg, name)
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.label, func(t *testing.T) {
+			name := "test-refresh-removed-" + tc.label
+			cleanupServerGlobals(t, name)
+
+			listing, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			sess := liveSessionIntercept(t, "send_message", "a_prompt", "res://thing",
+				func(ctx context.Context, method string) error {
+					if method != tc.method {
+						return nil
+					}
+					once.Do(func() { close(listing) })
+					select {
+					case <-release:
+					case <-ctx.Done():
+					}
+					return nil
+				})
+			cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: {Type: config.MCPStdio}}})
+			sessions.Set(name, sess)
+			updateState(name, StateConnected, nil, sess, Counts{})
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				tc.refresh(t.Context(), cfg, name)
+			}()
+
+			awaitSignal(t, listing)
+			gen := currentGen(name)
+			removed := make(chan struct{})
+			go func() {
+				removeServer(name)
+				close(removed)
+			}()
+			// NOTE: The session is registered here, so removal closes it,
+			// and closing waits for the held reply. Release only once the
+			// generation has moved, so the reply still lands after removal.
+			require.Eventually(t, func() bool { return currentGen(name) != gen },
+				5*time.Second, time.Millisecond)
+			close(release)
+			awaitSignal(t, removed)
+			awaitSignal(t, done)
+
+			requireNothingRegistered(t, name)
+		})
+	}
 }
 
 // TestGetOrRenewClient_StaleRebuildSkipsOAuthRecovery is the renewal-side

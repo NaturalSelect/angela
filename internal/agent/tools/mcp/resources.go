@@ -25,6 +25,8 @@ func Resources() iter.Seq2[string, []*Resource] {
 
 // ListResources returns the current resources for an MCP server.
 func ListResources(ctx context.Context, cfg *config.ConfigStore, name string) ([]*Resource, error) {
+	// NOTE: Read before the session; see RefreshTools.
+	gen := currentGen(name)
 	session, err := getOrRenewClient(ctx, cfg, name)
 	if err != nil {
 		return nil, err
@@ -35,10 +37,12 @@ func ListResources(ctx context.Context, cfg *config.ConfigStore, name string) ([
 		return nil, err
 	}
 
-	resourceCount := updateResources(name, resources)
-	prev, _ := states.Get(name)
-	prev.Counts.Resources = resourceCount
-	updateState(name, StateConnected, nil, session, prev.Counts)
+	commitIfCurrent(name, gen, func() {
+		resourceCount := updateResources(name, resources)
+		prev, _ := states.Get(name)
+		prev.Counts.Resources = resourceCount
+		updateState(name, StateConnected, nil, session, prev.Counts)
+	})
 	return resources, nil
 }
 
@@ -58,6 +62,8 @@ func ReadResource(ctx context.Context, cfg *config.ConfigStore, name, uri string
 // RefreshResources gets the updated list of resources from the MCP and updates the
 // global state.
 func RefreshResources(ctx context.Context, name string) {
+	// NOTE: Read before the session; see RefreshTools.
+	gen := currentGen(name)
 	session, ok := sessions.Get(name)
 	if !ok {
 		slog.Warn("Refresh resources: no session", "name", name)
@@ -66,15 +72,17 @@ func RefreshResources(ctx context.Context, name string) {
 
 	resources, err := getResources(ctx, session)
 	if err != nil {
-		updateState(name, StateError, err, nil, Counts{})
+		failIfCurrent(name, gen, err)
 		return
 	}
 
-	resourceCount := updateResources(name, resources)
+	commitIfCurrent(name, gen, func() {
+		resourceCount := updateResources(name, resources)
 
-	prev, _ := states.Get(name)
-	prev.Counts.Resources = resourceCount
-	updateState(name, StateConnected, nil, session, prev.Counts)
+		prev, _ := states.Get(name)
+		prev.Counts.Resources = resourceCount
+		updateState(name, StateConnected, nil, session, prev.Counts)
+	})
 }
 
 func getResources(ctx context.Context, c *ClientSession) ([]*Resource, error) {

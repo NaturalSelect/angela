@@ -442,12 +442,6 @@ func firstUndoable(msgs []message.Message, baseMessageID string) int {
 	return i
 }
 
-// findCut returns the index of the earliest message in the trailing
-// run of user messages that drove the turn: any trailing
-// assistant/tool messages are skipped first, since they are the
-// turn's reply rather than its prompt, then consecutive user messages
-// are collected back to the first non-user message or the top of the
-// session. Returns -1 if msgs holds no user message at all.
 // findCut returns the index of the earliest message in the run of user
 // messages that drove the turn. The turn's prompt is the last user
 // message that is real input: reminders persisted between steps, such

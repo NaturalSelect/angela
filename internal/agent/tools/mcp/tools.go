@@ -111,6 +111,10 @@ func RunTool(ctx context.Context, cfg *config.ConfigStore, name, toolName string
 // RefreshTools gets the updated list of tools from the MCP and updates the
 // global state.
 func RefreshTools(ctx context.Context, cfg *config.ConfigStore, name string) {
+	// NOTE: The generation is read before the session so a teardown at any
+	// later point reads as stale, instead of this refresh recreating the
+	// state entry of a server that was just removed.
+	gen := currentGen(name)
 	session, ok := sessions.Get(name)
 	if !ok {
 		slog.Warn("Refresh tools: no session", "name", name)
@@ -119,15 +123,17 @@ func RefreshTools(ctx context.Context, cfg *config.ConfigStore, name string) {
 
 	tools, err := getTools(ctx, session)
 	if err != nil {
-		updateState(name, StateError, err, nil, Counts{})
+		failIfCurrent(name, gen, err)
 		return
 	}
 
-	toolCount := updateTools(cfg, name, tools)
+	commitIfCurrent(name, gen, func() {
+		toolCount := updateTools(cfg, name, tools)
 
-	prev, _ := states.Get(name)
-	prev.Counts.Tools = toolCount
-	updateState(name, StateConnected, nil, session, prev.Counts)
+		prev, _ := states.Get(name)
+		prev.Counts.Tools = toolCount
+		updateState(name, StateConnected, nil, session, prev.Counts)
+	})
 }
 
 func getTools(ctx context.Context, session *ClientSession) ([]*Tool, error) {

@@ -210,6 +210,58 @@ func TestRun_NoticeWakeWithNothingPendingDoesNotRun(t *testing.T) {
 	require.Empty(t, e.userTexts(t, sess.ID))
 }
 
+// TestRun_NoticeWakeInterruptedByCompactionStillResumes pins that a wake
+// turn cut off mid-tool-use by auto-compaction resumes afterwards. The
+// resume is a copy of the wake call; if it still claimed to be a wake it
+// would find the inbox already drained and silently end the turn.
+func TestRun_NoticeWakeInterruptedByCompactionStillResumes(t *testing.T) {
+	t.Parallel()
+
+	e := newNoticeAgentEnv(t)
+	sess, err := e.env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+	e.inbox.Post(sess.ID, "<agent-notification>one</agent-notification>")
+
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		// NOTE: High usage trips auto-compaction with the tool call still
+		// pending, interrupting the wake turn.
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(toolCallThenFinish(fantasy.Usage{InputTokens: 900}), nil),
+		// NOTE: The resumed turn; a missing call fails the test.
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"done"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>summary</summary>"}, fantasy.FinishReasonStop), nil)
+
+	catwalkCfg := config.ProviderModel{Model: catwalk.Model{ContextWindow: 1000, DefaultMaxTokens: 500}}
+	_, err = e.sa.Run(t.Context(), SessionAgentCall{
+		Agent: resolvedAgent{
+			ID:        config.AgentCoder,
+			Model:     Model{Model: model, CatwalkCfg: catwalkCfg},
+			MaxTokens: catwalkCfg.DefaultMaxTokens,
+		},
+		Compact: resolvedAgent{
+			Model:        Model{Model: compactModel, CatwalkCfg: catwalkCfg},
+			SystemPrompt: "summarize",
+		},
+		SessionID:  sess.ID,
+		noticeWake: true,
+	})
+	require.NoError(t, err)
+
+	var resumed bool
+	for _, text := range e.userTexts(t, sess.ID) {
+		if strings.Contains(text, "The previous session was interrupted") {
+			resumed = true
+		}
+	}
+	require.True(t, resumed, "the interrupted wake turn must resume with a wrapped prompt")
+}
+
 func TestRun_NoticeWakeOnBusySessionIsDroppedAndTheTurnWakesAfterwards(t *testing.T) {
 	t.Parallel()
 

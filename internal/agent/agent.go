@@ -709,6 +709,9 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			return nil, nil
 		}
 		call.Prompt = wrapNotices(wakeNotices)
+		// NOTE: The notices are consumed, so a resume copy of this call
+		// must run as an ordinary prompt instead of taking again.
+		call.noticeWake = false
 	}
 
 	// Idle: become the active run. Register the cancel func before dropping

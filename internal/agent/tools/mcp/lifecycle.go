@@ -158,7 +158,9 @@ func reconcileOnce(ctx context.Context, cfg *config.ConfigStore) {
 // entry. Unlike DisableSingle (which keeps the entry as StateDisabled),
 // this is for servers that no longer exist in config at all.
 //
-// NOTE: The generation is kept so it stays monotonic; deleting it resets it to 0 and a stale in-flight attempt that captured 0 would pass the currentGen check and resurrect the removed server.
+// NOTE: The generation is kept so it stays monotonic. Deleting it resets it
+// to 0, and a stale in-flight attempt that captured 0 would then pass the
+// currentGen check and resurrect the removed server.
 func removeServer(name string) {
 	teardown(name)
 	states.Del(name)

@@ -448,9 +448,17 @@ func firstUndoable(msgs []message.Message, baseMessageID string) int {
 // turn's reply rather than its prompt, then consecutive user messages
 // are collected back to the first non-user message or the top of the
 // session. Returns -1 if msgs holds no user message at all.
+// findCut returns the index of the earliest message in the run of user
+// messages that drove the turn. The turn's prompt is the last user
+// message that is real input: reminders persisted between steps, such
+// as background agent notifications, are skipped so they cannot be
+// mistaken for the prompt, and everything after that prompt is the
+// turn's reply. Consecutive user messages are then collected back from
+// the prompt to the first non-user message or the top of the session.
+// Returns -1 if msgs holds no real user message.
 func findCut(msgs []message.Message) int {
 	i := len(msgs) - 1
-	for i >= 0 && msgs[i].Role != message.User {
+	for i >= 0 && (msgs[i].Role != message.User || msgs[i].IsReminder()) {
 		i--
 	}
 	if i < 0 {

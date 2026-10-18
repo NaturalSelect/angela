@@ -89,6 +89,12 @@ var (
 	// in-flight attempt instead of letting it register a stale session.
 	gens = csync.NewMap[string, uint64]()
 
+	// commitMus holds one mutex per server. teardown and every generation-
+	// gated publish take it, so a check and the publish it gates cannot be
+	// split by a teardown.
+	commitMusMu sync.Mutex
+	commitMus   = map[string]*sync.Mutex{}
+
 	// suppressMus serializes browser-suppression per server so only one
 	// remote (server-driven) OAuth flow is active for a server at a time.
 	suppressMus = csync.NewMap[string, *sync.Mutex]()
@@ -131,6 +137,19 @@ func renewLock(name string) *sync.Mutex {
 	if !ok {
 		mu = &sync.Mutex{}
 		renewMus[name] = mu
+	}
+	return mu
+}
+
+// commitLock returns the per-server mutex that orders publishes against
+// teardown, creating it on first use.
+func commitLock(name string) *sync.Mutex {
+	commitMusMu.Lock()
+	defer commitMusMu.Unlock()
+	mu, ok := commitMus[name]
+	if !ok {
+		mu = &sync.Mutex{}
+		commitMus[name] = mu
 	}
 	return mu
 }
@@ -484,7 +503,8 @@ func suppressLock(name string) *sync.Mutex {
 // a config change that restarts the server mid-connect discards this attempt.
 func initClient(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, gen uint64, resolver config.VariableResolver) error {
 	// NOTE: A removal can land between launching this attempt and it running.
-	// The state writes below would then recreate an entry nothing clears.
+	// This check spares the token clear below; the state writes are gated
+	// again, since a removal can also land between here and them.
 	if currentGen(name) != gen {
 		return context.Canceled
 	}
@@ -498,13 +518,21 @@ func initClient(ctx context.Context, cfg *config.ConfigStore, name string, m con
 		if m.OAuthToken != nil {
 			clearOAuthToken(cfg, name)
 		}
-		updateState(name, StateNeedsAuth, nil, nil, Counts{})
-		clearMCPData(name)
+		if !commitIfCurrent(name, gen, func() {
+			updateState(name, StateNeedsAuth, nil, nil, Counts{})
+			clearMCPData(name)
+		}) {
+			return context.Canceled
+		}
 		slog.Info("MCP server requires OAuth authentication", "name", name)
 		return nil
 	}
 
-	updateState(name, StateStarting, nil, nil, Counts{}, withPending(m))
+	if !commitIfCurrent(name, gen, func() {
+		updateState(name, StateStarting, nil, nil, Counts{}, withPending(m))
+	}) {
+		return context.Canceled
+	}
 	_, err := connectAndRegister(ctx, cfg, name, m, gen, resolver, channelEnabled(cfg.Overrides().EnabledChannels, name))
 	if err != nil {
 		// NOTE: A teardown ran mid-connect, so this attempt no longer owns
@@ -522,7 +550,11 @@ func initClient(ctx context.Context, cfg *config.ConfigStore, name string, m con
 			if m.OAuthToken != nil {
 				clearOAuthToken(cfg, name)
 			}
-			updateState(name, StateNeedsAuth, nil, nil, Counts{})
+			if !commitIfCurrent(name, gen, func() {
+				updateState(name, StateNeedsAuth, nil, nil, Counts{})
+			}) {
+				return err
+			}
 			slog.Info("MCP OAuth token is no longer valid, re-authentication required", "name", name, "error", err)
 			return nil
 		}
@@ -573,22 +605,23 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 	}
 
 	// NOTE: Listing is read-only on purpose. A teardown that lands during
-	// the network calls above must find nothing of ours to clean up, so check
-	// the generation once and then publish everything together.
-	if currentGen(name) != gen {
+	// the network calls above must find nothing of ours to clean up, so
+	// publish everything in one commit that rejects a stale generation.
+	committed := commitIfCurrent(name, gen, func() {
+		toolCount := updateTools(cfg, name, toolList)
+		updatePrompts(name, prompts)
+		sessions.Set(name, session)
+
+		updateState(name, StateConnected, nil, session, Counts{
+			Tools:   toolCount,
+			Prompts: len(prompts),
+		}, withConfig(m))
+	})
+	if !committed {
 		slog.Debug("Discarding stale MCP session after config change", "name", name)
 		closeSession(name, session)
 		return nil, context.Canceled
 	}
-
-	toolCount := updateTools(cfg, name, toolList)
-	updatePrompts(name, prompts)
-	sessions.Set(name, session)
-
-	updateState(name, StateConnected, nil, session, Counts{
-		Tools:   toolCount,
-		Prompts: len(prompts),
-	}, withConfig(m))
 
 	return session, nil
 }
@@ -657,12 +690,49 @@ func currentGen(name string) uint64 {
 // Shared by DisableSingle, removeServer, and the restart path in
 // Reinitialize.
 func teardown(name string) {
-	g, _ := gens.Get(name)
-	gens.Set(name, g+1)
-	if session, ok := sessions.Take(name); ok {
+	if session := detach(name); session != nil {
 		closeSession(name, session)
 	}
+}
+
+// detach is the part of teardown that must be ordered against publishes. It
+// bumps the generation and clears the registries under the commit lock, and
+// returns the session for the caller to close outside it.
+//
+// NOTE: The bump is a read followed by a write. Two unserialized teardowns
+// can both read N and both write N+1, losing a bump that an in-flight
+// attempt relies on to read as stale.
+func detach(name string) *ClientSession {
+	mu := commitLock(name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	g, _ := gens.Get(name)
+	gens.Set(name, g+1)
+	session, _ := sessions.Take(name)
 	clearMCPData(name)
+	return session
+}
+
+// commitIfCurrent runs publish only if gen is still the server's current
+// generation, and reports whether it ran.
+//
+// NOTE: Checking the generation and then writing is not enough on its own.
+// A teardown landing between the two finds nothing to clear, and the write
+// then resurrects a removed server nothing will ever clean up. Holding the
+// commit lock across both puts a publish entirely before a teardown, which
+// clears it, or entirely after, which rejects it. publish must not block on
+// the network or call teardown.
+func commitIfCurrent(name string, gen uint64, publish func()) bool {
+	mu := commitLock(name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if currentGen(name) != gen {
+		return false
+	}
+	publish()
+	return true
 }
 
 func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string) (*ClientSession, error) {
@@ -710,14 +780,16 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 
 	// NOTE: The server was removed or restarted while we were pinging.
 	// Recording StateError now would recreate an entry the teardown deleted.
-	if currentGen(name) != gen {
+	// The commit also keeps a teardown from landing between this check and
+	// the write.
+	if !commitIfCurrent(name, gen, func() {
+		state, _ := states.Get(name)
+		// StateError closes the dead session and clears its tools,
+		// prompts, and resources from the registry.
+		updateState(name, StateError, maybeTimeoutErr(pingErr, timeout), nil, state.Counts)
+	}) {
 		return nil, context.Canceled
 	}
-
-	state, _ := states.Get(name)
-	// StateError closes the dead session and clears its tools, prompts, and
-	// resources from the registry.
-	updateState(name, StateError, maybeTimeoutErr(pingErr, timeout), nil, state.Counts)
 
 	newSess, err := newSession(ctx, cfg, name, m, gen, cfg.Resolver(), channelEnabled(cfg.Overrides().EnabledChannels, name))
 	if err != nil {
@@ -726,15 +798,20 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 		if currentGen(name) != gen {
 			return nil, err
 		}
-		clearMCPData(name)
 		// If an OAuth MCP fails to reconnect because the token is no
 		// longer valid, clear the stale token and prompt the user to
 		// re-authenticate instead of leaving it in an error state.
-		if m.OAuth && m.Type == config.MCPHttp {
-			if m.OAuthToken != nil && isOAuthInitErr(err) {
-				clearOAuthToken(cfg, name)
+		oauthLapsed := m.OAuth && m.Type == config.MCPHttp
+		if oauthLapsed && m.OAuthToken != nil && isOAuthInitErr(err) {
+			clearOAuthToken(cfg, name)
+		}
+		committed := commitIfCurrent(name, gen, func() {
+			clearMCPData(name)
+			if oauthLapsed {
+				updateState(name, StateNeedsAuth, nil, nil, Counts{})
 			}
-			updateState(name, StateNeedsAuth, nil, nil, Counts{})
+		})
+		if committed && oauthLapsed {
 			slog.Info("MCP OAuth session expired, re-authentication required", "name", name, "error", err)
 		}
 		return nil, err
@@ -775,21 +852,22 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 	}
 
 	// NOTE: Listing is read-only on purpose. A teardown that lands during
-	// the network calls above must find nothing of ours to clean up, so check
-	// the generation once and then publish everything together.
-	if currentGen(name) != gen {
+	// the network calls above must find nothing of ours to clean up, so
+	// publish everything in one commit that rejects a stale generation.
+	committed := commitIfCurrent(name, gen, func() {
+		var counts Counts
+		counts.Tools = updateTools(cfg, name, toolList)
+		updatePrompts(name, prompts)
+		counts.Prompts = len(prompts)
+		counts.Resources = updateResources(name, resources)
+
+		sessions.Set(name, newSess)
+		updateState(name, StateConnected, nil, newSess, counts, withConfig(m))
+	})
+	if !committed {
 		closeSession(name, newSess)
 		return nil, context.Canceled
 	}
-
-	var counts Counts
-	counts.Tools = updateTools(cfg, name, toolList)
-	updatePrompts(name, prompts)
-	counts.Prompts = len(prompts)
-	counts.Resources = updateResources(name, resources)
-
-	sessions.Set(name, newSess)
-	updateState(name, StateConnected, nil, newSess, counts, withConfig(m))
 	return newSess, nil
 }
 
@@ -895,10 +973,9 @@ func updateState(name string, state State, err error, client *ClientSession, cou
 // NOTE: A stale attempt must not record StateError, or it resurrects a
 // server that teardown already removed.
 func failIfCurrent(name string, gen uint64, err error) {
-	if currentGen(name) != gen {
-		return
-	}
-	updateState(name, StateError, err, nil, Counts{})
+	commitIfCurrent(name, gen, func() {
+		updateState(name, StateError, err, nil, Counts{})
+	})
 }
 
 func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, gen uint64, resolver config.VariableResolver, channelOptIn bool) (*ClientSession, error) {

@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/google/uuid"
@@ -188,6 +189,13 @@ func TestFindCut(t *testing.T) {
 	msg := func(id string, role message.MessageRole) message.Message {
 		return message.Message{ID: id, Role: role}
 	}
+	reminderMsg := func(id string) message.Message {
+		return message.Message{
+			ID:    id,
+			Role:  message.User,
+			Parts: []message.ContentPart{message.TextContent{Text: reminder.Wrap("agent finished")}},
+		}
+	}
 
 	tests := []struct {
 		name string
@@ -224,6 +232,27 @@ func TestFindCut(t *testing.T) {
 				msg("u2", message.User), msg("u3", message.User),
 			},
 			want: 2,
+		},
+		{
+			name: "a notification between assistant steps does not become the cut",
+			msgs: []message.Message{
+				msg("u1", message.User), msg("a1", message.Assistant), msg("t1", message.Tool),
+				reminderMsg("n1"), msg("a2", message.Assistant),
+			},
+			want: 0,
+		},
+		{
+			name: "a notification after the final reply is skipped too",
+			msgs: []message.Message{
+				msg("u1", message.User), msg("a1", message.Assistant),
+				msg("u2", message.User), msg("a2", message.Assistant), reminderMsg("n1"),
+			},
+			want: 2,
+		},
+		{
+			name: "only reminders and replies means nothing to undo",
+			msgs: []message.Message{reminderMsg("n1"), msg("a1", message.Assistant)},
+			want: -1,
 		},
 	}
 

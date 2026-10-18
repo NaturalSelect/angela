@@ -501,6 +501,12 @@ func initClient(ctx context.Context, cfg *config.ConfigStore, name string, m con
 	updateState(name, StateStarting, nil, nil, Counts{}, withPending(m))
 	_, err := connectAndRegister(ctx, cfg, name, m, gen, resolver, channelEnabled(cfg.Overrides().EnabledChannels, name))
 	if err != nil {
+		// NOTE: A teardown ran mid-connect, so this attempt no longer owns
+		// the server. Touching its state or OAuth token would resurrect a
+		// removed server or wipe the token a newer attempt is using.
+		if currentGen(name) != gen {
+			return err
+		}
 		// If an OAuth MCP fails because the saved token is no longer
 		// valid (e.g. refresh token expired or revoked) or no token
 		// could be obtained, clear the stale token and prompt the user
@@ -617,7 +623,7 @@ func goInitClient(ctx context.Context, cfg *config.ConfigStore, name string, m c
 				default:
 					err = fmt.Errorf("panic: %v", v)
 				}
-				updateState(name, StateError, err, nil, Counts{})
+				failIfCurrent(name, gen, err)
 				slog.Error("Panic in MCP client initialization", "error", err, "name", name)
 			}
 		}()
@@ -700,6 +706,11 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 	gen := currentGen(name)
 	newSess, err := newSession(ctx, cfg, name, m, gen, cfg.Resolver(), channelEnabled(cfg.Overrides().EnabledChannels, name))
 	if err != nil {
+		// NOTE: A teardown ran while rebuilding; the newer attempt owns the
+		// registries and the server's state now.
+		if currentGen(name) != gen {
+			return nil, err
+		}
 		clearMCPData(name)
 		// If an OAuth MCP fails to reconnect because the token is no
 		// longer valid, clear the stale token and prompt the user to
@@ -731,14 +742,14 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 	var counts Counts
 	counts.Tools, err = registerSessionTools(ctx, cfg, name, newSess)
 	if err != nil {
-		updateState(name, StateError, err, nil, Counts{})
+		failIfCurrent(name, gen, err)
 		closeSession(name, newSess)
 		return nil, err
 	}
 
 	prompts, err := getPrompts(ctx, newSess)
 	if err != nil {
-		updateState(name, StateError, err, nil, Counts{})
+		failIfCurrent(name, gen, err)
 		closeSession(name, newSess)
 		return nil, err
 	}
@@ -747,7 +758,7 @@ func getOrRenewClient(ctx context.Context, cfg *config.ConfigStore, name string)
 
 	resources, err := getResources(ctx, newSess)
 	if err != nil {
-		updateState(name, StateError, err, nil, Counts{})
+		failIfCurrent(name, gen, err)
 		closeSession(name, newSess)
 		return nil, err
 	}
@@ -865,7 +876,8 @@ func updateState(name string, state State, err error, client *ClientSession, cou
 	})
 }
 
-// NOTE: A stale attempt must not record StateError, or it resurrects a server that teardown already removed.
+// NOTE: A stale attempt must not record StateError, or it resurrects a
+// server that teardown already removed.
 func failIfCurrent(name string, gen uint64, err error) {
 	if currentGen(name) != gen {
 		return

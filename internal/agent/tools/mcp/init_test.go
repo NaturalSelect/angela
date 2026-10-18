@@ -781,6 +781,114 @@ func setDistinct(typ reflect.Type, field reflect.Value) {
 	}
 }
 
+// TestFailIfCurrent pins that only the attempt that still owns a server may
+// record its failure. A stale attempt writing StateError would recreate the
+// state entry of a server that removeServer already deleted.
+func TestFailIfCurrent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("current attempt records the error", func(t *testing.T) {
+		t.Parallel()
+
+		const name = "test-fail-if-current-live"
+		t.Cleanup(func() { states.Del(name); gens.Del(name) })
+		gens.Set(name, 4)
+
+		failIfCurrent(name, 4, errors.New("boom"))
+
+		info, ok := states.Get(name)
+		require.True(t, ok)
+		require.Equal(t, StateError, info.State)
+	})
+
+	t.Run("stale attempt leaves a removed server removed", func(t *testing.T) {
+		t.Parallel()
+
+		const name = "test-fail-if-current-stale"
+		t.Cleanup(func() { states.Del(name); gens.Del(name) })
+		gens.Set(name, 4)
+		removeServer(name)
+
+		failIfCurrent(name, 4, errors.New("boom"))
+
+		_, ok := states.Get(name)
+		require.False(t, ok, "a stale failure must not resurrect the removed server")
+	})
+}
+
+// TestInitClient_StaleAttemptSkipsOAuthRecovery pins that an attempt
+// superseded mid-connect does not run the OAuth recovery path. That path
+// writes StateNeedsAuth and clears the saved token, which for a removed
+// server would conjure a phantom entry and for a restarted one would wipe
+// the token the newer attempt is relying on.
+func TestInitClient_StaleAttemptSkipsOAuthRecovery(t *testing.T) {
+	t.Parallel()
+
+	const name = "test-init-client-stale-oauth"
+	t.Cleanup(func() { states.Del(name); gens.Del(name) })
+
+	// NOTE: The invalid_grant text in the URL template makes the resolver
+	// failure read as a revoked token, which triggers OAuth recovery.
+	m := config.MCPConfig{
+		Type:       config.MCPHttp,
+		URL:        "https://$(false)/invalid_grant",
+		OAuth:      true,
+		OAuthToken: &oauth.Token{AccessToken: "stale"},
+	}
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: m}})
+
+	staleGen := currentGen(name)
+	gens.Set(name, staleGen+1)
+
+	err := initClient(t.Context(), cfg, name, m, staleGen, shellResolverWithPath(t, nil))
+	require.Error(t, err, "a stale attempt reports its failure instead of swallowing it")
+	require.True(t, isOAuthInitErr(err), "the failure must look like an OAuth error for this test to mean anything: %v", err)
+
+	info, ok := states.Get(name)
+	require.True(t, ok)
+	require.NotEqual(t, StateNeedsAuth, info.State, "a stale attempt must not move the server to needs-auth")
+}
+
+// TestGetOrRenewClient_StaleRebuildSkipsOAuthRecovery is the renewal-side
+// counterpart: a rebuild that fails after the server was removed must not
+// write a needs-auth entry for it.
+func TestGetOrRenewClient_StaleRebuildSkipsOAuthRecovery(t *testing.T) {
+	const name = "test-renew-stale-oauth"
+	t.Cleanup(func() {
+		if s, ok := sessions.Take(name); ok {
+			_ = s.Close()
+		}
+		states.Del(name)
+		gens.Del(name)
+	})
+
+	m := config.MCPConfig{
+		Type:       config.MCPHttp,
+		URL:        "https://example.com/mcp",
+		OAuth:      true,
+		OAuthToken: &oauth.Token{AccessToken: "stale"},
+	}
+	cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{name: m}})
+
+	dead, _ := liveSession(t, "send_message")
+	require.NoError(t, dead.Close())
+	sessions.Set(name, dead)
+	updateState(name, StateConnected, nil, dead, Counts{})
+
+	origNewSession := newSession
+	newSession = func(context.Context, *config.ConfigStore, string, config.MCPConfig, uint64, config.VariableResolver, bool) (*ClientSession, error) {
+		removeServer(name)
+		return nil, errors.New("invalid_grant")
+	}
+	t.Cleanup(func() { newSession = origNewSession })
+
+	_, err := getOrRenewClient(t.Context(), cfg, name)
+	require.Error(t, err)
+
+	_, ok := states.Get(name)
+	require.False(t, ok, "a stale rebuild must not write state for a removed server")
+}
+
 // TestRemoveServer proves removeServer fully tears down a server: the live
 // session is closed and removed, and unlike DisableSingle the state entry is
 // deleted rather than left behind as StateDisabled. The generation is kept and

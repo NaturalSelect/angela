@@ -380,7 +380,7 @@ func (c *coordinator) forgetDeletedSessions(ctx context.Context, events <-chan p
 				c.active.forget(ev.Payload.ID)
 				c.forgetSubagentRoute(ev.Payload.ID)
 				c.background.sessionDeleted(ev.Payload.ID)
-				c.notices.Forget(ev.Payload.ID)
+				c.notices.Close(ev.Payload.ID)
 			}
 		}
 	}
@@ -1010,7 +1010,7 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 			slog.Info("No subagents available; omitting the agent tool")
 		} else {
 			allTools = append(allTools, agentTool)
-			manageBackgroundAgents = c.backgroundAgentsAvailable(depth)
+			manageBackgroundAgents = c.backgroundAgentsAvailable(agent, depth)
 		}
 	}
 
@@ -2636,6 +2636,7 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	done := c.branches.Register(session.ID, params.SessionID)
 	defer c.branches.Forget(session.ID)
 	defer c.proposals.Discard(session.ID)
+	defer c.endBranchBackgroundAgents(session.ID)
 
 	if c.notify != nil {
 		c.notify.Publish(pubsub.CreatedEvent, notify.Notification{
@@ -2730,9 +2731,8 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 // alternative directions side by side. Every refusal names the alternative so
 // the model can act on it. Budget is not checked here: dispatchDepth counts a
 // branch hop like any other, and buildTools already withholds the agent tool
-// once options.subagent_depth is used up. Backgrounding needs an interactive
-// session at depth 0, which is stricter than this gate, so a caller that can
-// background can always fork.
+// once options.subagent_depth is used up. backgroundAgentsAvailable reads
+// this same gate, so a caller that can fork a branch can also background.
 func (c *coordinator) branchForkRefusal(caller config.Agent, depth int) string {
 	if !c.interactive {
 		return "A branch hands the conversation to the user, so it needs an interactive session. " +

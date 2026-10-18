@@ -16,4 +16,8 @@ changed, revise it with `ProposalEdit`, and call this tool again. There is no
 limit on attempts, and a rejection says nothing about the quality of the
 work.
 
-Calling this ends the branch, so call it once the work is actually done.
+Calling this ends the branch, so call it once the work is actually done. It is
+refused while background agents you launched from this branch are still running
+or their results have not reached you yet: wait for their notices, or end them
+with `AgentStop` first. Ending the branch stops any background agent still
+running.

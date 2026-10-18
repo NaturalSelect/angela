@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/session"
 )
 
@@ -30,13 +31,15 @@ var (
 // Agent schema and description, the AgentStatus and AgentStop tools, and
 // the dispatch branch all read it, so they cannot disagree.
 //
-// Only a top-level turn of an interactive coordinator qualifies: a
-// subagent has no user to wait on, and `angela run` exits when its turn
-// does, which would strand the agent and its notice. A coordinator built
-// without the registry and the inbox has nowhere to track or report an
-// agent, so it does not offer the feature either.
-func (c *coordinator) backgroundAgentsAvailable(depth int) bool {
-	return depth == 0 && c.interactive && c.background != nil && c.notices != nil
+// It shares branchForkRefusal's predicate because both need a caller that
+// faces the user in an interactive session and whose session is run again
+// after its turn ends: the top-level conversation, or a branch. A subagent
+// has no user to wait on, and `angela run` exits when its turn does, which
+// would strand the agent and its notice. A coordinator built without the
+// registry and the inbox has nowhere to track or report an agent, so it
+// does not offer the feature either.
+func (c *coordinator) backgroundAgentsAvailable(caller config.Agent, depth int) bool {
+	return c.branchForkRefusal(caller, depth) == "" && c.background != nil && c.notices != nil
 }
 
 // backgroundAgentInfo is a point-in-time view of one background agent.
@@ -212,6 +215,21 @@ func (r *backgroundAgents) stopChild(childSessionID string) bool {
 	return false
 }
 
+// stopAll asks every running agent of parentSessionID to end. Entries stay
+// registered: each agent records its own terminal status as it unwinds.
+func (r *backgroundAgents) stopAll(parentSessionID string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, e := range r.byID {
+		if e.info.ParentSessionID == parentSessionID && e.info.Status == tools.BackgroundAgentRunning {
+			e.cancel()
+		}
+	}
+}
+
 // shutdown ends every running agent and refuses new ones.
 func (r *backgroundAgents) shutdown() {
 	if r == nil {
@@ -297,6 +315,9 @@ func (c *coordinator) runBackgroundAgent(ctx context.Context, cancel context.Can
 	defer cancel()
 
 	outcome := c.executeSubAgent(ctx, sess, params)
+	if outcome.Err == nil {
+		c.rollUpIdleParentCost(ctx, sess.ID, params.SessionID)
+	}
 	status := classifyBackgroundOutcome(ctx, outcome)
 	if !c.background.finish(info.ID, status) {
 		return
@@ -306,9 +327,47 @@ func (c *coordinator) runBackgroundAgent(ctx context.Context, cancel context.Can
 	notice := backgroundAgentNotice(info, status, outcome, banner)
 	// NOTE: Post comes before the wake. A parent that is still finishing a
 	// turn picks the notice up at its own end-of-turn check, and one that is
-	// already idle is woken here, so no ordering strands the notice.
-	c.notices.Post(params.SessionID, tools.RenderBackgroundAgentNotice(notice))
-	c.wakeForNotices(params.SessionID)
+	// already idle is woken here, so no ordering strands the notice. A
+	// closed session, such as a branch that has ended, takes neither.
+	if c.notices.Post(params.SessionID, tools.RenderBackgroundAgentNotice(notice)) {
+		c.wakeForNotices(params.SessionID)
+	}
+}
+
+// rollUpIdleParentCost carries a finished background agent's cost above its
+// parent. executeSubAgent has already added it to the parent, and a parent
+// that is itself a sub-session, such as a branch, rolls its own turn's cost
+// up to the top-level session when that turn ends. An agent that finishes
+// while the parent is idle falls outside any such turn, so without this the
+// top-level totals would miss it. A top-level parent has no ancestors and is
+// left alone.
+//
+// NOTE: The busy check and the parent's cost window are not atomic, so a
+// turn that starts or ends right here can bill the cost twice or not at all.
+// The window is narrow and the figure small, so no lock is taken for it.
+func (c *coordinator) rollUpIdleParentCost(ctx context.Context, childSessionID, parentSessionID string) {
+	if c.IsSessionBusy(parentSessionID) {
+		return
+	}
+	// The agent may have been stopped, which cancels ctx, but the cost it
+	// ran up is still owed.
+	ctx = context.WithoutCancel(ctx)
+	child, err := c.sessions.Get(ctx, childSessionID)
+	if err != nil {
+		slog.Warn("Failed to read a background agent's cost", "session", childSessionID, "error", err)
+		return
+	}
+	if err := c.addCostToAncestors(ctx, parentSessionID, child.Cost); err != nil {
+		slog.Warn("Failed to roll a background agent's cost up", "session", childSessionID, "error", err)
+	}
+}
+
+// endBranchBackgroundAgents takes a finished branch's background agents
+// with it. The inbox closes first, so an agent that unwinds under the stop
+// finds nobody to tell and wakes nothing.
+func (c *coordinator) endBranchBackgroundAgents(branchSessionID string) {
+	c.notices.Close(branchSessionID)
+	c.background.stopAll(branchSessionID)
 }
 
 func backgroundAgentNotice(info backgroundAgentInfo, status tools.BackgroundAgentStatus, outcome subAgentOutcome, banner string) tools.BackgroundAgentNotice {

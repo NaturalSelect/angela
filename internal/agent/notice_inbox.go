@@ -20,17 +20,27 @@ import (
 type noticeInbox struct {
 	mu      sync.Mutex
 	pending map[string][]string
+	closed  map[string]struct{}
 }
 
 func newNoticeInbox() *noticeInbox {
-	return &noticeInbox{pending: make(map[string][]string)}
+	return &noticeInbox{
+		pending: make(map[string][]string),
+		closed:  make(map[string]struct{}),
+	}
 }
 
-// Post appends a rendered notice for sessionID.
-func (b *noticeInbox) Post(sessionID, notice string) {
+// Post appends a rendered notice for sessionID. It reports false when the
+// session is closed, in which case the notice is dropped and there is no
+// one to wake.
+func (b *noticeInbox) Post(sessionID, notice string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if _, closed := b.closed[sessionID]; closed {
+		return false
+	}
 	b.pending[sessionID] = append(b.pending[sessionID], notice)
+	return true
 }
 
 // Take removes and returns every pending notice for sessionID, oldest
@@ -55,6 +65,9 @@ func (b *noticeInbox) Requeue(sessionID string, notices []string) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if _, closed := b.closed[sessionID]; closed {
+		return
+	}
 	b.pending[sessionID] = append(slices.Clone(notices), b.pending[sessionID]...)
 }
 
@@ -68,15 +81,17 @@ func (b *noticeInbox) Has(sessionID string) bool {
 	return len(b.pending[sessionID]) > 0
 }
 
-// Forget drops everything pending for sessionID, for a session that no
-// longer exists. A nil inbox has nothing to drop.
-func (b *noticeInbox) Forget(sessionID string) {
+// Close drops everything pending for sessionID and refuses further notices
+// for it. It is for a session that will never run another turn: a deleted
+// session, or a branch that has ended. A nil inbox has nothing to close.
+func (b *noticeInbox) Close(sessionID string) {
 	if b == nil {
 		return
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.pending, sessionID)
+	b.closed[sessionID] = struct{}{}
 }
 
 // wrapNotices joins pending notices into the single reminder the model

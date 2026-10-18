@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
@@ -583,10 +585,196 @@ func TestWakeForNoticesWithoutALifetimeDoesNothing(t *testing.T) {
 	require.NotPanics(t, func() { coord.wakeForNotices("any-session") })
 }
 
-func agentToolInfo(t *testing.T, coord *coordinator, depth int) fantasy.ToolInfo {
+func TestStopAllEndsOnlyTheRunningAgentsOfThatParent(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	var cancelled []string
+	var mu sync.Mutex
+	register := func(id, parent string) {
+		require.NoError(t, r.start(backgroundAgentInfo{ID: id, ParentSessionID: parent}, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			cancelled = append(cancelled, id)
+		}))
+	}
+	register("mine-1", "branch")
+	register("mine-2", "branch")
+	register("done", "branch")
+	register("theirs", "other")
+	r.finish("done", tools.BackgroundAgentCompleted)
+
+	r.stopAll("branch")
+
+	require.ElementsMatch(t, []string{"mine-1", "mine-2"}, cancelled,
+		"another parent's agent and an already finished one are left alone")
+	info, ok := r.get("branch", "mine-1")
+	require.True(t, ok, "the entry stays so the agent can still report how it ended")
+	require.Equal(t, tools.BackgroundAgentRunning, info.Status, "the agent records its own terminal status as it unwinds")
+}
+
+func TestStopAllOnANilRegistryDoesNothing(t *testing.T) {
+	t.Parallel()
+
+	var r *backgroundAgents
+	require.NotPanics(t, func() { r.stopAll("branch") })
+}
+
+// A branch agent's own run_in_background is refused before anything is
+// built, whoever asks: the branch hands the conversation to the user, so
+// there is nothing to run behind their back.
+func TestDispatchingABranchInTheBackgroundIsRefusedWithoutDispatching(t *testing.T) {
+	coord := newBackgroundTestCoordinator(t)
+	branch := callerLike(coord, config.AgentModeBranch, nil)
+	primary := callerLike(coord, config.AgentModePrimary, nil)
+
+	tests := []struct {
+		name   string
+		caller config.Agent
+		depth  int
+	}{
+		{"from the top-level conversation", primary, 0},
+		{"from another branch", branch, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			agentTool := buildAgentTool(t, coord, tc.caller, tc.depth)
+			require.NotNil(t, agentTool)
+
+			ctx := context.WithValue(t.Context(), tools.SessionIDContextKey, "session-1")
+			ctx = context.WithValue(ctx, tools.MessageIDContextKey, "msg-1")
+			resp, err := agentTool.Run(ctx, fantasy.ToolCall{
+				ID:    "call-1",
+				Name:  toolnames.Agent,
+				Input: `{"prompt":"x","subagent_type":"plan","run_in_background":true}`,
+			})
+			require.NoError(t, err)
+			require.True(t, resp.IsError)
+			require.Contains(t, resp.Content, "is a branch agent")
+			require.Contains(t, resp.Content, "cannot run in the background")
+
+			sessions, err := coord.sessions.List(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, sessions, "a refused dispatch must not create a child session")
+			require.Empty(t, coord.background.list("session-1"))
+		})
+	}
+}
+
+// A branch that ends takes its background agents with it, however it ends,
+// and a result that lands afterwards has nobody to wake.
+func TestAnEndedBranchStopsItsBackgroundAgentsAndRefusesTheirNotices(t *testing.T) {
+	tests := []struct {
+		name string
+		end  func(t *testing.T, c *coordinator, branchID string, cancelParent context.CancelFunc)
+	}{
+		{"merged", func(t *testing.T, c *coordinator, branchID string, _ context.CancelFunc) {
+			require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "done"}))
+		}},
+		{"abandoned", func(t *testing.T, c *coordinator, branchID string, _ context.CancelFunc) {
+			require.True(t, c.AbandonBranch(branchID))
+		}},
+		{"its parent cancelled", func(_ *testing.T, _ *coordinator, _ string, cancelParent context.CancelFunc) {
+			cancelParent()
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testEnv(t)
+			c := branchCoordinator(t, env)
+			c.background = newBackgroundAgents()
+			c.notices = newNoticeInbox()
+
+			parent, err := env.sessions.Create(t.Context(), "Parent")
+			require.NoError(t, err)
+			forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+			require.NoError(t, err)
+
+			seen := make(chan string, 1)
+			agent, resolved := idleBranchAgent(t, seen)
+
+			parentCtx, cancelParent := context.WithCancel(t.Context())
+			defer cancelParent()
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c.runBranchAgent(parentCtx, branchParams(agent, resolved, parent.ID, forking.ID))
+			}()
+
+			requireBranchStarted(t, seen)
+			branchID := requireBranchSession(t, c, parent.ID)
+
+			stopped := make(chan struct{})
+			require.NoError(t, c.background.start(
+				backgroundAgentInfo{ID: "bg-1", ParentSessionID: branchID},
+				func() { close(stopped) },
+			))
+			require.True(t, c.notices.Post(branchID, "pending"))
+
+			tc.end(t, c, branchID, cancelParent)
+			wg.Wait()
+
+			select {
+			case <-stopped:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the branch ended with its background agent still running")
+			}
+			require.False(t, c.notices.Has(branchID), "what was pending is dropped")
+			require.False(t, c.notices.Post(branchID, "late"), "a result landing after the end tells nobody")
+		})
+	}
+}
+
+// A background agent that finishes while its parent branch is idle runs
+// outside any turn that would roll the cost up, so it is carried to the
+// top-level session here. A top-level parent has no ancestors to carry it to.
+func TestAnIdleBranchsBackgroundAgentCostReachesTheTopLevelSession(t *testing.T) {
+	coord := newBackgroundTestCoordinator(t)
+	coord.lifetime = t.Context()
+
+	top, err := coord.sessions.Create(t.Context(), "Top")
+	require.NoError(t, err)
+	branchID := coord.sessions.CreateAgentToolSessionID("msg-branch", "call-branch")
+	_, err = coord.sessions.CreateTaskSession(t.Context(), branchID, top.ID, "Branch")
+	require.NoError(t, err)
+	// The finished agent wakes the branch, so its executor must be able to run.
+	coord.registerSubagentRoute(branchID, config.AgentCoder, newMockSessionAgent(t, config.AgentCoder, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+		return agentResultWithText("noted"), nil
+	}))
+
+	launch := launchTestAgentFrom(t, coord, branchID, "call-1", func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		require.NoError(t, coord.sessions.AddCost(ctx, call.SessionID, 0.5))
+		return agentResultWithText("the findings"), nil
+	})
+	launch.awaitNotice(t, coord)
+
+	branchAfter, err := coord.sessions.Get(t.Context(), branchID)
+	require.NoError(t, err)
+	topAfter, err := coord.sessions.Get(t.Context(), top.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 0.5, branchAfter.Cost, 1e-9, "the parent is billed once by the sub-run")
+	require.InDelta(t, 0.5, topAfter.Cost, 1e-9, "and the top-level session is billed for the idle parent")
+}
+
+func TestATopLevelParentIsNotBilledTwiceForABackgroundAgent(t *testing.T) {
+	coord := newBackgroundTestCoordinator(t)
+
+	launch := launchTestAgent(t, coord, "call-1", func(ctx context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		require.NoError(t, coord.sessions.AddCost(ctx, call.SessionID, 0.5))
+		return agentResultWithText("the findings"), nil
+	})
+	launch.awaitNotice(t, coord)
+
+	parent, err := coord.sessions.Get(t.Context(), launch.parentID)
+	require.NoError(t, err)
+	require.InDelta(t, 0.5, parent.Cost, 1e-9)
+}
+
+func agentToolInfo(t *testing.T, coord *coordinator, caller config.Agent, depth int) fantasy.ToolInfo {
 	t.Helper()
 
-	tool, err := coord.agentTool(depth, config.Agent{}, config.ActiveAgent{})
+	tool, err := coord.agentTool(depth, caller, config.ActiveAgent{})
 	require.NoError(t, err)
 	require.NotNil(t, tool)
 	return tool.Info()
@@ -599,25 +787,33 @@ func TestAgentToolOffersRunInBackgroundOnlyWhereItCanWork(t *testing.T) {
 	nonInteractive.notices = newNoticeInbox()
 	handBuilt := newHermeticTestCoordinator(t, true, false)
 
+	primary := config.Agent{Mode: config.AgentModePrimary}
+	branch := config.Agent{Mode: config.AgentModeBranch}
+	subagent := config.Agent{Mode: config.AgentModeSubagent}
+
 	tests := []struct {
 		name    string
 		coord   *coordinator
+		caller  config.Agent
 		depth   int
 		offered bool
 	}{
-		{"top-level turn of an interactive coordinator", interactive, 0, true},
-		{"a sub-agent has no user to wait on", interactive, 1, false},
-		{"angela run exits when its turn does", nonInteractive, 0, false},
-		{"a coordinator with nowhere to track an agent", handBuilt, 0, false},
+		{"top-level turn of an interactive coordinator", interactive, primary, 0, true},
+		{"a branch faces the user and is woken after its turn", interactive, branch, 1, true},
+		{"a sub-agent has no user to wait on", interactive, subagent, 1, false},
+		{"an agent with no mode is dispatched as a sub-agent", interactive, config.Agent{}, 1, false},
+		{"angela run exits when its turn does", nonInteractive, primary, 0, false},
+		{"a branch of a non-interactive coordinator", nonInteractive, branch, 1, false},
+		{"a coordinator with nowhere to track an agent", handBuilt, primary, 0, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			info := agentToolInfo(t, tc.coord, tc.depth)
+			info := agentToolInfo(t, tc.coord, tc.caller, tc.depth)
 
 			_, hasParam := info.Parameters[runInBackgroundParameter]
 			require.Equal(t, tc.offered, hasParam, "schema")
 			require.NotContains(t, info.Required, runInBackgroundParameter)
-			require.Equal(t, tc.offered, tc.coord.backgroundAgentsAvailable(tc.depth), "gate")
+			require.Equal(t, tc.offered, tc.coord.backgroundAgentsAvailable(tc.caller, tc.depth), "gate")
 			require.Equal(t, tc.offered, containsAll(info.Description, "Background agents", toolnames.AgentStatus, toolnames.AgentStop),
 				"description")
 			require.Contains(t, info.Parameters, "prompt", "hiding one parameter leaves the rest")

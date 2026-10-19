@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -250,6 +251,15 @@ func TestAgentPrompt_BranchPreamble(t *testing.T) {
 	})
 }
 
+var blockquoteMarker = regexp.MustCompile(`(?m)^\s*> ?`)
+
+// normalizedCoDesignTemplate flattens line wrapping and blockquote markers so
+// assertions survive rewrapping the template's prose.
+func normalizedCoDesignTemplate() string {
+	unquoted := blockquoteMarker.ReplaceAllString(string(coDesignPromptTmpl), "")
+	return strings.Join(strings.Fields(unquoted), " ")
+}
+
 // TestCoDesignPrompt_ForcedChangesAreConsequencesNotChoices pins that when
 // an accepted decision A leaves only one viable form for another element B,
 // co-design states B as a consequence instead of asking the user to pick B
@@ -258,14 +268,14 @@ func TestAgentPrompt_BranchPreamble(t *testing.T) {
 func TestCoDesignPrompt_ForcedChangesAreConsequencesNotChoices(t *testing.T) {
 	t.Parallel()
 
-	tpl := strings.Join(strings.Fields(strings.ReplaceAll(string(coDesignPromptTmpl), "\n  > ", " ")), " ")
+	tpl := normalizedCoDesignTemplate()
 
 	for name, clause := range map[string]string{
 		"rule shows forced change as a consequence": "it is a consequence, not a choice. Show it as pseudo-code marked `// follows:`",
 		"rule demands why each alternative fails":   "If you cannot say why each alternative fails, it is a real choice: ask.",
 		"objection reopens the forcing decision":    "If the user objects to a consequence, they are reopening the decision that forced it",
 		"unseen rule admits consequences":           "saw it as a consequence and did not object",
-		"phase 2 traces before asking":              "trace what the decision touches elsewhere in the key design",
+		"phase 2 traces before asking":              "trace what the section touches elsewhere in the key design",
 		"to confirm needs a real choice":            "only when more than one answer still holds",
 		"consequences do not block merge":           "or shown as a consequence without objection",
 		"contract binds follows like key design":    "Unmarked pseudo-code and anything marked `// follows:` are the key design the user accepted",
@@ -273,6 +283,30 @@ func TestCoDesignPrompt_ForcedChangesAreConsequencesNotChoices(t *testing.T) {
 	} {
 		require.Contains(t, tpl, clause, name)
 	}
+}
+
+// TestCoDesignPrompt_HandsBackASolutionNotAPlan pins co-design's role as the
+// designer of a whole solution that the user exports and splits into plans.
+// A template that drifts back to an implementation plan would have the coder
+// start building the whole solution the moment the branch merges.
+func TestCoDesignPrompt_HandsBackASolutionNotAPlan(t *testing.T) {
+	t.Parallel()
+
+	tpl := normalizedCoDesignTemplate()
+
+	for _, clause := range []string{
+		"1. **Background**",
+		"2. **Design**",
+		"3. **Trade-offs**",
+		"4. **Risks and preconditions**",
+		"5. **Follow-up work**",
+		"This solution is built through plans, one part at a time.",
+		"Settle the outline",
+		"Settle only what was answered.",
+	} {
+		require.Contains(t, tpl, clause)
+	}
+	require.NotContains(t, tpl, "Implement the steps above")
 }
 
 // TestCommitPrompt_Builds pins that the commit agent's built-in

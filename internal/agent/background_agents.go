@@ -8,12 +8,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
-	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/session"
 )
 
@@ -49,21 +47,11 @@ type backgroundAgentInfo struct {
 	ID              string
 	ParentSessionID string
 	ChildSessionID  string
-	// Ancestors are the sessions above ParentSessionID, nearest first. They
-	// are fixed when the agent launches so that ending it undoes exactly
-	// what launching it counted, whatever happens to those sessions after.
-	Ancestors  []string
-	AgentType  string
-	Task       string
-	Status     tools.BackgroundAgentStatus
-	StartedAt  time.Time
-	FinishedAt time.Time
-}
-
-// countedSessions are the sessions a running agent is counted in: the one
-// that launched it and every one above.
-func (i backgroundAgentInfo) countedSessions() []string {
-	return append([]string{i.ParentSessionID}, i.Ancestors...)
+	AgentType       string
+	Task            string
+	Status          tools.BackgroundAgentStatus
+	StartedAt       time.Time
+	FinishedAt      time.Time
 }
 
 type backgroundAgentEntry struct {
@@ -78,13 +66,8 @@ type backgroundAgentEntry struct {
 // Once shut down it launches nothing and reports nothing, so agents that
 // unwind during shutdown do not wake a session that is going away.
 //
-// Alongside the entries it keeps a tally per session of the agents running
-// in that session or in any session below it. A launch counts the agent in
-// its parent and every ancestor, and its end takes it back out of the same
-// sessions, so the root of a session tree always holds the number running
-// anywhere under it. The tally follows Status and is changed only where an
-// entry enters or leaves the running state, under mu. Readers use the atomics
-// and take no lock, so asking from a request handler never waits on a launch.
+// How many agents run under a session is not kept here: the coordinator's
+// sub-session tree answers that.
 //
 // The registry is nil-safe for the calls the coordinator makes without
 // knowing whether anything was ever launched.
@@ -92,46 +75,10 @@ type backgroundAgents struct {
 	mu     sync.Mutex
 	byID   map[string]*backgroundAgentEntry
 	closed bool
-
-	tally *csync.Map[string, *atomic.Int64]
 }
 
 func newBackgroundAgents() *backgroundAgents {
-	return &backgroundAgents{
-		byID:  make(map[string]*backgroundAgentEntry),
-		tally: csync.NewMap[string, *atomic.Int64](),
-	}
-}
-
-// countRunning counts info in every session it belongs to. The caller holds mu.
-func (r *backgroundAgents) countRunning(info backgroundAgentInfo) {
-	for _, id := range info.countedSessions() {
-		r.tally.GetOrSet(id, func() *atomic.Int64 { return new(atomic.Int64) }).Add(1)
-	}
-}
-
-// uncountRunning takes info back out of the sessions countRunning put it in.
-// A session that was deleted in between has no tally left and is skipped. The
-// caller holds mu.
-func (r *backgroundAgents) uncountRunning(info backgroundAgentInfo) {
-	for _, id := range info.countedSessions() {
-		if n, ok := r.tally.Get(id); ok {
-			n.Add(-1)
-		}
-	}
-}
-
-// runningUnder reports how many agents are running in sessionID or in any
-// session below it.
-func (r *backgroundAgents) runningUnder(sessionID string) int {
-	if r == nil {
-		return 0
-	}
-	n, ok := r.tally.Get(sessionID)
-	if !ok {
-		return 0
-	}
-	return int(n.Load())
+	return &backgroundAgents{byID: make(map[string]*backgroundAgentEntry)}
 }
 
 // start registers a running agent. cancel stops the agent's run.
@@ -150,7 +97,6 @@ func (r *backgroundAgents) start(info backgroundAgentInfo, cancel context.Cancel
 	}
 	info.Status = tools.BackgroundAgentRunning
 	r.byID[info.ID] = &backgroundAgentEntry{info: info, cancel: cancel}
-	r.countRunning(info)
 	return nil
 }
 
@@ -168,9 +114,6 @@ func (r *backgroundAgents) runningLocked(parentSessionID string) int {
 func (r *backgroundAgents) abandon(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if e, ok := r.byID[id]; ok && e.info.Status == tools.BackgroundAgentRunning {
-		r.uncountRunning(e.info)
-	}
 	delete(r.byID, id)
 }
 
@@ -183,9 +126,6 @@ func (r *backgroundAgents) finish(id string, status tools.BackgroundAgentStatus)
 	e, ok := r.byID[id]
 	if !ok {
 		return false
-	}
-	if e.info.Status == tools.BackgroundAgentRunning {
-		r.uncountRunning(e.info)
 	}
 	e.info.Status = status
 	e.info.FinishedAt = time.Now()
@@ -258,26 +198,6 @@ func (r *backgroundAgents) stop(parentSessionID, id string) stopOutcome {
 	return stopRequested
 }
 
-// stopChild ends the running agent whose sub-session is childSessionID and
-// reports whether there was one. It is how a cancel aimed at the
-// sub-session itself, such as the user's stop in the sub-session list,
-// reaches the agent: cancelling through the executor alone would do nothing
-// before the run registers as active.
-func (r *backgroundAgents) stopChild(childSessionID string) bool {
-	if r == nil {
-		return false
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, e := range r.byID {
-		if e.info.ChildSessionID == childSessionID && e.info.Status == tools.BackgroundAgentRunning {
-			e.cancel()
-			return true
-		}
-	}
-	return false
-}
-
 // stopAll asks every running agent of parentSessionID to end. Entries stay
 // registered: each agent records its own terminal status as it unwinds.
 func (r *backgroundAgents) stopAll(parentSessionID string) {
@@ -322,7 +242,6 @@ func (r *backgroundAgents) sessionDeleted(sessionID string) {
 		case e.info.ParentSessionID:
 			if e.info.Status == tools.BackgroundAgentRunning {
 				e.cancel()
-				r.uncountRunning(e.info)
 			}
 			delete(r.byID, id)
 		case e.info.ChildSessionID:
@@ -331,7 +250,6 @@ func (r *backgroundAgents) sessionDeleted(sessionID string) {
 			}
 		}
 	}
-	r.tally.Del(sessionID)
 }
 
 // launchBackgroundAgent starts params as a background agent and returns a
@@ -344,8 +262,7 @@ func (c *coordinator) launchBackgroundAgent(ctx context.Context, params subAgent
 		return tools.Fail(err.Error())
 	}
 
-	ancestors, err := c.sessionAncestors(ctx, params.SessionID)
-	if err != nil {
+	if err := c.adoptAncestors(ctx, params.SessionID); err != nil {
 		return tools.FailErr("resolve session ancestors", err)
 	}
 
@@ -355,7 +272,6 @@ func (c *coordinator) launchBackgroundAgent(ctx context.Context, params subAgent
 		ID:              agentID,
 		ParentSessionID: params.SessionID,
 		ChildSessionID:  c.sessions.CreateAgentToolSessionID(params.AgentMessageID, params.ToolCallID),
-		Ancestors:       ancestors,
 		AgentType:       agentType,
 		Task:            description,
 		StartedAt:       time.Now(),
@@ -373,6 +289,7 @@ func (c *coordinator) launchBackgroundAgent(ctx context.Context, params subAgent
 		c.background.abandon(agentID)
 		return tools.FailErr("create session", err)
 	}
+	c.subSessions.add(subSessionInfo(sess.ID, params, tools.SubSessionKindBackground), cancel)
 
 	go c.runBackgroundAgent(runCtx, cancel, sess, params, info)
 
@@ -390,6 +307,7 @@ func (c *coordinator) runBackgroundAgent(ctx context.Context, cancel context.Can
 		c.rollUpIdleParentCost(ctx, sess.ID, params.SessionID)
 	}
 	status := classifyBackgroundOutcome(ctx, outcome)
+	c.subSessions.end(sess.ID, tools.SubSessionStatusOf(status))
 	if !c.background.finish(info.ID, status) {
 		return
 	}
@@ -477,7 +395,8 @@ func (c *coordinator) wakeForNotices(sessionID string) {
 }
 
 // classifyBackgroundOutcome maps how a sub-agent run ended onto the status
-// its notice carries. A run that produced an answer is completed even if a
+// its notice carries. Foreground runs use it too, so one rule decides
+// whether a run completed, failed or was stopped. A run that produced an answer is completed even if a
 // stop landed at the same moment, because the answer is what the parent
 // wants. Cancellation is read from the run's own error as well as from
 // ctx, since the sub-session can be cancelled from the UI without the

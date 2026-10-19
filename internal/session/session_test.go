@@ -348,3 +348,41 @@ func TestDeletedSessionDoesNotLeaveItsThinkingClockBehind(t *testing.T) {
 	defer impl.thinkingMu.RUnlock()
 	require.NotContains(t, impl.thinkingStartedAt, created.ID)
 }
+
+func TestListChildrenReturnsOnlyDirectChildrenInCreationOrder(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Cleanup(func() {
+		require.NoError(t, db.Release(dataDir))
+		db.ResetPool()
+	})
+
+	conn, err := db.Connect(t.Context(), dataDir)
+	require.NoError(t, err)
+
+	sessions := NewService(db.New(conn), conn)
+
+	parent, err := sessions.Create(t.Context(), "parent")
+	require.NoError(t, err)
+	other, err := sessions.Create(t.Context(), "other")
+	require.NoError(t, err)
+
+	first, err := sessions.CreateTaskSession(t.Context(), "call-1", parent.ID, "first")
+	require.NoError(t, err)
+	second, err := sessions.CreateTaskSession(t.Context(), "call-2", parent.ID, "second")
+	require.NoError(t, err)
+	_, err = sessions.CreateTaskSession(t.Context(), "call-3", first.ID, "grandchild")
+	require.NoError(t, err)
+	_, err = sessions.CreateTaskSession(t.Context(), "call-4", other.ID, "unrelated")
+	require.NoError(t, err)
+
+	children, err := sessions.ListChildren(t.Context(), parent.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 2)
+	require.Equal(t, first.ID, children[0].ID)
+	require.Equal(t, second.ID, children[1].ID)
+	require.Equal(t, parent.ID, children[0].ParentSessionID)
+
+	none, err := sessions.ListChildren(t.Context(), second.ID)
+	require.NoError(t, err)
+	require.Empty(t, none)
+}

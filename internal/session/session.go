@@ -129,6 +129,10 @@ type Service interface {
 	Get(ctx context.Context, id string) (Session, error)
 	GetLast(ctx context.Context) (Session, error)
 	List(ctx context.Context) ([]Session, error)
+
+	// ListChildren returns the direct children of parentSessionID in
+	// creation order.
+	ListChildren(ctx context.Context, parentSessionID string) ([]Session, error)
 	Save(ctx context.Context, session Session) (Session, error)
 	UpdateTitleAndUsage(ctx context.Context, sessionID, title string, promptTokens, completionTokens int64, cost float64) error
 	AddCost(ctx context.Context, sessionID string, delta float64) error
@@ -418,6 +422,23 @@ func (s *service) Rename(ctx context.Context, id string, title string) error {
 
 func (s *service) List(ctx context.Context) ([]Session, error) {
 	dbSessions, err := s.q.ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sessions := make([]Session, len(dbSessions))
+	for i, dbSession := range dbSessions {
+		sessions[i], err = s.fromDBItem(dbSession)
+		if err != nil {
+			return nil, err
+		}
+		s.applyEstimatedUsageState(&sessions[i])
+		s.applyThinkingState(&sessions[i])
+	}
+	return sessions, nil
+}
+
+func (s *service) ListChildren(ctx context.Context, parentSessionID string) ([]Session, error) {
+	dbSessions, err := s.q.ListChildSessions(ctx, sql.NullString{String: parentSessionID, Valid: true})
 	if err != nil {
 		return nil, err
 	}

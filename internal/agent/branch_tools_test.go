@@ -134,6 +134,7 @@ func TestMergeToolWaitsForBackgroundAgents(t *testing.T) {
 
 			c := mergeCoordinator(t)
 			c.background = newBackgroundAgents()
+			c.subSessions = newSubSessionTree()
 			c.notices = newNoticeInbox()
 			done := c.branches.Register("s1", "parent-1")
 			c.proposals.Set("s1", "found the leak")
@@ -155,6 +156,7 @@ func TestMergeToolProceedsOnceBackgroundAgentsHaveReported(t *testing.T) {
 
 	c := mergeCoordinator(t)
 	c.background = newBackgroundAgents()
+	c.subSessions = newSubSessionTree()
 	c.notices = newNoticeInbox()
 	done := c.branches.Register("s1", "parent-1")
 	c.proposals.Set("s1", "found the leak")

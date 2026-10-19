@@ -10,6 +10,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
@@ -1100,4 +1101,47 @@ func TestDispatchDepthCountsTheBranchHop(t *testing.T) {
 		"a branch hop costs a level like any other dispatch")
 	require.Equal(t, 2, c.dispatchDepth(t.Context(), sub.ID),
 		"a delegation under a branch stacks on top of the branch's own depth")
+}
+
+func TestRunBranchAgentRecordsTheBranchInTheSubSessionTree(t *testing.T) {
+	startBranch := func(t *testing.T) (c *coordinator, parentID, branchID string, done <-chan tools.Result) {
+		env := testEnv(t)
+		c = branchCoordinator(t, env)
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+		require.NoError(t, err)
+
+		seen := make(chan string, 1)
+		agent, resolved := idleBranchAgent(t, seen)
+		result := make(chan tools.Result, 1)
+		go func() {
+			result <- c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+		}()
+		requireBranchStarted(t, seen)
+		return c, parent.ID, requireBranchSession(t, c, parent.ID), result
+	}
+
+	t.Run("waiting branch is running and abort stops it", func(t *testing.T) {
+		c, parentID, branchID, done := startBranch(t)
+
+		listed := c.subSessions.childrenOf(parentID)
+		require.Len(t, listed, 1)
+		require.Equal(t, branchID, listed[0].ID)
+		require.Equal(t, tools.SubSessionKindBranch, listed[0].Kind)
+		require.Equal(t, tools.SubSessionRunning, listed[0].Status)
+		require.False(t, c.subSessions.stop(branchID), "a branch has no run of its own to cancel")
+
+		require.True(t, c.AbandonBranch(branchID))
+		<-done
+		require.Equal(t, tools.SubSessionStopped, subSessionStatusOf(t, c, parentID, branchID))
+	})
+
+	t.Run("merged branch is completed", func(t *testing.T) {
+		c, parentID, branchID, done := startBranch(t)
+
+		require.True(t, c.branches.Signal(branchID, branchOutcome{Merged: true, Payload: "the plan"}))
+		require.False(t, (<-done).Response().IsError)
+		require.Equal(t, tools.SubSessionCompleted, subSessionStatusOf(t, c, parentID, branchID))
+	})
 }

@@ -9,6 +9,7 @@ import (
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
@@ -337,67 +338,45 @@ func TestApplySessionItemsStartsNoSpinnerWhenNothingRuns(t *testing.T) {
 	require.Nil(t, cmd)
 }
 
-func TestSubSessionEntriesTellABackgroundAgentsStates(t *testing.T) {
+// ctrl+x in the list ends a running agent by cancelling its own session, the
+// road the rest of the UI already takes to stop a sub-agent. The list stays
+// open so several agents can be stopped in one visit.
+func TestCtrlXInTheListStopsARunningAgentWhateverItsKind(t *testing.T) {
 	t.Parallel()
-	m, _ := newSubSessionListUI(t)
 
-	running := backgroundAgentItem(t, m, "msg-1", "call-1", "agt_00000001")
-	completed := backgroundAgentItem(t, m, "msg-2", "call-2", "agt_00000002")
-	completed.SetBackgroundOutcome(agenttools.BackgroundAgentCompleted)
-	failed := backgroundAgentItem(t, m, "msg-3", "call-3", "agt_00000003")
-	failed.SetBackgroundOutcome(agenttools.BackgroundAgentFailed)
-	stopped := backgroundAgentItem(t, m, "msg-4", "call-4", "agt_00000004")
-	stopped.SetBackgroundOutcome(agenttools.BackgroundAgentStopped)
-	m.chat.SetMessages(running, completed, failed, stopped)
+	for _, kind := range []agenttools.SubSessionKind{
+		agenttools.SubSessionKindForeground,
+		agenttools.SubSessionKindBackground,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
+			m, ws := newSubSessionListUI(t)
+			openSubSessionsList(t, m, ws, subSession("child", kind, agenttools.SubSessionRunning))
 
-	entries := m.subSessionEntries()
+			ws.EXPECT().AgentCancel("child")
+			cmd := m.handleDialogMsg(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+			runCmds(m, cmd)
 
-	require.Len(t, entries, 4)
-	require.Equal(t, dialog.SubSessionRunning, entries[0].State)
-	require.True(t, entries[0].Stoppable, "only a running background agent can be stopped")
-	require.Equal(t, dialog.SubSessionDone, entries[1].State)
-	require.False(t, entries[1].Stoppable)
-	require.Equal(t, dialog.SubSessionFailed, entries[2].State)
-	require.False(t, entries[2].Stoppable)
-	require.Equal(t, dialog.SubSessionStopped, entries[3].State)
-	require.False(t, entries[3].Stoppable)
+			require.True(t, m.dialog.ContainsDialog(dialog.SubSessionsID), "the list stays open so several agents can be stopped")
+		})
+	}
 }
 
-// The launch receipt gives the call a result at once; it must not read as
-// "done" for an agent that has barely started.
-func TestSubSessionStateOfABackgroundLaunchIsRunningNotDone(t *testing.T) {
-	t.Parallel()
-	m, _ := newSubSessionListUI(t)
-	running := backgroundAgentItem(t, m, "msg-1", "call-1", bgAgentID)
-
-	require.Equal(t, dialog.SubSessionRunning, subSessionState(running, false))
-}
-
-func TestSubSessionStateOfAnOrdinaryAgentIsUnchanged(t *testing.T) {
-	t.Parallel()
-	m, _ := newSubSessionListUI(t)
-
-	require.Equal(t, dialog.SubSessionRunning, subSessionState(dispatchedAgent(m, "m", "c", `{}`, true, false), false))
-	require.Equal(t, dialog.SubSessionWaiting, subSessionState(dispatchedAgent(m, "m", "c", `{}`, true, false), true))
-	require.Equal(t, dialog.SubSessionDone, subSessionState(withResult(dispatchedAgent(m, "m", "c", `{}`, true, false), false), false))
-	require.Equal(t, dialog.SubSessionFailed, subSessionState(withResult(dispatchedAgent(m, "m", "c", `{}`, true, false), true), false))
-	require.Equal(t, dialog.SubSessionFailed, subSessionState(dispatchedAgent(m, "m", "c", `{}`, true, true), false))
-}
-
-// ctrl+x in the list ends the agent by cancelling its own session, the road
-// the rest of the UI already takes to stop a sub-agent. The list stays open
-// so several agents can be stopped in one visit.
-func TestStoppingARunningBackgroundAgentFromTheListCancelsItsSession(t *testing.T) {
+// A branch waiting for the user is given up the way /abort gives it up, not
+// by cancelling a turn, which a branch spares on purpose. The view stays on
+// the parent: only the branch is ended.
+func TestCtrlXInTheListAbortsAWaitingBranch(t *testing.T) {
 	t.Parallel()
 	m, ws := newSubSessionListUI(t)
-	m.chat.SetMessages(backgroundAgentItem(t, m, "msg-1", "call-1", bgAgentID))
-	require.Nil(t, m.openSubSessionsDialog())
+	openSubSessionsList(t, m, ws, subSession("branch", agenttools.SubSessionKindBranch, agenttools.SubSessionRunning))
 
-	ws.EXPECT().AgentCancel("msg-1$$call-1")
+	ws.EXPECT().AgentAbandonBranch("branch")
 	cmd := m.handleDialogMsg(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
 	runCmds(m, cmd)
 
-	require.True(t, m.dialog.ContainsDialog(dialog.SubSessionsID), "the list stays open so several agents can be stopped")
+	require.True(t, m.dialog.ContainsDialog(dialog.SubSessionsID), "the list stays open")
+	require.Equal(t, "root", m.session.ID, "the view stays on the parent")
+	require.False(t, m.inSubSession())
 }
 
 // Cancelling must not run on the Update goroutine: in client/server mode it
@@ -413,18 +392,43 @@ func TestStoppingFromTheListCancelsOnlyWhenTheCommandRuns(t *testing.T) {
 	require.Nil(t, cmd())
 }
 
-// An ordinary running sub-agent is not stoppable from the list, so the key
-// must neither cancel it nor close the list.
-func TestCtrlXInTheListLeavesAnOrdinaryAgentAlone(t *testing.T) {
+func TestAbortingFromTheListAbandonsOnlyWhenTheCommandRuns(t *testing.T) {
 	t.Parallel()
-	m, _ := newSubSessionListUI(t)
-	m.chat.SetMessages(dispatchedAgent(m, "msg-1", "call-1", `{"subagent_type":"explore"}`, true, false))
-	require.Nil(t, m.openSubSessionsDialog())
+	m, ws := newSubSessionListUI(t)
 
-	cmd := m.handleDialogMsg(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
-	runCmds(m, cmd)
+	cmd := m.abortSubSessionCmd("branch")
+	require.NotNil(t, cmd)
 
-	require.True(t, m.dialog.ContainsDialog(dialog.SubSessionsID))
+	ws.EXPECT().AgentAbandonBranch("branch")
+	require.Nil(t, cmd())
+}
+
+// A child of unknown kind, or one that has already ended, offers no way to
+// end it, so the key must neither cancel nor abandon anything nor close the
+// list.
+func TestCtrlXInTheListLeavesAChildThatCannotBeEndedAlone(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		sub  proto.SubSession
+	}{
+		{"unknown kind", subSession("child", agenttools.SubSessionKindUnknown, agenttools.SubSessionRunning)},
+		{"completed", subSession("child", agenttools.SubSessionKindForeground, agenttools.SubSessionCompleted)},
+		{"from an earlier process", subSession("child", agenttools.SubSessionKindUnknown, agenttools.SubSessionEnded)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, ws := newSubSessionListUI(t)
+			openSubSessionsList(t, m, ws, tt.sub)
+
+			cmd := m.handleDialogMsg(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+			runCmds(m, cmd)
+
+			require.True(t, m.dialog.ContainsDialog(dialog.SubSessionsID))
+		})
+	}
 }
 
 // The parent's turn is over but its background agent is not, so the status

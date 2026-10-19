@@ -159,6 +159,11 @@ type Coordinator interface {
 	// outlives the turn that launched it, so this is what tells an idle
 	// session from one that is still working.
 	BackgroundAgentsRunning(sessionID string) int
+	// SubSessions lists the direct children of a session in dispatch
+	// order. Children that an earlier process dispatched are read from the
+	// database the first time a session is asked about, and reported as
+	// ended, because how they finished was not kept.
+	SubSessions(ctx context.Context, parentSessionID string) ([]tools.SubSession, error)
 	IsBusy() bool
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []message.QueuedPrompt
@@ -248,6 +253,11 @@ type coordinator struct {
 	background *backgroundAgents
 	notices    *noticeInbox
 
+	// subSessions records every sub-session this process dispatched, whether
+	// it runs in the foreground, in the background or as a branch. It is nil
+	// on a hand-built coordinator, and every use is nil-safe.
+	subSessions *subSessionTree
+
 	// lifetime outlives any single turn. A wake runs on it, because the
 	// turn that happens to be finishing is not the one that owns the
 	// work. Nil on a hand-built coordinator, which never wakes.
@@ -330,6 +340,7 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 		branches:       newBranchController(),
 		background:     newBackgroundAgents(),
+		subSessions:    newSubSessionTree(),
 		notices:        newNoticeInbox(),
 		lifetime:       ctx,
 		proposals:      tools.NewProposalStore(),
@@ -385,6 +396,7 @@ func (c *coordinator) forgetDeletedSessions(ctx context.Context, events <-chan p
 				c.active.forget(ev.Payload.ID)
 				c.forgetSubagentRoute(ev.Payload.ID)
 				c.background.sessionDeleted(ev.Payload.ID)
+				c.subSessions.sessionDeleted(ev.Payload.ID)
 				c.notices.Close(ev.Payload.ID)
 			}
 		}
@@ -2046,7 +2058,10 @@ func (c *coordinator) LockSession(ctx context.Context, sessionID string) (func()
 const branchAbandonedMessage = "The user ended this branch without merging it."
 
 func (c *coordinator) Cancel(sessionID string) {
-	c.background.stopChild(sessionID)
+	// A sub-session is stopped through its own dispatch context. Going
+	// through the executor alone would do nothing before the run registers
+	// as active.
+	c.subSessions.stop(sessionID)
 	// Reaching through to a parent's branches below never abandons them:
 	// interruptBranchTree only interrupts whatever turn each one has
 	// running, the same as the branch directly in front of the user gets
@@ -2157,7 +2172,25 @@ func (c *coordinator) IsSessionBranch(sessionID string) bool {
 }
 
 func (c *coordinator) BackgroundAgentsRunning(sessionID string) int {
-	return c.background.runningUnder(sessionID)
+	return c.subSessions.backgroundRunningUnder(sessionID)
+}
+
+func (c *coordinator) SubSessions(ctx context.Context, parentSessionID string) ([]tools.SubSession, error) {
+	err := c.subSessions.hydrate(parentSessionID, func() ([]tools.SubSession, error) {
+		rows, err := c.sessions.ListChildren(ctx, parentSessionID)
+		if err != nil {
+			return nil, fmt.Errorf("list sub-sessions of %q: %w", parentSessionID, err)
+		}
+		infos := make([]tools.SubSession, len(rows))
+		for i, row := range rows {
+			infos[i] = endedSubSession(row)
+		}
+		return infos, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return c.subSessions.childrenOf(parentSessionID), nil
 }
 
 // DefaultModel reports the model a brand new session would run on. It
@@ -2426,8 +2459,21 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) to
 	if err != nil {
 		return tools.FailErr("create session", err)
 	}
-	return c.executeSubAgent(ctx, sess, params).result()
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	c.subSessions.add(subSessionInfo(sess.ID, params, tools.SubSessionKindForeground), cancel)
+
+	outcome := c.executeSubAgent(runCtx, sess, params)
+	c.subSessions.end(sess.ID, tools.SubSessionStatusOf(classifyBackgroundOutcome(runCtx, outcome)))
+	if outcome.stoppedWhileParentLives(ctx) {
+		return tools.Fail(subAgentStoppedMessage)
+	}
+	return outcome.result()
 }
+
+// subAgentStoppedMessage is what a parent model reads when the user stopped
+// the sub-agent it was waiting on, so it neither retries nor reports a fault.
+const subAgentStoppedMessage = "The user stopped this agent before it finished. Do not dispatch it again unless the user asks."
 
 // subAgentOutcome is how a sub-agent run ended. Failure is the text a
 // parent model reads when it did not produce a usable answer, and is empty
@@ -2444,6 +2490,14 @@ func (o subAgentOutcome) result() tools.Result {
 		return tools.Fail(o.Failure)
 	}
 	return tools.Ok(o.Text)
+}
+
+// stoppedWhileParentLives reports whether the run was cancelled on its own
+// while the context of the call that dispatched it is still alive. That is a
+// stop aimed at the sub-agent. A cancel of the parent cancels both contexts
+// and is not one.
+func (o subAgentOutcome) stoppedWhileParentLives(parent context.Context) bool {
+	return o.Failure != "" && errors.Is(o.Err, context.Canceled) && parent.Err() == nil
 }
 
 // prepareSubAgentSession creates the sub-session a sub-agent runs in and
@@ -2586,6 +2640,9 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	if err != nil {
 		return tools.FailErr("create branch session", err)
 	}
+	c.subSessions.add(subSessionInfo(session.ID, params, tools.SubSessionKindBranch), nil)
+	branchStatus := tools.SubSessionFailed
+	defer func() { c.subSessions.end(session.ID, branchStatus) }()
 	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)
 
 	c.registerSubagentRoute(session.ID, params.Resolved.ID, params.Agent)
@@ -2681,8 +2738,10 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 		return tools.Fail("cancelled")
 	case out := <-done:
 		if out.Merged {
+			branchStatus = tools.SubSessionCompleted
 			return tools.Ok(out.Payload)
 		}
+		branchStatus = tools.SubSessionStopped
 		return tools.Halt(out.Payload)
 	}
 }

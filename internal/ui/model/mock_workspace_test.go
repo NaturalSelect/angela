@@ -314,6 +314,21 @@ func (mr *MockWorkspaceMockRecorder) AgentRunShellCommand(ctx, sessionID, comman
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentRunShellCommand", reflect.TypeOf((*MockWorkspace)(nil).AgentRunShellCommand), ctx, sessionID, command, termWidth, onProgress, isFirstMessage)
 }
 
+// AgentSubSessions mocks base method.
+func (m *MockWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AgentSubSessions", ctx, sessionID)
+	ret0, _ := ret[0].([]proto.SubSession)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AgentSubSessions indicates an expected call of AgentSubSessions.
+func (mr *MockWorkspaceMockRecorder) AgentSubSessions(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentSubSessions", reflect.TypeOf((*MockWorkspace)(nil).AgentSubSessions), ctx, sessionID)
+}
+
 // AgentSummarize mocks base method.
 func (m *MockWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
 	m.ctrl.T.Helper()

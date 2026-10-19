@@ -850,6 +850,18 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewReports(m.com, msg.reports, msg.workingDir))
+	case subSessionsLoadedMsg:
+		// Drop a result for a session the user has already navigated
+		// away from while the fetch was in flight, and one that arrives
+		// after the list was opened by a second request.
+		if msg.sessionID != m.currentSessionID() || m.dialog.ContainsDialog(dialog.SubSessionsID) {
+			break
+		}
+		if len(msg.subs) == 0 {
+			cmds = append(cmds, util.ReportInfo("No sub-sessions in this session."))
+			break
+		}
+		m.dialog.OpenDialog(dialog.NewSubSessions(m.com, subSessionEntries(msg.subs)))
 	case exportProfilesLoadedMsg:
 		m.dialog.OpenDialog(dialog.NewProfiles(m.com, profiling.Profiles, msg.workingDir))
 	case tpsComputedMsg:
@@ -2441,6 +2453,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		// NOTE: The list stays open, with the row already showing the
 		// stop, so several agents can be stopped in one visit.
 		cmds = append(cmds, m.stopSubSessionCmd(msg.SessionID))
+
+	case dialog.ActionAbortSubSession:
+		// NOTE: The list stays open, with the row already showing the
+		// abort, and the view stays on the parent the branch suspended.
+		cmds = append(cmds, m.abortSubSessionCmd(msg.SessionID))
 
 	// Open dialog message.
 	case dialog.ActionOpenDialog:
@@ -5862,8 +5879,8 @@ func (m *UI) openSessionsDialog() tea.Cmd {
 }
 
 // openSubSessionsDialog opens the picker for the sub-sessions of the session
-// in view. A session that has dispatched none gets a notice instead of an
-// empty dialog.
+// in view. The children are read off the Update goroutine; a session that has
+// dispatched none gets a notice instead of an empty dialog once they arrive.
 func (m *UI) openSubSessionsDialog() tea.Cmd {
 	if m.dialog.ContainsDialog(dialog.SubSessionsID) {
 		m.dialog.BringToFront(dialog.SubSessionsID)
@@ -5872,14 +5889,7 @@ func (m *UI) openSubSessionsDialog() tea.Cmd {
 	if m.session == nil {
 		return nil
 	}
-
-	entries := m.subSessionEntries()
-	if len(entries) == 0 {
-		return util.ReportInfo("No sub-sessions in this session.")
-	}
-
-	m.dialog.OpenDialog(dialog.NewSubSessions(m.com, entries))
-	return nil
+	return m.loadSubSessionsCmd(m.session.ID)
 }
 
 // openFilesDialog opens the file picker dialog.

@@ -59,12 +59,15 @@ func (c *blockingCoordinator) IsBusy() bool                                     
 func (c *blockingCoordinator) IsSessionBusy(string) bool                          { return false }
 func (c *blockingCoordinator) IsSessionBranch(string) bool                        { return false }
 func (c *blockingCoordinator) BackgroundAgentsRunning(string) int                 { return 0 }
-func (c *blockingCoordinator) QueuedPrompts(string) int                           { return 0 }
-func (c *blockingCoordinator) QueuedPromptsList(string) []message.QueuedPrompt    { return nil }
-func (c *blockingCoordinator) ClearQueue(string)                                  {}
-func (c *blockingCoordinator) TakeQueuedPrompts(string) []message.QueuedPrompt    { return nil }
-func (c *blockingCoordinator) Summarize(context.Context, string) error            { return nil }
-func (c *blockingCoordinator) DefaultModel() agent.Model                          { return agent.Model{} }
+func (c *blockingCoordinator) SubSessions(context.Context, string) ([]proto.SubSession, error) {
+	return nil, nil
+}
+func (c *blockingCoordinator) QueuedPrompts(string) int                        { return 0 }
+func (c *blockingCoordinator) QueuedPromptsList(string) []message.QueuedPrompt { return nil }
+func (c *blockingCoordinator) ClearQueue(string)                               {}
+func (c *blockingCoordinator) TakeQueuedPrompts(string) []message.QueuedPrompt { return nil }
+func (c *blockingCoordinator) Summarize(context.Context, string) error         { return nil }
+func (c *blockingCoordinator) DefaultModel() agent.Model                       { return agent.Model{} }
 
 func (c *blockingCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
 	return config.ActiveAgent{}, nil

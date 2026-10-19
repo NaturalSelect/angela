@@ -1205,6 +1205,24 @@ func (c *Client) GetAgentSessionQueuedPromptsList(ctx context.Context, id string
 	return proto.QueuedPromptsToMessage(prompts), nil
 }
 
+// GetAgentSubSessions retrieves the direct children of a session in
+// dispatch order.
+func (c *Client) GetAgentSubSessions(ctx context.Context, id string, sessionID string) ([]proto.SubSession, error) {
+	rsp, err := c.get(ctx, fmt.Sprintf("/workspaces/%s/agent/sessions/%s/sub-sessions", id, sessionID), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sub-sessions: %w", err)
+	}
+	defer rsp.Body.Close()
+	if rsp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get sub-sessions: status code %d", rsp.StatusCode)
+	}
+	var subSessions []proto.SubSession
+	if err := json.NewDecoder(rsp.Body).Decode(&subSessions); err != nil {
+		return nil, fmt.Errorf("failed to decode sub-sessions: %w", err)
+	}
+	return subSessions, nil
+}
+
 // FileTrackerRecordRead records a file read for a session.
 func (c *Client) FileTrackerRecordRead(ctx context.Context, id string, sessionID, path string) error {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/filetracker/read", id), nil, jsonBody(struct {

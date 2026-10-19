@@ -185,6 +185,12 @@ type Workspace interface {
 	// launched them, so a session with a count above zero is still
 	// working even when AgentIsSessionBusy says otherwise.
 	AgentBackgroundAgents(sessionID string) int
+	// AgentSubSessions lists the direct children of a session in dispatch
+	// order, including those an earlier process dispatched, which come
+	// back as ended. Unlike the probes above it reports a failure rather
+	// than hiding it as an empty answer, so a caller can tell a server it
+	// could not reach from a session with no children.
+	AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error)
 	AgentIsReady() bool
 	// AgentReadyErr reports nil when the coder agent is ready to accept
 	// work, or a descriptive error otherwise: ErrAgentNotInitialized

@@ -7,6 +7,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/proto"
 )
 
 // fakeCoordinator is a fully configurable agent.Coordinator stub for
@@ -20,6 +21,8 @@ type fakeCoordinator struct {
 	sessionBusy    map[string]bool
 	sessionBranch  map[string]bool
 	backgroundRuns map[string]int
+	subSessions    map[string][]proto.SubSession
+	subSessionsErr error
 	queued         map[string]int
 	queuedList     map[string][]message.QueuedPrompt
 	takenQueue     map[string][]message.QueuedPrompt
@@ -84,6 +87,10 @@ func (c *fakeCoordinator) IsSessionBranch(sessionID string) bool { return c.sess
 
 func (c *fakeCoordinator) BackgroundAgentsRunning(sessionID string) int {
 	return c.backgroundRuns[sessionID]
+}
+
+func (c *fakeCoordinator) SubSessions(_ context.Context, parentSessionID string) ([]proto.SubSession, error) {
+	return c.subSessions[parentSessionID], c.subSessionsErr
 }
 
 func (c *fakeCoordinator) QueuedPrompts(sessionID string) int { return c.queued[sessionID] }

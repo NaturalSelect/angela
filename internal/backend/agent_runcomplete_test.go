@@ -48,12 +48,15 @@ func (c *errorCoordinator) IsBusy() bool                                       {
 func (c *errorCoordinator) IsSessionBusy(string) bool                          { return false }
 func (c *errorCoordinator) IsSessionBranch(string) bool                        { return false }
 func (c *errorCoordinator) BackgroundAgentsRunning(string) int                 { return 0 }
-func (c *errorCoordinator) QueuedPrompts(string) int                           { return 0 }
-func (c *errorCoordinator) QueuedPromptsList(string) []message.QueuedPrompt    { return nil }
-func (c *errorCoordinator) ClearQueue(string)                                  {}
-func (c *errorCoordinator) TakeQueuedPrompts(string) []message.QueuedPrompt    { return nil }
-func (c *errorCoordinator) Summarize(context.Context, string) error            { return nil }
-func (c *errorCoordinator) DefaultModel() agent.Model                          { return agent.Model{} }
+func (c *errorCoordinator) SubSessions(context.Context, string) ([]proto.SubSession, error) {
+	return nil, nil
+}
+func (c *errorCoordinator) QueuedPrompts(string) int                        { return 0 }
+func (c *errorCoordinator) QueuedPromptsList(string) []message.QueuedPrompt { return nil }
+func (c *errorCoordinator) ClearQueue(string)                               {}
+func (c *errorCoordinator) TakeQueuedPrompts(string) []message.QueuedPrompt { return nil }
+func (c *errorCoordinator) Summarize(context.Context, string) error         { return nil }
+func (c *errorCoordinator) DefaultModel() agent.Model                       { return agent.Model{} }
 
 func (c *errorCoordinator) EditActiveAgent(context.Context, string, config.ActiveAgentEdit) (config.ActiveAgent, error) {
 	return config.ActiveAgent{}, nil

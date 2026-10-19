@@ -311,6 +311,7 @@ func TestBackgroundAgentToolsComeWithTheAgentToolWhereBackgroundAgentsWork(t *te
 	interactive := newBackgroundTestCoordinator(t)
 	nonInteractive := newHermeticTestCoordinator(t, false, false)
 	nonInteractive.background = newBackgroundAgents()
+	nonInteractive.subSessions = newSubSessionTree()
 	nonInteractive.notices = newNoticeInbox()
 
 	coder := interactive.cfg.Config().Agents[config.AgentCoder]

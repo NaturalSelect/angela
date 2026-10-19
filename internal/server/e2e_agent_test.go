@@ -217,10 +217,13 @@ func (c *scriptedCoordinator) CancelAll() {
 	}
 }
 
-func (c *scriptedCoordinator) IsBusy() bool                                    { return false }
-func (c *scriptedCoordinator) IsSessionBusy(string) bool                       { return false }
-func (c *scriptedCoordinator) IsSessionBranch(string) bool                     { return false }
-func (c *scriptedCoordinator) BackgroundAgentsRunning(string) int              { return 0 }
+func (c *scriptedCoordinator) IsBusy() bool                       { return false }
+func (c *scriptedCoordinator) IsSessionBusy(string) bool          { return false }
+func (c *scriptedCoordinator) IsSessionBranch(string) bool        { return false }
+func (c *scriptedCoordinator) BackgroundAgentsRunning(string) int { return 0 }
+func (c *scriptedCoordinator) SubSessions(context.Context, string) ([]proto.SubSession, error) {
+	return nil, nil
+}
 func (c *scriptedCoordinator) QueuedPrompts(string) int                        { return 0 }
 func (c *scriptedCoordinator) QueuedPromptsList(string) []message.QueuedPrompt { return nil }
 func (c *scriptedCoordinator) ClearQueue(string)                               {}

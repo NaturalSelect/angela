@@ -6,6 +6,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/common"
@@ -203,7 +204,7 @@ func TestSubSessionsCommandSurvivesViewingASubAgent(t *testing.T) {
 func backgroundSubSessions() []SubSessionEntry {
 	return []SubSessionEntry{
 		{SessionID: "bg-stopped", Agent: "explore", Task: "scan deps", State: SubSessionStopped},
-		{SessionID: "bg-run", Agent: "explore", Task: "map the repo", State: SubSessionRunning, Stoppable: true},
+		{SessionID: "bg-run", Agent: "explore", Task: "map the repo", State: SubSessionRunning, End: SubSessionEndStop},
 		{SessionID: "plain-run", Agent: "explore", Task: "trace login", State: SubSessionRunning},
 	}
 }
@@ -411,8 +412,8 @@ func TestSubSessionsStayUsableAfterAStop(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSubSessions(t, []SubSessionEntry{
-		{SessionID: "a", Agent: "explore", Task: "one", State: SubSessionRunning, Stoppable: true},
-		{SessionID: "b", Agent: "explore", Task: "two", State: SubSessionRunning, Stoppable: true},
+		{SessionID: "a", Agent: "explore", Task: "one", State: SubSessionRunning, End: SubSessionEndStop},
+		{SessionID: "b", Agent: "explore", Task: "two", State: SubSessionRunning, End: SubSessionEndStop},
 	})
 
 	require.Equal(t, ActionStopSubSession{SessionID: "b"}, s.HandleMsg(ctrlX()))
@@ -573,4 +574,227 @@ func TestSubSessionsHelpKeepsTheCloseHintOnAStoppableRow(t *testing.T) {
 
 	_, ok := locateOnScreen(scr, "esc")
 	require.True(t, ok, "the close hint is still in the footer")
+}
+
+// abortSubSessions has a branch agent waiting for the user, which is ended
+// with Abort rather than Stop, next to a plain row and a stoppable one.
+func abortSubSessions() []SubSessionEntry {
+	return []SubSessionEntry{
+		{SessionID: "fg-run", Agent: "explore", Task: "map the repo", State: SubSessionRunning, End: SubSessionEndStop},
+		{SessionID: "branch", Agent: "plan", Task: "draft the schema", State: SubSessionWaiting, End: SubSessionEndAbort},
+		{SessionID: "done", Agent: "explore", Task: "scan deps", State: SubSessionDone},
+	}
+}
+
+// selectBranch moves the selection onto the waiting branch row, which is the
+// newest active row and so already the first one.
+func selectBranch(t *testing.T, s *SubSessions) {
+	t.Helper()
+	require.Equal(t, "branch", s.list.SelectedItem().(*SubSessionItem).ID())
+}
+
+func TestSubSessionItemLabelsTheButtonAfterTheEndAction(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+
+	require.Contains(t, renderedRow(s, "branch"), "Abort")
+	require.NotContains(t, renderedRow(s, "branch"), "Stop")
+	require.Contains(t, renderedRow(s, "branch"), "waiting for you")
+	require.Contains(t, renderedRow(s, "fg-run"), "Stop")
+	require.NotContains(t, renderedRow(s, "fg-run"), "Abort")
+	require.NotContains(t, renderedRow(s, "done"), "Abort")
+	require.NotContains(t, renderedRow(s, "done"), "Stop")
+}
+
+// The two labels differ in width, and rendering, focus and hit testing all
+// derive from the label, so each row must give up room at its own width.
+func TestSubSessionItemDropsEachButtonAtItsOwnWidth(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+	stop := s.list.FilteredItems()[1].(*SubSessionItem)
+	abort := s.list.FilteredItems()[0].(*SubSessionItem)
+	require.Equal(t, SubSessionEndStop, stop.entry.End)
+	require.Equal(t, SubSessionEndAbort, abort.entry.End)
+
+	stopWidth := stopButtonWidth(stop.t, "Stop") + 1 + subSessionMinRowWidth
+	abortWidth := stopButtonWidth(abort.t, "Abort") + 1 + subSessionMinRowWidth
+	require.Equal(t, stopWidth+1, abortWidth)
+
+	require.True(t, stop.showsStop(stopWidth))
+	require.False(t, stop.showsStop(stopWidth-1))
+	require.True(t, abort.showsStop(abortWidth))
+	require.False(t, abort.showsStop(abortWidth-1))
+
+	require.Contains(t, ansi.Strip(abort.Render(abortWidth)), "Abort")
+	require.NotContains(t, ansi.Strip(abort.Render(abortWidth-1)), "Abort")
+	require.False(t, abort.overStop(abortWidth-1, abortWidth-1))
+}
+
+func TestSubSessionsCtrlXAbortsTheWaitingBranch(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+	selectBranch(t, s)
+
+	action := s.HandleMsg(ctrlX())
+
+	require.Equal(t, ActionAbortSubSession{SessionID: "branch"}, action)
+	require.Contains(t, renderedRow(s, "branch"), "stopped", "the row shows the outcome at once")
+	require.NotContains(t, renderedRow(s, "branch"), "Abort")
+	require.Nil(t, s.HandleMsg(ctrlX()), "an aborted row cannot be aborted again")
+}
+
+func TestSubSessionsTabThenEnterAbortsTheWaitingBranch(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+	selectBranch(t, s)
+
+	require.Equal(t, ActionEnterSubSession{SessionID: "branch"}, s.HandleMsg(enter()), "enter alone still enters")
+
+	require.Nil(t, s.HandleMsg(tab()))
+	action := s.HandleMsg(enter())
+
+	require.Equal(t, ActionAbortSubSession{SessionID: "branch"}, action)
+	require.Contains(t, renderedRow(s, "branch"), "stopped")
+	require.NotContains(t, renderedRow(s, "branch"), "Abort")
+}
+
+func TestSubSessionsClickingAbortAbortsTheWaitingBranch(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+	at := findOnScreen(t, drawSubSessions(s), "Abort")
+
+	action := s.HandleMsg(tea.MouseClickMsg{X: at.X, Y: at.Y, Button: uv.MouseLeft})
+
+	require.Equal(t, ActionAbortSubSession{SessionID: "branch"}, action)
+	require.Contains(t, renderedRow(s, "branch"), "stopped")
+	require.NotContains(t, renderedRow(s, "branch"), "Abort")
+}
+
+// The Abort button is wider than the Stop button; its padding counts too.
+func TestSubSessionsClickingEitherEdgeOfTheAbortButtonAbortsTheBranch(t *testing.T) {
+	t.Parallel()
+
+	for _, dx := range []int{-1, 5} {
+		s := newTestSubSessions(t, abortSubSessions())
+		at := findOnScreen(t, drawSubSessions(s), "Abort")
+
+		action := s.HandleMsg(tea.MouseClickMsg{X: at.X + dx, Y: at.Y, Button: uv.MouseLeft})
+
+		require.Equal(t, ActionAbortSubSession{SessionID: "branch"}, action, "dx=%d", dx)
+	}
+}
+
+func TestSubSessionsClickingBesideTheAbortButtonDoesNotAbort(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+	at := findOnScreen(t, drawSubSessions(s), "Abort")
+
+	action := s.HandleMsg(tea.MouseClickMsg{X: at.X - 2, Y: at.Y, Button: uv.MouseLeft})
+
+	require.Nil(t, action)
+	require.Contains(t, renderedRow(s, "branch"), "waiting for you", "nothing was aborted")
+}
+
+// Each row's key help describes what its own end action does.
+func TestSubSessionsHelpFollowsTheSelectedRowsEndAction(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+	selectBranch(t, s)
+
+	descs := helpDescs(s.ShortHelp())
+	require.Equal(t, "abort branch", descs["ctrl+x"])
+	require.Equal(t, "abort button", descs["tab"])
+	descs = helpDescs(s.FullHelp()[0])
+	require.Equal(t, "abort branch", descs["ctrl+x"])
+	require.Equal(t, "abort button", descs["tab"])
+
+	s.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+	require.Equal(t, "fg-run", s.list.SelectedItem().(*SubSessionItem).ID())
+
+	descs = helpDescs(s.ShortHelp())
+	require.Equal(t, "stop agent", descs["ctrl+x"])
+	require.Equal(t, "stop button", descs["tab"])
+}
+
+func TestSubSessionsHelpRelabelsEnterWhileTheAbortButtonHasTheFocus(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+	selectBranch(t, s)
+	require.Equal(t, "enter sub-session", s.ShortHelp()[0].Help().Desc)
+
+	s.HandleMsg(tab())
+
+	require.Equal(t, "abort branch", s.ShortHelp()[0].Help().Desc)
+}
+
+func TestSubSessionsHelpKeepsTheCloseHintOnAnAbortableRow(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, abortSubSessions())
+	selectBranch(t, s)
+
+	_, ok := locateOnScreen(drawSubSessions(s), "esc")
+	require.True(t, ok, "the close hint is still in the footer")
+}
+
+// helpDescs maps each binding's key to its help text.
+func helpDescs(bindings []key.Binding) map[string]string {
+	descs := make(map[string]string, len(bindings))
+	for _, b := range bindings {
+		descs[b.Help().Key] = b.Help().Desc
+	}
+	return descs
+}
+
+// Children dispatched before a restart have an unknown outcome; the row
+// says so and does not claim success, failure or a stop.
+func TestSubSessionItemRendersAnEndedAgent(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, []SubSessionEntry{
+		{SessionID: "a", Agent: "explore", Task: "scan deps", State: SubSessionEnded},
+	})
+
+	out := ansi.Strip(s.list.FilteredItems()[0].Render(80))
+
+	require.Contains(t, out, "○")
+	require.Contains(t, out, "ended")
+	require.Contains(t, out, "scan deps")
+	require.NotContains(t, out, "✗")
+	require.NotContains(t, out, "■")
+	require.NotContains(t, out, "Stop")
+	require.False(t, SubSessionEnded.active())
+}
+
+func TestSubSessionsListEndedAgentsAfterTheActiveOnes(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, []SubSessionEntry{
+		{SessionID: "ended", Agent: "explore", Task: "scan deps", State: SubSessionEnded},
+		{SessionID: "run", Agent: "explore", Task: "map the repo", State: SubSessionRunning},
+	})
+
+	require.Equal(t, []string{"run", "ended"}, subSessionIDs(s))
+}
+
+func TestSubSessionsFilterMatchesEnded(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSubSessions(t, []SubSessionEntry{
+		{SessionID: "ended", Agent: "explore", Task: "scan deps", State: SubSessionEnded},
+		{SessionID: "run", Agent: "plan", Task: "map the repo", State: SubSessionRunning},
+	})
+	for _, r := range "ended" {
+		s.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+
+	require.Equal(t, []string{"ended"}, subSessionIDs(s))
 }

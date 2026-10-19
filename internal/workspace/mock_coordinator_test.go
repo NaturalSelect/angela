@@ -15,6 +15,7 @@ import (
 
 	fantasy "charm.land/fantasy"
 	agent "github.com/NaturalSelect/angela/internal/agent"
+	tools "github.com/NaturalSelect/angela/internal/agent/tools"
 	config "github.com/NaturalSelect/angela/internal/config"
 	message "github.com/NaturalSelect/angela/internal/message"
 	gomock "go.uber.org/mock/gomock"
@@ -376,6 +377,21 @@ func (mr *MockCoordinatorMockRecorder) RunAccepted(ctx, accept, sessionID, promp
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]any{ctx, accept, sessionID, prompt}, attachments...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunAccepted", reflect.TypeOf((*MockCoordinator)(nil).RunAccepted), varargs...)
+}
+
+// SubSessions mocks base method.
+func (m *MockCoordinator) SubSessions(ctx context.Context, parentSessionID string) ([]tools.SubSession, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SubSessions", ctx, parentSessionID)
+	ret0, _ := ret[0].([]tools.SubSession)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SubSessions indicates an expected call of SubSessions.
+func (mr *MockCoordinatorMockRecorder) SubSessions(ctx, parentSessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubSessions", reflect.TypeOf((*MockCoordinator)(nil).SubSessions), ctx, parentSessionID)
 }
 
 // Summarize mocks base method.

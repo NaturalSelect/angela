@@ -202,6 +202,7 @@ func (s *Server) installHandler() {
 	mux.HandleFunc("POST /v1/workspaces/{id}/agent/init", c.handlePostWorkspaceAgentInit)
 	mux.HandleFunc("POST /v1/workspaces/{id}/agent/update", c.handlePostWorkspaceAgentUpdate)
 	mux.HandleFunc("GET /v1/workspaces/{id}/agent/sessions/{sid}", c.handleGetWorkspaceAgentSession)
+	mux.HandleFunc("GET /v1/workspaces/{id}/agent/sessions/{sid}/sub-sessions", c.handleGetWorkspaceAgentSessionSubSessions)
 	mux.HandleFunc("POST /v1/workspaces/{id}/agent/sessions/{sid}/cancel", c.handlePostWorkspaceAgentSessionCancel)
 	mux.HandleFunc("POST /v1/workspaces/{id}/agent/sessions/{sid}/abandon-branch", c.handlePostWorkspaceAgentSessionAbandonBranch)
 	mux.HandleFunc("GET /v1/workspaces/{id}/agent/sessions/{sid}/prompts/queued", c.handleGetWorkspaceAgentSessionPromptQueued)

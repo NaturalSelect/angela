@@ -1177,6 +1177,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/workspaces/{id}/agent/sessions/{sid}/sub-sessions": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "agent"
+                ],
+                "summary": "List sub-sessions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workspace ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/proto.SubSession"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    }
+                }
+            }
+        },
         "/workspaces/{id}/agent/sessions/{sid}/summarize": {
             "post": {
                 "tags": [
@@ -5629,6 +5679,10 @@ const docTemplate = `{
                 "attached_clients": {
                     "type": "integer"
                 },
+                "background_agents": {
+                    "description": "BackgroundAgents counts the background agents running in this\nsession or in any session below it. A background agent outlives the\nturn that launched it, so a session can be idle and still working.",
+                    "type": "integer"
+                },
                 "cache_creation_tokens": {
                     "type": "integer"
                 },
@@ -6562,6 +6616,32 @@ const docTemplate = `{
                 }
             }
         },
+        "proto.SubSession": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/tools.SubSessionKind"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/tools.SubSessionStatus"
+                },
+                "task": {
+                    "type": "string"
+                }
+            }
+        },
         "proto.Todo": {
             "type": "object",
             "properties": {
@@ -6769,6 +6849,38 @@ const docTemplate = `{
                 "Second",
                 "Minute",
                 "Hour"
+            ]
+        },
+        "tools.SubSessionKind": {
+            "type": "string",
+            "enum": [
+                "",
+                "foreground",
+                "background",
+                "branch"
+            ],
+            "x-enum-varnames": [
+                "SubSessionKindUnknown",
+                "SubSessionKindForeground",
+                "SubSessionKindBackground",
+                "SubSessionKindBranch"
+            ]
+        },
+        "tools.SubSessionStatus": {
+            "type": "string",
+            "enum": [
+                "running",
+                "completed",
+                "failed",
+                "stopped",
+                "ended"
+            ],
+            "x-enum-varnames": [
+                "SubSessionRunning",
+                "SubSessionCompleted",
+                "SubSessionFailed",
+                "SubSessionStopped",
+                "SubSessionEnded"
             ]
         }
     }

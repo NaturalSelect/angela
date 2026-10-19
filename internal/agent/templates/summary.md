@@ -50,6 +50,17 @@ Any pending tasks you have explicitly been asked to work on.
 
 Precisely what was being worked on immediately before this summary request, paying special attention to the most recent messages from both user and assistant. Include file names and code snippets where applicable.
 
+
+## 10. Branch Context
+
+Include this section only when the conversation is a branch: it contains a message saying it was forked from another conversation as a branch and naming its task, or it starts from an earlier summary that already has this section. Otherwise omit the section entirely. A branch loses its bearings across repeated summaries unless this is carried forward each time, so when an earlier summary has it, start from it and update it rather than rewriting it from the recent messages alone.
+
+- **Parent**: the title of the conversation this branch was forked from. That conversation is suspended on a tool call that only this branch resolves, by the user approving a `Merge`, or by the user abandoning the branch.
+- **Task**: the task the branch was forked with, quoted verbatim inside `<branch_task>` tags. Do not paraphrase it, and do not narrow it to whatever sub-topic the latest messages were about: it is the scope every later turn is measured against.
+- **Proposal status**: whether a proposal has been drafted with `ProposalWrite`, what it currently covers, what it still lacks for the task, and which decisions the user has accepted into it. The document itself lives outside the conversation and survives this summary, so do not copy it here; the resuming assistant reads it with `ProposalRead` before revising it with `ProposalEdit`.
+- **Merge attempts**: every `Merge` the user rejected, with the reason they gave.
+- **Redirections**: everything the user changed, narrowed, or ruled out since the fork, so the resumed branch does not propose it again.
+
 ## 10. Next Step
 
 The next step you will take, DIRECTLY in line with the user's most recent explicit requests and the task you were working on immediately before this summary. If the last task was concluded, only list next steps that are explicitly in line with the user's request; do not start on tangential or old requests without confirming first.

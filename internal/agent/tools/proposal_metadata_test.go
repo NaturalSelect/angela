@@ -33,9 +33,8 @@ func TestProposalWriteReportsTheFirstDraftAsAdditions(t *testing.T) {
 	require.Zero(t, meta.Removals)
 }
 
-// Rewriting a draft diffs against the draft it replaced, not against
-// nothing, or the user would be shown the whole document as new.
-func TestProposalWriteDiffsAgainstThePreviousDraft(t *testing.T) {
+// A refused overwrite changed nothing, so it has no diff to show.
+func TestProposalWriteRefusalCarriesNoMetadata(t *testing.T) {
 	t.Parallel()
 
 	store := NewProposalStore()
@@ -46,12 +45,8 @@ func TestProposalWriteDiffsAgainstThePreviousDraft(t *testing.T) {
 		proposalCall(toolnames.ProposalWrite, `{"content":"ship it on Friday\n"}`),
 	)
 	require.NoError(t, err)
-
-	meta := proposalMetadata(t, resp.Metadata)
-	require.Equal(t, "ship it on Tuesday\n", meta.OldContent)
-	require.Equal(t, "ship it on Friday\n", meta.NewContent)
-	require.Equal(t, 1, meta.Additions)
-	require.Equal(t, 1, meta.Removals)
+	require.True(t, resp.IsError)
+	require.Empty(t, resp.Metadata)
 }
 
 func TestProposalEditReportsTheChange(t *testing.T) {
@@ -59,6 +54,7 @@ func TestProposalEditReportsTheChange(t *testing.T) {
 
 	store := NewProposalStore()
 	store.Set("s1", "ship it on Tuesday\n")
+	store.MarkRead("s1")
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
@@ -79,6 +75,7 @@ func TestProposalEditFailureCarriesNoMetadata(t *testing.T) {
 
 	store := NewProposalStore()
 	store.Set("s1", "ship it on Tuesday")
+	store.MarkRead("s1")
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),

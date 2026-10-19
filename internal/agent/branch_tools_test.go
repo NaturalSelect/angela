@@ -271,6 +271,7 @@ func TestMergeToolRetriesAfterDenial(t *testing.T) {
 	c := mergeCoordinator(t)
 	done := c.branches.Register("s1", "parent-1")
 	c.proposals.Set("s1", "ship the first try")
+	c.proposals.MarkRead("s1")
 	gated := newPermissionedTool(c.mergeTool(), svc, dir, nil)
 	events := svc.Subscribe(t.Context())
 

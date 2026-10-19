@@ -36,22 +36,44 @@ const ProposalDocumentName = "PROPOSAL.md"
 // restart either.
 type ProposalStore struct {
 	docs *csync.Map[string, string]
+	// read holds the sessions that have read their current document back
+	// with ProposalRead. It is the counterpart of the file tracker: an
+	// edit is only allowed against text the model has actually seen, so a
+	// change to the document that the model did not read invalidates it.
+	read *csync.Map[string, struct{}]
 }
 
 func NewProposalStore() *ProposalStore {
-	return &ProposalStore{docs: csync.NewMap[string, string]()}
+	return &ProposalStore{
+		docs: csync.NewMap[string, string](),
+		read: csync.NewMap[string, struct{}](),
+	}
 }
 
 func (s *ProposalStore) Get(sessionID string) (string, bool) {
 	return s.docs.Get(sessionID)
 }
 
+// Set stores content as the session's document and marks it unread.
+// Whoever knows the resulting text, such as an edit that just produced
+// it, calls MarkRead afterwards.
 func (s *ProposalStore) Set(sessionID, content string) {
 	s.docs.Set(sessionID, content)
+	s.read.Del(sessionID)
+}
+
+func (s *ProposalStore) MarkRead(sessionID string) {
+	s.read.Set(sessionID, struct{}{})
+}
+
+func (s *ProposalStore) HasRead(sessionID string) bool {
+	_, ok := s.read.Get(sessionID)
+	return ok
 }
 
 func (s *ProposalStore) Discard(sessionID string) {
 	s.docs.Del(sessionID)
+	s.read.Del(sessionID)
 }
 
 // ProposalResponseMetadata carries the document before and after a
@@ -75,7 +97,7 @@ func proposalChange(oldContent, newContent string) ProposalResponseMetadata {
 }
 
 type ProposalWriteParams struct {
-	Content string `json:"content" description:"The full text of the proposal, replacing whatever it held before"`
+	Content string `json:"content" description:"The full text of the proposal. Only valid while the proposal is empty"`
 }
 
 type ProposalEditParams struct {
@@ -102,15 +124,23 @@ func NewProposalWriteTool(store *ProposalStore) fantasy.AgentTool {
 				return Fail("content is required")
 			}
 
-			previous, _ := store.Get(sessionID)
+			if existing, _ := store.Get(sessionID); existing != "" {
+				return Failf(
+					"A proposal already exists and cannot be overwritten. Read it with %s, then revise it with %s.",
+					toolnames.ProposalRead, toolnames.ProposalEdit,
+				)
+			}
+
 			store.Set(sessionID, params.Content)
+			// NOTE: Like a file Write, drafting counts as having read the result.
+			store.MarkRead(sessionID)
 			// The proposal itself is deliberately absent from the reply:
 			// echoing it back would spend on the return path exactly what
 			// editing in place saves on the way in.
 			return Ok(fmt.Sprintf(
 				"Proposal saved, %d lines. Revise it with %s rather than writing it out again.",
 				lineCount(params.Content), toolnames.ProposalEdit,
-			)).WithMetadata(proposalChange(previous, params.Content))
+			)).WithMetadata(proposalChange("", params.Content))
 		},
 	)
 }
@@ -136,6 +166,9 @@ func NewProposalEditTool(store *ProposalStore) fantasy.AgentTool {
 					"There is no proposal to edit yet. Draft it with %s first.", toolnames.ProposalWrite,
 				)
 			}
+			if !store.HasRead(sessionID) {
+				return Failf("You must read the proposal before editing it. Use %s first.", toolnames.ProposalRead)
+			}
 
 			updated, whitespaceCorrected, err := findAndReplace(doc, params.OldString, params.NewString, params.ReplaceAll)
 			if err != nil {
@@ -145,6 +178,9 @@ func NewProposalEditTool(store *ProposalStore) fantasy.AgentTool {
 			}
 
 			store.Set(sessionID, updated)
+			// NOTE: The model asked for exactly this change to text it had read,
+			// so it knows the result without reading it back.
+			store.MarkRead(sessionID)
 			return Ok(withWhitespaceNote(fmt.Sprintf(
 				"Proposal updated, %d lines.", lineCount(updated),
 			), whitespaceCorrected)).WithMetadata(proposalChange(doc, updated))
@@ -169,6 +205,7 @@ func NewProposalReadTool(store *ProposalStore) fantasy.AgentTool {
 				))
 			}
 
+			store.MarkRead(sessionID)
 			if params.Limit <= 0 {
 				params.Limit = DefaultReadLimit
 			}

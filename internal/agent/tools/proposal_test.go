@@ -126,11 +126,159 @@ func TestProposalWriteRejectsEmptyContent(t *testing.T) {
 	require.True(t, resp.IsError)
 }
 
+// Overwriting is how a model throws away a draft it never looked at
+// again. Once there is a proposal, the only way to change it is an edit.
+func TestProposalWriteRefusesToOverwrite(t *testing.T) {
+	t.Parallel()
+
+	store := NewProposalStore()
+	store.Set("s1", "ship it on Tuesday")
+
+	resp, err := NewProposalWriteTool(store).Run(
+		proposalCtx(t, "s1"),
+		proposalCall(toolnames.ProposalWrite, `{"content":"ship it on Friday"}`),
+	)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, toolnames.ProposalEdit,
+		"the error has to name the tool that gets the model unstuck")
+
+	doc, _ := store.Get("s1")
+	require.Equal(t, "ship it on Tuesday", doc)
+}
+
+// A branch's proposal is its own: another branch having drafted must
+// not stop this one from starting.
+func TestProposalWriteIsPerSession(t *testing.T) {
+	t.Parallel()
+
+	store := NewProposalStore()
+	store.Set("s1", "first")
+
+	resp, err := NewProposalWriteTool(store).Run(
+		proposalCtx(t, "s2"),
+		proposalCall(toolnames.ProposalWrite, `{"content":"second"}`),
+	)
+	require.NoError(t, err)
+	require.False(t, resp.IsError)
+}
+
+// An edit is only as good as the model's picture of the document. One
+// that has not looked at it is guessing at old_string.
+func TestProposalEditRequiresReadingFirst(t *testing.T) {
+	t.Parallel()
+
+	store := NewProposalStore()
+	store.Set("s1", "ship it on Tuesday")
+
+	resp, err := NewProposalEditTool(store).Run(
+		proposalCtx(t, "s1"),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"Tuesday","new_string":"Friday"}`),
+	)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Content, toolnames.ProposalRead,
+		"the error has to name the tool that gets the model unstuck")
+
+	doc, _ := store.Get("s1")
+	require.Equal(t, "ship it on Tuesday", doc)
+}
+
+func TestProposalReadUnlocksEditing(t *testing.T) {
+	t.Parallel()
+
+	store := NewProposalStore()
+	store.Set("s1", "ship it on Tuesday")
+
+	read, err := NewProposalReadTool(store).Run(
+		proposalCtx(t, "s1"),
+		proposalCall(toolnames.ProposalRead, `{}`),
+	)
+	require.NoError(t, err)
+	require.False(t, read.IsError)
+
+	resp, err := NewProposalEditTool(store).Run(
+		proposalCtx(t, "s1"),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"Tuesday","new_string":"Friday"}`),
+	)
+	require.NoError(t, err)
+	require.False(t, resp.IsError)
+}
+
+// Reading an empty proposal shows the model nothing, so it must not
+// count as having read whatever is drafted afterwards.
+func TestProposalReadOfNothingDoesNotUnlockEditing(t *testing.T) {
+	t.Parallel()
+
+	store := NewProposalStore()
+	_, err := NewProposalReadTool(store).Run(
+		proposalCtx(t, "s1"),
+		proposalCall(toolnames.ProposalRead, `{}`),
+	)
+	require.NoError(t, err)
+
+	store.Set("s1", "ship it on Tuesday")
+	resp, err := NewProposalEditTool(store).Run(
+		proposalCtx(t, "s1"),
+		proposalCall(toolnames.ProposalEdit, `{"old_string":"Tuesday","new_string":"Friday"}`),
+	)
+	require.NoError(t, err)
+	require.True(t, resp.IsError)
+}
+
+// Drafting a document and editing it are both the model's own words, so
+// neither should force a read-back before the next edit, or every
+// revision would cost a round trip.
+func TestProposalAuthoringDoesNotNeedAReadBack(t *testing.T) {
+	t.Parallel()
+
+	store := NewProposalStore()
+	edit := NewProposalEditTool(store)
+
+	written, err := NewProposalWriteTool(store).Run(
+		proposalCtx(t, "s1"),
+		proposalCall(toolnames.ProposalWrite, `{"content":"ship it on Tuesday"}`),
+	)
+	require.NoError(t, err)
+	require.False(t, written.IsError)
+
+	for _, input := range []string{
+		`{"old_string":"Tuesday","new_string":"Wednesday"}`,
+		`{"old_string":"Wednesday","new_string":"Friday"}`,
+	} {
+		resp, err := edit.Run(proposalCtx(t, "s1"), proposalCall(toolnames.ProposalEdit, input))
+		require.NoError(t, err)
+		require.False(t, resp.IsError, resp.Content)
+	}
+
+	doc, _ := store.Get("s1")
+	require.Equal(t, "ship it on Friday", doc)
+}
+
+// Anything that replaces the document behind the model's back makes its
+// earlier read stale.
+func TestProposalStoreSetInvalidatesRead(t *testing.T) {
+	t.Parallel()
+
+	store := NewProposalStore()
+	store.Set("s1", "first")
+	store.MarkRead("s1")
+	require.True(t, store.HasRead("s1"))
+
+	store.Set("s1", "second")
+	require.False(t, store.HasRead("s1"))
+
+	store.MarkRead("s1")
+	store.Discard("s1")
+	require.False(t, store.HasRead("s1"))
+}
+
 func TestProposalEditReplacesInPlace(t *testing.T) {
 	t.Parallel()
 
 	store := NewProposalStore()
 	store.Set("s1", "ship it on Tuesday")
+	store.MarkRead("s1")
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
@@ -150,6 +298,7 @@ func TestProposalEditLeavesDocumentAloneOnFailure(t *testing.T) {
 
 	store := NewProposalStore()
 	store.Set("s1", "ship it on Tuesday")
+	store.MarkRead("s1")
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
@@ -168,6 +317,7 @@ func TestProposalEditNeedsAUniqueMatch(t *testing.T) {
 
 	store := NewProposalStore()
 	store.Set("s1", "step\nstep\n")
+	store.MarkRead("s1")
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),
@@ -186,6 +336,7 @@ func TestProposalEditReplaceAll(t *testing.T) {
 
 	store := NewProposalStore()
 	store.Set("s1", "step\nstep\n")
+	store.MarkRead("s1")
 
 	resp, err := NewProposalEditTool(store).Run(
 		proposalCtx(t, "s1"),

@@ -22,7 +22,7 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `disable_metrics`              | bool   | `false`            | Stop sending metrics                                            |
 | `disable_provider_auto_update` | bool   | `false`            | Stop auto-updating the provider catalog                         |
 | `disable_default_providers`    | bool   | `false`            | Ignore all embedded providers. Every provider must then be fully specified with `base_url`, `models`, and `api_key` — no merging with defaults |
-| `disable_image_tools`          | bool   | `false`            | Disable the built-in `ImageGenerate`/`ImageEdit` tools, even on a terminal that supports inline image rendering. The tools are only offered when the terminal supports Kitty graphics Unicode placeholders (auto-detected for kitty, Ghostty, Rio; not VS Code's terminal or WezTerm) — see `tui.kitty_placeholders` |
+| `disable_image_tools`          | bool   | `false`            | Disable the built-in `ImageGenerate`/`ImageEdit` tools, even on a terminal that supports inline image rendering (the `--disable-image-tools` flag does the same for one launch). The tools are only offered when the terminal supports Kitty graphics Unicode placeholders (auto-detected for kitty, Ghostty, Rio; not VS Code's terminal or WezTerm) — see `tui.kitty_placeholders` |
 | `attribution`                  | object | —                  | See below                                                       |
 | `compaction`                   | object | —                  | See below                                                       |
 | `tui`                          | object | —                  | See below                                                       |
@@ -52,7 +52,7 @@ Note the negative phrasing: `disable_metrics: true` turns metrics **off**.
 | ------------------------ | ------ | --------- | --------------------------------- |
 | `compact_mode`           | bool   | `false`   |                                  |
 | `diff_mode`              | string | —         | `unified` or `split`             |
-| `transparent`            | bool   | `false`   | Transparent background           |
+| `transparent`            | bool   | `false`   | Transparent background (switched on automatically in Apple Terminal when unset) |
 | `scrollbar`              | string | `default` | `default` (auto-hide), `always`, `never` |
 | `kitty_placeholders`     | bool   | auto      | Force Kitty graphics Unicode placeholder support on (`true`) or off (`false`); unset auto-detects. Gates inline image previews and the `ImageGenerate`/`ImageEdit` tools. The `--kitty-placeholders[=false]` CLI flag overrides it for one launch — handy when you use several terminals |
 | `completions.max_depth`  | int    | `0`       | Depth limit for completions      |
@@ -106,8 +106,13 @@ rather than aborting the load.
 | `glob.timeout`  | int  | 30s     | Timeout for a `glob` tool call            |
 | `read.max_image_size` | int | `204800` | Largest image file in bytes the `read` tool returns (200KB) |
 | `image.timeout` | int  | 10m     | Timeout for an `ImageGenerate`/`ImageEdit` call |
+| `web_search.engine` | string | `bing` | Engine tried first by `WebSearch`/`MultiSearch`; the rest serve as fallback. Engine ids: `bing`, `ddg`, `ddg-lite`, `exa`, `tavily`, `firecrawl`, `anysearch`, `searxng`. An unknown id falls back to `bing` |
+| `web_search.timeout` | int | 30s | Total time budget for the whole fallback chain |
+| `web_search.api_keys` | object | — | Map of engine id to API key; `$VAR`/`${VAR}` expand but `$(cmd)` does not. Unset keys fall back to `EXA_API_KEY`, `TAVILY_API_KEY`, `FIRECRAWL_API_KEY`, `ANYSEARCH_API_KEY` |
+| `web_search.bing_market` | string | `en-US` | Market/locale for Bing results |
+| `web_search.searxng_instances` | array | built-in public list | SearXNG instance URLs tried in order |
 
-The three timeouts are Go durations serialized as **integer nanoseconds** in
+The four timeouts are Go durations serialized as **integer nanoseconds** in
 JSON: `10000000000` is 10 seconds. `read.max_image_size` is a plain byte count:
 `1048576` is 1MB. It only raises Angela's own cap; the model provider can still
 reject an image it considers too large.
@@ -122,7 +127,8 @@ unbounded walk of a non-project directory.
     "ls": { "max_depth": 10, "max_items": 500 },
     "grep": { "timeout": 10000000000 },
     "read": { "max_image_size": 1048576 },
-    "image": { "timeout": 900000000000 }
+    "image": { "timeout": 900000000000 },
+    "web_search": { "engine": "tavily", "api_keys": { "tavily": "$TAVILY_API_KEY" } }
   }
 }
 ```

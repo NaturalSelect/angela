@@ -7,7 +7,7 @@ description: Use when the user wants to create, configure, override, or debug an
 
 Angela's multi-agent system lets you create specialized agents and control how
 they are dispatched. The main `coder` agent can delegate tasks to sub-agents
-via the `agent` tool. You configure agents in `angela.json` or as markdown
+via the `Agent` tool. You configure agents in `angela.json` or as markdown
 files in an agent directory.
 
 For config edits, follow the `angela-config` skill procedure: read the file,
@@ -18,21 +18,26 @@ is needed.
 
 | ID | Mode | Description |
 |---|---|---|
-| `coder` | primary | Main agent; has access to all tools. Cannot be disabled. |
-| `explore` | subagent | Fast codebase explorer. Read-only: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, LSP. |
-| `general` | subagent | General-purpose; inherits coder's tools minus `todos`. |
-| `plan` | branch | Turns a request into an agreed implementation plan. Read-only. |
+| `coder` | primary | Main agent; has access to all tools except `Git` (kept for `explore`). Cannot be disabled. |
+| `explore` | subagent | Fast codebase explorer. Read-only: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git, LSPDefinition, LSPSymbols, LSPCallHierarchy. |
+| `general` | subagent | General-purpose; inherits coder's tools minus `Todos`. |
+| `plan` | branch | Turns a request into an agreed implementation plan. Read-only (reads, searches, asks the user). |
 | `co-design` | branch | Designs a change with the user as pseudo-code, piece by piece, and hands back a plan that carries it. Read-only; only forked when the user asks. |
-| `deep-research` | branch | Investigates a hard question; has Bash but no edit/write. |
+| `deep-research` | branch | Investigates a hard question; plan's read-only set plus `Bash`, `JobOutput`, `JobKill`, but no edit/write. |
 | `web-fetch` | subagent | Fetches and analyzes web pages or searches the web. |
 
+`plan`, `co-design` and `deep-research` can dispatch only `explore` (their
+`allowed_agents`).
+
 Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
-`image`) can be overridden but are not dispatched via the `agent` tool.
+`commit`, `image`) can be overridden but are not dispatched via the `Agent`
+tool. A leftover override for the retired `sketch` agent is ignored with a
+warning; move its settings to `co-design`.
 
 ## Agent Modes
 
 - **primary** — Drives a session directly. Multiple primary agents are allowed.
-- **subagent** — Dispatched via the `agent` tool. Subject to `subagent_depth` budget.
+- **subagent** — Dispatched via the `Agent` tool. Subject to `subagent_depth` budget.
 - **branch** — Dispatched like a subagent but forks the conversation and hands
   it to the user. The user drives it; it ends by merging its proposal back.
 - **compact** — Summarizes another agent's session. Never dispatched; referenced
@@ -45,7 +50,7 @@ Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
 | `name` | string | Display name. |
 | `description` | string | Shown to the dispatching model. |
 | `mode` | string | `primary`, `subagent`, `branch`, or `compact`. |
-| `slot` | string | Model slot to use, or `"inherited"` to run on whatever model dispatched this agent. Default `main`; `web-fetch` and `title` default to `chore`. |
+| `slot` | string | Model slot to use, or `"inherited"` to run on whatever model dispatched this agent. Default `main`; `web-fetch`, `title` and `commit` default to `chore`, `image` to `image`. |
 | `variant` | string | Named variant on the slot's model; wins over the slot's own `variant`. |
 | `max_tokens` | int | Output-token cap; omit for model default. |
 | `prompt` | string | Replaces the built-in system prompt (Go template). |
@@ -55,9 +60,10 @@ Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
 | `allowed_tools` | array \| string | Tool names, `"all"`, or `"inherited"` (mirrors coder's set). |
 | `disabled_tools` | array | Removed from the resolved allow-list. |
 | `allowed_mcp` | object \| string | Object of server → tools, `"all"`, or `"inherited"`. |
-| `allowed_agents` | array \| string | Agent IDs or `"all"`. Unset = no restriction. Empty array removes `agent` tool. |
+| `allowed_agents` | array \| string | Agent IDs or `"all"`. Unset = no restriction. Empty array removes the `Agent` tool. |
 | `compact_agent` | string | ID of the `compact`-mode agent that summarizes this agent's sessions. |
-| `context_paths` | array | Extra context files for this agent. |
+| `context_paths` | array | Context file paths for this agent (overrides the default list). JSON only. |
+| `allow_yolo_merge` | bool | JSON only. `false` makes `Merge` always prompt for this agent, even under `--yolo --yolo-merge`. Default `true`. |
 
 > [!IMPORTANT]
 > An unrecognized field inside `agents.<id>` silently drops the **entire**
@@ -82,9 +88,9 @@ with no host session) falls back to `coder`'s own slot instead.
 
 ## Dispatch Depth
 
-`options.subagent_depth` caps how many levels deep the `agent` tool may
+`options.subagent_depth` caps how many levels deep the `Agent` tool may
 recursively dispatch. Default is `2` (primary → sub-agent → one more level).
-`0` disables delegation entirely. A branch hop counts the same as a sub-agent
+`0` disables delegation entirely; negative values are rejected. A branch hop counts the same as a sub-agent
 hop.
 
 ```json
@@ -98,10 +104,14 @@ agents are never dispatched by `angela run`.
 ## Sub-agent Tool Constraints
 
 At runtime, regardless of config:
-- Sub-agents always lose the `question` tool (no user to ask).
-- Sub-agents lose the `agent` tool once the `subagent_depth` budget is
+- Sub-agents always lose the `Question` tool (no user to ask); so does every
+  agent in a non-interactive run such as `angela run`.
+- Sub-agents lose the `Agent` tool once the `subagent_depth` budget is
   exhausted.
-- Branch agents keep `question` (they talk directly to the user).
+- Branch agents keep `Question` (they talk directly to the user).
+- Branch agents always get `Merge`, `ProposalWrite`, `ProposalEdit` and
+  `ProposalRead`, and primary and branch agents always get `LoadReport`, even
+  if `allowed_tools` omits them.
 - `compact`-mode agents are stripped of all tools, MCP, and delegation.
 
 ## Recipes
@@ -176,9 +186,35 @@ everything else.
    passed). Per-agent `"allow_yolo_merge": false` also forces a prompt
    regardless of `--yolo-merge`.
    Approving ends the branch and returns the proposal to the coder. Denying
-   keeps the branch open so you can redirect it.
-4. **Abandon** — `/abort` drops the branch without merging; the coder is told
-   it was abandoned and continues without a proposal.
+   keeps the branch open so you can redirect it. `Merge` is refused while
+   background agents launched from the branch are still running or their
+   results are unread (see Background Agents).
+4. **Abandon** — `/abort` drops the branch without merging. The coder's call
+   fails with "The user ended this branch without merging it." and its turn
+   ends (it does not retry). Ending a branch stops its background agents.
+
+## Background Agents
+
+The `Agent` tool accepts `run_in_background: true` for sub-agents. The call
+returns at once with a receipt carrying an `agent_id` (`agt_...`); when the
+agent ends, a completion notice (status `completed`, `failed` or `stopped`,
+plus its result) is delivered to the launching session's model and starts a
+new turn. A completed agent's output is stored as a report, loadable later
+with `LoadReport`.
+
+- Offered only to the top-level session and branches in an interactive
+  session, and only while the `Agent` tool is available to them. Sub-agents
+  and `angela run` never get it, and a branch agent cannot itself run in the
+  background.
+- `AgentStatus` lists the session's background agents (or one, given
+  `agent_id`); `AgentStop` ends one. Both are added automatically alongside
+  the `Agent` tool, even if `allowed_tools` omits them.
+- At most 8 run at once per session.
+- They survive the launching turn ending or being cancelled; a stop, deleting
+  the session, or shutting down ends them. After a restart a launched agent
+  with no notice shows as `interrupted`.
+- In the TUI, the "Sub-sessions" command lists them and has a Stop button for
+  running background agents.
 
 ## Markdown Agent Files
 
@@ -189,7 +225,10 @@ for them in these directories (priority ascending; last writer wins):
 2. Paths in `options.agent_paths`
 3. Project `.claude/agents/`, `.agents/agents/`, `.angela/agents/`
 
-If `$ANGELA_AGENTS_DIR` is set, **only** that directory is used.
+In a git checkout, the same project directories at the git root are also
+scanned, at lower priority than those in the working directory. If
+`$ANGELA_AGENTS_DIR` is set, it **replaces the global list** (item 1) only;
+`options.agent_paths` and the project directories still apply.
 
 Create agents with the CLI:
 
@@ -204,9 +243,15 @@ Or list all available agents:
 angela agent list
 ```
 
-Frontmatter fields match the JSON config fields. Agent IDs must match
+The file name (without `.md`) is the agent ID and the body is the system
+prompt. Frontmatter accepts `name`, `description`, `mode`, `slot`, `variant`,
+`temperature`, `allowed_tools`, `disabled_tools`, `allowed_mcp`,
+`allowed_agents`, `disabled`, `hidden`, `max_tokens` and `compact_agent`;
+`context_paths` and `allow_yolo_merge` are JSON-only. Agent IDs must match
 `^[a-z0-9]+(?:-[a-z0-9]+)*$`. Symlinked files and directories are skipped.
 Unknown frontmatter fields are a hard error (file is skipped with a warning).
+A new agent with no `mode` is a `subagent` and, unless it sets them, inherits
+coder's tools and MCP set.
 
 ## Layer Precedence
 

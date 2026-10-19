@@ -237,9 +237,21 @@ Conversion rules for OpenCode permissions:
 
 #### From Claude Code
 
-Claude Code hooks are format-compatible with Angela. Copy them directly.
-Angela's stdout JSON parsing accepts both the Angela format and the Claude
-Code `hookSpecificOutput` envelope.
+Claude Code hooks are only partly compatible with Angela. Angela's stdout
+JSON parsing accepts both the Angela format and the Claude Code
+`hookSpecificOutput` envelope (`permissionDecision`,
+`permissionDecisionReason`, `updatedInput`, `additionalContext`), so existing
+hook *scripts* keep working. The config shape and the runtime differ:
+
+- Angela hooks are flat: `{"matcher": "Bash", "command": "..."}` (plus
+  optional `name` and `timeout` in seconds, default 30). Claude Code's nested
+  `{"matcher": ..., "hooks": [{"type": "command", "command": ...}]}` fails
+  validation (`command is required`) — flatten it to one entry per command.
+- Only `PreToolUse` ever fires. Other Claude Code events are not rejected
+  but never run; tell the user they have no Angela equivalent.
+- `matcher` is a regex tested against Angela's tool names; empty matches all.
+- `CLAUDE_PROJECT_DIR` is not set; scripts should use `ANGELA_PROJECT_DIR`
+  (see the `angela-hooks` skill for the full env and stdin payload).
 
 One difference: Angela treats `updated_input` as a **shallow merge** (keys
 you include overwrite, keys you omit are preserved), while Claude Code
@@ -257,10 +269,26 @@ Angela hooks (shell scripts). Point them to the `angela-hooks` skill.
 #### From Claude Code / OpenCode
 
 Both support Markdown-based agent definitions. Angela scans these directories
-automatically:
+automatically (the file name — lowercase letters, digits, single hyphens —
+is the agent ID):
 
-- `.claude/agents/*.md` — already scanned by Angela
-- `~/.claude/agents/*.md` — already scanned by Angela
+- `.claude/agents/*.md`, `.agents/agents/*.md`, `.angela/agents/*.md` —
+  project level, at the working directory and the git root
+- `~/.claude/agents/*.md`, `~/.agents/agents/*.md`,
+  `~/.config/angela/agents/*.md` — global
+
+Frontmatter is parsed strictly: a key Angela doesn't know rejects the whole
+file, which is then skipped with a warning. Known keys: `name`,
+`description`, `mode`, `slot`, `variant`, `temperature`, `allowed_tools`,
+`disabled_tools`, `allowed_mcp`, `allowed_agents`, `disabled`, `hidden`,
+`max_tokens`, `compact_agent`. A Claude Code agent in `.claude/agents` is
+therefore only picked up once its extra keys are converted:
+
+| Claude Code Field | Angela Field |
+| --- | --- |
+| `tools` | `allowed_tools` (a YAML list) |
+| `model` | `slot` (a slot name such as `main` or `chore`; there is no per-agent model ID) |
+| `color` | Not supported — remove |
 
 For OpenCode agents, copy `.opencode/agent/*.md` to `.angela/agents/` and
 adjust frontmatter:
@@ -291,10 +319,24 @@ So existing `CLAUDE.md`, `.cursorrules`, and even a GitHub Copilot
 `.github/copilot-instructions.md` file all work as-is. For `OPENCODE.md`,
 either rename it to `ANGELA.md` or add it to `options.context_paths`.
 
+`.cursor/rules/` is read as a directory: every file in it loads, `.mdc`
+included, but Cursor's `alwaysApply`/`globs` frontmatter is not interpreted —
+every rule applies all the time, and the frontmatter shows up in the prompt
+as plain text.
+
 If the source tool also had global, cross-project instructions (e.g. Claude
 Code's `~/.claude/CLAUDE.md`), move that content to
 `~/.config/angela/ANGELA.md` or `~/.config/AGENTS.md` — Angela reads either
 by default (`options.global_context_paths`), no config needed.
+
+### Custom Commands
+
+Angela loads Markdown slash commands only from `~/.config/angela/commands/`,
+`~/.angela/commands/`, and `<data_dir>/commands/` (the project data
+directory, `.angela` by default). Other agents' command directories such as
+`.claude/commands/` are not read — copy the files over. Any `$UPPER_CASE`
+token in a command body becomes a required named argument that Angela asks
+for.
 
 ### Options Mapping
 
@@ -305,8 +347,11 @@ by default (`options.global_context_paths`), no config needed.
 
 ### Skills
 
-Angela scans `.claude/skills/` and `.cursor/skills/` by default (Agent
-Skills spec). Existing skills from these agents work without changes.
+Angela scans `.agents/skills/`, `.angela/skills/`, `.claude/skills/`, and
+`.cursor/skills/` in the project (working directory and git root), plus
+`~/.claude/skills/`, `~/.agents/skills/`, `~/.config/angela/skills/`, and
+`~/.config/agents/skills/` globally (Agent Skills spec). Existing skills from
+these agents work without changes.
 
 For OpenCode plugins (`~/.config/opencode/plugin/*.ts`): these are
 TypeScript and not directly portable. Inform the user and suggest equivalent
@@ -330,6 +375,7 @@ user which level to target.
 
 After generating the config:
 
+- [ ] Run `angela config validate` and fix every error and `warning:` line.
 - [ ] Verify API key environment variables are set.
 - [ ] Start Angela and confirm the model is selectable.
 - [ ] Check that MCP servers connect (look for errors in the status bar).

@@ -4,11 +4,13 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 
 `lsp` maps a language-server name to its config. With `options.auto_lsp` on
 (the default), Angela also discovers servers from root markers, so most
-projects need no `lsp` block at all.
+projects need no `lsp` block at all. Setting `auto_lsp` to `false` only stops
+that discovery; servers you list under `lsp` (unless `disabled`) still start.
 
-For a name Angela recognizes (e.g. `gopls`, `typescript-language-server`), it
-fills in any of `command`, `args`, `env`, `filetypes`, `root_markers`,
-`options`, and `init_options` you leave unset from its built-in defaults, so
+For a name Angela recognizes (e.g. `gopls`, `typescript-language-server`), or
+failing that a `command` that matches a recognized server name, it fills in any
+of `command`, `args`, `env`, `filetypes`, `root_markers`, `options`, and
+`init_options` you leave unset from its built-in defaults, so
 `{"lsp": {"gopls": {}}}` alone is often enough to turn one on explicitly.
 
 | Field          | Type   | Notes                                                |

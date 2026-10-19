@@ -24,6 +24,9 @@ report whether a restart is needed.
 | `LSPReplaceSymbol` | Replace an entire function/type/method by name. |
 | `LSPRestart` | Restart one or all LSP clients by name. |
 
+These tools are only offered to the agent when at least one server is
+configured under `lsp` or `options.auto_lsp` is not `false`.
+
 ## Config Structure
 
 ```json
@@ -31,7 +34,7 @@ report whether a restart is needed.
   "lsp": {
     "gopls": {
       "command": "gopls",
-      "file_types": ["go"],
+      "filetypes": ["go"],
       "timeout": 30
     }
   }
@@ -45,7 +48,8 @@ report whether a restart is needed.
 | `command` | string | Executable to run. Shell-expanded. |
 | `args` | array | Arguments. Shell-expanded. |
 | `env` | object | Extra environment variables. Shell-expanded. |
-| `file_types` | array | File extensions that activate this server (e.g. `["go", "mod"]`). |
+| `filetypes` | array | File extensions (leading dot optional) or language IDs that activate this server (e.g. `["go", "mod"]`). Empty means every file. Not `file_types`: unknown keys are silently ignored. |
+| `root_markers` | array | Files or glob patterns that must exist directly in the working directory for the server to start (e.g. `["go.mod"]`). Empty means no requirement. |
 | `timeout` | int | Seconds to wait for initialization. Default `30`. |
 | `init_options` | object | Passed as `initializationOptions` during LSP handshake. |
 | `options` | object | Workspace settings sent after initialization. |
@@ -56,7 +60,7 @@ report whether a restart is needed.
 | Key | Type | Notes |
 |---|---|---|
 | `options.auto_lsp` | bool | Default `true`. Auto-configure well-known LSPs by root markers (e.g. `go.mod` → gopls). Set `false` to manage all LSPs manually. |
-| `options.debug_lsp` | bool | Default `false`. Logs LSP protocol messages at debug level. |
+| `options.debug_lsp` | bool | Default `false`. Turns on extra LSP client logging (e.g. messages the server sends via `window/showMessage`). These entries are debug level, so they only appear in the logs when Angela is run with `--debug`. |
 
 ```json
 { "options": { "auto_lsp": false, "debug_lsp": true } }
@@ -77,12 +81,19 @@ as an auto-discovered one, your config merges over the defaults. Setting
 ## Startup and Retry Behavior
 
 LSP clients start on demand the first time a file of a matching type is
-accessed. If a client fails to start or initialize, Angela records it as
-unavailable and retries after **30 seconds**. During the cooldown, LSP tools
-return no results rather than an error.
+accessed. A server only starts when the file matches its `filetypes` and every
+`root_markers` requirement is met in the working directory (default-catalog
+servers that list no `root_markers` require `.git`).
 
-Use `LSPRestart` to force an immediate restart without waiting for the
-cooldown:
+For auto-discovered servers (not configured under `lsp`), Angela also needs
+the command on `PATH`; if it is missing, that is remembered for **30 seconds**
+and `PATH` is not searched again until the cooldown ends. A few generic
+commands (for example `node`, `python`, `java`, `ruff`) are never
+auto-started, so configure those explicitly under `lsp`. If a started client
+fails to initialize, it is dropped and the next matching file access tries
+again.
+
+Use `LSPRestart` to restart running clients immediately:
 
 ```bash
 # The LSPRestart tool name (no shell needed — the agent calls it directly)
@@ -90,12 +101,16 @@ cooldown:
 # Restarts one client: provide the name
 ```
 
+It only acts on clients that have already been started; naming one that has
+not started returns `LSP client '<name>' not found`.
+
 ## Name Resolution
 
 The config key is usually the server's command name (e.g. `gopls`, `rust-analyzer`).
-If the key is not the canonical server name recognized by the LSP protocol,
-Angela maps it via an internal table. If your server is not auto-mapped,
-set `command` explicitly.
+If the key is not the name of a default server but equals a default server's
+`command`, Angela uses that default's name (so `rust-analyzer` maps to the
+default `rust_analyzer`). If your server is not matched, set `command`
+explicitly.
 
 ## Recipes
 
@@ -106,7 +121,7 @@ set `command` explicitly.
   "lsp": {
     "gopls": {
       "command": "gopls",
-      "file_types": ["go"],
+      "filetypes": ["go"],
       "options": {
         "gopls": {
           "analyses": { "unusedparams": true }
@@ -124,7 +139,7 @@ set `command` explicitly.
   "lsp": {
     "rust-analyzer": {
       "command": "rust-analyzer",
-      "file_types": ["rs"]
+      "filetypes": ["rs"]
     }
   }
 }
@@ -138,7 +153,7 @@ set `command` explicitly.
     "tsserver": {
       "command": "/usr/local/lib/node_modules/typescript/bin/tsserver",
       "args": ["--stdio"],
-      "file_types": ["ts", "tsx", "js", "jsx"]
+      "filetypes": ["ts", "tsx", "js", "jsx"]
     }
   }
 }
@@ -152,7 +167,7 @@ set `command` explicitly.
   "lsp": {
     "gopls": {
       "command": "gopls",
-      "file_types": ["go"]
+      "filetypes": ["go"]
     }
   }
 }
@@ -160,17 +175,19 @@ set `command` explicitly.
 
 ## Troubleshooting
 
-**LSP tools return empty results** — the server may still be initializing or
-in its 30-second retry cooldown after a failed startup. Ask the agent to call
-`LSPRestart` and try again.
+**LSP tools return empty results or can't find a symbol** — the server may not
+have started: check that the command is on `PATH`, that `filetypes` matches the
+file, and that a `root_markers` entry exists in the working directory. If you
+just installed the server, an auto-discovered one can stay skipped for up to 30
+seconds after a failed `PATH` lookup.
 
-**Unknown symbols / wrong root** — check that `root_markers` (in the powernap
-default or your config) point to a file in the project. Angela uses the
-nearest marker walking up from the working directory to determine the
-workspace root.
+**Unknown symbols / wrong root** — `root_markers` (in the powernap default or
+your config) are checked only directly in the working directory, not in parent
+directories, and the working directory is used as the workspace root. Start
+Angela from the project root or adjust `root_markers`.
 
-**Server not starting at all** — set `options.debug_lsp: true`, restart
-Angela, and check `angela logs` for LSP protocol errors.
+**Server not starting at all** — set `options.debug_lsp: true`, run Angela with
+`--debug`, and check `angela logs` for LSP errors.
 
 **Conflicting auto-LSP default** — if auto-discovery sets options you want
 to override, add an explicit entry for the same server name; your config

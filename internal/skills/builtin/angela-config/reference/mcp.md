@@ -6,13 +6,13 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 
 | Field                  | Type   | Notes                                                     |
 | ---------------------- | ------ | --------------------------------------------------------- |
-| `type`                 | string | **Required**: `stdio`, `sse`, or `http`. Default `stdio`   |
-| `command`              | string | stdio only; shell-expanded                                 |
+| `type`                 | string | **Required**: `stdio`, `sse`, or `http`. Never inferred: a missing `type` fails to connect with `unsupported mcp type` |
+| `command`              | string | stdio only, required for stdio; shell-expanded             |
 | `args`                 | array  | stdio only; shell-expanded                                 |
 | `env`                  | object | stdio only; shell-expanded                                 |
-| `url`                  | string | http/sse only; shell-expanded, `$(cmd)` only from system/global config |
+| `url`                  | string | http/sse only, required for both; shell-expanded, `$(cmd)` only from system/global config |
 | `headers`               | object | http/sse only; shell-expanded (empty values dropped), `$(cmd)` only from system/global |
-| `timeout`              | int    | Seconds. Default `10`                                      |
+| `timeout`              | int    | Seconds. Default `10`; with `oauth` the default is `30` (`5` minutes while a user-initiated login waits on the browser) |
 | `disabled`             | bool   | Default `false`                                            |
 | `enabled_tools`        | array  | Allow list of tool names from this server                  |
 | `disabled_tools`       | array  | Deny list of tool names from this server                   |

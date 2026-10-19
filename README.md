@@ -11,13 +11,15 @@ gives them tools to read, write, and execute code in your terminal.
 
 Key capabilities:
 
-- **Multi-provider** — Anthropic, OpenAI, Gemini, Bedrock, OpenRouter, Ollama, and any OpenAI-compatible API
-- **Multi-agent** — built-in `coder`, `explore`, `plan`, `co-design`, `deep-research` agents with configurable dispatch
+- **Multi-provider** — Anthropic, OpenAI, Gemini, Bedrock, GitHub Copilot, OpenRouter, Ollama, and any OpenAI-compatible API
+- **Multi-agent** — built-in `coder`, `explore`, `plan`, `co-design`, `deep-research` agents with configurable dispatch, plus sub-agents that can run in the background
 - **LSP integration** — uses language servers for code intelligence, just like your editor
 - **MCP support** — extend with Model Context Protocol servers (`stdio`, `http`, `sse`)
 - **Image input** — paste images from clipboard or attach files for vision-capable models
 - **Hooks** — user-defined shell scripts that fire before tool execution for policy enforcement
-- **Agent Skills** — reusable instruction packages ([Agent Skills](https://agentskills.io) standard)
+- **Permissions and sandboxing** — declarative allow/ask/deny rules, plus optional OS-level isolation (Landlock, Seatbelt)
+- **Sessions** — resume, branch, list, and export conversations from the TUI or the command line
+- **Agent Skills** — reusable instruction packages ([Agent Skills](https://agentskills.io) standard), with built-in skills for configuring Angela itself
 - **Cross-platform** — macOS, Linux, Windows, Android, FreeBSD, OpenBSD, NetBSD
 
 ## Installation
@@ -35,6 +37,9 @@ go install github.com/NaturalSelect/angela@latest
 2. Press <kbd>Ctrl+L</kbd> to open the model picker.
 3. Choose a provider, paste your API key, and start coding.
 
+Press <kbd>Ctrl+P</kbd> for the command palette. Use `angela --continue` to
+resume the most recent session, or `angela --session <id>` for a specific one.
+
 Set API keys via environment variables to skip the manual step:
 
 | Variable              | Provider        |
@@ -45,7 +50,49 @@ Set API keys via environment variables to skip the manual step:
 | `OPENROUTER_API_KEY`  | OpenRouter      |
 | `AWS_PROFILE`         | Amazon Bedrock  |
 
+GitHub Copilot uses a device login instead of a key: run `angela login copilot`.
+
 See the [full provider list](./docs/config/) for all supported variables.
+
+## Command Line
+
+| Command                      | Purpose                                                  |
+| ---------------------------- | -------------------------------------------------------- |
+| `angela`                     | Start the interactive UI                                 |
+| `angela run "<prompt>"`      | Run one prompt non-interactively and exit                |
+| `angela commit`              | Generate a commit message for staged changes and commit  |
+| `angela session ...`         | `list`, `show`, `last`, `rename`, `delete`, `export`     |
+| `angela agent ...`           | `list` configured agents, `create` one from a description |
+| `angela config validate`     | Load `angela.json` and report errors and warnings        |
+| `angela models [term]`       | List models from known providers                         |
+| `angela login` / `logout`    | Sign in to or out of a platform (`copilot`)              |
+| `angela logs`                | Show the log for the current project                     |
+| `angela stats`               | Show token usage, cost, and activity statistics          |
+| `angela dirs`                | Show config and data directories                         |
+| `angela projects`            | List known project directories                           |
+| `angela pprof ...`           | Export runtime profiles of a running Angela process      |
+| `angela server`              | Start the shared daemon (see [Client-server mode](#client-server-mode)) |
+| `angela update-providers`    | Refresh the provider catalog                             |
+
+Run any command with `--help` for its flags.
+
+### Running non-interactively
+
+```bash
+angela run "Explain what this package does"
+cat README.md | angela run "make this more glamorous" > GLAMOROUS_README.md
+
+# Save only the final response to a file (stdout still shows the conversation)
+angela run --output answer.md "Summarize the open TODOs"
+
+# Pick a model, continue a session, hide the spinner
+angela run -m provider/model --continue -q "Follow up"
+```
+
+A headless run has nobody to answer a permission prompt, so it refuses
+anything it cannot already settle from your rules. Pass `--yolo` or
+`--auto-accept-edits` (see [Permissions](#permissions)) to let it proceed. A
+cancelled run exits with an error.
 
 ### Committing from the command line
 
@@ -58,6 +105,14 @@ and it exits with an error if nothing is staged.
 git add -p
 angela commit
 ```
+
+### Client-server mode
+
+Set `ANGELA_CLIENT_SERVER=1` and Angela connects to a shared background
+server instead of running everything in the terminal process, starting one
+if none is running. `angela server` starts it by hand, and `--host` selects
+a different Unix socket or TCP address. `--sandbox` is not available in this
+mode.
 
 ## Configuration
 
@@ -85,33 +140,54 @@ Angela is configured with `angela.json`. No config is required to get started.
 Config files are discovered by walking up from the working directory to the
 git worktree root. Multiple layers are deep-merged (project overrides global):
 
-| Priority | Path                                  |
-| -------- | ------------------------------------- |
-| 1        | `./.angela.json` or `./angela.json`   |
-| 2        | `~/.config/angela/angela.json`        |
+| Priority | Path                                                       |
+| -------- | ---------------------------------------------------------- |
+| 1        | `./.angela.json`                                           |
+| 2        | `./angela.json`                                            |
+| 3        | `~/.config/angela/angela.json` (`$ANGELA_GLOBAL_CONFIG/angela.json` if set) |
+| 4        | `/etc/angela/angela.json` (Unix-like systems only)         |
+
+Run `angela dirs` to see which files were found, and `angela config validate`
+to check them for errors.
 
 Selected string fields (API keys, headers, URLs) support `$VAR` and `$(cmd)`
 shell expansion.
+
+Angela also reads project instructions from `AGENTS.md`, `ANGELA.md`,
+`CLAUDE.md`, `GEMINI.md`, `.cursorrules`, and
+`.github/copilot-instructions.md` in the working directory (plus `*.local.md`
+variants), and `~/.config/angela/ANGELA.md` or `~/.config/AGENTS.md` for
+instructions that apply to every project. Change the list with
+`options.context_paths` and `options.global_context_paths`.
 
 For the full reference, see [docs/config/](./docs/config/).
 
 ## Agents
 
 Angela uses a multi-agent system. The main `coder` agent can delegate to
-specialized sub-agents:
+specialized agents:
 
-| Agent           | Purpose                                      |
-| --------------- | -------------------------------------------- |
-| `coder`         | Primary agent with all tools                 |
-| `explore`       | Fast read-only codebase search               |
-| `plan`          | Interactive implementation planning (branch) |
-| `co-design`     | Interactive design of a change (branch)      |
-| `deep-research` | Root cause analysis and design (branch)      |
-| `general`       | Multi-step tasks with inherited tools        |
-| `web-fetch`     | Web search and page fetching                 |
+| Agent           | Mode     | Purpose                                      |
+| --------------- | -------- | -------------------------------------------- |
+| `coder`         | primary  | Primary agent with all tools                 |
+| `explore`       | subagent | Fast read-only codebase search               |
+| `general`       | subagent | Multi-step tasks with inherited tools        |
+| `web-fetch`     | subagent | Web search and page fetching                 |
+| `plan`          | branch   | Interactive implementation planning          |
+| `co-design`     | branch   | Interactive design of a change, piece by piece |
+| `deep-research` | branch   | Root cause analysis and design               |
 
-Custom agents can be defined in `angela.json` or as markdown files. See
-[docs/agents/](./docs/agents/).
+Sub-agents run on their own and report back. Branch agents fork the
+conversation and hand control to you until you merge their result back or end
+the branch.
+
+The `coder` can start a sub-agent in the background and keep working. Its
+result arrives later as a notification that starts a new turn. Open the
+**Sub-sessions** entry in the command palette (<kbd>Ctrl+P</kbd>) to look
+inside a running sub-agent or stop it.
+
+Custom agents can be defined in `angela.json` or as markdown files. List the
+configured ones with `angela agent list`. See [docs/agents/](./docs/agents/).
 
 ## Hooks
 
@@ -144,16 +220,24 @@ rules in `angela.json`:
   "permissions": {
     "allowed_tools": ["Read", "LS", "Grep"],
     "rules": [
-      { "action": "deny", "tool": "read", "path": "**/.env" },
+      { "action": "deny", "tool": "read", "pattern": "**/.env", "mode": "path" },
       { "action": "allow", "tool": "bash", "pattern": "git status*" }
-    ]
+    ],
+    "prompt": "ask"
   }
 }
 ```
 
+Rules are evaluated deny, then ask, then allow. `tool` is either an access
+category (`read`, `edit`, `execute`, `network`, `mcp`, `list`) or a single
+tool name. `prompt` decides what happens when no rule matches: `ask`
+(default) or `deny`.
+
 Use `--yolo` to skip all prompts (at your own risk). Use
 `--auto-accept-edits` to auto-approve file edits while still being asked
-about everything else; it cannot be combined with `--yolo`.
+about everything else; it cannot be combined with `--yolo`. Even in yolo
+mode, merging a branch agent's result still asks first. Add `--yolo-merge`
+to auto-approve that too.
 
 Use `--sandbox` to restrict the process itself with OS-level isolation
 (Linux via Landlock, macOS via Seatbelt) instead of relying on approval
@@ -178,6 +262,10 @@ filesystem allow rule under `permissions.rules` (see [Permissions](#permissions)
 above) already covers, so an edit or read the permission policy already
 approves without a prompt doesn't instead run into a confusing sandbox I/O
 error.
+
+Inside a Docker or other OCI container Angela treats the container as the
+sandbox and does not apply Landlock on top. Pass `--no-docker-sandbox` to
+apply it anyway.
 
 `--sandbox` is independent from `--yolo` and only supported in local
 (non-`ANGELA_CLIENT_SERVER`) mode, since the restriction is irreversible
@@ -204,7 +292,31 @@ Angela auto-detects kitty, Ghostty, and Rio; VS Code's integrated terminal
 and WezTerm answer the basic Kitty query but don't render placeholders
 correctly, so the tools stay hidden there. Override the detection with
 `--kitty-placeholders`/`--kitty-placeholders=false` (per launch) or
-`options.tui.kitty_placeholders` (persistent, in `angela.json`).
+`options.tui.kitty_placeholders` (persistent, in `angela.json`). Turn the
+image tools off entirely with `--disable-image-tools` or
+`options.disable_image_tools`.
+
+## Skills
+
+Angela discovers Agent Skills (folders containing a `SKILL.md`) from these
+directories:
+
+| Scope   | Directories                                                              |
+| ------- | ------------------------------------------------------------------------ |
+| Project | `.agents/skills`, `.angela/skills`, `.claude/skills`, `.cursor/skills`   |
+| Global  | `~/.config/angela/skills`, `~/.config/agents/skills`, `~/.agents/skills`, `~/.claude/skills` |
+
+Add more with `options.skills_paths` and hide some with
+`options.disabled_skills`.
+
+A set of skills ships inside the binary, so Angela can help you configure
+itself. Ask it to add a provider, MCP server, LSP, hook, or permission rule
+and it loads the matching skill (`angela-config`, `angela-mcp`,
+`angela-lsp`, `angela-hooks`, `angela-permissions`, `angela-agents`,
+`angela-sandbox`, `angela-sessions`, `angela-shell`, `angela-skills`,
+`angela-setup`, `angela-migrate`). General-purpose ones cover `jq`, writing
+unit tests, and code walkthroughs. A skill with the same name in your own
+skill directories replaces the built-in one.
 
 ## Local Models
 
@@ -228,6 +340,7 @@ Logs are stored in `.angela/logs/angela.log` relative to the project.
 
 ```bash
 angela logs              # last 1000 lines
+angela logs --tail 200   # last 200 lines
 angela logs --follow     # real-time
 ```
 

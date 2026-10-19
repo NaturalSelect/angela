@@ -8,7 +8,7 @@ tasks to specialized sub-agents via the `agent` tool.
 | ID        | Mode      | Description                                                            |
 |-----------|-----------|------------------------------------------------------------------------|
 | `coder`   | primary   | Main agent for executing coding tasks. Has access to all tools.        |
-| `co-design` | branch | Designs a change with you as pseudo-code, one piece at a time, and hands back a plan that carries it. Read-only. Only forked when you ask. |
+| `co-design` | branch | Designs a whole solution with you as pseudo-code, section by section, and hands back a solution document to export and split into plans. Read-only. Only forked when you ask. |
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
 | `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git (read-only), LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
@@ -133,31 +133,34 @@ gives up is the structural guarantee, since yolo mode approves everything
 
 ### `co-design`
 
-`co-design` is for the times you want to understand a design, not only approve
-it. You and the agent work out a change's data structures, how they interact,
-and where they land in the repository, all as pseudo-code. It first probes what
-you already know about the code, then fills the gaps. From then on you state
-the key decisions in plain words, and it writes each one back as pseudo-code
-for you to confirm. Key decisions are data structures, interfaces between
-modules, cross-module flows, and ownership. The agent settles the details
-itself, such as names, error handling, and step order, following the
-repository's existing patterns, and marks them in the plan without asking. It
-may suggest key design of its own, but a suggestion enters the design only
-after you accept it. Finally it checks the design against the repository,
-raises only the conflicts that change the design, and orders the work into
-steps.
+`co-design` is for the times you want to understand and shape the design of a
+whole solution, not only approve it. It first probes what you already know
+about the code and fills the gaps. Then you settle the problem, the
+challenges any solution has to meet, and an outline of sections, one per
+module or flow. After that it designs the solution section by section, as
+pseudo-code: data structures, interfaces between modules, cross-module
+flows, ownership, and where each lands in the repository. For each section
+you either state your decisions in plain words, or ask it to draft the
+section and then accept, change, or reject each numbered item. The agent
+settles the details itself, such as names and error handling, following the
+repository's existing patterns, and marks them without asking. It may
+suggest key design of its own, but a suggestion enters the design only after
+you accept it. It checks each section against the repository and raises only
+the conflicts that change the design.
 
-It hands back a plan in the same shape as `plan`'s: context, goal, ordered
-steps, verification, risks and key files. Each step also carries the
-pseudo-code of the key design you accepted, with the details marked
-separately. The coder that implements it must stop and tell you before
-deviating from the key design: what you see is what gets built.
+It hands back a solution document: background with the problem and its
+challenges, the design by section, trade-offs, risks and preconditions, and
+follow-up work. A contract at its end says that any plan or implementation
+built from it must stop and tell you before deviating from the key design you
+accepted. The coder does not implement the document. Save it with the
+"Export Report" command, then split it into plans and build them one part at
+a time. Each plan stays bound by the contract.
 
-Unlike `plan`, which works out the approach for you to settle, `co-design`
-builds the key design piece by piece with you. That is slower, and it is the
-point: signing a plan does not repay the understanding you skip. The coder
-never forks `co-design` on its own. Ask for it when you want to shape the
-design yourself.
+Unlike `plan`, which works out the implementation approach for one part,
+`co-design` settles the design of the whole solution with you. That is
+slower, and it is the point: signing a design does not repay the
+understanding you skip. The coder never forks `co-design` on its own. Ask for
+it when you want to shape the design yourself.
 
 Like `plan`, `co-design` is read-only, holds no `bash`, and can only delegate
 to `explore`.

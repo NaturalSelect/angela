@@ -174,7 +174,7 @@ specialized agents:
 | `general`       | subagent | Multi-step tasks with inherited tools        |
 | `web-fetch`     | subagent | Web search and page fetching                 |
 | `plan`          | branch   | Interactive implementation planning          |
-| `co-design`     | branch   | Interactive design of a change, piece by piece |
+| `co-design`     | branch   | Interactive design of a whole solution, section by section |
 | `deep-research` | branch   | Root cause analysis and design               |
 
 Sub-agents run on their own and report back. Branch agents fork the

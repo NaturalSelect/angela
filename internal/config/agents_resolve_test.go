@@ -158,6 +158,16 @@ func TestResolveAgents_BuiltinBranchesAreExactlyPlanCoDesignAndDeepResearch(t *t
 	require.Equal(t, []string{AgentCoDesign, AgentDeepResearch, AgentPlan}, branches)
 }
 
+// Co-design hands back a solution document the user splits into plans. If its
+// description told the coder to implement the result, merging the branch
+// would start building the whole solution at once.
+func TestResolveAgents_CoDesignDescriptionDoesNotAskForImplementation(t *testing.T) {
+	description := (&Config{Options: &Options{}}).ResolveAgents()[AgentCoDesign].Description
+
+	require.Contains(t, description, "do not start implementing it")
+	require.NotContains(t, description, "takes the place of plan")
+}
+
 // A config written for the removed sketch agent has no builtin left to merge
 // onto. Resolved as a fresh custom agent it would inherit every coder tool and
 // be offered for dispatch with no description, so it must be dropped loudly.

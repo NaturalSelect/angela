@@ -8,10 +8,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/session"
 )
 
@@ -47,11 +49,21 @@ type backgroundAgentInfo struct {
 	ID              string
 	ParentSessionID string
 	ChildSessionID  string
-	AgentType       string
-	Task            string
-	Status          tools.BackgroundAgentStatus
-	StartedAt       time.Time
-	FinishedAt      time.Time
+	// Ancestors are the sessions above ParentSessionID, nearest first. They
+	// are fixed when the agent launches so that ending it undoes exactly
+	// what launching it counted, whatever happens to those sessions after.
+	Ancestors  []string
+	AgentType  string
+	Task       string
+	Status     tools.BackgroundAgentStatus
+	StartedAt  time.Time
+	FinishedAt time.Time
+}
+
+// countedSessions are the sessions a running agent is counted in: the one
+// that launched it and every one above.
+func (i backgroundAgentInfo) countedSessions() []string {
+	return append([]string{i.ParentSessionID}, i.Ancestors...)
 }
 
 type backgroundAgentEntry struct {
@@ -66,16 +78,60 @@ type backgroundAgentEntry struct {
 // Once shut down it launches nothing and reports nothing, so agents that
 // unwind during shutdown do not wake a session that is going away.
 //
+// Alongside the entries it keeps a tally per session of the agents running
+// in that session or in any session below it. A launch counts the agent in
+// its parent and every ancestor, and its end takes it back out of the same
+// sessions, so the root of a session tree always holds the number running
+// anywhere under it. The tally follows Status and is changed only where an
+// entry enters or leaves the running state, under mu. Readers use the atomics
+// and take no lock, so asking from a request handler never waits on a launch.
+//
 // The registry is nil-safe for the calls the coordinator makes without
 // knowing whether anything was ever launched.
 type backgroundAgents struct {
 	mu     sync.Mutex
 	byID   map[string]*backgroundAgentEntry
 	closed bool
+
+	tally *csync.Map[string, *atomic.Int64]
 }
 
 func newBackgroundAgents() *backgroundAgents {
-	return &backgroundAgents{byID: make(map[string]*backgroundAgentEntry)}
+	return &backgroundAgents{
+		byID:  make(map[string]*backgroundAgentEntry),
+		tally: csync.NewMap[string, *atomic.Int64](),
+	}
+}
+
+// countRunning counts info in every session it belongs to. The caller holds mu.
+func (r *backgroundAgents) countRunning(info backgroundAgentInfo) {
+	for _, id := range info.countedSessions() {
+		r.tally.GetOrSet(id, func() *atomic.Int64 { return new(atomic.Int64) }).Add(1)
+	}
+}
+
+// uncountRunning takes info back out of the sessions countRunning put it in.
+// A session that was deleted in between has no tally left and is skipped. The
+// caller holds mu.
+func (r *backgroundAgents) uncountRunning(info backgroundAgentInfo) {
+	for _, id := range info.countedSessions() {
+		if n, ok := r.tally.Get(id); ok {
+			n.Add(-1)
+		}
+	}
+}
+
+// runningUnder reports how many agents are running in sessionID or in any
+// session below it.
+func (r *backgroundAgents) runningUnder(sessionID string) int {
+	if r == nil {
+		return 0
+	}
+	n, ok := r.tally.Get(sessionID)
+	if !ok {
+		return 0
+	}
+	return int(n.Load())
 }
 
 // start registers a running agent. cancel stops the agent's run.
@@ -94,6 +150,7 @@ func (r *backgroundAgents) start(info backgroundAgentInfo, cancel context.Cancel
 	}
 	info.Status = tools.BackgroundAgentRunning
 	r.byID[info.ID] = &backgroundAgentEntry{info: info, cancel: cancel}
+	r.countRunning(info)
 	return nil
 }
 
@@ -111,6 +168,9 @@ func (r *backgroundAgents) runningLocked(parentSessionID string) int {
 func (r *backgroundAgents) abandon(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if e, ok := r.byID[id]; ok && e.info.Status == tools.BackgroundAgentRunning {
+		r.uncountRunning(e.info)
+	}
 	delete(r.byID, id)
 }
 
@@ -123,6 +183,9 @@ func (r *backgroundAgents) finish(id string, status tools.BackgroundAgentStatus)
 	e, ok := r.byID[id]
 	if !ok {
 		return false
+	}
+	if e.info.Status == tools.BackgroundAgentRunning {
+		r.uncountRunning(e.info)
 	}
 	e.info.Status = status
 	e.info.FinishedAt = time.Now()
@@ -259,6 +322,7 @@ func (r *backgroundAgents) sessionDeleted(sessionID string) {
 		case e.info.ParentSessionID:
 			if e.info.Status == tools.BackgroundAgentRunning {
 				e.cancel()
+				r.uncountRunning(e.info)
 			}
 			delete(r.byID, id)
 		case e.info.ChildSessionID:
@@ -267,6 +331,7 @@ func (r *backgroundAgents) sessionDeleted(sessionID string) {
 			}
 		}
 	}
+	r.tally.Del(sessionID)
 }
 
 // launchBackgroundAgent starts params as a background agent and returns a
@@ -279,12 +344,18 @@ func (c *coordinator) launchBackgroundAgent(ctx context.Context, params subAgent
 		return tools.Fail(err.Error())
 	}
 
+	ancestors, err := c.sessionAncestors(ctx, params.SessionID)
+	if err != nil {
+		return tools.FailErr("resolve session ancestors", err)
+	}
+
 	agentID := tools.AgentID(c.sessions, params.AgentMessageID, params.ToolCallID)
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	info := backgroundAgentInfo{
 		ID:              agentID,
 		ParentSessionID: params.SessionID,
 		ChildSessionID:  c.sessions.CreateAgentToolSessionID(params.AgentMessageID, params.ToolCallID),
+		Ancestors:       ancestors,
 		AgentType:       agentType,
 		Task:            description,
 		StartedAt:       time.Now(),

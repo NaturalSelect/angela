@@ -232,6 +232,13 @@ func (w *AppWorkspace) AgentIsSessionBranch(sessionID string) bool {
 	return w.app.AgentCoordinator.IsSessionBranch(sessionID)
 }
 
+func (w *AppWorkspace) AgentBackgroundAgents(sessionID string) int {
+	if w.app.AgentCoordinator == nil {
+		return 0
+	}
+	return w.app.AgentCoordinator.BackgroundAgentsRunning(sessionID)
+}
+
 func (w *AppWorkspace) AgentIsReady() bool {
 	return w.app.AgentCoordinator != nil
 }

@@ -357,6 +357,22 @@ func (c *coordinator) billedTurn(ctx context.Context, sessionID string, turn fun
 	}
 }
 
+// sessionAncestors lists the sessions above sessionID, nearest first.
+func (c *coordinator) sessionAncestors(ctx context.Context, sessionID string) ([]string, error) {
+	var ancestors []string
+	for {
+		sess, err := c.sessions.Get(ctx, sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("get session %q: %w", sessionID, err)
+		}
+		if sess.ParentSessionID == "" {
+			return ancestors, nil
+		}
+		ancestors = append(ancestors, sess.ParentSessionID)
+		sessionID = sess.ParentSessionID
+	}
+}
+
 // addCostToAncestors adds delta to every session above sessionID.
 //
 // Walking the whole chain is only correct for a cost no sub-run will account

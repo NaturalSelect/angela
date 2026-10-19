@@ -391,7 +391,11 @@ type UI struct {
 	agentBusyCache      ttlCache[bool]
 	sessionBusyCache    ttlCache[bool]
 	permissionModeCache ttlCache[permission.PermissionMode]
-	busyFetchInFlight   bool
+	// backgroundAgentsCache is how many background agents are running in
+	// the session on screen or any session below it, as the workspace
+	// counts them. It is probed with sessionBusyCache and scoped like it.
+	backgroundAgentsCache ttlCache[int]
+	busyFetchInFlight     bool
 	// sandboxActive reports whether the workspace process is currently
 	// confined by a sandbox. Landlock restriction is irreversible for the
 	// life of the process and a Docker sandbox starts (and stays) active,
@@ -991,6 +995,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// session may be a cycle away. Until it lands the old session's
 			// answer would gate the new transcript's animations.
 			m.sessionBusyCache = ttlCache[bool]{}
+			m.backgroundAgentsCache = ttlCache[int]{}
 		}
 		m.invalidatePromptQueue()
 		m.promptQueue = 0
@@ -4225,7 +4230,7 @@ func (m *UI) View() tea.View {
 	content = strings.Join(contentLines, "\n")
 
 	v.Content = content
-	if m.progressBarEnabled && m.sendProgressBar && m.isSessionBusy() {
+	if m.progressBarEnabled && m.sendProgressBar && m.isSessionWorking() {
 		// HACK: use a random percentage to prevent ghostty from hiding it
 		// after a timeout.
 		v.ProgressBar = tea.NewProgressBar(tea.ProgressBarIndeterminate, rand.Intn(100))

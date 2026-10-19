@@ -81,7 +81,10 @@ type busyStateMsg struct {
 	// running. sessionBusy asks the same question of forSession alone.
 	agentBusy   bool
 	sessionBusy bool
-	mode        permission.PermissionMode
+	// backgroundAgents counts the background agents running in forSession
+	// or any session below it.
+	backgroundAgents int
+	mode             permission.PermissionMode
 	// forSession is the session the agent probe was scoped to. The agent
 	// instance belongs to a session, so a result that raced a session
 	// switch describes the wrong one; applyBusyState stamps it and the
@@ -173,6 +176,7 @@ func (m *UI) currentSessionID() string {
 func (m *UI) invalidateBusyCaches() {
 	m.agentBusyCache.invalidate()
 	m.sessionBusyCache.invalidate()
+	m.backgroundAgentsCache.invalidate()
 	m.permissionModeCache.invalidate()
 	m.busyFetchGen++
 }
@@ -204,6 +208,7 @@ func (m *UI) dispatchBusyRefresh() tea.Cmd {
 			st.agentBusy = ws.AgentIsBusy()
 			if sessionID != "" {
 				st.sessionBusy = ws.AgentIsSessionBusy(sessionID)
+				st.backgroundAgents = ws.AgentBackgroundAgents(sessionID)
 			}
 			active, err := ws.AgentActive(context.Background(), sessionID)
 			if err != nil {
@@ -249,6 +254,7 @@ func (m *UI) applyBusyState(msg busyStateMsg) []tea.Cmd {
 	wasSessionBusy := m.sessionBusyCache.val
 	m.agentBusyCache.set(msg.agentBusy)
 	m.sessionBusyCache.set(msg.sessionBusy)
+	m.backgroundAgentsCache.set(msg.backgroundAgents)
 	m.permissionModeCache.set(msg.mode)
 	m.agentReady = msg.ready
 	m.agentActive = msg.active

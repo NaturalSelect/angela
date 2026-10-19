@@ -58,6 +58,7 @@ func (c *blockingCoordinator) CancelAll()                                       
 func (c *blockingCoordinator) IsBusy() bool                                       { return false }
 func (c *blockingCoordinator) IsSessionBusy(string) bool                          { return false }
 func (c *blockingCoordinator) IsSessionBranch(string) bool                        { return false }
+func (c *blockingCoordinator) BackgroundAgentsRunning(string) int                 { return 0 }
 func (c *blockingCoordinator) QueuedPrompts(string) int                           { return 0 }
 func (c *blockingCoordinator) QueuedPromptsList(string) []message.QueuedPrompt    { return nil }
 func (c *blockingCoordinator) ClearQueue(string)                                  {}

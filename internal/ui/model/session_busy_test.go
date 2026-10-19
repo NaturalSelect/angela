@@ -171,6 +171,7 @@ func stubBusyProbe(ws *MockWorkspace, ready, busy bool, mode permission.Permissi
 	ws.EXPECT().AgentIsReady().Return(ready).AnyTimes()
 	ws.EXPECT().AgentIsBusy().Return(busy).AnyTimes()
 	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(busy).AnyTimes()
+	ws.EXPECT().AgentBackgroundAgents(gomock.Any()).Return(0).AnyTimes()
 	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(context.Context, string) (workspace.ActiveAgent, error) {
 			return *active, nil
@@ -950,6 +951,7 @@ func TestBackstopRefreshesStaleCaches(t *testing.T) {
 	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 	ws.EXPECT().AgentIsBusy().DoAndReturn(func() bool { agentBusyCalls++; return true })
 	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(true).AnyTimes()
+	ws.EXPECT().AgentBackgroundAgents(gomock.Any()).Return(0).AnyTimes()
 	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(context.Context, string) (workspace.ActiveAgent, error) {
 			return active, nil
@@ -1165,6 +1167,7 @@ func TestSessionBusyIgnoresOtherSessions(t *testing.T) {
 	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 	ws.EXPECT().AgentIsBusy().Return(true).AnyTimes()
 	ws.EXPECT().AgentIsSessionBusy("s1").Return(false).AnyTimes()
+	ws.EXPECT().AgentBackgroundAgents("s1").Return(0).AnyTimes()
 	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).Return(workspace.ActiveAgent{}, nil).AnyTimes()
 	ws.EXPECT().PermissionMode().Return(permission.ModeManual).AnyTimes()
 	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()

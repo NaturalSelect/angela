@@ -30,6 +30,7 @@ func newCoordinator(t *testing.T) (*MockCoordinator, *coordinatorState) {
 	m := NewMockCoordinator(gomock.NewController(t))
 	m.EXPECT().IsSessionBusy(gomock.Any()).DoAndReturn(func(id string) bool { return st.busy[id] }).AnyTimes()
 	m.EXPECT().IsSessionBranch(gomock.Any()).DoAndReturn(func(id string) bool { return st.branch[id] }).AnyTimes()
+	m.EXPECT().BackgroundAgentsRunning(gomock.Any()).Return(0).AnyTimes()
 	m.EXPECT().AbandonBranch(gomock.Any()).DoAndReturn(func(id string) bool {
 		st.abandoned = append(st.abandoned, id)
 		return true

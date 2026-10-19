@@ -103,6 +103,20 @@ func (mr *MockCoordinatorMockRecorder) AskSideQuestion(ctx, sessionID, question 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AskSideQuestion", reflect.TypeOf((*MockCoordinator)(nil).AskSideQuestion), ctx, sessionID, question)
 }
 
+// BackgroundAgentsRunning mocks base method.
+func (m *MockCoordinator) BackgroundAgentsRunning(sessionID string) int {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BackgroundAgentsRunning", sessionID)
+	ret0, _ := ret[0].(int)
+	return ret0
+}
+
+// BackgroundAgentsRunning indicates an expected call of BackgroundAgentsRunning.
+func (mr *MockCoordinatorMockRecorder) BackgroundAgentsRunning(sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackgroundAgentsRunning", reflect.TypeOf((*MockCoordinator)(nil).BackgroundAgentsRunning), sessionID)
+}
+
 // BeginAccepted mocks base method.
 func (m *MockCoordinator) BeginAccepted(ctx context.Context, sessionID string) *agent.AcceptedRun {
 	m.ctrl.T.Helper()

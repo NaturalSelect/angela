@@ -230,11 +230,15 @@ type AgentSession struct {
 	// IsBranch reports whether the serving process still has a parent
 	// tool call suspended on this session.
 	IsBranch bool `json:"is_branch"`
+	// BackgroundAgents counts the background agents running in this
+	// session or in any session below it. A background agent outlives the
+	// turn that launched it, so a session can be idle and still working.
+	BackgroundAgents int `json:"background_agents"`
 }
 
 // IsZero checks if the AgentSession is zero-valued.
 func (a AgentSession) IsZero() bool {
-	return a.ID == "" && !a.IsBusy && !a.IsBranch
+	return a.ID == "" && !a.IsBusy && !a.IsBranch && a.BackgroundAgents == 0
 }
 
 // PermissionAction represents an action taken on a permission request.

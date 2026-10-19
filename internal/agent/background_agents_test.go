@@ -842,3 +842,257 @@ func TestWithoutParameterDoesNotMutateTheInnerSchema(t *testing.T) {
 	_, stillThere := hidden.AgentTool.Info().Parameters[runInBackgroundParameter]
 	require.True(t, stillThere, "the wrapper hides the parameter from the model, not from the tool")
 }
+
+func testNestedBackgroundInfo(id, parent string, ancestors ...string) backgroundAgentInfo {
+	info := testBackgroundInfo(id, parent)
+	info.Ancestors = ancestors
+	return info
+}
+
+func requireRunningUnder(t *testing.T, r *backgroundAgents, want map[string]int) {
+	t.Helper()
+	for sessionID, n := range want {
+		require.Equal(t, n, r.runningUnder(sessionID), "running under %s", sessionID)
+	}
+}
+
+func TestBackgroundAgentsTallyCountsTheParentAndEveryAncestor(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	require.NoError(t, r.start(testNestedBackgroundInfo("a", "leaf", "mid", "root"), func() {}))
+
+	requireRunningUnder(t, r, map[string]int{"leaf": 1, "mid": 1, "root": 1, "elsewhere": 0})
+
+	require.True(t, r.finish("a", tools.BackgroundAgentCompleted))
+	requireRunningUnder(t, r, map[string]int{"leaf": 0, "mid": 0, "root": 0})
+}
+
+func TestBackgroundAgentsTallyAddsUpAgentsAcrossABranchingTree(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	require.NoError(t, r.start(testNestedBackgroundInfo("a", "left", "root"), func() {}))
+	require.NoError(t, r.start(testNestedBackgroundInfo("b", "left", "root"), func() {}))
+	require.NoError(t, r.start(testNestedBackgroundInfo("c", "right", "root"), func() {}))
+	require.NoError(t, r.start(testBackgroundInfo("d", "root"), func() {}))
+
+	requireRunningUnder(t, r, map[string]int{"left": 2, "right": 1, "root": 4})
+
+	require.True(t, r.finish("a", tools.BackgroundAgentFailed))
+	require.True(t, r.finish("c", tools.BackgroundAgentStopped))
+	requireRunningUnder(t, r, map[string]int{"left": 1, "right": 0, "root": 2})
+}
+
+func TestBackgroundAgentsTallyIsUntouchedByARefusedLaunch(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	for i := range maxBackgroundAgentsPerSession {
+		require.NoError(t, r.start(testNestedBackgroundInfo(fmt.Sprintf("a%d", i), "leaf", "root"), func() {}))
+	}
+
+	require.ErrorIs(t, r.start(testNestedBackgroundInfo("over", "leaf", "root"), func() {}), errBackgroundAgentLimit)
+	require.Error(t, r.start(testNestedBackgroundInfo("a0", "leaf", "root"), func() {}), "an id launches once")
+
+	requireRunningUnder(t, r, map[string]int{"leaf": maxBackgroundAgentsPerSession, "root": maxBackgroundAgentsPerSession})
+}
+
+func TestBackgroundAgentsTallyFollowsAbandonButNotStop(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	require.NoError(t, r.start(testNestedBackgroundInfo("a", "leaf", "root"), func() {}))
+	require.NoError(t, r.start(testNestedBackgroundInfo("b", "leaf", "root"), func() {}))
+
+	r.abandon("a")
+	requireRunningUnder(t, r, map[string]int{"leaf": 1, "root": 1})
+
+	require.Equal(t, stopRequested, r.stop("leaf", "b"))
+	requireRunningUnder(t, r, map[string]int{"leaf": 1, "root": 1})
+
+	require.True(t, r.finish("b", tools.BackgroundAgentStopped))
+	requireRunningUnder(t, r, map[string]int{"leaf": 0, "root": 0})
+}
+
+func TestBackgroundAgentsTallyIsTakenBackOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	require.NoError(t, r.start(testNestedBackgroundInfo("a", "leaf", "root"), func() {}))
+	require.NoError(t, r.start(testNestedBackgroundInfo("b", "leaf", "root"), func() {}))
+
+	require.True(t, r.finish("a", tools.BackgroundAgentCompleted))
+	require.True(t, r.finish("a", tools.BackgroundAgentFailed), "a second ending is recorded but counts nothing")
+	r.abandon("a")
+
+	requireRunningUnder(t, r, map[string]int{"leaf": 1, "root": 1})
+}
+
+func TestBackgroundAgentsTallyIsTakenBackWhenTheParentSessionIsDeleted(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	spy := &cancelSpy{}
+	require.NoError(t, r.start(testNestedBackgroundInfo("a", "leaf", "root"), spy.cancel))
+	require.NoError(t, r.start(testNestedBackgroundInfo("b", "other", "root"), func() {}))
+
+	r.sessionDeleted("leaf")
+
+	require.True(t, spy.called)
+	requireRunningUnder(t, r, map[string]int{"leaf": 0, "other": 1, "root": 1})
+	require.False(t, r.finish("a", tools.BackgroundAgentStopped), "the dropped agent tells nobody")
+	requireRunningUnder(t, r, map[string]int{"root": 1})
+}
+
+func TestBackgroundAgentsTallyKeepsCountingWhenOnlyTheChildSessionIsDeleted(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	require.NoError(t, r.start(testNestedBackgroundInfo("a", "leaf", "root"), func() {}))
+
+	r.sessionDeleted("child-a")
+	requireRunningUnder(t, r, map[string]int{"leaf": 1, "root": 1})
+
+	require.True(t, r.finish("a", tools.BackgroundAgentStopped))
+	requireRunningUnder(t, r, map[string]int{"leaf": 0, "root": 0})
+}
+
+func TestBackgroundAgentsTallySurvivesADeletedAncestor(t *testing.T) {
+	t.Parallel()
+
+	r := newBackgroundAgents()
+	require.NoError(t, r.start(testNestedBackgroundInfo("a", "leaf", "mid", "root"), func() {}))
+
+	r.sessionDeleted("mid")
+	require.Zero(t, r.runningUnder("mid"))
+
+	require.True(t, r.finish("a", tools.BackgroundAgentCompleted))
+	requireRunningUnder(t, r, map[string]int{"leaf": 0, "mid": 0, "root": 0})
+}
+
+func TestBackgroundAgentsRunningUnderIsZeroForANilRegistry(t *testing.T) {
+	t.Parallel()
+
+	var r *backgroundAgents
+	require.Zero(t, r.runningUnder("anything"))
+}
+
+func TestBackgroundAgentsTallyIsExactUnderConcurrentLaunchesAndEndings(t *testing.T) {
+	t.Parallel()
+
+	const parents = 16
+	r := newBackgroundAgents()
+	var wg sync.WaitGroup
+	for p := range parents {
+		wg.Go(func() {
+			parent := fmt.Sprintf("p%d", p)
+			for i := range 50 {
+				id := fmt.Sprintf("%s-%d", parent, i)
+				require.NoError(t, r.start(testNestedBackgroundInfo(id, parent, "root"), func() {}))
+				_ = r.runningUnder("root")
+				require.True(t, r.finish(id, tools.BackgroundAgentCompleted))
+			}
+			require.NoError(t, r.start(testNestedBackgroundInfo(parent+"-last", parent, "root"), func() {}))
+		})
+	}
+	wg.Wait()
+
+	require.Equal(t, parents, r.runningUnder("root"), "only the last agent of each parent is left")
+	for p := range parents {
+		require.Equal(t, 1, r.runningUnder(fmt.Sprintf("p%d", p)))
+	}
+}
+
+func TestSessionAncestorsListsEveryParentNearestFirst(t *testing.T) {
+	t.Parallel()
+
+	env := testEnv(t)
+	coord := newTestCoordinator(t, env, "test-provider", config.ProviderConfig{ID: "test-provider"})
+
+	root, err := env.sessions.Create(t.Context(), "Root")
+	require.NoError(t, err)
+	childID := env.sessions.CreateAgentToolSessionID("msg-1", "call-1")
+	_, err = env.sessions.CreateTaskSession(t.Context(), childID, root.ID, "child")
+	require.NoError(t, err)
+	grandchildID := env.sessions.CreateAgentToolSessionID("msg-2", "call-2")
+	_, err = env.sessions.CreateTaskSession(t.Context(), grandchildID, childID, "grandchild")
+	require.NoError(t, err)
+
+	ancestors, err := coord.sessionAncestors(t.Context(), grandchildID)
+	require.NoError(t, err)
+	require.Equal(t, []string{childID, root.ID}, ancestors)
+
+	ancestors, err = coord.sessionAncestors(t.Context(), root.ID)
+	require.NoError(t, err)
+	require.Empty(t, ancestors, "a top-level session has nothing above it")
+
+	_, err = coord.sessionAncestors(t.Context(), "missing")
+	require.Error(t, err)
+}
+
+// The count has to be readable at the root of the tree while an agent runs
+// deep below it, and has to go back to zero everywhere once it ends.
+func TestARunningBackgroundAgentIsCountedAtEveryLevelAboveItsParent(t *testing.T) {
+	coord := newBackgroundTestCoordinator(t)
+	coord.lifetime = t.Context()
+
+	root, err := coord.sessions.Create(t.Context(), "Root")
+	require.NoError(t, err)
+	childID := coord.sessions.CreateAgentToolSessionID("msg-child", "call-child")
+	_, err = coord.sessions.CreateTaskSession(t.Context(), childID, root.ID, "Child")
+	require.NoError(t, err)
+	grandchildID := coord.sessions.CreateAgentToolSessionID("msg-grandchild", "call-grandchild")
+	_, err = coord.sessions.CreateTaskSession(t.Context(), grandchildID, childID, "Grandchild")
+	require.NoError(t, err)
+	coord.registerSubagentRoute(grandchildID, config.AgentCoder, newMockSessionAgent(t, config.AgentCoder, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+		return agentResultWithText("noted"), nil
+	}))
+
+	release := make(chan struct{})
+	launchTestAgentFrom(t, coord, grandchildID, "call-1", func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+		<-release
+		return agentResultWithText("the findings"), nil
+	})
+
+	for _, id := range []string{grandchildID, childID, root.ID} {
+		require.Equal(t, 1, coord.BackgroundAgentsRunning(id), "running under %s", id)
+	}
+
+	close(release)
+	require.Eventually(t, func() bool {
+		return coord.BackgroundAgentsRunning(root.ID) == 0
+	}, 5*time.Second, 10*time.Millisecond, "ending the agent must take it out of the root")
+	require.Zero(t, coord.BackgroundAgentsRunning(childID))
+	require.Zero(t, coord.BackgroundAgentsRunning(grandchildID))
+}
+
+func TestALaunchThatCannotResolveItsSessionsCountsNothing(t *testing.T) {
+	coord := newBackgroundTestCoordinator(t)
+
+	launch := launchTestAgentFrom(t, coord, "missing-session", "call-1", func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+		return agentResultWithText("never runs"), nil
+	})
+
+	require.True(t, launch.response.IsError)
+	require.Zero(t, coord.BackgroundAgentsRunning("missing-session"))
+}
+
+func TestBackgroundAgentsRunningStopsCountingAnAgentOnceItIsStopped(t *testing.T) {
+	coord := newBackgroundTestCoordinator(t)
+
+	started := make(chan struct{})
+	launch := launchTestAgent(t, coord, "call-1", func(ctx context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	<-started
+	require.Equal(t, 1, coord.BackgroundAgentsRunning(launch.parentID))
+
+	require.Equal(t, stopRequested, coord.background.stop(launch.parentID, launch.agentID))
+
+	require.Eventually(t, func() bool {
+		return coord.BackgroundAgentsRunning(launch.parentID) == 0
+	}, 5*time.Second, 10*time.Millisecond)
+}

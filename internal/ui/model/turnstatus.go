@@ -36,7 +36,7 @@ func (m *UI) renderTurnStatus(width int) string {
 	if width <= 0 || !m.hasSession() {
 		return ""
 	}
-	if !m.isSessionBusy() {
+	if !m.isSessionWorking() {
 		return m.renderIdleStatus(width)
 	}
 
@@ -45,6 +45,14 @@ func (m *UI) renderTurnStatus(width int) string {
 	hint := m.renderTurnHint()
 
 	return joinStatusLine(m.com.Styles, spinner, fields, hint, width)
+}
+
+// NOTE: isSessionWorking is wider than isSessionBusy. A background agent
+// outlives the turn that launched it, so the session keeps working after the
+// turn ends. Only what acts on the turn itself, such as esc, stays on
+// isSessionBusy.
+func (m *UI) isSessionWorking() bool {
+	return m.isSessionBusy() || m.backgroundAgentsCache.val > 0
 }
 
 // turnSpinnerFrame returns the current spinner glyph, falling back to a static
@@ -61,12 +69,12 @@ func (m *UI) turnSpinnerFrame() string {
 // no-op while the spinner already matches the busy state, which is what keeps
 // a second tick chain from starting.
 func (m *UI) syncTurnSpinner() tea.Cmd {
-	busy := m.isSessionBusy()
-	if busy == m.turnIsSpinning {
+	working := m.isSessionWorking()
+	if working == m.turnIsSpinning {
 		return nil
 	}
-	m.turnIsSpinning = busy
-	if !busy {
+	m.turnIsSpinning = working
+	if !working {
 		m.stopTurnSpinner()
 		return nil
 	}
@@ -106,6 +114,11 @@ func (m *UI) busyStatusFields() []string {
 
 // currentActivity names what the agent is doing right now.
 func (m *UI) currentActivity() string {
+	if !m.isSessionBusy() {
+		if n := m.backgroundAgentsCache.val; n > 0 {
+			return backgroundActivity(n)
+		}
+	}
 	if label := m.retryActivity(); label != "" {
 		return label
 	}
@@ -124,6 +137,13 @@ func (m *UI) currentActivity() string {
 		label += " (" + slow + ")"
 	}
 	return label
+}
+
+func backgroundActivity(running int) string {
+	if running == 1 {
+		return "1 background agent running"
+	}
+	return fmt.Sprintf("%d background agents running", running)
 }
 
 // retryStatus tracks an in-progress provider retry so the turn-status
@@ -215,6 +235,11 @@ func (m *UI) toolSlowness(tc message.ToolCall) string {
 // renderTurnHint renders the right-hand escape hint. The three states mirror
 // the cancel binding shown in the help line.
 func (m *UI) renderTurnHint() string {
+	// NOTE: Esc interrupts the session's own turn and leaves background
+	// agents running, so with only them left it has nothing to stop.
+	if !m.isSessionBusy() {
+		return ""
+	}
 	desc := "stop"
 	switch {
 	case m.isCanceling:

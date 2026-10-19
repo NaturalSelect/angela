@@ -22,7 +22,8 @@ hard error.
 
 1. `/etc/angela/angela.json` — system-wide (Unix only; not read on Windows).
 2. **Global user config** — `$ANGELA_GLOBAL_CONFIG/angela.json` when that
-   variable is set, otherwise `~/.config/angela/angela.json`
+   variable is set, otherwise `$XDG_CONFIG_HOME/angela/angela.json` when
+   `XDG_CONFIG_HOME` is set, else `~/.config/angela/angela.json`
    (`%USERPROFILE%\.config\angela\angela.json` on Windows).
 3. **Project configs** — Angela walks up from the working directory looking
    for `.angela.json` and `angela.json` in each directory.
@@ -43,6 +44,10 @@ Within the project layer:
 
 - A directory **closer to the working directory wins** over one further up.
 - In the same directory, **`.angela.json` wins over `angela.json`**.
+- A file reached by two paths (a project `angela.json` symlinked to the
+  global config, or a working directory inside the global config directory)
+  is loaded once, at its highest-priority position, so its arrays aren't
+  doubled.
 
 Merge semantics: objects merge key by key, scalars are replaced by the
 higher-priority layer, and **arrays are concatenated** rather than replaced.

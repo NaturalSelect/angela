@@ -5,15 +5,20 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 `agents` maps an agent ID to overrides for a built-in agent, or to a brand new
 agent. Built-in agents you can override: `coder`, `explore`, `general`,
 `plan`, `co-design`, `deep-research`, `web-fetch`, plus the hidden internal ones `title`,
-`compact`, `generate-agent`, `initialize`, and `image` (selects the model for
+`compact`, `generate-agent`, `initialize`, `commit`, and `image` (selects the model for
 the built-in image generation/editing tools).
+
+The built-in modes: `coder` is `primary`; `explore`, `general` and `web-fetch`
+are `subagent`; `plan`, `co-design` and `deep-research` are `branch`; `compact`
+is `compact`. An agent you define from scratch defaults to `mode: subagent`,
+`slot: main`, and `allowed_tools`/`allowed_mcp` of `"inherited"`.
 
 | Field            | Type   | Notes                                                              |
 | ---------------- | ------ | ------------------------------------------------------------------ |
 | `name`           | string | Display name                                                        |
 | `description`    | string | What the agent does; shown to the dispatching model                 |
-| `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user), `compact` (only ever summarizes another agent's session) |
-| `slot`           | string | A slot name from `slots`, or `"inherited"` to run on whatever model dispatched this agent. Default `main` for most agents — `title` and `web-fetch` default to `chore` instead, which is how a subagent is pointed at a cheaper model |
+| `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user), `compact` (only ever summarizes another agent's session; always hidden and toolless whatever else is configured) |
+| `slot`           | string | A slot name from `slots`, or `"inherited"` to run on whatever model dispatched this agent. Default `main` for most agents — `title`, `commit` and `web-fetch` default to `chore` instead (which is how a subagent is pointed at a cheaper model), and `image` defaults to `image` |
 | `variant`        | string | A variant name on that model slot; takes priority over the slot's own `variant` |
 | `max_tokens`     | int    | Output-token cap; omit for the model default                        |
 | `prompt`         | string | Replaces the built-in system prompt. Parsed as a Go template        |
@@ -26,7 +31,18 @@ the built-in image generation/editing tools).
 | `allowed_agents` | array \| string | Array of agent IDs, or `"all"`. Unset = every dispatchable agent is available |
 | `compact_agent`  | string | ID of a `mode: compact` agent that summarizes this agent's sessions. Unset, unknown, or non-compact IDs fall back to the built-in `compact` agent |
 | `context_paths`  | array  | Context files for this agent                                        |
+| `allow_yolo_merge` | bool | Default `true`. Set `false` so this agent's `Merge` always prompts, even in yolo mode with `--yolo-merge` (see `reference/permissions.md`) |
 
+A markdown agent file accepts only `name`, `description`, `mode`, `slot`,
+`variant`, `temperature`, `allowed_tools`, `disabled_tools`, `allowed_mcp`,
+`allowed_agents`, `disabled`, `hidden`, `max_tokens` and `compact_agent` in its
+frontmatter (the body becomes the prompt); an unknown key is rejected. Put
+`context_paths` and `allow_yolo_merge` in `angela.json` instead.
+
+Only the top-level conversation or a `branch` agent can fork a `branch` or
+launch a background agent (`run_in_background`); a `subagent` can only dispatch
+subagents, and `angela run` (non-interactive) forks no branches at all. A
+branch hop uses up `options.subagent_depth` like any other dispatch.
 `disabled` and `hidden` are tri-state: omitting them inherits the lower layer,
 and an explicit `false` can re-enable or un-hide something a lower-priority
 layer turned off.

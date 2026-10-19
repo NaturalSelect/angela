@@ -23,7 +23,14 @@ variables automatically:
 | `AI_AGENT=angela` | Compatibility alias. |
 
 Scripts that need to behave differently when run by Angela can check
-`$ANGELA` or `$AI_AGENT`.
+`$ANGELA` or `$AI_AGENT`. Config shell expansion (`$(cmd)` inside
+`angela.json`) does not build its shell this way and does not get these
+markers.
+
+Both the Bash tool and hooks also force these overrides, replacing whatever
+the caller's environment had, so commands never wait on a terminal:
+`TERM=xterm-256color`, `EDITOR`/`VISUAL`/`GIT_EDITOR`/`JJ_EDITOR` set to
+`false`, and `PAGER`/`GIT_PAGER`/`JJ_PAGER` set to `cat`.
 
 Hook shells additionally receive:
 
@@ -46,12 +53,13 @@ The Bash tool accepts these parameters:
 |---|---|---|
 | `command` | string | Shell command to execute. |
 | `description` | string | Brief description shown in the UI. |
+| `working_dir` | string | Directory to run the command in (defaults to the current directory). |
 | `run_in_background` | bool | Start detached immediately. |
 | `auto_background_after` | int | Seconds before auto-moving to background. Default `60`. |
 
 A command that runs longer than `auto_background_after` seconds is
 automatically moved to a background job. The agent is told "Background shell
-started with ID X" and can use `job_output` and `job_kill` to manage it.
+started with ID X" and can use `JobOutput` and `JobKill` to manage it.
 
 ```bash
 # Explicit background — starts detached immediately
@@ -65,11 +73,25 @@ auto_background_after: 30
 
 | Tool | Purpose |
 |---|---|
-| `job_output` | Read stdout/stderr from a background job. Pass `wait: true` to block until it finishes. |
-| `job_kill` | Terminate a background job by its shell ID. |
+| `JobOutput` | Read stdout/stderr from a background job (`shell_id`). Pass `wait: true` to block until it finishes. |
+| `JobKill` | Terminate a background job by its `shell_id`. |
 
-Background jobs persist for the session. The shell ID is returned in the
-"Background shell started" message.
+The shell ID is returned in the "Background shell started" message. A job
+belongs to the session that started it; other sessions cannot see or kill it.
+At most 50 background jobs can exist at once (starting another fails until
+some are killed or removed), finished jobs are forgotten 8 hours after they
+complete, and every job is killed when Angela exits.
+
+## Oversized Tool Output
+
+A text result longer than 30000 terminal-display cells is not simply cut
+off. The model gets the first and last 15000 cells plus a notice, and the
+full text is saved to `<data_dir>/tool-output/<session>/output-*.txt` so it
+can be paged through with Read or Grep (the permission system treats that
+directory as readable). This applies to Bash and to every other tool except
+Read, Agent, LoadReport, ProposalRead, and Merge. If the file can't be
+written, the notice says the full output could not be saved. Session
+directories untouched for 24 hours are pruned.
 
 ## Shell Semantics
 
@@ -79,12 +101,15 @@ Differences to be aware of:
 - Scripts dispatched via a shebang (`#!/usr/bin/env python3`) run as a
   subprocess via `os/exec` — those are not limited to POSIX shell.
 - A shebang with a missing absolute path falls back to a PATH lookup of the
-  base name; failure is a non-blocking warning and has no effect on the rest
-  of the command.
+  base name. If the interpreter still can't be resolved, the script prints
+  `angela: <script>: <reason>` to stderr and exits 127; a malformed shebang
+  line exits 126.
 - PowerShell `.ps1` files are not auto-dispatched — call
   `powershell -File script.ps1` explicitly.
-- Shell state persists across Bash tool calls within a session: `export FOO=bar`
-  in one call makes `$FOO` available in the next.
+- Shell state does **not** persist across Bash tool calls: every call starts
+  a fresh shell, so `export FOO=bar` or `cd` in one call has no effect on the
+  next. Chain commands in one call, or use the `working_dir` parameter.
+- `jq` is available as a built-in command (see the `jq` skill).
 - Windows paths: use forward slashes.
 
 ## Shell Expansion in Config
@@ -115,7 +140,10 @@ Shell commands are scanned **segment by segment** by `shellscan`. Each command
 in a pipeline is judged individually. An allow rule must cover every segment;
 a deny or ask on any one segment settles the whole command.
 
-- Wrappers like `timeout`, `env`, and `sudo` are peeled before scanning.
+- Wrappers (`timeout`, `nice`, `ionice`, `stdbuf`, `chrt`, `nohup`, plain
+  `env`, and `exec`/`command`/`builtin`) are peeled before scanning. `sudo`
+  is not peeled: it counts as a command that can carry another command and
+  prompts.
 - File operands of commands are also checked: a file path verdict can refuse
   but cannot approve on its own.
 - Opaque or unreadable syntax → always prompts (fail-closed).
@@ -123,6 +151,16 @@ a deny or ask on any one segment settles the whole command.
   stored session grant and always prompt again.
 
 See the `angela-permissions` skill for writing allow/deny rules.
+
+## Blocked Commands
+
+Separately from permissions, the Bash tool refuses a fixed list of commands
+by name (the first word of a command), however permissive the rules are:
+network clients and browsers (`wget`, `ssh`, `scp`, `nc`, `telnet`, `lynx`,
+...), privilege tools (`sudo`, `su`, `doas`), system package managers
+(`apt`, `dnf`, `yum`, `pacman`, `rpm`, ...), and system-administration or
+network-configuration tools (`systemctl`, `service`, `mount`, `crontab`,
+`iptables`, `ip`, ...). `alias` is blocked too.
 
 ## Recipes
 
@@ -152,7 +190,7 @@ fi
 ### Run a long build in the background
 
 The agent can call the Bash tool with `run_in_background: true` to start a
-build immediately detached, then poll with `job_output` and `wait: false` to
+build immediately detached, then poll with `JobOutput` (`wait: false`) to
 check progress, and `wait: true` to block until done.
 
 ## Troubleshooting
@@ -162,9 +200,9 @@ command is being scanned as opaque (complex syntax, unrecognized constructs)
 or whether it contains a dangerous verb that skips stored grants. Simplify
 the command or add a more specific allow rule.
 
-**Export in one call not visible in the next** — shell state does persist
-within a session, but only if the same underlying shell process is reused.
-Confirm the commands run in the same session.
+**Export in one call not visible in the next** — expected: every Bash call
+starts a fresh shell. Put the commands in one call (`export FOO=bar && cmd`)
+or use `working_dir` instead of `cd`.
 
 **`$(cmd)` not expanding in a config field** — for restricted fields (MCP
 `url`/`headers`/OAuth fields, provider `api_key`/`base_url`/

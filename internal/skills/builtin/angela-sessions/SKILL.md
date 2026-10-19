@@ -17,10 +17,15 @@ angela session show <id>
 angela session last
 angela session delete <id>
 angela session rename <id> "New title"
-angela session export <id> [--output file.json]
+angela session export <id> [-o, --output file.md]
 ```
 
-All subcommands accept `--json` for machine-readable output.
+`list`, `show`, `last`, `delete`, and `rename` accept `--json` for
+machine-readable output; `export` does not. `export` writes the transcript as
+**Markdown**; without `--output` the file is `<title-slug>.md` in the current
+directory. `<id>` can be a UUID, a full hash, or a unique hash prefix (an
+ambiguous prefix is rejected with the list of matches). `list` shows only
+top-level sessions (sub-agent and branch sessions are hidden).
 
 ## Regenerating a Title
 
@@ -52,12 +57,27 @@ angela run --yolo "run the full test suite and fix failures"
 angela run --output result.md "summarize the open TODOs"   # save the final response to a file
 ```
 
+The prompt can be given as arguments or piped on stdin. Other flags: `-q,
+--quiet` (hide the spinner), `-v, --verbose` (logs on stderr; add `--debug`
+for debug level), `-m, --model` (`model` or `provider/model`), `--small-model`.
+
+`--output` replaces the file with only the final response (plain text) once
+the run succeeds; stdout still streams the whole conversation. A failed or
+cancelled run leaves the file untouched.
+
 Key differences from interactive mode:
 
-- Branch agents are never dispatched — there's no user to hand a branch to.
-- Because prompts can't be answered, pair `angela run` with `--yolo` (or
-  narrow `permissions.rules` allow entries) for anything beyond read-only
-  work, or it will stall on the first prompt.
+- Branch agents are refused ("A branch hands the conversation to the user, so
+  it needs an interactive session") — the model is told to dispatch a regular
+  sub-agent instead.
+- The session is marked unattended: a permission prompt that would need an
+  answer is refused immediately rather than waiting. Pair `angela run` with
+  `--yolo`, `--auto-accept-edits` (edits only), or narrow
+  `permissions.rules` allow entries for anything beyond what the permission
+  mode already settles.
+- A cancelled run exits with an error ("the run was cancelled"). A run cut
+  off by the output token limit exits with an error ("output was cut off by
+  the output token limit...") — raise the model's max tokens and rerun.
 
 ## Session Data
 
@@ -69,10 +89,10 @@ to its origin.
 
 ## Sub-Agent and Branch Sessions
 
-Dispatching a sub-agent or branch creates a nested session whose ID encodes
-the parent session. These are visible in `angela session list` alongside
-top-level sessions but are conceptually children of the session that
-dispatched them.
+Dispatching a sub-agent or branch creates a nested session with the ID
+`<messageID>$$<toolCallID>` (the message and tool call that spawned it) and
+`ParentSessionID` set to the dispatching session. `angela session list` hides
+these child sessions.
 
 ## Client-Server (Daemon) Mode
 
@@ -81,34 +101,53 @@ shared daemon instead of a local process:
 
 ```bash
 angela server                 # start the daemon (HTTP/REST + SSE)
-angela server -H 0.0.0.0:8080 # bind to a specific host/port instead of the default socket
+angela server -H tcp://0.0.0.0:8080 # bind to a specific host instead of the default socket
 ```
 
-By default the daemon listens on a Unix socket (`angela-<uid>.sock`,
-falling back to `angela.sock`, with a `/tmp` fallback on macOS for socket
-path length limits). Windows uses named pipes instead.
+`-H, --host` takes `scheme://address` (`tcp://`, `unix://`, or `npipe://`); a
+bare `host:port` is rejected. The same flag on any other command picks the
+server to connect to.
+
+By default the daemon listens on a Unix socket named `angela-<uid>.sock`
+(`angela.sock` if the uid is unknown) in `$XDG_RUNTIME_DIR`, or the OS temp
+directory if that is unset. If that path would exceed 104 bytes it falls back
+to `/tmp`. Windows uses named pipes instead. A client pointed at a `unix` or
+`npipe` host starts the daemon itself when it isn't running (and restarts it
+on a version mismatch).
 
 Daemon mode has some restrictions that don't apply to local mode:
 
-- `--sandbox` is refused (see `angela-sandbox`) — a daemon serves many
-  workspaces, and the restriction is process-wide and irreversible.
+- `--sandbox` and `--no-docker-sandbox` are refused (see `angela-sandbox`) —
+  a daemon serves many workspaces, and the restriction is process-wide and
+  irreversible.
 
 ## Other Session-Adjacent Flags
 
 | Flag | Notes |
 |---|---|
 | `-c, --cwd <dir>` | Working directory for the session. |
-| `-D, --data-dir <dir>` | Override the data directory (default `.angela`). |
+| `-D, --data-dir <dir>` | Override the data directory. Unset, it is the nearest `.angela` found walking up from the working directory, else `<cwd>/.angela`. |
 | `-y, --yolo` | Auto-approve every prompt. |
 | `--auto-accept-edits` | Auto-approve file edits only. Mutually exclusive with `--yolo`. |
 | `--yolo-merge` | Under `--yolo`, also auto-approve branch merges (by default, merge still prompts). |
+
+## Other CLI Commands
+
+| Command | Notes |
+|---|---|
+| `angela commit` | Generates a commit message for the staged diff (`commit` agent, `chore` slot) and runs `git commit -s --no-verify`. Fails with "nothing staged to commit" when nothing is staged. |
+| `angela logs` | Prints the data directory's `logs/angela.log`; `-f, --follow`, `-t, --tail N` (default 1000). |
+| `angela stats` | Usage statistics; `--all` aggregates every known project, `--crawl-dir <dir>` scans a directory for projects. |
+| `angela projects` | Lists known project directories; `--json`. |
+| `angela dirs` | Shows the config and data directories. |
+| `angela pprof <profile>` | Exports a runtime profile of a running angela process over a private local endpoint (no TCP port). Profiles: `goroutine`, `heap`, `allocs`, `threadcreate`, `cpu`, `trace`. `angela pprof list` shows exportable processes; flags `-p, --pid`, `-o, --output` (`-` for stdout), `--format proto\|text\|full` (`full` is goroutine-only), `--seconds` for `cpu`/`trace`. |
 
 ## Recipes
 
 ### Export a session for sharing or archival
 
 ```bash
-angela session export abc123 --output session.json
+angela session export abc123 --output session.md
 ```
 
 ### Resume the last session after closing the terminal
@@ -131,9 +170,10 @@ angela session list --json
 
 ## Troubleshooting
 
-**`angela run` hangs with no output** — it's likely stalled on a permission
-prompt it can't answer. Add `--yolo` or specific `permissions.rules` allow
-entries, or check `angela logs` for what it's waiting on.
+**`angela run` fails or does nothing where a prompt would have appeared** —
+the session is unattended, so anything that needs an answer is refused. Add
+`--yolo`, `--auto-accept-edits`, or specific `permissions.rules` allow
+entries, or check `angela logs` for what was refused.
 
 **`--session` and `--continue` both given** — these are mutually exclusive;
 drop one.
@@ -141,6 +181,7 @@ drop one.
 **`--sandbox` fails under the daemon** — expected in client-server mode; see
 `angela-sandbox`.
 
-**Can't find a session created by a sub-agent** — sub-agent and branch
-sessions are still listed by `angela session list`; use `--json` and filter
-by `ParentSessionID` if you need to trace lineage.
+**Can't find a session created by a sub-agent** — `angela session list`
+hides sub-agent and branch sessions. Their IDs have the form
+`<messageID>$$<toolCallID>`; in the TUI use the **Sub-sessions** command-palette
+entry to open them.

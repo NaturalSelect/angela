@@ -9,8 +9,9 @@ with Angela:
 - **`chore`** — the cheap model for auxiliary work such as titles and
   summaries.
 - **`image`** — the model used by the built-in image generation/editing
-  tools. Needs a provider of type `openai` or `openaicompat` that
-  implements `/images/*`. The tools are only registered in a terminal
+  tools. Needs a provider of type `openai` or `openai-compat` that
+  implements `/images/*` and has an `api_key`. If this slot is not configured
+  it falls back to provider `openai`, model `gpt-image-1`. The tools are only registered in a terminal
   that supports Kitty graphics Unicode placeholders (see
   `options.tui.kitty_placeholders`); on an unsupported terminal (e.g.
   VS Code's integrated terminal) they stay hidden regardless of this
@@ -30,7 +31,23 @@ which only *names* one of those presets as this slot's own default.
 | `variant`  | string | Default variant for this slot; an agent's own `variant` always wins     |
 
 A slot that no agent's `slot` field ever names still loads fine, but logs a
-startup warning since it has no effect.
+startup warning since it has no effect (`main` and `chore` are exempt).
+`inherited` is reserved for agents ("run on the model that dispatched me") and
+is never a valid slot name; a slot called that is ignored with a warning.
+
+How `main` and `chore` are validated at load time:
+
+- If the slot's `provider` is not configured, angela quietly falls back to a
+  default model.
+- If the provider is configured but does not offer `model`, loading **fails**
+  with `slot model not offered by its provider` instead of falling back. Check
+  the ID against `providers.<id>.models` (or the provider's discovered models).
+- `variant` is kept through this resolution. When `chore` is not set and angela
+  reuses `main` for it (custom/local providers), `main`'s `variant` is not
+  carried over.
+
+Other slots (e.g. `image`) are not checked against the chat catalog, since they
+may name models it does not list.
 
 ```json
 {

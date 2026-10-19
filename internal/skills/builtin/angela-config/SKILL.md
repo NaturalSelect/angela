@@ -100,7 +100,9 @@ do it directly if the user already named a model.
 ```
 **Watch out:** the TUI's model picker changes this live with no restart —
 mention that as the faster path if the user is at the keyboard. A
-config-file edit needs a restart either way.
+config-file edit needs a restart either way. A `main` or `chore` model the
+provider doesn't offer is a hard error (`slot model not offered by its
+provider`), not a silent fallback — use an exact model ID.
 **Reference:** `reference/slots.md`
 
 ### Add an MCP server

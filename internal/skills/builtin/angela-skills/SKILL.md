@@ -45,7 +45,10 @@ Instructions for the model, in plain markdown.
 | `disable-model-invocation` | no | If `true`, hidden from the model's automatic skill list — only reachable via explicit user invocation. |
 | `license` | no | Free text. |
 | `compatibility` | no | Free text, max 500 chars. |
-| `metadata` | no | Arbitrary map for tooling. |
+| `metadata` | no | Map of string keys to string values, for tooling. |
+
+Unknown frontmatter keys are ignored without error, so a misspelled key (for
+example `user_invocable` instead of `user-invocable`) is silently dropped.
 
 > [!IMPORTANT]
 > The `name` field must match the directory name exactly (case-insensitive).
@@ -54,22 +57,30 @@ Instructions for the model, in plain markdown.
 
 ## Discovery Paths
 
-Angela discovers skills from, in this order (embedded builtins first, then
-user/project directories; **duplicates are resolved last-wins**, so a later
-path with the same skill name overrides an earlier one):
+Angela discovers skills from these locations (embedded builtins first, then
+user/project directories; **duplicates are resolved last-wins**):
 
 1. Embedded builtin skills (compiled into the binary).
 2. `options.skills_paths` — user-configured directories (supports `~` and
    `$VAR` expansion).
-3. Global skills directories (platform config dir, e.g.
-   `~/.config/angela/skills`).
+3. Global skills directories: `~/.config/angela/skills`,
+   `~/.config/agents/skills`, `~/.agents/skills`, `~/.claude/skills`. Setting
+   the `ANGELA_SKILLS_DIR` environment variable replaces this whole list with
+   that one directory. On Windows, the `angela\skills` and `agents\skills`
+   folders under `%LOCALAPPDATA%` are added too.
 4. Project skill directories, checked in both the working directory and the
-   git worktree root (working directory first): `.angela/skills`,
-   `.claude/skills`, `.cursor/skills`.
+   git worktree root (working directory first): `.agents/skills`,
+   `.angela/skills`, `.claude/skills`, `.cursor/skills`.
 
-Because discovery is last-wins, **a project or user skill with the same name
-as a builtin replaces that builtin.** This is intentional — it lets you
-override a builtin skill's instructions without touching the binary.
+Because builtins are always loaded first, **a project or user skill with the
+same name as a builtin replaces that builtin.** This is intentional — it lets
+you override a builtin skill's instructions without touching the binary.
+
+Among on-disk skills, "last" is **not** the order of the list above or of
+`skills_paths`: results from all directories are sorted together by the skill
+directory's path (case-insensitive) before duplicates are dropped, so the
+path that sorts last alphabetically wins. Don't rely on location order to
+choose between two on-disk skills with the same name — rename or remove one.
 
 Symlinked subdirectories are followed during discovery.
 
@@ -105,6 +116,11 @@ These are independent, not opposites:
 | `true` | `false` | Both: shown as `/command` and auto-loadable by the model. |
 | `false` | `true` | Neither: exists on disk but effectively inert. Unusual. |
 | `true` | `true` | Only reachable via `/command`; hidden from automatic model triggering. |
+
+In the TUI, typing `&` opens a mention popup that lists every enabled skill
+regardless of these two flags. Selecting one inserts the plain text
+`[skill:name]` into the prompt; it does not attach the skill's content the
+way picking an invocable skill from the `/` command palette does.
 
 ## Recipes
 
@@ -165,8 +181,8 @@ trigger-oriented enough. Rewrite it to start with "Use when..." and name
 concrete scenarios, not just a summary of contents.
 
 **Skill used to work, now missing after an update** — check
-`options.disabled_skills` and whether a different skills path now shadows it
-(last-wins on name collision).
+`options.disabled_skills` and whether another on-disk skill with the same
+`name` now sorts later by path and shadows it (see the duplicate rule above).
 
 **Frontmatter parse error** — frontmatter must open with `---` on its own
 line; a BOM or CRLF line endings are tolerated and normalized, but an

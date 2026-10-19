@@ -14,9 +14,9 @@ executes. Event keys are normalized, so `PreToolUse`, `pretooluse`,
 
 | Field     | Type   | Notes                                                     |
 | --------- | ------ | --------------------------------------------------------- |
-| `command` | string | **Required**. Invalid or empty commands fail at load time  |
+| `command` | string | **Required**. An empty command fails at load time          |
 | `name`    | string | Display name in the TUI; falls back to `command`           |
-| `matcher` | string | Regex tested against the tool name. Empty matches all tools. An invalid regex fails at load time |
+| `matcher` | string | Regex tested against the tool name; case-sensitive and unanchored, so use `^Bash$` rather than `bash`. Empty matches all tools. An invalid regex fails at load time |
 | `timeout` | int    | Seconds. Default `30`                                      |
 
 ```json
@@ -25,7 +25,7 @@ executes. Event keys are normalized, so `PreToolUse`, `pretooluse`,
     "PreToolUse": [
       {
         "name": "no-haskell",
-        "matcher": "^bash$",
+        "matcher": "^Bash$",
         "command": ".angela/hooks/no-haskell.sh",
         "timeout": 10
       }
@@ -86,7 +86,8 @@ wants top-level calls filters on `depth` or `agent_id`.
 
 - `decision`: `allow` to explicitly allow, `deny` to block, `none` (or omit).
 - `reason`: explanation, used when denying or halting.
-- `context`: extra context appended to the tool result.
+- `context`: extra context appended to the tool result. A string, or an array
+  of strings that are joined with newlines.
 - `updated_input`: a **shallow-merge patch** against the tool input, not a
   replacement. Keys you include overwrite; keys you omit are preserved.
 - `halt`: `true` stops the whole agent turn, not just this tool call, and

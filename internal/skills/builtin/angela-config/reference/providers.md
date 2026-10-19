@@ -9,20 +9,20 @@ slot's `provider` field references.
 | ---------------------- | ----------------- | -------------------------------------------------------------- |
 | `id`                   | string            | Provider identifier                                             |
 | `name`                 | string            | Display name                                                    |
-| `type`                 | string            | API format: `openai`, `openai-compat`, `openrouter`, `vercel`, `anthropic`, `google`, `azure`, `bedrock`, `google-vertex`, `litellm`, `llamacpp`, `lmstudio`, `ollama`, `omlx`. Defaults to `openai` |
+| `type`                 | string            | API format: `openai`, `openai-compat`, `openrouter`, `vercel`, `anthropic`, `google`, `azure`, `bedrock`, `google-vertex`, `litellm`, `llamacpp`, `lmstudio`, `ollama`, `omlx`. Custom providers default to `openai-compat`; built-in providers take theirs from the catalog |
 | `use_responses`        | bool              | Force the OpenAI Responses API on or off for this provider; unset picks per model from its ID |
-| `base_url`             | string            | API base URL; shell-expanded, `$(cmd)` only from system/global config |
+| `base_url`             | string            | API base URL; shell-expanded, `$(cmd)` only from system/global config. Required for a custom provider (one without it is skipped) |
 | `api_key`              | string            | Shell-expanded, `$(cmd)` only from system/global config         |
 | `disable`              | bool              | Default `false`                                                 |
 | `flat_rate`            | bool              | Skip cost accumulation for subscription/flat-rate billing       |
-| `discover_models`      | bool              | Default `true`. Fetches `/v1/models`; when `models` is also set the discovered ones are merged in and yours win. Set `false` to use only what you list |
+| `discover_models`      | bool              | Default `true`, for custom providers only. Fetches `/v1/models` automatically when `models` is empty; if you list `models` too, discovery runs only when this is explicitly `true`, and the discovered ones are merged in (yours win). Set `false` to use only what you list |
 | `system_prompt_prefix` | string            | Prefix prepended to system prompts for this provider            |
 | `extra_headers`        | object            | Extra HTTP headers; values shell-expanded (empty ones dropped), `$(cmd)` only from system/global |
 | `extra_body`           | object            | Merged verbatim into OpenAI-compatible request bodies; **not** shell-expanded |
 | `provider_options`     | object            | Provider-specific options                                       |
 | `aws_auth_refresh`     | string            | Shell command run when Bedrock credentials expire               |
 | `oauth`                | object            | OAuth2 token Angela persists after an interactive login (e.g. Copilot); not meant to be hand-written |
-| `models`               | array             | Model catalog, see below                                        |
+| `models`               | array             | Model catalog, see below. A custom provider left with no models (listed or discovered) is skipped |
 
 ```json
 {
@@ -70,8 +70,8 @@ slot's `provider` field references.
 | `cost_per_1m_in_cached`, `cost_per_1m_out_cached` | number | Required                                    |
 | `can_reason`                                      | bool   | Required                                    |
 | `supports_attachments`                            | bool   | Required                                    |
-| `reasoning_levels`                                | array  | Effort levels the model accepts. A `reasoning_effort` outside this list is not sent |
-| `reasoning_effort`                        | string | Default effort for this model               |
+| `reasoning_levels`                                | array  | Effort levels the model accepts |
+| `reasoning_effort`                        | string | Default effort for this model. Only sent when `can_reason` is true and the value is in `reasoning_levels`; otherwise the first level is sent, and nothing is sent if `reasoning_levels` is empty |
 | `options`                                         | object | `temperature`, `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options` |
 | `think`                                           | bool   | Default thinking mode for Anthropic reasoners |
 | `use_responses`                                   | bool   | Force the OpenAI Responses API on or off for this model only; overrides the provider-level setting |
@@ -91,8 +91,9 @@ reuses one of those names replaces its behavior instead of adding a duplicate.
 Variant fields: `think`, `reasoning_effort`, `max_tokens`, `temperature`,
 `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options`.
 Values are validated at load time — `temperature`/`top_p` must be finite and
-in `0`–`1`, `max_tokens` must be `0`–`200000`, and the penalties must be
-finite — and a variant that fails is dropped with a warning rather than
+in `0`–`1`, `max_tokens` must not be negative (the JSON schema also caps it
+at `200000` and `reasoning_effort` at `low`/`medium`/`high`, which the loader
+does not enforce), and the penalties must be finite — and a variant that fails is dropped with a warning rather than
 failing the whole config load.
 
 ```json

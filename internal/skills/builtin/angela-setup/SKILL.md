@@ -23,7 +23,7 @@ Ask the user which LLM provider they want to use. Common options:
 | Anthropic | `anthropic` | No (default works) | Yes (`ANTHROPIC_API_KEY`) |
 | OpenAI | `openai` | No (default works) | Yes (`OPENAI_API_KEY`) |
 | Google Gemini | `google` | No | Yes (`GEMINI_API_KEY`) |
-| OpenRouter | `openrouter` | Yes: `https://openrouter.ai/api/v1` | Yes (`OPENROUTER_API_KEY`) |
+| OpenRouter | `openrouter` | No (the catalog supplies `https://openrouter.ai/api/v1`) | Yes (`OPENROUTER_API_KEY`) |
 | AWS Bedrock | `bedrock` | No | No (uses AWS credentials; `aws_auth_refresh` can run a refresh command) |
 | GitHub Copilot | (built-in) | No | No — run `angela login copilot` instead |
 | Ollama (local) | `ollama` | Yes: `http://localhost:11434/v1` | No |
@@ -35,8 +35,10 @@ keys into config files. **GitHub Copilot is the exception**: tell the user to
 run `angela login copilot` (or `angela login -f copilot` to force
 re-authentication) instead — it runs a device-code OAuth flow and writes the
 resulting token to the global config itself, so there's no key to type in.
+`angela logout copilot` removes the stored credentials again (`-f` skips the
+confirmation prompt).
 
-`type` also accepts `azure`, `google-vertex`, `litellm`, `llamacpp`,
+`type` also accepts `vercel`, `azure`, `google-vertex`, `litellm`, `llamacpp`,
 `lmstudio`, and `omlx` for less common setups — see
 `angela://skills/angela-config/reference/providers.md` for the full provider
 field reference.
@@ -60,19 +62,32 @@ field reference.
   Angela never guesses a missing version segment.
 - **`ollama`**: `http://localhost:11434/v1`.
 
+For local providers (`ollama`, `lmstudio`, `llamacpp`, `omlx`, `litellm`, or
+any custom `openai-compat` entry with a `base_url`), the user doesn't have to
+list models: when `models` is empty Angela requests `<base_url>/models` at
+startup (3-second limit) and uses what it finds. Set `"discover_models": true`
+to also merge discovered models into a hand-written `models` list, or
+`false` to turn discovery off.
+
 If the user wants multiple providers, configure them all — Angela supports
 any number of providers simultaneously.
 
 ## Step 2 — Select Models
 
-Angela has two model slots:
+Angela has two model slots you normally configure:
 
 - **`main`** — the primary model for coding, planning, and tool use.
 - **`chore`** — a cheaper/faster model for titles, summaries, and compaction.
 
+(A third slot, `image`, is used by the built-in image generation and editing
+tools.)
+
 Ask the user which models to use. If unsure, suggest sensible defaults for
 their provider. Reference models with `provider` (the key from Step 1) and
-`model` (the provider's model ID).
+`model` (the provider's model ID). The model must be one the provider
+actually offers: a `main` or `chore` slot naming a model its provider doesn't
+offer fails config loading with `slot model not offered by its provider`
+(naming a provider that isn't configured falls back to a default instead).
 
 ```json
 {
@@ -83,7 +98,7 @@ their provider. Reference models with `provider` (the key from Step 1) and
     },
     "chore": {
       "provider": "anthropic",
-      "model": "claude-haiku-4-20250514"
+      "model": "claude-haiku-4-5-20251001"
     }
   }
 }
@@ -93,8 +108,10 @@ their provider. Reference models with `provider` (the key from Step 1) and
 
 If the user wants different parameter presets for the same model (e.g. a
 "deep thinking" mode), set up variants under that model's catalog entry in
-`providers`, not under `slots` — a slot is only ever a `provider` + `model`
-reference. Overriding a known provider's model by `id` replaces its whole
+`providers`, not under `slots`. A slot is a `provider` + `model` reference
+with an optional `variant` naming one of those variants as its default
+(`"variant": "deep"`); an agent's own `variant` wins over the slot's.
+Overriding a known provider's model by `id` replaces its whole
 catalog entry, so copy the model's other fields (context window, costs,
 capabilities — see `angela://skills/angela-config/reference/providers.md`)
 along with the variants, or the resolved model loses that data:
@@ -132,7 +149,9 @@ Ask the user how they want to handle tool permissions. Three common setups:
 
 ### Conservative (default)
 
-Every tool call is prompted. Good for learning what Angela does.
+Calls that nothing else settles are prompted; in-workspace reads and
+read-only commands still pass without a prompt. Good for learning what Angela
+does.
 
 ```json
 {
@@ -157,7 +176,9 @@ Read-only tools run freely; writes and commands are prompted.
 
 ### Permissive
 
-Most things run freely; only dangerous commands are blocked.
+Most things run freely; dangerous commands still prompt (an allow rule or
+`allowed_tools` entry can't waive that) and the deny rules below refuse
+edits to secrets.
 
 ```json
 {
@@ -211,7 +232,10 @@ ones:
 ### Docker MCP Gateway
 
 If the user has Docker installed with the MCP plugin, this is the whole
-config — Angela also has a one-command setup for this one, so mention that
+config. Angela can also write it for them: when `docker mcp version`
+succeeds and no `docker` MCP entry exists yet, the command palette offers
+**Enable Docker MCP Catalog** (and **Disable Docker MCP Catalog** once it's
+enabled), which saves this same entry to the global config. Mention that
 too:
 
 ```json
@@ -259,7 +283,8 @@ Ask if the user wants to customize built-in agents. Common adjustments:
 }
 ```
 
-`title` and `web-fetch` already default to `chore`, so they need no
+`title`, `web-fetch`, and `commit` (the hidden agent behind `angela commit`
+and `/commit`) already default to `chore`, so they need no
 override. Leave `compact` on `main` even though it's an auxiliary call —
 summarizing a conversation on the cheap model degrades the only context a
 resumed session keeps.
@@ -362,7 +387,8 @@ After writing the config, verify it works:
 1. Run `angela config validate`; fix every error and `warning:` line before
    continuing.
 2. Run `angela` to start.
-3. Check that the model selector shows the configured models.
+3. Check that the model selector (Ctrl+L, or Ctrl+M) shows the configured
+   models.
 4. Try a simple prompt to confirm the provider connection.
 
 If the user hits errors, check:

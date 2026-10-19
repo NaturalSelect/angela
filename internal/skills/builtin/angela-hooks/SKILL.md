@@ -34,6 +34,7 @@ Hooks live under the `hooks` key, grouped by event name:
   "hooks": {
     "PreToolUse": [
       {
+        "name": "no-rm-rf",               // optional: friendly name shown in the TUI (defaults to command)
         "matcher": "^Bash$",              // regex against tool name (optional; omit to match all)
         "command": "./hooks/my-hook.sh",   // required: shell command to run
         "timeout": 10                     // optional: seconds, default 30
@@ -43,8 +44,14 @@ Hooks live under the `hooks` key, grouped by event name:
 }
 ```
 
-Project-level hooks take precedence over global. Matching hooks are deduped by
-`command`, run in parallel, and aggregated in **config order** (not finish order).
+Hooks from every config layer (global, project, workspace) are
+**concatenated**, global first and project last; a project entry does not
+replace a global one. Matching hooks are deduped by `command`, run in
+parallel, and aggregated in **config order** (not finish order).
+
+`command` is required and `matcher` must be a valid regex; otherwise config
+load (and reload) fails with `invalid hook configuration`. A key other than
+`PreToolUse` is accepted but never fires.
 
 ## Language
 
@@ -79,6 +86,9 @@ the process environment.
 | `ANGELA_AGENT_DEPTH`          | `0` for the top-level agent, `1+` below  |
 | `ANGELA_TOOL_INPUT_COMMAND`   | For `Bash` calls: the shell command      |
 | `ANGELA_TOOL_INPUT_FILE_PATH` | For file tools: the target file path     |
+
+Every hook also sees `ANGELA=1`, `AGENT=angela` and `AI_AGENT=angela`, the same
+markers the `Bash` tool sets.
 
 **JSON on stdin:**
 
@@ -124,7 +134,9 @@ policy violation).
 ```
 
 - **`decision`**: `"allow"`, `"deny"`, or omit. `"allow"` is **affirmative
-  pre-approval** — it bypasses the permission prompt entirely. Omit it
+  pre-approval** — it skips the permission prompt. It does not override a
+  permission deny rule, and commands that always need approval (dangerous or
+  unanalysable shell commands, or a matching ask rule) still prompt. Omit it
   (or `null`) when you only want to inject context or rewrite input without
   also auto-approving the call.
 - **`halt: true`**: ends the turn (same as exit 49).
@@ -220,13 +232,18 @@ preserved.
 
 - Timeouts kill the hook silently and the tool call proceeds. Bump `timeout` if needed.
 - Non-zero exit codes other than 2/49 are logged but don't block — check Angela logs.
+- Exit 0 with empty or non-JSON stdout is "no opinion"; stdout that isn't a
+  JSON object is ignored without an error.
 - Use `echo "debug info" >&2` for logging without corrupting stdout JSON.
 - `matcher` is a regex against the tool name. Use `^Bash$` (not `Bash`) if you
   don't also want to match `MCP_something_bash`.
 
 ## Claude Code Compatibility
 
-Angela also accepts Claude Code's `hookSpecificOutput` envelope. One intentional
+Angela also accepts Claude Code's `hookSpecificOutput` envelope (read fields:
+`permissionDecision`, `permissionDecisionReason`, `updatedInput`,
+`additionalContext`; when present it is used instead of the top-level
+envelope, so `halt` is not available there). One intentional
 divergence: Angela treats `updated_input` as shallow-merge, Claude Code replaces.
 Existing Claude Code hooks work without modification for the matcher/decision
 parts; revisit any that relied on `updatedInput` fully replacing tool input.

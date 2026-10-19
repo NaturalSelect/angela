@@ -66,9 +66,11 @@ func (b *Backend) GetAgentSession(ctx context.Context, workspaceID, sessionID st
 	}
 
 	var isSessionBusy, isSessionBranch bool
+	var backgroundAgents int
 	if ws.AgentCoordinator != nil {
 		isSessionBusy = ws.AgentCoordinator.IsSessionBusy(sessionID)
 		isSessionBranch = ws.AgentCoordinator.IsSessionBranch(sessionID)
+		backgroundAgents = ws.AgentCoordinator.BackgroundAgentsRunning(sessionID)
 	}
 
 	return proto.AgentSession{
@@ -76,8 +78,9 @@ func (b *Backend) GetAgentSession(ctx context.Context, workspaceID, sessionID st
 			ID:    se.ID,
 			Title: se.Title,
 		},
-		IsBusy:   isSessionBusy,
-		IsBranch: isSessionBranch,
+		IsBusy:           isSessionBusy,
+		IsBranch:         isSessionBranch,
+		BackgroundAgents: backgroundAgents,
 	}, nil
 }
 

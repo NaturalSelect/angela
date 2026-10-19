@@ -121,6 +121,21 @@ func TestBackendSession_GetAgentSession(t *testing.T) {
 	require.ErrorIs(t, err, session.ErrSessionNotFound)
 }
 
+// The count of running background agents travels with the session so a
+// client can keep showing it as working after its own turn has ended.
+func TestBackendSession_GetAgentSessionCarriesBackgroundAgents(t *testing.T) {
+	b, ws, _ := newPublishingWorkspace(t)
+
+	sess, err := b.CreateSession(t.Context(), ws.ID, "s")
+	require.NoError(t, err)
+	ws.AgentCoordinator = &fakeCoordinator{backgroundRuns: map[string]int{sess.ID: 3}}
+
+	agentSess, err := b.GetAgentSession(t.Context(), ws.ID, sess.ID)
+	require.NoError(t, err)
+	require.Equal(t, 3, agentSess.BackgroundAgents)
+	require.False(t, agentSess.IsBusy, "the session's own turn is a separate fact")
+}
+
 // TestBackendSession_MessagesAndHistory drives real message.Service and
 // history.Service calls, verifying the role filtering ListUserMessages
 // and ListAllUserMessages perform on top of the raw ListSessionMessages

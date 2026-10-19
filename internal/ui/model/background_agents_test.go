@@ -8,10 +8,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	"github.com/NaturalSelect/angela/internal/workspace"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -422,4 +425,112 @@ func TestCtrlXInTheListLeavesAnOrdinaryAgentAlone(t *testing.T) {
 	runCmds(m, cmd)
 
 	require.True(t, m.dialog.ContainsDialog(dialog.SubSessionsID))
+}
+
+// The parent's turn is over but its background agent is not, so the status
+// line must keep reading as at work or the user takes the session for done.
+func TestTurnStatusStaysBusyWhileABackgroundAgentRuns(t *testing.T) {
+	t.Parallel()
+	m, _ := newBackgroundTranscriptUI(t)
+	m.backgroundAgentsCache.set(1)
+	require.False(t, m.isSessionBusy())
+
+	status := ansi.Strip(m.renderTurnStatus(200))
+
+	require.Contains(t, status, "1 background agent running")
+	require.NotContains(t, status, "Thinking")
+}
+
+func TestTurnStatusCountsEveryRunningBackgroundAgent(t *testing.T) {
+	t.Parallel()
+	m, _ := newBackgroundTranscriptUI(t)
+	m.backgroundAgentsCache.set(2)
+
+	require.Contains(t, ansi.Strip(m.renderTurnStatus(200)), "2 background agents running")
+}
+
+// Esc interrupts the session's own turn, and a background agent survives
+// that. Offering to stop would promise something the key does not do.
+func TestTurnStatusOffersNoStopForBackgroundOnlyWork(t *testing.T) {
+	t.Parallel()
+	m, _ := newBackgroundTranscriptUI(t)
+	m.backgroundAgentsCache.set(1)
+
+	status := ansi.Strip(m.renderTurnStatus(200))
+
+	require.Contains(t, status, "background agent running")
+	require.NotContains(t, status, "esc")
+	require.False(t, m.escapeCancels())
+}
+
+// While the turn itself runs, what it is doing outranks the agent it left
+// behind, and esc keeps its meaning.
+func TestTurnStatusPrefersTheTurnOverABackgroundAgent(t *testing.T) {
+	t.Parallel()
+	m, _ := newBackgroundTranscriptUI(t)
+	m.backgroundAgentsCache.set(1)
+	m.agentBusyCache.set(true)
+	m.sessionBusyCache.set(true)
+
+	status := ansi.Strip(m.renderTurnStatus(200))
+
+	require.Contains(t, status, "Thinking")
+	require.NotContains(t, status, "background agent")
+	require.Contains(t, status, "esc stop")
+}
+
+func TestTurnStatusGoesIdleOnceTheBackgroundAgentEnds(t *testing.T) {
+	t.Parallel()
+	m, _ := newBackgroundTranscriptUI(t)
+	m.backgroundAgentsCache.set(1)
+	require.Contains(t, ansi.Strip(m.renderTurnStatus(200)), "background agent running")
+
+	m.backgroundAgentsCache.set(0)
+
+	require.NotContains(t, ansi.Strip(m.renderTurnStatus(200)), "background agent")
+}
+
+func TestSpinnerFollowsABackgroundAgentWithNoBusyTurn(t *testing.T) {
+	t.Parallel()
+	m, _ := newBackgroundTranscriptUI(t)
+	m.backgroundAgentsCache.set(1)
+
+	require.NotNil(t, m.syncTurnSpinner(), "the spinner must start for a running background agent")
+	require.True(t, m.turnIsSpinning)
+	require.Nil(t, m.syncTurnSpinner(), "a second sync must not start another tick chain")
+
+	m.backgroundAgentsCache.set(0)
+
+	require.Nil(t, m.syncTurnSpinner())
+	require.False(t, m.turnIsSpinning)
+}
+
+// The count arrives with the busy probe, so the spinner has to start from
+// the probe result alone, with nothing in the transcript to go by.
+func TestBusyProbeResultStartsTheSpinnerForABackgroundAgent(t *testing.T) {
+	t.Parallel()
+	m, _ := newBackgroundTranscriptUI(t)
+	m.busyFetchInFlight = true
+
+	cmds := m.applyBusyState(busyStateMsg{gen: m.busyFetchGen, backgroundAgents: 2, mode: permission.ModeManual})
+
+	require.Equal(t, 2, m.backgroundAgentsCache.val)
+	require.NotEmpty(t, cmds, "the spinner tick must be returned")
+	require.True(t, m.turnIsSpinning)
+}
+
+func TestBusyRefreshCarriesTheBackgroundAgentCount(t *testing.T) {
+	t.Parallel()
+	m, ws := newBackgroundTranscriptUI(t)
+	ws.EXPECT().AgentIsReady().Return(true)
+	ws.EXPECT().AgentIsBusy().Return(false)
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+	ws.EXPECT().AgentBackgroundAgents("s1").Return(3)
+	ws.EXPECT().AgentActive(gomock.Any(), "s1").Return(workspace.ActiveAgent{}, nil)
+	ws.EXPECT().PermissionMode().Return(permission.ModeManual)
+
+	msg, ok := m.dispatchBusyRefresh()().(busyStateMsg)
+
+	require.True(t, ok)
+	require.Equal(t, 3, msg.backgroundAgents)
 }

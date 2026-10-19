@@ -47,6 +47,7 @@ func (c *errorCoordinator) CancelAll()                                         {
 func (c *errorCoordinator) IsBusy() bool                                       { return false }
 func (c *errorCoordinator) IsSessionBusy(string) bool                          { return false }
 func (c *errorCoordinator) IsSessionBranch(string) bool                        { return false }
+func (c *errorCoordinator) BackgroundAgentsRunning(string) int                 { return 0 }
 func (c *errorCoordinator) QueuedPrompts(string) int                           { return 0 }
 func (c *errorCoordinator) QueuedPromptsList(string) []message.QueuedPrompt    { return nil }
 func (c *errorCoordinator) ClearQueue(string)                                  {}

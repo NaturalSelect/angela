@@ -154,6 +154,11 @@ type Coordinator interface {
 	// for it, and a restart leaves the config behind while the
 	// suspended call it described is gone.
 	IsSessionBranch(sessionID string) bool
+	// BackgroundAgentsRunning reports how many background agents are
+	// running in a session or in any session below it. A background agent
+	// outlives the turn that launched it, so this is what tells an idle
+	// session from one that is still working.
+	BackgroundAgentsRunning(sessionID string) int
 	IsBusy() bool
 	QueuedPrompts(sessionID string) int
 	QueuedPromptsList(sessionID string) []message.QueuedPrompt
@@ -2149,6 +2154,10 @@ func (c *coordinator) IsSessionBusy(sessionID string) bool {
 
 func (c *coordinator) IsSessionBranch(sessionID string) bool {
 	return c.branches.Waiting(sessionID)
+}
+
+func (c *coordinator) BackgroundAgentsRunning(sessionID string) int {
+	return c.background.runningUnder(sessionID)
 }
 
 // DefaultModel reports the model a brand new session would run on. It

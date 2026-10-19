@@ -180,6 +180,11 @@ type Workspace interface {
 	// configured to run a branch-mode agent is not a live branch once
 	// the process holding its suspended call is gone.
 	AgentIsSessionBranch(sessionID string) bool
+	// AgentBackgroundAgents counts the background agents running in a
+	// session or in any session below it. They outlive the turn that
+	// launched them, so a session with a count above zero is still
+	// working even when AgentIsSessionBusy says otherwise.
+	AgentBackgroundAgents(sessionID string) int
 	AgentIsReady() bool
 	// AgentReadyErr reports nil when the coder agent is ready to accept
 	// work, or a descriptive error otherwise: ErrAgentNotInitialized

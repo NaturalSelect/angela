@@ -19,6 +19,7 @@ type fakeCoordinator struct {
 
 	sessionBusy    map[string]bool
 	sessionBranch  map[string]bool
+	backgroundRuns map[string]int
 	queued         map[string]int
 	queuedList     map[string][]message.QueuedPrompt
 	takenQueue     map[string][]message.QueuedPrompt
@@ -80,6 +81,10 @@ func (c *fakeCoordinator) IsBusy() bool { return c.busy }
 func (c *fakeCoordinator) IsSessionBusy(sessionID string) bool { return c.sessionBusy[sessionID] }
 
 func (c *fakeCoordinator) IsSessionBranch(sessionID string) bool { return c.sessionBranch[sessionID] }
+
+func (c *fakeCoordinator) BackgroundAgentsRunning(sessionID string) int {
+	return c.backgroundRuns[sessionID]
+}
 
 func (c *fakeCoordinator) QueuedPrompts(sessionID string) int { return c.queued[sessionID] }
 

@@ -239,6 +239,13 @@ func (w *AppWorkspace) AgentBackgroundAgents(sessionID string) int {
 	return w.app.AgentCoordinator.BackgroundAgentsRunning(sessionID)
 }
 
+func (w *AppWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error) {
+	if w.app.AgentCoordinator == nil {
+		return nil, nil
+	}
+	return w.app.AgentCoordinator.SubSessions(ctx, sessionID)
+}
+
 func (w *AppWorkspace) AgentIsReady() bool {
 	return w.app.AgentCoordinator != nil
 }

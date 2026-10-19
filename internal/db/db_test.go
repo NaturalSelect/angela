@@ -96,7 +96,9 @@ func TestPrepare(t *testing.T) {
 		t.Parallel()
 
 		_, conn := newTestQueries(t)
-		_, err := conn.ExecContext(t.Context(), "ALTER TABLE sessions DROP COLUMN parent_session_id")
+		_, err := conn.ExecContext(t.Context(), "DROP INDEX idx_sessions_parent_session_id")
+		require.NoError(t, err)
+		_, err = conn.ExecContext(t.Context(), "ALTER TABLE sessions DROP COLUMN parent_session_id")
 		require.NoError(t, err)
 
 		q, err := Prepare(t.Context(), conn)

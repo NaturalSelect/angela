@@ -330,6 +330,10 @@ func (w *ClientWorkspace) AgentBackgroundAgents(sessionID string) int {
 	return info.BackgroundAgents
 }
 
+func (w *ClientWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error) {
+	return w.client.GetAgentSubSessions(ctx, w.workspaceID(), sessionID)
+}
+
 func (w *ClientWorkspace) AgentIsReady() bool {
 	return w.AgentReadyErr() == nil
 }

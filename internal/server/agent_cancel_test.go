@@ -76,8 +76,11 @@ func (s *runCoordinator) IsBusy() bool                                       { r
 func (s *runCoordinator) IsSessionBusy(string) bool {
 	return false
 }
-func (s *runCoordinator) IsSessionBranch(string) bool                     { return false }
-func (s *runCoordinator) BackgroundAgentsRunning(string) int              { return 0 }
+func (s *runCoordinator) IsSessionBranch(string) bool        { return false }
+func (s *runCoordinator) BackgroundAgentsRunning(string) int { return 0 }
+func (s *runCoordinator) SubSessions(context.Context, string) ([]proto.SubSession, error) {
+	return nil, nil
+}
 func (s *runCoordinator) QueuedPrompts(string) int                        { return 0 }
 func (s *runCoordinator) QueuedPromptsList(string) []message.QueuedPrompt { return nil }
 func (s *runCoordinator) ClearQueue(string)                               {}

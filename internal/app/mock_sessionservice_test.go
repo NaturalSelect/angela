@@ -175,6 +175,21 @@ func (mr *MockSessionServiceMockRecorder) List(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockSessionService)(nil).List), ctx)
 }
 
+// ListChildren mocks base method.
+func (m *MockSessionService) ListChildren(ctx context.Context, parentSessionID string) ([]session.Session, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListChildren", ctx, parentSessionID)
+	ret0, _ := ret[0].([]session.Session)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListChildren indicates an expected call of ListChildren.
+func (mr *MockSessionServiceMockRecorder) ListChildren(ctx, parentSessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListChildren", reflect.TypeOf((*MockSessionService)(nil).ListChildren), ctx, parentSessionID)
+}
+
 // ParseAgentToolSessionID mocks base method.
 func (m *MockSessionService) ParseAgentToolSessionID(sessionID string) (string, string, bool) {
 	m.ctrl.T.Helper()

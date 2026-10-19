@@ -953,6 +953,12 @@ definitions:
         type: string
       attached_clients:
         type: integer
+      background_agents:
+        description: |-
+          BackgroundAgents counts the background agents running in this
+          session or in any session below it. A background agent outlives the
+          turn that launched it, so a session can be idle and still working.
+        type: integer
       cache_creation_tokens:
         type: integer
       cache_read_tokens:
@@ -1572,6 +1578,23 @@ definitions:
       state:
         $ref: '#/definitions/proto.SkillDiscoveryState'
     type: object
+  proto.SubSession:
+    properties:
+      agent:
+        type: string
+      id:
+        type: string
+      kind:
+        $ref: '#/definitions/tools.SubSessionKind'
+      parent_id:
+        type: string
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/tools.SubSessionStatus'
+      task:
+        type: string
+    type: object
   proto.Todo:
     properties:
       active_form:
@@ -1731,6 +1754,32 @@ definitions:
     - Second
     - Minute
     - Hour
+  tools.SubSessionKind:
+    enum:
+    - ""
+    - foreground
+    - background
+    - branch
+    type: string
+    x-enum-varnames:
+    - SubSessionKindUnknown
+    - SubSessionKindForeground
+    - SubSessionKindBackground
+    - SubSessionKindBranch
+  tools.SubSessionStatus:
+    enum:
+    - running
+    - completed
+    - failed
+    - stopped
+    - ended
+    type: string
+    x-enum-varnames:
+    - SubSessionRunning
+    - SubSessionCompleted
+    - SubSessionFailed
+    - SubSessionStopped
+    - SubSessionEnded
 info:
   contact:
     name: Charm
@@ -2499,6 +2548,39 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Ask a side question
+      tags:
+      - agent
+  /workspaces/{id}/agent/sessions/{sid}/sub-sessions:
+    get:
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/proto.SubSession'
+            type: array
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: List sub-sessions
       tags:
       - agent
   /workspaces/{id}/agent/sessions/{sid}/summarize:

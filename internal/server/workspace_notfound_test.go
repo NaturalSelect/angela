@@ -63,6 +63,7 @@ var wsHandlerCases = []wsHandlerCase{
 	{name: "PostWorkspaceAgentDefaultActiveAgent", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceAgentDefaultActiveAgent},
 	{name: "PostWorkspaceAgentSessionShell", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceAgentSessionShell},
 	{name: "GetWorkspaceAgentSessionPromptList", invoke: (*controllerV1).handleGetWorkspaceAgentSessionPromptList},
+	{name: "GetWorkspaceAgentSessionSubSessions", invoke: (*controllerV1).handleGetWorkspaceAgentSessionSubSessions},
 	{name: "PostWorkspacePermissionsGrant", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspacePermissionsGrant},
 	{name: "PostWorkspaceQuestionsAnswer", body: "{}", decodes: true, invoke: (*controllerV1).handlePostWorkspaceQuestionsAnswer},
 	{name: "PostWorkspaceQuestionsCancel", invoke: (*controllerV1).handlePostWorkspaceQuestionsCancel},

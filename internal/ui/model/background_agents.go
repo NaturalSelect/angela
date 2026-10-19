@@ -83,3 +83,15 @@ func (m *UI) stopSubSessionCmd(sessionID string) tea.Cmd {
 		return nil
 	}
 }
+
+// abortSubSessionCmd abandons a branch off the Update goroutine. Unlike
+// abortBranch it leaves the view where it is: the list is still open and the
+// parent whose turn the branch suspended resumes on its own once its call
+// resolves.
+func (m *UI) abortSubSessionCmd(sessionID string) tea.Cmd {
+	ws := m.com.Workspace
+	return func() tea.Msg {
+		ws.AgentAbandonBranch(sessionID)
+		return nil
+	}
+}

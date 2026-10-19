@@ -1011,6 +1011,32 @@ func (c *controllerV1) handleGetWorkspaceAgentSession(w http.ResponseWriter, r *
 	jsonEncode(w, agentSession)
 }
 
+// handleGetWorkspaceAgentSessionSubSessions returns the direct children of
+// an agent session.
+//
+//	@Summary		List sub-sessions
+//	@Tags			agent
+//	@Produce		json
+//	@Param			id	path		string	true	"Workspace ID"
+//	@Param			sid	path		string	true	"Session ID"
+//	@Success		200	{array}		proto.SubSession
+//	@Failure		404	{object}	proto.Error
+//	@Failure		500	{object}	proto.Error
+//	@Router			/workspaces/{id}/agent/sessions/{sid}/sub-sessions [get]
+func (c *controllerV1) handleGetWorkspaceAgentSessionSubSessions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+	subSessions, err := c.backend.ListSubSessions(r.Context(), id, sid)
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	if subSessions == nil {
+		subSessions = []proto.SubSession{}
+	}
+	jsonEncode(w, subSessions)
+}
+
 // handlePostWorkspaceAgentSessionCancel cancels a running agent session.
 //
 //	@Summary		Cancel agent session

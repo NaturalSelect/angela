@@ -47,9 +47,16 @@ type ActionEnterSubSession struct {
 	SessionID string
 }
 
-// ActionStopSubSession is a message asking to stop the background agent
-// running in a sub-session of the session in view.
+// ActionStopSubSession is a message asking to stop the agent running in a
+// sub-session of the session in view, whether it runs in the foreground or
+// in the background.
 type ActionStopSubSession struct {
+	SessionID string
+}
+
+// ActionAbortSubSession is a message asking to abort the branch agent that
+// is waiting for the user in a sub-session of the session in view.
+type ActionAbortSubSession struct {
 	SessionID string
 }
 

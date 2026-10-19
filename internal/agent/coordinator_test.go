@@ -85,6 +85,7 @@ func newTestCoordinator(t *testing.T, env fakeEnv, providerID string, providerCf
 		permissions:    env.permissions,
 		subagents:      newSubagentRegistry(),
 		branches:       newBranchController(),
+		subSessions:    newSubSessionTree(),
 		proposals:      tools.NewProposalStore(),
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
@@ -1139,4 +1140,164 @@ func TestSubAgentInheritsWhetherAnyoneCanApprove(t *testing.T) {
 		assert.False(t, env.permissions.SessionUnattended(child),
 			"a sub-agent under a TUI session must still be able to ask the user")
 	})
+}
+
+func subSessionStatusOf(t *testing.T, coord *coordinator, parentID, childID string) tools.SubSessionStatus {
+	t.Helper()
+	for _, c := range coord.subSessions.childrenOf(parentID) {
+		if c.ID == childID {
+			return c.Status
+		}
+	}
+	require.FailNow(t, "child not in the tree", childID)
+	return ""
+}
+
+func TestRunSubAgentRecordsTheChildInTheSubSessionTree(t *testing.T) {
+	const providerID = "test-provider"
+	providerCfg := config.ProviderConfig{ID: providerID}
+
+	run := func(t *testing.T, runFunc func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error)) (coord *coordinator, parentID, childID string, done <-chan tools.Result) {
+		env := testEnv(t)
+		coord = newTestCoordinator(t, env, providerID, providerCfg)
+		parent, err := env.sessions.Create(t.Context(), "Parent")
+		require.NoError(t, err)
+		agent, resolved := newMockAgent(t, providerID, 4096, runFunc)
+		resolved.ID = "explore"
+
+		result := make(chan tools.Result, 1)
+		go func() {
+			result <- coord.runSubAgent(t.Context(), subAgentParams{
+				Agent:          agent,
+				Resolved:       resolved,
+				SessionID:      parent.ID,
+				AgentMessageID: "msg-1",
+				ToolCallID:     "call-1",
+				Prompt:         "look around",
+				SessionTitle:   "Survey",
+			})
+		}()
+		return coord, parent.ID, env.sessions.CreateAgentToolSessionID("msg-1", "call-1"), result
+	}
+
+	t.Run("running while it runs and completed after", func(t *testing.T) {
+		started, release := make(chan struct{}), make(chan struct{})
+		coord, parentID, childID, done := run(t, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+			close(started)
+			<-release
+			return agentResultWithText("found it"), nil
+		})
+		<-started
+
+		listed := coord.subSessions.childrenOf(parentID)
+		require.Len(t, listed, 1)
+		require.Equal(t, childID, listed[0].ID)
+		require.Equal(t, parentID, listed[0].ParentID)
+		require.Equal(t, "explore", listed[0].Agent)
+		require.Equal(t, "Survey", listed[0].Task)
+		require.Equal(t, tools.SubSessionKindForeground, listed[0].Kind)
+		require.Equal(t, tools.SubSessionRunning, listed[0].Status)
+
+		close(release)
+		require.False(t, (<-done).Response().IsError)
+		require.Equal(t, tools.SubSessionCompleted, subSessionStatusOf(t, coord, parentID, childID))
+	})
+
+	t.Run("failed when the run errors", func(t *testing.T) {
+		coord, parentID, childID, done := run(t, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+			return nil, errors.New("provider request failed")
+		})
+		require.True(t, (<-done).Response().IsError)
+		require.Equal(t, tools.SubSessionFailed, subSessionStatusOf(t, coord, parentID, childID))
+	})
+}
+
+func TestRunSubAgentStoppedByTheUserReadsAsAStop(t *testing.T) {
+	const providerID = "test-provider"
+	env := testEnv(t)
+	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+
+	started := make(chan struct{})
+	agent, resolved := newMockAgent(t, providerID, 4096, func(ctx context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+
+	parentCtx, cancelParent := context.WithCancel(t.Context())
+	defer cancelParent()
+	result := make(chan tools.Result, 1)
+	go func() {
+		result <- coord.runSubAgent(parentCtx, subAgentParams{
+			Agent:          agent,
+			Resolved:       resolved,
+			SessionID:      parent.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "look around",
+			SessionTitle:   "Survey",
+		})
+	}()
+	<-started
+	childID := env.sessions.CreateAgentToolSessionID("msg-1", "call-1")
+
+	coord.Cancel(childID)
+
+	resp := (<-result).Response()
+	require.True(t, resp.IsError)
+	require.Equal(t, subAgentStoppedMessage, resp.Content)
+	require.Equal(t, tools.SubSessionStopped, subSessionStatusOf(t, coord, parent.ID, childID))
+	require.NoError(t, parentCtx.Err(), "stopping the child must not take the parent's turn down")
+}
+
+func TestRunSubAgentCancelledWithItsParentIsNotReportedAsAUserStop(t *testing.T) {
+	const providerID = "test-provider"
+	env := testEnv(t)
+	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+
+	started := make(chan struct{})
+	agent, resolved := newMockAgent(t, providerID, 4096, func(ctx context.Context, _ SessionAgentCall) (*fantasy.AgentResult, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+
+	parentCtx, cancelParent := context.WithCancel(t.Context())
+	result := make(chan tools.Result, 1)
+	go func() {
+		result <- coord.runSubAgent(parentCtx, subAgentParams{
+			Agent:          agent,
+			Resolved:       resolved,
+			SessionID:      parent.ID,
+			AgentMessageID: "msg-1",
+			ToolCallID:     "call-1",
+			Prompt:         "look around",
+			SessionTitle:   "Survey",
+		})
+	}()
+	<-started
+	cancelParent()
+
+	resp := (<-result).Response()
+	require.True(t, resp.IsError)
+	require.NotEqual(t, subAgentStoppedMessage, resp.Content)
+	require.Contains(t, resp.Content, "Failed to generate response")
+}
+
+func TestSubAgentOutcomeStoppedWhileParentLives(t *testing.T) {
+	t.Parallel()
+
+	live := t.Context()
+	dead, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	cancelled := subAgentOutcome{Failure: "Failed to generate response: context canceled", Err: context.Canceled}
+	require.True(t, cancelled.stoppedWhileParentLives(live))
+	require.False(t, cancelled.stoppedWhileParentLives(dead))
+	require.False(t, subAgentOutcome{Failure: "boom", Err: errors.New("boom")}.stoppedWhileParentLives(live))
+	require.False(t, subAgentOutcome{Text: "answer"}.stoppedWhileParentLives(live))
 }

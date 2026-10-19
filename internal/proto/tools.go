@@ -9,6 +9,15 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 )
 
+// SubSession describes one direct child of a session.
+type SubSession = tools.SubSession
+
+// SubSessionKind says how a child session was dispatched.
+type SubSessionKind = tools.SubSessionKind
+
+// SubSessionStatus is the lifecycle state of a child session.
+type SubSessionStatus = tools.SubSessionStatus
+
 // ToolResponseType represents the type of tool response.
 type ToolResponseType string
 

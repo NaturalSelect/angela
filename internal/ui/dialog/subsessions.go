@@ -26,7 +26,7 @@ const (
 	subSessionsDialogMaxHeight = 20
 
 	// subSessionMinRowWidth is the room a row keeps for its own text before
-	// the Stop button is dropped, so a narrow list never trades the title
+	// its end button is dropped, so a narrow list never trades the title
 	// away for the button.
 	subSessionMinRowWidth = 16
 )
@@ -43,9 +43,12 @@ const (
 	SubSessionDone
 	// SubSessionFailed means the sub-agent errored or was canceled.
 	SubSessionFailed
-	// SubSessionStopped means a background sub-agent was stopped on purpose,
+	// SubSessionStopped means a sub-agent was stopped or aborted on purpose,
 	// which is neither a success nor a failure of its own.
 	SubSessionStopped
+	// SubSessionEnded means the sub-agent was dispatched before a process
+	// restart, so how it really ended is unknown.
+	SubSessionEnded
 )
 
 // active reports whether the sub-session still needs attention.
@@ -63,6 +66,8 @@ func (s SubSessionState) marker() string {
 		return "✓"
 	case SubSessionStopped:
 		return "■"
+	case SubSessionEnded:
+		return "○"
 	default:
 		return "✗"
 	}
@@ -78,9 +83,49 @@ func (s SubSessionState) label() string {
 		return "done"
 	case SubSessionStopped:
 		return "stopped"
+	case SubSessionEnded:
+		return "ended"
 	default:
 		return "failed"
 	}
+}
+
+// SubSessionEnd is the action the user can take to end a sub-session from
+// the list. A row carries at most one, so it can never offer two buttons.
+type SubSessionEnd uint8
+
+const (
+	// SubSessionEndNone means the user cannot end the sub-session from the
+	// list.
+	SubSessionEndNone SubSessionEnd = iota
+	// SubSessionEndStop stops a running foreground or background sub-agent.
+	SubSessionEndStop
+	// SubSessionEndAbort aborts a branch agent that is waiting for the user.
+	SubSessionEndAbort
+)
+
+// buttonText is the label of the row's end button.
+func (e SubSessionEnd) buttonText() string {
+	if e == SubSessionEndAbort {
+		return "Abort"
+	}
+	return "Stop"
+}
+
+// actionHelp is how the key help describes ending the row.
+func (e SubSessionEnd) actionHelp() string {
+	if e == SubSessionEndAbort {
+		return "abort branch"
+	}
+	return "stop agent"
+}
+
+// buttonHelp is how the key help describes moving the focus to the button.
+func (e SubSessionEnd) buttonHelp() string {
+	if e == SubSessionEndAbort {
+		return "abort button"
+	}
+	return "stop button"
 }
 
 // SubSessionEntry describes one sub-session of the session in view. It is
@@ -93,9 +138,9 @@ type SubSessionEntry struct {
 	// Task is the short description of the work it was given.
 	Task  string
 	State SubSessionState
-	// Stoppable is true for a running background agent, the only kind the
-	// user can end from the list.
-	Stoppable bool
+	// End is the action that ends the sub-session from the list, or
+	// [SubSessionEndNone] when the user cannot end it from there.
+	End SubSessionEnd
 }
 
 // SubSessions is a dialog for picking one of the current session's
@@ -110,7 +155,7 @@ type SubSessions struct {
 	metrics FrameMetrics
 
 	items []*SubSessionItem
-	// stopFocused is true while the keyboard focus sits on the Stop button
+	// stopFocused is true while the keyboard focus sits on the end button
 	// of the selected row instead of on the row itself.
 	stopFocused bool
 	// listRect and listWidth are where the list was last drawn, in screen
@@ -237,7 +282,7 @@ func (s *SubSessions) HandleMsg(msg tea.Msg) Action {
 			s.list.ScrollToSelected()
 		case key.Matches(msg, s.keyMap.Select):
 			if s.stopFocused {
-				return s.stopSelected()
+				return s.endSelected()
 			}
 			item, ok := s.list.SelectedItem().(*SubSessionItem)
 			if !ok {
@@ -245,12 +290,12 @@ func (s *SubSessions) HandleMsg(msg tea.Msg) Action {
 			}
 			return ActionEnterSubSession{SessionID: item.entry.SessionID}
 		case key.Matches(msg, s.keyMap.Stop):
-			// A row that cannot be stopped swallows the key: handing it to
+			// A row that cannot be ended swallows the key: handing it to
 			// the filter box would type nothing, but it would also move the
 			// cursor for a key the user meant as a command.
-			return s.stopSelected()
+			return s.endSelected()
 		case key.Matches(msg, s.keyMap.Tab):
-			if s.selectedStoppable() != nil {
+			if s.selectedEndable() != nil {
 				s.setStopFocus(!s.stopFocused)
 			}
 		default:
@@ -272,8 +317,8 @@ func (s *SubSessions) HandleMsg(msg tea.Msg) Action {
 	return nil
 }
 
-// click selects the row under the pointer and stops its agent when the
-// pointer is on the Stop button. A click elsewhere on the row only selects
+// click selects the row under the pointer and ends its agent when the
+// pointer is on the end button. A click elsewhere on the row only selects
 // it, so entering a sub-session stays a deliberate keyboard action.
 func (s *SubSessions) click(x, y int) Action {
 	idx, item := s.rowAt(x, y)
@@ -283,7 +328,7 @@ func (s *SubSessions) click(x, y int) Action {
 	s.list.SetSelected(idx)
 	s.setStopFocus(false)
 	if item.overStop(x-s.listRect.Min.X, s.listWidth) {
-		return s.stopSelected()
+		return s.endSelected()
 	}
 	return nil
 }
@@ -307,27 +352,31 @@ func (s *SubSessions) rowAt(x, y int) (int, *SubSessionItem) {
 	return idx, item
 }
 
-// setStopFocus moves the keyboard focus onto the selected row's Stop button
+// setStopFocus moves the keyboard focus onto the selected row's end button
 // or back to the row.
 func (s *SubSessions) setStopFocus(focused bool) {
 	s.stopFocused = focused
-	selected := s.selectedStoppable()
+	selected := s.selectedEndable()
 	for _, item := range s.items {
 		item.setStopFocused(focused && item == selected)
 	}
 }
 
-// stopSelected ends the selected row's agent and leaves the dialog open with
-// the row showing the outcome, so several agents can be stopped in a row. It
-// returns nil when the selected row cannot be stopped.
-func (s *SubSessions) stopSelected() Action {
-	item := s.selectedStoppable()
+// endSelected ends the selected row's agent and leaves the dialog open with
+// the row showing the outcome, so several agents can be ended in a row. It
+// returns nil when the selected row cannot be ended.
+func (s *SubSessions) endSelected() Action {
+	item := s.selectedEndable()
 	if item == nil {
 		return nil
 	}
-	item.markStopped()
+	sessionID, end := item.entry.SessionID, item.entry.End
+	item.markEnded()
 	s.setStopFocus(false)
-	return ActionStopSubSession{SessionID: item.entry.SessionID}
+	if end == SubSessionEndAbort {
+		return ActionAbortSubSession{SessionID: sessionID}
+	}
+	return ActionStopSubSession{SessionID: sessionID}
 }
 
 // Cursor returns the cursor position relative to the dialog.
@@ -390,45 +439,62 @@ func (s *SubSessions) locateList(area uv.Rectangle, view string, inputHeight, li
 	s.listWidth = listWidth
 }
 
-// selectedStoppable returns the highlighted row when the user can end it
-// from the list, and nil otherwise.
-func (s *SubSessions) selectedStoppable() *SubSessionItem {
+// selectedEndable returns the highlighted row when the user can end it from
+// the list, and nil otherwise.
+func (s *SubSessions) selectedEndable() *SubSessionItem {
 	item, ok := s.list.SelectedItem().(*SubSessionItem)
-	if !ok || !item.entry.Stoppable {
+	if !ok || item.entry.End == SubSessionEndNone {
 		return nil
 	}
 	return item
 }
 
-// selectBinding is the enter binding, relabeled while the Stop button has
+// relabeled returns the binding with the same keys and a new help text.
+func relabeled(binding key.Binding, desc string) key.Binding {
+	return key.NewBinding(
+		key.WithKeys(binding.Keys()...),
+		key.WithHelp(binding.Help().Key, desc),
+	)
+}
+
+// selectBinding is the enter binding, relabeled while the end button has
 // the focus because enter then ends the agent instead of entering it.
 func (s *SubSessions) selectBinding() key.Binding {
-	if !s.stopFocused {
+	item := s.selectedEndable()
+	if !s.stopFocused || item == nil {
 		return s.keyMap.Select
 	}
-	return key.NewBinding(
-		key.WithKeys(s.keyMap.Select.Keys()...),
-		key.WithHelp("enter", "stop agent"),
-	)
+	return relabeled(s.keyMap.Select, item.entry.End.actionHelp())
 }
 
 // ShortHelp implements [help.KeyMap].
 func (s *SubSessions) ShortHelp() []key.Binding {
-	if s.selectedStoppable() == nil {
+	item := s.selectedEndable()
+	if item == nil {
 		return []key.Binding{s.keyMap.UpDown, s.selectBinding(), s.keyMap.Close}
 	}
-	// NOTE: The choose hint makes way for the two stop hints; with it the
+	// NOTE: The choose hint makes way for the two end hints; with it the
 	// line outgrows the dialog and the close hint is the first to be cut.
-	return []key.Binding{s.selectBinding(), s.keyMap.Tab, s.keyMap.Stop, s.keyMap.Close}
+	return []key.Binding{s.selectBinding(), s.tabBinding(item), s.endBinding(item), s.keyMap.Close}
 }
 
 // FullHelp implements [help.KeyMap].
 func (s *SubSessions) FullHelp() [][]key.Binding {
 	bindings := []key.Binding{s.selectBinding()}
-	if s.selectedStoppable() != nil {
-		bindings = append(bindings, s.keyMap.Tab, s.keyMap.Stop)
+	if item := s.selectedEndable(); item != nil {
+		bindings = append(bindings, s.tabBinding(item), s.endBinding(item))
 	}
 	return [][]key.Binding{append(bindings, s.keyMap.Next, s.keyMap.Previous, s.keyMap.Close)}
+}
+
+// tabBinding is the tab binding, described for the row's kind of button.
+func (s *SubSessions) tabBinding(item *SubSessionItem) key.Binding {
+	return relabeled(s.keyMap.Tab, item.entry.End.buttonHelp())
+}
+
+// endBinding is the end binding, described for the row's kind of action.
+func (s *SubSessions) endBinding(item *SubSessionItem) key.Binding {
+	return relabeled(s.keyMap.Stop, item.entry.End.actionHelp())
 }
 
 func (s *SubSessions) setItems(entries []SubSessionEntry) {
@@ -523,11 +589,11 @@ func (i *SubSessionItem) setStopHovered(hovered bool) {
 	i.invalidate()
 }
 
-// markStopped shows the outcome of a stop the user just asked for, without
-// waiting for the transcript to catch up.
-func (i *SubSessionItem) markStopped() {
+// markEnded shows the outcome of a stop or abort the user just asked for,
+// without waiting for the transcript to catch up.
+func (i *SubSessionItem) markEnded() {
 	i.entry.State = SubSessionStopped
-	i.entry.Stoppable = false
+	i.entry.End = SubSessionEndNone
 	i.stopFocused = false
 	i.stopHovered = false
 	i.invalidate()
@@ -540,21 +606,25 @@ func (i *SubSessionItem) invalidate() {
 	}
 }
 
-// showsStop reports whether a row of the given width has room for its Stop
+// showsStop reports whether a row of the given width has room for its end
 // button. Render and the mouse hit test both ask it, so they cannot disagree.
 func (i *SubSessionItem) showsStop(width int) bool {
-	return i.entry.Stoppable && width >= stopButtonWidth(i.t)+1+subSessionMinRowWidth
+	if i.entry.End == SubSessionEndNone {
+		return false
+	}
+	return width >= stopButtonWidth(i.t, i.entry.End.buttonText())+1+subSessionMinRowWidth
 }
 
 // overStop reports whether a column of a row of the given width is on the
-// Stop button, which is pinned to the right edge.
+// end button, which is pinned to the right edge.
 func (i *SubSessionItem) overStop(column, width int) bool {
-	return i.showsStop(width) && column >= width-stopButtonWidth(i.t) && column < width
+	buttonWidth := stopButtonWidth(i.t, i.entry.End.buttonText())
+	return i.showsStop(width) && column >= width-buttonWidth && column < width
 }
 
-func stopButton(t *styles.Styles, focused, hovered bool) string {
+func stopButton(t *styles.Styles, text string, focused, hovered bool) string {
 	return common.Button(t, common.ButtonOpts{
-		Text:           "Stop",
+		Text:           text,
 		Padding:        1,
 		UnderlineIndex: -1,
 		Negative:       true,
@@ -563,8 +633,8 @@ func stopButton(t *styles.Styles, focused, hovered bool) string {
 	})
 }
 
-func stopButtonWidth(t *styles.Styles) int {
-	return lipgloss.Width(stopButton(t, false, false))
+func stopButtonWidth(t *styles.Styles, text string) int {
+	return lipgloss.Width(stopButton(t, text, false, false))
 }
 
 // Render returns the string representation of the sub-session item.
@@ -578,7 +648,8 @@ func (i *SubSessionItem) Render(width int) string {
 	if !i.showsStop(width) {
 		return renderItem(itemStyles, i.title(), i.entry.State.label(), i.focused, width, i.cache, &i.m)
 	}
-	rowWidth := width - stopButtonWidth(i.t) - 1
+	text := i.entry.End.buttonText()
+	rowWidth := width - stopButtonWidth(i.t, text) - 1
 	row := renderItem(itemStyles, i.title(), i.entry.State.label(), i.focused, rowWidth, i.cache, &i.m)
-	return row + " " + stopButton(i.t, i.stopFocused, i.stopHovered)
+	return row + " " + stopButton(i.t, text, i.stopFocused, i.stopHovered)
 }

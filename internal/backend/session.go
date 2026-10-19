@@ -52,6 +52,19 @@ func (b *Backend) ListSessions(ctx context.Context, workspaceID string) ([]sessi
 	return ws.Sessions.List(ctx)
 }
 
+// ListSubSessions returns the direct children of a session in dispatch
+// order. A workspace without an agent coordinator has none.
+func (b *Backend) ListSubSessions(ctx context.Context, workspaceID, sessionID string) ([]proto.SubSession, error) {
+	ws, err := b.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if ws.AgentCoordinator == nil {
+		return nil, nil
+	}
+	return ws.AgentCoordinator.SubSessions(ctx, sessionID)
+}
+
 // GetAgentSession returns session metadata with the agent's busy
 // status.
 func (b *Backend) GetAgentSession(ctx context.Context, workspaceID, sessionID string) (proto.AgentSession, error) {

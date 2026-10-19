@@ -1,14 +1,16 @@
 package model
 
 import (
+	"context"
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
-	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
 // sessionStackFrame remembers a level the view drilled down from. The title is
@@ -172,64 +174,82 @@ func (m *UI) enterSubSessionByID(childID string) tea.Cmd {
 	return m.loadSession(childID, loadSessionOpt{enterFrame: &frame, draftAfter: &editorDraft{}})
 }
 
-// subSessionEntries lists the direct children of the session in view, in
-// transcript order. It reads only what the transcript already holds: the
-// list is built while handling a key press, where asking the workspace
-// whether a child is still running could mean a network round trip.
-func (m *UI) subSessionEntries() []dialog.SubSessionEntry {
-	if m.chat == nil || m.session == nil {
-		return nil
-	}
-	cfg := m.com.Config()
-	var entries []dialog.SubSessionEntry
-	for _, item := range m.chat.AgentToolItems() {
-		// Until the input has streamed in, the child session does not
-		// exist yet and there is nothing to enter.
-		if !item.ToolCall().Finished {
-			continue
+// subSessionsLoadedMsg carries the children of a session, read off the
+// Update goroutine, so the list can be opened once they arrive.
+type subSessionsLoadedMsg struct {
+	sessionID string
+	subs      []proto.SubSession
+}
+
+// loadSubSessionsCmd asks the workspace for the children of a session. In
+// client/server mode that is a network call, so it must not run on the
+// Update goroutine.
+func (m *UI) loadSubSessionsCmd(sessionID string) tea.Cmd {
+	ws := m.com.Workspace
+	return func() tea.Msg {
+		subs, err := ws.AgentSubSessions(context.Background(), sessionID)
+		if err != nil {
+			return util.ReportError(err)()
 		}
-		agentName := item.SubagentName()
-		state := subSessionState(item, isBranchAgent(cfg, agentName))
+		return subSessionsLoadedMsg{sessionID: sessionID, subs: subs}
+	}
+}
+
+// subSessionEntries turns the children the coordinator reports into list
+// rows, keeping the order it gives them in, which is the order they were
+// dispatched.
+func subSessionEntries(subs []proto.SubSession) []dialog.SubSessionEntry {
+	entries := make([]dialog.SubSessionEntry, 0, len(subs))
+	for _, sub := range subs {
 		entries = append(entries, dialog.SubSessionEntry{
-			SessionID: m.com.Workspace.CreateAgentToolSessionID(item.MessageID(), item.ToolCall().ID),
-			Agent:     agentName,
-			Task:      item.Task(),
-			State:     state,
-			Stoppable: item.IsBackground() && state == dialog.SubSessionRunning,
+			SessionID: sub.ID,
+			Agent:     sub.Agent,
+			Task:      sub.Task,
+			State:     subSessionState(sub),
+			End:       subSessionEnd(sub),
 		})
 	}
 	return entries
 }
 
-// subSessionState maps a dispatch to what the user cares about. A branch
-// whose call has no result is waiting on the user rather than working on its
-// own. A background agent's call has its result at once, so its state comes
-// from how the agent ended instead; a stop is told apart from a failure
-// because the user chose it.
-func subSessionState(item *chat.AgentToolMessageItem, branch bool) dialog.SubSessionState {
-	if item.IsBackground() && item.BackgroundOutcome() == agenttools.BackgroundAgentStopped {
-		return dialog.SubSessionStopped
-	}
-	switch item.Status() {
-	case chat.ToolStatusSuccess:
+// subSessionState maps a child's lifecycle onto what the user cares about. A
+// running branch is waiting on the user rather than working on its own.
+func subSessionState(sub proto.SubSession) dialog.SubSessionState {
+	switch sub.Status {
+	case agenttools.SubSessionCompleted:
 		return dialog.SubSessionDone
-	case chat.ToolStatusError, chat.ToolStatusCanceled:
+	case agenttools.SubSessionFailed:
 		return dialog.SubSessionFailed
+	case agenttools.SubSessionStopped:
+		return dialog.SubSessionStopped
+	case agenttools.SubSessionEnded:
+		return dialog.SubSessionEnded
 	default:
-		if branch {
+		if sub.Kind == agenttools.SubSessionKindBranch {
 			return dialog.SubSessionWaiting
 		}
 		return dialog.SubSessionRunning
 	}
 }
 
-// isBranchAgent reports whether the named agent is configured as a branch.
-func isBranchAgent(cfg *config.Config, name string) bool {
-	if cfg == nil {
-		return false
+// subSessionEnd is the way the user can end a child from the list: stop a
+// running agent, abort a branch that is waiting for them, and nothing for a
+// child that has already ended.
+func subSessionEnd(sub proto.SubSession) dialog.SubSessionEnd {
+	if sub.Status != agenttools.SubSessionRunning {
+		return dialog.SubSessionEndNone
 	}
-	return cfg.Agents[name].Mode == config.AgentModeBranch
+	switch sub.Kind {
+	case agenttools.SubSessionKindForeground, agenttools.SubSessionKindBackground:
+		return dialog.SubSessionEndStop
+	case agenttools.SubSessionKindBranch:
+		return dialog.SubSessionEndAbort
+	default:
+		return dialog.SubSessionEndNone
+	}
 }
+
+// isBranchAgent reports whether the named agent is configured as a branch.
 
 // leaveSubSession pops back one level. The parent is reloaded from the
 // database rather than restored from memory: the sub-agent kept writing to

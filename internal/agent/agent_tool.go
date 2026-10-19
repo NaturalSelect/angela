@@ -143,7 +143,7 @@ func (c *coordinator) agentTool(depth int, caller config.Agent, parent config.Ac
 
 			title := params.Description
 			if title == "" {
-				title = "New Agent Session"
+				title = defaultAgentSessionTitle
 			}
 
 			run := c.runSubAgent

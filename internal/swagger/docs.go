@@ -4345,6 +4345,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/proto.Error"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/proto.Error"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {

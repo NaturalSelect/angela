@@ -429,7 +429,7 @@ func (w *AppWorkspace) Undo(ctx context.Context, sessionID, cutMessageID string)
 // -- Reports --
 
 func (w *AppWorkspace) ImportReport(ctx context.Context, sessionID string, report agenttools.Report) (agenttools.ImportResult, error) {
-	return agenttools.ImportReport(ctx, w.app.Sessions, w.app.Messages, sessionID, report)
+	return w.app.ImportReport(ctx, sessionID, report)
 }
 
 // -- LSP --

@@ -14,5 +14,5 @@ func (b *Backend) ImportReport(ctx context.Context, workspaceID, sessionID strin
 		return tools.ImportResult{}, err
 	}
 
-	return tools.ImportReport(ctx, ws.Sessions, ws.Messages, sessionID, report)
+	return ws.ImportReport(ctx, sessionID, report)
 }

@@ -76,10 +76,19 @@ func ReportBanner(reportID, agentType, task string) string {
 	return banner.String()
 }
 
-// IsReportID reports whether id has the shape ReportID produces.
+// IsReportID reports whether id has the shape ReportID produces: the
+// prefix followed by lowercase hex digits only.
 func IsReportID(id string) bool {
 	hash, ok := strings.CutPrefix(id, reportIDPrefix)
-	return ok && len(hash) == reportIDHashLen
+	if !ok || len(hash) != reportIDHashLen {
+		return false
+	}
+	for _, r := range hash {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // bannerReportID returns the id ReportBanner stamped at the front of
@@ -309,8 +318,8 @@ type ImportResult struct {
 	// Its ID is the one LoadReport takes.
 	Report Report
 	// RequestedID is the id the imported report carried, or "" if it had
-	// none. It differs from Report.ID when that id was already taken by a
-	// different report.
+	// none or one that is not a report id. It differs from Report.ID when
+	// that id was already taken by a different report.
 	RequestedID string
 	// AlreadyPresent is true when the session already held this exact
 	// report, so nothing was written.
@@ -373,19 +382,20 @@ func ImportReport(ctx context.Context, sessions session.Service, messages messag
 		taken[report.ID] = report
 	}
 
-	result := ImportResult{RequestedID: in.ID}
-	id := in.ID
-	if IsReportID(id) {
+	var result ImportResult
+	id := ""
+	if IsReportID(in.ID) {
+		result.RequestedID = in.ID
+		id = in.ID
 		if held, conflict := taken[id]; conflict {
-			if held.Body() == body {
+			// NOTE: A dispatch's output is stored untrimmed, while body is not.
+			if strings.TrimRight(held.Body(), "\n") == body {
 				result.Report = held
 				result.AlreadyPresent = true
 				return result, nil
 			}
 			id = ""
 		}
-	} else {
-		id = ""
 	}
 	for id == "" || taken[id].ID != "" {
 		id = reportIDPrefix + session.HashID(uuid.NewString())[:reportIDHashLen]

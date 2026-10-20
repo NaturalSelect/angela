@@ -27,6 +27,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/lipgloss/v2"
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
@@ -2758,6 +2759,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			if err != nil {
 				if errors.Is(err, agenttools.ErrEmptyReport) {
 					return util.ReportWarn("Report file is empty")()
+				}
+				if errors.Is(err, agent.ErrSessionBusy) {
+					return util.ReportWarn("Agent is busy, please wait before importing a report...")()
 				}
 				return util.ReportError(err)()
 			}

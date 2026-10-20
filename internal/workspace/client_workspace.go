@@ -615,10 +615,14 @@ func (w *ClientWorkspace) Undo(ctx context.Context, sessionID, cutMessageID stri
 
 func (w *ClientWorkspace) ImportReport(ctx context.Context, sessionID string, report agenttools.Report) (agenttools.ImportResult, error) {
 	body := report.Body()
-	// NOTE: The server's 400 for an empty report reaches this client as a
-	// plain error, so the sentinel callers match on is raised here too.
+	// NOTE: The server's 400 for an empty or oversized report reaches this
+	// client as a plain error, so the sentinels callers match on are raised
+	// here too, which also keeps an oversized body off the wire.
 	if strings.TrimSpace(body) == "" {
 		return agenttools.ImportResult{}, agenttools.ErrEmptyReport
+	}
+	if size := len(strings.TrimRight(body, "\n")); size > agenttools.MaxImportedReportSize {
+		return agenttools.ImportResult{}, fmt.Errorf("%w: %d bytes, the limit is %d", agenttools.ErrReportTooLarge, size, agenttools.MaxImportedReportSize)
 	}
 	result, err := w.client.ImportReport(ctx, w.workspaceID(), sessionID, proto.ReportImportRequest{
 		ID:        report.ID,

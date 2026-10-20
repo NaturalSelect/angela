@@ -1145,3 +1145,29 @@ func TestRunBranchAgentRecordsTheBranchInTheSubSessionTree(t *testing.T) {
 		require.Equal(t, tools.SubSessionCompleted, subSessionStatusOf(t, c, parentID, branchID))
 	})
 }
+
+// The user pressing Esc while the parent waits on a branch is a stop they
+// chose, so the sub-session list must not show it as a failure.
+func TestRunBranchAgentMarksAParentCancelAsStopped(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 1)
+	agent, resolved := idleBranchAgent(t, seen)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan tools.Result, 1)
+	go func() {
+		done <- c.runBranchAgent(ctx, branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+	requireBranchStarted(t, seen)
+	branchID := requireBranchSession(t, c, parent.ID)
+
+	cancel()
+	<-done
+	require.Equal(t, tools.SubSessionStopped, subSessionStatusOf(t, c, parent.ID, branchID))
+}

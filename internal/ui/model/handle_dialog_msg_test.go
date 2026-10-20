@@ -736,6 +736,31 @@ func TestHandleDialogMsg_ActionImportReport_BusyAfterTheCheck(t *testing.T) {
 	require.Equal(t, util.InfoTypeWarn, info.Type)
 }
 
+// TestHandleDialogMsg_ActionImportReport_TooLargeWarns verifies that the
+// workspace's size refusal reaches the user as a warning rather than a
+// failure.
+func TestHandleDialogMsg_ActionImportReport_TooLargeWarns(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "rpt.md")
+	require.NoError(t, os.WriteFile(path, []byte("some findings"), 0o644))
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+	ws.EXPECT().ImportReport(gomock.Any(), "s1", gomock.Any()).Return(agenttools.ImportResult{}, agenttools.ErrReportTooLarge)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeWarn, info.Type)
+}
+
 // TestHandleDialogMsg_ActionImportReport_WorkspaceErrorIsReported
 // verifies that any other failure from the workspace is shown as an error.
 func TestHandleDialogMsg_ActionImportReport_WorkspaceErrorIsReported(t *testing.T) {

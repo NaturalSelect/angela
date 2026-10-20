@@ -322,7 +322,7 @@ func TestLoadReportWithNoReportsSaysSo(t *testing.T) {
 
 	resp := loadReport(t, env, sessionID, "rpt_deadbeef")
 	require.True(t, resp.IsError)
-	require.Contains(t, resp.Content, "has not dispatched any agent")
+	require.Contains(t, resp.Content, "no reports to load")
 }
 
 func TestLoadReportCannotReachAnotherSession(t *testing.T) {

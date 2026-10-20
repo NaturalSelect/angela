@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -287,6 +288,15 @@ type Workspace interface {
 	// longer agrees the turn starts there.
 	PreviewUndo(ctx context.Context, sessionID string) (undo.Preview, error)
 	Undo(ctx context.Context, sessionID, cutMessageID string) (undo.Result, error)
+
+	// Reports
+	//
+	// ImportReport stores a report read from disk in sessionID so the
+	// agent's LoadReport tool can return it. The result's report carries
+	// the id LoadReport takes, which differs from the id the report came
+	// with when that id already names another report. See
+	// tools.ImportReport.
+	ImportReport(ctx context.Context, sessionID string, report agenttools.Report) (agenttools.ImportResult, error)
 
 	// LSP
 	LSPStart(ctx context.Context, path string)

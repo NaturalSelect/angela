@@ -153,7 +153,7 @@ func (e *sessionExporter) renderMessage(msg *message.Message, toolResults map[st
 		sections = append(sections, renderReasoning(msg, thinking))
 	}
 
-	if text := strings.TrimSpace(msg.Content().Text); text != "" {
+	if text := strings.TrimSpace(transcriptText(msg)); text != "" {
 		sections = append(sections, text)
 	}
 
@@ -503,4 +503,52 @@ func ReportToMarkdown(r tools.Report) string {
 	b.WriteString(strings.TrimRight(r.Body(), "\n"))
 	b.WriteString("\n")
 	return b.String()
+}
+
+// ReportFromMarkdown reads a report file back into a report to import. A
+// file that ReportToMarkdown wrote keeps its id, agent, task and body.
+// Any other file is taken whole as the body and labelled with its name, so
+// notes written by hand can be imported too.
+func ReportFromMarkdown(data []byte, fileName string) tools.Report {
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if report, ok := parseExportedReport(text); ok {
+		return report
+	}
+	return tools.Report{Task: filepath.Base(fileName), Content: text}
+}
+
+// parseExportedReport is the inverse of ReportToMarkdown. It accepts only
+// that exact shape, so an ordinary document whose first heading happens to
+// look like a report id is not mistaken for one.
+func parseExportedReport(text string) (tools.Report, bool) {
+	title, rest, found := strings.Cut(text, "\n\n")
+	if !found {
+		return tools.Report{}, false
+	}
+	id, ok := strings.CutPrefix(title, "# ")
+	if !ok || !tools.IsReportID(id) {
+		return tools.Report{}, false
+	}
+	meta, body, found := strings.Cut(rest, "\n\n")
+	if !found {
+		return tools.Report{}, false
+	}
+	agentLine, taskLine, hasTask := strings.Cut(meta, "\n")
+	agentType, ok := strings.CutPrefix(agentLine, "- Agent: ")
+	if !ok {
+		return tools.Report{}, false
+	}
+	var task string
+	if hasTask {
+		task, ok = strings.CutPrefix(taskLine, "- Task: ")
+		if !ok {
+			return tools.Report{}, false
+		}
+	}
+	return tools.Report{
+		ID:        id,
+		AgentType: agentType,
+		Task:      task,
+		Content:   strings.TrimSuffix(body, "\n"),
+	}, true
 }

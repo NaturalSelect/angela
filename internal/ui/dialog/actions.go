@@ -208,6 +208,12 @@ type (
 		Report     tools.Report
 		WorkingDir string
 	}
+	// ActionImportReport asks for an agent report to be read from a file
+	// into the current session. An empty Path means the user picked the
+	// command from the palette but has not entered one yet.
+	ActionImportReport struct {
+		Path string
+	}
 	// ActionExportProfile asks for a runtime profile of this process to be
 	// written to disk. A zero Profile means the user picked the command from
 	// the palette but has not chosen one yet. Seconds only applies to timed

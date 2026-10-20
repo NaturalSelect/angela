@@ -4,15 +4,19 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/toolnames"
+	"github.com/google/uuid"
 )
 
 //go:embed report.md
@@ -72,6 +76,12 @@ func ReportBanner(reportID, agentType, task string) string {
 	return banner.String()
 }
 
+// IsReportID reports whether id has the shape ReportID produces.
+func IsReportID(id string) bool {
+	hash, ok := strings.CutPrefix(id, reportIDPrefix)
+	return ok && len(hash) == reportIDHashLen
+}
+
 // bannerReportID returns the id ReportBanner stamped at the front of
 // content. The stamped id is the one the model was shown, so it stays
 // valid in a session whose message ids were rewritten by a fork.
@@ -81,10 +91,60 @@ func bannerReportID(content string) (string, bool) {
 		return "", false
 	}
 	id, _, _ := strings.Cut(rest, " ")
-	if !strings.HasPrefix(id, reportIDPrefix) || len(id) != len(reportIDPrefix)+reportIDHashLen {
+	if !IsReportID(id) {
 		return "", false
 	}
 	return id, true
+}
+
+// parseReportBanner reads back the fields ReportBanner wrote at the front
+// of content. The task is a quoted string that may itself hold a space or
+// a closing bracket, so it is unquoted rather than split off.
+func parseReportBanner(content string) (id, agentType, task string, ok bool) {
+	id, ok = bannerReportID(content)
+	if !ok {
+		return "", "", "", false
+	}
+	_, rest, _ := strings.Cut(content[len(reportBannerOpen):], " ")
+	rest, ok = strings.CutPrefix(rest, "agent=")
+	if !ok {
+		return "", "", "", false
+	}
+	agentEnd := strings.IndexAny(rest, " ]")
+	if agentEnd < 0 {
+		return "", "", "", false
+	}
+	agentType, rest = rest[:agentEnd], rest[agentEnd:]
+	if quotedTask, hasTask := strings.CutPrefix(rest, " task="); hasTask {
+		quoted, err := strconv.QuotedPrefix(quotedTask)
+		if err != nil {
+			return "", "", "", false
+		}
+		task, err = strconv.Unquote(quoted)
+		if err != nil {
+			return "", "", "", false
+		}
+	}
+	return id, agentType, task, true
+}
+
+// importedReportKeyPrefix keeps an imported report's key apart from the
+// tool call ids that key the dispatches next to it.
+const importedReportKeyPrefix = "import:"
+
+// ImportedReportFromMessage returns the report an import stored in msg. An
+// import is a system message, so it shows in the transcript but never
+// reaches the model; the model reads it only through LoadReport.
+func ImportedReportFromMessage(msg message.Message) (Report, bool) {
+	if msg.Role != message.System {
+		return Report{}, false
+	}
+	content := msg.Content().Text
+	id, agentType, task, ok := parseReportBanner(content)
+	if !ok {
+		return Report{}, false
+	}
+	return Report{ID: id, AgentType: agentType, Task: task, Content: content}, true
 }
 
 // agentCallInput mirrors the fields of the agent tool's parameters that
@@ -163,6 +223,11 @@ func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message)
 	backgroundCalls := make(map[string]string)
 	var order []string
 	for _, msg := range msgs {
+		if imported, ok := ImportedReportFromMessage(msg); ok {
+			key := importedReportKeyPrefix + msg.ID
+			dispatches[key] = imported
+			order = append(order, key)
+		}
 		for _, call := range msg.ToolCalls() {
 			if call.Name != toolnames.Agent {
 				continue
@@ -231,6 +296,123 @@ func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message)
 	return reports
 }
 
+// importedAgentType labels an imported report whose file did not say which
+// agent produced it.
+const importedAgentType = "imported"
+
+// ErrEmptyReport is returned when an import has no text to store.
+var ErrEmptyReport = errors.New("report is empty")
+
+// ImportResult describes what ImportReport did with a report.
+type ImportResult struct {
+	// Report is the report as stored, or the identical one already there.
+	// Its ID is the one LoadReport takes.
+	Report Report
+	// RequestedID is the id the imported report carried, or "" if it had
+	// none. It differs from Report.ID when that id was already taken by a
+	// different report.
+	RequestedID string
+	// AlreadyPresent is true when the session already held this exact
+	// report, so nothing was written.
+	AlreadyPresent bool
+}
+
+// bannerSafeAgentType makes a label read from a file fit the banner, where
+// the agent ends at the first space or closing bracket.
+func bannerSafeAgentType(label string) string {
+	label = strings.Join(strings.Fields(label), "-")
+	return strings.ReplaceAll(label, "]", "")
+}
+
+// importedReportNotice tells the model that the user brought a report into
+// the session. The stored copy is a system message the model never sees, so
+// without this notice nothing would tell it that LoadReport has something
+// new to load.
+func importedReportNotice(report Report) string {
+	var notice strings.Builder
+	fmt.Fprintf(&notice, "The user imported a report into this session: id=%s agent=%s", report.ID, report.AgentType)
+	if report.Task != "" {
+		fmt.Fprintf(&notice, " task=%q", report.Task)
+	}
+	notice.WriteString(". Its text is not in this conversation. Call ")
+	notice.WriteString(toolnames.LoadReport)
+	notice.WriteString(" with this id when you need it.")
+	return reminder.Wrap(notice.String())
+}
+
+// ImportReport stores in as a report of sessionID so that LoadReport finds
+// it there and in every session that descends from it. in may hold the
+// bare text or text that still carries a banner; only its body is kept.
+// A reminder follows the stored report so the model learns of the import on
+// its next turn.
+//
+// The report keeps its own id when it has a valid one that no different
+// report in the session's lineage uses. Otherwise it gets a fresh id, so
+// an import can never shadow a report the model already cited.
+func ImportReport(ctx context.Context, sessions session.Service, messages message.Service, sessionID string, in Report) (ImportResult, error) {
+	body := strings.TrimRight(in.Body(), "\n")
+	if strings.TrimSpace(body) == "" {
+		return ImportResult{}, ErrEmptyReport
+	}
+	agentType := bannerSafeAgentType(in.AgentType)
+	if agentType == "" {
+		agentType = importedAgentType
+	}
+
+	// The scan reads rows, so a report written a moment ago must already
+	// be on disk to be seen.
+	if err := messages.FlushAll(ctx); err != nil {
+		return ImportResult{}, fmt.Errorf("flush messages: %w", err)
+	}
+	existing, err := CollectReports(ctx, sessions, messages, sessionID)
+	if err != nil {
+		return ImportResult{}, err
+	}
+	taken := make(map[string]Report, len(existing))
+	for _, report := range existing {
+		taken[report.ID] = report
+	}
+
+	result := ImportResult{RequestedID: in.ID}
+	id := in.ID
+	if IsReportID(id) {
+		if held, conflict := taken[id]; conflict {
+			if held.Body() == body {
+				result.Report = held
+				result.AlreadyPresent = true
+				return result, nil
+			}
+			id = ""
+		}
+	} else {
+		id = ""
+	}
+	for id == "" || taken[id].ID != "" {
+		id = reportIDPrefix + session.HashID(uuid.NewString())[:reportIDHashLen]
+	}
+
+	report := Report{
+		ID:        id,
+		AgentType: agentType,
+		Task:      in.Task,
+		Content:   ReportBanner(id, agentType, in.Task) + body,
+	}
+	if _, err := messages.Create(ctx, sessionID, message.CreateMessageParams{
+		Role:  message.System,
+		Parts: []message.ContentPart{message.TextContent{Text: report.Content}},
+	}); err != nil {
+		return ImportResult{}, fmt.Errorf("store report: %w", err)
+	}
+	if _, err := messages.Create(ctx, sessionID, message.CreateMessageParams{
+		Role:  message.User,
+		Parts: []message.ContentPart{message.TextContent{Text: importedReportNotice(report)}},
+	}); err != nil {
+		return ImportResult{}, fmt.Errorf("store report notice: %w", err)
+	}
+	result.Report = report
+	return result, nil
+}
+
 type LoadReportParams struct {
 	ID string `json:"id" description:"The id of the report to load, as shown in its header or in the compaction summary"`
 }
@@ -266,7 +448,7 @@ func NewLoadReportTool(sessions session.Service, messages message.Service) fanta
 // guessing again.
 func unknownReportMessage(wanted string, reports []Report) string {
 	if len(reports) == 0 {
-		return fmt.Sprintf("No report with id %q: this session has not dispatched any agent that produced a report.", wanted)
+		return fmt.Sprintf("No report with id %q: this session has no reports to load.", wanted)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "No report with id %q. Reports available in this session:\n", wanted)

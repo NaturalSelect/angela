@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/backend"
@@ -326,6 +327,25 @@ func undoResultToProto(r undo.Result) proto.UndoResult {
 		Deleted:      r.Deleted,
 		Skipped:      undoSkippedFilesToProto(r.Skipped),
 		MessageCount: r.MessageCount,
+	}
+}
+
+func protoToReport(r proto.ReportImportRequest) agenttools.Report {
+	return agenttools.Report{
+		ID:        r.ID,
+		AgentType: r.AgentType,
+		Task:      r.Task,
+		Content:   r.Body,
+	}
+}
+
+func importResultToProto(r agenttools.ImportResult) proto.ReportImportResult {
+	return proto.ReportImportResult{
+		ID:             r.Report.ID,
+		AgentType:      r.Report.AgentType,
+		Task:           r.Report.Task,
+		RequestedID:    r.RequestedID,
+		AlreadyPresent: r.AlreadyPresent,
 	}
 }
 

@@ -486,6 +486,295 @@ func TestHandleDialogMsg_ActionSelectExportReport_OpensArgumentsWithDefault(t *t
 	require.Equal(t, filepath.Join("/work", "rpt_1a2b3c4d.md"), argsDialog.Value("OUTPUT"))
 }
 
+// argumentsPassThroughDialog stands in for the arguments dialog the way
+// commandsPassThroughDialog stands in for the palette: it hands the action
+// straight back while reporting ArgumentsID, so closing it can be observed.
+type argumentsPassThroughDialog struct{ dialog.Dialog }
+
+func (argumentsPassThroughDialog) ID() string { return dialog.ArgumentsID }
+
+func (argumentsPassThroughDialog) HandleMsg(msg tea.Msg) dialog.Action { return msg }
+
+// TestHandleDialogMsg_ActionImportReport_EmptyPathOpensArguments verifies
+// that picking "Import Report" from the command palette closes the palette
+// and asks for the file path. Nothing is read or imported yet.
+func TestHandleDialogMsg_ActionImportReport_EmptyPathOpensArguments(t *testing.T) {
+	t.Parallel()
+
+	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{})
+	require.Nil(t, cmd)
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the path prompt opens")
+	require.True(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
+}
+
+// TestHandleDialogMsg_ActionImportReport_NoSession verifies that
+// importing with no active session warns, both when asking for the path
+// and when a path has already been submitted.
+func TestHandleDialogMsg_ActionImportReport_NoSession(t *testing.T) {
+	t.Parallel()
+
+	for name, action := range map[string]dialog.ActionImportReport{
+		"asking for the path": {},
+		"path submitted":      {Path: "/tmp/rpt_1a2b3c4d.md"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+			m.session = nil
+
+			cmd := m.handleDialogMsg(action)
+			require.NotNil(t, cmd)
+			require.False(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
+
+			msg := cmd()
+			info, ok := msg.(util.InfoMsg)
+			require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+			require.Equal(t, util.InfoTypeWarn, info.Type)
+		})
+	}
+}
+
+// TestHandleDialogMsg_ActionImportReport_BusySession verifies that an
+// import is refused while the session's agent is running. The mock has no
+// expectation for ImportReport, so a call that slipped past the guard
+// would fail the test on its own.
+func TestHandleDialogMsg_ActionImportReport_BusySession(t *testing.T) {
+	t.Parallel()
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(true)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: filepath.Join(t.TempDir(), "rpt.md")})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeWarn, info.Type)
+}
+
+// TestHandleDialogMsg_ActionImportReport_ImportsAnExportedFile verifies
+// the whole path: a file written by Export Report is read from this
+// process's disk and handed to the workspace with its id, agent, task and
+// body intact, and the user is told which id the agent can load it by.
+func TestHandleDialogMsg_ActionImportReport_ImportsAnExportedFile(t *testing.T) {
+	t.Parallel()
+
+	exported := agenttools.Report{
+		ID:        "rpt_1a2b3c4d",
+		AgentType: "explore",
+		Task:      "find the parser",
+		Content:   agenttools.ReportBanner("rpt_1a2b3c4d", "explore", "find the parser") + "parser lives in parse.go",
+	}
+	path := filepath.Join(t.TempDir(), "rpt_1a2b3c4d.md")
+	require.NoError(t, os.WriteFile(path, []byte(chat.ReportToMarkdown(exported)), 0o644))
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+	var got agenttools.Report
+	ws.EXPECT().ImportReport(gomock.Any(), "s1", gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ string, report agenttools.Report) (agenttools.ImportResult, error) {
+			got = report
+			return agenttools.ImportResult{Report: agenttools.Report{ID: report.ID}}, nil
+		})
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+	m.dialog = dialog.NewOverlay(argumentsPassThroughDialog{})
+	require.True(t, m.dialog.ContainsDialog(dialog.ArgumentsID))
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
+	require.NotNil(t, cmd)
+	require.False(t, m.dialog.ContainsDialog(dialog.ArgumentsID), "the path prompt must close once a path is submitted")
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected an info message, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeInfo, info.Type)
+	require.Contains(t, info.Msg, "rpt_1a2b3c4d")
+
+	require.Equal(t, "rpt_1a2b3c4d", got.ID)
+	require.Equal(t, "explore", got.AgentType)
+	require.Equal(t, "find the parser", got.Task)
+	require.Equal(t, "parser lives in parse.go", got.Body())
+}
+
+// TestHandleDialogMsg_ActionImportReport_ReadsARelativePathFromTheWorkingDirectory
+// pins that a relative path is resolved against this process's own
+// working directory, never the workspace's. It does not run in parallel
+// because it changes the process's working directory.
+func TestHandleDialogMsg_ActionImportReport_ReadsARelativePathFromTheWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.md"), []byte("hand written notes"), 0o644))
+
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { require.NoError(t, os.Chdir(origWd)) })
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+	var got agenttools.Report
+	ws.EXPECT().ImportReport(gomock.Any(), "s1", gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ string, report agenttools.Report) (agenttools.ImportResult, error) {
+			got = report
+			return agenttools.ImportResult{Report: agenttools.Report{ID: "rpt_5e6f7a8b"}}, nil
+		})
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: "notes.md"})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected an info message, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeInfo, info.Type)
+
+	require.Empty(t, got.ID, "a file that is not an exported report has no id yet")
+	require.Equal(t, "notes.md", got.Task, "the file name labels a report that has no task of its own")
+	require.Equal(t, "hand written notes", got.Body())
+}
+
+// TestHandleDialogMsg_ActionImportReport_MissingFile verifies that a path
+// that does not exist reports an error and never reaches the workspace.
+func TestHandleDialogMsg_ActionImportReport_MissingFile(t *testing.T) {
+	t.Parallel()
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: filepath.Join(t.TempDir(), "missing.md")})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected an error message, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeError, info.Type)
+}
+
+// TestHandleDialogMsg_ActionImportReport_DirectoryIsRejected verifies that
+// a directory is refused before it is read.
+func TestHandleDialogMsg_ActionImportReport_DirectoryIsRejected(t *testing.T) {
+	t.Parallel()
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: t.TempDir()})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected an error message, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeError, info.Type)
+	require.Contains(t, info.Msg, "directory")
+}
+
+// TestHandleDialogMsg_ActionImportReport_EmptyFileWarns verifies that the
+// workspace's empty-report refusal reaches the user as a warning rather
+// than a failure.
+func TestHandleDialogMsg_ActionImportReport_EmptyFileWarns(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "empty.md")
+	require.NoError(t, os.WriteFile(path, nil, 0o644))
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+	ws.EXPECT().ImportReport(gomock.Any(), "s1", gomock.Any()).Return(agenttools.ImportResult{}, agenttools.ErrEmptyReport)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeWarn, info.Type)
+}
+
+// TestHandleDialogMsg_ActionImportReport_WorkspaceErrorIsReported
+// verifies that any other failure from the workspace is shown as an error.
+func TestHandleDialogMsg_ActionImportReport_WorkspaceErrorIsReported(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "rpt.md")
+	require.NoError(t, os.WriteFile(path, []byte("some findings"), 0o644))
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+	ws.EXPECT().ImportReport(gomock.Any(), "s1", gomock.Any()).Return(agenttools.ImportResult{}, errors.New("database is locked"))
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected an error message, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeError, info.Type)
+	require.Contains(t, info.Msg, "database is locked")
+}
+
+// TestImportReportSummary pins what the user is told after an import for
+// each way it can end.
+func TestImportReportSummary(t *testing.T) {
+	t.Parallel()
+
+	report := agenttools.Report{ID: "rpt_1a2b3c4d"}
+	tests := []struct {
+		name   string
+		result agenttools.ImportResult
+		want   string
+	}{
+		{
+			name:   "stored under its own id",
+			result: agenttools.ImportResult{Report: report, RequestedID: "rpt_1a2b3c4d"},
+			want:   "Imported report rpt_1a2b3c4d",
+		},
+		{
+			name:   "stored under a fresh id",
+			result: agenttools.ImportResult{Report: report},
+			want:   "Imported report rpt_1a2b3c4d",
+		},
+		{
+			name:   "id was taken by a different report",
+			result: agenttools.ImportResult{Report: report, RequestedID: "rpt_deadbeef"},
+			want:   "Imported as rpt_1a2b3c4d (rpt_deadbeef is taken by a different report)",
+		},
+		{
+			name:   "already in the session",
+			result: agenttools.ImportResult{Report: report, RequestedID: "rpt_1a2b3c4d", AlreadyPresent: true},
+			want:   "Report rpt_1a2b3c4d is already in this session",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, importReportSummary(tt.result))
+		})
+	}
+}
+
 // TestHandleDialogMsg_ActionToggleMCPServer pins that toggling leaves
 // the command palette open (see the comment on the production switch
 // case) so several servers can be flipped in one visit, while still

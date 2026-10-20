@@ -264,6 +264,9 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 					// survive here.
 					action.Output = args["OUTPUT"]
 					return action
+				case ActionImportReport:
+					action.Path = args["PATH"]
+					return action
 				case ActionExportProfile:
 					// Like the report step, the Profile was already set by
 					// the picker. Only timed profiles have a SECONDS field.

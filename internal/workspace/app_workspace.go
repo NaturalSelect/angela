@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/agent"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	mcptools "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/commands"
@@ -423,6 +424,12 @@ func (w *AppWorkspace) PreviewUndo(ctx context.Context, sessionID string) (undo.
 
 func (w *AppWorkspace) Undo(ctx context.Context, sessionID, cutMessageID string) (undo.Result, error) {
 	return w.app.Undo.Undo(ctx, sessionID, cutMessageID)
+}
+
+// -- Reports --
+
+func (w *AppWorkspace) ImportReport(ctx context.Context, sessionID string, report agenttools.Report) (agenttools.ImportResult, error) {
+	return agenttools.ImportReport(ctx, w.app.Sessions, w.app.Messages, sessionID, report)
 }
 
 // -- LSP --

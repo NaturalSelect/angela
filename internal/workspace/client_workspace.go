@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/client"
@@ -608,6 +609,35 @@ func (w *ClientWorkspace) Undo(ctx context.Context, sessionID, cutMessageID stri
 		return undo.Result{}, err
 	}
 	return protoToUndoResult(result), nil
+}
+
+// -- Reports --
+
+func (w *ClientWorkspace) ImportReport(ctx context.Context, sessionID string, report agenttools.Report) (agenttools.ImportResult, error) {
+	body := report.Body()
+	// NOTE: The server's 400 for an empty report reaches this client as a
+	// plain error, so the sentinel callers match on is raised here too.
+	if strings.TrimSpace(body) == "" {
+		return agenttools.ImportResult{}, agenttools.ErrEmptyReport
+	}
+	result, err := w.client.ImportReport(ctx, w.workspaceID(), sessionID, proto.ReportImportRequest{
+		ID:        report.ID,
+		AgentType: report.AgentType,
+		Task:      report.Task,
+		Body:      body,
+	})
+	if err != nil {
+		return agenttools.ImportResult{}, err
+	}
+	return agenttools.ImportResult{
+		Report: agenttools.Report{
+			ID:        result.ID,
+			AgentType: result.AgentType,
+			Task:      result.Task,
+		},
+		RequestedID:    result.RequestedID,
+		AlreadyPresent: result.AlreadyPresent,
+	}, nil
 }
 
 // -- LSP --

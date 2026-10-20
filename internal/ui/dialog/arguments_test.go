@@ -228,6 +228,37 @@ func TestArguments_ExportReportSubmitPreservesPickedReport(t *testing.T) {
 	require.Equal(t, "/tmp/rpt_1a2b3c4d.md", got.Output)
 }
 
+// TestArguments_ImportReportSubmitCarriesThePath verifies that confirming
+// the "Import Report" step hands the typed file path back on the action.
+func TestArguments_ImportReportSubmitCarriesThePath(t *testing.T) {
+	t.Parallel()
+
+	a := newTestArguments(t, testArgumentList(
+		commands.Argument{ID: "PATH", Title: "Report File", Required: true},
+	), ActionImportReport{})
+
+	a.SetValue("PATH", "/tmp/rpt_1a2b3c4d.md")
+	action := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	got, ok := action.(ActionImportReport)
+	require.True(t, ok, "expected ActionImportReport, got %T", action)
+	require.Equal(t, "/tmp/rpt_1a2b3c4d.md", got.Path)
+}
+
+// TestArguments_ImportReportSubmitRejectsAnEmptyPath verifies that the
+// required PATH field blocks the import instead of submitting an action
+// whose empty path would reopen this very dialog.
+func TestArguments_ImportReportSubmitRejectsAnEmptyPath(t *testing.T) {
+	t.Parallel()
+
+	a := newTestArguments(t, testArgumentList(
+		commands.Argument{ID: "PATH", Title: "Report File", Required: true},
+	), ActionImportReport{})
+
+	action := a.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.IsType(t, ActionCmd{}, action, "an empty required field must warn, not submit")
+}
+
 // TestArguments_DefaultKeyForwardsToFocusedInput verifies that
 // unmatched keys (ordinary typing) are forwarded to the focused
 // textinput.

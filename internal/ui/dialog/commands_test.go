@@ -142,6 +142,18 @@ func TestNewCommands_ExportReportNeedsASession(t *testing.T) {
 	require.NotContains(t, withoutSession, "export_report", "no session is open yet")
 }
 
+// TestNewCommands_ImportReportNeedsASession pins that a report can only
+// be imported once a session exists to receive it.
+func TestNewCommands_ImportReportNeedsASession(t *testing.T) {
+	t.Parallel()
+
+	withSession := visibleCommandIDs(newTestCommands(t, nil, "sess-1", true, nil, nil, nil))
+	require.Contains(t, withSession, "import_report")
+
+	withoutSession := visibleCommandIDs(newTestCommands(t, nil, "", false, nil, nil, nil))
+	require.NotContains(t, withoutSession, "import_report", "no session is open yet")
+}
+
 // TestDefaultCommands_ActiveAgentGating pins which of the thinking
 // toggle and the variant selector the menu offers, since they cover
 // overlapping ground: a model that reasons without named levels gets

@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
@@ -33,9 +34,27 @@ func NewSystemNoticeItem(sty *styles.Styles, msg *message.Message) MessageItem {
 		Versioned:         list.NewVersioned(),
 		cachedMessageItem: &cachedMessageItem{},
 		id:                fmt.Sprintf("%s:system-notice", msg.ID),
-		text:              msg.Content().Text,
+		text:              transcriptText(msg),
 		sty:               sty,
 	}
+}
+
+// transcriptText returns the text a user reads for msg. An imported report
+// is stored as a banner plus its whole body so LoadReport can return it,
+// but the transcript only needs to say that the import happened.
+func transcriptText(msg *message.Message) string {
+	if report, ok := tools.ImportedReportFromMessage(*msg); ok {
+		return importedReportNotice(report)
+	}
+	return msg.Content().Text
+}
+
+func importedReportNotice(report tools.Report) string {
+	notice := fmt.Sprintf("Imported report %s (%s)", report.ID, report.AgentType)
+	if task := strings.Join(strings.Fields(report.Task), " "); task != "" {
+		notice += ": " + task
+	}
+	return notice
 }
 
 // Finished implements list.Item. The text is fixed at construction.

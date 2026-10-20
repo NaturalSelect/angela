@@ -656,6 +656,7 @@ func (c *controllerV1) handlePostWorkspaceSessionUndo(w http.ResponseWriter, r *
 //	@Success		200		{object}	proto.ReportImportResult
 //	@Failure		400		{object}	proto.Error
 //	@Failure		404		{object}	proto.Error
+//	@Failure		409		{object}	proto.Error
 //	@Failure		500		{object}	proto.Error
 //	@Router			/workspaces/{id}/sessions/{sid}/reports [post]
 func (c *controllerV1) handlePostWorkspaceSessionReports(w http.ResponseWriter, r *http.Request) {

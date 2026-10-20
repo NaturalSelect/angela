@@ -11,7 +11,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/db"
@@ -693,6 +695,24 @@ func TestCoordinatorBusyChecker(t *testing.T) {
 		require.True(t, ok)
 		require.NotNil(t, unlock)
 	})
+}
+
+// TestApp_ImportReport_RefusesABusySession verifies that an import is
+// refused while a turn runs on the session, and that the reservation taken
+// to make that check is released. The App has no services, so a call that
+// slipped past the guard would panic on its own.
+func TestApp_ImportReport_RefusesABusySession(t *testing.T) {
+	t.Parallel()
+
+	released := false
+	coord := NewMockCoordinator(gomock.NewController(t))
+	coord.EXPECT().LockSession(gomock.Any(), "sess-1").Return(func() { released = true }, true)
+	coord.EXPECT().IsSessionBusy("sess-1").Return(true)
+
+	app := &App{AgentCoordinator: coord}
+	_, err := app.ImportReport(t.Context(), "sess-1", agenttools.Report{Content: "text"})
+	require.ErrorIs(t, err, agent.ErrSessionBusy)
+	require.True(t, released, "the session must not stay locked after a refused import")
 }
 
 // TestApp_RunNonInteractive_MissingCoderConfig verifies that

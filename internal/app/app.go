@@ -20,6 +20,7 @@ import (
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/clipboard"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -122,6 +123,21 @@ func (c coordinatorBusyChecker) LockSession(ctx context.Context, sessionID strin
 		return nil, false
 	}
 	return c.app.AgentCoordinator.LockSession(ctx, sessionID)
+}
+
+// ImportReport stores report in sessionID so LoadReport can find it, and
+// refuses with agent.ErrSessionBusy while a turn runs on the session.
+func (app *App) ImportReport(ctx context.Context, sessionID string, report agenttools.Report) (agenttools.ImportResult, error) {
+	busy := coordinatorBusyChecker{app: app}
+	// NOTE: Lock before checking, as undo does, so no turn can start between
+	// the check and the writes.
+	if release, ok := busy.LockSession(ctx, sessionID); ok {
+		defer release()
+	}
+	if busy.IsSessionBusy(sessionID) {
+		return agenttools.ImportResult{}, agent.ErrSessionBusy
+	}
+	return agenttools.ImportReport(ctx, app.Sessions, app.Messages, sessionID, report)
 }
 
 // New initializes a new application instance. skillsMgr carries the

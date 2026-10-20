@@ -87,6 +87,57 @@ func TestImportReportTwiceStoresItOnce(t *testing.T) {
 	require.Len(t, msgs, 2, "one stored report and one notice, not a second copy")
 }
 
+func TestIsReportID(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, IsReportID("rpt_1a2b3c4d"))
+	for _, id := range []string{
+		"",
+		"rpt_",
+		"rpt_1a2b3c4",
+		"rpt_1a2b3c4d5",
+		"agt_1a2b3c4d",
+		"1a2b3c4d",
+		"rpt_ab cdefg",
+		"rpt_1A2B3C4D",
+		"rpt_ghijklmn",
+		"rpt_1a2b3c4\n",
+	} {
+		require.False(t, IsReportID(id), id)
+	}
+}
+
+func TestImportReportWithAMalformedIDGetsALoadableOne(t *testing.T) {
+	t.Parallel()
+	env := newReportEnv(t)
+	sessionID := env.newSession(t, "parent")
+
+	// Eight characters long, but the space ends the id in the banner.
+	result := env.importReport(t, sessionID, Report{ID: "rpt_ab cdefg", Content: "some notes"})
+	require.True(t, IsReportID(result.Report.ID), result.Report.ID)
+	require.Empty(t, result.RequestedID, "a malformed id was never a request for that id")
+
+	resp := loadReport(t, env, sessionID, result.Report.ID)
+	require.False(t, resp.IsError, resp.Content)
+	require.Contains(t, resp.Content, "some notes")
+}
+
+func TestImportReportRecognizesADispatchWhoseTextEndsInANewline(t *testing.T) {
+	t.Parallel()
+	env := newReportEnv(t)
+	sessionID := env.newSession(t, "parent")
+	id := env.dispatchBannered(t, sessionID, "call-1", "explore", "find the parser", "parser lives in parse.go\n")
+
+	// Export Report trims the trailing newline, so that is what comes back.
+	result := env.importReport(t, sessionID, Report{ID: id, Content: "parser lives in parse.go"})
+	require.True(t, result.AlreadyPresent)
+	require.Equal(t, id, result.Report.ID)
+
+	msgs, err := env.messages.List(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2, "the dispatch's assistant and tool rows, and nothing new")
+}
+
 func TestImportReportWithATakenIDAndNewTextGetsANewID(t *testing.T) {
 	t.Parallel()
 	env := newReportEnv(t)

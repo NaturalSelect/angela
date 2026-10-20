@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/agent"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/commands"
@@ -697,6 +698,31 @@ func TestHandleDialogMsg_ActionImportReport_EmptyFileWarns(t *testing.T) {
 	ws := NewMockWorkspace(gomock.NewController(t))
 	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
 	ws.EXPECT().ImportReport(gomock.Any(), "s1", gomock.Any()).Return(agenttools.ImportResult{}, agenttools.ErrEmptyReport)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
+	require.NotNil(t, cmd)
+
+	msg := cmd()
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeWarn, info.Type)
+}
+
+// TestHandleDialogMsg_ActionImportReport_BusyAfterTheCheck verifies that a
+// turn which starts after the local busy check, and so is only caught by
+// the workspace, is shown as a warning rather than an error.
+func TestHandleDialogMsg_ActionImportReport_BusyAfterTheCheck(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "rpt.md")
+	require.NoError(t, os.WriteFile(path, []byte("some findings"), 0o644))
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
+	ws.EXPECT().ImportReport(gomock.Any(), "s1", gomock.Any()).Return(agenttools.ImportResult{}, agent.ErrSessionBusy)
 
 	m := newHandleDialogUI(t, ws)
 	m.session = &session.Session{ID: "s1"}

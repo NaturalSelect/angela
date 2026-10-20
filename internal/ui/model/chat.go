@@ -708,13 +708,10 @@ func (m *Chat) ScrollToTop() tea.Cmd {
 // ScrollBy scrolls the chat view by the given number of line deltas.
 func (m *Chat) ScrollBy(lines int) tea.Cmd {
 	m.list.ScrollBy(lines)
-	if lines < 0 {
-		// Scrolling up always disables follow mode.
-		m.follow = false
-	} else if m.AtBottom() {
-		// Scrolling down re-enables follow when we reach the bottom.
-		m.follow = true
-	}
+	// Follow mode tracks whether the view ends at the latest content: it
+	// ends when the user scrolls away from the bottom and resumes once they
+	// are back. A scroll that cannot leave the bottom changes nothing.
+	m.follow = m.AtBottom()
 	return m.showScrollbar()
 }
 
@@ -931,6 +928,21 @@ func (m *Chat) SelectLastInView() {
 			return
 		}
 	}
+}
+
+// SelectClosestInView moves the selection onto the nearest selectable item
+// inside the viewport when it has scrolled out of view, without moving the
+// viewport itself. It is a no-op while the selection is still visible.
+func (m *Chat) SelectClosestInView() {
+	if m.list.SelectedItemInView() {
+		return
+	}
+	startIdx, _ := m.list.VisibleItemIndices()
+	if m.list.Selected() < startIdx {
+		m.SelectFirstInView()
+		return
+	}
+	m.SelectLastInView()
 }
 
 // ClearMessages removes all messages from the chat list.

@@ -3,6 +3,7 @@ package chat
 import (
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/charmbracelet/x/ansi"
@@ -68,4 +69,45 @@ func TestSystemNoticeItem_RenderIsCachedAndPrefixed(t *testing.T) {
 	second := item.Render(80)
 	require.Equal(t, first, second)
 	require.Contains(t, ansi.Strip(first), "Agent switched.")
+}
+
+// An imported report is stored as a banner plus its whole body so LoadReport
+// can return it. The transcript must show one line about it, never the body.
+func TestSystemNoticeItem_ImportedReportShowsOneLine(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	const id = "rpt_1a2b3c4d"
+	msg := &message.Message{
+		ID:   "sys-2",
+		Role: message.System,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: tools.ReportBanner(id, "explore", "find the parser") + "SECRET_REPORT_BODY"},
+		},
+	}
+	item := NewSystemNoticeItem(&sty, msg)
+
+	out := ansi.Strip(item.RawRender(120))
+	require.Contains(t, out, "Imported report rpt_1a2b3c4d (explore): find the parser")
+	require.NotContains(t, out, "SECRET_REPORT_BODY")
+	require.NotContains(t, out, "Stored in full")
+}
+
+func TestSystemNoticeItem_ImportedReportWithoutATaskOmitsIt(t *testing.T) {
+	t.Parallel()
+	sty := styles.CharmtonePantera()
+
+	const id = "rpt_1a2b3c4d"
+	msg := &message.Message{
+		ID:   "sys-3",
+		Role: message.System,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: tools.ReportBanner(id, "imported", "") + "body"},
+		},
+	}
+	item := NewSystemNoticeItem(&sty, msg)
+
+	out := ansi.Strip(item.RawRender(120))
+	require.Contains(t, out, "Imported report rpt_1a2b3c4d (imported)")
+	require.NotContains(t, out, ":")
 }

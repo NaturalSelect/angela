@@ -15,6 +15,7 @@ import (
 	time "time"
 
 	tea "charm.land/bubbletea/v2"
+	tools "github.com/NaturalSelect/angela/internal/agent/tools"
 	mcp "github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	commands "github.com/NaturalSelect/angela/internal/commands"
 	config "github.com/NaturalSelect/angela/internal/config"
@@ -570,6 +571,21 @@ func (m *MockWorkspace) ImportCopilot() (*oauth.Token, bool) {
 func (mr *MockWorkspaceMockRecorder) ImportCopilot() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ImportCopilot", reflect.TypeOf((*MockWorkspace)(nil).ImportCopilot))
+}
+
+// ImportReport mocks base method.
+func (m *MockWorkspace) ImportReport(ctx context.Context, sessionID string, report tools.Report) (tools.ImportResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ImportReport", ctx, sessionID, report)
+	ret0, _ := ret[0].(tools.ImportResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ImportReport indicates an expected call of ImportReport.
+func (mr *MockWorkspaceMockRecorder) ImportReport(ctx, sessionID, report any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ImportReport", reflect.TypeOf((*MockWorkspace)(nil).ImportReport), ctx, sessionID, report)
 }
 
 // InitCoderAgent mocks base method.

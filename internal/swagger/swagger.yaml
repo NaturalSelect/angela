@@ -1448,6 +1448,30 @@ definitions:
       result:
         $ref: '#/definitions/proto.SkillReadResult'
     type: object
+  proto.ReportImportRequest:
+    properties:
+      agent_type:
+        type: string
+      body:
+        type: string
+      id:
+        type: string
+      task:
+        type: string
+    type: object
+  proto.ReportImportResult:
+    properties:
+      agent_type:
+        type: string
+      already_present:
+        type: boolean
+      id:
+        type: string
+      requested_id:
+        type: string
+      task:
+        type: string
+    type: object
   proto.SandboxStatusResponse:
     properties:
       in_sandbox:
@@ -4586,6 +4610,49 @@ paths:
           schema:
             $ref: '#/definitions/proto.Error'
       summary: Get user messages for session
+      tags:
+      - sessions
+  /workspaces/{id}/sessions/{sid}/reports:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workspace ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: Report to import
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/proto.ReportImportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/proto.ReportImportResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/proto.Error'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/proto.Error'
+      summary: Import a report
       tags:
       - sessions
   /workspaces/{id}/sessions/{sid}/undo:

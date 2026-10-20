@@ -1009,6 +1009,22 @@ func TestProtoMethodsSuccessPaths(t *testing.T) {
 			},
 		},
 		{
+			name:       "ImportReport",
+			wantMethod: http.MethodPost,
+			wantPath:   "/v1/workspaces/ws1/sessions/sess1/reports",
+			body:       mustJSON(t, proto.ReportImportResult{ID: "rpt_1a2b3c4d", AgentType: "explore", RequestedID: "rpt_1a2b3c4d"}),
+			call: func(t *testing.T, c *Client) {
+				got, err := c.ImportReport(context.Background(), "ws1", "sess1", proto.ReportImportRequest{
+					ID:        "rpt_1a2b3c4d",
+					AgentType: "explore",
+					Body:      "text",
+				})
+				require.NoError(t, err)
+				require.Equal(t, "rpt_1a2b3c4d", got.ID)
+				require.False(t, got.AlreadyPresent)
+			},
+		},
+		{
 			name:       "ListSessions",
 			wantMethod: http.MethodGet,
 			wantPath:   "/v1/workspaces/ws1/sessions",
@@ -1268,6 +1284,14 @@ func TestProtoMethodsErrorPaths(t *testing.T) {
 			name: "Undo not found", status: http.StatusNotFound, message: "session gone",
 			wantErr: ErrNotFound, checkMsg: true,
 			call: func(c *Client) error { _, err := c.Undo(context.Background(), "ws1", "sess1", "m1"); return err },
+		},
+		{
+			name: "ImportReport not found", status: http.StatusNotFound, message: "session gone",
+			wantErr: ErrNotFound, checkMsg: true,
+			call: func(c *Client) error {
+				_, err := c.ImportReport(context.Background(), "ws1", "sess1", proto.ReportImportRequest{Body: "text"})
+				return err
+			},
 		},
 		{
 			name: "AnswerQuestionBatch server error", status: http.StatusInternalServerError,

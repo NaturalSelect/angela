@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/backend"
 	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/sandbox"
@@ -640,6 +641,40 @@ func (c *controllerV1) handlePostWorkspaceSessionUndo(w http.ResponseWriter, r *
 		return
 	}
 	jsonEncode(w, undoResultToProto(result))
+}
+
+// handlePostWorkspaceSessionReports stores a report read from disk in a
+// session so the agent's LoadReport tool can return it.
+//
+//	@Summary		Import a report
+//	@Tags			sessions
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string						true	"Workspace ID"
+//	@Param			sid		path		string						true	"Session ID"
+//	@Param			request	body		proto.ReportImportRequest	true	"Report to import"
+//	@Success		200		{object}	proto.ReportImportResult
+//	@Failure		400		{object}	proto.Error
+//	@Failure		404		{object}	proto.Error
+//	@Failure		500		{object}	proto.Error
+//	@Router			/workspaces/{id}/sessions/{sid}/reports [post]
+func (c *controllerV1) handlePostWorkspaceSessionReports(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sid := r.PathValue("sid")
+
+	var req proto.ReportImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		c.server.logError(r, "Failed to decode request", "error", err)
+		jsonError(w, http.StatusBadRequest, "failed to decode request")
+		return
+	}
+
+	result, err := c.backend.ImportReport(r.Context(), id, sid, protoToReport(req))
+	if err != nil {
+		c.handleError(w, r, err)
+		return
+	}
+	jsonEncode(w, importResultToProto(result))
 }
 
 // handleGetWorkspaceSessionMessages returns all messages for a session.
@@ -1734,6 +1769,10 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 		// looked, not a server fault; the caller can re-preview and
 		// decide whether to retry.
 		status = http.StatusConflict
+	case errors.Is(err, agenttools.ErrEmptyReport):
+		// An empty file has nothing to store, which the caller can fix
+		// by choosing another one.
+		status = http.StatusBadRequest
 	case errors.Is(err, backend.ErrServerShuttingDown):
 		// 503, not 409: the request is not wrong, this process is just
 		// leaving. Clients retry against its replacement.

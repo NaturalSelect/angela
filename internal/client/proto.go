@@ -902,6 +902,24 @@ func (c *Client) Undo(ctx context.Context, id string, sessionID string, cutMessa
 	return result, nil
 }
 
+// ImportReport stores a report read from disk in a session so the
+// agent's LoadReport tool can return it.
+func (c *Client) ImportReport(ctx context.Context, id string, sessionID string, req proto.ReportImportRequest) (proto.ReportImportResult, error) {
+	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/sessions/%s/reports", id, sessionID), nil, jsonBody(req), http.Header{"Content-Type": []string{"application/json"}})
+	if err != nil {
+		return proto.ReportImportResult{}, fmt.Errorf("failed to import report: %w", err)
+	}
+	defer rsp.Body.Close()
+	if err := checkStatus(rsp); err != nil {
+		return proto.ReportImportResult{}, fmt.Errorf("failed to import report: %w", err)
+	}
+	var result proto.ReportImportResult
+	if err := json.NewDecoder(rsp.Body).Decode(&result); err != nil {
+		return proto.ReportImportResult{}, fmt.Errorf("failed to decode report import result: %w", err)
+	}
+	return result, nil
+}
+
 // CreateSession creates a new session in a workspace as a proto type.
 func (c *Client) CreateSession(ctx context.Context, id string, title string) (*proto.Session, error) {
 	rsp, err := c.post(ctx, fmt.Sprintf("/workspaces/%s/sessions", id), nil, jsonBody(proto.Session{Title: title}), http.Header{"Content-Type": []string{"application/json"}})

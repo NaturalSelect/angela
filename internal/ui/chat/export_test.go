@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/agent/tools"
@@ -310,4 +311,107 @@ func TestReportToMarkdown(t *testing.T) {
 	require.Equal(t,
 		"# rpt_1a2b3c4d\n\n- Agent: explore\n\n"+body+"\n",
 		ReportToMarkdown(unlabelled))
+}
+
+// TestReportFromMarkdown_RoundTripsAnExportedReport verifies a file written by
+// ReportToMarkdown reads back with its id, agent, task and body, which is what
+// lets an exported report be imported into another session unchanged.
+func TestReportFromMarkdown_RoundTripsAnExportedReport(t *testing.T) {
+	t.Parallel()
+
+	const id = "rpt_1a2b3c4d"
+	cases := []struct {
+		name string
+		task string
+		body string
+	}{
+		{name: "with task", task: "websocket vs sse", body: "first paragraph\n\nsecond paragraph"},
+		{name: "without task", body: "just the body"},
+		{name: "body that looks like metadata", task: "t", body: "- Agent: not metadata\n\n# rpt_ffffffff"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			original := tools.Report{
+				ID:        id,
+				AgentType: "deep-research",
+				Task:      tc.task,
+				Content:   tools.ReportBanner(id, "deep-research", tc.task) + tc.body,
+			}
+
+			got := ReportFromMarkdown([]byte(ReportToMarkdown(original)), "export.md")
+			require.Equal(t, id, got.ID)
+			require.Equal(t, "deep-research", got.AgentType)
+			require.Equal(t, tc.task, got.Task)
+			require.Equal(t, tc.body, got.Body())
+		})
+	}
+}
+
+func TestReportFromMarkdown_AcceptsWindowsLineEndings(t *testing.T) {
+	t.Parallel()
+
+	exported := ReportToMarkdown(tools.Report{
+		ID:        "rpt_1a2b3c4d",
+		AgentType: "explore",
+		Task:      "find it",
+		Content:   "line one\nline two",
+	})
+	got := ReportFromMarkdown([]byte(strings.ReplaceAll(exported, "\n", "\r\n")), "export.md")
+	require.Equal(t, "rpt_1a2b3c4d", got.ID)
+	require.Equal(t, "explore", got.AgentType)
+	require.Equal(t, "find it", got.Task)
+	require.Equal(t, "line one\nline two", got.Body())
+}
+
+// TestReportFromMarkdown_TakesAnyOtherFileWhole verifies a file that is not a
+// report export is imported as a whole, labelled with its own name, and left
+// without an id for the importer to assign.
+func TestReportFromMarkdown_TakesAnyOtherFileWhole(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		data string
+	}{
+		{name: "plain notes", data: "some notes\n\nmore notes\n"},
+		{name: "heading is not a report id", data: "# rpt_short\n\n- Agent: explore\n\nbody\n"},
+		{name: "heading without metadata", data: "# rpt_1a2b3c4d\n\nbody only\n"},
+		{name: "metadata out of order", data: "# rpt_1a2b3c4d\n\n- Task: t\n- Agent: explore\n\nbody\n"},
+		{name: "no body separator", data: "# rpt_1a2b3c4d\n\n- Agent: explore\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ReportFromMarkdown([]byte(tc.data), filepath.Join("some", "dir", "notes.md"))
+			require.Empty(t, got.ID)
+			require.Empty(t, got.AgentType)
+			require.Equal(t, "notes.md", got.Task)
+			require.Equal(t, tc.data, got.Content)
+		})
+	}
+}
+
+// TestSessionToMarkdown_ImportedReportExportsAsOneLine verifies the banner and
+// body that an import stores for LoadReport do not leak into a session export.
+func TestSessionToMarkdown_ImportedReportExportsAsOneLine(t *testing.T) {
+	t.Parallel()
+
+	const id = "rpt_1a2b3c4d"
+	sess := session.Session{ID: "sess-3", Title: "With Import"}
+	messages := []message.Message{
+		{
+			ID:   "msg-import",
+			Role: message.System,
+			Parts: []message.ContentPart{
+				message.TextContent{Text: tools.ReportBanner(id, "explore", "find it") + "SECRET_REPORT_BODY"},
+			},
+		},
+	}
+
+	doc, err := SessionToMarkdown(sess, messages, filepath.Join(t.TempDir(), "with-import.assets"))
+	require.NoError(t, err)
+	require.Contains(t, doc, "Imported report rpt_1a2b3c4d (explore): find it")
+	require.NotContains(t, doc, "SECRET_REPORT_BODY")
+	require.NotContains(t, doc, "Stored in full")
 }

@@ -1770,9 +1770,10 @@ func (c *controllerV1) handleError(w http.ResponseWriter, r *http.Request, err e
 		// looked, not a server fault; the caller can re-preview and
 		// decide whether to retry.
 		status = http.StatusConflict
-	case errors.Is(err, agenttools.ErrEmptyReport):
-		// An empty file has nothing to store, which the caller can fix
-		// by choosing another one.
+	case errors.Is(err, agenttools.ErrEmptyReport),
+		errors.Is(err, agenttools.ErrReportTooLarge):
+		// An empty or oversized file cannot be stored, which the caller
+		// can fix by choosing another one.
 		status = http.StatusBadRequest
 	case errors.Is(err, backend.ErrServerShuttingDown):
 		// 503, not 409: the request is not wrong, this process is just

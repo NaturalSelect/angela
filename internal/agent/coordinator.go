@@ -2735,6 +2735,7 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 		// way: this method's caller goes through tools.NewParallelTool,
 		// whose adapter reads ctx.Err() itself once Run returns and
 		// reports cancellation as a Go error instead of a tool result.
+		branchStatus = tools.SubSessionStopped
 		return tools.Fail("cancelled")
 	case out := <-done:
 		if out.Merged {

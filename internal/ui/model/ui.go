@@ -2760,6 +2760,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 				if errors.Is(err, agenttools.ErrEmptyReport) {
 					return util.ReportWarn("Report file is empty")()
 				}
+				if errors.Is(err, agenttools.ErrReportTooLarge) {
+					return util.ReportWarn(err.Error())()
+				}
 				if errors.Is(err, agent.ErrSessionBusy) {
 					return util.ReportWarn("Agent is busy, please wait before importing a report...")()
 				}

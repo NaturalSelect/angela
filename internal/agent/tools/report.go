@@ -309,8 +309,18 @@ func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message)
 // agent produced it.
 const importedAgentType = "imported"
 
+// MaxImportedReportSize caps the text of an imported report. LoadReport
+// returns a report whole, and a dispatch's output is bounded by the model's
+// output limit, so an import has to be bounded as well or a single file
+// could overflow the context of the model that loads it.
+const MaxImportedReportSize = 512 * 1024
+
 // ErrEmptyReport is returned when an import has no text to store.
 var ErrEmptyReport = errors.New("report is empty")
+
+// ErrReportTooLarge is returned when an import's text exceeds
+// MaxImportedReportSize.
+var ErrReportTooLarge = errors.New("report is too large")
 
 // ImportResult describes what ImportReport did with a report.
 type ImportResult struct {
@@ -322,7 +332,7 @@ type ImportResult struct {
 	// that id was already taken by a different report.
 	RequestedID string
 	// AlreadyPresent is true when the session already held this exact
-	// report, so nothing was written.
+	// report, so only the notice was written again.
 	AlreadyPresent bool
 }
 
@@ -339,9 +349,9 @@ func bannerSafeAgentType(label string) string {
 // new to load.
 func importedReportNotice(report Report) string {
 	var notice strings.Builder
-	fmt.Fprintf(&notice, "The user imported a report into this session: id=%s agent=%s", report.ID, report.AgentType)
+	fmt.Fprintf(&notice, "The user imported a report into this session: id=%s agent=%s", report.ID, reminder.Escape(report.AgentType))
 	if report.Task != "" {
-		fmt.Fprintf(&notice, " task=%q", report.Task)
+		fmt.Fprintf(&notice, " task=%q", reminder.Escape(report.Task))
 	}
 	notice.WriteString(". Its text is not in this conversation. Call ")
 	notice.WriteString(toolnames.LoadReport)
@@ -353,7 +363,9 @@ func importedReportNotice(report Report) string {
 // it there and in every session that descends from it. in may hold the
 // bare text or text that still carries a banner; only its body is kept.
 // A reminder follows the stored report so the model learns of the import on
-// its next turn.
+// its next turn. Importing a report the session already holds writes only
+// that reminder: undo and compaction can drop it while the report stays, and
+// without it the model would never hear of a report it can load.
 //
 // The report keeps its own id when it has a valid one that no different
 // report in the session's lineage uses. Otherwise it gets a fresh id, so
@@ -362,6 +374,9 @@ func ImportReport(ctx context.Context, sessions session.Service, messages messag
 	body := strings.TrimRight(in.Body(), "\n")
 	if strings.TrimSpace(body) == "" {
 		return ImportResult{}, ErrEmptyReport
+	}
+	if len(body) > MaxImportedReportSize {
+		return ImportResult{}, fmt.Errorf("%w: %d bytes, the limit is %d", ErrReportTooLarge, len(body), MaxImportedReportSize)
 	}
 	agentType := bannerSafeAgentType(in.AgentType)
 	if agentType == "" {
@@ -392,6 +407,9 @@ func ImportReport(ctx context.Context, sessions session.Service, messages messag
 			if strings.TrimRight(held.Body(), "\n") == body {
 				result.Report = held
 				result.AlreadyPresent = true
+				if err := announceImportedReport(ctx, messages, sessionID, held); err != nil {
+					return ImportResult{}, err
+				}
 				return result, nil
 			}
 			id = ""
@@ -413,14 +431,23 @@ func ImportReport(ctx context.Context, sessions session.Service, messages messag
 	}); err != nil {
 		return ImportResult{}, fmt.Errorf("store report: %w", err)
 	}
+	if err := announceImportedReport(ctx, messages, sessionID, report); err != nil {
+		return ImportResult{}, err
+	}
+	result.Report = report
+	return result, nil
+}
+
+// announceImportedReport stores the reminder that tells the model report is
+// there to load.
+func announceImportedReport(ctx context.Context, messages message.Service, sessionID string, report Report) error {
 	if _, err := messages.Create(ctx, sessionID, message.CreateMessageParams{
 		Role:  message.User,
 		Parts: []message.ContentPart{message.TextContent{Text: importedReportNotice(report)}},
 	}); err != nil {
-		return ImportResult{}, fmt.Errorf("store report notice: %w", err)
+		return fmt.Errorf("store report notice: %w", err)
 	}
-	result.Report = report
-	return result, nil
+	return nil
 }
 
 type LoadReportParams struct {

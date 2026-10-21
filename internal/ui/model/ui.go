@@ -2732,7 +2732,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 				m.com,
 				"Import Report",
 				"Reads an agent report from a file into this session so the agent can load it with LoadReport.",
-				[]commands.Argument{{ID: "PATH", Title: "Report File", Required: true}},
+				[]commands.Argument{{
+					ID:          "PATH",
+					Title:       "Report File",
+					Description: "Path to an exported report file (absolute or relative)",
+					Required:    true,
+				}},
 				dialog.ActionImportReport{},
 			))
 			break

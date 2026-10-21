@@ -686,9 +686,13 @@ func (l *List) RemoveItem(idx int) {
 	// Adjust offset if needed
 	if l.offsetIdx > idx {
 		l.offsetIdx--
-	} else if l.offsetIdx == idx && l.offsetIdx >= len(l.items) {
-		l.offsetIdx = max(0, len(l.items)-1)
+	} else if l.offsetIdx == idx {
+		// NOTE: offsetLine counted lines into the removed item, so it means
+		// nothing for whichever item slides into this slot.
 		l.offsetLine = 0
+		if l.offsetIdx >= len(l.items) {
+			l.offsetIdx = max(0, len(l.items)-1)
+		}
 	}
 	l.totalHeightValid = false
 }

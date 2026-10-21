@@ -594,6 +594,24 @@ func TestList_RemoveItem(t *testing.T) {
 	})
 }
 
+func TestList_RemoveItem_AtViewportTopDropsStaleLineOffset(t *testing.T) {
+	t.Parallel()
+
+	tall := newMultiLineItem("tall", 50)
+	short := newMultiLineItem("short", 2)
+	l := NewList(tall, short)
+	l.SetSize(40, 10)
+	l.ScrollToBottom()
+	require.Equal(t, 0, l.offsetIdx)
+	require.Positive(t, l.offsetLine, "the viewport starts inside the tall item")
+
+	l.RemoveItem(0)
+
+	require.Equal(t, 0, l.offsetIdx)
+	require.Equal(t, 0, l.offsetLine, "the line offset belonged to the removed item")
+	require.Contains(t, l.Render(), "short:0")
+}
+
 func TestList_Offset_WithGap(t *testing.T) {
 	t.Parallel()
 

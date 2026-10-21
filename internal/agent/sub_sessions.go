@@ -284,7 +284,10 @@ func (t *subSessionTree) hydrate(parentID string, load func() ([]tools.SubSessio
 	if t == nil {
 		return nil
 	}
+	// NOTE: GetOrSet is not atomic, so creating the list needs mu like add does.
+	t.mu.Lock()
 	list := t.lists.GetOrSet(parentID, newSubSessionList)
+	t.mu.Unlock()
 	if list.hydrated.Load() {
 		return nil
 	}

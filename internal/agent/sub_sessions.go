@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -57,8 +58,12 @@ func endedSubSession(sess session.Session) tools.SubSession {
 // restart would be counted in that session only, and not in the ones above.
 func (c *coordinator) adoptAncestors(ctx context.Context, sessionID string) error {
 	for {
-		if _, known := c.subSessions.parentIDOf(sessionID); known {
-			return nil
+		// NOTE: A session in the tree does not prove the ones above it are.
+		// Listing a session's children files them without adopting the
+		// session itself, so a known link is followed, not trusted.
+		if parentID, known := c.subSessions.parentIDOf(sessionID); known {
+			sessionID = parentID
+			continue
 		}
 		sess, err := c.sessions.Get(ctx, sessionID)
 		if err != nil {
@@ -70,6 +75,17 @@ func (c *coordinator) adoptAncestors(ctx context.Context, sessionID string) erro
 		c.subSessions.adopt([]tools.SubSession{endedSubSession(sess)})
 		sessionID = sess.ParentSessionID
 	}
+}
+
+// trackSubSession files a child that params just dispatched as sessionID,
+// after making the tree know the sessions above it. Counting is a display
+// aid, so a session whose ancestors cannot be read is still filed and the
+// run goes on.
+func (c *coordinator) trackSubSession(ctx context.Context, sessionID string, params subAgentParams, kind tools.SubSessionKind, cancel context.CancelFunc) {
+	if err := c.adoptAncestors(ctx, params.SessionID); err != nil {
+		slog.Warn("Failed to resolve session ancestors", "session", params.SessionID, "error", err)
+	}
+	c.subSessions.add(subSessionInfo(sessionID, params, kind), cancel)
 }
 
 // subSessionNode is one child session and, while it runs, the function that

@@ -1146,6 +1146,39 @@ func TestRunBranchAgentRecordsTheBranchInTheSubSessionTree(t *testing.T) {
 	})
 }
 
+// A branch forked from a session the user resumed after a restart hangs
+// under a session the tree never saw. What runs inside the branch must
+// still be counted at the root above that session.
+func TestRunBranchAgentCountsItsBackgroundAgentsAtTheRootOfAResumedSession(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+	root, err := env.sessions.Create(t.Context(), "Root")
+	require.NoError(t, err)
+	resumedID := c.sessions.CreateAgentToolSessionID("msg-resumed", "call-resumed")
+	_, err = c.sessions.CreateTaskSession(t.Context(), resumedID, root.ID, "Resumed")
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), resumedID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 1)
+	agent, resolved := idleBranchAgent(t, seen)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan tools.Result, 1)
+	go func() {
+		done <- c.runBranchAgent(ctx, branchParams(agent, resolved, resumedID, forking.ID))
+	}()
+	requireBranchStarted(t, seen)
+	branchID := requireBranchSession(t, c, resumedID)
+
+	addBackground(c.subSessions, "bg-1", branchID)
+	require.Equal(t, 1, c.BackgroundAgentsRunning(resumedID))
+	require.Equal(t, 1, c.BackgroundAgentsRunning(root.ID), "the root sees what runs below its resumed session")
+
+	cancel()
+	<-done
+}
+
 // The user pressing Esc while the parent waits on a branch is a stop they
 // chose, so the sub-session list must not show it as a failure.
 func TestRunBranchAgentMarksAParentCancelAsStopped(t *testing.T) {

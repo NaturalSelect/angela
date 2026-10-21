@@ -862,6 +862,46 @@ func TestARunningBackgroundAgentIsCountedAtEveryLevelAboveItsParent(t *testing.T
 	require.Zero(t, coord.BackgroundAgentsRunning(grandchildID))
 }
 
+// A session the user resumed after a restart is not in the tree. A
+// foreground agent dispatched from it is filed under it, so the background
+// agent that one launches must still be counted at the root.
+func TestABackgroundAgentLaunchedBelowAForegroundAgentOfAResumedSessionIsCountedAtTheRoot(t *testing.T) {
+	coord := newBackgroundTestCoordinator(t)
+
+	root, err := coord.sessions.Create(t.Context(), "Root")
+	require.NoError(t, err)
+	resumedID := coord.sessions.CreateAgentToolSessionID("msg-resumed", "call-resumed")
+	_, err = coord.sessions.CreateTaskSession(t.Context(), resumedID, root.ID, "Resumed")
+	require.NoError(t, err)
+
+	release := make(chan struct{})
+	defer close(release)
+	var runningAtRoot, runningAtForeground int
+	foreground, resolved := newMockAgent(t, "mock", 4096, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+		launchTestAgentFrom(t, coord, call.SessionID, "call-bg", func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+			<-release
+			return agentResultWithText("the findings"), nil
+		})
+		runningAtForeground = coord.BackgroundAgentsRunning(call.SessionID)
+		runningAtRoot = coord.BackgroundAgentsRunning(root.ID)
+		return agentResultWithText("dispatched"), nil
+	})
+
+	resp := coord.runSubAgent(t.Context(), subAgentParams{
+		Agent:          foreground,
+		Resolved:       resolved,
+		SessionID:      resumedID,
+		AgentMessageID: "msg-fg",
+		ToolCallID:     "call-fg",
+		Prompt:         "dispatch a background agent",
+		SessionTitle:   "Foreground",
+	}).Response()
+
+	require.False(t, resp.IsError)
+	require.Equal(t, 1, runningAtForeground)
+	require.Equal(t, 1, runningAtRoot, "the root sees what runs below its resumed session")
+}
+
 func TestALaunchThatCannotResolveItsSessionsCountsNothing(t *testing.T) {
 	coord := newBackgroundTestCoordinator(t)
 

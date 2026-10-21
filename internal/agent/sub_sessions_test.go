@@ -420,3 +420,27 @@ func TestCoordinatorSubSessionsCountsAnAgentLaunchedFromAnEarlierProcessSession(
 
 	require.Error(t, coord.adoptAncestors(t.Context(), "missing"))
 }
+
+func TestCoordinatorSubSessionsCountsAnAgentLaunchedBelowAChildTheUserListed(t *testing.T) {
+	t.Parallel()
+
+	coord := newSubSessionsTestCoordinator(t)
+	root, err := coord.sessions.Create(t.Context(), "Root")
+	require.NoError(t, err)
+	midID := coord.sessions.CreateAgentToolSessionID("msg-mid", "call-mid")
+	_, err = coord.sessions.CreateTaskSession(t.Context(), midID, root.ID, "Mid")
+	require.NoError(t, err)
+	leafID := coord.sessions.CreateAgentToolSessionID("msg-leaf", "call-leaf")
+	_, err = coord.sessions.CreateTaskSession(t.Context(), leafID, midID, "Leaf")
+	require.NoError(t, err)
+
+	// Listing mid's children files the leaf, but nothing files mid itself.
+	_, err = coord.SubSessions(t.Context(), midID)
+	require.NoError(t, err)
+
+	require.NoError(t, coord.adoptAncestors(t.Context(), leafID))
+	coord.subSessions.add(testSubSession("agent-session", leafID, tools.SubSessionKindBackground), func() {})
+
+	require.Equal(t, 1, coord.BackgroundAgentsRunning(midID))
+	require.Equal(t, 1, coord.BackgroundAgentsRunning(root.ID), "a known session does not stop the walk to the root")
+}

@@ -2461,7 +2461,7 @@ func (c *coordinator) runSubAgent(ctx context.Context, params subAgentParams) to
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	c.subSessions.add(subSessionInfo(sess.ID, params, tools.SubSessionKindForeground), cancel)
+	c.trackSubSession(ctx, sess.ID, params, tools.SubSessionKindForeground, cancel)
 
 	outcome := c.executeSubAgent(runCtx, sess, params)
 	c.subSessions.end(sess.ID, tools.SubSessionStatusOf(classifyBackgroundOutcome(runCtx, outcome)))
@@ -2640,7 +2640,7 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	if err != nil {
 		return tools.FailErr("create branch session", err)
 	}
-	c.subSessions.add(subSessionInfo(session.ID, params, tools.SubSessionKindBranch), nil)
+	c.trackSubSession(ctx, session.ID, params, tools.SubSessionKindBranch, nil)
 	branchStatus := tools.SubSessionFailed
 	defer func() { c.subSessions.end(session.ID, branchStatus) }()
 	defer removeWebFetchScratch(c.cfg.Config().Options.DataDirectory, session.ID)

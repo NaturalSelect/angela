@@ -34,6 +34,13 @@ var (
 	// what is safe to do with an older server rather than treating the
 	// failure as transient.
 	ErrUnsupported = errors.New("unsupported by the running server")
+
+	// ErrConflict reports that the server answered 409: the request is
+	// well formed but the state it targets does not allow it right now.
+	// It says nothing about the workspace's lifecycle. What the conflict
+	// is depends on the route, so only a caller that knows its route can
+	// give it a meaning.
+	ErrConflict = errors.New("conflict")
 )
 
 // checkStatus returns nil when rsp's status code is one of ok
@@ -59,6 +66,8 @@ func checkStatus(rsp *http.Response, ok ...int) error {
 		return fmt.Errorf("%w: %w", ErrNotFound, err)
 	case http.StatusServiceUnavailable:
 		return fmt.Errorf("%w: %w", ErrServerShuttingDown, err)
+	case http.StatusConflict:
+		return fmt.Errorf("%w: %w", ErrConflict, err)
 	}
 	return err
 }

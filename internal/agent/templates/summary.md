@@ -61,7 +61,7 @@ Include this section only when the conversation is a branch: it contains a messa
 - **Merge attempts**: every `Merge` the user rejected, with the reason they gave.
 - **Redirections**: everything the user changed, narrowed, or ruled out since the fork, so the resumed branch does not propose it again.
 
-## 10. Next Step
+## 11. Next Step
 
 The next step you will take, DIRECTLY in line with the user's most recent explicit requests and the task you were working on immediately before this summary. If the last task was concluded, only list next steps that are explicitly in line with the user's request; do not start on tangential or old requests without confirming first.
 

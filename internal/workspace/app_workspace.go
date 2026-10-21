@@ -233,11 +233,12 @@ func (w *AppWorkspace) AgentIsSessionBranch(sessionID string) bool {
 	return w.app.AgentCoordinator.IsSessionBranch(sessionID)
 }
 
-func (w *AppWorkspace) AgentBackgroundAgents(sessionID string) int {
+func (w *AppWorkspace) AgentSessionStatus(sessionID string) (bool, int) {
 	if w.app.AgentCoordinator == nil {
-		return 0
+		return false, 0
 	}
-	return w.app.AgentCoordinator.BackgroundAgentsRunning(sessionID)
+	return w.app.AgentCoordinator.IsSessionBusy(sessionID),
+		w.app.AgentCoordinator.BackgroundAgentsRunning(sessionID)
 }
 
 func (w *AppWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error) {

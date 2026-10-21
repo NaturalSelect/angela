@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/stretchr/testify/require"
 )
@@ -31,6 +32,10 @@ func TestBackendSession_WorkspaceNotFound(t *testing.T) {
 		}},
 		{"GetAgentSession", func(t *testing.T) error {
 			_, err := b.GetAgentSession(t.Context(), "nope", "s1")
+			return err
+		}},
+		{"ListSubSessions", func(t *testing.T) error {
+			_, err := b.ListSubSessions(t.Context(), "nope", "s1")
 			return err
 		}},
 		{"ListSessionMessages", func(t *testing.T) error {
@@ -134,6 +139,27 @@ func TestBackendSession_GetAgentSessionCarriesBackgroundAgents(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, agentSess.BackgroundAgents)
 	require.False(t, agentSess.IsBusy, "the session's own turn is a separate fact")
+}
+
+// An unknown session ID must be refused before the coordinator sees it,
+// because the coordinator keeps a list for every ID it is asked about.
+func TestBackendSession_ListSubSessionsRefusesUnknownSession(t *testing.T) {
+	b, ws, _ := newPublishingWorkspace(t)
+
+	sess, err := b.CreateSession(t.Context(), ws.ID, "s")
+	require.NoError(t, err)
+	ws.AgentCoordinator = &fakeCoordinator{
+		subSessions: map[string][]proto.SubSession{
+			sess.ID: {{ID: "child", ParentID: sess.ID}},
+		},
+	}
+
+	subs, err := b.ListSubSessions(t.Context(), ws.ID, sess.ID)
+	require.NoError(t, err)
+	require.Len(t, subs, 1)
+
+	_, err = b.ListSubSessions(t.Context(), ws.ID, "missing-session")
+	require.ErrorIs(t, err, ErrSessionNotFound)
 }
 
 // TestBackendSession_MessagesAndHistory drives real message.Service and

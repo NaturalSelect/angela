@@ -59,6 +59,11 @@ func (b *Backend) ListSubSessions(ctx context.Context, workspaceID, sessionID st
 	if err != nil {
 		return nil, err
 	}
+	// NOTE: The coordinator keeps a list per probed ID for the life of the
+	// process, so an unknown ID must be refused before it gets that far.
+	if _, err := ws.Sessions.Get(ctx, sessionID); err != nil {
+		return nil, err
+	}
 	if ws.AgentCoordinator == nil {
 		return nil, nil
 	}

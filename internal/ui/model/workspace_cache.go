@@ -207,8 +207,7 @@ func (m *UI) dispatchBusyRefresh() tea.Cmd {
 			st.ready = true
 			st.agentBusy = ws.AgentIsBusy()
 			if sessionID != "" {
-				st.sessionBusy = ws.AgentIsSessionBusy(sessionID)
-				st.backgroundAgents = ws.AgentBackgroundAgents(sessionID)
+				st.sessionBusy, st.backgroundAgents = ws.AgentSessionStatus(sessionID)
 			}
 			active, err := ws.AgentActive(context.Background(), sessionID)
 			if err != nil {

@@ -396,7 +396,7 @@ func TestReAuthWaitsRatherThanGuessingAModel(t *testing.T) {
 	ws.EXPECT().AgentIsReady().Return(true).AnyTimes()
 	ws.EXPECT().AgentIsBusy().Return(false).AnyTimes()
 	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(false).AnyTimes()
-	ws.EXPECT().AgentBackgroundAgents(gomock.Any()).Return(0).AnyTimes()
+	ws.EXPECT().AgentSessionStatus(gomock.Any()).Return(false, 0).AnyTimes()
 	ws.EXPECT().PermissionMode().Return(permission.ModeManual).AnyTimes()
 	ws.EXPECT().AgentActive(gomock.Any(), gomock.Any()).
 		Return(workspace.ActiveAgent{}, errors.New("probe failed")).AnyTimes()

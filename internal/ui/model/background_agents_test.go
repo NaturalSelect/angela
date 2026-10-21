@@ -528,8 +528,7 @@ func TestBusyRefreshCarriesTheBackgroundAgentCount(t *testing.T) {
 	m, ws := newBackgroundTranscriptUI(t)
 	ws.EXPECT().AgentIsReady().Return(true)
 	ws.EXPECT().AgentIsBusy().Return(false)
-	ws.EXPECT().AgentIsSessionBusy("s1").Return(false)
-	ws.EXPECT().AgentBackgroundAgents("s1").Return(3)
+	ws.EXPECT().AgentSessionStatus("s1").Return(false, 3)
 	ws.EXPECT().AgentActive(gomock.Any(), "s1").Return(workspace.ActiveAgent{}, nil)
 	ws.EXPECT().PermissionMode().Return(permission.ModeManual)
 

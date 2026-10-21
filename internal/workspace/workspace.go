@@ -181,11 +181,13 @@ type Workspace interface {
 	// configured to run a branch-mode agent is not a live branch once
 	// the process holding its suspended call is gone.
 	AgentIsSessionBranch(sessionID string) bool
-	// AgentBackgroundAgents counts the background agents running in a
-	// session or in any session below it. They outlive the turn that
-	// launched them, so a session with a count above zero is still
-	// working even when AgentIsSessionBusy says otherwise.
-	AgentBackgroundAgents(sessionID string) int
+	// AgentSessionStatus reports whether a session has a turn running
+	// and how many background agents are running in it or in any
+	// session below it. They outlive the turn that launched them, so a
+	// session with a count above zero is still working even when busy
+	// is false. Both come from one probe, so a remote workspace pays
+	// for a single round trip rather than one per fact.
+	AgentSessionStatus(sessionID string) (busy bool, backgroundAgents int)
 	// AgentSubSessions lists the direct children of a session in dispatch
 	// order, including those an earlier process dispatched, which come
 	// back as ended. Unlike the probes above it reports a failure rather

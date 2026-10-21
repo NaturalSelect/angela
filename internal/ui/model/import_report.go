@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,13 +37,26 @@ func readReportFile(path string) (agenttools.Report, error) {
 	if info.IsDir() {
 		return agenttools.Report{}, fmt.Errorf("%s is a directory, not a report file", path)
 	}
-	if info.Size() > common.MaxAttachmentSize {
-		return agenttools.Report{}, fmt.Errorf("report file is too large (%d bytes, the limit is %d)", info.Size(), common.MaxAttachmentSize)
+	// NOTE: A pipe or device reports a size of zero, so only a regular file
+	// can be trusted to end.
+	if !info.Mode().IsRegular() {
+		return agenttools.Report{}, fmt.Errorf("%s is not a regular file", path)
 	}
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return agenttools.Report{}, err
+	}
+	defer f.Close()
+
+	// NOTE: The cap is enforced on the bytes read, not on the size from
+	// Stat, because a file can grow after it was statted.
+	data, err := io.ReadAll(io.LimitReader(f, common.MaxAttachmentSize+1))
+	if err != nil {
+		return agenttools.Report{}, err
+	}
+	if int64(len(data)) > common.MaxAttachmentSize {
+		return agenttools.Report{}, fmt.Errorf("report file is too large (the limit is %d bytes)", common.MaxAttachmentSize)
 	}
 	return chat.ReportFromMarkdown(data, path), nil
 }

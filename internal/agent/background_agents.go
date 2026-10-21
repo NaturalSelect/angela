@@ -396,11 +396,11 @@ func (c *coordinator) wakeForNotices(sessionID string) {
 
 // classifyBackgroundOutcome maps how a sub-agent run ended onto the status
 // its notice carries. Foreground runs use it too, so one rule decides
-// whether a run completed, failed or was stopped. A run that produced an answer is completed even if a
-// stop landed at the same moment, because the answer is what the parent
-// wants. Cancellation is read from the run's own error as well as from
-// ctx, since the sub-session can be cancelled from the UI without the
-// agent's context ever being touched.
+// whether a run completed, failed or was stopped. A run that produced an
+// answer is completed even if a stop landed at the same moment, because the
+// answer is what the parent wants. Cancellation is read from the run's own
+// error as well as from ctx, since the sub-session can be cancelled from the
+// UI without the agent's context ever being touched.
 func classifyBackgroundOutcome(ctx context.Context, outcome subAgentOutcome) tools.BackgroundAgentStatus {
 	switch {
 	case outcome.Failure == "":

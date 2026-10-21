@@ -324,12 +324,12 @@ func (w *ClientWorkspace) AgentIsSessionBranch(sessionID string) bool {
 	return info.IsBranch
 }
 
-func (w *ClientWorkspace) AgentBackgroundAgents(sessionID string) int {
+func (w *ClientWorkspace) AgentSessionStatus(sessionID string) (bool, int) {
 	info, err := w.client.GetAgentSessionInfo(context.Background(), w.workspaceID(), sessionID)
 	if err != nil {
-		return 0
+		return false, 0
 	}
-	return info.BackgroundAgents
+	return info.IsBusy, info.BackgroundAgents
 }
 
 func (w *ClientWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error) {

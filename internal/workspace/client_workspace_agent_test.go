@@ -157,6 +157,38 @@ func TestClientWorkspace_AgentIsSessionBusyAndBranch(t *testing.T) {
 	})
 }
 
+func TestClientWorkspace_AgentSessionStatus(t *testing.T) {
+	t.Parallel()
+
+	t.Run("one request carries both facts", func(t *testing.T) {
+		t.Parallel()
+		var requests int
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+			requests++
+			require.Equal(t, "/v1/workspaces/ws-1/agent/sessions/s1", r.URL.Path)
+			require.NoError(t, json.NewEncoder(w).Encode(proto.AgentSession{
+				IsBusy: true, BackgroundAgents: 2,
+			}))
+		})
+
+		busy, background := ws.AgentSessionStatus("s1")
+		require.True(t, busy)
+		require.Equal(t, 2, background)
+		require.Equal(t, 1, requests)
+	})
+
+	t.Run("server error defaults to idle", func(t *testing.T) {
+		t.Parallel()
+		ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		})
+
+		busy, background := ws.AgentSessionStatus("s1")
+		require.False(t, busy)
+		require.Zero(t, background)
+	})
+}
+
 func TestClientWorkspace_AgentQueuedPrompts(t *testing.T) {
 	t.Parallel()
 

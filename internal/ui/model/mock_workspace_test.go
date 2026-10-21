@@ -101,20 +101,6 @@ func (mr *MockWorkspaceMockRecorder) AgentAskSideQuestion(ctx, sessionID, arg2 a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentAskSideQuestion", reflect.TypeOf((*MockWorkspace)(nil).AgentAskSideQuestion), ctx, sessionID, arg2)
 }
 
-// AgentBackgroundAgents mocks base method.
-func (m *MockWorkspace) AgentBackgroundAgents(sessionID string) int {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AgentBackgroundAgents", sessionID)
-	ret0, _ := ret[0].(int)
-	return ret0
-}
-
-// AgentBackgroundAgents indicates an expected call of AgentBackgroundAgents.
-func (mr *MockWorkspaceMockRecorder) AgentBackgroundAgents(sessionID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentBackgroundAgents", reflect.TypeOf((*MockWorkspace)(nil).AgentBackgroundAgents), sessionID)
-}
-
 // AgentCancel mocks base method.
 func (m *MockWorkspace) AgentCancel(sessionID string) {
 	m.ctrl.T.Helper()
@@ -313,6 +299,21 @@ func (m *MockWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, com
 func (mr *MockWorkspaceMockRecorder) AgentRunShellCommand(ctx, sessionID, command, termWidth, onProgress, isFirstMessage any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentRunShellCommand", reflect.TypeOf((*MockWorkspace)(nil).AgentRunShellCommand), ctx, sessionID, command, termWidth, onProgress, isFirstMessage)
+}
+
+// AgentSessionStatus mocks base method.
+func (m *MockWorkspace) AgentSessionStatus(sessionID string) (bool, int) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AgentSessionStatus", sessionID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(int)
+	return ret0, ret1
+}
+
+// AgentSessionStatus indicates an expected call of AgentSessionStatus.
+func (mr *MockWorkspaceMockRecorder) AgentSessionStatus(sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentSessionStatus", reflect.TypeOf((*MockWorkspace)(nil).AgentSessionStatus), sessionID)
 }
 
 // AgentSubSessions mocks base method.

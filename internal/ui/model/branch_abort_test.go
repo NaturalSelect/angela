@@ -35,7 +35,7 @@ func newIdleMockWorkspace(t *testing.T) *MockWorkspace {
 	ws.EXPECT().AgentIsReady().Return(false).AnyTimes()
 	ws.EXPECT().AgentIsBusy().Return(false).AnyTimes()
 	ws.EXPECT().AgentIsSessionBusy(gomock.Any()).Return(false).AnyTimes()
-	ws.EXPECT().AgentBackgroundAgents(gomock.Any()).Return(0).AnyTimes()
+	ws.EXPECT().AgentSessionStatus(gomock.Any()).Return(false, 0).AnyTimes()
 	ws.EXPECT().PermissionMode().Return(permission.ModeManual).AnyTimes()
 	return ws
 }

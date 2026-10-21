@@ -249,8 +249,6 @@ func subSessionEnd(sub proto.SubSession) dialog.SubSessionEnd {
 	}
 }
 
-// isBranchAgent reports whether the named agent is configured as a branch.
-
 // leaveSubSession pops back one level. The parent is reloaded from the
 // database rather than restored from memory: the sub-agent kept writing to
 // it while the view was elsewhere, so the copy we drilled down from is

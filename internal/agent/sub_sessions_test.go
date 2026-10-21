@@ -265,6 +265,31 @@ func TestSubSessionTreeHydrateKeepsADispatchThatLandsWhileLoading(t *testing.T) 
 	require.Equal(t, tools.SubSessionEnded, byID["old"].Status)
 }
 
+func TestSubSessionTreeHydrateKeepsADispatchThatCreatesTheListConcurrently(t *testing.T) {
+	t.Parallel()
+
+	for i := range 20_000 {
+		tree := newSubSessionTree()
+		parent := fmt.Sprintf("root%d", i)
+		start := make(chan struct{})
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			<-start
+			addBackground(tree, "running", parent)
+		})
+		wg.Go(func() {
+			<-start
+			_ = tree.hydrate(parent, func() ([]tools.SubSession, error) { return nil, nil })
+		})
+		close(start)
+		wg.Wait()
+
+		require.Equal(t, 1, tree.backgroundRunningUnder(parent), "round %d", i)
+		require.Len(t, tree.childrenOf(parent), 1, "round %d", i)
+	}
+}
+
 func TestSubSessionTreeHydrateRetriesAfterALoadError(t *testing.T) {
 	t.Parallel()
 

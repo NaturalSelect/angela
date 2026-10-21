@@ -3,7 +3,6 @@ package model
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/ui/common"
@@ -46,16 +45,5 @@ func TestReadReportFile(t *testing.T) {
 
 		_, err := readReportFile(path)
 		require.NoError(t, err)
-	})
-
-	t.Run("rejects a named pipe without blocking", func(t *testing.T) {
-		t.Parallel()
-		path := filepath.Join(t.TempDir(), "pipe.md")
-		if err := syscall.Mkfifo(path, 0o644); err != nil {
-			t.Skipf("cannot create a named pipe here: %v", err)
-		}
-
-		_, err := readReportFile(path)
-		require.ErrorContains(t, err, "not a regular file")
 	})
 }

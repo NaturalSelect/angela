@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/ui/chat"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,6 +28,25 @@ func TestChatAtBottomWithTallItemAtViewportTop(t *testing.T) {
 
 	require.True(t, u.chat.AtBottom(),
 		"a viewport pinned to the end is at the bottom even when its top item is taller than the viewport")
+}
+
+func TestChatRemovingViewportTopItemWhileFollowingKeepsTranscriptVisible(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	u.chat.SetMessages(
+		&mutableMessageItem{id: "tall", lines: 200},
+		testMessageItem{id: "s1", text: "short 1"},
+	)
+	u.updateLayoutAndSize()
+	u.chat.ScrollToBottom()
+
+	u.chat.RemoveMessage("tall")
+
+	scr := uv.NewScreenBuffer(u.width, u.height)
+	u.chat.Draw(scr, u.layout.main)
+	require.Contains(t, ansi.Strip(scr.Render()), "short 1")
+	require.True(t, u.chat.Follow())
 }
 
 func TestChatWheelDownToEndResumesFollow(t *testing.T) {

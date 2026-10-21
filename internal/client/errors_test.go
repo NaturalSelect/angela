@@ -52,8 +52,9 @@ func TestCheckStatus_TypesActionableStatuses(t *testing.T) {
 			wantMsg: "workspace not found",
 		},
 		{
-			name:        "conflict carries no lifecycle meaning",
+			name:        "conflict is typed but carries no lifecycle meaning",
 			status:      http.StatusConflict,
+			wantErr:     ErrConflict,
 			wantUntyped: true,
 		},
 	}

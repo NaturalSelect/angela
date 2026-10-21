@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
@@ -631,6 +632,11 @@ func (w *ClientWorkspace) ImportReport(ctx context.Context, sessionID string, re
 		Body:      body,
 	})
 	if err != nil {
+		// NOTE: The only conflict this route reports is a turn running on
+		// the session, which the local workspace reports as ErrSessionBusy.
+		if errors.Is(err, client.ErrConflict) {
+			return agenttools.ImportResult{}, fmt.Errorf("%w: %w", agent.ErrSessionBusy, err)
+		}
 		return agenttools.ImportResult{}, err
 	}
 	return agenttools.ImportResult{

@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/agent"
+	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/client"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/message"
@@ -727,6 +730,67 @@ func TestClientWorkspace_Undo(t *testing.T) {
 				Deleted:      []string{"/tmp/b.go"},
 				MessageCount: 2,
 			}, got)
+		})
+	}
+}
+
+// TestClientWorkspace_ImportReport pins that a remote import fails the same
+// way a local one does: a session that started a turn after the caller's
+// pre-check comes back as agent.ErrSessionBusy, not as a bare status code.
+func TestClientWorkspace_ImportReport(t *testing.T) {
+	t.Parallel()
+
+	report := agenttools.Report{ID: "rpt_12345678", AgentType: "explore", Content: "the findings"}
+
+	cases := []struct {
+		name     string
+		status   int
+		wantBusy bool
+		wantErr  bool
+	}{
+		{name: "success", status: http.StatusOK},
+		{name: "busy session", status: http.StatusConflict, wantBusy: true, wantErr: true},
+		{name: "server error", status: http.StatusInternalServerError, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotBody proto.ReportImportRequest
+			ws := testClientWorkspace(t, "ws-1", func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, http.MethodPost, r.Method)
+				require.Equal(t, "/v1/workspaces/ws-1/sessions/s1/reports", r.URL.Path)
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&gotBody))
+				if tc.status != http.StatusOK {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(tc.status)
+					require.NoError(t, json.NewEncoder(w).Encode(proto.Error{Message: "session is currently processing another request"}))
+					return
+				}
+				require.NoError(t, json.NewEncoder(w).Encode(proto.ReportImportResult{
+					ID:             "rpt_12345678",
+					AgentType:      "explore",
+					AlreadyPresent: true,
+				}))
+			})
+
+			got, err := ws.ImportReport(t.Context(), "s1", report)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.Equal(t, tc.wantBusy, errors.Is(err, agent.ErrSessionBusy))
+				require.NotErrorIs(t, err, agenttools.ErrEmptyReport)
+				require.NotErrorIs(t, err, agenttools.ErrReportTooLarge)
+				if tc.wantBusy {
+					require.ErrorIs(t, err, client.ErrConflict, "the server's own message stays in the chain")
+					require.Contains(t, err.Error(), "session is currently processing another request")
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "the findings", gotBody.Body)
+			require.Equal(t, "rpt_12345678", got.Report.ID)
+			require.True(t, got.AlreadyPresent)
 		})
 	}
 }

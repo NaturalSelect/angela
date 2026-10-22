@@ -275,7 +275,7 @@ func TestCoDesignPrompt_ForcedChangesAreConsequencesNotChoices(t *testing.T) {
 		"rule demands why each alternative fails":   "If you cannot say why each alternative fails, it is a real choice: ask.",
 		"objection reopens the forcing decision":    "If the user objects to a consequence, they are reopening the decision that forced it",
 		"unseen rule admits consequences":           "saw it as a consequence and did not object",
-		"phase 2 traces before asking":              "trace what the section touches elsewhere in the key design",
+		"step 3 traces before asking":               "trace what the section touches elsewhere in the key design",
 		"to confirm needs a real choice":            "only when more than one answer still holds",
 		"consequences do not block merge":           "or shown as a consequence without objection",
 		"contract binds follows like key design":    "Unmarked pseudo-code and anything marked `// follows:` are the key design the user accepted",

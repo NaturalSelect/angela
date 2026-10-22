@@ -134,14 +134,27 @@ gives up is the structural guarantee, since yolo mode approves everything
 ### `co-design`
 
 `co-design` is for the times you want to understand and shape the design of a
-whole solution, not only approve it. It first probes what you already know
-about the code and fills the gaps. Then you settle the problem, the
-challenges any solution has to meet, and an outline of sections, one per
-module or flow. After that it designs the solution section by section, as
-pseudo-code: data structures, interfaces between modules, cross-module
-flows, ownership, and where each lands in the repository. For each section
-you either state your decisions in plain words, or ask it to draft the
-section and then accept, change, or reject each numbered item. The agent
+whole solution, not only approve it. It works in four steps:
+
+1. **Align on the requirement.** You settle the problem, what "solved" looks
+   like, the constraints any solution has to meet, and what is out of scope.
+   No solution is proposed yet.
+2. **Confirm the direction.** It probes what you already know about the code
+   and fills the gaps. Then you settle the overall approach, as coarse
+   pseudo-code of its main pieces. If you ask it to propose, it offers two or
+   three directions and recommends one.
+3. **Break the problem down and solve each part.** You settle the outline,
+   one sub-problem per module or flow, and the boundaries between them. Then
+   it designs each sub-problem on its own, in dependency order, as
+   pseudo-code: data structures, interfaces between modules, cross-module
+   flows, ownership, and where each lands in the repository.
+4. **Write the solution.** It walks the whole design through the code once
+   more, stitches the sections into one end-to-end flow, and writes the
+   trade-offs, risks, and follow-up work.
+
+For each sub-problem in step 3, you either state your decisions in plain
+words, or ask it to draft the section and then accept, change, or reject each
+numbered item. The agent
 settles the details itself, such as names and error handling, following the
 repository's existing patterns, and marks them without asking. It may
 suggest key design of its own, but a suggestion enters the design only after

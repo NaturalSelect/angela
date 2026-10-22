@@ -53,7 +53,7 @@ Precisely what was being worked on immediately before this summary request, payi
 
 ## 10. Branch Context
 
-Include this section only when the conversation is a branch: it contains a message saying it was forked from another conversation as a branch and naming its task, or it starts from an earlier summary that already has this section. Otherwise omit the section entirely. A branch loses its bearings across repeated summaries unless this is carried forward each time, so when an earlier summary has it, start from it and update it rather than rewriting it from the recent messages alone.
+The conversation is a branch when it contains a message saying it was forked from another conversation as a branch and naming its task, or when it starts from an earlier summary whose Branch Context describes a branch. If it is not a branch, write exactly "Not a branch." under this heading and nothing else, and ignore the bullets below. Otherwise fill in the bullets. A branch loses its bearings across repeated summaries unless this is carried forward each time, so when an earlier summary describes a branch here, start from it and update it rather than rewriting it from the recent messages alone.
 
 - **Parent**: the title of the conversation this branch was forked from. That conversation is suspended on a tool call that only this branch resolves, by the user approving a `Merge`, or by the user abandoning the branch.
 - **Task**: the task the branch was forked with, quoted verbatim inside `<branch_task>` tags. Do not paraphrase it, and do not narrow it to whatever sub-topic the latest messages were about: it is the scope every later turn is measured against.

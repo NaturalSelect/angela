@@ -48,7 +48,9 @@ func TestACorruptActiveAgentIsNotAFreshSession(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, sessions.UpdateActiveAgent(t.Context(), created.ID, config.ActiveAgentState{
 		Agent: "reviewer",
-		Model: config.SelectedModel{Provider: "mock", Model: "large-model"},
+		AgentModels: map[string]config.AgentModelPick{
+			"reviewer": {Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
+		},
 	}))
 
 	corruptActiveAgent(t, conn, created.ID)
@@ -96,7 +98,9 @@ func TestAStoredActiveAgentRoundTrips(t *testing.T) {
 
 	want := config.ActiveAgentState{
 		Agent: "reviewer",
-		Model: config.SelectedModel{Provider: "mock", Model: "large-model"},
+		AgentModels: map[string]config.AgentModelPick{
+			"reviewer": {Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
+		},
 	}
 	require.NoError(t, sessions.UpdateActiveAgent(t.Context(), created.ID, want))
 

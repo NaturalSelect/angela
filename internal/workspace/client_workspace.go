@@ -403,13 +403,14 @@ func (w *ClientWorkspace) AgentEditActive(ctx context.Context, sessionID string,
 // activeAgentFromProto restates the wire shape as the one the UI reads.
 func activeAgentFromProto(active proto.ActiveAgent) ActiveAgent {
 	return ActiveAgent{
-		AgentID:    active.AgentID,
-		AgentName:  active.AgentName,
-		Slot:       active.Slot,
-		ModelCfg:   active.ModelCfg,
-		CatwalkCfg: active.CatwalkCfg,
-		Think:      active.Think,
-		Variant:    active.Variant,
+		AgentID:     active.AgentID,
+		AgentName:   active.AgentName,
+		Slot:        active.Slot,
+		ModelCfg:    active.ModelCfg,
+		CatwalkCfg:  active.CatwalkCfg,
+		Think:       active.Think,
+		Variant:     active.Variant,
+		AgentModels: active.AgentModels,
 	}
 }
 
@@ -763,14 +764,6 @@ func (w *ClientWorkspace) ImportCopilot() (*oauth.Token, bool) {
 
 func (w *ClientWorkspace) RefreshOAuthToken(ctx context.Context, scope config.Scope, providerID string) error {
 	return w.refreshAfter(w.client.RefreshOAuthToken(ctx, w.workspaceID(), scope, providerID))
-}
-
-func (w *ClientWorkspace) SetAgentModelOverride(agentID string, model config.SelectedModel) error {
-	return w.refreshAfter(w.client.SetAgentModelOverride(context.Background(), w.workspaceID(), agentID, model))
-}
-
-func (w *ClientWorkspace) ClearAgentModelOverrides() error {
-	return w.refreshAfter(w.client.ClearAgentModelOverrides(context.Background(), w.workspaceID()))
 }
 
 // -- Project lifecycle --

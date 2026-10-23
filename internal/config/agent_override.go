@@ -21,9 +21,10 @@ var ErrAgentOverrideUnknownVariant = fmt.Errorf("variant not found on model")
 
 // ValidateAgentModelOverride reports why agentID cannot be pinned to
 // model, or nil when the pin resolves cleanly. It is checked both
-// when the override is first set and again on every config reload,
-// since a reload can remove the agent, disable the provider, or drop
-// the variant out from under a pin set earlier.
+// when a session first picks the model and again whenever the picks
+// are applied to an instance, since a config reload can remove the
+// agent, disable the provider, or drop the variant out from under a
+// pick made earlier.
 func (c *Config) ValidateAgentModelOverride(agentID string, model SelectedModel) error {
 	if _, ok := c.Agents[agentID]; !ok {
 		return fmt.Errorf("%w: %s", ErrAgentOverrideUnknownAgent, agentID)

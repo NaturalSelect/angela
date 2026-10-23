@@ -1483,12 +1483,12 @@ type activeAgentChange struct {
 	variantFrom  string
 	variantTo    string
 	variantMoved bool
-	modelMoved   bool
+	picksMoved   bool
 	thinkMoved   bool
 }
 
 func (ch activeAgentChange) any() bool {
-	return ch.agentMoved || ch.variantMoved || ch.modelMoved || ch.thinkMoved
+	return ch.agentMoved || ch.variantMoved || ch.picksMoved || ch.thinkMoved
 }
 
 // trail renders the transcript lines this change deserves. Only moves
@@ -1509,56 +1509,51 @@ func (ch activeAgentChange) trail(model Model) []string {
 // moved. It is pure: the validation that needs a built model happens in
 // the caller, once, on the result.
 //
-// Switching agent takes the new agent's own configured model rather
-// than carrying the old one across: an agent's model is part of what
-// the user picked when they picked the agent.
+// Model and preset choices all land in the session's pick table, keyed
+// by agent: Model and Variant act on edit.ForAgent, or on the agent the
+// session runs once edit.Agent has taken effect when that is empty. So
+// switching the running agent's model and switching another agent's
+// model are one edit, the former being the latter without a target.
+// The edit is applied to the persisted form of the instance and the
+// instance is then rebuilt from it, which is what keeps a live session
+// and a restored one from ever disagreeing.
+//
+// Switching agent takes the new agent's own pick, if the session made
+// one, and otherwise its configured model, rather than carrying the old
+// model across: an agent's model is part of what the user picked when
+// they picked the agent.
 func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit config.ActiveAgentEdit) (config.ActiveAgent, activeAgentChange, error) {
-	next := current
 	var change activeAgentChange
+	state := current.State()
 
 	if edit.Agent != "" && edit.Agent != current.Agent.ID {
-		instantiated, ok := cfg.InstantiateAgent(edit.Agent)
+		agent, ok := cfg.Agents[edit.Agent]
 		if !ok {
 			return current, change, fmt.Errorf("%w: %q", ErrAgentNotAvailable, edit.Agent)
 		}
-		// instantiated carries no ModelPick: a fresh agent switch takes
-		// the new agent's own configured model rather than a pick, the
-		// same way it takes its own configured model over carrying the
-		// old one across.
-		next = instantiated
-		change.agentFrom, change.agentTo, change.agentMoved = current.Agent.ID, instantiated.Agent, true
+		// A thinking pick belongs to the agent it was made on, so a
+		// fresh switch starts from the new agent's own default.
+		state.Agent = edit.Agent
+		state.Think = nil
+		change.agentFrom, change.agentTo, change.agentMoved = current.Agent.ID, agent, true
 	}
 
-	if edit.Model != nil && !sameModel(*edit.Model, next.Model) {
-		picked := *edit.Model
-		next.Model = picked
-		next.ModelPick = &picked
-		change.modelMoved = true
-
-		// A preset is a different way to call the model it names, not
-		// a property of the agent: carrying a session's pick across to
-		// a model that never offered it either fails the validation
-		// below or silently applies a preset the user never chose for
-		// it there. Dropping the pick falls back to Agent.Variant,
-		// which already holds whatever the agent's config says today
-		// — it is never itself written by a pick.
-		next.VariantPick = nil
+	if edit.ClearModels && len(state.AgentModels) > 0 {
+		state.AgentModels = nil
+		change.picksMoved = true
 	}
 
-	if edit.Variant != nil {
-		// Compared against the effective preset, not the agent's raw
-		// field: a slot can be supplying one while the field reads
-		// empty, and picking that same name (including the baseline)
-		// must still count as a move so the pick gets recorded.
-		effective := next.EffectiveVariant()
-		if *edit.Variant != effective {
-			change.variantFrom, change.variantTo, change.variantMoved = effective, *edit.Variant, true
+	if edit.Model != nil || edit.Variant != nil {
+		picks, err := applyPickEdit(cfg, state, edit, &change)
+		if err != nil {
+			return current, change, err
 		}
-		// Recorded even when it matches what the config says today:
-		// the user picked this preset, so later editing the config's
-		// default must not move them off it.
-		pick := *edit.Variant
-		next.VariantPick = &pick
+		state.AgentModels = picks
+	}
+
+	next, ok := cfg.Restore(state)
+	if !ok {
+		return current, change, fmt.Errorf("%w: %q", ErrAgentNotAvailable, state.Agent)
 	}
 
 	if think, ok := thinkAfter(edit, next.Think); ok {
@@ -1569,6 +1564,103 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 	}
 
 	return next.Clone(), change, nil
+}
+
+// applyPickEdit folds the Model and Variant of an edit into the pick
+// table of state and returns the new table. state.Agent is already the
+// agent the session will run, so an edit without a target lands on it.
+func applyPickEdit(cfg *config.Config, state config.ActiveAgentState, edit config.ActiveAgentEdit, change *activeAgentChange) (map[string]config.AgentModelPick, error) {
+	targetID := cmp.Or(edit.ForAgent, state.Agent)
+	isCurrent := targetID == state.Agent
+
+	target, ok := cfg.InstantiateWith(targetID, state.AgentModels)
+	if !ok {
+		if isCurrent {
+			return nil, fmt.Errorf("%w: %q", ErrAgentNotAvailable, targetID)
+		}
+		return nil, fmt.Errorf("%w: %s", config.ErrAgentOverrideUnknownAgent, targetID)
+	}
+
+	picks := state.AgentModels
+	pick := picks[targetID]
+
+	if edit.Model != nil {
+		// The running agent is compared against the model it runs on,
+		// so picking what it already runs records nothing. Any other
+		// agent is compared against its own pick only: what it resolves
+		// to without one can be an inherited model that changes under
+		// it, and the user asked for this model specifically.
+		running := pick.Model
+		if isCurrent {
+			running = target.Model
+		}
+		if !sameModel(*edit.Model, running) {
+			if err := cfg.ValidateAgentModelOverride(targetID, *edit.Model); err != nil {
+				return nil, err
+			}
+			// A preset is a different way to call the model it names,
+			// not a property of the agent: carrying a pick across to a
+			// model that never offered it either fails validation or
+			// silently applies a preset the user never chose for it
+			// there. Dropping it falls back to Agent.Variant, which
+			// already holds whatever the agent's config says today.
+			pick.Model, pick.Variant = *edit.Model, nil
+			change.picksMoved = true
+		}
+	}
+
+	if edit.Variant != nil {
+		picks = withPick(picks, targetID, pick)
+		target, _ = cfg.InstantiateWith(targetID, picks)
+
+		// Compared against the effective preset, not the agent's raw
+		// field: a slot can be supplying one while the field reads
+		// empty, and picking that same name (including the baseline)
+		// must still count as a move so the pick gets recorded.
+		effective := target.EffectiveVariant()
+		variant := *edit.Variant
+		if variant != effective {
+			if isCurrent {
+				change.variantFrom, change.variantTo, change.variantMoved = effective, variant, true
+			} else {
+				change.picksMoved = true
+			}
+		}
+
+		// The running agent's preset is validated by the caller
+		// against the model it builds, where a missing one has its own
+		// error. Any other agent never gets built here, so its preset
+		// is checked against its model now, while the user is watching.
+		if !isCurrent && variant != "" {
+			candidate := target.Model
+			candidate.Variant = variant
+			if err := cfg.ValidateAgentModelOverride(targetID, candidate); err != nil {
+				return nil, err
+			}
+		}
+
+		// Recorded even when it matches what the config says today:
+		// the user picked this preset, so later editing the config's
+		// default must not move them off it.
+		pick.Variant = &variant
+	}
+
+	return withPick(picks, targetID, pick), nil
+}
+
+// withPick sets agentID's entry in picks, creating the table when it is
+// nil and dropping the entry when the pick chooses nothing, so a table
+// never holds an entry that says nothing.
+func withPick(picks map[string]config.AgentModelPick, agentID string, pick config.AgentModelPick) map[string]config.AgentModelPick {
+	if pick.IsZero() {
+		delete(picks, agentID)
+		return picks
+	}
+	if picks == nil {
+		picks = make(map[string]config.AgentModelPick, 1)
+	}
+	picks[agentID] = pick
+	return picks
 }
 
 // thinkAfter resolves what the thinking flag becomes, given what it is

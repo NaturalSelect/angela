@@ -46,8 +46,9 @@ func (f *fakeActiveIO) materialize(_ string, state config.ActiveAgentState) (con
 		agentID = config.AgentCoder
 	}
 	return config.ActiveAgent{
-		Agent: config.Agent{ID: agentID},
-		Model: state.Model,
+		Agent:       config.Agent{ID: agentID},
+		Model:       state.AgentModels[agentID].Model,
+		AgentModels: state.AgentModels,
 	}, nil
 }
 
@@ -65,7 +66,7 @@ func (f *fakeActiveIO) counter(t *testing.T, sessionID string) int {
 	t.Helper()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	name := f.stored[sessionID].Model.Model
+	name := f.stored[sessionID].AgentModels[config.AgentCoder].Model.Model
 	if name == "" {
 		return 0
 	}
@@ -76,8 +77,8 @@ func (f *fakeActiveIO) counter(t *testing.T, sessionID string) int {
 
 // bumpCounter is the read-modify-write the store has to serialize: it
 // reads the value the session currently holds and writes back one
-// more. It sets ModelPick itself, standing in for a real pick, since
-// State only persists Model when a pick was recorded.
+// more. It writes the pick table itself, standing in for a real pick,
+// since State only persists what the table holds.
 func bumpCounter(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
 	n := 0
 	if current.Model.Model != "" {
@@ -89,7 +90,9 @@ func bumpCounter(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
 	}
 	model := config.SelectedModel{Model: strconv.Itoa(n + 1), Provider: "mock"}
 	current.Model = model
-	current.ModelPick = &model
+	current.AgentModels = map[string]config.AgentModelPick{
+		current.Agent.ID: {Model: model},
+	}
 	return current, true, nil
 }
 

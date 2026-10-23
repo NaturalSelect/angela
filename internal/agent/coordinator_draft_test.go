@@ -81,9 +81,10 @@ func TestAdoptDraftCopiesThePickOntoANewSession(t *testing.T) {
 
 	record, err := coord.sessions.Get(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.NotNil(t, record.ActiveAgent.Variant,
+	adopted := record.ActiveAgent.AgentModels[config.AgentCoder].Variant
+	require.NotNil(t, adopted,
 		"the adoption must be durable, not merely land in the in-memory cache")
-	require.Equal(t, "deep", *record.ActiveAgent.Variant)
+	require.Equal(t, "deep", *adopted)
 }
 
 // TestAdoptDraftIsANoOpWhenTheDraftWasNeverTouched pins the other

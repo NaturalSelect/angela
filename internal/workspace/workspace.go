@@ -109,15 +109,17 @@ type LSPEvent struct {
 
 // ActiveAgent is what a session is currently running, as the UI needs to
 // display it: the agent it belongs to, and the model resolved from that
-// agent with the session's preset already folded in.
+// agent with the session's preset already folded in. AgentModels is the
+// session's model-pick table, keyed by agent.
 type ActiveAgent struct {
-	AgentID    string
-	AgentName  string
-	Slot       config.SlotName
-	CatwalkCfg config.ProviderModel
-	ModelCfg   config.SelectedModel
-	Think      bool
-	Variant    string
+	AgentID     string
+	AgentName   string
+	Slot        config.SlotName
+	CatwalkCfg  config.ProviderModel
+	ModelCfg    config.SelectedModel
+	Think       bool
+	Variant     string
+	AgentModels map[string]config.AgentModelPick
 }
 
 // Workspace is the main abstraction consumed by the TUI and CLI. It
@@ -332,16 +334,6 @@ type Workspace interface {
 	RemoveConfigField(scope config.Scope, key string) error
 	ImportCopilot() (*oauth.Token, bool)
 	RefreshOAuthToken(ctx context.Context, scope config.Scope, providerID string) error
-	// SetAgentModelOverride pins agentID to model (and its Variant)
-	// for the lifetime of this process, without touching any config
-	// file. It backs the "switch agent model" command, which lets a
-	// user try a different model on one agent without editing
-	// angela.json.
-	SetAgentModelOverride(agentID string, model config.SelectedModel) error
-	// ClearAgentModelOverrides drops every pin SetAgentModelOverride
-	// made on this instance, returning every agent to whatever its
-	// config file says.
-	ClearAgentModelOverrides() error
 
 	// Project lifecycle
 	ProjectNeedsInitialization() (bool, error)

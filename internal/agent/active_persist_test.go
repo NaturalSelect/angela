@@ -123,7 +123,7 @@ func TestAnUnpickedVariantKeepsFollowingTheConfig(t *testing.T) {
 
 	record, err := coord.sessions.Get(t.Context(), sess.ID)
 	require.NoError(t, err)
-	require.Nil(t, record.ActiveAgent.Variant,
+	require.Nil(t, record.ActiveAgent.AgentModels[config.AgentCoder].Variant,
 		"an edit that touched no preset must record no preset pick")
 
 	// The user now changes the configured default and comes back.

@@ -127,8 +127,8 @@ type ActionSelectAgentModelVariant struct {
 	Variant string
 }
 
-// ActionClearAgentModelOverrides drops every process-level "switch
-// agent model" pin, returning every agent to its configured model.
+// ActionClearAgentModelOverrides drops every model and preset pick the
+// current session holds, returning every agent to its configured model.
 type ActionClearAgentModelOverrides struct{}
 
 // Messages for commands

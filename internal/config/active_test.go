@@ -120,12 +120,11 @@ func TestActiveAgentStateRoundTripKeepsModelAndRefreshesDefinition(t *testing.T)
 
 	// The session picks a model the config never named for it.
 	picked := SelectedModel{Provider: "groq", Model: "llama"}
-	active.Model = picked
-	active.ModelPick = &picked
+	active, _ = cfg.ApplyPicks(active, map[string]AgentModelPick{"coder": {Model: picked}})
 	state := active.State()
 
 	require.Equal(t, "coder", state.Agent)
-	require.Equal(t, picked, state.Model)
+	require.Equal(t, picked, state.AgentModels["coder"].Model)
 
 	// Meanwhile the config file changed the agent's prompt.
 	agent := cfg.Agents["coder"]
@@ -154,7 +153,10 @@ func TestRestoreSlotAlwaysFollowsTheCurrentConfigLayout(t *testing.T) {
 	cfg := activeTestConfig()
 
 	picked := SelectedModel{Provider: "groq", Model: "llama"}
-	state := ActiveAgentState{Agent: "coder", Model: picked}
+	state := ActiveAgentState{
+		Agent:       "coder",
+		AgentModels: map[string]AgentModelPick{"coder": {Model: picked}},
+	}
 
 	restored, ok := cfg.Restore(state)
 	require.True(t, ok)
@@ -185,7 +187,7 @@ func TestStateOmitsModelWhenNothingWasPicked(t *testing.T) {
 	require.Nil(t, active.ModelPick, "a freshly instantiated agent has picked nothing")
 
 	state := active.State()
-	require.Zero(t, state.Model, "the model must not be persisted until the user actually picks one")
+	require.Empty(t, state.AgentModels, "no pick may be persisted until the user actually makes one")
 }
 
 func TestRestoreFallsBackWhenStateCarriesNoModel(t *testing.T) {
@@ -351,84 +353,87 @@ func TestRestoreExplicitBaselinePickOutranksSlotVariant(t *testing.T) {
 	cfg.Slots[SlotMain] = slot
 
 	pick := ""
-	active, ok := cfg.Restore(ActiveAgentState{Agent: "coder", Variant: &pick})
+	active, ok := cfg.Restore(ActiveAgentState{
+		Agent:       "coder",
+		AgentModels: map[string]AgentModelPick{"coder": {Variant: &pick}},
+	})
 	require.True(t, ok)
 	require.Empty(t, active.EffectiveVariant(),
 		"an explicit baseline pick must not fall back to the slot's variant")
 }
 
-// TestAgentModelOverrideOutranksConfig pins the "switch agent model"
-// override contract: it replaces Model outright and outranks the
-// agent's own configured Variant, the same way a session's
-// VariantPick would. Slot stays whatever the agent's own config
-// says, so InstantiateFor's same-slot inheritance keeps working
-// against the overridden model.
-func TestAgentModelOverrideOutranksConfig(t *testing.T) {
+// TestAgentModelPickOutranksConfig pins the pick contract: a model
+// pick in the session's table replaces Model outright and its preset
+// outranks the agent's own configured Variant, the same way a
+// session's VariantPick would. Slot stays whatever the agent's own
+// config says, so InstantiateFor's same-slot inheritance keeps working
+// against the picked model.
+func TestAgentModelPickOutranksConfig(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
-	agent := cfg.Agents["coder"]
+	agent := cfg.Agents["scout"]
 	agent.Variant = "custom"
-	cfg.Agents["coder"] = agent
-	cfg.AgentModelOverrides = map[string]SelectedModel{
-		"coder": {Provider: "groq", Model: "llama", Variant: "careful"},
-	}
+	cfg.Agents["scout"] = agent
+	variant := "careful"
 
-	active, ok := cfg.InstantiateAgent("coder")
+	active, ok := cfg.InstantiateWith("scout", map[string]AgentModelPick{
+		"scout": {Model: SelectedModel{Provider: "anthropic", Model: "claude"}, Variant: &variant},
+	})
 	require.True(t, ok)
-	require.Equal(t, "groq", active.Model.Provider)
-	require.Equal(t, "llama", active.Model.Model)
+	require.Equal(t, "anthropic", active.Model.Provider)
+	require.Equal(t, "claude", active.Model.Model)
 	require.Equal(t, "careful", active.EffectiveVariant(),
-		"the override's variant must outrank the agent's own configured variant")
-	require.Equal(t, SlotMain, active.Slot,
-		"the slot label stays the agent's own, not the override's origin")
+		"the pick's variant must outrank the agent's own configured variant")
+	require.Equal(t, SlotName("fast"), active.Slot,
+		"the slot label stays the agent's own, not the pick's origin")
 }
 
-// TestInstantiateForIgnoresHostWhenTargetHasItsOwnOverride pins that
-// an explicit override on an internal agent wins over inheriting the
-// host's model, even when both sit on the same slot: the user asked
-// to override that agent specifically.
-func TestInstantiateForIgnoresHostWhenTargetHasItsOwnOverride(t *testing.T) {
+// TestInstantiateForIgnoresHostWhenTargetHasItsOwnPick pins that a
+// pick made for an internal agent wins over inheriting the host's
+// model, even when both sit on the same slot: the user asked to
+// change that agent specifically.
+func TestInstantiateForIgnoresHostWhenTargetHasItsOwnPick(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
 	cfg.Agents["compact"] = Agent{ID: "compact", Slot: SlotMain}
-	cfg.AgentModelOverrides = map[string]SelectedModel{
-		"compact": {Provider: "groq", Model: "llama"},
-	}
 
 	host, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
 	host.Model = SelectedModel{Provider: "anthropic", Model: "claude-opus"}
+	host.AgentModels = map[string]AgentModelPick{
+		"compact": {Model: SelectedModel{Provider: "groq", Model: "llama"}},
+	}
 
 	compact, ok := cfg.InstantiateFor("compact", host)
 	require.True(t, ok)
 	require.Equal(t, "llama", compact.Model.Model,
-		"compact's own override must win over inheriting the host's model")
+		"compact's own pick must win over inheriting the host's model")
 }
 
-// TestRestoreSessionModelOutranksProcessOverride pins that a
-// session's own persisted model pick keeps winning over a
-// process-level override set on that agent afterward: switching an
-// agent's model process-wide must not silently change a session that
-// already made its own choice.
-func TestRestoreSessionModelOutranksProcessOverride(t *testing.T) {
+// TestRestoreKeepsPicksMadeForOtherAgents pins that the pick table is
+// restored whole: the running agent runs on its own entry while the
+// entries for other agents stay available to whatever it dispatches.
+func TestRestoreKeepsPicksMadeForOtherAgents(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
-	cfg.AgentModelOverrides = map[string]SelectedModel{
-		"coder": {Provider: "groq", Model: "llama"},
-	}
-
 	state := ActiveAgentState{
 		Agent: "coder",
-		Model: SelectedModel{Provider: "openai", Model: "gpt-mini"},
+		AgentModels: map[string]AgentModelPick{
+			"coder": {Model: SelectedModel{Provider: "openai", Model: "gpt-mini"}},
+			"scout": {Model: SelectedModel{Provider: "anthropic", Model: "claude"}},
+		},
 	}
+
 	restored, ok := cfg.Restore(state)
 	require.True(t, ok)
-	require.Equal(t, "openai", restored.Model.Provider,
-		"a session's own persisted model pick must outrank a process-level override")
 	require.Equal(t, "gpt-mini", restored.Model.Model)
+	require.Equal(t, "claude", restored.AgentModels["scout"].Model.Model,
+		"a pick made for another agent must survive the restore")
+	require.Equal(t, state.AgentModels, restored.State().AgentModels,
+		"the table must round-trip through State unchanged")
 }
 
 // TestInstantiateUnderWithoutParentFallsBackToCoderSlot pins
@@ -561,21 +566,21 @@ func TestInstantiateUnderThinkFollowsParentsExplicitPick(t *testing.T) {
 	require.True(t, active.Think, "the parent's explicit thinking pick must propagate")
 }
 
-// TestInstantiateUnderOverrideOutranksInheritance pins that an
-// explicit "switch agent model" pin on the dispatched agent itself
-// wins over inheriting the parent's model, the same as it already
-// wins over a named slot.
-func TestInstantiateUnderOverrideOutranksInheritance(t *testing.T) {
+// TestInstantiateUnderPickOutranksInheritance pins that a model pick
+// for the dispatched agent itself, found in the parent's table, wins
+// over inheriting the parent's model, the same as it already wins over
+// a named slot.
+func TestInstantiateUnderPickOutranksInheritance(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
 	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
-	cfg.AgentModelOverrides = map[string]SelectedModel{
-		"inherits": {Provider: "groq", Model: "llama"},
-	}
 
 	parent, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
+	parent.AgentModels = map[string]AgentModelPick{
+		"inherits": {Model: SelectedModel{Provider: "groq", Model: "llama"}},
+	}
 
 	active, ok := cfg.InstantiateUnder("inherits", parent)
 	require.True(t, ok)

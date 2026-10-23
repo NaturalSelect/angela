@@ -95,13 +95,12 @@ func NewAgents(com *common.Common, currentAgent string) (*Agents, error) {
 }
 
 // NewAgentModelTarget creates the agent picker for the "Switch Agent
-// Model" command. Every configured agent is a valid override target,
-// hidden ones included: an override applies wherever InstantiateAgent
-// resolves that agent, whether that is a session's primary agent or
-// one of Angela's own internal calls, so restricting the list the way
-// NewAgents does would make those agents unreachable for this command
-// specifically. Hidden agents keep an "internal" label so the
-// distinction isn't lost.
+// Model" command. Every configured agent is a valid target, hidden
+// ones included: a pick applies wherever the session resolves that
+// agent, whether that is its primary agent or one of Angela's own
+// internal calls, so restricting the list the way NewAgents does would
+// make those agents unreachable for this command specifically. Hidden
+// agents keep an "internal" label so the distinction isn't lost.
 func NewAgentModelTarget(com *common.Common, currentAgent string) (*Agents, error) {
 	cfg := com.Config()
 	if cfg == nil {

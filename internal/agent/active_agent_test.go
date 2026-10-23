@@ -98,9 +98,11 @@ func TestConcurrentActiveAgentEditsDoNotLoseUpdates(t *testing.T) {
 			defer wg.Done()
 			_ = coord.editActiveAgent(t.Context(), sess.ID,
 				func(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
-					next := current
+					next := current.Clone()
 					pick := "deep"
-					next.VariantPick = &pick
+					next.AgentModels = map[string]config.AgentModelPick{
+						next.Agent.ID: {Variant: &pick},
+					}
 					return next, true, nil
 				})
 		}()

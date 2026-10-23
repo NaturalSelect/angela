@@ -1357,9 +1357,9 @@ func agentModelTestConfig() *config.Config {
 }
 
 // agentModelInfoText digs the info/error message out of
-// applyAgentModelOverrideCmd's result. It nests a further tea.Sequence
-// to run the recent-model bookkeeping ahead of the actual override, so
-// the unwrap goes one level deeper than infoText's.
+// applyAgentModelCmd's result. It nests a further tea.Sequence to run
+// the recent-model bookkeeping ahead of the actual pick, so the unwrap
+// goes one level deeper than infoText's.
 func agentModelInfoText(t *testing.T, msg tea.Msg) string {
 	t.Helper()
 	cmds := sequencedCmds(msg)
@@ -1430,17 +1430,18 @@ func TestHandleDialogMsg_ActionSelectAgentModel(t *testing.T) {
 		require.Equal(t, util.InfoTypeWarn, msg.Type)
 	})
 
-	t.Run("no variants applies the override without touching an unrelated session", func(t *testing.T) {
+	t.Run("no variants picks for the named agent whatever the session runs", func(t *testing.T) {
 		t.Parallel()
 
 		ctrl := gomock.NewController(t)
 		ws := NewMockWorkspace(ctrl)
 		ws.EXPECT().Config().Return(agentModelTestConfig()).AnyTimes()
-		ws.EXPECT().RecordRecentModel(config.ScopeGlobal, config.SlotMain, config.SelectedModel{Provider: "acme", Model: "plain"}).Return(nil)
-		ws.EXPECT().SetAgentModelOverride("reviewer", config.SelectedModel{Provider: "acme", Model: "plain"}).Return(nil)
-		// AgentEditActive is deliberately left unstubbed: the session
-		// runs "coder", not the agent being overridden, so gomock's
-		// strict controller fails the test if it is invoked.
+		model := config.SelectedModel{Provider: "acme", Model: "plain"}
+		emptyVariant := ""
+		ws.EXPECT().RecordRecentModel(config.ScopeGlobal, config.SlotMain, model).Return(nil)
+		ws.EXPECT().AgentEditActive(gomock.Any(), "s1", config.ActiveAgentEdit{
+			ForAgent: "reviewer", Model: &model, Variant: &emptyVariant,
+		}).Return(workspace.ActiveAgent{}, nil)
 
 		m := newHandleDialogUI(t, ws)
 		m.dialog = dialog.NewOverlay(idOnlyDialog{id: dialog.AgentModelModelsID})
@@ -1453,41 +1454,11 @@ func TestHandleDialogMsg_ActionSelectAgentModel(t *testing.T) {
 		cmd := m.handleDialogMsg(dialog.ActionSelectAgentModel{
 			AgentID:  "reviewer",
 			Provider: catwalk.Provider{ID: "acme"},
-			Model:    config.SelectedModel{Provider: "acme", Model: "plain"},
+			Model:    model,
 		})
 		require.False(t, m.dialog.ContainsDialog(dialog.AgentModelModelsID))
 		require.NotNil(t, cmd)
-		require.Equal(t, "Reviewer now runs Plain Model for this run", agentModelInfoText(t, cmd()))
-	})
-
-	t.Run("no variants and a matching session also syncs it", func(t *testing.T) {
-		t.Parallel()
-
-		ctrl := gomock.NewController(t)
-		ws := NewMockWorkspace(ctrl)
-		ws.EXPECT().Config().Return(agentModelTestConfig()).AnyTimes()
-		model := config.SelectedModel{Provider: "acme", Model: "plain"}
-		emptyVariant := ""
-		ws.EXPECT().RecordRecentModel(config.ScopeGlobal, config.SlotMain, model).Return(nil)
-		ws.EXPECT().SetAgentModelOverride("reviewer", model).Return(nil)
-		ws.EXPECT().AgentEditActive(gomock.Any(), "s1", config.ActiveAgentEdit{Model: &model, Variant: &emptyVariant}).
-			Return(workspace.ActiveAgent{}, nil)
-
-		m := newHandleDialogUI(t, ws)
-		m.dialog = dialog.NewOverlay(idOnlyDialog{id: dialog.AgentModelModelsID})
-		m.session = &session.Session{ID: "s1"}
-		m.agentReady = true
-		m.agentActiveKnown = true
-		m.agentActiveSession = "s1"
-		m.agentActive.AgentID = "reviewer"
-
-		cmd := m.handleDialogMsg(dialog.ActionSelectAgentModel{
-			AgentID:  "reviewer",
-			Provider: catwalk.Provider{ID: "acme"},
-			Model:    model,
-		})
-		require.NotNil(t, cmd)
-		require.Equal(t, "Reviewer now runs Plain Model for this run", agentModelInfoText(t, cmd()))
+		require.Equal(t, "Reviewer now runs Plain Model for this session", agentModelInfoText(t, cmd()))
 	})
 
 	t.Run("variants open the variant picker instead of applying immediately", func(t *testing.T) {
@@ -1515,20 +1486,25 @@ func TestHandleDialogMsg_ActionSelectAgentModelVariant(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().Config().Return(agentModelTestConfig()).AnyTimes()
-	ws.EXPECT().RecordRecentModel(config.ScopeGlobal, config.SlotMain, config.SelectedModel{Provider: "acme", Model: "fancy"}).Return(nil)
-	ws.EXPECT().SetAgentModelOverride("reviewer", config.SelectedModel{Provider: "acme", Model: "fancy", Variant: "careful"}).Return(nil)
+	model := config.SelectedModel{Provider: "acme", Model: "fancy"}
+	variant := "careful"
+	ws.EXPECT().RecordRecentModel(config.ScopeGlobal, config.SlotMain, model).Return(nil)
+	ws.EXPECT().AgentEditActive(gomock.Any(), "s1", config.ActiveAgentEdit{
+		ForAgent: "reviewer", Model: &model, Variant: &variant,
+	}).Return(workspace.ActiveAgent{}, nil)
 
 	m := newHandleDialogUI(t, ws)
 	m.dialog = dialog.NewOverlay(idOnlyDialog{id: dialog.AgentModelVariantsID})
+	m.session = &session.Session{ID: "s1"}
 
 	cmd := m.handleDialogMsg(dialog.ActionSelectAgentModelVariant{
 		AgentID: "reviewer",
-		Model:   config.SelectedModel{Provider: "acme", Model: "fancy"},
-		Variant: "careful",
+		Model:   model,
+		Variant: variant,
 	})
 	require.False(t, m.dialog.ContainsDialog(dialog.AgentModelVariantsID))
 	require.NotNil(t, cmd)
-	require.Equal(t, "Reviewer now runs Fancy Model (careful) for this run", agentModelInfoText(t, cmd()))
+	require.Equal(t, "Reviewer now runs Fancy Model (careful) for this session", agentModelInfoText(t, cmd()))
 }
 
 func TestHandleDialogMsg_ActionClearAgentModelOverrides(t *testing.T) {
@@ -1536,14 +1512,16 @@ func TestHandleDialogMsg_ActionClearAgentModelOverrides(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
-	ws.EXPECT().ClearAgentModelOverrides().Return(nil)
+	ws.EXPECT().AgentEditActive(gomock.Any(), "s1", config.ActiveAgentEdit{ClearModels: true}).
+		Return(workspace.ActiveAgent{}, nil)
 
 	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
 
 	cmd := m.handleDialogMsg(dialog.ActionClearAgentModelOverrides{})
 	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID))
 	require.NotNil(t, cmd)
-	require.Equal(t, "Agent model overrides cleared", infoText(t, cmd()))
+	require.Equal(t, "Model picks reset for this session", infoText(t, cmd()))
 }
 
 func TestHandleDialogMsg_ActionPermissionResponse(t *testing.T) {

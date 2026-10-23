@@ -243,13 +243,14 @@ func (b *Backend) GetSessionActiveAgent(ctx context.Context, workspaceID, sessio
 		return proto.ActiveAgent{}, err
 	}
 	return proto.ActiveAgent{
-		AgentID:    active.Agent.ID,
-		AgentName:  active.Agent.Name,
-		Slot:       active.Slot,
-		ModelCfg:   model.ModelCfg,
-		CatwalkCfg: model.CatwalkCfg,
-		Think:      model.Think,
-		Variant:    model.Variant,
+		AgentID:     active.Agent.ID,
+		AgentName:   active.Agent.Name,
+		Slot:        active.Slot,
+		ModelCfg:    model.ModelCfg,
+		CatwalkCfg:  model.CatwalkCfg,
+		Think:       model.Think,
+		Variant:     model.Variant,
+		AgentModels: active.AgentModels,
 	}, nil
 }
 

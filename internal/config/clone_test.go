@@ -79,6 +79,9 @@ func TestActiveAgentCloneSharesNothing(t *testing.T) {
 		},
 		Model:       SelectedModel{Provider: "openai", Model: "gpt-4"},
 		VariantPick: &pick,
+		AgentModels: map[string]AgentModelPick{
+			"coder": {Model: SelectedModel{Provider: "openai", Model: "gpt-4"}, Variant: &pick},
+		},
 	}
 
 	clone := orig.Clone()
@@ -96,6 +99,9 @@ func TestActiveAgentCloneSharesNothing(t *testing.T) {
 
 	*clone.VariantPick = "high"
 
+	clone.AgentModels["explore"] = AgentModelPick{Model: SelectedModel{Provider: "groq", Model: "llama"}}
+	*clone.AgentModels["coder"].Variant = "high"
+
 	// Nothing above may be visible through the original.
 	require.True(t, *orig.Agent.Disabled, "Agent.Disabled leaked")
 	require.True(t, *orig.Agent.Hidden, "Agent.Hidden leaked")
@@ -108,6 +114,8 @@ func TestActiveAgentCloneSharesNothing(t *testing.T) {
 	require.NotContains(t, orig.Agent.AllowedMCP.Servers, "gitlab", "AllowedMCP.Servers leaked")
 
 	require.Equal(t, "low", *orig.VariantPick, "VariantPick leaked")
+	require.NotContains(t, orig.AgentModels, "explore", "AgentModels leaked")
+	require.Equal(t, "low", *orig.AgentModels["coder"].Variant, "AgentModels variant leaked")
 }
 
 // TestProviderModelCloneSharesNothing pins the same isolation contract

@@ -618,12 +618,11 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "disable_docker_mcp", "Disable Docker MCP Catalog", "", ActionDisableDockerMCP{}))
 	}
 
-	// Offered only once a "Switch Agent Model" pick exists to clear:
-	// an empty override map means every agent is already on its
-	// configured model, so there would be nothing for the command to
-	// do.
-	if cfg != nil && len(cfg.AgentModelOverrides) > 0 {
-		commands = append(commands, NewCommandItem(c.com.Styles, "clear_agent_model_overrides", "Reset Agent Model Overrides", "", ActionClearAgentModelOverrides{}))
+	// Offered only once the session holds a model pick to clear: an
+	// empty pick table means every agent is already on its configured
+	// model, so there would be nothing for the command to do.
+	if c.active != nil && len(c.active.AgentModels) > 0 {
+		commands = append(commands, NewCommandItem(c.com.Styles, "clear_agent_model_overrides", "Reset Model Picks", "", ActionClearAgentModelOverrides{}))
 	}
 
 	// Sandbox restriction is irreversible for the life of the process, so

@@ -143,48 +143,82 @@ func TestBuildAgentAppliesTemperature(t *testing.T) {
 		"every turn must keep applying the agent's Temperature override")
 }
 
-// TestAgentModelOverrideOutranksAgentConfig pins that a "switch agent
-// model" override reaches buildModel, not just InstantiateAgent in
-// isolation: the override must win over the agent's own configured
-// slot the same way it does at the config layer.
-func TestAgentModelOverrideOutranksAgentConfig(t *testing.T) {
+// pickModelFor sends the edit "Switch Agent Model" sends: a model for
+// agentID, recorded in the session's pick table.
+func pickModelFor(t *testing.T, coord *coordinator, sessionID, agentID, model string) {
+	t.Helper()
+	_, err := coord.EditActiveAgent(t.Context(), sessionID, config.ActiveAgentEdit{
+		ForAgent: agentID,
+		Model:    &config.SelectedModel{Provider: "mock", Model: model},
+	})
+	require.NoError(t, err)
+}
+
+// TestAgentModelPickOutranksAgentConfig pins that a "switch agent
+// model" pick reaches buildModel, and still does after the session's
+// instance is dropped and rebuilt from its record, which is what a
+// restart does.
+func TestAgentModelPickOutranksAgentConfig(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
+	sessionID := newVariantSession(t, coord)
 
 	// The coder is configured to prefer the chore (small) model.
-	require.NoError(t, coord.cfg.SetAgentModelOverride(config.AgentCoder,
-		config.SelectedModel{Provider: "mock", Model: "large-model"}))
+	pickModelFor(t, coord, sessionID, config.AgentCoder, "large-model")
 
-	model, err := coord.buildModel(context.Background(), instantiate(t, coord, config.AgentCoder), false)
-	require.NoError(t, err)
-	require.Equal(t, "large-model", model.ModelCfg.Model,
-		"the override must outrank the agent's own configured slot")
+	for _, stage := range []string{"live", "restored"} {
+		if stage == "restored" {
+			coord.active.forget(sessionID)
+		}
+		active, err := coord.activeAgentFor(t.Context(), sessionID)
+		require.NoError(t, err)
+		model, err := coord.buildModel(context.Background(), active, false)
+		require.NoError(t, err)
+		require.Equal(t, "large-model", model.ModelCfg.Model,
+			"the pick must outrank the agent's own configured slot (%s)", stage)
+	}
 }
 
-// TestAgentModelOverrideReachesSubagentDispatch pins that the override
-// applies to a sub-agent resolved through the agent tool's dispatch
-// path, not just a coordinator's own primary agent: resolveSubagent
-// calls the same InstantiateAgent a primary turn does, so it must see
-// the same override.
-func TestAgentModelOverrideReachesSubagentDispatch(t *testing.T) {
+// TestAgentModelPickReachesSubagentDispatch pins that a pick made for
+// a sub-agent applies when the agent tool dispatches it under that
+// session, not just to the session's own primary agent: resolveSubagent
+// rebuilds the parent from its record and resolves the child under it.
+func TestAgentModelPickReachesSubagentDispatch(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
 
-	require.NoError(t, coord.cfg.SetAgentModelOverride(config.AgentExplore,
-		config.SelectedModel{Provider: "mock", Model: "large-model"}))
+	childID := persistedChildSession(t, coord, config.AgentExplore)
+	child, err := coord.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
 
-	resolved, err := coord.resolveSubagent(context.Background(), config.AgentExplore, "")
+	pickModelFor(t, coord, child.ParentSessionID, config.AgentExplore, "large-model")
+
+	resolved, err := coord.resolveSubagent(context.Background(), config.AgentExplore, childID)
 	require.NoError(t, err)
 	require.Equal(t, "large-model", resolved.Model.ModelCfg.Model,
-		"a sub-agent dispatch must see the same override a primary agent's turn does")
+		"a sub-agent dispatch must see the pick its session made for it")
 }
 
-// TestSessionModelPickOutranksLaterAgentModelOverride pins the other
-// half: a session that already recorded its own model pick keeps it
-// even after a process-level override is set on that same agent
-// afterward. materializeActiveAgent is exercised directly because it
-// is what rebuilds a session's instance from its persisted delta on a
-// cold cache — a fresh load, or a new coordinator after a restart —
-// which is exactly when a stale override could leak in.
-func TestSessionModelPickOutranksLaterAgentModelOverride(t *testing.T) {
+// TestAgentModelPickStaysInItsSession pins the scope of a pick: it is
+// part of one session's record, so a second session keeps resolving the
+// agent's configured model.
+func TestAgentModelPickStaysInItsSession(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	picked := newVariantSession(t, coord)
+	other := newVariantSession(t, coord)
+
+	pickModelFor(t, coord, picked, config.AgentCoder, "large-model")
+
+	otherAgent, err := coord.activeAgentFor(t.Context(), other)
+	require.NoError(t, err)
+	require.Equal(t, "small-model", otherAgent.Model.Model,
+		"a pick made in one session must not reach another")
+	require.Empty(t, otherAgent.AgentModels)
+}
+
+// TestSessionModelPickSurvivesAColdCache pins that the table in the
+// session record alone is enough to rebuild the pick. materializeActiveAgent
+// is what a fresh load, or a new coordinator after a restart, goes
+// through.
+func TestSessionModelPickSurvivesAColdCache(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
 	sessionID := newVariantSession(t, coord)
 
@@ -195,14 +229,10 @@ func TestSessionModelPickOutranksLaterAgentModelOverride(t *testing.T) {
 
 	sess, err := coord.sessions.Get(t.Context(), sessionID)
 	require.NoError(t, err)
-
-	// A process-level override set afterward targets the model the
-	// session just moved away from.
-	require.NoError(t, coord.cfg.SetAgentModelOverride(config.AgentCoder,
-		config.SelectedModel{Provider: "mock", Model: "small-model"}))
+	require.Equal(t, "large-model", sess.ActiveAgent.AgentModels[config.AgentCoder].Model.Model,
+		"switching the running agent's model must land in the same table as switching another agent's")
 
 	agentCfg, err := coord.materializeActiveAgent(sessionID, sess.ActiveAgent)
 	require.NoError(t, err)
-	require.Equal(t, "large-model", agentCfg.Model.Model,
-		"a session's own persisted pick must outrank a process-level override set afterward")
+	require.Equal(t, "large-model", agentCfg.Model.Model)
 }

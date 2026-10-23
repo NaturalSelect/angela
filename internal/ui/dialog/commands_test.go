@@ -351,25 +351,25 @@ func TestDefaultCommands_SwitchAgentModelAlwaysVisible(t *testing.T) {
 }
 
 // TestDefaultCommands_ClearAgentModelOverridesGating verifies "Reset
-// Agent Model Overrides" only appears once some agent actually carries
-// a process-level override to clear.
+// Model Picks" only appears once the session carries a pick to clear.
 func TestDefaultCommands_ClearAgentModelOverridesGating(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no overrides hides the command", func(t *testing.T) {
+	t.Run("no picks hides the command", func(t *testing.T) {
 		t.Parallel()
-		ids := commandIDs(newCommandsForDefaults(t, &config.Config{}, false, nil, nil).defaultCommands())
+		active := &workspace.ActiveAgent{}
+		ids := commandIDs(newCommandsForDefaults(t, &config.Config{}, true, active, nil).defaultCommands())
 		require.NotContains(t, ids, "clear_agent_model_overrides")
 	})
 
-	t.Run("an override reveals the command", func(t *testing.T) {
+	t.Run("a pick reveals the command", func(t *testing.T) {
 		t.Parallel()
-		cfg := &config.Config{
-			AgentModelOverrides: map[string]config.SelectedModel{
-				"coder": {Provider: "acme", Model: "big"},
+		active := &workspace.ActiveAgent{
+			AgentModels: map[string]config.AgentModelPick{
+				"coder": {Model: config.SelectedModel{Provider: "acme", Model: "big"}},
 			},
 		}
-		ids := commandIDs(newCommandsForDefaults(t, cfg, false, nil, nil).defaultCommands())
+		ids := commandIDs(newCommandsForDefaults(t, &config.Config{}, true, active, nil).defaultCommands())
 		require.Contains(t, ids, "clear_agent_model_overrides")
 	})
 }

@@ -20,30 +20,24 @@ definitions:
     properties:
       agent:
         type: string
-      model:
-        allOf:
-        - $ref: '#/definitions/config.SelectedModel'
+      agent_models:
+        additionalProperties:
+          $ref: '#/definitions/config.AgentModelPick'
         description: |-
-          Model is the model the user picked for this session, and is
-          absent when they never picked one — the same reasoning as
-          Variant and Think below: a config default must keep reaching a
-          session that never overrode it.
+          AgentModels holds the model and preset the user picked, keyed
+          by the agent they were picked for. The running agent's own
+          entry is what Switch Model writes; the entries for other
+          agents are what Switch Agent Model writes. It is absent when
+          the user never picked anything: a config default must keep
+          reaching a session that never overrode it.
+        type: object
       think:
         description: |-
           Think is the thinking-mode value the user picked, and is absent
-          when they never touched it, for the same reason Variant is: a
-          model's catalog default must keep reaching a session that never
-          overrode it.
+          when they never touched it, for the same reason AgentModels is
+          sparse: a model's catalog default must keep reaching a session
+          that never overrode it.
         type: boolean
-      variant:
-        description: |-
-          Variant is the preset the user picked, and is absent when they
-          never picked one. The distinction matters: Agent.Variant also
-          holds config-derived defaults, and persisting one of those
-          would freeze it — changing the default in the config file
-          would then never reach this session again. A pointer to the
-          empty string is a real pick, namely backing out of a preset.
-        type: string
     type: object
   config.Agent:
     properties:
@@ -171,6 +165,24 @@ definitions:
     - AgentModeSubagent
     - AgentModeBranch
     - AgentModeCompact
+  config.AgentModelPick:
+    properties:
+      model:
+        allOf:
+        - $ref: '#/definitions/config.SelectedModel'
+        description: |-
+          Model is the model the user picked, and is absent when they
+          only picked a preset: a config default must keep reaching an
+          agent whose model the user never overrode.
+      variant:
+        description: |-
+          Variant is the preset the user picked, and is absent when they
+          never picked one. The distinction matters: Agent.Variant also
+          holds config-derived defaults, and persisting one of those
+          would freeze it. A pointer to the empty string is a real pick,
+          namely backing out of a preset.
+        type: string
+    type: object
   config.AllowedAgentSet:
     properties:
       agents:
@@ -615,20 +627,6 @@ definitions:
     properties:
       $schema:
         type: string
-      agent_model_overrides:
-        additionalProperties:
-          $ref: '#/definitions/config.SelectedModel'
-        description: |-
-          AgentModelOverrides pins an agent to a model (and variant) for
-          the lifetime of this process, set by the "switch agent model"
-          command. It lives only in memory: config writes go through
-          writeConfigFields, which patches named fields in the file and
-          never serializes this one, so a pin never reaches disk and does
-          not survive a restart. ReloadFromDisk replays it from
-          ConfigStore's RuntimeOverrides afterward, the same way slot
-          pins survive a reload. The json tag exists only so a served
-          Config carries the pin to a connected client.
-        type: object
       agents:
         additionalProperties:
           $ref: '#/definitions/config.Agent'
@@ -876,6 +874,10 @@ definitions:
     properties:
       agent_id:
         type: string
+      agent_models:
+        additionalProperties:
+          $ref: '#/definitions/config.AgentModelPick'
+        type: object
       agent_name:
         type: string
       catwalk_cfg:
@@ -895,6 +897,20 @@ definitions:
         description: |-
           Agent, when non-empty, re-instantiates the session on a
           different primary agent.
+        type: string
+      clear_models:
+        description: |-
+          ClearModels drops every model and preset pick the session holds,
+          for every agent, so each one goes back to following the config.
+        type: boolean
+      for_agent:
+        description: |-
+          ForAgent names the agent Model and Variant are picked for. Empty
+          means the agent the session runs once Agent has taken effect,
+          which is all that Switch Model is: Switch Agent Model without a
+          target. Any configured agent may be named, including hidden ones
+          and subagents, since a pick is only ever read when that agent is
+          dispatched.
         type: string
       model:
         allOf:
@@ -1032,13 +1048,6 @@ definitions:
     properties:
       message:
         type: string
-    type: object
-  proto.ConfigAgentModelRequest:
-    properties:
-      agent_id:
-        type: string
-      model:
-        $ref: '#/definitions/config.SelectedModel'
     type: object
   proto.ConfigCompactRequest:
     properties:
@@ -2749,61 +2758,6 @@ paths:
       summary: Get workspace config
       tags:
       - workspaces
-  /workspaces/{id}/config/agent-model:
-    delete:
-      parameters:
-      - description: Workspace ID
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/proto.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/proto.Error'
-      summary: Clear every agent model override
-      tags:
-      - config
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Workspace ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Agent model override request
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/proto.ConfigAgentModelRequest'
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/proto.Error'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/proto.Error'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/proto.Error'
-      summary: Pin an agent to a model for this process
-      tags:
-      - config
   /workspaces/{id}/config/compact:
     post:
       consumes:

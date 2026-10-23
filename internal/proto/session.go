@@ -47,15 +47,18 @@ type Session struct {
 // ActiveAgent is everything the UI needs to name what a session is
 // running: the agent, and the model with the session's parameter
 // preset already folded in. The preset is applied server-side so a
-// client never has to re-derive it and disagree.
+// client never has to re-derive it and disagree. AgentModels is the
+// session's whole model-pick table, keyed by agent, so a client can
+// show what each agent runs on in this session without asking again.
 type ActiveAgent struct {
-	AgentID    string               `json:"agent_id"`
-	AgentName  string               `json:"agent_name"`
-	Slot       config.SlotName      `json:"slot,omitempty"`
-	ModelCfg   config.SelectedModel `json:"model_cfg,omitzero"`
-	CatwalkCfg config.ProviderModel `json:"catwalk_cfg,omitzero"`
-	Think      bool                 `json:"think,omitempty"`
-	Variant    string               `json:"variant,omitempty"`
+	AgentID     string                           `json:"agent_id"`
+	AgentName   string                           `json:"agent_name"`
+	Slot        config.SlotName                  `json:"slot,omitempty"`
+	ModelCfg    config.SelectedModel             `json:"model_cfg,omitzero"`
+	CatwalkCfg  config.ProviderModel             `json:"catwalk_cfg,omitzero"`
+	Think       bool                             `json:"think,omitempty"`
+	Variant     string                           `json:"variant,omitempty"`
+	AgentModels map[string]config.AgentModelPick `json:"agent_models,omitempty"`
 }
 
 // Todo represents a single todo entry on a session in the proto layer.

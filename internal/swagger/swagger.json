@@ -1437,90 +1437,6 @@
                 }
             }
         },
-        "/workspaces/{id}/config/agent-model": {
-            "post": {
-                "consumes": [
-                    "application/json"
-                ],
-                "tags": [
-                    "config"
-                ],
-                "summary": "Pin an agent to a model for this process",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Workspace ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Agent model override request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/proto.ConfigAgentModelRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/proto.Error"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/proto.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/proto.Error"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "tags": [
-                    "config"
-                ],
-                "summary": "Clear every agent model override",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Workspace ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/proto.Error"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/proto.Error"
-                        }
-                    }
-                }
-            }
-        },
         "/workspaces/{id}/config/compact": {
             "post": {
                 "consumes": [
@@ -4608,21 +4524,16 @@
                 "agent": {
                     "type": "string"
                 },
-                "model": {
-                    "description": "Model is the model the user picked for this session, and is\nabsent when they never picked one — the same reasoning as\nVariant and Think below: a config default must keep reaching a\nsession that never overrode it.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.SelectedModel"
-                        }
-                    ]
+                "agent_models": {
+                    "description": "AgentModels holds the model and preset the user picked, keyed\nby the agent they were picked for. The running agent's own\nentry is what Switch Model writes; the entries for other\nagents are what Switch Agent Model writes. It is absent when\nthe user never picked anything: a config default must keep\nreaching a session that never overrode it.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.AgentModelPick"
+                    }
                 },
                 "think": {
-                    "description": "Think is the thinking-mode value the user picked, and is absent\nwhen they never touched it, for the same reason Variant is: a\nmodel's catalog default must keep reaching a session that never\noverrode it.",
+                    "description": "Think is the thinking-mode value the user picked, and is absent\nwhen they never touched it, for the same reason AgentModels is\nsparse: a model's catalog default must keep reaching a session\nthat never overrode it.",
                     "type": "boolean"
-                },
-                "variant": {
-                    "description": "Variant is the preset the user picked, and is absent when they\nnever picked one. The distinction matters: Agent.Variant also\nholds config-derived defaults, and persisting one of those\nwould freeze it — changing the default in the config file\nwould then never reach this session again. A pointer to the\nempty string is a real pick, namely backing out of a preset.",
-                    "type": "string"
                 }
             }
         },
@@ -4735,6 +4646,23 @@
                 "AgentModeBranch",
                 "AgentModeCompact"
             ]
+        },
+        "config.AgentModelPick": {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "description": "Model is the model the user picked, and is absent when they\nonly picked a preset: a config default must keep reaching an\nagent whose model the user never overrode.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.SelectedModel"
+                        }
+                    ]
+                },
+                "variant": {
+                    "description": "Variant is the preset the user picked, and is absent when they\nnever picked one. The distinction matters: Agent.Variant also\nholds config-derived defaults, and persisting one of those\nwould freeze it. A pointer to the empty string is a real pick,\nnamely backing out of a preset.",
+                    "type": "string"
+                }
+            }
         },
         "config.AllowedAgentSet": {
             "type": "object",
@@ -5299,13 +5227,6 @@
                 "$schema": {
                     "type": "string"
                 },
-                "agent_model_overrides": {
-                    "description": "AgentModelOverrides pins an agent to a model (and variant) for\nthe lifetime of this process, set by the \"switch agent model\"\ncommand. It lives only in memory: config writes go through\nwriteConfigFields, which patches named fields in the file and\nnever serializes this one, so a pin never reaches disk and does\nnot survive a restart. ReloadFromDisk replays it from\nConfigStore's RuntimeOverrides afterward, the same way slot\npins survive a reload. The json tag exists only so a served\nConfig carries the pin to a connected client.",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/config.SelectedModel"
-                    }
-                },
                 "agents": {
                     "description": "AgentConfigs holds user-defined agent overrides and custom agents.\nThese are merged over built-in defaults during SetupAgents().",
                     "type": "object",
@@ -5645,6 +5566,12 @@
                 "agent_id": {
                     "type": "string"
                 },
+                "agent_models": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.AgentModelPick"
+                    }
+                },
                 "agent_name": {
                     "type": "string"
                 },
@@ -5670,6 +5597,14 @@
             "properties": {
                 "agent": {
                     "description": "Agent, when non-empty, re-instantiates the session on a\ndifferent primary agent.",
+                    "type": "string"
+                },
+                "clear_models": {
+                    "description": "ClearModels drops every model and preset pick the session holds,\nfor every agent, so each one goes back to following the config.",
+                    "type": "boolean"
+                },
+                "for_agent": {
+                    "description": "ForAgent names the agent Model and Variant are picked for. Empty\nmeans the agent the session runs once Agent has taken effect,\nwhich is all that Switch Model is: Switch Agent Model without a\ntarget. Any configured agent may be named, including hidden ones\nand subagents, since a pick is only ever read when that agent is\ndispatched.",
                     "type": "string"
                 },
                 "model": {
@@ -5854,17 +5789,6 @@
             "properties": {
                 "message": {
                     "type": "string"
-                }
-            }
-        },
-        "proto.ConfigAgentModelRequest": {
-            "type": "object",
-            "properties": {
-                "agent_id": {
-                    "type": "string"
-                },
-                "model": {
-                    "$ref": "#/definitions/config.SelectedModel"
                 }
             }
         },

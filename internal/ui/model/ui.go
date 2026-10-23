@@ -2996,10 +2996,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 	case dialog.ActionSelectAgentModelVariant:
 		m.dialog.CloseDialog(dialog.AgentModelVariantsID)
-		cmds = append(cmds, m.applyAgentModelOverrideCmd(msg.AgentID, msg.Model, msg.Variant))
+		cmds = append(cmds, m.applyAgentModelCmd(msg.AgentID, msg.Model, msg.Variant))
 	case dialog.ActionClearAgentModelOverrides:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, m.clearAgentModelOverridesCmd())
+		cmds = append(cmds, m.clearAgentModelsCmd())
 	case dialog.ActionPermissionResponse:
 		m.dialog.CloseDialog(dialog.PermissionsID)
 		switch msg.Action {
@@ -3471,9 +3471,12 @@ func (m *UI) recordRecentModelCmd(name config.SlotName, model config.SelectedMod
 // agentModelDialogTarget builds the workspace.ActiveAgent the model
 // and variant dialogs highlight against in the "Switch Agent Model"
 // flow: agentID's own instance, not the current session's — the two
-// may differ, and may even run on different slots.
-func agentModelDialogTarget(cfg *config.Config, agentID string) (workspace.ActiveAgent, bool) {
-	active, ok := cfg.InstantiateAgent(agentID)
+// may differ, and may even run on different slots. picks is the
+// current session's model-pick table, so the dialog highlights what
+// the agent runs in this session rather than only what the config
+// says; it may be nil.
+func agentModelDialogTarget(cfg *config.Config, agentID string, picks map[string]config.AgentModelPick) (workspace.ActiveAgent, bool) {
+	active, ok := cfg.InstantiateWith(agentID, picks)
 	if !ok {
 		return workspace.ActiveAgent{}, false
 	}
@@ -3503,7 +3506,7 @@ func (m *UI) handleSelectAgentModelTarget(msg dialog.ActionSelectAgentModelTarge
 	if cfg == nil {
 		return util.ReportError(errors.New("configuration not found"))
 	}
-	target, ok := agentModelDialogTarget(cfg, msg.AgentID)
+	target, ok := agentModelDialogTarget(cfg, msg.AgentID, m.sessionAgentModels())
 	if !ok {
 		return util.ReportError(fmt.Errorf("agent not found: %s", msg.AgentID))
 	}
@@ -3538,7 +3541,7 @@ func (m *UI) handleSelectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 		variants = catwalkModel.VariantNames()
 	}
 	if len(variants) == 0 {
-		return m.applyAgentModelOverrideCmd(msg.AgentID, msg.Model, "")
+		return m.applyAgentModelCmd(msg.AgentID, msg.Model, "")
 	}
 
 	// The agent's current preset only survives the picker opening on
@@ -3546,7 +3549,7 @@ func (m *UI) handleSelectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 	// different model always drops whatever preset was in effect
 	// before, the same rule a session's own pick follows.
 	var current string
-	if target, ok := agentModelDialogTarget(cfg, msg.AgentID); ok &&
+	if target, ok := agentModelDialogTarget(cfg, msg.AgentID, m.sessionAgentModels()); ok &&
 		target.ModelCfg.Provider == msg.Model.Provider && target.ModelCfg.Model == msg.Model.Model {
 		current = target.Variant
 	}
@@ -3561,19 +3564,24 @@ func (m *UI) handleSelectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 	return nil
 }
 
-// applyAgentModelOverrideCmd pins agentID to model+variant for the
-// rest of this process: every future instantiation of that agent — a
-// new session, a subagent dispatch, an internal call — resolves to
-// it. The pin is never written to any config file and survives a
-// config reload; a turn already streaming keeps the instance it
-// started on. When agentID is the agent driving the current session,
-// that session's own instance is also moved onto the pick in the same
-// edit, so the change is visible immediately rather than waiting for
-// the session's next restart.
-func (m *UI) applyAgentModelOverrideCmd(agentID string, model config.SelectedModel, variant string) tea.Cmd {
+// sessionAgentModels returns the current session's model-pick table,
+// or nil when no agent state has been loaded yet.
+func (m *UI) sessionAgentModels() map[string]config.AgentModelPick {
+	if active := m.activeAgent(); active != nil {
+		return active.AgentModels
+	}
+	return nil
+}
+
+// applyAgentModelCmd picks model+variant for agentID in the current
+// session: the session itself, every subagent it dispatches and every
+// internal call it hosts resolve that agent to it from then on. The
+// pick is written into the session's persisted agent state, so it
+// survives a restart, and never reaches any config file or any other
+// session. A turn already streaming keeps the instance it started on.
+// Switch Model is this same edit without a target agent.
+func (m *UI) applyAgentModelCmd(agentID string, model config.SelectedModel, variant string) tea.Cmd {
 	sessionID := m.currentSessionID()
-	active := m.activeAgent()
-	syncSession := active != nil && active.AgentID == agentID
 
 	cfg := m.com.Config()
 	agentName := agentID
@@ -3591,20 +3599,12 @@ func (m *UI) applyAgentModelOverrideCmd(agentID string, model config.SelectedMod
 		variantSuffix = " (" + variant + ")"
 	}
 
-	overrideModel := model
-	overrideModel.Variant = variant
-
 	applyCmd := func() tea.Msg {
-		if err := m.com.Workspace.SetAgentModelOverride(agentID, overrideModel); err != nil {
+		edit := config.ActiveAgentEdit{ForAgent: agentID, Model: &model, Variant: &variant}
+		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
 			return util.ReportError(err)()
 		}
-		if syncSession {
-			edit := config.ActiveAgentEdit{Model: &model, Variant: &variant}
-			if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
-				return util.ReportError(err)()
-			}
-		}
-		return util.NewInfoMsg(fmt.Sprintf("%s now runs %s%s for this run", agentName, modelName, variantSuffix))
+		return util.NewInfoMsg(fmt.Sprintf("%s now runs %s%s for this session", agentName, modelName, variantSuffix))
 	}
 
 	return m.refreshActiveAgentCmd(tea.Sequence(
@@ -3613,16 +3613,18 @@ func (m *UI) applyAgentModelOverrideCmd(agentID string, model config.SelectedMod
 	))
 }
 
-// clearAgentModelOverridesCmd drops every process-level "switch agent
-// model" pin. A turn already streaming on an overridden agent keeps
-// running on it; only the next instantiation of each agent reverts to
+// clearAgentModelsCmd drops every model and preset pick the current
+// session holds. A turn already streaming keeps running on the model it
+// started with; only the next instantiation of each agent reverts to
 // its configured model.
-func (m *UI) clearAgentModelOverridesCmd() tea.Cmd {
+func (m *UI) clearAgentModelsCmd() tea.Cmd {
+	sessionID := m.currentSessionID()
 	return m.refreshActiveAgentCmd(func() tea.Msg {
-		if err := m.com.Workspace.ClearAgentModelOverrides(); err != nil {
+		edit := config.ActiveAgentEdit{ClearModels: true}
+		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
 			return util.ReportError(err)()
 		}
-		return util.NewInfoMsg("Agent model overrides cleared")
+		return util.NewInfoMsg("Model picks reset for this session")
 	})
 }
 

@@ -1,9 +1,7 @@
 package config
 
 import (
-	"context"
-	"os"
-	"path/filepath"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,119 +63,92 @@ func TestValidateAgentModelOverrideRejectsUnknownVariant(t *testing.T) {
 	require.ErrorIs(t, err, ErrAgentOverrideUnknownVariant)
 }
 
-func TestConfigStore_SetAgentModelOverride_ValidatesBeforeApplying(t *testing.T) {
+// TestApplyPicksSkipsAPickThatNoLongerResolves pins the reload
+// behavior: a pick whose model left the catalog must not brick the
+// agent, so it falls back to the configured model, but the entry stays
+// in the table so it takes effect again once the model comes back.
+func TestApplyPicksSkipsAPickThatNoLongerResolves(t *testing.T) {
 	t.Parallel()
 
-	store := &ConfigStore{config: activeTestConfig()}
-
-	err := store.SetAgentModelOverride("ghost", SelectedModel{Provider: "anthropic", Model: "claude"})
-	require.ErrorIs(t, err, ErrAgentOverrideUnknownAgent)
-	require.Empty(t, store.Config().AgentModelOverrides, "a failed validation must not apply the override")
-}
-
-// TestConfigStore_SetAgentModelOverride_PublishesWithoutMutatingPreviousConfig
-// mirrors TestConfigStore_SetupAgentsDoesNotMutatePublishedConfig: a mutator
-// must publish a new Config value rather than writing through the pointer
-// every other reader still holds.
-func TestConfigStore_SetAgentModelOverride_PublishesWithoutMutatingPreviousConfig(t *testing.T) {
-	t.Parallel()
-
-	store := &ConfigStore{config: activeTestConfig()}
-	before := store.Config()
-
-	require.NoError(t, store.SetAgentModelOverride("coder", SelectedModel{Provider: "groq", Model: "llama"}))
-
-	after := store.Config()
-	require.NotSame(t, before, after, "SetAgentModelOverride must publish a new Config value, not mutate the live one")
-	require.Empty(t, before.AgentModelOverrides, "the previously published Config must be left untouched")
-
-	active, ok := after.InstantiateAgent("coder")
+	cfg := activeTestConfig()
+	active, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
-	require.Equal(t, "groq", active.Model.Provider)
-	require.Equal(t, "llama", active.Model.Model)
+
+	variant := "careful"
+	picks := map[string]AgentModelPick{
+		"coder": {Model: SelectedModel{Provider: "ghost", Model: "gone"}, Variant: &variant},
+	}
+	applied, pinned := cfg.ApplyPicks(active, picks)
+
+	require.False(t, pinned)
+	require.Equal(t, "claude", applied.Model.Model, "the agent must fall back to its configured model")
+	require.Nil(t, applied.ModelPick)
+	require.Nil(t, applied.VariantPick, "a preset only means something on the model it was chosen for")
+	require.Equal(t, picks, applied.AgentModels, "the entry must stay in the table")
 }
 
-func TestConfigStore_ClearAgentModelOverrides(t *testing.T) {
+// TestApplyPicksAppliesAPresetOnlyPick pins that a pick naming only a
+// preset moves the preset and leaves the model to the config, and is
+// not reported as a pinned model.
+func TestApplyPicksAppliesAPresetOnlyPick(t *testing.T) {
 	t.Parallel()
 
-	store := &ConfigStore{config: activeTestConfig()}
-	require.NoError(t, store.SetAgentModelOverride("coder", SelectedModel{Provider: "groq", Model: "llama"}))
-	require.NotEmpty(t, store.Config().AgentModelOverrides)
-
-	store.ClearAgentModelOverrides()
-
-	require.Empty(t, store.Config().AgentModelOverrides)
-	active, ok := store.Config().InstantiateAgent("coder")
+	cfg := activeTestConfig()
+	active, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
-	require.Equal(t, "claude", active.Model.Model, "clearing the override must restore the agent's configured model")
+
+	variant := "careful"
+	applied, pinned := cfg.ApplyPicks(active, map[string]AgentModelPick{"coder": {Variant: &variant}})
+
+	require.False(t, pinned, "no model was picked, so inheritance must still apply")
+	require.Equal(t, "claude", applied.Model.Model)
+	require.Nil(t, applied.ModelPick)
+	require.Equal(t, "careful", applied.EffectiveVariant())
 }
 
-// TestAgentModelOverrideSurvivesReloadFromDisk is the agent-override
-// counterpart to TestModelSelectionSurvivesPeerWrite: a reload triggered by
-// an unrelated write to the shared config file (a sibling instance, a token
-// refresh) must not drop a pin this instance made.
-func TestAgentModelOverrideSurvivesReloadFromDisk(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "angela.json")
+// TestActiveAgentStateReadsTheLayoutBeforePicksWereKeyedByAgent pins
+// the upgrade path: a row written when the running agent's model and
+// preset sat at the top level decodes into that agent's entry, and is
+// written back in the current layout only.
+func TestActiveAgentStateReadsTheLayoutBeforePicksWereKeyedByAgent(t *testing.T) {
+	t.Parallel()
 
-	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
-	resetProviderState()
-	t.Cleanup(resetProviderState)
+	legacy := `{"agent":"reviewer","model":{"model":"claude","provider":"anthropic"},"variant":"careful","think":true}`
 
-	require.NoError(t, os.WriteFile(configPath, []byte(twoProviderConfig("openai", "gpt-4")), 0o600))
+	var state ActiveAgentState
+	require.NoError(t, json.Unmarshal([]byte(legacy), &state))
 
-	store, err := Load(dir, dir, false)
+	variant := "careful"
+	think := true
+	require.Equal(t, ActiveAgentState{
+		Agent: "reviewer",
+		AgentModels: map[string]AgentModelPick{
+			"reviewer": {Model: SelectedModel{Provider: "anthropic", Model: "claude"}, Variant: &variant},
+		},
+		Think: &think,
+	}, state)
+
+	written, err := json.Marshal(state)
 	require.NoError(t, err)
-	store.globalDataPath = configPath
-	store.CaptureStalenessSnapshot([]string{configPath})
-
-	require.NoError(t, store.SetAgentModelOverride(AgentCoder, SelectedModel{Provider: "anthropic", Model: "claude-3"}))
-
-	// An unrelated write to the shared config file must not drop the pin.
-	require.NoError(t, os.WriteFile(configPath, []byte(twoProviderConfig("openai", "gpt-4")), 0o600))
-	require.NoError(t, store.ReloadFromDisk(context.Background()))
-
-	active, ok := store.Config().InstantiateAgent(AgentCoder)
-	require.True(t, ok)
-	require.Equal(t, "anthropic", active.Model.Provider)
-	require.Equal(t, "claude-3", active.Model.Model)
+	require.JSONEq(t, `{
+		"agent": "reviewer",
+		"agent_models": {"reviewer": {"model": {"model": "claude", "provider": "anthropic"}, "variant": "careful"}},
+		"think": true
+	}`, string(written))
 }
 
-// TestAgentModelOverrideDroppedWhenItNoLongerResolvesAfterReload pins the
-// other half: a pin that reload can no longer validate — here because the
-// provider it named disappeared from the file — must not survive as a
-// pin to nothing.
-func TestAgentModelOverrideDroppedWhenItNoLongerResolvesAfterReload(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "angela.json")
+// TestActiveAgentStateKeepsTheNewLayoutEntryOverTheLegacyFields pins
+// that when a row somehow carries both layouts, the keyed entry wins.
+func TestActiveAgentStateKeepsTheNewLayoutEntryOverTheLegacyFields(t *testing.T) {
+	t.Parallel()
 
-	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
-	resetProviderState()
-	t.Cleanup(resetProviderState)
-
-	require.NoError(t, os.WriteFile(configPath, []byte(twoProviderConfig("openai", "gpt-4")), 0o600))
-
-	store, err := Load(dir, dir, false)
-	require.NoError(t, err)
-	store.globalDataPath = configPath
-	store.CaptureStalenessSnapshot([]string{configPath})
-
-	require.NoError(t, store.SetAgentModelOverride(AgentCoder, SelectedModel{Provider: "anthropic", Model: "claude-3"}))
-
-	// The config file is rewritten without the anthropic provider at all,
-	// as if the user removed it while this instance still held the pin.
-	openAIOnly := `{
-		"slots": {"main": {"provider": "openai", "model": "gpt-4"}},
-		"providers": {"openai": {"api_key": "test-key", "models": [{"id": "gpt-4", "name": "GPT-4"}]}}
+	both := `{
+		"agent": "reviewer",
+		"model": {"model": "old", "provider": "old"},
+		"agent_models": {"reviewer": {"model": {"model": "claude", "provider": "anthropic"}}}
 	}`
-	require.NoError(t, os.WriteFile(configPath, []byte(openAIOnly), 0o600))
-	require.NoError(t, store.ReloadFromDisk(context.Background()))
 
-	require.Empty(t, store.Config().AgentModelOverrides,
-		"an override that no longer resolves must be dropped, not silently kept")
-	active, ok := store.Config().InstantiateAgent(AgentCoder)
-	require.True(t, ok)
-	require.Equal(t, "openai", active.Model.Provider, "the agent must fall back to its configured model")
+	var state ActiveAgentState
+	require.NoError(t, json.Unmarshal([]byte(both), &state))
+	require.Equal(t, "claude", state.AgentModels["reviewer"].Model.Model)
 }

@@ -65,6 +65,12 @@ const (
 	// 5+10+20+40+80 = 155s before the error reaches the user.
 	streamMaxRetries = 5
 
+	// summaryMaxAttempts bounds how many times Summarize asks the compact
+	// agent for a summary when its answer comes back without the
+	// <summary> wrapper. The provider-level retries above never see
+	// that failure, since the request itself succeeded.
+	summaryMaxAttempts = 3
+
 	// attachmentOnlyPrompt substitutes for the current turn's prompt text
 	// when the user sends attachments with no typed message: fantasy's
 	// Agent.Stream rejects an empty prompt whenever files are attached.
@@ -1894,7 +1900,7 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 	retryModel := &atomic.Pointer[fantasy.LanguageModel]{}
 	retryModel.Store(&compact.Model.Model)
 
-	resp, err := agent.Stream(genCtx, fantasy.AgentStreamCall{
+	streamCall := fantasy.AgentStreamCall{
 		Prompt:          summaryPromptText,
 		Messages:        aiMsgs,
 		Headers:         sessionHeaders(sessionID),
@@ -1928,43 +1934,55 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 			summaryMessage.AppendContent(text)
 			return a.messages.Update(genCtx, summaryMessage)
 		},
-	})
-	if err != nil {
-		isCancelErr := errors.Is(err, context.Canceled)
-		if isCancelErr {
-			// User cancelled summarize we need to remove the summary
-			// message. Return the cancellation itself (joined with any
-			// delete failure) rather than swallowing it as success:
-			// the caller (Run, for the auto-compaction path) needs a
-			// non-nil, context.Canceled-wrapping error so it (a) drops
-			// the internal resume entry instead of treating it as
-			// still pending, and (b) reports this turn's RunComplete
-			// as cancelled instead of a silent success.
-			deleteErr := a.messages.Delete(ctx, summaryMessage.ID)
-			return nil, errors.Join(context.Canceled, deleteErr)
-		}
-		// Mark the summary message as finished with an error so the UI
-		// stops spinning.
-		summaryMessage.AddFinish(message.FinishReasonError, "Summarization Error", err.Error())
-		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
-			return nil, updateErr
-		}
-		return nil, err
 	}
 
-	if resp.Response.FinishReason == fantasy.FinishReasonLength {
-		// Accepting this as SummaryMessageID would make the truncated text
-		// the session's only memory of everything before it, discarding
-		// the rest of the history the summary was supposed to preserve.
-		summaryMessage.AddFinish(message.FinishReasonMaxTokens, "Summarization Error", "the summary hit the output token limit before it finished")
-		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
-			return nil, updateErr
+	var (
+		resp      *fantasy.AgentResult
+		extracted string
+	)
+	for attempt := 1; ; attempt++ {
+		resp, err = agent.Stream(genCtx, streamCall)
+		if err != nil {
+			isCancelErr := errors.Is(err, context.Canceled)
+			if isCancelErr {
+				// User cancelled summarize we need to remove the summary
+				// message. Return the cancellation itself (joined with any
+				// delete failure) rather than swallowing it as success:
+				// the caller (Run, for the auto-compaction path) needs a
+				// non-nil, context.Canceled-wrapping error so it (a) drops
+				// the internal resume entry instead of treating it as
+				// still pending, and (b) reports this turn's RunComplete
+				// as cancelled instead of a silent success.
+				deleteErr := a.messages.Delete(ctx, summaryMessage.ID)
+				return nil, errors.Join(context.Canceled, deleteErr)
+			}
+			// Mark the summary message as finished with an error so the UI
+			// stops spinning.
+			summaryMessage.AddFinish(message.FinishReasonError, "Summarization Error", err.Error())
+			if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
+				return nil, updateErr
+			}
+			return nil, err
 		}
-		return nil, errors.New("summarization hit the output token limit")
-	}
 
-	extracted, ok := extractSummaryTag(summaryMessage.Content().Text)
-	if !ok {
+		if resp.Response.FinishReason == fantasy.FinishReasonLength {
+			// Accepting this as SummaryMessageID would make the truncated text
+			// the session's only memory of everything before it, discarding
+			// the rest of the history the summary was supposed to preserve.
+			// Not retried: the same prompt hits the same output cap again.
+			summaryMessage.AddFinish(message.FinishReasonMaxTokens, "Summarization Error", "the summary hit the output token limit before it finished")
+			if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
+				return nil, updateErr
+			}
+			return nil, errors.New("summarization hit the output token limit")
+		}
+
+		var ok bool
+		extracted, ok = extractSummaryTag(summaryMessage.Content().Text)
+		if ok {
+			break
+		}
+
 		// A model can ignore the compact prompt entirely and just keep
 		// doing the task in plain prose, still finishing with a clean
 		// end_turn. Nothing above would catch that: it isn't a length
@@ -1973,11 +1991,21 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 		// apart, and reject the ones that aren't a summary — instead
 		// of adopting arbitrary task output as SummaryMessageID and
 		// permanently discarding everything before it.
-		summaryMessage.AddFinish(message.FinishReasonError, "Summarization Error", "the model's response was not wrapped in "+summaryTagOpen+" tags")
-		if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
+		if attempt >= summaryMaxAttempts {
+			summaryMessage.AddFinish(message.FinishReasonError, "Summarization Error", "the model's response was not wrapped in "+summaryTagOpen+" tags")
+			if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
+				return nil, updateErr
+			}
+			return nil, errors.New("summarization output missing " + summaryTagOpen + " tags")
+		}
+
+		// NOTE: Only the final attempt's text stays on the message, so the
+		// retry does not concatenate onto the rejected output.
+		slog.Warn("Summary was not wrapped in tags, retrying", "session_id", sessionID, "attempt", attempt, "max_attempts", summaryMaxAttempts)
+		summaryMessage.ResetStreamedContent()
+		if updateErr := a.messages.Update(genCtx, summaryMessage); updateErr != nil {
 			return nil, updateErr
 		}
-		return nil, errors.New("summarization output missing " + summaryTagOpen + " tags")
 	}
 	summaryMessage.SetContent(extracted)
 

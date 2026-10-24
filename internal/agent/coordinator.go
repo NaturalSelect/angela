@@ -233,6 +233,10 @@ type coordinator struct {
 	notify      pubsub.Publisher[notify.Notification]
 	runComplete pubsub.Publisher[notify.RunComplete]
 	interactive bool
+	// noBranchAgents refuses branch forks and background agents even in an
+	// interactive session, for front ends that cannot hand a conversation
+	// to a sub-session.
+	noBranchAgents bool
 
 	currentAgent SessionAgent
 	subagents    *subagentRegistry
@@ -309,6 +313,9 @@ type CoordinatorOptions struct {
 	Images       images.Service
 	ImageSupport func() bool
 	Interactive  bool
+	// NoBranchAgents disables branch agents and background agents while
+	// leaving the other interactive tools, such as question, available.
+	NoBranchAgents bool
 }
 
 func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, error) {
@@ -350,6 +357,7 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		images:         opts.Images,
 		imageSupport:   opts.ImageSupport,
 		interactive:    opts.Interactive,
+		noBranchAgents: opts.NoBranchAgents,
 	}
 
 	// No agent is bound here. Which agent drives a turn is read from
@@ -2971,6 +2979,10 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 func (c *coordinator) branchForkRefusal(caller config.Agent, depth int) string {
 	if !c.interactive {
 		return "A branch hands the conversation to the user, so it needs an interactive session. " +
+			"Dispatch a regular subagent instead."
+	}
+	if c.noBranchAgents {
+		return "This front end cannot hand the conversation to a branch. " +
 			"Dispatch a regular subagent instead."
 	}
 	if depth > 0 && caller.Mode != config.AgentModeBranch {

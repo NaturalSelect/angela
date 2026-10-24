@@ -89,6 +89,13 @@ type RuntimeOverrides struct {
 	// editing tools (via the --disable-image-tools flag), on top of
 	// whatever options.disable_image_tools already says.
 	DisableImageTools bool
+	// NonInteractive starts the coder agent without interactive-only tools
+	// such as question, for front ends that cannot ask the user anything.
+	NonInteractive bool
+	// NoBranchAgents keeps branch agents and background agents off even
+	// when the session is interactive, for front ends that cannot hand a
+	// conversation over to a sub-session.
+	NoBranchAgents bool
 	// Env is the environment of the client that requested this
 	// workspace, as KEY=VALUE strings. It is nil in local mode, where
 	// this process's own os.Getenv already reflects the terminal the

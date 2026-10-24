@@ -616,6 +616,8 @@ func TestDiscoverBuiltin(t *testing.T) {
 			require.NotEmpty(t, s.Description)
 			require.NotEmpty(t, s.Instructions)
 			require.True(t, s.Builtin)
+			require.True(t, s.UserInvocable, "the walkthrough must stay reachable as a /command")
+			require.True(t, s.DisableModelInvocation, "the model must not load the walkthrough on its own")
 		}
 	}
 	require.True(t, foundWalkthrough, "builtin-code-walkthrough builtin skill not found")

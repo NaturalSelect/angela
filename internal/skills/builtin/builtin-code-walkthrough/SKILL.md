@@ -7,6 +7,8 @@ description: >-
   refactor, or review. Applies whenever the intent is understanding existing
   code, even if the word "walkthrough" is never used. Not for a single symbol
   lookup, debugging one specific failure, or planning a change.
+user-invocable: true
+disable-model-invocation: true
 ---
 
 # Code Walkthrough

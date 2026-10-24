@@ -113,10 +113,10 @@ func clonePicks(picks map[string]AgentModelPick) map[string]AgentModelPick {
 
 // ActiveAgentState is the persisted, session-scoped delta of an
 // ActiveAgent: which agent it runs and which models the user actually
-// picked for which agents, if any. The agent definition itself is deliberately
-// absent — prompts, tools and permissions are re-read from the config
-// files on every load so a session never runs a stale copy of them.
-// The slot a model happens to run on is absent for the same reason:
+// picked for which agents, if any. The agent definition itself is
+// deliberately absent — prompts, tools and permissions are re-read from
+// the config files on every load so a session never runs a stale copy of
+// them. The slot a model happens to run on is absent for the same reason:
 // it is implementation-detail plumbing that InstantiateAgent always
 // derives fresh from the config, never a user choice worth freezing
 // here.

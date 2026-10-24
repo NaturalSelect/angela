@@ -1267,7 +1267,11 @@ func (c *coordinator) saveActiveAgent(ctx context.Context, sessionID string, sta
 // keeps following that default until it picks something of its own.
 // A session naming an agent config has since removed, disabled or
 // hidden falls back the same way — erroring there would strand the
-// session with no way to type the command that fixes it.
+// session with no way to type the command that fixes it. The fallback
+// still carries the session's pick table: the picks it holds for other
+// agents are read when it dispatches them, and the next edit writes
+// the table back from this instance, so dropping it here would erase
+// them for good.
 func (c *coordinator) materializeActiveAgent(sessionID string, state config.ActiveAgentState) (config.ActiveAgent, error) {
 	cfg := c.cfg.Config()
 
@@ -1279,7 +1283,12 @@ func (c *coordinator) materializeActiveAgent(sessionID string, state config.Acti
 	}
 	slog.Warn("Session points at an agent that is no longer available; falling back to the default",
 		"sessionID", sessionID, "agent", state.Agent)
-	return defaultAgentInstance(cfg)
+	fallback, err := defaultAgentInstance(cfg)
+	if err != nil {
+		return config.ActiveAgent{}, err
+	}
+	fallback, _ = cfg.ApplyPicks(fallback, state.AgentModels)
+	return fallback, nil
 }
 
 // defaultAgentInstance builds the agent instance a session runs before

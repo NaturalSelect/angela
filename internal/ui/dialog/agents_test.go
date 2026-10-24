@@ -81,7 +81,7 @@ func TestNewAgents_RequiresAPrimaryAgent(t *testing.T) {
 func TestSwitchableAgents_FiltersHiddenAndSubagents(t *testing.T) {
 	t.Parallel()
 
-	agents := switchableAgents(agentsTestConfig())
+	agents := config.SwitchableAgents(agentsTestConfig())
 
 	ids := make([]string, len(agents))
 	for i, a := range agents {

@@ -1,16 +1,20 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -471,5 +475,67 @@ func TestAppWorkspace_ListAllUserMessages(t *testing.T) {
 
 		_, err := fx.ws.ListAllUserMessages(t.Context())
 		require.ErrorIs(t, err, boom)
+	})
+}
+
+type eventsProbe struct{ name string }
+
+func TestAppWorkspace_Events(t *testing.T) {
+	t.Parallel()
+
+	newWorkspace := func(t *testing.T) (*AppWorkspace, *app.App) {
+		t.Helper()
+		a := app.NewForTest(t.Context())
+		t.Cleanup(a.ShutdownForTest)
+		return NewAppWorkspace(a, nil), a
+	}
+	next := func(t *testing.T, ch <-chan pubsub.Event[tea.Msg]) (pubsub.Event[tea.Msg], bool) {
+		t.Helper()
+		select {
+		case ev, ok := <-ch:
+			return ev, ok
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "timed out waiting for an event")
+			return pubsub.Event[tea.Msg]{}, false
+		}
+	}
+
+	t.Run("every subscriber receives every event", func(t *testing.T) {
+		t.Parallel()
+		ws, a := newWorkspace(t)
+		first := ws.Events(t.Context())
+		second := ws.Events(t.Context())
+
+		a.SendEvent(eventsProbe{name: "one"})
+
+		for _, ch := range []<-chan pubsub.Event[tea.Msg]{first, second} {
+			ev, ok := next(t, ch)
+			require.True(t, ok)
+			require.Equal(t, pubsub.UpdatedEvent, ev.Type)
+			require.Equal(t, eventsProbe{name: "one"}, ev.Payload)
+		}
+	})
+
+	t.Run("cancelling one subscription leaves the others running", func(t *testing.T) {
+		t.Parallel()
+		ws, a := newWorkspace(t)
+		cancelledCtx, cancel := context.WithCancel(t.Context())
+		cancelled := ws.Events(cancelledCtx)
+		kept := ws.Events(t.Context())
+
+		cancel()
+		require.Eventually(t, func() bool {
+			select {
+			case _, ok := <-cancelled:
+				return !ok
+			default:
+				return false
+			}
+		}, 5*time.Second, 5*time.Millisecond, "a cancelled subscription must close its channel")
+
+		a.SendEvent(eventsProbe{name: "after"})
+		ev, ok := next(t, kept)
+		require.True(t, ok)
+		require.Equal(t, eventsProbe{name: "after"}, ev.Payload)
 	})
 }

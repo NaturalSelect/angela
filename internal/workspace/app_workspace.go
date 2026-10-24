@@ -21,6 +21,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/proto"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -658,6 +659,12 @@ func (w *AppWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) err
 
 func (w *AppWorkspace) Subscribe(program *tea.Program) {
 	w.app.Subscribe(program)
+}
+
+// NOTE: Each call gets its own subscription, and the channel closes when ctx
+// ends.
+func (w *AppWorkspace) Events(ctx context.Context) <-chan pubsub.Event[tea.Msg] {
+	return w.app.Events(ctx)
 }
 
 func (w *AppWorkspace) Shutdown() {

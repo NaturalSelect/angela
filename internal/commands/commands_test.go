@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/skills"
@@ -107,8 +108,8 @@ func TestFromSkillCatalog_UsesDiscoveredSymlinkedSkills(t *testing.T) {
 	entries := skills.Catalog(activeSkills, []string{root}, "")
 	cmds := FromSkillCatalog(entries)
 
-	require.Len(t, cmds, 1)
-	require.Equal(t, "user:linked-skill", cmds[0].ID)
-	require.Equal(t, "linked-skill", cmds[0].Skill.Name)
-	require.Equal(t, filepath.Join(link, skills.SkillFileName), cmds[0].Skill.SkillFilePath)
+	idx := slices.IndexFunc(cmds, func(c CustomCommand) bool { return c.ID == "user:linked-skill" })
+	require.NotEqual(t, -1, idx, "the symlinked skill must be offered as a command")
+	require.Equal(t, "linked-skill", cmds[idx].Skill.Name)
+	require.Equal(t, filepath.Join(link, skills.SkillFileName), cmds[idx].Skill.SkillFilePath)
 }

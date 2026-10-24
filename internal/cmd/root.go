@@ -92,6 +92,7 @@ func init() {
 		loginCmd,
 		statsCmd,
 		sessionCmd,
+		acpCmd,
 	)
 }
 
@@ -384,7 +385,32 @@ func permissionModeFromFlags(cmd *cobra.Command) permission.PermissionMode {
 
 // setupLocalWorkspace creates an in-process app.App and wraps it in an
 // AppWorkspace.
-func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
+// sandboxResolver builds the sandbox config once the workspace's data
+// directory and permission rules are known. It reports false when no
+// sandbox was requested.
+type sandboxResolver func(workingDir, dataDir string, permissions *config.Permissions) (sandbox.Config, bool, error)
+
+// localWorkspaceOptions is everything openLocalWorkspace needs, so callers
+// other than the cobra commands can build a workspace too.
+type localWorkspaceOptions struct {
+	Cwd               string
+	DataDir           string
+	Debug             bool
+	PermissionMode    permission.PermissionMode
+	YoloMerge         bool
+	NoVSCodeDiff      bool
+	DisableImageTools bool
+	NoDockerSandbox   bool
+	Channels          []string
+	Sandbox           sandboxResolver
+	// NonInteractive and NoBranchAgents are zero for the TUI. Only a front
+	// end that cannot ask questions or hand a conversation to a branch sets
+	// them.
+	NonInteractive bool
+	NoBranchAgents bool
+}
+
+func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspaceOptions {
 	debug, _ := cmd.Flags().GetBool("debug")
 	yoloMerge, _ := cmd.Flags().GetBool("yolo-merge")
 	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
@@ -392,25 +418,55 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 	noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox")
-	ctx := cmd.Context()
 
+	return localWorkspaceOptions{
+		Cwd:               cwd,
+		DataDir:           dataDir,
+		Debug:             debug,
+		PermissionMode:    permissionModeFromFlags(cmd),
+		YoloMerge:         yoloMerge,
+		NoVSCodeDiff:      noVSCodeDiff,
+		DisableImageTools: disableImageTools,
+		NoDockerSandbox:   noDockerSandbox,
+		Channels:          channels,
+		Sandbox: func(workingDir, dataDir string, permissions *config.Permissions) (sandbox.Config, bool, error) {
+			return sandboxConfigFromFlags(cmd, workingDir, dataDir, permissions)
+		},
+	}
+}
+
+// setupLocalWorkspace creates an in-process app.App and wraps it in an
+// AppWorkspace.
+func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error) {
 	cwd, err := ResolveCwd(cmd)
 	if err != nil {
 		return nil, nil, err
 	}
+	ws, cleanup, err := openLocalWorkspace(cmd.Context(), localWorkspaceOptionsFromFlags(cmd, cwd))
+	if err != nil {
+		return nil, nil, err
+	}
+	return ws, cleanup, nil
+}
 
-	store, err := config.Init(cwd, dataDir, debug)
+// openLocalWorkspace builds an AppWorkspace for o.Cwd. The returned cleanup
+// shuts the app down, which AppWorkspace.Shutdown does as well.
+func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspace.AppWorkspace, func(), error) {
+	store, err := config.Init(o.Cwd, o.DataDir, o.Debug)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	cfg := store.Config()
-	store.Overrides().PermissionMode = permissionModeFromFlags(cmd)
-	store.Overrides().EnabledChannels = channels
-	store.Overrides().NoDockerSandbox = noDockerSandbox
-	store.Overrides().YoloMerge = yoloMerge
-	store.Overrides().NoVSCodeDiff = noVSCodeDiff
-	store.Overrides().DisableImageTools = disableImageTools
+	overrides := store.Overrides()
+	overrides.PermissionMode = o.PermissionMode
+	overrides.EnabledChannels = o.Channels
+	overrides.NoDockerSandbox = o.NoDockerSandbox
+	overrides.YoloMerge = o.YoloMerge
+	overrides.NoVSCodeDiff = o.NoVSCodeDiff
+	overrides.DisableImageTools = o.DisableImageTools
+	overrides.NonInteractive = o.NonInteractive
+	overrides.NoBranchAgents = o.NoBranchAgents
 
 	if err := os.MkdirAll(cfg.Options.DataDirectory, 0o700); err != nil {
 		return nil, nil, fmt.Errorf("failed to create data directory: %q %w", cfg.Options.DataDirectory, err)
@@ -428,13 +484,15 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	// yet, so entering any earlier would leave the still-missing
 	// data directory unprotected. Both backends restrict the running
 	// process in place and return normally on success.
-	sandboxCfg, sandboxEnabled, err := sandboxConfigFromFlags(cmd, cwd, cfg.Options.DataDirectory, cfg.Permissions)
-	if err != nil {
-		return nil, nil, err
-	}
-	if sandboxEnabled {
-		if err := sandbox.New(noDockerSandbox).EnterSandbox(sandboxCfg); err != nil {
-			return nil, nil, fmt.Errorf("failed to enter sandbox: %w", err)
+	if o.Sandbox != nil {
+		sandboxCfg, sandboxEnabled, err := o.Sandbox(o.Cwd, cfg.Options.DataDirectory, cfg.Permissions)
+		if err != nil {
+			return nil, nil, err
+		}
+		if sandboxEnabled {
+			if err := sandbox.New(o.NoDockerSandbox).EnterSandbox(sandboxCfg); err != nil {
+				return nil, nil, fmt.Errorf("failed to enter sandbox: %w", err)
+			}
 		}
 	}
 
@@ -445,7 +503,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 		}
 	}
 
-	if err := projects.Register(cwd, cfg.Options.DataDirectory); err != nil {
+	if err := projects.Register(o.Cwd, cfg.Options.DataDirectory); err != nil {
 		slog.Warn("Failed to register project", "error", err)
 	}
 
@@ -455,7 +513,7 @@ func setupLocalWorkspace(cmd *cobra.Command) (workspace.Workspace, func(), error
 	}
 
 	logFile := filepath.Join(cfg.Options.DataDirectory, "logs", "angela.log")
-	angelalog.Setup(logFile, debug)
+	angelalog.Setup(logFile, o.Debug)
 
 	// Discover skills once before app.New. Local mode hosts a single
 	// workspace per process, so WithGlobalMirror keeps the package

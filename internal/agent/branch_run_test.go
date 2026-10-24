@@ -950,11 +950,12 @@ func TestBranchForkRefusal(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		interactive bool
-		caller      config.Agent
-		depth       int
-		refused     []string
+		name           string
+		interactive    bool
+		noBranchAgents bool
+		caller         config.Agent
+		depth          int
+		refused        []string
 	}{
 		{
 			name:        "a headless run cannot fork",
@@ -969,6 +970,14 @@ func TestBranchForkRefusal(t *testing.T) {
 			caller:      config.Agent{Mode: config.AgentModeBranch},
 			depth:       1,
 			refused:     []string{"interactive", "subagent instead"},
+		},
+		{
+			name:           "a front end without branches refuses even when interactive",
+			interactive:    true,
+			noBranchAgents: true,
+			caller:         config.Agent{Mode: config.AgentModePrimary},
+			depth:          0,
+			refused:        []string{"front end", "subagent instead"},
 		},
 		{
 			name:        "the top-level conversation may fork",
@@ -1011,6 +1020,7 @@ func TestBranchForkRefusal(t *testing.T) {
 			env := testEnv(t)
 			c := branchCoordinator(t, env)
 			c.interactive = tt.interactive
+			c.noBranchAgents = tt.noBranchAgents
 
 			refusal := strings.ToLower(c.branchForkRefusal(tt.caller, tt.depth))
 			if len(tt.refused) == 0 {

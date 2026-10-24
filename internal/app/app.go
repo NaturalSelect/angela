@@ -251,7 +251,7 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 		slog.Warn("No agent configuration found")
 		return app, nil
 	}
-	if err := app.InitCoderAgent(ctx); err != nil {
+	if err := app.initCoderAgent(ctx, !store.Overrides().NonInteractive); err != nil {
 		return nil, fmt.Errorf("failed to initialize coder agent: %w", err)
 	}
 
@@ -783,6 +783,8 @@ func (app *App) initCoderAgent(ctx context.Context, interactive bool) error {
 		Images:       app.Images,
 		ImageSupport: app.ClientImageSupported,
 		Interactive:  interactive,
+
+		NoBranchAgents: app.config.Overrides().NoBranchAgents,
 	})
 	if err != nil {
 		slog.Error("Failed to create coder agent", "err", err)

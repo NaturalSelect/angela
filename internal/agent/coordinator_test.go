@@ -37,6 +37,7 @@ type mockSessionAgent struct {
 	cancelled  []string
 	cleared    []string
 	summarized []string
+	compacted  []resolvedAgent
 	cancelAll  int
 }
 
@@ -66,8 +67,9 @@ func newMockSessionAgent(t *testing.T, agentID string, runFunc func(context.Cont
 		return taken
 	}).AnyTimes()
 	a.EXPECT().Summarize(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, sessionID string, _ resolvedAgent, _ fantasy.ProviderOptions, _ func(context.Context, *fantasy.ProviderError) error) error {
+		func(_ context.Context, sessionID string, compact resolvedAgent, _ fantasy.ProviderOptions, _ func(context.Context, *fantasy.ProviderError) error) error {
 			a.summarized = append(a.summarized, sessionID)
+			a.compacted = append(a.compacted, compact)
 			return nil
 		}).AnyTimes()
 	return a

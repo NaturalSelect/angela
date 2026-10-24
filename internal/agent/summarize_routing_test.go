@@ -34,3 +34,26 @@ func TestSummarizeRoutesToTheSubAgentExecutor(t *testing.T) {
 	require.NoError(t, coord.Summarize(t.Context(), childID))
 	require.Equal(t, []string{childID}, child.summarized)
 }
+
+// TestSummarizeInAChildHonorsItsDispatchersPicks pins that summarizing a
+// child by hand compacts with the same model automatic compaction in that
+// child uses, picks made by the session that dispatched it included.
+func TestSummarizeInAChildHonorsItsDispatchersPicks(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+
+	parent, err := coord.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	childID := coord.sessions.CreateAgentToolSessionID("msg-1", "call-1")
+	_, err = coord.sessions.CreateTaskSession(t.Context(), childID, parent.ID, "explore run")
+	require.NoError(t, err)
+
+	child := newMockSessionAgent(t, config.AgentExplore, nil)
+	coord.registerSubagentRoute(childID, config.AgentExplore, child)
+
+	pickModelFor(t, coord, parent.ID, config.AgentCompact, "small-model")
+
+	require.NoError(t, coord.Summarize(t.Context(), childID))
+	require.Len(t, child.compacted, 1)
+	require.Equal(t, "small-model", child.compacted[0].Model.ModelCfg.Model,
+		"the compact agent must follow the pick the child's dispatcher made for it")
+}

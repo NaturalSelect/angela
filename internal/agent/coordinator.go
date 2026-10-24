@@ -1324,13 +1324,17 @@ func (c *coordinator) editActiveAgent(
 // fails the edit.
 func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (config.ActiveAgent, error) {
 	if edit.IsZero() {
-		return c.activeAgentFor(ctx, sessionID)
+		return c.runningInstance(ctx, sessionID)
 	}
 	cfg := c.cfg.Config()
 	if edit.Agent != "" {
 		if err := checkPrimaryAgent(cfg, edit.Agent); err != nil {
 			return config.ActiveAgent{}, err
 		}
+	}
+	scope, err := c.scopeFor(ctx, sessionID)
+	if err != nil {
+		return config.ActiveAgent{}, err
 	}
 
 	var (
@@ -1339,15 +1343,23 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 		agentID  string
 		result   config.ActiveAgent
 	)
-	err := c.editActiveAgent(ctx, sessionID, func(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
+	err = c.active.editState(ctx, sessionID, c.activeIO(), func(record config.ActiveAgentState, stored config.ActiveAgent) (config.ActiveAgentState, bool, error) {
+		current := stored
+		if scope.child {
+			resolved, ok := scope.resolve(cfg, record)
+			if !ok {
+				return config.ActiveAgentState{}, false, fmt.Errorf("%w: agent %q is no longer configured", ErrSubSessionNotResumable, scope.agentID)
+			}
+			current = resolved
+		}
 		result = current
-		next, moved, err := applyActiveAgentEdit(cfg, current, edit)
+		next, nextRecord, moved, err := applyActiveAgentEdit(cfg, scope, current, record, edit)
 		if err != nil || !moved.any() {
-			return current, false, err
+			return config.ActiveAgentState{}, false, err
 		}
 		model, err := c.buildModel(ctx, next, false)
 		if err != nil {
-			return current, false, fmt.Errorf("resolve the session's model: %w", err)
+			return config.ActiveAgentState{}, false, fmt.Errorf("resolve the session's model: %w", err)
 		}
 		// An unknown preset is an error here, where the user is
 		// watching and can pick again; per-turn resolution stays
@@ -1357,10 +1369,10 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 		// them here would block a model switch merely because the
 		// agent's configured default is absent from the new model.
 		if v := next.VariantPick; v != nil && *v != "" && !slices.Contains(model.CatwalkCfg.VariantNames(), *v) {
-			return current, false, fmt.Errorf("%w: %q on %q", ErrVariantNotAvailable, *v, model.ModelCfg.Model)
+			return config.ActiveAgentState{}, false, fmt.Errorf("%w: %q on %q", ErrVariantNotAvailable, *v, model.ModelCfg.Model)
 		}
 		change, switched, agentID, result = moved, model, next.Agent.ID, next
-		return next, true, nil
+		return nextRecord, true, nil
 	})
 	if err != nil {
 		return config.ActiveAgent{}, err
@@ -1505,9 +1517,15 @@ func (ch activeAgentChange) trail(model Model) []string {
 	return lines
 }
 
-// applyActiveAgentEdit folds an edit into an instance and reports what
+// applyActiveAgentEdit folds an edit into a session and reports what
 // moved. It is pure: the validation that needs a built model happens in
 // the caller, once, on the result.
+//
+// current is the instance the session runs and record is the state its
+// row holds. For a top-level session they say the same thing. For a
+// child, current also carries what its dispatcher picked, so an edit is
+// judged against current but written onto record alone: the returned
+// record holds only picks made in the child.
 //
 // Model and preset choices all land in the session's pick table, keyed
 // by agent: Model and Variant act on edit.ForAgent, or on the agent the
@@ -1521,15 +1539,28 @@ func (ch activeAgentChange) trail(model Model) []string {
 // Switching agent takes the new agent's own pick, if the session made
 // one, and otherwise its configured model, rather than carrying the old
 // model across: an agent's model is part of what the user picked when
-// they picked the agent.
-func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit config.ActiveAgentEdit) (config.ActiveAgent, activeAgentChange, error) {
+// they picked the agent. A child cannot switch: the agent it runs is the
+// one that was dispatched into it.
+func applyActiveAgentEdit(
+	cfg *config.Config,
+	scope sessionScope,
+	current config.ActiveAgent,
+	record config.ActiveAgentState,
+	edit config.ActiveAgentEdit,
+) (config.ActiveAgent, config.ActiveAgentState, activeAgentChange, error) {
 	var change activeAgentChange
 	state := current.State()
+	if scope.child {
+		state = scope.ownState(record)
+	}
 
 	if edit.Agent != "" && edit.Agent != current.Agent.ID {
+		if scope.child {
+			return current, record, change, fmt.Errorf("%w: %q cannot replace the agent dispatched into a child session", ErrAgentNotAvailable, edit.Agent)
+		}
 		agent, ok := cfg.Agents[edit.Agent]
 		if !ok {
-			return current, change, fmt.Errorf("%w: %q", ErrAgentNotAvailable, edit.Agent)
+			return current, record, change, fmt.Errorf("%w: %q", ErrAgentNotAvailable, edit.Agent)
 		}
 		// A thinking pick belongs to the agent it was made on, so a
 		// fresh switch starts from the new agent's own default.
@@ -1544,36 +1575,70 @@ func applyActiveAgentEdit(cfg *config.Config, current config.ActiveAgent, edit c
 	}
 
 	if edit.Model != nil || edit.Variant != nil {
-		picks, err := applyPickEdit(cfg, state, edit, &change)
+		picks, err := applyPickEdit(cfg, scope, state, edit, &change)
 		if err != nil {
-			return current, change, err
+			return current, record, change, err
 		}
 		state.AgentModels = picks
 	}
 
-	next, ok := cfg.Restore(state)
+	next, ok := scope.resolve(cfg, state)
 	if !ok {
-		return current, change, fmt.Errorf("%w: %q", ErrAgentNotAvailable, state.Agent)
+		return current, record, change, fmt.Errorf("%w: %q", ErrAgentNotAvailable, state.Agent)
 	}
 
 	if think, ok := thinkAfter(edit, next.Think); ok {
 		next.Think = think
 		pick := think
 		next.ThinkPick = &pick
+		state.Think = &pick
 		change.thinkMoved = true
 	}
 
-	return next.Clone(), change, nil
+	// A reset clears the child's own picks only. Those it inherits
+	// belong to the session that made them, so a reset with nothing of
+	// the child's own to clear has to say so rather than report success.
+	if edit.ClearModels && !change.any() && len(scope.inherited()) > 0 {
+		return current, record, change, errPicksInherited
+	}
+
+	if len(state.AgentModels) == 0 {
+		state.AgentModels = nil
+	}
+	return next.Clone(), state, change, nil
 }
+
+// errPicksInherited reports a reset that has nothing to reset in the
+// session it was asked of, because every pick that applies there was
+// made by the session that dispatched it.
+var errPicksInherited = errors.New("these model picks were made in the session that started this one; reset them there")
 
 // applyPickEdit folds the Model and Variant of an edit into the pick
 // table of state and returns the new table. state.Agent is already the
 // agent the session will run, so an edit without a target lands on it.
-func applyPickEdit(cfg *config.Config, state config.ActiveAgentState, edit config.ActiveAgentEdit, change *activeAgentChange) (map[string]config.AgentModelPick, error) {
+//
+// state holds the session's own picks and the table returned is what
+// gets written, so a child's inherited picks never enter it. They are
+// consulted when asking what an agent runs now, which is what a pick is
+// compared against.
+func applyPickEdit(cfg *config.Config, scope sessionScope, state config.ActiveAgentState, edit config.ActiveAgentEdit, change *activeAgentChange) (map[string]config.AgentModelPick, error) {
 	targetID := cmp.Or(edit.ForAgent, state.Agent)
 	isCurrent := targetID == state.Agent
 
-	target, ok := cfg.InstantiateWith(targetID, state.AgentModels)
+	instantiate := func(picks map[string]config.AgentModelPick) (config.ActiveAgent, bool) {
+		switch {
+		case !scope.child:
+			return cfg.InstantiateWith(targetID, picks)
+		case isCurrent:
+			own := state
+			own.AgentModels = picks
+			return scope.resolve(cfg, own)
+		default:
+			return cfg.InstantiateWith(targetID, overlayPicks(scope.inherited(), picks))
+		}
+	}
+
+	target, ok := instantiate(state.AgentModels)
 	if !ok {
 		if isCurrent {
 			return nil, fmt.Errorf("%w: %q", ErrAgentNotAvailable, targetID)
@@ -1611,7 +1676,7 @@ func applyPickEdit(cfg *config.Config, state config.ActiveAgentState, edit confi
 
 	if edit.Variant != nil {
 		picks = withPick(picks, targetID, pick)
-		target, _ = cfg.InstantiateWith(targetID, picks)
+		target, _ = instantiate(picks)
 
 		// Compared against the effective preset, not the agent's raw
 		// field: a slot can be supplying one while the field reads
@@ -2310,7 +2375,7 @@ func (c *coordinator) DefaultModel() Model {
 // the model resolved from it. An empty sessionID reports the draft
 // instance the landing page edits before any session exists.
 func (c *coordinator) ActiveAgent(ctx context.Context, sessionID string) (config.ActiveAgent, Model, error) {
-	active, err := c.activeAgentFor(ctx, sessionID)
+	active, err := c.runningInstance(ctx, sessionID)
 	if err != nil {
 		return config.ActiveAgent{}, Model{}, err
 	}
@@ -2373,7 +2438,7 @@ func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 	// provider this call talks to. Taking the provider from the
 	// primary model instead would refresh credentials for one provider
 	// and then send the request to another.
-	active, err := c.activeAgentFor(ctx, sessionID)
+	active, err := c.runningInstance(ctx, sessionID)
 	if err != nil {
 		return err
 	}

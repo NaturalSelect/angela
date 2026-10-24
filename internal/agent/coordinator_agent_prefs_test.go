@@ -219,30 +219,212 @@ func TestPickMadeInAChildSessionReachesItsNextTurn(t *testing.T) {
 		"a pick made in the child session must change the child's next turn")
 }
 
-// TestChildPickOutranksItsDispatchersPick pins the precedence between
-// the two tables a child resolves from: when both name the same agent,
-// the child's own entry wins.
-func TestChildPickOutranksItsDispatchersPick(t *testing.T) {
-	coord := newModelPrefTestCoordinator(t, nil)
-	childID := persistedChildSession(t, coord, config.AgentExplore)
+// exploreChild creates an explore child session and returns it together
+// with the session that dispatched it.
+func exploreChild(t *testing.T, coord *coordinator) (parentID, childID string) {
+	t.Helper()
+	childID = persistedChildSession(t, coord, config.AgentExplore)
 	child, err := coord.sessions.Get(t.Context(), childID)
 	require.NoError(t, err)
+	return child.ParentSessionID, childID
+}
 
-	pickModelFor(t, coord, child.ParentSessionID, config.AgentExplore, "small-model")
-	// Written straight to the row: through an edit, picking the model the
-	// child already shows is a no-op, and large-model is what explore
-	// shows by default.
-	require.NoError(t, coord.sessions.UpdateActiveAgent(t.Context(), childID, config.ActiveAgentState{
-		Agent: config.AgentExplore,
-		AgentModels: map[string]config.AgentModelPick{
-			config.AgentExplore: {Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
-		},
-	}))
+// TestChildPickOutranksItsDispatchersPick pins the precedence between
+// the two tables a child resolves from: when both name the same agent,
+// the child's own entry wins, and the child's row holds that entry
+// alone rather than a copy of what its dispatcher picked.
+func TestChildPickOutranksItsDispatchersPick(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	parentID, childID := exploreChild(t, coord)
+
+	pickModelFor(t, coord, parentID, config.AgentExplore, "small-model")
+	pickModelFor(t, coord, parentID, config.AgentGeneral, "small-model")
+
+	_, err := coord.EditActiveAgent(t.Context(), childID, switchModelEdit("large-model"))
+	require.NoError(t, err)
 
 	resolved, err := coord.resolveSubagent(t.Context(), config.AgentExplore, childID)
 	require.NoError(t, err)
 	require.Equal(t, "large-model", resolved.Model.ModelCfg.Model,
 		"the child's own pick must outrank the one its dispatcher made for the same agent")
+
+	stored, err := coord.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, map[string]config.AgentModelPick{
+		config.AgentExplore: {Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
+	}, stored.ActiveAgent.AgentModels,
+		"the child's row must hold only what was picked in the child, not its dispatcher's table")
+}
+
+// TestChildShowsTheModelItRuns pins that the instance a child session
+// reports is the one its next turn runs as, picks made by its dispatcher
+// included.
+func TestChildShowsTheModelItRuns(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	parentID, childID := exploreChild(t, coord)
+	pickModelFor(t, coord, parentID, config.AgentExplore, "small-model")
+
+	active, model, err := coord.ActiveAgent(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, "small-model", model.ModelCfg.Model,
+		"the header must show the model the next turn runs on")
+	require.Contains(t, active.AgentModels, config.AgentExplore,
+		"the dialogs highlight against the table that applies to the child")
+
+	turn, err := coord.turnExecutorFor(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, model.ModelCfg.Model, turn.resolved.Model.ModelCfg.Model)
+}
+
+// TestPickingTheModelAChildAlreadyRunsRecordsNothing pins that an edit
+// in a child is judged against what the child runs, not against what
+// its own row alone would resolve to.
+func TestPickingTheModelAChildAlreadyRunsRecordsNothing(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	parentID, childID := exploreChild(t, coord)
+	pickModelFor(t, coord, parentID, config.AgentExplore, "small-model")
+
+	_, err := coord.EditActiveAgent(t.Context(), childID, switchModelEdit("small-model"))
+	require.NoError(t, err)
+
+	stored, err := coord.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
+	require.Empty(t, stored.ActiveAgent.AgentModels,
+		"the child already runs this model, so there is nothing to record")
+}
+
+// TestPresetOnlyPickInAChildKeepsItsDispatchersModel pins that choosing
+// a preset in a child does not move the child off the model its
+// dispatcher picked for it.
+func TestPresetOnlyPickInAChildKeepsItsDispatchersModel(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	setChoreVariants(t, coord, map[string]config.SelectedModelOverride{
+		"deep": {MaxTokens: ptrTo(int64(32000))},
+	})
+	parentID, childID := exploreChild(t, coord)
+	pickModelFor(t, coord, parentID, config.AgentExplore, "small-model")
+
+	require.NoError(t, coord.SwitchVariant(t.Context(), childID, "deep"))
+
+	turn, err := coord.turnExecutorFor(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, "small-model", turn.resolved.Model.ModelCfg.Model,
+		"a preset-only pick must leave the model to the dispatcher's pick")
+	require.Equal(t, int64(32000), turn.resolved.Model.CatwalkCfg.DefaultMaxTokens,
+		"the preset must reach the model it was picked on")
+}
+
+// TestToggleThinkInAChildStartsFromWhatItRuns pins that a relative
+// thinking edit in a child flips the value the child actually runs
+// with, which an agent on the inherited slot takes from its dispatcher.
+func TestToggleThinkInAChildStartsFromWhatItRuns(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	inheriting := coord.cfg.Config().Agents[config.AgentExplore]
+	inheriting.Slot = config.SlotInherited
+	coord.cfg.Config().Agents[config.AgentExplore] = inheriting
+	parentID, childID := exploreChild(t, coord)
+
+	_, err := coord.EditActiveAgent(t.Context(), parentID, config.ActiveAgentEdit{Think: ptrTo(true)})
+	require.NoError(t, err)
+
+	active, err := coord.EditActiveAgent(t.Context(), childID, config.ActiveAgentEdit{ToggleThink: true})
+	require.NoError(t, err)
+	require.False(t, active.Think, "the child runs with thinking on, so a toggle turns it off")
+
+	turn, err := coord.turnExecutorFor(t.Context(), childID)
+	require.NoError(t, err)
+	require.False(t, turn.resolved.Model.Think)
+}
+
+// TestResetInAChildClearsOnlyItsOwnPicks pins what a reset can reach
+// from a child: the picks made there. Those made by the session that
+// dispatched it are that session's to reset.
+func TestResetInAChildClearsOnlyItsOwnPicks(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	parentID, childID := exploreChild(t, coord)
+	pickModelFor(t, coord, parentID, config.AgentExplore, "small-model")
+
+	_, err := coord.EditActiveAgent(t.Context(), childID, config.ActiveAgentEdit{ClearModels: true})
+	require.ErrorIs(t, err, errPicksInherited,
+		"a reset with nothing of the child's own to clear must say so, not report success")
+
+	_, err = coord.EditActiveAgent(t.Context(), childID, switchModelEdit("large-model"))
+	require.NoError(t, err)
+	_, err = coord.EditActiveAgent(t.Context(), childID, config.ActiveAgentEdit{ClearModels: true})
+	require.NoError(t, err)
+
+	stored, err := coord.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
+	require.Empty(t, stored.ActiveAgent.AgentModels)
+
+	active, model, err := coord.ActiveAgent(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, "small-model", model.ModelCfg.Model,
+		"the dispatcher's pick still applies once the child's own is gone")
+	require.Contains(t, active.AgentModels, config.AgentExplore)
+
+	parent, err := coord.sessions.Get(t.Context(), parentID)
+	require.NoError(t, err)
+	require.Contains(t, parent.ActiveAgent.AgentModels, config.AgentExplore,
+		"a reset in the child must not reach the session that dispatched it")
+}
+
+// TestAChildCannotSwitchAgent pins that the agent a child runs is the
+// one dispatched into it. Its route binds it to that agent, so a switch
+// recorded on its row could not take effect in this process and would
+// take effect after a restart.
+func TestAChildCannotSwitchAgent(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	_, childID := exploreChild(t, coord)
+
+	_, err := coord.EditActiveAgent(t.Context(), childID, config.ActiveAgentEdit{Agent: config.AgentCoder})
+	require.ErrorIs(t, err, ErrAgentNotAvailable)
+
+	stored, err := coord.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, config.AgentExplore, stored.Agent)
+}
+
+// TestOverlayPicksMergesEachPickFieldByField pins how a child's entry
+// is laid over its dispatcher's: the preset is always the child's, since
+// it only means something on the model it was picked for, while a pick
+// that names no model leaves the model to the dispatcher.
+func TestOverlayPicksMergesEachPickFieldByField(t *testing.T) {
+	t.Parallel()
+
+	small := config.SelectedModel{Provider: "mock", Model: "small-model"}
+	large := config.SelectedModel{Provider: "mock", Model: "large-model"}
+	deep, high, baseline := "deep", "high", ""
+
+	tests := []struct {
+		name string
+		base config.AgentModelPick
+		over config.AgentModelPick
+		want config.AgentModelPick
+	}{
+		{"preset only keeps the model", config.AgentModelPick{Model: small}, config.AgentModelPick{Variant: &deep}, config.AgentModelPick{Model: small, Variant: &deep}},
+		{"preset only replaces the preset", config.AgentModelPick{Model: small, Variant: &deep}, config.AgentModelPick{Variant: &high}, config.AgentModelPick{Model: small, Variant: &high}},
+		{"preset only can back out of a preset", config.AgentModelPick{Model: small, Variant: &deep}, config.AgentModelPick{Variant: &baseline}, config.AgentModelPick{Model: small, Variant: &baseline}},
+		{"model only drops the preset of the model it replaces", config.AgentModelPick{Model: small, Variant: &deep}, config.AgentModelPick{Model: large}, config.AgentModelPick{Model: large}},
+		{"model and preset replace both", config.AgentModelPick{Model: small, Variant: &deep}, config.AgentModelPick{Model: large, Variant: &high}, config.AgentModelPick{Model: large, Variant: &high}},
+		{"nothing to inherit", config.AgentModelPick{}, config.AgentModelPick{Variant: &deep}, config.AgentModelPick{Variant: &deep}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			base := map[string]config.AgentModelPick{"explore": tt.base, "general": {Model: small}}
+			over := map[string]config.AgentModelPick{"explore": tt.over}
+
+			got := overlayPicks(base, over)
+
+			require.Equal(t, tt.want, got["explore"])
+			require.Equal(t, config.AgentModelPick{Model: small}, got["general"],
+				"an agent the child never picked for keeps its dispatcher's pick")
+			require.Equal(t, tt.base, base["explore"], "the dispatcher's table must not be edited")
+			require.Equal(t, tt.over, over["explore"], "the child's table must not be edited")
+		})
+	}
 }
 
 // TestAgentModelPickStaysInItsSession pins the scope of a pick: it is

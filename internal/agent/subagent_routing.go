@@ -223,27 +223,119 @@ func (c *coordinator) resolveSubagent(ctx context.Context, agentID string, sessi
 // resolution, and InstantiateUnder's own coder-slot fallback is a
 // perfectly good answer when the live chain cannot be rebuilt.
 func (c *coordinator) instanceFor(ctx context.Context, sessionID string) config.ActiveAgent {
-	route, routed, err := c.routeFor(ctx, sessionID)
+	active, err := c.runningInstance(ctx, sessionID)
 	if err != nil {
 		return config.ActiveAgent{}
 	}
+	return active
+}
+
+// runningInstance is the instance sessionID's next turn runs as, and the
+// one the session reports as its own. A top-level session's is what its
+// record says. A child's is its agent instantiated under the session
+// that dispatched it, with the child's own record laid over that, so what
+// a child shows, what an edit in it is judged against and what its next
+// turn runs on are one answer.
+//
+// The error is for a session whose instance cannot be rebuilt: one that
+// cannot be read, or a child whose agent has left config. instanceFor
+// turns those into a zero instance for the callers that can do without.
+func (c *coordinator) runningInstance(ctx context.Context, sessionID string) (config.ActiveAgent, error) {
+	route, routed, err := c.routeFor(ctx, sessionID)
+	if err != nil {
+		return config.ActiveAgent{}, err
+	}
 	if !routed {
-		active, err := c.activeAgentFor(ctx, sessionID)
-		if err != nil {
-			return config.ActiveAgent{}
-		}
-		return active
+		return c.activeAgentFor(ctx, sessionID)
 	}
 
 	sess, err := c.sessions.Get(ctx, sessionID)
 	if err != nil {
-		return config.ActiveAgent{}
+		return config.ActiveAgent{}, fmt.Errorf("%w: %w", ErrSubSessionNotResumable, err)
 	}
 	active, ok := c.childInstance(ctx, route.agentID, sess)
 	if !ok {
-		return config.ActiveAgent{}
+		return config.ActiveAgent{}, fmt.Errorf("%w: agent %q is no longer configured", ErrSubSessionNotResumable, route.agentID)
 	}
-	return active
+	return active, nil
+}
+
+// sessionScope is what a session's own record is laid over. A top-level
+// session runs exactly what its record says. A child also runs under the
+// session that dispatched it, whose picks reach it, and under the agent
+// its route binds it to, whatever its record says.
+//
+// The record and the instance are different things for a child, and an
+// edit must keep them apart: the instance carries the dispatcher's picks,
+// and writing it back would copy them onto the child's row, where they
+// would outrank every pick the dispatcher makes later.
+type sessionScope struct {
+	child      bool
+	agentID    string
+	dispatcher config.ActiveAgent
+}
+
+// scopeFor describes the scope sessionID runs in.
+func (c *coordinator) scopeFor(ctx context.Context, sessionID string) (sessionScope, error) {
+	route, routed, err := c.routeFor(ctx, sessionID)
+	if err != nil {
+		return sessionScope{}, err
+	}
+	if !routed {
+		return sessionScope{}, nil
+	}
+	sess, err := c.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return sessionScope{}, fmt.Errorf("%w: %w", ErrSubSessionNotResumable, err)
+	}
+	return c.childScope(ctx, route.agentID, sess), nil
+}
+
+// childScope describes the scope a child session runs in.
+func (c *coordinator) childScope(ctx context.Context, agentID string, child session.Session) sessionScope {
+	return sessionScope{
+		child:      true,
+		agentID:    agentID,
+		dispatcher: c.instanceFor(ctx, child.ParentSessionID),
+	}
+}
+
+// inherited is the pick table the session's own is laid over.
+func (s sessionScope) inherited() map[string]config.AgentModelPick {
+	return s.dispatcher.AgentModels
+}
+
+// ownState is the state an edit in a child starts from: its record,
+// naming the agent its route binds it to, with the pick table copied so
+// an edit that fails leaves the cached record alone.
+func (s sessionScope) ownState(record config.ActiveAgentState) config.ActiveAgentState {
+	record.Agent = s.agentID
+	record.AgentModels = maps.Clone(record.AgentModels)
+	return record
+}
+
+// resolve builds the instance record describes in this scope, and
+// reports false when the agent it names is no longer configured.
+//
+// A child's own picks are laid over its dispatcher's, one agent at a
+// time, and its thinking flag applies only if it made a pick of its own.
+func (s sessionScope) resolve(cfg *config.Config, record config.ActiveAgentState) (config.ActiveAgent, bool) {
+	if !s.child {
+		return cfg.Restore(record)
+	}
+
+	dispatcher := s.dispatcher
+	dispatcher.AgentModels = overlayPicks(dispatcher.AgentModels, record.AgentModels)
+	active, ok := cfg.InstantiateUnder(s.agentID, dispatcher)
+	if !ok {
+		return config.ActiveAgent{}, false
+	}
+	if record.Think != nil {
+		pick := *record.Think
+		active.Think = pick
+		active.ThinkPick = &pick
+	}
+	return active, true
 }
 
 // childInstance builds the instance a child session's agent runs as: the
@@ -252,37 +344,36 @@ func (c *coordinator) instanceFor(ctx context.Context, sessionID string) config.
 //
 // The child's own record matters because a user can talk to a child
 // directly, as in a branch, and Switch Model or Switch Agent Model there
-// are written to the child's row and nowhere else. Its pick table is laid
-// over the dispatcher's, entry by entry, with the child's entry winning
-// as a whole: a preset only means something on the model it was picked
-// for, so the two halves of a pick never come from different tables.
-// The thinking flag is the child's own pick for the same reason.
+// are written to the child's row and nowhere else.
 func (c *coordinator) childInstance(ctx context.Context, agentID string, child session.Session) (config.ActiveAgent, bool) {
-	dispatcher := c.instanceFor(ctx, child.ParentSessionID)
-	dispatcher.AgentModels = overlayPicks(dispatcher.AgentModels, child.ActiveAgent.AgentModels)
-
-	active, ok := c.cfg.Config().InstantiateUnder(agentID, dispatcher)
-	if !ok {
-		return config.ActiveAgent{}, false
-	}
-	if think := child.ActiveAgent.Think; think != nil {
-		pick := *think
-		active.Think = pick
-		active.ThinkPick = &pick
-	}
-	return active, true
+	return c.childScope(ctx, agentID, child).resolve(c.cfg.Config(), child.ActiveAgent)
 }
 
-// overlayPicks returns base with over's entries winning, leaving both
-// inputs untouched.
+// overlayPicks returns base with over laid over it, one agent at a time,
+// leaving both inputs untouched.
 func overlayPicks(base, over map[string]config.AgentModelPick) map[string]config.AgentModelPick {
 	if len(over) == 0 {
 		return base
 	}
 	merged := make(map[string]config.AgentModelPick, len(base)+len(over))
 	maps.Copy(merged, base)
-	maps.Copy(merged, over)
+	for agentID, pick := range over {
+		merged[agentID] = overlayPick(base[agentID], pick)
+	}
 	return merged
+}
+
+// overlayPick lays over on base. A pick that names a model stands on its
+// own, because a preset only means something on the model it was picked
+// for. A pick that names only a preset changes the preset and leaves the
+// model to base: the user asked for a different way to call the model
+// they were running, not for a different model.
+func overlayPick(base, over config.AgentModelPick) config.AgentModelPick {
+	if over.Model.Provider != "" && over.Model.Model != "" {
+		return over
+	}
+	over.Model = base.Model
+	return over
 }
 
 // dispatchedState is what a newly created child session records about
@@ -324,7 +415,7 @@ func (c *coordinator) dispatchDepth(ctx context.Context, sessionID string) int {
 // sub-run. The second result reports whether sessionID is a child session at
 // all; a false with no error means the caller should take the normal path.
 func (c *coordinator) routeFor(ctx context.Context, sessionID string) (subagentRoute, bool, error) {
-	if !c.sessions.IsAgentToolSession(sessionID) {
+	if sessionID == draftSessionID || !c.sessions.IsAgentToolSession(sessionID) {
 		return subagentRoute{}, false, nil
 	}
 	if route, ok := c.subagentRoutes.Get(sessionID); ok {

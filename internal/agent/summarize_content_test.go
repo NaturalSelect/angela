@@ -250,7 +250,7 @@ func TestSummarizeRejectsOutputMissingSummaryTags(t *testing.T) {
 		Return(streamOf([]string{
 			"The article content was fetched successfully. ",
 			"Now adding it to the mcp configuration in angela.json.",
-		}, fantasy.FinishReasonStop), nil)
+		}, fantasy.FinishReasonStop), nil).Times(summaryMaxAttempts)
 
 	compact := resolvedAgent{
 		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
@@ -263,6 +263,61 @@ func TestSummarizeRejectsOutputMissingSummaryTags(t *testing.T) {
 	require.NoError(t, getErr)
 	require.Empty(t, updated.SummaryMessageID,
 		"a rejected summary must never become the session's SummaryMessageID — that would discard everything before it")
+}
+
+// TestSummarizeRetriesWhenSummaryTagsAreMissing pins that a response
+// without the <summary> wrapper is asked for again instead of failing
+// the compaction outright, and that the rejected text does not leak
+// into the summary that is finally adopted.
+func TestSummarizeRetriesWhenSummaryTagsAreMissing(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sessID := seedSession(t, sa, env)
+
+	compactModel := newMockLanguageModel(t)
+	gomock.InOrder(
+		compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"rambling plain prose, no tags"}, fantasy.FinishReasonStop), nil),
+		compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			Return(streamOf([]string{"<summary>", "the real summary", "</summary>"}, fantasy.FinishReasonStop), nil),
+	)
+
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
+		SystemPrompt: "summarize",
+	}
+	require.NoError(t, sa.Summarize(t.Context(), sessID, compact, nil, nil))
+
+	updated, err := env.sessions.Get(t.Context(), sessID)
+	require.NoError(t, err)
+	require.NotEmpty(t, updated.SummaryMessageID)
+	summaryMsg, err := env.messages.Get(t.Context(), updated.SummaryMessageID)
+	require.NoError(t, err)
+	require.Equal(t, "the real summary", summaryMsg.Content().Text,
+		"text from the rejected attempt must not be concatenated onto the retried summary")
+	require.Equal(t, message.FinishReasonEndTurn, summaryMsg.FinishReason())
+}
+
+// TestSummarizeDoesNotRetryTokenLimit pins that a summary cut off by the
+// output cap is not asked for again: the same prompt would hit the same
+// cap, so a retry only burns more tokens before reporting the failure.
+func TestSummarizeDoesNotRetryTokenLimit(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sessID := seedSession(t, sa, env)
+
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		Return(streamOf([]string{"<summary>cut off"}, fantasy.FinishReasonLength), nil).Times(1)
+
+	compact := resolvedAgent{
+		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 4096}}},
+		SystemPrompt: "summarize",
+		MaxTokens:    4096,
+	}
+	require.Error(t, sa.Summarize(t.Context(), sessID, compact, nil, nil))
 }
 
 // TestRejectedSummaryIsExcludedFromModelContext pins that the text of a
@@ -279,7 +334,7 @@ func TestRejectedSummaryIsExcludedFromModelContext(t *testing.T) {
 	const junk = "Claude Opus 4.6 is no longer available. Please switch to Claude Opus 5.5."
 	compactModel := newMockLanguageModel(t)
 	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		Return(streamOf([]string{junk}, fantasy.FinishReasonStop), nil)
+		Return(streamOf([]string{junk}, fantasy.FinishReasonStop), nil).Times(summaryMaxAttempts)
 
 	compact := resolvedAgent{
 		Model:        Model{Model: compactModel, CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ContextWindow: 200000, DefaultMaxTokens: 10000}}},
@@ -407,7 +462,7 @@ func TestSummarizeAppendsSummaryTagInstructionForAnyCompactAgent(t *testing.T) {
 			// This agent ignores the instruction and just keeps
 			// doing the task instead of summarizing it.
 			return streamOf([]string{"done installing the thing, no summary here"}, fantasy.FinishReasonStop), nil
-		})
+		}).Times(summaryMaxAttempts)
 
 	// A custom compact agent unrelated to the built-in summary.md
 	// template, standing in for a host agent whose CompactAgent points

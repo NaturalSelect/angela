@@ -2,6 +2,7 @@ version: "2"
 linters:
   enable:
     - bodyclose
+    - depguard
     # - exhaustive
     # - goconst
     # - godot
@@ -29,6 +30,17 @@ linters:
     - errcheck
     - ineffassign
     - unused
+  settings:
+    depguard:
+      rules:
+        acp-sdk:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/internal/acp/caelis/**"
+          deny:
+            - pkg: github.com/caelis-labs/acp-go-sdk
+              desc: only internal/acp/caelis may import the ACP SDK
   exclusions:
     generated: lax
     presets:

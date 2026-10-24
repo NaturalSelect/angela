@@ -2607,7 +2607,7 @@ func (c *coordinator) prepareSubAgentSession(ctx context.Context, params subAgen
 	// Record which sub-agent owns this session. Without it the session is
 	// only addressable for as long as this process lives, and a later one
 	// has no identity to resume it under.
-	if err := c.sessions.UpdateActiveAgent(ctx, sess.ID, params.Resolved.Host.State()); err != nil {
+	if err := c.sessions.UpdateActiveAgent(ctx, sess.ID, dispatchedState(params.Resolved.Host)); err != nil {
 		slog.Warn(
 			"Failed to record the sub-agent on its session",
 			"session", sess.ID,
@@ -2740,7 +2740,7 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	c.registerSubagentRoute(session.ID, params.Resolved.ID, params.Agent)
 	c.permissions.RegisterChild(session.ID, params.SessionID)
 
-	if err := c.sessions.UpdateActiveAgent(ctx, session.ID, params.Resolved.Host.State()); err != nil {
+	if err := c.sessions.UpdateActiveAgent(ctx, session.ID, dispatchedState(params.Resolved.Host)); err != nil {
 		slog.Warn(
 			"Failed to record the branch agent on its session",
 			"session", session.ID,

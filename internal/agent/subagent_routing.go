@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 
 	"charm.land/fantasy"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/session"
 )
 
 // ErrSubSessionNotResumable is returned when a child session cannot be tied
@@ -188,11 +190,15 @@ func (c *coordinator) turnExecutorFor(ctx context.Context, sessionID string) (tu
 // failing the turn; InstantiateUnder's own coder-slot fallback is a
 // perfectly good answer when the live chain cannot be rebuilt.
 func (c *coordinator) resolveSubagent(ctx context.Context, agentID string, sessionID string) (resolvedAgent, error) {
-	var parent config.ActiveAgent
+	var (
+		active config.ActiveAgent
+		ok     bool
+	)
 	if sess, err := c.sessions.Get(ctx, sessionID); err == nil {
-		parent = c.instanceFor(ctx, sess.ParentSessionID)
+		active, ok = c.childInstance(ctx, agentID, sess)
+	} else {
+		active, ok = c.cfg.Config().InstantiateUnder(agentID, config.ActiveAgent{})
 	}
-	active, ok := c.cfg.Config().InstantiateUnder(agentID, parent)
 	if !ok {
 		return resolvedAgent{}, fmt.Errorf("%w: agent %q is no longer configured", ErrSubSessionNotResumable, agentID)
 	}
@@ -233,12 +239,62 @@ func (c *coordinator) instanceFor(ctx context.Context, sessionID string) config.
 	if err != nil {
 		return config.ActiveAgent{}
 	}
-	parent := c.instanceFor(ctx, sess.ParentSessionID)
-	active, ok := c.cfg.Config().InstantiateUnder(route.agentID, parent)
+	active, ok := c.childInstance(ctx, route.agentID, sess)
 	if !ok {
 		return config.ActiveAgent{}
 	}
 	return active
+}
+
+// childInstance builds the instance a child session's agent runs as: the
+// agent instantiated under the session that dispatched it, then the
+// choices the user made in the child itself laid over that.
+//
+// The child's own record matters because a user can talk to a child
+// directly, as in a branch, and Switch Model or Switch Agent Model there
+// are written to the child's row and nowhere else. Its pick table is laid
+// over the dispatcher's, entry by entry, with the child's entry winning
+// as a whole: a preset only means something on the model it was picked
+// for, so the two halves of a pick never come from different tables.
+// The thinking flag is the child's own pick for the same reason.
+func (c *coordinator) childInstance(ctx context.Context, agentID string, child session.Session) (config.ActiveAgent, bool) {
+	dispatcher := c.instanceFor(ctx, child.ParentSessionID)
+	dispatcher.AgentModels = overlayPicks(dispatcher.AgentModels, child.ActiveAgent.AgentModels)
+
+	active, ok := c.cfg.Config().InstantiateUnder(agentID, dispatcher)
+	if !ok {
+		return config.ActiveAgent{}, false
+	}
+	if think := child.ActiveAgent.Think; think != nil {
+		pick := *think
+		active.Think = pick
+		active.ThinkPick = &pick
+	}
+	return active, true
+}
+
+// overlayPicks returns base with over's entries winning, leaving both
+// inputs untouched.
+func overlayPicks(base, over map[string]config.AgentModelPick) map[string]config.AgentModelPick {
+	if len(over) == 0 {
+		return base
+	}
+	merged := make(map[string]config.AgentModelPick, len(base)+len(over))
+	maps.Copy(merged, base)
+	maps.Copy(merged, over)
+	return merged
+}
+
+// dispatchedState is what a newly created child session records about
+// its own agent. The host's pick table is the dispatcher's, passed down
+// so the child's agents can find theirs; persisting it would freeze a
+// copy on the child's row that childInstance then lets outrank every
+// pick the dispatcher makes afterwards. Only picks made in the child
+// itself belong on its row.
+func dispatchedState(host config.ActiveAgent) config.ActiveAgentState {
+	state := host.State()
+	state.AgentModels = nil
+	return state
 }
 
 // dispatchDepth counts how many parent_session_id hops separate sessionID

@@ -20,7 +20,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/permission"
-	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/sandbox"
@@ -31,8 +30,7 @@ import (
 )
 
 // AppWorkspace implements the Workspace interface by delegating
-// directly to an in-process [app.App] instance. This is the default
-// mode when the client/server architecture is not enabled.
+// directly to an in-process [app.App] instance.
 type AppWorkspace struct {
 	app      *app.App
 	store    *config.ConfigStore
@@ -155,7 +153,7 @@ func (w *AppWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, a
 	return err
 }
 
-func (w *AppWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (proto.ShellCommandResponse, error) {
+func (w *AppWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (ShellCommandResponse, error) {
 	var persist shell.PersistFunc
 	if sessionID != "" {
 		persist = func(cmd, output string, exitCode int) error {
@@ -179,7 +177,7 @@ func (w *AppWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, comm
 	}
 
 	if err != nil && onProgress == nil {
-		return proto.ShellCommandResponse{}, err
+		return ShellCommandResponse{}, err
 	}
 
 	// Persist if we used the streaming path (persist wasn't called by RunAndPersist).
@@ -195,7 +193,7 @@ func (w *AppWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, comm
 		w.app.AgentCoordinator.GenerateTitle(titleCtx, sessionID, "$ "+command)
 	}
 
-	return proto.ShellCommandResponse{
+	return ShellCommandResponse{
 		Output:   result.Output,
 		ExitCode: result.ExitCode,
 	}, nil
@@ -242,7 +240,7 @@ func (w *AppWorkspace) AgentSessionStatus(sessionID string) (bool, int) {
 		w.app.AgentCoordinator.BackgroundAgentsRunning(sessionID)
 }
 
-func (w *AppWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error) {
+func (w *AppWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]agenttools.SubSession, error) {
 	if w.app.AgentCoordinator == nil {
 		return nil, nil
 	}

@@ -10,7 +10,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
-	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
@@ -42,14 +41,14 @@ func newSubSessionListUI(t *testing.T) (*UI, *MockWorkspace) {
 }
 
 // subSession builds a child as the coordinator reports it.
-func subSession(id string, kind agenttools.SubSessionKind, status agenttools.SubSessionStatus) proto.SubSession {
-	return proto.SubSession{ID: id, ParentID: "root", Agent: "explore", Task: id + " task", Kind: kind, Status: status}
+func subSession(id string, kind agenttools.SubSessionKind, status agenttools.SubSessionStatus) agenttools.SubSession {
+	return agenttools.SubSession{ID: id, ParentID: "root", Agent: "explore", Task: id + " task", Kind: kind, Status: status}
 }
 
 // openSubSessionsList opens the list the way the user does: the command
 // reads the children off the Update goroutine and the result opens the
 // dialog.
-func openSubSessionsList(t *testing.T, m *UI, ws *MockWorkspace, subs ...proto.SubSession) []tea.Msg {
+func openSubSessionsList(t *testing.T, m *UI, ws *MockWorkspace, subs ...agenttools.SubSession) []tea.Msg {
 	t.Helper()
 	ws.EXPECT().AgentSubSessions(gomock.Any(), m.session.ID).Return(subs, nil)
 	return runCmds(m, m.openSubSessionsDialog())
@@ -92,7 +91,7 @@ func TestSubSessionEntriesDescribeEachDirectChild(t *testing.T) {
 
 	tests := []struct {
 		name string
-		sub  proto.SubSession
+		sub  agenttools.SubSession
 		want dialog.SubSessionEntry
 	}{
 		{
@@ -148,7 +147,7 @@ func TestSubSessionEntriesDescribeEachDirectChild(t *testing.T) {
 			tt.want.Agent = tt.sub.Agent
 			tt.want.Task = tt.sub.Task
 
-			require.Equal(t, []dialog.SubSessionEntry{tt.want}, subSessionEntries([]proto.SubSession{tt.sub}))
+			require.Equal(t, []dialog.SubSessionEntry{tt.want}, subSessionEntries([]agenttools.SubSession{tt.sub}))
 		})
 	}
 }
@@ -156,7 +155,7 @@ func TestSubSessionEntriesDescribeEachDirectChild(t *testing.T) {
 func TestSubSessionEntriesKeepTheOrderTheCoordinatorGave(t *testing.T) {
 	t.Parallel()
 
-	entries := subSessionEntries([]proto.SubSession{
+	entries := subSessionEntries([]agenttools.SubSession{
 		subSession("c", agenttools.SubSessionKindForeground, agenttools.SubSessionCompleted),
 		subSession("a", agenttools.SubSessionKindBackground, agenttools.SubSessionRunning),
 		subSession("b", agenttools.SubSessionKindBranch, agenttools.SubSessionRunning),
@@ -187,7 +186,7 @@ func TestOpenSubSessionsDialogReadsTheChildrenOnlyWhenTheCommandRuns(t *testing.
 	require.False(t, m.dialog.ContainsDialog(dialog.SubSessionsID))
 
 	ws.EXPECT().AgentSubSessions(gomock.Any(), "root").
-		Return([]proto.SubSession{subSession("child", agenttools.SubSessionKindForeground, agenttools.SubSessionRunning)}, nil)
+		Return([]agenttools.SubSession{subSession("child", agenttools.SubSessionKindForeground, agenttools.SubSessionRunning)}, nil)
 	msg, ok := cmd().(subSessionsLoadedMsg)
 	require.True(t, ok)
 	require.Equal(t, "root", msg.sessionID)
@@ -237,7 +236,7 @@ func TestSubSessionsLoadedForAnotherSessionIsDropped(t *testing.T) {
 	t.Parallel()
 	m, ws := newSubSessionListUI(t)
 	ws.EXPECT().AgentSubSessions(gomock.Any(), "root").
-		Return([]proto.SubSession{subSession("child", agenttools.SubSessionKindForeground, agenttools.SubSessionRunning)}, nil)
+		Return([]agenttools.SubSession{subSession("child", agenttools.SubSessionKindForeground, agenttools.SubSessionRunning)}, nil)
 	msg := m.openSubSessionsDialog()()
 
 	m.session = &session.Session{ID: "elsewhere", Title: "Elsewhere"}

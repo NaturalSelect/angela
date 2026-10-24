@@ -17,9 +17,8 @@ import (
 // filesystem. A relative path is taken from the working directory and a
 // leading "~" from the home directory.
 //
-// NOTE: The workspace's working directory is never used here. In
-// client-server mode it names a path on the daemon host, while the user
-// typed a path on the machine they are sitting at.
+// NOTE: The workspace's working directory is never used here, because the
+// user typed a path relative to the directory they launched Angela from.
 func readReportFile(path string) (agenttools.Report, error) {
 	path = home.Long(strings.TrimSpace(path))
 	if !filepath.IsAbs(path) {

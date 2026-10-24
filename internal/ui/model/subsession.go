@@ -7,7 +7,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
-	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
@@ -178,7 +177,7 @@ func (m *UI) enterSubSessionByID(childID string) tea.Cmd {
 // Update goroutine, so the list can be opened once they arrive.
 type subSessionsLoadedMsg struct {
 	sessionID string
-	subs      []proto.SubSession
+	subs      []agenttools.SubSession
 }
 
 // loadSubSessionsCmd asks the workspace for the children of a session. In
@@ -198,7 +197,7 @@ func (m *UI) loadSubSessionsCmd(sessionID string) tea.Cmd {
 // subSessionEntries turns the children the coordinator reports into list
 // rows, keeping the order it gives them in, which is the order they were
 // dispatched.
-func subSessionEntries(subs []proto.SubSession) []dialog.SubSessionEntry {
+func subSessionEntries(subs []agenttools.SubSession) []dialog.SubSessionEntry {
 	entries := make([]dialog.SubSessionEntry, 0, len(subs))
 	for _, sub := range subs {
 		entries = append(entries, dialog.SubSessionEntry{
@@ -214,7 +213,7 @@ func subSessionEntries(subs []proto.SubSession) []dialog.SubSessionEntry {
 
 // subSessionState maps a child's lifecycle onto what the user cares about. A
 // running branch is waiting on the user rather than working on its own.
-func subSessionState(sub proto.SubSession) dialog.SubSessionState {
+func subSessionState(sub agenttools.SubSession) dialog.SubSessionState {
 	switch sub.Status {
 	case agenttools.SubSessionCompleted:
 		return dialog.SubSessionDone
@@ -235,7 +234,7 @@ func subSessionState(sub proto.SubSession) dialog.SubSessionState {
 // subSessionEnd is the way the user can end a child from the list: stop a
 // running agent, abort a branch that is waiting for them, and nothing for a
 // child that has already ended.
-func subSessionEnd(sub proto.SubSession) dialog.SubSessionEnd {
+func subSessionEnd(sub agenttools.SubSession) dialog.SubSessionEnd {
 	if sub.Status != agenttools.SubSessionRunning {
 		return dialog.SubSessionEndNone
 	}

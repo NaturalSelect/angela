@@ -11,9 +11,9 @@ import (
 	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
-// NOTE: Events is not part of workspace.Workspace because ClientWorkspace
-// cannot give each caller its own event stream. Fold it into the shared
-// interface once ClientWorkspace is removed.
+// NOTE: Events gives each caller its own event stream without needing a
+// tea.Program, which the ACP front end does not have. It stays off
+// workspace.Workspace so the TUI-facing interface and its mock are unchanged.
 type Workspace interface {
 	workspace.Workspace
 	Events(ctx context.Context) <-chan pubsub.Event[tea.Msg]

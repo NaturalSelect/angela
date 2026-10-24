@@ -268,10 +268,7 @@ type UI struct {
 	// told the workspace the client can render images (Kitty graphics
 	// Unicode placeholder support confirmed via
 	// [common.Capabilities.SupportsKittyPlaceholders]), so the
-	// one-shot report fires at most once per session — except on a
-	// client/server reconnect, where handleConnectionEvent re-sends
-	// it since a restarted daemon has no memory of the earlier
-	// report.
+	// one-shot report fires at most once per session.
 	imageSupportReported bool
 	// placeholderMismatchLogged tracks whether the one-time Info log
 	// explaining that Kitty graphics work but Unicode placeholders
@@ -1640,8 +1637,6 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			TTL:  ttl,
 		})
 		cmds = append(cmds, clearInfoMsgCmd(ttl))
-	case workspace.ConnectionEvent:
-		cmds = append(cmds, m.handleConnectionEvent(msg)...)
 	case util.ClearStatusMsg:
 		m.status.ClearInfoMsg()
 	case completions.CompletionItemsLoadedMsg:
@@ -1897,51 +1892,6 @@ func (m *UI) applySessionItems(items []chat.MessageItem) tea.Cmd {
 	}
 	m.chat.SelectLast()
 	return tea.Sequence(cmds...)
-}
-
-// handleConnectionEvent reports the health of the client-server link and,
-// once it recovers, reloads the open session. A reload is always needed
-// after a degraded episode: events published while the stream was down are
-// gone, and if the workspace itself was re-created any run died with it.
-func (m *UI) handleConnectionEvent(msg workspace.ConnectionEvent) []tea.Cmd {
-	info := util.InfoMsg{
-		Type: util.InfoTypeWarn,
-		Msg:  "Lost connection to the Angela server — reconnecting…",
-		TTL:  30 * time.Second,
-	}
-	switch msg.State {
-	case workspace.ConnectionDegraded:
-		slog.Warn("Server connection degraded", "error", msg.Err, "stuck", msg.Stuck)
-		if msg.Stuck {
-			info.Type = util.InfoTypeError
-			info.Msg = "Can't restore the connection to the Angela server. Restart Angela to recover."
-			info.TTL = time.Minute
-		}
-	case workspace.ConnectionRecovered:
-		info = util.InfoMsg{
-			Type: util.InfoTypeSuccess,
-			Msg:  "Reconnected to the Angela server.",
-			TTL:  DefaultStatusTTL,
-		}
-	}
-	m.status.SetInfoMsg(info)
-	cmds := []tea.Cmd{clearInfoMsgCmd(info.TTL)}
-	if msg.State == workspace.ConnectionRecovered {
-		if m.session != nil {
-			cmds = append(cmds, m.loadSession(m.session.ID))
-		}
-		// A daemon we just reconnected to may be a fresh restart that
-		// lost the in-memory image-support flag entirely, even though
-		// this TUI already proved the terminal supports it earlier in
-		// the session. The terminal only answers the Kitty graphics
-		// query once at startup, so there is no future
-		// KittyGraphicsEvent to re-derive this from — re-assert it
-		// directly instead.
-		if m.imageSupportReported {
-			cmds = append(cmds, m.reportClientImageSupport())
-		}
-	}
-	return cmds
 }
 
 // maybeReportImageSupport reports client image support at most once
@@ -2536,11 +2486,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 				return util.ReportError(err)()
 			}
 
-			// The export always writes through this process's own
-			// filesystem, never the workspace's: in client-server mode
-			// Workspace.WorkingDir() names a path on the daemon host,
-			// which this client cannot write to and which may not even
-			// exist locally.
 			workingDir, err := os.Getwd()
 			if err != nil {
 				return util.ReportError(err)()
@@ -2579,11 +2524,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 					return util.ReportWarn("No generated images in this session")()
 				}
 
-				// The export always writes through this process's own
-				// filesystem, never the workspace's: in client-server
-				// mode Workspace.WorkingDir() names a path on the
-				// daemon host, which this client cannot write to and
-				// which may not even exist locally.
 				workingDir, err := os.Getwd()
 				if err != nil {
 					return util.ReportError(err)()
@@ -2603,11 +2543,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 				return util.ReportError(err)()
 			}
 
-			// The export always writes through this process's own
-			// filesystem, never the workspace's: in client-server mode
-			// Workspace.WorkingDir() names a path on the daemon host,
-			// which this client cannot write to and which may not even
-			// exist locally.
 			workingDir, err := os.Getwd()
 			if err != nil {
 				return util.ReportError(err)()
@@ -2662,11 +2597,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 					return util.ReportWarn("No agent reports in this session")()
 				}
 
-				// The export always writes through this process's own
-				// filesystem, never the workspace's: in client-server
-				// mode Workspace.WorkingDir() names a path on the
-				// daemon host, which this client cannot write to and
-				// which may not even exist locally.
 				workingDir, err := os.Getwd()
 				if err != nil {
 					return util.ReportError(err)()
@@ -2680,11 +2610,6 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		report := msg.Report
 		output := msg.Output
 		cmds = append(cmds, func() tea.Msg {
-			// The export always writes through this process's own
-			// filesystem, never the workspace's: in client-server mode
-			// Workspace.WorkingDir() names a path on the daemon host,
-			// which this client cannot write to and which may not even
-			// exist locally.
 			workingDir, err := os.Getwd()
 			if err != nil {
 				return util.ReportError(err)()

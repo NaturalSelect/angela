@@ -71,7 +71,7 @@ See the [full provider list](./docs/config/) for all supported variables.
 | `angela dirs`                | Show config and data directories                         |
 | `angela projects`            | List known project directories                           |
 | `angela pprof ...`           | Export runtime profiles of a running Angela process      |
-| `angela server`              | Start the shared daemon (see [Client-server mode](#client-server-mode)) |
+| `angela acp`                 | Run as an ACP agent over stdio (see [Editor integration](#editor-integration-acp)) |
 | `angela update-providers`    | Refresh the provider catalog                             |
 
 Run any command with `--help` for its flags.
@@ -106,13 +106,25 @@ git add -p
 angela commit
 ```
 
-### Client-server mode
+### Editor integration (ACP)
 
-Set `ANGELA_CLIENT_SERVER=1` and Angela connects to a shared background
-server instead of running everything in the terminal process, starting one
-if none is running. `angela server` starts it by hand, and `--host` selects
-a different Unix socket or TCP address. `--sandbox` is not available in this
-mode.
+`angela acp` runs Angela as an [Agent Client Protocol](https://agentclientprotocol.com)
+agent over stdin and stdout, so editors such as Zed and Neovim
+(CodeCompanion) can drive it. The editor starts the command itself. In Zed,
+add this to `settings.json`:
+
+```jsonc
+{
+  "agent_servers": {
+    "Angela": { "command": "angela", "args": ["acp"] }
+  }
+}
+```
+
+One process serves one project, named by the first session request. Branch
+agents and background agents are not available, and the question tool works
+only when the editor supports forms. Permission prompts go to the editor;
+`--yolo` and `--auto-accept-edits` apply as usual.
 
 ## Configuration
 
@@ -267,8 +279,7 @@ Inside a Docker or other OCI container Angela treats the container as the
 sandbox and does not apply Landlock on top. Pass `--no-docker-sandbox` to
 apply it anyway.
 
-`--sandbox` is independent from `--yolo` and only supported in local
-(non-`ANGELA_CLIENT_SERVER`) mode, since the restriction is irreversible
+`--sandbox` is independent from `--yolo`, and the restriction is irreversible
 for the life of the process. Both Linux and macOS restrict the running
 process in place and return normally on success, so the interactive
 `/sandbox` command works the same way on both, not just at startup.

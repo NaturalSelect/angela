@@ -288,11 +288,10 @@ func TestClientEnvGetenv_FallsBackToProcessEnvByDefault(t *testing.T) {
 }
 
 // TestClientEnvGetenv_UsesOverrideOnceSet verifies that once
-// Overrides().Env is populated (client-server mode, set from the
-// connecting client's os.Environ()), clientEnvGetenv answers only from
-// that snapshot: a hit returns the client's value even when the
+// Overrides().Env is populated, clientEnvGetenv answers only from
+// that snapshot: a hit returns the override's value even when the
 // process disagrees, and a miss returns empty rather than silently
-// falling back to the daemon's own environment.
+// falling back to the process's own environment.
 func TestClientEnvGetenv_UsesOverrideOnceSet(t *testing.T) {
 	t.Setenv("ANGELA_TEST_CLIENT_ENV_PROBE", "from-process")
 	t.Setenv("ANGELA_TEST_CLIENT_ONLY_ON_PROCESS", "leaked-if-seen")
@@ -307,7 +306,7 @@ func TestClientEnvGetenv_UsesOverrideOnceSet(t *testing.T) {
 		"a key present in the override must win over the process environment")
 	require.Equal(t, "vscode", getenv("TERM_PROGRAM"))
 	require.Empty(t, getenv("ANGELA_TEST_CLIENT_ONLY_ON_PROCESS"),
-		"a miss in the override must not fall back to the daemon's own environment")
+		"a miss in the override must not fall back to the process environment")
 }
 
 // TestApp_SendEvent_DeliversToSubscriber verifies SendEvent publishes to

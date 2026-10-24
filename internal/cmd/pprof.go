@@ -73,7 +73,7 @@ var pprofCmd = &cobra.Command{
 	Short: "Export runtime profiles of a running angela process",
 	Long: `Export goroutine, CPU, memory and other runtime profiles of a running
 angela process without opening a network port. Every interactive session,
-"angela run" and "angela server" process serves its profiles on a private
+"angela run" and "angela acp" process serves its profiles on a private
 endpoint that only the current user can reach.
 
 Snapshot profiles are written in the binary format read by "go tool pprof".

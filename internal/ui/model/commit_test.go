@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
+	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"mvdan.cc/sh/v3/expand"
@@ -52,11 +52,11 @@ func TestCommitStagedChanges_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
 	ws.EXPECT().AgentGenerateCommitMessage(gomock.Any(), "s1", "diff --git a/x b/x\n+y").
 		Return("fix: add y", nil)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", commitCmd, 0, nil, false).
-		Return(proto.ShellCommandResponse{ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{ExitCode: 0}, nil)
 
 	m := newBusyUIWithWorkspace(ws)
 	msgs := collectInfoMsgs(m.commitStagedChanges("s1"))
@@ -78,7 +78,7 @@ func TestCommitStagedChanges_DiffReadError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{}, errors.New("boom"))
+		Return(workspace.ShellCommandResponse{}, errors.New("boom"))
 
 	m := newBusyUIWithWorkspace(ws)
 	msgs := collectInfoMsgs(m.commitStagedChanges("s1"))
@@ -98,7 +98,7 @@ func TestCommitStagedChanges_DiffCommandNonZeroExit(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "fatal: not a git repository", ExitCode: 128}, nil)
+		Return(workspace.ShellCommandResponse{Output: "fatal: not a git repository", ExitCode: 128}, nil)
 
 	m := newBusyUIWithWorkspace(ws)
 	msgs := collectInfoMsgs(m.commitStagedChanges("s1"))
@@ -118,7 +118,7 @@ func TestCommitStagedChanges_NothingStaged(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "   \n\t", ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{Output: "   \n\t", ExitCode: 0}, nil)
 
 	m := newBusyUIWithWorkspace(ws)
 	msgs := collectInfoMsgs(m.commitStagedChanges("s1"))
@@ -137,7 +137,7 @@ func TestCommitStagedChanges_GenerateError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
 	ws.EXPECT().AgentGenerateCommitMessage(gomock.Any(), "s1", "diff --git a/x b/x\n+y").
 		Return("", errors.New("model unavailable"))
 
@@ -161,11 +161,11 @@ func TestCommitStagedChanges_CommitCommandError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
 	ws.EXPECT().AgentGenerateCommitMessage(gomock.Any(), "s1", "diff --git a/x b/x\n+y").
 		Return("fix: add y", nil)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", commitCmd, 0, nil, false).
-		Return(proto.ShellCommandResponse{}, errors.New("exec failed"))
+		Return(workspace.ShellCommandResponse{}, errors.New("exec failed"))
 
 	m := newBusyUIWithWorkspace(ws)
 	msgs := collectInfoMsgs(m.commitStagedChanges("s1"))
@@ -188,11 +188,11 @@ func TestCommitStagedChanges_CommitCommandNonZeroExit(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
 	ws.EXPECT().AgentGenerateCommitMessage(gomock.Any(), "s1", "diff --git a/x b/x\n+y").
 		Return("fix: add y", nil)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", commitCmd, 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "error: gpg failed to sign the data", ExitCode: 1}, nil)
+		Return(workspace.ShellCommandResponse{Output: "error: gpg failed to sign the data", ExitCode: 1}, nil)
 
 	m := newBusyUIWithWorkspace(ws)
 	msgs := collectInfoMsgs(m.commitStagedChanges("s1"))
@@ -277,11 +277,11 @@ func TestCommitWithoutSessionSkipsBusyCheck(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
 	ws.EXPECT().AgentGenerateCommitMessage(gomock.Any(), "", "diff --git a/x b/x\n+y").
 		Return("fix: add y", nil)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", commitCmd, 0, nil, false).
-		Return(proto.ShellCommandResponse{ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{ExitCode: 0}, nil)
 
 	m := newSummarizeGateUI(t, ws)
 
@@ -307,11 +307,11 @@ func TestCommitDispatchesWhenIdle(t *testing.T) {
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().AgentIsSessionBusy("current").Return(false)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", "git diff --cached", 0, nil, false).
-		Return(proto.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{Output: "diff --git a/x b/x\n+y", ExitCode: 0}, nil)
 	ws.EXPECT().AgentGenerateCommitMessage(gomock.Any(), "current", "diff --git a/x b/x\n+y").
 		Return("fix: add y", nil)
 	ws.EXPECT().AgentRunShellCommand(gomock.Any(), "", commitCmd, 0, nil, false).
-		Return(proto.ShellCommandResponse{ExitCode: 0}, nil)
+		Return(workspace.ShellCommandResponse{ExitCode: 0}, nil)
 
 	m := newSummarizeGateUI(t, ws)
 

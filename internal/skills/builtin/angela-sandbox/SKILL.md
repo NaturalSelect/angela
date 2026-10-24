@@ -50,8 +50,8 @@ yolo would skip.
 | `--sandbox-no-network` | Blocks outbound network for spawned commands. Linux only — fails at startup on macOS. |
 | `--no-docker-sandbox` | Ignore an auto-detected Docker/OCI container as "already sandboxed" and apply Landlock on top of it anyway. Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. |
 
-The flags are registered on `angela`, `angela run` and `angela agent create`
-(not on `angela server`), and have no environment-variable or `angela.json`
+The flags are registered on `angela`, `angela run` and `angela agent create`,
+and have no environment-variable or `angela.json`
 equivalent. Using `--sandbox-rw`, `--sandbox-ro` or `--sandbox-no-network`
 without `--sandbox` itself is an error at startup (`--sandbox-rw requires
 --sandbox`).
@@ -103,17 +103,6 @@ independent of `--yolo` — it protects against mistakes yolo mode would
 otherwise allow straight through. The filesystem restriction is applied
 before the database, LSP and MCP servers start, so it covers all of them.
 
-## Client-Server Mode
-
-`--sandbox` and `--no-docker-sandbox` are **not supported** when
-`ANGELA_CLIENT_SERVER` is set to a true value (daemon mode); they fail with
-`--sandbox is not supported in client-server mode ... run without
-ANGELA_CLIENT_SERVER instead`, and the other `--sandbox-*` flags are ignored
-there. Restricting the daemon process would restrict every workspace it
-serves. `angela server` itself has no sandbox flags, and entering a sandbox is
-never available for a daemon-hosted workspace, including from the **Enter
-Sandbox** dialog. Run Angela in local mode instead if you need the sandbox.
-
 ## Recipes
 
 ### Confine writes to the working directory (the rest stays readable)
@@ -161,9 +150,6 @@ deny rule with `mode: "domain"`).
 **`--sandbox` fails with `unsupported operation`** — the platform has no
 implemented backend (only Linux and macOS are supported). On Linux a kernel
 without Landlock does not fail; it silently enforces nothing.
-
-**`--sandbox` fails in daemon mode** — expected; see Client-Server Mode
-above. Run without `ANGELA_CLIENT_SERVER` set.
 
 **A tool call that should be scoped in still fails with an I/O error** — the
 path may fall outside the read-write set (everything is readable by default,

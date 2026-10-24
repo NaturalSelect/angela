@@ -126,7 +126,7 @@
     <li>把 <code>App</code> 包成一个"工作区"交给终端界面，然后启动界面，并开一条后台通道把事件推给界面。</li>
   </ol>
 </div>
-<p>本文只讲默认的<strong>本地模式</strong>，也就是界面和后端在同一个进程里。另有一种客户端/服务器模式，由环境变量 <code>ANGELA_CLIENT_SERVER</code> 开启，见 <code>internal/cmd/root.go:347</code>，本文不展开。</p>
+<p>本文讲的是界面和后端在同一个进程里的启动流程。编辑器通过 <code>angela acp</code> 接入时走另一条入口，本文不展开。</p>
 
 <h2 id="terms">术语表</h2>
 <table>

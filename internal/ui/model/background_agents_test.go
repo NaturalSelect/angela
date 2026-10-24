@@ -9,7 +9,6 @@ import (
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
-	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
@@ -411,7 +410,7 @@ func TestCtrlXInTheListLeavesAChildThatCannotBeEndedAlone(t *testing.T) {
 
 	tests := []struct {
 		name string
-		sub  proto.SubSession
+		sub  agenttools.SubSession
 	}{
 		{"unknown kind", subSession("child", agenttools.SubSessionKindUnknown, agenttools.SubSessionRunning)},
 		{"completed", subSession("child", agenttools.SubSessionKindForeground, agenttools.SubSessionCompleted)},

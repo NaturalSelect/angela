@@ -10,14 +10,13 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
-	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
-// Domain type translation.
+// Event translation.
 
 func TestTranslateDomainAssistantMessage(t *testing.T) {
 	t.Parallel()
@@ -69,78 +68,6 @@ func TestTranslateDomainPermissionNotification(t *testing.T) {
 		Payload: permission.PermissionNotification{Granted: true},
 	}
 	assert.Equal(t, PermissionResolved{}, Translate(ev))
-}
-
-// Proto type translation.
-
-func TestTranslateProtoAssistantMessage(t *testing.T) {
-	t.Parallel()
-	ev := pubsub.Event[proto.Message]{
-		Payload: proto.Message{Role: proto.Assistant, SessionID: "s1"},
-	}
-	assert.Equal(t, AssistantMessage{SessionID: "s1"}, Translate(ev))
-}
-
-func TestTranslateProtoNonAssistantIgnored(t *testing.T) {
-	t.Parallel()
-	ev := pubsub.Event[proto.Message]{
-		Payload: proto.Message{Role: proto.User, SessionID: "s1"},
-	}
-	assert.Nil(t, Translate(ev))
-}
-
-func TestTranslateProtoRunComplete(t *testing.T) {
-	t.Parallel()
-	ev := pubsub.Event[proto.RunComplete]{
-		Payload: proto.RunComplete{SessionID: "s1"},
-	}
-	assert.Equal(t, RunComplete{SessionID: "s1"}, Translate(ev))
-}
-
-func TestTranslateProtoPermissionRequest(t *testing.T) {
-	t.Parallel()
-	ev := pubsub.Event[proto.PermissionRequest]{
-		Payload: proto.PermissionRequest{ToolName: "bash"},
-	}
-	assert.Equal(t, PermissionRequested{}, Translate(ev))
-}
-
-func TestTranslateProtoPermissionNotification(t *testing.T) {
-	t.Parallel()
-	ev := pubsub.Event[proto.PermissionNotification]{
-		Payload: proto.PermissionNotification{Granted: true},
-	}
-	assert.Equal(t, PermissionResolved{}, Translate(ev))
-}
-
-func TestTranslateProtoSummarizing(t *testing.T) {
-	t.Parallel()
-	ev := pubsub.Event[proto.AgentEvent]{
-		Payload: proto.AgentEvent{
-			Type: proto.AgentEventTypeSummarize,
-			Done: false,
-		},
-	}
-	assert.Equal(t, Summarizing{}, Translate(ev))
-}
-
-func TestTranslateProtoSummarizeDoneIgnored(t *testing.T) {
-	t.Parallel()
-	ev := pubsub.Event[proto.AgentEvent]{
-		Payload: proto.AgentEvent{
-			Type: proto.AgentEventTypeSummarize,
-			Done: true,
-		},
-	}
-	assert.Nil(t, Translate(ev))
-}
-
-func TestTranslateProtoSessionIgnored(t *testing.T) {
-	t.Parallel()
-	ev := pubsub.Event[proto.Session]{
-		Payload: proto.Session{ID: "s1"},
-	}
-	assert.Nil(t, Translate(ev))
 }
 
 // Unknown types.

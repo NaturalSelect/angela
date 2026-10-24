@@ -371,21 +371,29 @@ func TestRun_NoticeArrivingMidTurnReachesTheNextStep(t *testing.T) {
 	require.NoError(t, err)
 
 	type noParams struct{}
+	var posted sync.Once
 	arrive := tools.NewTool("some_tool", "posts a notice", func(_ context.Context, _ noParams, _ fantasy.ToolCall) tools.Result {
-		e.inbox.Post(sess.ID, "<agent-notification>mid-turn</agent-notification>")
+		posted.Do(func() {
+			e.inbox.Post(sess.ID, "<agent-notification>mid-turn</agent-notification>")
+		})
 		return tools.Ok("tool done")
 	})
 
-	var secondStep fantasy.Call
+	var steps []fantasy.Call
+	recordStep := func(response fantasy.StreamResponse) func(context.Context, fantasy.Call) (fantasy.StreamResponse, error) {
+		return func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+			steps = append(steps, call)
+			return response, nil
+		}
+	}
 	model := newMockLanguageModel(t)
 	gomock.InOrder(
 		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-			Return(toolCallThenFinish(fantasy.Usage{}), nil),
+			DoAndReturn(recordStep(toolCallStream("call-1"))),
 		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
-				secondStep = call
-				return streamOf([]string{"saw it"}, fantasy.FinishReasonStop), nil
-			}),
+			DoAndReturn(recordStep(toolCallStream("call-2"))),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			DoAndReturn(recordStep(streamOf([]string{"saw it"}, fantasy.FinishReasonStop))),
 	)
 
 	agent := largeWindowAgent(model)
@@ -393,15 +401,81 @@ func TestRun_NoticeArrivingMidTurnReachesTheNextStep(t *testing.T) {
 	_, err = e.sa.Run(t.Context(), SessionAgentCall{Agent: agent, SessionID: sess.ID, Prompt: "go"})
 	require.NoError(t, err)
 
-	var seen bool
-	for _, m := range secondStep.Prompt {
+	require.Len(t, steps, 3)
+	require.Equal(t, -1, indexOfPromptText(steps[0], "mid-turn"), "the first step ran before the notice arrived")
+	delivered := indexOfPromptText(steps[1], "mid-turn")
+	require.NotEqual(t, -1, delivered, "the step after the notice arrived must carry it")
+	require.Equal(t, delivered, indexOfPromptText(steps[2], "mid-turn"),
+		"a later step must still carry the notice, at the position it was first shown")
+	require.False(t, e.inbox.Has(sess.ID))
+	require.Zero(t, e.wakeCount(), "a delivered notice needs no wake")
+}
+
+// toolCallStream is a step that calls some_tool under the given ID and is
+// left for the agent to continue from.
+func toolCallStream(id string) fantasy.StreamResponse {
+	return func(yield func(fantasy.StreamPart) bool) {
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeToolCall, ID: id, ToolCallName: "some_tool", ToolCallInput: "{}"}) {
+			return
+		}
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonToolCalls})
+	}
+}
+
+func TestRun_QueuedPromptFoldedIntoATurnStaysVisibleOnLaterSteps(t *testing.T) {
+	t.Parallel()
+
+	e := newNoticeAgentEnv(t)
+	sess, err := e.env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	e.sa.enqueueCall(SessionAgentCall{SessionID: sess.ID, Prompt: "queued-followup"})
+
+	type noParams struct{}
+	step := tools.NewTool("some_tool", "does nothing", func(_ context.Context, _ noParams, _ fantasy.ToolCall) tools.Result {
+		return tools.Ok("tool done")
+	})
+
+	var steps []fantasy.Call
+	recordStep := func(response fantasy.StreamResponse) func(context.Context, fantasy.Call) (fantasy.StreamResponse, error) {
+		return func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+			steps = append(steps, call)
+			return response, nil
+		}
+	}
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			DoAndReturn(recordStep(toolCallStream("call-1"))),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			DoAndReturn(recordStep(toolCallStream("call-2"))),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			DoAndReturn(recordStep(streamOf([]string{"done"}, fantasy.FinishReasonStop))),
+	)
+
+	agent := largeWindowAgent(model)
+	agent.Tools = []fantasy.AgentTool{step}
+	_, err = e.sa.Run(t.Context(), SessionAgentCall{Agent: agent, SessionID: sess.ID, Prompt: "go"})
+	require.NoError(t, err)
+
+	require.Len(t, steps, 3)
+	folded := indexOfPromptText(steps[0], "queued-followup")
+	require.NotEqual(t, -1, folded, "the queued prompt is folded into the first step")
+	for i, call := range steps[1:] {
+		require.Equal(t, folded, indexOfPromptText(call, "queued-followup"),
+			"step %d must still carry the folded prompt, where the first step put it", i+1)
+	}
+}
+
+// indexOfPromptText returns the index of the first prompt message with a
+// text part containing needle, or -1.
+func indexOfPromptText(call fantasy.Call, needle string) int {
+	for i, m := range call.Prompt {
 		for _, part := range m.Content {
-			if text, ok := part.(fantasy.TextPart); ok && strings.Contains(text.Text, "mid-turn") {
-				seen = true
+			if text, ok := part.(fantasy.TextPart); ok && strings.Contains(text.Text, needle) {
+				return i
 			}
 		}
 	}
-	require.True(t, seen, "the step after the notice arrived must carry it")
-	require.False(t, e.inbox.Has(sess.ID))
-	require.Zero(t, e.wakeCount(), "a delivered notice needs no wake")
+	return -1
 }

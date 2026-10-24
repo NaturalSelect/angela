@@ -8,7 +8,7 @@ tasks to specialized sub-agents via the `agent` tool.
 | ID        | Mode      | Description                                                            |
 |-----------|-----------|------------------------------------------------------------------------|
 | `coder`   | primary   | Main agent for executing coding tasks. Has access to all tools.        |
-| `co-design` | branch | Designs a whole solution with you as pseudo-code, section by section, and hands back a solution document to export and split into plans. Read-only. Only forked when you ask. |
+| `co-design` | branch | Designs a whole solution with you, mechanism by mechanism, and hands back a design document to export and build through plans. Read-only. Only forked when you ask. |
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. Read-only plus `bash`. |
 | `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git (read-only), LSP (read-only). |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `todos`. |
@@ -136,38 +136,51 @@ gives up is the structural guarantee, since yolo mode approves everything
 `co-design` is for the times you want to understand and shape the design of a
 whole solution, not only approve it. It works in four steps:
 
-1. **Align on the requirement.** You settle the problem, what "solved" looks
-   like, the constraints any solution has to meet, and what is out of scope.
-   No solution is proposed yet.
-2. **Confirm the direction.** It probes what you already know about the code
-   and fills the gaps. Then you settle the overall approach, as coarse
-   pseudo-code of its main pieces. If you ask it to propose, it offers two or
-   three directions and recommends one.
-3. **Break the problem down and solve each part.** You settle the outline,
-   one sub-problem per module or flow, and the boundaries between them. Then
-   it designs each sub-problem on its own, in dependency order, as
-   pseudo-code: data structures, interfaces between modules, cross-module
-   flows, ownership, and where each lands in the repository.
-4. **Write the solution.** It walks the whole design through the code once
-   more, stitches the sections into one end-to-end flow, and writes the
-   trade-offs, risks, and follow-up work.
+1. **Align on the requirement.** You settle the problem with the concrete
+   cases that show it, what makes it hard, what "solved" looks like, and what
+   is out of scope. No solution is proposed yet.
+2. **Choose the direction.** If you bring a direction, it verifies that the
+   direction fits the code and solves the problem, by tracing a problem case
+   through the code and checking it against every challenge. If you bring
+   none, or yours does not hold, it proposes two or three directions it has
+   verified the same way and recommends one. If no direction can work, it
+   tells you the problem has no solution under its constraints, and which
+   constraint rules out each direction. You settle the idea the solution
+   rests on, in a sentence or two.
+3. **Refine the direction into mechanisms.** Step 3 adds no new idea. The
+   outline comes from the direction you settled: one section per mechanism
+   it rests on, such as a lock protocol or a commit protocol, with the
+   boundaries between them. Then it designs each mechanism on its own, in
+   dependency order: the part of the direction it realizes and why the
+   obvious ways fall short, its core idea, its data structures and rules,
+   its flows on the normal and failure paths, what it guarantees, and the
+   edge cases it handles or knowingly leaves open. If a mechanism cannot be
+   designed without departing from the direction, the direction goes back
+   to step 2.
+4. **Write the document.** It walks the whole design through the code once
+   more, checks that every challenge is met, traces a worked example through
+   it, and writes the trade-offs, risks, and follow-up work.
 
-For each sub-problem in step 3, you either state your decisions in plain
+For each mechanism in step 3, you either state your decisions in plain
 words, or ask it to draft the section and then accept, change, or reject each
-numbered item. The agent
-settles the details itself, such as names and error handling, following the
-repository's existing patterns, and marks them without asking. It may
-suggest key design of its own, but a suggestion enters the design only after
-you accept it. It checks each section against the repository and raises only
-the conflicts that change the design.
+numbered item. It gives each idea the form that makes it checkable: types
+for data, tables for rules, sequence diagrams for interactions, and a worked
+example with real values. It leaves how the code realizes the design, such
+as files, function bodies, names, and tests, to the plans that build it. It
+may suggest design of its own, but a suggestion enters the design only after
+you accept it. It checks each section against the repository and raises
+only the conflicts that change the design.
 
-It hands back a solution document: background with the problem and its
-challenges, the design by section, trade-offs, risks and preconditions, and
-follow-up work. A contract at its end says that any plan or implementation
-built from it must stop and tell you before deviating from the key design you
-accepted. The coder does not implement the document. Save it with the
-"Export Report" command, then split it into plans and build them one part at
-a time. Each plan stays bound by the contract.
+It hands back a design document: background with the problem and its
+challenges, the design by mechanism with a worked example, trade-offs, risks
+and preconditions, and follow-up work. A contract at
+its end says that any plan or implementation built from it must stop and
+tell you before deviating from the design you accepted, and that what the
+design leaves unsaid is the plan's to decide. The coder does not implement
+the document. The intended flow is co-design, then several plans, then each
+plan executed on its own: save the document with the
+"Export Report" command, then plan and build one part at a time. Each plan
+stays bound by the contract.
 
 Unlike `plan`, which works out the implementation approach for one part,
 `co-design` settles the design of the whole solution with you. That is
@@ -176,7 +189,7 @@ understanding you skip. The coder never forks `co-design` on its own. Ask for
 it when you want to shape the design yourself.
 
 Like `plan`, `co-design` is read-only, holds no `bash`, and can only delegate
-to `explore`.
+to `explore` and `web-fetch`.
 
 ### `deep-research`
 
@@ -392,10 +405,11 @@ does.
   keeps whatever a lower layer decided rather than clearing it.
 
 The built-in `plan`, `co-design` and `deep-research` agents all set
-`"allowed_agents": ["explore"]`: a plan or a root-cause finding is
-only as trustworthy as the read-only legwork behind it, so none of them can
+`"allowed_agents": ["explore", "web-fetch"]`: a plan or a root-cause finding
+is only as trustworthy as the read-only legwork behind it, so none of them can
 hand the decision off to `general` or to each other — they can only delegate
-the read-only search `explore` provides.
+the read-only code search `explore` provides and the web lookups `web-fetch`
+provides.
 
 ```json
 {

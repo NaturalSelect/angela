@@ -264,22 +264,88 @@ func normalizedCoDesignTemplate() string {
 // an accepted decision A leaves only one viable form for another element B,
 // co-design states B as a consequence instead of asking the user to pick B
 // from options where only one holds. Each clause closes one path that used
-// to push the model back into asking.
+// to push the model back into asking. Standing is said in plain words, so no
+// marker survives to leak into the document.
 func TestCoDesignPrompt_ForcedChangesAreConsequencesNotChoices(t *testing.T) {
 	t.Parallel()
 
 	tpl := normalizedCoDesignTemplate()
 
 	for name, clause := range map[string]string{
-		"rule shows forced change as a consequence": "it is a consequence, not a choice. Show it as pseudo-code marked `// follows:`",
-		"rule demands why each alternative fails":   "If you cannot say why each alternative fails, it is a real choice: ask.",
-		"objection reopens the forcing decision":    "If the user objects to a consequence, they are reopening the decision that forced it",
+		"rule shows forced change as a consequence": "it is a consequence, not a choice: present it in one sentence naming the decision and why each alternative fails.",
+		"rule demands why each alternative fails":   "If you cannot say why each fails, it is a real choice: ask.",
+		"objection reopens the forcing decision":    "An objection to a consequence reopens the decision that forced it.",
 		"unseen rule admits consequences":           "saw it as a consequence and did not object",
-		"step 3 traces before asking":               "trace what the section touches elsewhere in the key design",
-		"to confirm needs a real choice":            "only when more than one answer still holds",
-		"consequences do not block merge":           "or shown as a consequence without objection",
-		"contract binds follows like key design":    "Unmarked pseudo-code and anything marked `// follows:` are the key design the user accepted",
-		"marker list defines follows":               "`// follows:` a change forced by an accepted decision",
+		"step 3 traces before asking":               "Trace what the section touches elsewhere in the design",
+		"to confirm needs a real choice":            "Ask only where more than one answer still holds",
+		"consequences do not block merge":           "Each piece was shown here",
+		"contract binds the accepted design":        "The design above is what the user accepted: a plan or implementation that has to deviate from it must stop and tell the user first.",
+		"accepted pieces read as plain design":      "accepted suggestions and consequences read as plain design",
+	} {
+		require.Contains(t, tpl, clause, name)
+	}
+	for _, marker := range []string{"// suggested:", "// follows:", "to confirm"} {
+		require.NotContains(t, tpl, marker)
+	}
+}
+
+// TestCoDesignPrompt_VerifiesDirectionsBeforeChoosing pins step 2 as the place
+// where directions are weighed and proven feasible against the code, not a
+// quiz on what the user knows. A direction chosen unverified sends every later
+// section into a design that cannot be built.
+func TestCoDesignPrompt_VerifiesDirectionsBeforeChoosing(t *testing.T) {
+	t.Parallel()
+
+	tpl := normalizedCoDesignTemplate()
+
+	for name, clause := range map[string]string{
+		"feasibility defined":           "A direction is feasible when it fits the code, meets every challenge and hard constraint from step 1, and handles the problem cases in the Background.",
+		"trace a problem case":          "trace a problem case through the code as the direction would change it",
+		"user direction verified first": "**The user brings a direction:** verify it.",
+		"failed direction shown":        "show the failing step and the challenge or constraint it breaks",
+		"propose only feasible":         "Propose only directions you verified",
+		"unsolvable said plainly":       "**Nothing is feasible:** tell the user plainly the problem cannot be solved under its constraints",
+		"no silent relaxing":            "Do not relax a constraint yourself or present a failing direction as working.",
+	} {
+		require.Contains(t, tpl, clause, name)
+	}
+	require.NotContains(t, tpl, "I don't know")
+}
+
+// TestCoDesignPrompt_MechanismsRefineTheDirection pins step 3 as a refinement
+// of the direction step 2 verified, not a fresh design. Sections cut free of
+// the thesis can drift into a solution nobody checked for feasibility.
+func TestCoDesignPrompt_MechanismsRefineTheDirection(t *testing.T) {
+	t.Parallel()
+
+	tpl := normalizedCoDesignTemplate()
+
+	for name, clause := range map[string]string{
+		"refine, no new idea":         "Refine the direction settled in step 2; bring in no new idea.",
+		"outline from the thesis":     "Derive the outline from the thesis",
+		"boundaries from the trace":   "the points where the trace passes from one mechanism to another",
+		"section keeps the outcome":   "it must reach the outcome step 2's trace reached",
+		"departure reopens direction": "take the failing case back to step 2; never reshape the direction inside a section",
+	} {
+		require.Contains(t, tpl, clause, name)
+	}
+}
+
+// TestCoDesignPrompt_MergesWhenFeasibleSolvedAndKnown pins the merge bar to
+// what the document has to guarantee its readers: the design can be built,
+// it meets the problem the user stated, and the user has seen every piece of
+// it. A bar built from bookkeeping, such as every item ticked off, lets a
+// design that solves nothing pass.
+func TestCoDesignPrompt_MergesWhenFeasibleSolvedAndKnown(t *testing.T) {
+	t.Parallel()
+
+	tpl := normalizedCoDesignTemplate()
+
+	for name, clause := range map[string]string{
+		"feasible":                 "1. **The solution is feasible.**",
+		"solves the problem":       "2. **It solves the problem.** Every challenge is met by a mechanism",
+		"user knows the design":    "3. **The user knows every piece of the design.**",
+		"step 4 checks challenges": "For each challenge, name the mechanism that meets it and how.",
 	} {
 		require.Contains(t, tpl, clause, name)
 	}
@@ -301,12 +367,36 @@ func TestCoDesignPrompt_HandsBackASolutionNotAPlan(t *testing.T) {
 		"4. **Risks and preconditions**",
 		"5. **Follow-up work**",
 		"This solution is built through plans, one part at a time.",
-		"Settle the outline",
-		"Settle only what was answered.",
+		"Derive the outline",
+		"A suggestion or open question is settled only by an answer that names it",
 	} {
 		require.Contains(t, tpl, clause)
 	}
 	require.NotContains(t, tpl, "Implement the steps above")
+	require.NotContains(t, tpl, "Plan breakdown")
+}
+
+// TestCoDesignPrompt_LeavesDetailsToThePlans pins the line between co-design
+// and the plans that follow it. Under the contract, everything written into
+// the document binds those plans, so a template that records function bodies,
+// constants or line-level change lists takes those choices away from the
+// plans that have to make them.
+func TestCoDesignPrompt_LeavesDetailsToThePlans(t *testing.T) {
+	t.Parallel()
+
+	tpl := normalizedCoDesignTemplate()
+
+	for name, clause := range map[string]string{
+		"document stands on its own":         "Readers who never saw this conversation must be able to build each part from it without reopening its design.",
+		"details stay out of co-design":      "never ask about it or write it down.",
+		"no function bodies":                 "Never write a function body.",
+		"section ends where building can":    "A section is complete when a reader who was not here can work out how to build it, and why it is correct, from the section alone",
+		"document does not narrate the flow": "Outside the contract, never mention plans or what the document leaves out.",
+		"contract hands omissions over":      "What the design leaves unsaid, such as code layout, function boundaries, private names, and tests, is the plan's to decide.",
+	} {
+		require.Contains(t, tpl, clause, name)
+	}
+	require.NotContains(t, tpl, "// detail:")
 }
 
 // TestCommitPrompt_Builds pins that the commit agent's built-in

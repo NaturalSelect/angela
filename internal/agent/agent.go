@@ -937,6 +937,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	a.eventPromptSent(call.SessionID, runModel)
 
 	var stepMessages []fantasy.Message
+	// NOTE: fantasy rebuilds each step from the original prompt and the
+	// replies so far, so a message stored mid-turn would reach the model for
+	// one step only. carried is the previous step's prompt before provider
+	// adjustments, and carriedBase is how many of fantasy's own messages it
+	// was built from.
+	var carried []fantasy.Message
+	var carriedBase int
 	var shouldSummarize bool
 	// latestFolded is the most recent queued call folded into this turn
 	// (see the fold loop in PrepareStep below), if any. A turn
@@ -983,7 +990,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		TopK:             call.TopK,
 		FrequencyPenalty: call.FrequencyPenalty,
 		PrepareStep: func(callContext context.Context, options fantasy.PrepareStepFunctionOptions) (_ context.Context, prepared fantasy.PrepareStepResult, err error) {
-			prepared.Messages = options.Messages
+			prepared.Messages = slices.Concat(carried, options.Messages[carriedBase:])
 			for i := range prepared.Messages {
 				prepared.Messages[i].ProviderOptions = nil
 			}
@@ -1027,6 +1034,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				}
 				prepared.Messages = append(prepared.Messages, noticeMsg.ToAIMessage()...)
 			}
+
+			carried, carriedBase = slices.Clone(prepared.Messages), len(options.Messages)
 
 			prepared.Messages = a.workaroundProviderMediaLimitations(prepared.Messages, runModel)
 

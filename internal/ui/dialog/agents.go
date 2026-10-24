@@ -86,7 +86,7 @@ func NewAgents(com *common.Common, currentAgent string) (*Agents, error) {
 	if cfg == nil {
 		return nil, errors.New("configuration not available")
 	}
-	candidates := switchableAgents(cfg)
+	candidates := config.SwitchableAgents(cfg)
 	if len(candidates) == 0 {
 		return nil, errors.New("no primary agents configured")
 	}
@@ -316,25 +316,9 @@ func (a *Agents) setAgentItems(candidates []config.Agent, currentAgent string) {
 	a.list.ScrollToSelected()
 }
 
-// switchableAgents returns the agents a session can run on, sorted by ID
-// so the list is stable across openings. Hidden agents back Angela's own
-// internal calls and subagents are delegation targets; neither drives a
-// session.
-func switchableAgents(cfg *config.Config) []config.Agent {
-	var agents []config.Agent
-	for _, agentCfg := range cfg.Agents {
-		if agentCfg.Mode != config.AgentModePrimary || agentCfg.IsHidden() {
-			continue
-		}
-		agents = append(agents, agentCfg)
-	}
-	sort.Slice(agents, func(i, j int) bool { return agents[i].ID < agents[j].ID })
-	return agents
-}
-
 // allAgents returns every configured agent, sorted by ID so the list
 // is stable across openings. It backs the "Switch Agent Model" picker,
-// which — unlike switchableAgents — has to reach hidden agents too.
+// which — unlike config.SwitchableAgents — has to reach hidden agents too.
 // Disabled agents never reach cfg.Agents: ResolveAgents drops them at
 // load time.
 func allAgents(cfg *config.Config) []config.Agent {

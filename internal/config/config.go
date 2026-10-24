@@ -910,6 +910,22 @@ func (a Agent) IsHidden() bool {
 	return a.Hidden != nil && *a.Hidden
 }
 
+// SwitchableAgents returns the agents a session can run on, sorted by ID
+// so the list is stable across calls. Hidden agents back Angela's own
+// internal calls and subagents are delegation targets; neither drives a
+// session.
+func SwitchableAgents(cfg *Config) []Agent {
+	var agents []Agent
+	for _, agentCfg := range cfg.Agents {
+		if agentCfg.Mode != AgentModePrimary || agentCfg.IsHidden() {
+			continue
+		}
+		agents = append(agents, agentCfg)
+	}
+	slices.SortFunc(agents, func(a, b Agent) int { return cmp.Compare(a.ID, b.ID) })
+	return agents
+}
+
 // YoloMergeAllowed reports whether yolo mode may auto-approve the
 // merge tool for this agent. Nil and true both allow it.
 func (a Agent) YoloMergeAllowed() bool {

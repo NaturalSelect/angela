@@ -44,7 +44,7 @@ func pickerDlgWithConfig(t *testing.T, ws *MockWorkspace, cfg *config.Config) *U
 }
 
 // pickerDlgThreeAgents configures three switchable primary agents (coder,
-// reviewer, writer — alphabetical, matching switchableAgents' sort order)
+// reviewer, writer — alphabetical, matching config.SwitchableAgents' sort order)
 // so navigation tests can exercise real multi-item wrap-around.
 func pickerDlgThreeAgents(t *testing.T, ws *MockWorkspace) *UI {
 	t.Helper()

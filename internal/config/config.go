@@ -1416,7 +1416,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// A root cause is a finding, not a plan, so deep-research is
 			// limited to reading the code rather than being able to reach
 			// for plan or dispatch itself again through general.
-			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
+			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore, AgentWebFetch}},
 		},
 		AgentPlan: {
 			ID:          AgentPlan,
@@ -1433,7 +1433,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// A plan is a proposal to settle with the user, not a
 			// license to hand the decision off again, so plan can only
 			// delegate the read-only legwork behind it.
-			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
+			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore, AgentWebFetch}},
 		},
 		AgentCoDesign: {
 			ID:           AgentCoDesign,
@@ -1446,7 +1446,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// anything.
 			AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
 			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetScope},
-			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore}},
+			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore, AgentWebFetch}},
 		},
 		AgentWebFetch: {
 			ID:           AgentWebFetch,

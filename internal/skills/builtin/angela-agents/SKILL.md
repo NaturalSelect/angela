@@ -26,8 +26,8 @@ is needed.
 | `deep-research` | branch | Investigates a hard question; plan's read-only set plus `Bash`, `JobOutput`, `JobKill`, but no edit/write. |
 | `web-fetch` | subagent | Fetches and analyzes web pages or searches the web. |
 
-`plan`, `co-design` and `deep-research` can dispatch only `explore` (their
-`allowed_agents`).
+`plan`, `co-design` and `deep-research` can dispatch only `explore` and
+`web-fetch` (their `allowed_agents`).
 
 Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
 `commit`, `image`) can be overridden but are not dispatched via the `Agent`

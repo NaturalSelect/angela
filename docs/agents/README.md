@@ -176,7 +176,7 @@ understanding you skip. The coder never forks `co-design` on its own. Ask for
 it when you want to shape the design yourself.
 
 Like `plan`, `co-design` is read-only, holds no `bash`, and can only delegate
-to `explore`.
+to `explore` and `web-fetch`.
 
 ### `deep-research`
 
@@ -392,10 +392,11 @@ does.
   keeps whatever a lower layer decided rather than clearing it.
 
 The built-in `plan`, `co-design` and `deep-research` agents all set
-`"allowed_agents": ["explore"]`: a plan or a root-cause finding is
-only as trustworthy as the read-only legwork behind it, so none of them can
+`"allowed_agents": ["explore", "web-fetch"]`: a plan or a root-cause finding
+is only as trustworthy as the read-only legwork behind it, so none of them can
 hand the decision off to `general` or to each other — they can only delegate
-the read-only search `explore` provides.
+the read-only code search `explore` provides and the web lookups `web-fetch`
+provides.
 
 ```json
 {

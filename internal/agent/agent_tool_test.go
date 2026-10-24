@@ -286,12 +286,13 @@ func TestAgentToolAllowedAgentsEmptyOmitsTheTool(t *testing.T) {
 	require.Nil(t, tool)
 }
 
-// TestBuiltinBranchesOnlyDispatchExplore pins the allowed_agents
+// TestBuiltinBranchesOnlyDispatchReadOnlyAgents pins the allowed_agents
 // restriction on the built-in branch agents: a plan, a co-designed plan or a
 // root-cause finding is only as trustworthy as the read-only legwork
 // behind it, so none should be able to reach general, or hand the
-// decision off to another branch, through its own agent tool.
-func TestBuiltinBranchesOnlyDispatchExplore(t *testing.T) {
+// decision off to another branch, through its own agent tool. Explore and
+// web-fetch are the only agents they may reach.
+func TestBuiltinBranchesOnlyDispatchReadOnlyAgents(t *testing.T) {
 	coord := newGateTestCoordinator(t, true)
 
 	for _, id := range []string{config.AgentPlan, config.AgentCoDesign, config.AgentDeepResearch} {
@@ -308,6 +309,7 @@ func TestBuiltinBranchesOnlyDispatchExplore(t *testing.T) {
 			}
 			require.NotNil(t, agentTool, "%s must still hold the agent tool", id)
 			require.Contains(t, agentTool.Info().Description, "- "+config.AgentExplore+":")
+			require.Contains(t, agentTool.Info().Description, "- "+config.AgentWebFetch+":")
 			// Substring checks on the bare IDs would false-positive:
 			// explore's own description mentions "plan" and
 			// "deep_research" in prose. Check for the rendered list

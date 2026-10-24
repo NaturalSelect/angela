@@ -166,6 +166,24 @@ func (s *activeAgentStore) edit(
 	io activeAgentIO,
 	fn func(config.ActiveAgent) (config.ActiveAgent, bool, error),
 ) error {
+	return s.editState(ctx, sessionID, io, func(_ config.ActiveAgentState, current config.ActiveAgent) (config.ActiveAgentState, bool, error) {
+		next, changed, err := fn(current)
+		if err != nil || !changed {
+			return config.ActiveAgentState{}, false, err
+		}
+		return next.State(), true, nil
+	})
+}
+
+// editState is edit for a caller that decides what gets persisted. fn
+// sees the record as stored next to the instance built from it, and
+// returns the record to write.
+func (s *activeAgentStore) editState(
+	ctx context.Context,
+	sessionID string,
+	io activeAgentIO,
+	fn func(config.ActiveAgentState, config.ActiveAgent) (config.ActiveAgentState, bool, error),
+) error {
 	l := s.lockFor(sessionID)
 	defer s.release(sessionID, l)
 	l.mu.Lock()
@@ -179,12 +197,11 @@ func (s *activeAgentStore) edit(
 	if err != nil {
 		return err
 	}
-	next, changed, err := fn(current)
+	nextState, changed, err := fn(state, current)
 	if err != nil || !changed {
 		return err
 	}
 
-	nextState := next.State()
 	if err := io.save(ctx, sessionID, nextState); err != nil {
 		// The session is gone, so the entry describes nothing. Keeping
 		// it would go on serving that agent to every later read.

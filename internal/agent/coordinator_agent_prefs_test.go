@@ -197,6 +197,54 @@ func TestAgentModelPickReachesSubagentDispatch(t *testing.T) {
 		"a sub-agent dispatch must see the pick its session made for it")
 }
 
+// TestPickMadeInAChildSessionReachesItsNextTurn pins that a model pick
+// made while viewing a child session, as a user does in a branch,
+// changes what that child's next turn runs on and not only what the UI
+// shows.
+func TestPickMadeInAChildSessionReachesItsNextTurn(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	childID := persistedChildSession(t, coord, config.AgentExplore)
+
+	before, err := coord.turnExecutorFor(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, "large-model", before.resolved.Model.ModelCfg.Model,
+		"test premise: explore is configured on the main model")
+
+	_, err = coord.EditActiveAgent(t.Context(), childID, switchModelEdit("small-model"))
+	require.NoError(t, err)
+
+	after, err := coord.turnExecutorFor(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, "small-model", after.resolved.Model.ModelCfg.Model,
+		"a pick made in the child session must change the child's next turn")
+}
+
+// TestChildPickOutranksItsDispatchersPick pins the precedence between
+// the two tables a child resolves from: when both name the same agent,
+// the child's own entry wins.
+func TestChildPickOutranksItsDispatchersPick(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	childID := persistedChildSession(t, coord, config.AgentExplore)
+	child, err := coord.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
+
+	pickModelFor(t, coord, child.ParentSessionID, config.AgentExplore, "small-model")
+	// Written straight to the row: through an edit, picking the model the
+	// child already shows is a no-op, and large-model is what explore
+	// shows by default.
+	require.NoError(t, coord.sessions.UpdateActiveAgent(t.Context(), childID, config.ActiveAgentState{
+		Agent: config.AgentExplore,
+		AgentModels: map[string]config.AgentModelPick{
+			config.AgentExplore: {Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
+		},
+	}))
+
+	resolved, err := coord.resolveSubagent(t.Context(), config.AgentExplore, childID)
+	require.NoError(t, err)
+	require.Equal(t, "large-model", resolved.Model.ModelCfg.Model,
+		"the child's own pick must outrank the one its dispatcher made for the same agent")
+}
+
 // TestAgentModelPickStaysInItsSession pins the scope of a pick: it is
 // part of one session's record, so a second session keeps resolving the
 // agent's configured model.

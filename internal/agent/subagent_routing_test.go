@@ -611,6 +611,49 @@ func TestRunSubAgentRecordsItsAgentOnTheSession(t *testing.T) {
 		"the child session does not say which agent produced it, so it cannot be resumed")
 }
 
+// A child session's row holds only the picks made in that child. Copying
+// the dispatcher's table onto it would freeze a snapshot that outranks
+// whatever the dispatcher picks afterwards.
+func TestRunSubAgentDoesNotFreezeTheDispatchersPicks(t *testing.T) {
+	t.Parallel()
+
+	const providerID = "test-provider"
+	env := testEnv(t)
+	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
+	coord.currentAgent = newMockSessionAgent(t, "coder", nil)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+
+	child, resolved := newMockAgent(t, providerID, 4096, func(context.Context, SessionAgentCall) (*fantasy.AgentResult, error) {
+		return agentResultWithText("done"), nil
+	})
+	resolved.ID = "explore"
+	resolved.Host = config.ActiveAgent{
+		Agent: config.Agent{ID: "explore"},
+		AgentModels: map[string]config.AgentModelPick{
+			"explore": {Model: config.SelectedModel{Provider: providerID, Model: "dispatcher-pick"}},
+		},
+	}
+
+	coord.runSubAgent(t.Context(), subAgentParams{
+		Agent:          child,
+		Resolved:       resolved,
+		SessionID:      parent.ID,
+		AgentMessageID: "msg-1",
+		ToolCallID:     "call-1",
+		Prompt:         "do something",
+		SessionTitle:   "explore run",
+	})
+
+	childID := env.sessions.CreateAgentToolSessionID("msg-1", "call-1")
+	stored, err := env.sessions.Get(t.Context(), childID)
+	require.NoError(t, err)
+	require.Equal(t, "explore", stored.Agent, "test premise: the child still records its agent")
+	require.Empty(t, stored.ActiveAgent.AgentModels,
+		"the dispatcher's pick table was copied onto the child's row and will outrank its later picks")
+}
+
 // Cost has to climb the whole chain, one level at a time. Stats count only
 // top-level sessions, so a grandchild's turn that stops at its parent is a
 // turn nobody is billed for.

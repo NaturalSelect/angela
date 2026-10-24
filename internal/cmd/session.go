@@ -427,7 +427,7 @@ func runSessionExport(cmd *cobra.Command, args []string) error {
 	// This is a fresh, single-purpose service instance with nothing
 	// else writing through it, so there is normally no debounced state
 	// to drain; flushing anyway keeps this command correct if that
-	// ever changes (e.g. a future daemon-attached mode).
+	// ever changes.
 	if err := svc.messages.FlushAll(ctx); err != nil {
 		return fmt.Errorf("failed to flush pending messages: %w", err)
 	}

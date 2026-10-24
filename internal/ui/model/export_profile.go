@@ -16,11 +16,9 @@ import (
 )
 
 // exportProfile writes a runtime profile of this process to disk. The data
-// comes straight from the runtime, not from the workspace: in client-server
-// mode the workspace's agents run in the daemon, whose profiles are exported
-// with `angela pprof` instead. The result is reported as a toast, and a
-// timed profile shows an animated one while it records, since a frozen toast
-// would read as stuck.
+// comes straight from the runtime, not from the workspace. The result is
+// reported as a toast, and a timed profile shows an animated one while it
+// records, since a frozen toast would read as stuck.
 func exportProfile(action dialog.ActionExportProfile) tea.Cmd {
 	profile := action.Profile
 	record := func() tea.Msg {

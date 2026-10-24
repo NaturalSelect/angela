@@ -1,6 +1,6 @@
 ---
 name: angela-sessions
-description: Use when the user wants to manage Angela sessions — listing, viewing, renaming, deleting, exporting, resuming, or forking a session from the CLI; understanding session data (todos, cost, token usage); running Angela headlessly with `angela run`; or working with the client-server daemon mode.
+description: Use when the user wants to manage Angela sessions — listing, viewing, renaming, deleting, exporting, resuming, or forking a session from the CLI; understanding session data (todos, cost, token usage); running Angela headlessly with `angela run`.
 ---
 
 # Angela Sessions
@@ -94,33 +94,6 @@ Dispatching a sub-agent or branch creates a nested session with the ID
 `ParentSessionID` set to the dispatching session. `angela session list` hides
 these child sessions.
 
-## Client-Server (Daemon) Mode
-
-Set `ANGELA_CLIENT_SERVER=1` to run Angela as a client connecting to a
-shared daemon instead of a local process:
-
-```bash
-angela server                 # start the daemon (HTTP/REST + SSE)
-angela server -H tcp://0.0.0.0:8080 # bind to a specific host instead of the default socket
-```
-
-`-H, --host` takes `scheme://address` (`tcp://`, `unix://`, or `npipe://`); a
-bare `host:port` is rejected. The same flag on any other command picks the
-server to connect to.
-
-By default the daemon listens on a Unix socket named `angela-<uid>.sock`
-(`angela.sock` if the uid is unknown) in `$XDG_RUNTIME_DIR`, or the OS temp
-directory if that is unset. If that path would exceed 104 bytes it falls back
-to `/tmp`. Windows uses named pipes instead. A client pointed at a `unix` or
-`npipe` host starts the daemon itself when it isn't running (and restarts it
-on a version mismatch).
-
-Daemon mode has some restrictions that don't apply to local mode:
-
-- `--sandbox` and `--no-docker-sandbox` are refused (see `angela-sandbox`) —
-  a daemon serves many workspaces, and the restriction is process-wide and
-  irreversible.
-
 ## Other Session-Adjacent Flags
 
 | Flag | Notes |
@@ -177,9 +150,6 @@ entries, or check `angela logs` for what was refused.
 
 **`--session` and `--continue` both given** — these are mutually exclusive;
 drop one.
-
-**`--sandbox` fails under the daemon** — expected in client-server mode; see
-`angela-sandbox`.
 
 **Can't find a session created by a sub-agent** — `angela session list`
 hides sub-agent and branch sessions. Their IDs have the form

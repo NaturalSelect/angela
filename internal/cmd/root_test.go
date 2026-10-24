@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,32 +17,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
-
-func TestUseClientServer(t *testing.T) {
-	tests := []struct {
-		name  string
-		value string
-		unset bool
-		want  bool
-	}{
-		{"unset defaults to false", "", true, false},
-		{"empty string is false", "", false, false},
-		{"true enables it", "true", false, true},
-		{"1 enables it", "1", false, true},
-		{"false disables it", "false", false, false},
-		{"garbage is false", "not-a-bool", false, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.unset {
-				t.Setenv("ANGELA_CLIENT_SERVER", "")
-			} else {
-				t.Setenv("ANGELA_CLIENT_SERVER", tt.value)
-			}
-			require.Equal(t, tt.want, useClientServer())
-		})
-	}
-}
 
 func TestShouldEnableMetrics(t *testing.T) {
 	tests := []struct {
@@ -66,53 +39,6 @@ func TestShouldEnableMetrics(t *testing.T) {
 
 			cfg := &config.Config{Options: &config.Options{DisableMetrics: tt.cfgDisabled}}
 			require.Equal(t, tt.want, shouldEnableMetrics(cfg))
-		})
-	}
-}
-
-func TestSafeHostName(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		url  *url.URL
-		want string
-	}{
-		{
-			name: "unix socket path becomes underscores",
-			url:  &url.URL{Scheme: "unix", Host: "", Path: "/tmp/angela/server.sock"},
-			want: "unix____tmp_angela_server.sock",
-		},
-		{
-			name: "tcp host and port keep dot-separated address",
-			url:  &url.URL{Scheme: "tcp", Host: "127.0.0.1:1234"},
-			want: "tcp___127.0.0.1_1234",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tt.want, safeHostName(tt.url))
-		})
-	}
-}
-
-func TestServerReadyTimeout(t *testing.T) {
-	tests := []struct {
-		name  string
-		value string
-		want  time.Duration
-	}{
-		{"unset uses default", "", 10 * time.Second},
-		{"valid duration is honored", "2s", 2 * time.Second},
-		{"invalid duration falls back to default", "not-a-duration", 10 * time.Second},
-		{"negative duration falls back to default", "-5s", 10 * time.Second},
-		{"zero falls back to default", "0s", 10 * time.Second},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("ANGELA_SERVER_READY_TIMEOUT", tt.value)
-			require.Equal(t, tt.want, serverReadyTimeout())
 		})
 	}
 }
@@ -186,7 +112,7 @@ func TestResolveCwd_GetwdErrorPropagates(t *testing.T) {
 }
 
 // TestPermissionModeFromFlags covers every combination of --yolo and
-// --auto-accept-edits reaching setupLocalWorkspace/connectToServer.
+// --auto-accept-edits reaching setupLocalWorkspace.
 // cobra rejects the two flags being set together via
 // MarkFlagsMutuallyExclusive, but the helper is exercised directly
 // here anyway, which also documents that yolo would stay the wider
@@ -614,34 +540,6 @@ func TestLocalSkillsDiscoveryConfig_PropagatesOptionsAndResolver(t *testing.T) {
 	require.Contains(t, dc.SkillsPaths, "./my-skills", "the configured path must survive alongside any default discovery paths")
 	require.Equal(t, []string{"foo"}, dc.DisabledSkills)
 	require.Equal(t, store.WorkingDir(), dc.WorkingDir)
-}
-
-func TestPerHostServerDir_CreatesDirectory(t *testing.T) {
-	cacheDir := t.TempDir()
-	t.Setenv("ANGELA_CACHE_DIR", cacheDir)
-
-	u := &url.URL{Scheme: "tcp", Host: "127.0.0.1:1234"}
-	dir, err := perHostServerDir(u)
-	require.NoError(t, err)
-
-	info, statErr := os.Stat(dir)
-	require.NoError(t, statErr)
-	require.True(t, info.IsDir())
-	require.Equal(t, filepath.Join(cacheDir, "server-"+safeHostName(u)), dir)
-}
-
-// TestPerHostServerDir_MkdirFailurePropagates covers a cache directory
-// blocked by a regular file where the per-host directory needs to go.
-func TestPerHostServerDir_MkdirFailurePropagates(t *testing.T) {
-	cacheDir := t.TempDir()
-	u := &url.URL{Scheme: "tcp", Host: "blocked:1"}
-	blocker := filepath.Join(cacheDir, "server-"+safeHostName(u))
-	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644))
-	t.Setenv("ANGELA_CACHE_DIR", cacheDir)
-
-	_, err := perHostServerDir(u)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to create server working directory")
 }
 
 func kittyPlaceholdersPtrBool(b bool) *bool {

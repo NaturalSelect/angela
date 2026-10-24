@@ -273,19 +273,10 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 }
 
 // clientEnvGetenv returns a Getenv function for editorapproval.VSCodeMCP
-// to probe TERM_PROGRAM (and anything else it needs) against the
-// environment of the client that asked for this workspace, not this
-// process's own.
-//
-// In local mode there is no daemon in between, so this process's
-// environment already is the client's, and store.Overrides().Env is
-// left nil: Getenv falls back to os.Getenv. In client-server mode,
-// connectToServer sends the CLI's os.Environ() over the wire, and
-// backend.CreateWorkspace copies it into Overrides().Env before
-// New runs — looking a key up only in that snapshot, rather than
-// falling back to this daemon process's own environment on a miss,
-// keeps a check like TERM_PROGRAM answering for the client's terminal
-// even when the two processes' environments disagree.
+// to probe TERM_PROGRAM (and anything else it needs). With
+// store.Overrides().Env left nil it falls back to os.Getenv; when a caller
+// supplies a snapshot, a key is looked up only in that snapshot, so a miss
+// never leaks this process's own environment.
 func clientEnvGetenv(store *config.ConfigStore) func(string) string {
 	overrides := store.Overrides().Env
 	if overrides == nil {

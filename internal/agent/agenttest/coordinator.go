@@ -1,7 +1,6 @@
 // Package agenttest provides test-only constructors for wiring a real
 // production agent.Coordinator without booting a full app.App. It is
-// imported only from _test.go files (e.g. internal/backend integration
-// tests) and is never referenced by production code, so it is compiled
+// imported only from _test.go files and is never referenced by production code, so it is compiled
 // only under tests and never ships in the production binary or API.
 package agenttest
 

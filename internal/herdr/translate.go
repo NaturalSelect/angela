@@ -7,16 +7,13 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
-	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 )
 
-// Translate converts a pub/sub event (domain or proto) into a herdr
-// Event. Returns nil for event types herdr doesn't care about. This
-// is the single translation point for all integration modes.
+// Translate converts a pub/sub event into a herdr Event. Returns nil for
+// event types herdr doesn't care about.
 func Translate(ev any) Event {
 	switch e := ev.(type) {
-	// Domain types (TUI / local headless).
 	case pubsub.Event[message.Message]:
 		return translateMessage(
 			e.Payload.Role == message.Assistant,
@@ -29,33 +26,12 @@ func Translate(ev any) Event {
 		return PermissionRequested{}
 	case pubsub.Event[permission.PermissionNotification]:
 		return PermissionResolved{}
-
-	// Proto types (client/server mode).
-	case pubsub.Event[proto.Message]:
-		return translateMessage(
-			e.Payload.Role == proto.Assistant,
-			e.Payload.SessionID,
-			false,
-		)
-	case pubsub.Event[proto.RunComplete]:
-		return RunComplete{SessionID: e.Payload.SessionID}
-	case pubsub.Event[proto.PermissionRequest]:
-		return PermissionRequested{}
-	case pubsub.Event[proto.PermissionNotification]:
-		return PermissionResolved{}
-	case pubsub.Event[proto.AgentEvent]:
-		if e.Payload.Type == proto.AgentEventTypeSummarize && !e.Payload.Done {
-			return Summarizing{}
-		}
-		return nil
-
 	default:
 		return nil
 	}
 }
 
-// translateMessage is the shared message-mapping logic for both domain
-// and proto message types.
+// translateMessage maps a message event to a herdr Event.
 func translateMessage(isAssistant bool, sessionID string, isSummary bool) Event {
 	if !isAssistant {
 		return nil

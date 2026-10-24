@@ -2,14 +2,12 @@ package cmd
 
 import (
 	"cmp"
-	"context"
 	"fmt"
 	"os"
-	"os/signal"
 
 	"charm.land/lipgloss/v2"
-	"github.com/NaturalSelect/angela/internal/client"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
 )
@@ -39,13 +37,13 @@ angela logout copilot
 	},
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, ws, cleanup, err := connectToServer(cmd)
+		ws, cleanup, err := setupLocalWorkspace(cmd)
 		if err != nil {
 			return err
 		}
 		defer cleanup()
 
-		progressEnabled := ws.Config.Options.Progress == nil || *ws.Config.Options.Progress
+		progressEnabled := ws.Config().Options.Progress == nil || *ws.Config().Options.Progress
 		if progressEnabled && supportsProgressBar() {
 			_, _ = fmt.Fprintf(os.Stderr, ansi.SetIndeterminateProgressBar)
 			defer func() { _, _ = fmt.Fprintf(os.Stderr, ansi.ResetProgressBar) }()
@@ -53,7 +51,7 @@ angela logout copilot
 
 		var provider string
 		if len(args) == 0 {
-			provider, err = pickLoggedInProvider(c, ws.ID)
+			provider, err = pickLoggedInProvider(ws.Config())
 			if err != nil {
 				return err
 			}
@@ -77,19 +75,17 @@ angela logout copilot
 
 		switch provider {
 		case "copilot", "github", "github-copilot":
-			return logoutCopilot(c, ws.ID)
+			return logoutCopilot(ws)
 		default:
 			return fmt.Errorf("unknown platform: %s", provider)
 		}
 	},
 }
 
-func logoutCopilot(c *client.Client, wsID string) error {
-	ctx := getLogoutContext()
-
+func logoutCopilot(ws workspace.Workspace) error {
 	if err := cmp.Or(
-		c.RemoveConfigField(ctx, wsID, config.ScopeGlobal, "providers.copilot.api_key"),
-		c.RemoveConfigField(ctx, wsID, config.ScopeGlobal, "providers.copilot.oauth"),
+		ws.RemoveConfigField(config.ScopeGlobal, "providers.copilot.api_key"),
+		ws.RemoveConfigField(config.ScopeGlobal, "providers.copilot.oauth"),
 	); err != nil {
 		return err
 	}
@@ -98,14 +94,7 @@ func logoutCopilot(c *client.Client, wsID string) error {
 	return nil
 }
 
-func pickLoggedInProvider(c *client.Client, wsID string) (string, error) {
-	ctx := getLogoutContext()
-
-	cfg, err := c.GetConfig(ctx, wsID)
-	if err != nil {
-		return "", fmt.Errorf("failed to get config: %w", err)
-	}
-
+func pickLoggedInProvider(cfg *config.Config) (string, error) {
 	type loggedInProvider struct {
 		id   string
 		name string
@@ -140,7 +129,7 @@ func pickLoggedInProvider(c *client.Client, wsID string) (string, error) {
 	fmt.Print(logoutPromptStyle.Render(fmt.Sprintf("Select a platform to logout (1-%d): ", len(loggedIn))))
 
 	var choice int
-	_, err = fmt.Scanln(&choice)
+	_, err := fmt.Scanln(&choice)
 	if err != nil || choice < 1 || choice > len(loggedIn) {
 		fmt.Println(logoutHeaderStyle.Render("Logout cancelled."))
 		return "", nil
@@ -151,14 +140,4 @@ func pickLoggedInProvider(c *client.Client, wsID string) (string, error) {
 
 func init() {
 	logoutCmd.Flags().BoolP("force", "f", false, "Skip logout confirmation prompt")
-}
-
-func getLogoutContext() context.Context {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	go func() {
-		<-ctx.Done()
-		cancel()
-		os.Exit(1)
-	}()
-	return ctx
 }

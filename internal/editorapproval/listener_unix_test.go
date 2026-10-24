@@ -15,7 +15,7 @@ import (
 // a Unix socket path. Unlike t.TempDir(), it doesn't embed the test
 // name, so paths built under it stay well below the 104-byte macOS
 // sun_path limit regardless of how long the test name is (see the same
-// pattern in internal/herdr/client_test.go and internal/server).
+// pattern in internal/herdr/client_test.go).
 func shortSocketDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "vscodemcp-sock")

@@ -1,7 +1,6 @@
 // Package workspace defines the Workspace interface used by all
-// frontends (TUI, CLI) to interact with a running workspace. Two
-// implementations exist: one wrapping a local app.App instance and one
-// wrapping the HTTP client SDK.
+// frontends (TUI, CLI, ACP) to interact with a running workspace. The one
+// implementation, AppWorkspace, wraps a local app.App instance.
 package workspace
 
 import (
@@ -20,7 +19,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/oauth"
 	"github.com/NaturalSelect/angela/internal/permission"
-	"github.com/NaturalSelect/angela/internal/proto"
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -28,60 +26,21 @@ import (
 	"github.com/NaturalSelect/angela/internal/undo"
 )
 
-// Reasons the coder agent may be unavailable, returned by
-// Workspace.AgentReadyErr so callers can tell a genuinely
-// uninitialized agent apart from a lost server connection.
-var (
-	// ErrAgentNotInitialized means the workspace exists but its coder
-	// agent has not been configured/initialized (e.g. no model set).
-	ErrAgentNotInitialized = errors.New("coder agent is not initialized")
-	// ErrServerUnreachable means the client could not reach the server
-	// to determine the agent's status (server down, or the workspace was
-	// torn down out from under the client).
-	ErrServerUnreachable = errors.New("lost connection to the angela server")
-	// ErrWorkspaceGone means the server is reachable but no longer knows
-	// this client's workspace: it was torn down, or the server was
-	// replaced underneath the client. The subscription loop re-registers
-	// the workspace in the background when it sees this.
-	ErrWorkspaceGone = errors.New("the server reset this workspace; reconnecting")
-	// ErrStreamClosed means an established event stream ended.
-	// Resubscribing usually succeeds immediately, but events published in
-	// the meantime are lost for good, so the client treats it as a
-	// degraded link that requires a resync.
-	ErrStreamClosed = errors.New("the event stream closed; reconnecting")
-)
+// ErrAgentNotInitialized means the workspace exists but its coder agent has
+// not been configured/initialized (e.g. no model set). Workspace.AgentReadyErr
+// returns it.
+var ErrAgentNotInitialized = errors.New("coder agent is not initialized")
 
-// ConnectionState describes the health of the client-server link as
-// reported by the [ClientWorkspace] subscription loop.
-type ConnectionState int
-
-const (
-	// ConnectionDegraded means the event stream is down (or the workspace
-	// was lost server-side) and the client is retrying or re-registering
-	// in the background.
-	ConnectionDegraded ConnectionState = iota
-	// ConnectionRecovered means the event stream was re-established,
-	// possibly against a re-created workspace.
-	ConnectionRecovered
-)
-
-// ConnectionEvent is delivered to the TUI as a tea.Msg on degraded and
-// recovered transitions of the client-server link. Local (in-process)
-// workspaces never emit it.
-type ConnectionEvent struct {
-	State ConnectionState
-	// Err is the most recent failure, set when State is
-	// ConnectionDegraded.
-	Err error
-	// Stuck marks a degraded connection that has resisted repeated
-	// recovery attempts. The loop keeps retrying regardless; the UI
-	// should escalate from a transient notice to a persistent error.
-	Stuck bool
+// ShellCommandResponse is the result of a shell command the user ran
+// directly, outside the model's tool loop.
+type ShellCommandResponse struct {
+	Output   string
+	ExitCode int
 }
 
 // LSPClientInfo holds information about an LSP client's state. This is
 // the frontend-facing type; implementations translate from the
-// underlying app or proto representation.
+// underlying app representation.
 type LSPClientInfo struct {
 	Name            string
 	State           lsp.ServerState
@@ -122,10 +81,9 @@ type ActiveAgent struct {
 	AgentModels map[string]config.AgentModelPick
 }
 
-// Workspace is the main abstraction consumed by the TUI and CLI. It
-// groups every operation a frontend needs to perform against a running
-// workspace, regardless of whether the workspace is in-process or
-// remote.
+// Workspace is the main abstraction consumed by the TUI, CLI and ACP front
+// ends. It groups every operation a frontend needs to perform against a
+// running workspace.
 type Workspace interface {
 	// Sessions
 	CreateSession(ctx context.Context, title string) (session.Session, error)
@@ -137,9 +95,7 @@ type Workspace interface {
 	ParseAgentToolSessionID(sessionID string) (messageID string, toolCallID string, ok bool)
 	// SetCurrentSession reports the session this client is currently
 	// viewing. Empty sessionID clears the entry (e.g. landing screen).
-	// In single-client local mode this is a no-op. In client/server
-	// mode it informs the server's per-client presence map so other
-	// observers can compute attached-client counts per session.
+	// Only herdr reporting reads it.
 	SetCurrentSession(ctx context.Context, sessionID string) error
 	// SetClientImageSupport reports that this client can render
 	// images (Kitty graphics protocol confirmed working), so the
@@ -164,7 +120,7 @@ type Workspace interface {
 
 	// Agent
 	AgentRun(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) error
-	AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (proto.ShellCommandResponse, error)
+	AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (ShellCommandResponse, error)
 	// AgentCancel interrupts a running turn. On a conversation suspended
 	// waiting on one or more branches it reaches through and interrupts
 	// those too, since the parent has nothing running of its own. It
@@ -187,22 +143,17 @@ type Workspace interface {
 	// and how many background agents are running in it or in any
 	// session below it. They outlive the turn that launched them, so a
 	// session with a count above zero is still working even when busy
-	// is false. Both come from one probe, so a remote workspace pays
-	// for a single round trip rather than one per fact.
+	// is false. Both come from one probe.
 	AgentSessionStatus(sessionID string) (busy bool, backgroundAgents int)
 	// AgentSubSessions lists the direct children of a session in dispatch
 	// order, including those an earlier process dispatched, which come
 	// back as ended. Unlike the probes above it reports a failure rather
-	// than hiding it as an empty answer, so a caller can tell a server it
-	// could not reach from a session with no children.
-	AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error)
+	// than hiding it as an empty answer.
+	AgentSubSessions(ctx context.Context, sessionID string) ([]agenttools.SubSession, error)
 	AgentIsReady() bool
 	// AgentReadyErr reports nil when the coder agent is ready to accept
-	// work, or a descriptive error otherwise: ErrAgentNotInitialized
-	// when the agent simply isn't set up, or ErrServerUnreachable
-	// (wrapped) when the client could not reach the server to find out.
-	// It lets the UI show an actionable message instead of collapsing
-	// both cases into "agent offline".
+	// work, or ErrAgentNotInitialized when the agent isn't set up. It
+	// lets the UI show an actionable message instead of "agent offline".
 	AgentReadyErr() error
 	AgentQueuedPrompts(sessionID string) int
 	AgentQueuedPromptsList(sessionID string) []message.QueuedPrompt
@@ -313,7 +264,7 @@ type Workspace interface {
 	WorkingDir() string
 	Resolver() config.VariableResolver
 
-	// Config mutations (proxied to server in client mode)
+	// Config mutations
 	UpdatePreferredModel(scope config.Scope, name config.SlotName, model config.SelectedModel) error
 	// RecordRecentModel adds a model to the recent-models list without
 	// changing which model is selected. Picking a model for a session
@@ -342,7 +293,7 @@ type Workspace interface {
 	ListSkills(ctx context.Context) ([]skills.CatalogEntry, error)
 	ReadSkill(ctx context.Context, skillID string) ([]byte, skills.SkillReadResult, error)
 
-	// MCP operations (server-side in client mode)
+	// MCP operations
 	MCPGetStates() map[string]mcptools.ClientInfo
 	MCPRefreshPrompts(ctx context.Context, name string)
 	MCPRefreshResources(ctx context.Context, name string)
@@ -364,7 +315,7 @@ type Workspace interface {
 	// the next restart.
 	MCPDisable(name string) error
 
-	// Sandbox operations (server-side in client mode)
+	// Sandbox operations
 	IsInSandbox() bool
 	EnterSandbox(ctx context.Context, cfg sandbox.Config) error
 

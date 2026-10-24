@@ -96,12 +96,9 @@ type RuntimeOverrides struct {
 	// when the session is interactive, for front ends that cannot hand a
 	// conversation over to a sub-session.
 	NoBranchAgents bool
-	// Env is the environment of the client that requested this
-	// workspace, as KEY=VALUE strings. It is nil in local mode, where
-	// this process's own os.Getenv already reflects the terminal the
-	// user is sitting at; client-server mode sets it from the
-	// connecting client's os.Environ() so checks like TERM_PROGRAM
-	// still see the client's terminal rather than the daemon's.
+	// Env, when set, is an environment snapshot as KEY=VALUE strings that
+	// checks like TERM_PROGRAM read instead of this process's own. It is
+	// nil in normal use, where os.Getenv already reflects the user's terminal.
 	Env []string
 }
 

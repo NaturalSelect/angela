@@ -43,7 +43,7 @@ angela commit`,
 			return err
 		}
 
-		ws, cleanup, err := setupWorkspace(cmd)
+		ws, cleanup, err := setupLocalWorkspace(cmd)
 		if err != nil {
 			return err
 		}

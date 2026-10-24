@@ -69,7 +69,7 @@ func TestRun_DoesNotContinueAfterMaxTokens(t *testing.T) {
 // TestRun_TruncatedTurnPublishesTruncatedRunComplete pins that a turn cut
 // off by the output token limit says so on its terminal event. The run
 // returns (result, nil), so without the flag a client that only reads the
-// event, such as `angela run` against a daemon, takes the cut-off text for
+// event, such as an ACP front end, takes the cut-off text for
 // a finished answer.
 func TestRun_TruncatedTurnPublishesTruncatedRunComplete(t *testing.T) {
 	t.Parallel()

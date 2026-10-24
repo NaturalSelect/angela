@@ -5,9 +5,9 @@
 // screen scraping.
 //
 // The client consumes a small, herdr-specific event vocabulary rather
-// than accepting raw proto or domain types. Callers translate their
+// than accepting raw domain types. Callers translate their
 // events into herdr.Event before forwarding. This keeps the client
-// decoupled from both the proto and internal domain layers.
+// decoupled from the internal domain layer.
 package herdr
 
 import (
@@ -32,7 +32,7 @@ const (
 
 // Event is the herdr-specific event vocabulary. Each type maps to a
 // distinct state transition in the agent lifecycle. Callers translate
-// from proto or domain types into these before calling HandleEvent.
+// from domain types into these before calling HandleEvent.
 type Event interface {
 	herdrEvent()
 }

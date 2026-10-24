@@ -1609,15 +1609,14 @@ func TestHandleDialogMsg_ActionRunMCPPrompt_OpensArgumentsDialogWhenUnfilled(t *
 
 // TestHandleDialogMsg_ActionExportSession_WritesToLocalWorkingDirectory is
 // the regression for a bug where the export handler derived its output
-// directory from Workspace.WorkingDir(). In client-server mode that method
-// names a path on the remote daemon host, not on the machine actually
-// running this process, so writing there either fails outright or (worse)
-// silently lands in an unrelated local directory that just happens to
-// share the same name. The mock workspace below has no WorkingDir
-// expectation at all, so the test fails immediately via ctrl.Finish if the
-// handler ever calls it again; the export must be written relative to
-// this test process's own current directory instead. This does not run
-// in parallel because it changes the process's working directory.
+// directory from Workspace.WorkingDir(). That method can name a path other
+// than the one the process is actually running in, so writing there either
+// fails outright or (worse) silently lands in an unrelated local directory
+// that just happens to share the same name. The mock workspace below has no
+// WorkingDir expectation at all, so the test fails immediately via
+// ctrl.Finish if the handler ever calls it again; the export must be written
+// relative to this test process's own current directory instead. This does
+// not run in parallel because it changes the process's working directory.
 func TestHandleDialogMsg_ActionExportSession_WritesToLocalWorkingDirectory(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)

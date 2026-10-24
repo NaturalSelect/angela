@@ -33,12 +33,10 @@ internal/
     templates/                     System prompt templates (coder.md.tpl, task.md.tpl, etc.)
     tools/                         All built-in tools (bash, edit, read, grep, glob, etc.)
       mcp/                         MCP client integration
-  backend/                         Transport-agnostic backend: workspace, session, agent, events
-  server/                          HTTP/REST + SSE daemon server (Unix socket / TCP)
-  client/                          RPC/REST client SDK for connecting to the daemon
-  workspace/                       Unified workspace interface (local AppWorkspace + remote)
-  proto/                           Client/server protocol DTOs and SSE event payloads
-  swagger/                         Auto-generated OpenAPI/Swagger 2.0 API docs
+  acp/                             Agent Client Protocol agent for editors (`angela acp`, stdio)
+    protocol/                      Angela's own ACP types and ports (no SDK imports)
+    caelis/                        The only package allowed to import the ACP SDK (depguard)
+  workspace/                       Workspace interface and its in-process AppWorkspace
   hooks/                           Hook engine: runs user shell commands on hook events
     hooks.go                       Decision types, aggregation logic, event constants
     runner.go                      Parallel hook execution, timeout, dedup
@@ -161,7 +159,6 @@ lib/
 - **Install**: `task install` (builds and installs the binary)
 - **Schema**: `task schema` (generates `schema.json` for config validation)
 - **SQLC**: `task sqlc` (regenerates Go code from SQL queries)
-- **Swagger**: `task swag` (regenerates OpenAPI spec from annotations)
 
 ## Code Style Guidelines
 

@@ -25,7 +25,6 @@ import (
 	message "github.com/NaturalSelect/angela/internal/message"
 	oauth "github.com/NaturalSelect/angela/internal/oauth"
 	permission "github.com/NaturalSelect/angela/internal/permission"
-	proto "github.com/NaturalSelect/angela/internal/proto"
 	question "github.com/NaturalSelect/angela/internal/question"
 	sandbox "github.com/NaturalSelect/angela/internal/sandbox"
 	session "github.com/NaturalSelect/angela/internal/session"
@@ -287,10 +286,10 @@ func (mr *MockWorkspaceMockRecorder) AgentRun(ctx, sessionID, prompt any, attach
 }
 
 // AgentRunShellCommand mocks base method.
-func (m *MockWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (proto.ShellCommandResponse, error) {
+func (m *MockWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (workspace.ShellCommandResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AgentRunShellCommand", ctx, sessionID, command, termWidth, onProgress, isFirstMessage)
-	ret0, _ := ret[0].(proto.ShellCommandResponse)
+	ret0, _ := ret[0].(workspace.ShellCommandResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -317,10 +316,10 @@ func (mr *MockWorkspaceMockRecorder) AgentSessionStatus(sessionID any) *gomock.C
 }
 
 // AgentSubSessions mocks base method.
-func (m *MockWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]proto.SubSession, error) {
+func (m *MockWorkspace) AgentSubSessions(ctx context.Context, sessionID string) ([]tools.SubSession, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AgentSubSessions", ctx, sessionID)
-	ret0, _ := ret[0].([]proto.SubSession)
+	ret0, _ := ret[0].([]tools.SubSession)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

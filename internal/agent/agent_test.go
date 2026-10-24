@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 }
 
 var modelPairs = []modelPair{
-	{"glm-5.2", mundusBuilder("glm-5.2"), mundusBuilder("glm-5.2")},
+	{"deepseek-flash", mundusBuilder("deepseek-flash"), mundusBuilder("deepseek-flash")},
 }
 
 func getModels(t *testing.T, r *vcr.Recorder, pair modelPair) (fantasy.LanguageModel, fantasy.LanguageModel) {
@@ -407,7 +407,7 @@ func TestCoderAgent(t *testing.T) {
 
 				res, err := agent.Run(t.Context(), SessionAgentCall{
 					Agent:           resolved,
-					Prompt:          "use ls to list the files in the current directory",
+					Prompt:          "use the LS tool to list the files in the current directory",
 					SessionID:       session.ID,
 					MaxOutputTokens: 10000,
 				})

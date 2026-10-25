@@ -48,7 +48,7 @@ func cancelTurn(ws Workspace, s *liveSession) {
 // runTurn starts one run and waits for its RunComplete event.
 //
 // NOTE: ctx ends only when the connection closes. If the run's completion
-// event never arrives, the turn still returns: shortly after AgentRun
+// event never arrives, the turn still returns: shortly after the run
 // reports back, or shortly after a cancel. A queued turn behind a busy
 // session has no such signal and waits until it is cancelled.
 func runTurn(ctx context.Context, ws Workspace, s *liveSession, req protocol.PromptRequest, grace time.Duration) (protocol.PromptResponse, error) {
@@ -63,8 +63,15 @@ func runTurn(ctx context.Context, ws Workspace, s *liveSession, req protocol.Pro
 	defer s.forget(runID)
 
 	runCtx := agent.WithRunCompleteMarker(agent.WithRunID(ctx, runID))
+	// NOTE: The reservation is taken before the run starts, so a cancel that
+	// lands while the run is still preparing, for example waiting on MCP
+	// servers, is recorded against it instead of being dropped.
+	accept := ws.AgentBeginAccepted(ctx, s.id)
 	runDone := make(chan error, 1)
-	go func() { runDone <- ws.AgentRun(runCtx, s.id, text, attachments...) }()
+	go func() {
+		defer accept.Close()
+		runDone <- ws.AgentRunAccepted(runCtx, accept, s.id, text, attachments...)
+	}()
 
 	var (
 		fallback  func() (protocol.PromptResponse, error)

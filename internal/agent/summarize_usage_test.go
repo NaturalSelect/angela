@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"testing"
 
 	"charm.land/catwalk/pkg/catwalk"
@@ -116,6 +117,33 @@ func TestSummarizeLeavesTheCostAloneWhenNothingWasUsed(t *testing.T) {
 	after, err := env.sessions.Get(t.Context(), sessID)
 	require.NoError(t, err)
 	require.Equal(t, before.Cost, after.Cost)
+}
+
+func TestSummarizeKeepsCostAddedWhileItRan(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+	sessID := seedSession(t, sa, env)
+	before, err := env.sessions.Get(t.Context(), sessID)
+	require.NoError(t, err)
+
+	// A background agent finishing mid-compaction rolls its cost up to this
+	// session while the summary is still streaming.
+	const rolledUp = 0.5
+	compactModel := newMockLanguageModel(t)
+	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ fantasy.Call) (fantasy.StreamResponse, error) {
+			require.NoError(t, env.sessions.AddCost(ctx, sessID, rolledUp))
+			return textThenFinish("<summary>done</summary>", fantasy.FinishReasonStop, fantasy.Usage{InputTokens: 1000, OutputTokens: 100}), nil
+		})
+
+	require.NoError(t, sa.Summarize(t.Context(), sessID, pricedCompactAgent(compactModel), nil, nil))
+
+	after, err := env.sessions.Get(t.Context(), sessID)
+	require.NoError(t, err)
+	require.NotEmpty(t, after.SummaryMessageID)
+	require.InDelta(t, rolledUp+0.012, after.Cost-before.Cost, 1e-9,
+		"the saved row must keep the cost added while the summary ran")
 }
 
 func TestAddUsage(t *testing.T) {

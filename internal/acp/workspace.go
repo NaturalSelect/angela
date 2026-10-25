@@ -7,16 +7,26 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/NaturalSelect/angela/internal/agent"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
-// NOTE: Events gives each caller its own event stream without needing a
-// tea.Program, which the ACP front end does not have. It stays off
-// workspace.Workspace so the TUI-facing interface and its mock are unchanged.
+// NOTE: The methods below stay off workspace.Workspace so the TUI-facing
+// interface and its mock are unchanged. Events gives each caller its own
+// event stream without needing a tea.Program, which the ACP front end does
+// not have. The accepted-run pair lets a session/cancel that arrives before
+// a run registers be recorded against it instead of being dropped.
 type Workspace interface {
 	workspace.Workspace
 	Events(ctx context.Context) <-chan pubsub.Event[tea.Msg]
+	// AgentBeginAccepted reserves a run on the session. The caller must
+	// close the handle, and may get nil when the session has no executor.
+	AgentBeginAccepted(ctx context.Context, sessionID string) *agent.AcceptedRun
+	// AgentRunAccepted runs a prompt under a reservation taken by
+	// AgentBeginAccepted.
+	AgentRunAccepted(ctx context.Context, accept *agent.AcceptedRun, sessionID, prompt string, attachments ...message.Attachment) error
 }
 
 var _ Workspace = (*workspace.AppWorkspace)(nil)

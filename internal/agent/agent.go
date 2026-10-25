@@ -2038,6 +2038,13 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 		return nil, err
 	}
 
+	// NOTE: The row read before the stream is stale by now, and Save writes
+	// the whole row back. Re-read it so cost added meanwhile, such as a
+	// background agent finishing, is not overwritten.
+	currentSession, err = a.sessions.Get(genCtx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
 	a.updateSessionUsage(compact.Model, &currentSession, spentUsage, spentCost, false)
 
 	// Just in case, get just the last usage info.

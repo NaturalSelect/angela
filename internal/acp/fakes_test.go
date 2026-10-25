@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/NaturalSelect/angela/internal/acp/protocol"
+	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
@@ -44,6 +45,7 @@ type fakeWorkspace struct {
 	run func(ctx context.Context, sessionID, prompt string, atts []message.Attachment) error
 
 	deleted         []string
+	trace           []string
 	cancelled       []string
 	edits           []config.ActiveAgentEdit
 	granted         []permission.PermissionRequest
@@ -156,9 +158,26 @@ func (f *fakeWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, 
 	return f.run(ctx, sessionID, prompt, atts)
 }
 
+// AgentBeginAccepted hands back no reservation, which the adapter must
+// tolerate: the real one does the same for a session with no executor.
+func (f *fakeWorkspace) AgentBeginAccepted(context.Context, string) *agent.AcceptedRun {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.trace = append(f.trace, "begin")
+	return nil
+}
+
+func (f *fakeWorkspace) AgentRunAccepted(ctx context.Context, _ *agent.AcceptedRun, sessionID, prompt string, atts ...message.Attachment) error {
+	f.mu.Lock()
+	f.trace = append(f.trace, "run")
+	f.mu.Unlock()
+	return f.AgentRun(ctx, sessionID, prompt, atts...)
+}
+
 func (f *fakeWorkspace) AgentCancel(sessionID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.trace = append(f.trace, "cancel")
 	f.cancelled = append(f.cancelled, sessionID)
 }
 

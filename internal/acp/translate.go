@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"cmp"
 	"encoding/json"
 	"strings"
 
@@ -15,6 +16,10 @@ type DiffContext struct {
 	// ToolCall finds the call a tool result answers. Edit results carry no
 	// file path, so the path has to come from the call input.
 	ToolCall func(toolCallID string) (message.ToolCall, bool)
+	// Compaction is set when the editor can show a compaction as its own
+	// entry. A summary message is then sent as compaction updates instead
+	// of as thoughts.
+	Compaction bool
 }
 
 func (dc DiffContext) lookup(toolCallID string) (message.ToolCall, bool) {
@@ -69,7 +74,47 @@ func textDelta(sent, next string) string {
 	return next
 }
 
+// diffCompaction reports a summary message as a compaction. The summary text
+// is sent once, when the message finishes, because Angela rewrites the
+// streamed text to the extracted summary at that point.
+//
+// NOTE: A summary the user cancels is deleted, not finished, so the pump
+// reports that case itself.
+func diffCompaction(prev, next message.Message) []protocol.SessionUpdate {
+	if !next.IsFinished() {
+		if prev.ID != "" {
+			return nil
+		}
+		return []protocol.SessionUpdate{protocol.CompactionUpdate{ID: next.ID, Status: protocol.CompactionInProgress}}
+	}
+	if prev.IsFinished() {
+		return nil
+	}
+
+	update := protocol.CompactionUpdate{ID: next.ID}
+	switch next.FinishReason() {
+	case message.FinishReasonEndTurn:
+		update.Status = protocol.CompactionCompleted
+		if text := next.Content().Text; text != "" {
+			update.Summary = &text
+		}
+	case message.FinishReasonCanceled:
+		update.Status = protocol.CompactionCancelled
+	default:
+		update.Status = protocol.CompactionFailed
+		if finish := next.FinishPart(); finish != nil {
+			if reason := cmp.Or(finish.Details, finish.Message); reason != "" {
+				update.Error = &reason
+			}
+		}
+	}
+	return []protocol.SessionUpdate{update}
+}
+
 func diffAssistant(prev, next message.Message, dc DiffContext) []protocol.SessionUpdate {
+	if dc.Compaction && next.IsSummaryMessage {
+		return diffCompaction(prev, next)
+	}
 	prevCalls := make(map[string]message.ToolCall)
 	for _, call := range prev.ToolCalls() {
 		prevCalls[call.ID] = call

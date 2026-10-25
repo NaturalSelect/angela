@@ -146,6 +146,11 @@ model turn, and `session/cancel` stops them. Other palette entries, such as
 scrolling and themes, only make sense in the terminal, and `/undo` is left out
 because it reverts files without a confirmation step.
 
+When the editor advertises compaction support, a compaction, whether started
+by `/compact` or by Angela when the context fills up, shows as its own entry
+that goes from in progress to completed, failed or cancelled, with the summary
+attached once it is ready. Other editors see the summary as a thought.
+
 ## Configuration
 
 Angela is configured with `angela.json`. No config is required to get started.

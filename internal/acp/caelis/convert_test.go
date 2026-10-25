@@ -153,6 +153,26 @@ func TestFromSessionUpdateWireFormat(t *testing.T) {
 			in:   protocol.AvailableCommandsUpdate{},
 			want: `{"sessionUpdate":"available_commands_update","availableCommands":[]}`,
 		},
+		{
+			name: "compaction that has started",
+			in:   protocol.CompactionUpdate{ID: "c1", Status: protocol.CompactionInProgress},
+			want: `{"sessionUpdate":"compaction_update","compactionId":"c1","status":"in_progress"}`,
+		},
+		{
+			name: "compaction that completed with a summary",
+			in:   protocol.CompactionUpdate{ID: "c1", Status: protocol.CompactionCompleted, Summary: new("recap")},
+			want: `{"sessionUpdate":"compaction_update","compactionId":"c1","status":"completed","summary":[{"type":"text","text":"recap"}]}`,
+		},
+		{
+			name: "compaction that failed",
+			in:   protocol.CompactionUpdate{ID: "c1", Status: protocol.CompactionFailed, Error: new("boom")},
+			want: `{"sessionUpdate":"compaction_update","compactionId":"c1","status":"failed","error":"boom"}`,
+		},
+		{
+			name: "compaction that was cancelled",
+			in:   protocol.CompactionUpdate{ID: "c1", Status: protocol.CompactionCancelled},
+			want: `{"sessionUpdate":"compaction_update","compactionId":"c1","status":"cancelled"}`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -252,6 +272,21 @@ func TestToInitializeReadsElicitationForm(t *testing.T) {
 
 	none := toInitialize(parse(t, `{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":true}}}`))
 	require.False(t, none.ElicitationForm)
+}
+
+func TestToInitializeReadsCompaction(t *testing.T) {
+	t.Parallel()
+
+	parse := func(t *testing.T, raw string) protocol.InitializeRequest {
+		t.Helper()
+		var req acp.InitializeRequest
+		require.NoError(t, json.Unmarshal([]byte(raw), &req))
+		return toInitialize(req)
+	}
+	require.True(t, parse(t, `{"protocolVersion":1,"clientCapabilities":{"session":{"compaction":{}}}}`).Compaction)
+	require.False(t, parse(t, `{"protocolVersion":1,"clientCapabilities":{"session":{"notices":{}}}}`).Compaction)
+	require.False(t, parse(t, `{"protocolVersion":1,"clientCapabilities":{"session":{"compaction":null}}}`).Compaction)
+	require.False(t, parse(t, `{"protocolVersion":1}`).Compaction)
 }
 
 func TestToPrompt(t *testing.T) {

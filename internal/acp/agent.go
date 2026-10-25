@@ -62,6 +62,7 @@ type Agent struct {
 	reg    *registry
 
 	elicitForm      atomic.Bool
+	compaction      atomic.Bool
 	completionGrace time.Duration
 
 	mu       sync.Mutex
@@ -118,7 +119,7 @@ func (a *Agent) workspaceFor(cwd string) (Workspace, error) {
 		return nil, internalError("open workspace: %v", err)
 	}
 	a.ws, a.cwd = ws, cwd
-	a.pumpDone = startPump(a.ctx, ws, a.client, a.reg, cwd, elicitation)
+	a.pumpDone = startPump(a.ctx, ws, a.client, a.reg, cwd, elicitation, a.compaction.Load())
 	return ws, nil
 }
 
@@ -138,6 +139,7 @@ func (a *Agent) Close() {
 
 func (a *Agent) Initialize(_ context.Context, req protocol.InitializeRequest) (protocol.InitializeResponse, error) {
 	a.elicitForm.Store(req.ElicitationForm)
+	a.compaction.Store(req.Compaction)
 	return protocol.InitializeResponse{
 		ProtocolVersion:       1,
 		AgentName:             "angela",
@@ -237,7 +239,7 @@ func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, repla
 		return nil, internalError("list messages: %v", err)
 	}
 
-	dc := DiffContext{Cwd: ws.WorkingDir(), ToolCall: indexToolCalls(msgs)}
+	dc := DiffContext{Cwd: ws.WorkingDir(), ToolCall: indexToolCalls(msgs), Compaction: a.compaction.Load()}
 	sent := make(map[string]message.Message, len(msgs))
 	for _, m := range msgs {
 		if replay {

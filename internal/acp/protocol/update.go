@@ -144,6 +144,25 @@ type AvailableCommandsUpdate struct {
 	Commands []AvailableCommand
 }
 
+type CompactionStatus string
+
+const (
+	CompactionInProgress CompactionStatus = "in_progress"
+	CompactionCompleted  CompactionStatus = "completed"
+	CompactionFailed     CompactionStatus = "failed"
+	CompactionCancelled  CompactionStatus = "cancelled"
+)
+
+// NOTE: The first update for an ID creates the compaction and later ones
+// patch it. Summary and Error replace the stored value, and nil leaves it
+// as it was.
+type CompactionUpdate struct {
+	ID      string
+	Status  CompactionStatus
+	Summary *string
+	Error   *string
+}
+
 func (UserMessageChunk) isSessionUpdate()        {}
 func (AgentMessageChunk) isSessionUpdate()       {}
 func (AgentThoughtChunk) isSessionUpdate()       {}
@@ -154,6 +173,7 @@ func (SessionInfoUpdate) isSessionUpdate()       {}
 func (UsageUpdate) isSessionUpdate()             {}
 func (ConfigOptionUpdate) isSessionUpdate()      {}
 func (AvailableCommandsUpdate) isSessionUpdate() {}
+func (CompactionUpdate) isSessionUpdate()        {}
 
 func (ToolContent) isToolCallContent() {}
 func (ToolDiff) isToolCallContent()    {}

@@ -140,6 +140,107 @@ func TestPumpSessionState(t *testing.T) {
 	}, h.client.updates(sid), "an unchanged state is not repeated")
 }
 
+func TestPumpCompaction(t *testing.T) {
+	t.Parallel()
+
+	newCompacting := func(t *testing.T) (*harness, string) {
+		t.Helper()
+		h := newHarness(t)
+		_, err := h.agent.Initialize(t.Context(), protocol.InitializeRequest{ProtocolVersion: 1, Compaction: true})
+		require.NoError(t, err)
+		return h, h.newSession(t)
+	}
+	summary := func(sid string, parts ...message.ContentPart) message.Message {
+		m := assistantMsg("s1", parts...)
+		m.SessionID = sid
+		m.IsSummaryMessage = true
+		return m
+	}
+	deleted := func(m message.Message) pubsub.Event[message.Message] {
+		return pubsub.Event[message.Message]{Type: pubsub.DeletedEvent, Payload: m}
+	}
+	finish := message.Finish{Reason: message.FinishReasonEndTurn}
+
+	t.Run("a compaction is started and then completed", func(t *testing.T) {
+		t.Parallel()
+		h, sid := newCompacting(t)
+
+		h.publishMessage(summary(sid))
+		h.publishMessage(summary(sid, message.TextContent{Text: "final recap"}, finish))
+
+		eventually(t, func() bool { return len(h.client.updates(sid)) == 2 })
+		require.Equal(t, []protocol.SessionUpdate{
+			protocol.CompactionUpdate{ID: "s1", Status: protocol.CompactionInProgress},
+			protocol.CompactionUpdate{ID: "s1", Status: protocol.CompactionCompleted, Summary: new("final recap")},
+		}, h.client.updates(sid))
+	})
+
+	t.Run("deleting an unfinished summary reports it as cancelled", func(t *testing.T) {
+		t.Parallel()
+		h, sid := newCompacting(t)
+
+		h.publishMessage(summary(sid))
+		h.ws.publish(deleted(summary(sid)))
+
+		eventually(t, func() bool { return len(h.client.updates(sid)) == 2 })
+		require.Equal(t, []protocol.SessionUpdate{
+			protocol.CompactionUpdate{ID: "s1", Status: protocol.CompactionInProgress},
+			protocol.CompactionUpdate{ID: "s1", Status: protocol.CompactionCancelled},
+		}, h.client.updates(sid))
+	})
+
+	t.Run("deleting a finished summary says nothing", func(t *testing.T) {
+		t.Parallel()
+		h, sid := newCompacting(t)
+
+		done := summary(sid, message.TextContent{Text: "recap"}, finish)
+		h.publishMessage(done)
+		h.ws.publish(deleted(done))
+		// NOTE: The marker message orders the check: the pump handles events
+		// in sequence, so once it is seen the deletion has been handled.
+		marker := assistantMsg("a1", message.TextContent{Text: "next"})
+		marker.SessionID = sid
+		h.publishMessage(marker)
+
+		eventually(t, func() bool { return len(h.client.updates(sid)) == 2 })
+		require.Equal(t, []protocol.SessionUpdate{
+			protocol.CompactionUpdate{ID: "s1", Status: protocol.CompactionCompleted, Summary: new("recap")},
+			answer("a1", "next"),
+		}, h.client.updates(sid))
+	})
+
+	t.Run("a sub-agent's summary is never reported", func(t *testing.T) {
+		t.Parallel()
+		h, sid := newCompacting(t)
+		h.ws.addSession(session.Session{ID: "child", ParentSessionID: sid})
+
+		childSummary := summary("child")
+		h.publishMessage(childSummary)
+		h.ws.publish(deleted(childSummary))
+		marker := assistantMsg("a1", message.TextContent{Text: "next"})
+		marker.SessionID = sid
+		h.publishMessage(marker)
+
+		eventually(t, func() bool { return len(h.client.updates(sid)) == 1 })
+		require.Equal(t, []protocol.SessionUpdate{answer("a1", "next")}, h.client.updates(sid))
+	})
+
+	t.Run("without editor support nothing about compaction is sent", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sid := h.newSession(t)
+
+		h.publishMessage(summary(sid))
+		h.ws.publish(deleted(summary(sid)))
+		marker := assistantMsg("a1", message.TextContent{Text: "next"})
+		marker.SessionID = sid
+		h.publishMessage(marker)
+
+		eventually(t, func() bool { return len(h.client.updates(sid)) == 1 })
+		require.Equal(t, []protocol.SessionUpdate{answer("a1", "next")}, h.client.updates(sid))
+	})
+}
+
 func TestPumpNotices(t *testing.T) {
 	t.Parallel()
 

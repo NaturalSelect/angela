@@ -93,6 +93,80 @@ func TestTextDelta(t *testing.T) {
 	}
 }
 
+func TestDiffCompaction(t *testing.T) {
+	t.Parallel()
+
+	summary := func(parts ...message.ContentPart) message.Message {
+		m := assistantMsg("s1", parts...)
+		m.IsSummaryMessage = true
+		return m
+	}
+	finished := func(reason message.FinishReason, text, failure string) message.Message {
+		parts := []message.ContentPart{}
+		if text != "" {
+			parts = append(parts, message.TextContent{Text: text})
+		}
+		return summary(append(parts, message.Finish{Reason: reason, Message: "Summarization Error", Details: failure})...)
+	}
+	dc := DiffContext{Cwd: testCwd, Compaction: true}
+
+	t.Run("starts, streams quietly, then completes with the summary", func(t *testing.T) {
+		t.Parallel()
+		runDiffSteps(t, dc, []diffStep{
+			{
+				next: summary(),
+				want: []protocol.SessionUpdate{protocol.CompactionUpdate{ID: "s1", Status: protocol.CompactionInProgress}},
+			},
+			{next: summary(message.ReasoningContent{Thinking: "hmm"}), want: nil},
+			{next: summary(message.TextContent{Text: "<summary>par"}), want: nil},
+			{
+				next: finished(message.FinishReasonEndTurn, "the whole summary", ""),
+				want: []protocol.SessionUpdate{protocol.CompactionUpdate{
+					ID: "s1", Status: protocol.CompactionCompleted, Summary: new("the whole summary"),
+				}},
+			},
+		})
+	})
+
+	t.Run("a replayed summary is reported once, as completed", func(t *testing.T) {
+		t.Parallel()
+		got := Diff(message.Message{}, finished(message.FinishReasonEndTurn, "recap", ""), dc)
+		require.Equal(t, []protocol.SessionUpdate{protocol.CompactionUpdate{
+			ID: "s1", Status: protocol.CompactionCompleted, Summary: new("recap"),
+		}}, got)
+	})
+
+	t.Run("a summary that failed carries the reason", func(t *testing.T) {
+		t.Parallel()
+		got := Diff(summary(), finished(message.FinishReasonError, "", "model overloaded"), dc)
+		require.Equal(t, []protocol.SessionUpdate{protocol.CompactionUpdate{
+			ID: "s1", Status: protocol.CompactionFailed, Error: new("model overloaded"),
+		}}, got)
+	})
+
+	t.Run("a summary cut off by the token limit is a failure", func(t *testing.T) {
+		t.Parallel()
+		got := Diff(summary(), finished(message.FinishReasonMaxTokens, "", ""), dc)
+		require.Equal(t, []protocol.SessionUpdate{protocol.CompactionUpdate{
+			ID: "s1", Status: protocol.CompactionFailed, Error: new("Summarization Error"),
+		}}, got)
+	})
+
+	t.Run("a cancelled finish is reported as cancelled", func(t *testing.T) {
+		t.Parallel()
+		got := Diff(summary(), finished(message.FinishReasonCanceled, "", ""), dc)
+		require.Equal(t, []protocol.SessionUpdate{protocol.CompactionUpdate{
+			ID: "s1", Status: protocol.CompactionCancelled,
+		}}, got)
+	})
+
+	t.Run("without editor support the summary stays a thought", func(t *testing.T) {
+		t.Parallel()
+		got := Diff(message.Message{}, finished(message.FinishReasonEndTurn, "recap", ""), DiffContext{Cwd: testCwd})
+		require.Equal(t, []protocol.SessionUpdate{thought("s1", "recap")}, got)
+	})
+}
+
 func TestDiffRoles(t *testing.T) {
 	t.Parallel()
 

@@ -42,9 +42,11 @@ func toRequestError(err error) error {
 
 func toInitialize(p acp.InitializeRequest) protocol.InitializeRequest {
 	elicitation := p.ClientCapabilities.Elicitation
+	session := p.ClientCapabilities.Session
 	return protocol.InitializeRequest{
 		ProtocolVersion: int(p.ProtocolVersion),
 		ElicitationForm: elicitation != nil && elicitation.Form != nil,
+		Compaction:      session != nil && session.Compaction != nil,
 	}
 }
 
@@ -362,6 +364,19 @@ func fromSessionUpdate(u protocol.SessionUpdate) (acp.SessionUpdate, error) {
 			SessionUpdate:     "available_commands_update",
 			AvailableCommands: fromAvailableCommands(u.Commands),
 		}}, nil
+	case protocol.CompactionUpdate:
+		update := &acp.SessionCompactionUpdate{
+			SessionUpdate: "compaction_update",
+			CompactionId:  acp.CompactionId(u.ID),
+			Status:        acp.CompactionStatus(u.Status),
+		}
+		if u.Summary != nil {
+			update.SetSummary([]acp.ContentBlock{acp.TextBlock(*u.Summary)})
+		}
+		if u.Error != nil {
+			update.SetError(*u.Error)
+		}
+		return acp.SessionUpdate{CompactionUpdate: update}, nil
 	default:
 		return acp.SessionUpdate{}, fmt.Errorf("unsupported session update %T", u)
 	}

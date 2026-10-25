@@ -30,19 +30,21 @@ type pump struct {
 	reg        *registry
 	cwd        string
 	elicitForm bool
+	compaction bool
 
 	rootOf    map[string]string
 	questions questionGuard
 }
 
 // startPump returns a channel that closes once the event stream has ended.
-func startPump(ctx context.Context, ws Workspace, c protocol.Client, reg *registry, cwd string, elicitForm bool) <-chan struct{} {
+func startPump(ctx context.Context, ws Workspace, c protocol.Client, reg *registry, cwd string, elicitForm, compaction bool) <-chan struct{} {
 	p := &pump{
 		ws:         ws,
 		client:     c,
 		reg:        reg,
 		cwd:        cwd,
 		elicitForm: elicitForm,
+		compaction: compaction,
 		rootOf:     make(map[string]string),
 	}
 	events := ws.Events(ctx)
@@ -101,10 +103,16 @@ func (p *pump) send(ctx context.Context, sessionID string, u protocol.SessionUpd
 }
 
 // NOTE: User messages are skipped: the editor already shows the prompt it
-// sent, and a deleted message cannot be taken back from the editor.
+// sent, and a deleted message cannot be taken back from the editor. The one
+// deletion that matters is a summary the user cancelled, which the editor
+// has been told is in progress.
 func (p *pump) onMessage(ctx context.Context, e pubsub.Event[message.Message]) {
 	m := e.Payload
-	if e.Type == pubsub.DeletedEvent || m.Role == message.User {
+	if e.Type == pubsub.DeletedEvent {
+		p.onSummaryDeleted(ctx, m)
+		return
+	}
+	if m.Role == message.User {
 		return
 	}
 	s, ok := p.route(ctx, m.SessionID)
@@ -112,6 +120,22 @@ func (p *pump) onMessage(ctx context.Context, e pubsub.Event[message.Message]) {
 		return
 	}
 	p.emit(ctx, s, m)
+}
+
+func (p *pump) onSummaryDeleted(ctx context.Context, m message.Message) {
+	if !p.compaction || !m.IsSummaryMessage {
+		return
+	}
+	s, ok := p.route(ctx, m.SessionID)
+	if !ok || s.id != m.SessionID {
+		return
+	}
+	prev, seen := s.sent[m.ID]
+	if !seen || prev.IsFinished() {
+		return
+	}
+	delete(s.sent, m.ID)
+	p.send(ctx, s.id, protocol.CompactionUpdate{ID: m.ID, Status: protocol.CompactionCancelled})
 }
 
 // emit is the only place that sends message updates, which keeps them in
@@ -123,7 +147,8 @@ func (p *pump) onMessage(ctx context.Context, e pubsub.Event[message.Message]) {
 func (p *pump) emit(ctx context.Context, s *liveSession, m message.Message) {
 	child := m.SessionID != s.id
 	dc := DiffContext{
-		Cwd: p.cwd,
+		Cwd:        p.cwd,
+		Compaction: p.compaction,
 		ToolCall: func(id string) (message.ToolCall, bool) {
 			return s.lookupCall(m.SessionID, id)
 		},

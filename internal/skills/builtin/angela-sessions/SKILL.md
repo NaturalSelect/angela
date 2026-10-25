@@ -75,7 +75,7 @@ Key differences from interactive mode:
   `--yolo`, `--auto-accept-edits` (edits only), or narrow
   `permissions.rules` allow entries for anything beyond what the permission
   mode already settles.
-- A cancelled run exits with an error ("the run was cancelled"). A run cut
+- A cancelled run exits with an error ("request canceled by user"). A run cut
   off by the output token limit exits with an error ("output was cut off by
   the output token limit...") — raise the model's max tokens and rerun.
 

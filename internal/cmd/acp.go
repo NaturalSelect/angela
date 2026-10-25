@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -23,8 +24,9 @@ stdin and stdout. Nothing else is written to stdout; logs go to Angela's log
 file and, before the project is open, to stderr.
 
 One process serves one project: the first session request names its
-directory. Branch agents and background agents are not available, and the
-question tool is available only when the editor supports forms.`,
+directory, so --cwd is not accepted. Branch agents and background agents are
+not available, and the question tool is available only when the editor
+supports forms.`,
 	Example: `
 # Zed: add to settings.json
 #   "agent_servers": { "Angela": { "command": "angela", "args": ["acp"] } }
@@ -34,6 +36,13 @@ angela acp --auto-accept-edits
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		// NOTE: --cwd is a global flag, so cobra accepts it here. The editor
+		// names the directory in its first session request, so a value given
+		// here would be ignored without a word.
+		if cwd, _ := cmd.Flags().GetString("cwd"); cwd != "" {
+			return errors.New("angela acp does not take --cwd: the editor names the project directory in its first session request")
+		}
+
 		defer serveProfiles()()
 
 		protocolOut := os.Stdout

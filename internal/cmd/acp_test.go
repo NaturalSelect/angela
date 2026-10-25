@@ -132,6 +132,35 @@ func initializeParams() map[string]any {
 	return map[string]any{"protocolVersion": 1, "clientCapabilities": map[string]any{}}
 }
 
+func TestACPCmd_RejectsCwdFlag(t *testing.T) {
+	isolateSessionEnv(t)
+
+	// NOTE: Without the guard the command would serve stdio and close the
+	// stdout it was given, which here is the test binary's own and would
+	// swallow the failure report.
+	stdinR, stdinW, err := os.Pipe()
+	require.NoError(t, err)
+	require.NoError(t, stdinW.Close())
+	stdoutR, stdoutW, err := os.Pipe()
+	require.NoError(t, err)
+	originalIn, originalOut := os.Stdin, os.Stdout
+	os.Stdin, os.Stdout = stdinR, stdoutW
+	t.Cleanup(func() {
+		os.Stdin, os.Stdout = originalIn, originalOut
+		_ = stdinR.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
+	})
+
+	cmd := newSetupWorkspaceTestCmd(t, acpDataDir(t))
+	cmd.SetContext(t.Context())
+	require.NoError(t, cmd.Flags().Set("cwd", t.TempDir()))
+
+	err = acpCmd.RunE(cmd, nil)
+
+	require.ErrorContains(t, err, "does not take --cwd")
+}
+
 func TestRunACP_Conversation(t *testing.T) {
 	isolateSessionEnv(t)
 	cwd, err := os.Getwd()

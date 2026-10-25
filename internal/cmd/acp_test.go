@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -202,7 +203,11 @@ func TestOpenACPWorkspace(t *testing.T) {
 
 			cwd, err := os.Getwd()
 			require.NoError(t, err)
-			require.Equal(t, appWs.WorkingDir(), cwd, "the process works from the project directory")
+			resolvedCwd, err := filepath.EvalSymlinks(cwd)
+			require.NoError(t, err)
+			resolvedProject, err := filepath.EvalSymlinks(appWs.WorkingDir())
+			require.NoError(t, err)
+			require.Equal(t, resolvedProject, resolvedCwd, "the process works from the project directory")
 		})
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/acp/protocol"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
@@ -73,6 +74,22 @@ func (p *pump) handle(ctx context.Context, payload any) {
 		p.questions.dismissed(e.Payload.BatchID)
 	case pubsub.Event[notify.Notification]:
 		p.onNotice(ctx, e.Payload)
+	case pubsub.Event[mcp.Event]:
+		p.onMCP(ctx, e.Payload)
+	}
+}
+
+// onMCP re-sends the command list when a server connects, drops, or changes
+// its prompts. A server that connects does not announce its prompts as a
+// separate event, so the state change covers that too.
+//
+// NOTE: Tool and resource changes do not affect the list.
+func (p *pump) onMCP(ctx context.Context, e mcp.Event) {
+	if e.Type != mcp.EventStateChanged && e.Type != mcp.EventPromptsListChanged {
+		return
+	}
+	for _, s := range p.reg.all() {
+		refreshCommands(ctx, p.client, s, commandsOf(ctx, p.ws))
 	}
 }
 

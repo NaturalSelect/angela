@@ -127,6 +127,7 @@ func TestInitialize(t *testing.T) {
 	require.Equal(t, 1, resp.ProtocolVersion)
 	require.Equal(t, "angela", resp.AgentName)
 	require.True(t, resp.LoadSession)
+	require.True(t, resp.ResumeSession)
 	require.True(t, resp.ListSessions)
 	require.True(t, resp.DeleteSessions)
 	require.True(t, resp.PromptImage)
@@ -244,6 +245,89 @@ func TestLoadSession(t *testing.T) {
 		h.ws.addSession(session.Session{ID: "busy"})
 		h.ws.busy["busy"] = true
 		_, err := h.agent.LoadSession(t.Context(), protocol.LoadSessionRequest{SessionID: "busy", Cwd: testCwd})
+		requireCode(t, err, protocol.CodeInvalidParams)
+	})
+}
+
+func TestResumeSession(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sends the session state but not the history", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		user := message.Message{ID: "u1", SessionID: "old", Role: message.User, Parts: []message.ContentPart{message.TextContent{Text: "fix it"}}}
+		reply := assistantMsg("a1", message.TextContent{Text: "done"}, message.Finish{Reason: message.FinishReasonEndTurn})
+		reply.SessionID = "old"
+		h.ws.addSession(session.Session{ID: "old", Title: "Fix bug"})
+		h.ws.setMessages("old", user, reply)
+
+		resp, err := h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "old", Cwd: testCwd})
+		require.NoError(t, err)
+		require.NotEmpty(t, resp.ConfigOptions)
+
+		require.Equal(t, []protocol.SessionUpdate{
+			protocol.SessionInfoUpdate{Title: new("Fix bug")},
+			protocol.Plan{Entries: []protocol.PlanEntry{}},
+		}, h.client.updates("old"))
+	})
+
+	t.Run("later changes to an old message are sent as new text only", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		reply := assistantMsg("a1", message.TextContent{Text: "done"}, message.Finish{Reason: message.FinishReasonEndTurn})
+		reply.SessionID = "old"
+		h.ws.addSession(session.Session{ID: "old", Title: "Fix bug"})
+		h.ws.setMessages("old", reply)
+
+		_, err := h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "old", Cwd: testCwd})
+		require.NoError(t, err)
+		before := len(h.client.updates("old"))
+
+		// NOTE: The pump must treat the resumed message as already sent. If
+		// it did not, it would resend "done" in full and the editor would
+		// show the answer twice.
+		extended := assistantMsg("a1", message.TextContent{Text: "done!"}, message.Finish{Reason: message.FinishReasonEndTurn})
+		extended.SessionID = "old"
+		h.publishMessage(extended)
+		eventually(t, func() bool { return len(h.client.updates("old")) == before+1 })
+		require.Equal(t, answer("a1", "!"), h.client.updates("old")[before])
+	})
+
+	t.Run("the session accepts a prompt afterwards", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		h.ws.addSession(session.Session{ID: "old", Title: "Fix bug"})
+		h.ws.run = h.completeWith(notify.RunComplete{})
+
+		_, err := h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "old", Cwd: testCwd})
+		require.NoError(t, err)
+
+		got, err := h.agent.Prompt(t.Context(), textPrompt("old", "go on"))
+		require.NoError(t, err)
+		require.Equal(t, protocol.StopReasonEndTurn, got.StopReason)
+	})
+
+	t.Run("unknown session", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		_, err := h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "nope", Cwd: testCwd})
+		requireCode(t, err, protocol.CodeNotFound)
+	})
+
+	t.Run("sub-agent session", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		h.ws.addSession(session.Session{ID: "child", ParentSessionID: "root"})
+		_, err := h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "child", Cwd: testCwd})
+		requireCode(t, err, protocol.CodeInvalidParams)
+	})
+
+	t.Run("running session", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		h.ws.addSession(session.Session{ID: "busy"})
+		h.ws.busy["busy"] = true
+		_, err := h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "busy", Cwd: testCwd})
 		requireCode(t, err, protocol.CodeInvalidParams)
 	})
 }

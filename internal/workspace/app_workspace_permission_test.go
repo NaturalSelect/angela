@@ -38,6 +38,7 @@ func TestAppWorkspace_PermissionResolution(t *testing.T) {
 		{name: "Grant allows the call", resolve: (*AppWorkspace).PermissionGrant, wantAllowed: true},
 		{name: "GrantPersistent allows the call", resolve: (*AppWorkspace).PermissionGrantPersistent, wantAllowed: true},
 		{name: "Deny refuses the call", resolve: (*AppWorkspace).PermissionDeny, wantAllowed: false},
+		{name: "DenyPersistent refuses the call", resolve: (*AppWorkspace).PermissionDenyPersistent, wantAllowed: false},
 	}
 
 	for _, tc := range cases {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/editorapproval"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1633,6 +1634,151 @@ func TestPermissionService_GrantPersistentReleasesPendingSiblings(t *testing.T) 
 	assert.True(t, waitA().Allowed(), "the request granted directly must be allowed")
 	assert.True(t, waitB().Allowed(),
 		"a sibling sharing the same GrantKey must be released too, not left blocked forever")
+}
+
+// nextRequest waits for the next request to reach the prompt.
+func nextRequest(t *testing.T, events <-chan pubsub.Event[PermissionRequest]) PermissionRequest {
+	t.Helper()
+	select {
+	case ev := <-events:
+		return ev.Payload
+	case <-time.After(2 * time.Second):
+		t.Fatal("the request never reached the prompt")
+		return PermissionRequest{}
+	}
+}
+
+// requireNoPrompt fails if a request reaches the prompt shortly after.
+func requireNoPrompt(t *testing.T, events <-chan pubsub.Event[PermissionRequest]) {
+	t.Helper()
+	select {
+	case ev := <-events:
+		t.Fatalf("the request should not have prompted: %+v", ev.Payload)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestPermissionService_DenyPersistent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("refuses the same access later without asking", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		service := NewPermissionService(dir, ModeManual, nil)
+		events := service.Subscribe(t.Context())
+		path := filepath.Join(dir, "a.go")
+
+		wait := gateAsync(t.Context(), service, "s1", "c1", editAccess(path))
+		require.True(t, service.DenyPersistent(nextRequest(t, events)))
+		require.Equal(t, OutcomeUserDeny, wait().Outcome)
+
+		again := gate(t.Context(), service, "s1", "c2", editAccess(path))
+		assert.Equal(t, OutcomeUserDeny, again.Outcome)
+		assert.NotEmpty(t, again.Reason,
+			"a reason lets the model take another route instead of ending the turn")
+		requireNoPrompt(t, events)
+	})
+
+	t.Run("a different access still asks", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		service := NewPermissionService(dir, ModeManual, nil)
+		events := service.Subscribe(t.Context())
+
+		wait := gateAsync(t.Context(), service, "s1", "c1", editAccess(filepath.Join(dir, "a.go")))
+		service.DenyPersistent(nextRequest(t, events))
+		wait()
+
+		wait2 := gateAsync(t.Context(), service, "s1", "c2", editAccess(filepath.Join(dir, "b.go")))
+		service.Grant(nextRequest(t, events))
+		assert.True(t, wait2().Allowed(), "the refusal covers a.go only")
+	})
+
+	t.Run("another session still asks", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		service := NewPermissionService(dir, ModeManual, nil)
+		events := service.Subscribe(t.Context())
+		path := filepath.Join(dir, "a.go")
+
+		wait := gateAsync(t.Context(), service, "s1", "c1", editAccess(path))
+		service.DenyPersistent(nextRequest(t, events))
+		wait()
+
+		wait2 := gateAsync(t.Context(), service, "s2", "c2", editAccess(path))
+		service.Grant(nextRequest(t, events))
+		assert.True(t, wait2().Allowed(), "a refusal lasts for its own session tree")
+	})
+
+	t.Run("also covers a command that always needs approval", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		service := NewPermissionService(dir, ModeManual, nil)
+		events := service.Subscribe(t.Context())
+		access := Access{Tool: "bash", Action: ActionExecute, Command: "rm -rf build", Path: dir}
+
+		wait := gateAsync(t.Context(), service, "s1", "c1", access)
+		service.DenyPersistent(nextRequest(t, events))
+		wait()
+
+		again := gate(t.Context(), service, "s1", "c2", access)
+		assert.Equal(t, OutcomeUserDeny, again.Outcome)
+		requireNoPrompt(t, events)
+	})
+
+	t.Run("refuses a sibling sub-agent already waiting on the same access", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		service := NewPermissionService(dir, ModeManual, nil)
+		service.RegisterChild("agent-a", "root")
+		service.RegisterChild("agent-b", "root")
+		events := service.Subscribe(t.Context())
+		path := filepath.Join(dir, "shared.go")
+
+		waitA := gateAsync(t.Context(), service, "agent-a", "call-a", editAccess(path))
+		waitB := gateAsync(t.Context(), service, "agent-b", "call-b", editAccess(path))
+		pending := map[string]PermissionRequest{}
+		for range 2 {
+			req := nextRequest(t, events)
+			pending[req.ToolCallID] = req
+		}
+
+		require.True(t, service.DenyPersistent(pending["call-a"]))
+		assert.Equal(t, OutcomeUserDeny, waitA().Outcome)
+		assert.Equal(t, OutcomeUserDeny, waitB().Outcome,
+			"the sibling must not stay blocked on a question already answered")
+	})
+
+	t.Run("a call that loses the race records nothing", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		service := NewPermissionService(dir, ModeManual, nil)
+		events := service.Subscribe(t.Context())
+		path := filepath.Join(dir, "a.go")
+
+		wait := gateAsync(t.Context(), service, "s1", "c1", editAccess(path))
+		pending := nextRequest(t, events)
+		require.True(t, service.Grant(pending))
+		require.False(t, service.DenyPersistent(pending), "already resolved by the grant")
+		require.True(t, wait().Allowed())
+
+		wait2 := gateAsync(t.Context(), service, "s1", "c2", editAccess(path))
+		service.Grant(nextRequest(t, events))
+		assert.True(t, wait2().Allowed(), "a losing call must not leave a refusal behind")
+	})
+
+	t.Run("an unknown request is a safe no-op", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, nil)
+		notifications := service.SubscribeNotifications(t.Context())
+
+		assert.False(t, service.DenyPersistent(PermissionRequest{ID: "ghost", ToolCallID: "ghost"}))
+		select {
+		case ev := <-notifications:
+			t.Fatalf("an unknown request must not publish: %+v", ev.Payload)
+		case <-time.After(50 * time.Millisecond):
+		}
+	})
 }
 
 // TestChildNeverWiderThanRoot is the hard constraint this rework

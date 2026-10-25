@@ -25,6 +25,12 @@ type liveSession struct {
 
 	mu    sync.Mutex
 	turns map[string]*turn
+
+	// cmdOpen and commands are guarded by cmdMu. commands is the last list
+	// the editor was sent.
+	cmdMu    sync.Mutex
+	cmdOpen  bool
+	commands []protocol.AvailableCommand
 }
 
 func newLiveSession(id string, sent map[string]message.Message, state []protocol.SessionUpdate) *liveSession {
@@ -161,18 +167,19 @@ func newRegistry() *registry {
 	return &registry{sessions: make(map[string]*liveSession)}
 }
 
-func (r *registry) add(id string) {
-	r.put(newLiveSession(id, nil, nil))
+func (r *registry) add(id string) *liveSession {
+	return r.put(newLiveSession(id, nil, nil))
 }
 
-func (r *registry) addLoaded(id string, sent map[string]message.Message, state []protocol.SessionUpdate) {
-	r.put(newLiveSession(id, sent, state))
+func (r *registry) addLoaded(id string, sent map[string]message.Message, state []protocol.SessionUpdate) *liveSession {
+	return r.put(newLiveSession(id, sent, state))
 }
 
-func (r *registry) put(s *liveSession) {
+func (r *registry) put(s *liveSession) *liveSession {
 	r.mu.Lock()
 	r.sessions[s.id] = s
 	r.mu.Unlock()
+	return s
 }
 
 func (r *registry) remove(id string) {

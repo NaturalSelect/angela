@@ -25,6 +25,7 @@ type fakeAgent struct {
 	initialize      func(context.Context, protocol.InitializeRequest) (protocol.InitializeResponse, error)
 	newSession      func(context.Context, protocol.NewSessionRequest) (protocol.NewSessionResponse, error)
 	loadSession     func(context.Context, protocol.LoadSessionRequest) (protocol.LoadSessionResponse, error)
+	resumeSession   func(context.Context, protocol.ResumeSessionRequest) (protocol.ResumeSessionResponse, error)
 	listSessions    func(context.Context, protocol.ListSessionsRequest) (protocol.ListSessionsResponse, error)
 	deleteSession   func(context.Context, protocol.DeleteSessionRequest) error
 	prompt          func(context.Context, protocol.PromptRequest) (protocol.PromptResponse, error)
@@ -58,6 +59,13 @@ func (f *fakeAgent) LoadSession(ctx context.Context, r protocol.LoadSessionReque
 		return protocol.LoadSessionResponse{}, nil
 	}
 	return f.loadSession(ctx, r)
+}
+
+func (f *fakeAgent) ResumeSession(ctx context.Context, r protocol.ResumeSessionRequest) (protocol.ResumeSessionResponse, error) {
+	if f.resumeSession == nil {
+		return protocol.ResumeSessionResponse{}, nil
+	}
+	return f.resumeSession(ctx, r)
 }
 
 func (f *fakeAgent) ListSessions(ctx context.Context, r protocol.ListSessionsRequest) (protocol.ListSessionsResponse, error) {
@@ -230,6 +238,8 @@ func (h *harness) startPrompt(ctx context.Context, req acp.PromptRequest) <-chan
 }
 
 type rpcReply struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
 	Result json.RawMessage `json:"result"`
 	Error  *struct {
 		Code    int    `json:"code"`
@@ -277,7 +287,7 @@ func TestServeInitializeWireFormat(t *testing.T) {
 			name: "every capability enabled",
 			resp: protocol.InitializeResponse{
 				ProtocolVersion: 1, AgentName: "angela", AgentVersion: "v1",
-				LoadSession: true, ListSessions: true, DeleteSessions: true,
+				LoadSession: true, ResumeSession: true, ListSessions: true, DeleteSessions: true,
 				PromptImage: true, PromptEmbeddedContext: true,
 			},
 			want: `{
@@ -289,7 +299,7 @@ func TestServeInitializeWireFormat(t *testing.T) {
 					"mcpCapabilities":{},
 					"loadSession":true,
 					"promptCapabilities":{"image":true,"embeddedContext":true},
-					"sessionCapabilities":{"list":{},"delete":{}}
+					"sessionCapabilities":{"list":{},"delete":{},"resume":{}}
 				}
 			}`,
 		},
@@ -374,6 +384,7 @@ func TestServeRoutesSessionRequests(t *testing.T) {
 	var (
 		mu       sync.Mutex
 		loaded   protocol.LoadSessionRequest
+		resumed  protocol.ResumeSessionRequest
 		listed   protocol.ListSessionsRequest
 		deleted  protocol.DeleteSessionRequest
 		configed protocol.SetConfigOptionRequest
@@ -395,6 +406,12 @@ func TestServeRoutesSessionRequests(t *testing.T) {
 			defer mu.Unlock()
 			loaded = r
 			return protocol.LoadSessionResponse{ConfigOptions: options}, nil
+		},
+		resumeSession: func(_ context.Context, r protocol.ResumeSessionRequest) (protocol.ResumeSessionResponse, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			resumed = r
+			return protocol.ResumeSessionResponse{ConfigOptions: options}, nil
 		},
 		listSessions: func(_ context.Context, r protocol.ListSessionsRequest) (protocol.ListSessionsResponse, error) {
 			mu.Lock()
@@ -430,6 +447,10 @@ func TestServeRoutesSessionRequests(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, loadResp.ConfigOptions, 1)
 
+	resumeResp, err := h.conn.ResumeSession(ctx, acp.ResumeSessionRequest{SessionId: "s1", Cwd: "/p", McpServers: []acp.McpServer{}})
+	require.NoError(t, err)
+	require.Len(t, resumeResp.ConfigOptions, 1)
+
 	cursor, cwd := "c1", "/p"
 	listResp, err := h.conn.ListSessions(ctx, acp.ListSessionsRequest{Cursor: &cursor, Cwd: &cwd})
 	require.NoError(t, err)
@@ -450,9 +471,48 @@ func TestServeRoutesSessionRequests(t *testing.T) {
 	defer mu.Unlock()
 	require.Equal(t, protocol.NewSessionRequest{Cwd: "/p"}, created)
 	require.Equal(t, protocol.LoadSessionRequest{SessionID: "s1", Cwd: "/p"}, loaded)
+	require.Equal(t, protocol.ResumeSessionRequest{SessionID: "s1", Cwd: "/p"}, resumed)
 	require.Equal(t, protocol.ListSessionsRequest{Cwd: "/p", Cursor: "c1"}, listed)
 	require.Equal(t, protocol.DeleteSessionRequest{SessionID: "s1"}, deleted)
 	require.Equal(t, protocol.SetConfigOptionRequest{SessionID: "s1", ConfigID: "model", Value: "b"}, configed)
+}
+
+// NOTE: The editor learns a session ID from the session/new response, so an
+// update for that session sent before the response would be dropped.
+func TestServeNewSessionWorkRunsAfterTheResponseIsWritten(t *testing.T) {
+	t.Parallel()
+
+	agent := &fakeAgent{}
+	agent.newSession = func(context.Context, protocol.NewSessionRequest) (protocol.NewSessionResponse, error) {
+		return protocol.NewSessionResponse{
+			SessionID: "s1",
+			AfterSent: func(ctx context.Context) {
+				_ = agent.client.SessionUpdate(ctx, protocol.SessionNotification{
+					SessionID: "s1",
+					Update: protocol.AvailableCommandsUpdate{Commands: []protocol.AvailableCommand{
+						{Name: "user:review", Description: "Review a file"},
+					}},
+				})
+			},
+		}, nil
+	}
+	p, _ := serveOnPipes(t, agent.factory)
+	raw := newRawConn(t, p)
+
+	raw.send(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/p","mcpServers":[]}}`)
+
+	first := raw.readReply()
+	require.Nil(t, first.Error)
+	require.JSONEq(t, `{"sessionId":"s1"}`, string(first.Result))
+
+	second := raw.readReply()
+	require.Equal(t, "session/update", second.Method)
+	require.JSONEq(t, `{
+		"sessionId":"s1",
+		"update":{"sessionUpdate":"available_commands_update","availableCommands":[
+			{"name":"user:review","description":"Review a file"}
+		]}
+	}`, string(second.Params))
 }
 
 func TestServePromptDeliversEveryBlockType(t *testing.T) {
@@ -781,10 +841,6 @@ func TestServeAnswersUnsupportedMethodsWithMethodNotFound(t *testing.T) {
 	h := newHarness(t, &fakeAgent{})
 	ctx := t.Context()
 	calls := map[string]func() error{
-		"session/resume": func() error {
-			_, err := h.conn.ResumeSession(ctx, acp.ResumeSessionRequest{SessionId: "s1", Cwd: "/p"})
-			return err
-		},
 		"session/close": func() error {
 			_, err := h.conn.CloseSession(ctx, acp.CloseSessionRequest{SessionId: "s1"})
 			return err

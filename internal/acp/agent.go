@@ -143,6 +143,7 @@ func (a *Agent) Initialize(_ context.Context, req protocol.InitializeRequest) (p
 		AgentName:             "angela",
 		AgentVersion:          version.Version,
 		LoadSession:           true,
+		ResumeSession:         true,
 		ListSessions:          true,
 		DeleteSessions:        true,
 		PromptImage:           true,
@@ -169,10 +170,13 @@ func (a *Agent) NewSession(ctx context.Context, req protocol.NewSessionRequest) 
 	if err != nil {
 		return protocol.NewSessionResponse{}, internalError("create session: %v", err)
 	}
-	a.reg.add(sess.ID)
+	s := a.reg.add(sess.ID)
 	return protocol.NewSessionResponse{
 		SessionID:     sess.ID,
 		ConfigOptions: a.configOptions(ctx, ws, sess.ID),
+		AfterSent: func(ctx context.Context) {
+			openCommands(ctx, a.client, s, commandsOf(ctx, ws))
+		},
 	}, nil
 }
 
@@ -182,40 +186,64 @@ func (a *Agent) NewSession(ctx context.Context, req protocol.NewSessionRequest) 
 // NOTE: The replay runs on the request goroutine. The session is not
 // registered yet, so the event pump cannot write to it concurrently.
 func (a *Agent) LoadSession(ctx context.Context, req protocol.LoadSessionRequest) (protocol.LoadSessionResponse, error) {
-	ws, err := a.workspaceFor(req.Cwd)
+	opts, err := a.restoreSession(ctx, req.SessionID, req.Cwd, true)
 	if err != nil {
 		return protocol.LoadSessionResponse{}, err
 	}
+	return protocol.LoadSessionResponse{ConfigOptions: opts}, nil
+}
+
+// ResumeSession picks a session up where it stopped without sending its
+// history. The editor keeps the transcript it already has, so only the
+// title, usage and plan are sent.
+func (a *Agent) ResumeSession(ctx context.Context, req protocol.ResumeSessionRequest) (protocol.ResumeSessionResponse, error) {
+	opts, err := a.restoreSession(ctx, req.SessionID, req.Cwd, false)
+	if err != nil {
+		return protocol.ResumeSessionResponse{}, err
+	}
+	return protocol.ResumeSessionResponse{ConfigOptions: opts}, nil
+}
+
+// restoreSession registers an existing session with the event pump. Either
+// way the pump must know the messages that already exist, or it would send
+// them to the editor again as if they were new.
+func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, replay bool) ([]protocol.ConfigOption, error) {
+	ws, err := a.workspaceFor(cwd)
+	if err != nil {
+		return nil, err
+	}
 	if err := readyWorkspace(ws); err != nil {
-		return protocol.LoadSessionResponse{}, err
+		return nil, err
 	}
 
-	sess, err := ws.GetSession(ctx, req.SessionID)
+	sess, err := ws.GetSession(ctx, sessionID)
 	switch {
 	case errors.Is(err, session.ErrSessionNotFound):
-		return protocol.LoadSessionResponse{}, notFound("session %s not found", req.SessionID)
+		return nil, notFound("session %s not found", sessionID)
 	case err != nil:
-		return protocol.LoadSessionResponse{}, internalError("get session: %v", err)
+		return nil, internalError("get session: %v", err)
 	}
 	if sess.ParentSessionID != "" {
-		return protocol.LoadSessionResponse{}, invalidParams("session %s belongs to another session", sess.ID)
+		return nil, invalidParams("session %s belongs to another session", sess.ID)
 	}
 	if ws.AgentIsSessionBusy(sess.ID) {
-		return protocol.LoadSessionResponse{}, invalidParams("session %s is running", sess.ID)
+		return nil, invalidParams("session %s is running", sess.ID)
 	}
 
 	a.reg.remove(sess.ID)
 	msgs, err := ws.ListMessages(ctx, sess.ID)
 	if err != nil {
-		return protocol.LoadSessionResponse{}, internalError("list messages: %v", err)
+		return nil, internalError("list messages: %v", err)
 	}
 
 	dc := DiffContext{Cwd: ws.WorkingDir(), ToolCall: indexToolCalls(msgs)}
 	sent := make(map[string]message.Message, len(msgs))
 	for _, m := range msgs {
-		for _, u := range Diff(message.Message{}, m, dc) {
-			if err := a.client.SessionUpdate(ctx, protocol.SessionNotification{SessionID: sess.ID, Update: u}); err != nil {
-				return protocol.LoadSessionResponse{}, internalError("replay history: %v", err)
+		if replay {
+			for _, u := range Diff(message.Message{}, m, dc) {
+				if err := a.client.SessionUpdate(ctx, protocol.SessionNotification{SessionID: sess.ID, Update: u}); err != nil {
+					return nil, internalError("replay history: %v", err)
+				}
 			}
 		}
 		sent[m.ID] = m
@@ -225,12 +253,13 @@ func (a *Agent) LoadSession(ctx context.Context, req protocol.LoadSessionRequest
 	state := sessionStateUpdates(sess, active)
 	for _, u := range state {
 		if err := a.client.SessionUpdate(ctx, protocol.SessionNotification{SessionID: sess.ID, Update: u}); err != nil {
-			return protocol.LoadSessionResponse{}, internalError("replay history: %v", err)
+			return nil, internalError("send session state: %v", err)
 		}
 	}
 
-	a.reg.addLoaded(sess.ID, sent, state)
-	return protocol.LoadSessionResponse{ConfigOptions: a.configOptions(ctx, ws, sess.ID)}, nil
+	s := a.reg.addLoaded(sess.ID, sent, state)
+	openCommands(ctx, a.client, s, commandsOf(ctx, ws))
+	return a.configOptions(ctx, ws, sess.ID), nil
 }
 
 func (a *Agent) ListSessions(ctx context.Context, req protocol.ListSessionsRequest) (protocol.ListSessionsResponse, error) {

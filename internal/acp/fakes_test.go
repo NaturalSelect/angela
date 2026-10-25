@@ -2,7 +2,9 @@ package acp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -12,12 +14,14 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/acp/protocol"
 	"github.com/NaturalSelect/angela/internal/agent"
+	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
@@ -47,6 +51,12 @@ type fakeWorkspace struct {
 	// a prompt in its setup.
 	onActive func()
 
+	customCommands []commands.CustomCommand
+	skillEntries   []skills.CatalogEntry
+	skillBodies    map[string][]byte
+	mcpPrompts     []commands.MCPPrompt
+	promptText     func(clientID, promptID string, args map[string]string) (string, error)
+
 	deleted         []string
 	trace           []string
 	cancelled       []string
@@ -54,6 +64,7 @@ type fakeWorkspace struct {
 	granted         []permission.PermissionRequest
 	grantedAlways   []permission.PermissionRequest
 	denied          []permission.PermissionRequest
+	deniedAlways    []permission.PermissionRequest
 	answers         [][]question.Answer
 	questionCancels int
 	shutdowns       int
@@ -222,6 +233,13 @@ func (f *fakeWorkspace) PermissionDeny(req permission.PermissionRequest) bool {
 	return true
 }
 
+func (f *fakeWorkspace) PermissionDenyPersistent(req permission.PermissionRequest) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deniedAlways = append(f.deniedAlways, req)
+	return true
+}
+
 func (f *fakeWorkspace) QuestionAnswer(answers []question.Answer) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -237,6 +255,56 @@ func (f *fakeWorkspace) QuestionCancel() bool {
 }
 
 func (f *fakeWorkspace) Config() *config.Config { return f.cfg }
+
+func (f *fakeWorkspace) ListCustomCommands(context.Context) ([]commands.CustomCommand, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.customCommands), nil
+}
+
+func (f *fakeWorkspace) ListSkills(context.Context) ([]skills.CatalogEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.skillEntries), nil
+}
+
+func (f *fakeWorkspace) ReadSkill(_ context.Context, id string) ([]byte, skills.SkillReadResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	body, ok := f.skillBodies[id]
+	if !ok {
+		return nil, skills.SkillReadResult{}, fmt.Errorf("%w: %s", skills.ErrSkillNotFound, id)
+	}
+	var name string
+	for _, e := range f.skillEntries {
+		if e.ID == id {
+			name = e.Name
+		}
+	}
+	return body, skills.SkillReadResult{Name: name}, nil
+}
+
+func (f *fakeWorkspace) ListMCPPrompts(context.Context) ([]commands.MCPPrompt, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.mcpPrompts), nil
+}
+
+func (f *fakeWorkspace) GetMCPPrompt(clientID, promptID string, args map[string]string) (string, error) {
+	f.mu.Lock()
+	get := f.promptText
+	f.mu.Unlock()
+	if get == nil {
+		return "", errors.New("no prompt text configured")
+	}
+	return get(clientID, promptID, args)
+}
+
+func (f *fakeWorkspace) setMCPPrompts(prompts ...commands.MCPPrompt) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mcpPrompts = prompts
+}
 
 func (f *fakeWorkspace) WorkingDir() string { return f.cwd }
 

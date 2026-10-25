@@ -123,8 +123,17 @@ add this to `settings.json`:
 
 One process serves one project, named by the first session request. Branch
 agents and background agents are not available, and the question tool works
-only when the editor supports forms. Permission prompts go to the editor;
-`--yolo` and `--auto-accept-edits` apply as usual.
+only when the editor supports forms. Permission prompts go to the editor and
+offer allow and deny, each either once or for the rest of the session;
+`--yolo` and `--auto-accept-edits` apply as usual. Editors can load a session
+with its history or resume it without the history.
+
+The editor's `/` menu lists your custom commands, user-invocable skills and
+MCP prompts, and updates when an MCP server connects or changes its prompts.
+Start a prompt with one of them to run it, as in the terminal UI. A command
+with one argument takes the rest of the line. A command with several takes
+`NAME=value` pairs, and a value with spaces goes in double quotes. A skill is
+attached to the prompt, and any text after its name is sent alongside it.
 
 ## Configuration
 

@@ -56,6 +56,9 @@ func fromInitializeResponse(r protocol.InitializeResponse) acp.InitializeRespons
 			EmbeddedContext: r.PromptEmbeddedContext,
 		},
 	}
+	if r.ResumeSession {
+		caps.SessionCapabilities.Resume = &acp.SessionResumeCapabilities{}
+	}
 	if r.ListSessions {
 		caps.SessionCapabilities.List = &acp.SessionListCapabilities{}
 	}
@@ -87,6 +90,14 @@ func toLoadSession(p acp.LoadSessionRequest) protocol.LoadSessionRequest {
 
 func fromLoadSession(r protocol.LoadSessionResponse) acp.LoadSessionResponse {
 	return acp.LoadSessionResponse{ConfigOptions: fromConfigOptions(r.ConfigOptions)}
+}
+
+func toResumeSession(p acp.ResumeSessionRequest) protocol.ResumeSessionRequest {
+	return protocol.ResumeSessionRequest{SessionID: string(p.SessionId), Cwd: p.Cwd}
+}
+
+func fromResumeSession(r protocol.ResumeSessionResponse) acp.ResumeSessionResponse {
+	return acp.ResumeSessionResponse{ConfigOptions: fromConfigOptions(r.ConfigOptions)}
 }
 
 func toListSessions(p acp.ListSessionsRequest) protocol.ListSessionsRequest {
@@ -339,9 +350,28 @@ func fromSessionUpdate(u protocol.SessionUpdate) (acp.SessionUpdate, error) {
 			SessionUpdate: "config_option_update",
 			ConfigOptions: fromConfigOptions(u.ConfigOptions),
 		}}, nil
+	case protocol.AvailableCommandsUpdate:
+		return acp.SessionUpdate{AvailableCommandsUpdate: &acp.SessionAvailableCommandsUpdate{
+			SessionUpdate:     "available_commands_update",
+			AvailableCommands: fromAvailableCommands(u.Commands),
+		}}, nil
 	default:
 		return acp.SessionUpdate{}, fmt.Errorf("unsupported session update %T", u)
 	}
+}
+
+func fromAvailableCommands(cmds []protocol.AvailableCommand) []acp.AvailableCommand {
+	out := make([]acp.AvailableCommand, 0, len(cmds))
+	for _, c := range cmds {
+		cmd := acp.AvailableCommand{Name: c.Name, Description: c.Description}
+		if c.InputHint != "" {
+			cmd.Input = &acp.AvailableCommandInput{
+				Unstructured: &acp.UnstructuredCommandInput{Hint: c.InputHint},
+			}
+		}
+		out = append(out, cmd)
+	}
+	return out
 }
 
 // NOTE: The SDK's start-tool-call helpers fill rawInput from a single

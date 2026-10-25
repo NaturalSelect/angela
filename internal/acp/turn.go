@@ -63,6 +63,12 @@ func runTurn(ctx context.Context, ws Workspace, s *liveSession, req protocol.Pro
 		accept.Close()
 		return protocol.PromptResponse{}, err
 	}
+	text, extra, err := expandCommand(ctx, ws, text)
+	if err != nil {
+		accept.Close()
+		return protocol.PromptResponse{}, err
+	}
+	attachments = append(attachments, extra...)
 
 	runID := uuid.NewString()
 	t := s.expect(runID)

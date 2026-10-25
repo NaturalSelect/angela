@@ -16,7 +16,15 @@ import (
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
-const testCwd = "/work/proj"
+// NOTE: A bare "/work/proj" has no drive letter, so Windows does not treat it
+// as absolute.
+var testCwd = func() string {
+	abs, err := filepath.Abs(filepath.FromSlash("/work/proj"))
+	if err != nil {
+		panic(err)
+	}
+	return abs
+}()
 
 type diffStep struct {
 	next message.Message

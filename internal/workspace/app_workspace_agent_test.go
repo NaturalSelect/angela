@@ -87,6 +87,46 @@ func TestAppWorkspace_AgentCancel(t *testing.T) {
 	fx.ws.AgentCancel("sess-1")
 }
 
+func TestAppWorkspace_AgentAcceptedRun(t *testing.T) {
+	t.Parallel()
+
+	t.Run("without a coordinator", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		fx.app.AgentCoordinator = nil
+
+		require.Nil(t, fx.ws.AgentBeginAccepted(t.Context(), "sess-1"))
+		require.Error(t, fx.ws.AgentRunAccepted(t.Context(), nil, "sess-1", "hi"))
+	})
+
+	t.Run("reserves through the coordinator", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		want := &agent.AcceptedRun{}
+		fx.coord.EXPECT().BeginAccepted(gomock.Any(), "sess-1").Return(want)
+
+		require.Same(t, want, fx.ws.AgentBeginAccepted(t.Context(), "sess-1"))
+	})
+
+	t.Run("runs under the reservation it was given", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		accept := &agent.AcceptedRun{}
+		fx.coord.EXPECT().RunAccepted(gomock.Any(), accept, "sess-1", "hello").Return(&fantasy.AgentResult{}, nil)
+
+		require.NoError(t, fx.ws.AgentRunAccepted(t.Context(), accept, "sess-1", "hello"))
+	})
+
+	t.Run("propagates the coordinator error", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		boom := errors.New("run failed")
+		fx.coord.EXPECT().RunAccepted(gomock.Any(), gomock.Any(), "sess-1", "hello").Return(nil, boom)
+
+		require.ErrorIs(t, fx.ws.AgentRunAccepted(t.Context(), nil, "sess-1", "hello"), boom)
+	})
+}
+
 func TestAppWorkspace_AgentAbandonBranch(t *testing.T) {
 	t.Parallel()
 	fx := newAWFixture(t)

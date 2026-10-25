@@ -153,6 +153,24 @@ func (w *AppWorkspace) AgentRun(ctx context.Context, sessionID, prompt string, a
 	return err
 }
 
+// AgentBeginAccepted reserves a run so a cancel arriving before the run
+// registers as active is recorded against it. It returns nil when there is
+// no coordinator or the session has no executor to run on.
+func (w *AppWorkspace) AgentBeginAccepted(ctx context.Context, sessionID string) *agent.AcceptedRun {
+	if w.app.AgentCoordinator == nil {
+		return nil
+	}
+	return w.app.AgentCoordinator.BeginAccepted(ctx, sessionID)
+}
+
+func (w *AppWorkspace) AgentRunAccepted(ctx context.Context, accept *agent.AcceptedRun, sessionID, prompt string, attachments ...message.Attachment) error {
+	if w.app.AgentCoordinator == nil {
+		return errors.New("agent coordinator not initialized")
+	}
+	_, err := w.app.AgentCoordinator.RunAccepted(ctx, accept, sessionID, prompt, attachments...)
+	return err
+}
+
 func (w *AppWorkspace) AgentRunShellCommand(ctx context.Context, sessionID, command string, termWidth int, onProgress func(string), isFirstMessage bool) (ShellCommandResponse, error) {
 	var persist shell.PersistFunc
 	if sessionID != "" {

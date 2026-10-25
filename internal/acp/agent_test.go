@@ -628,6 +628,32 @@ func TestCancel(t *testing.T) {
 		require.NoError(t, h.agent.Cancel(t.Context(), protocol.CancelRequest{SessionID: "nope"}))
 		h.ws.snapshot(func() { require.Empty(t, h.ws.cancelled) })
 	})
+
+	t.Run("a cancel is only recorded once the run holds its reservation", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		h.agent.completionGrace = 20 * time.Millisecond
+		sid := h.newSession(t)
+
+		started := make(chan struct{})
+		release := make(chan struct{})
+		t.Cleanup(func() { close(release) })
+		h.ws.run = func(context.Context, string, string, []message.Attachment) error {
+			close(started)
+			<-release
+			return nil
+		}
+
+		result := h.promptAsync(t, sid)
+		<-started
+		require.NoError(t, h.agent.Cancel(t.Context(), protocol.CancelRequest{SessionID: sid}))
+		await(t, result)
+
+		h.ws.snapshot(func() {
+			require.Equal(t, []string{"begin", "run", "cancel"}, h.ws.trace,
+				"the reservation must exist before the run starts, or an early cancel is dropped")
+		})
+	})
 }
 
 func TestClose(t *testing.T) {

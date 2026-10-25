@@ -162,9 +162,8 @@ func TestBuildSessionItemsLeavesALiveAgentRunning(t *testing.T) {
 	require.Empty(t, agents[0].BackgroundOutcome())
 }
 
-// A notice settles the question, so the probe — a round trip in
-// client/server mode — is not paid for it. The mock fails on any call it
-// was not told to expect.
+// A notice settles the question, so the probe is not paid for it. The mock
+// fails on any call it was not told to expect.
 func TestBuildSessionItemsSkipsTheProbeForAnAgentThatReported(t *testing.T) {
 	t.Parallel()
 	m, _ := newBackgroundTranscriptUI(t)
@@ -378,8 +377,7 @@ func TestCtrlXInTheListAbortsAWaitingBranch(t *testing.T) {
 	require.False(t, m.inSubSession())
 }
 
-// Cancelling must not run on the Update goroutine: in client/server mode it
-// is a network call.
+// Cancelling must not run on the Update goroutine: it may block.
 func TestStoppingFromTheListCancelsOnlyWhenTheCommandRuns(t *testing.T) {
 	t.Parallel()
 	m, ws := newSubSessionListUI(t)

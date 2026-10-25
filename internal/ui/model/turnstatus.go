@@ -30,8 +30,7 @@ const maxActivityTargetWidth = 32
 // agent is doing, how long it has taken, what it cost, and how to stop it.
 //
 // It reads memoized state only and must never probe the workspace: this runs
-// on every frame, and the probes behind the workspace are synchronous HTTP
-// round-trips in client/server mode.
+// on every frame, and the probes behind the workspace may block.
 func (m *UI) renderTurnStatus(width int) string {
 	if width <= 0 || !m.hasSession() {
 		return ""

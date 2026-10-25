@@ -103,10 +103,9 @@ type tpsComputedMsg struct {
 // showTPS fetches the current session's messages and reports the
 // tok/s distribution across its qualifying assistant steps as an
 // in-memory chat notice. Like ActionUndo's preview
-// (loadSessionMessagesCmd/undoPreviewMsg), the fetch is a round-trip
-// in client/server mode, so it runs off the Update goroutine and
-// reports back through tpsComputedMsg rather than mutating m.chat
-// directly from within the command.
+// (loadSessionMessagesCmd/undoPreviewMsg), the fetch may block, so it
+// runs off the Update goroutine and reports back through tpsComputedMsg
+// rather than mutating m.chat directly from within the command.
 func (m *UI) showTPS() tea.Cmd {
 	if !m.hasSession() {
 		return nil

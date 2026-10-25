@@ -96,8 +96,8 @@ type Models struct {
 
 	// staleRecents are the recent-model entries that no longer resolve
 	// to an available model. Building the item list must not write
-	// config — that is a synchronous HTTP round-trip in client/server
-	// mode — so the removal is deferred to a command.
+	// config — that call may block — so the removal is deferred to a
+	// command.
 	staleRecents []config.SelectedModel
 
 	// restrictedProvider is the provider the custom entry is attributed
@@ -208,8 +208,8 @@ func (m *Models) SetProviders(providers []catwalk.Provider) tea.Cmd {
 }
 
 // pruneRecentsCmd drops recent-model entries that no longer resolve to
-// an available model. The write is an HTTP round-trip in client/server
-// mode, so it never runs on the Update goroutine. It sends the dead
+// an available model. The write may block, so it never runs on the Update
+// goroutine. It sends the dead
 // entries rather than the surviving list: a model picked while the
 // catalog was loading must not be erased by this write.
 func (m *Models) pruneRecentsCmd() tea.Cmd {

@@ -140,8 +140,7 @@ func TestSessionDetailsRectIsSetInBothLayouts(t *testing.T) {
 	}
 }
 
-// Details rendering runs per frame; probing the workspace there is a
-// synchronous HTTP round-trip in client/server mode.
+// Details rendering runs per frame; probing the workspace there may block.
 func TestSessionDetailsDoesNotProbeWorkspace(t *testing.T) {
 	pinTTLs(t)
 

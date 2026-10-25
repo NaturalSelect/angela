@@ -180,12 +180,11 @@ func stubBusyProbe(ws *MockWorkspace, ready, busy bool, mode permission.Permissi
 }
 
 // TestUpdateDoesNotProbeWorkspacePerMessage pins the hot-path fix: Update
-// used to call AgentQueuedPrompts (a synchronous HTTP GET in client/server
-// mode) at the top of every message while the agent was busy, and the
-// placeholder path probed AgentIsReady/AgentIsBusy/PermissionMode —
-// every keystroke blocked the single Update goroutine on network round-
-// trips. Now Update performs no synchronous workspace call at all; refreshes
-// are dispatched as commands.
+// used to call AgentQueuedPrompts (a call that may block) at the top of
+// every message while the agent was busy, and the placeholder path probed
+// AgentIsReady/AgentIsBusy/PermissionMode — every keystroke blocked the
+// single Update goroutine on those calls. Now Update performs no
+// synchronous workspace call at all; refreshes are dispatched as commands.
 func TestUpdateDoesNotProbeWorkspacePerMessage(t *testing.T) {
 	pinTTLs(t)
 
@@ -1101,8 +1100,8 @@ func TestStalePromptQueuePreservesSessionScoping(t *testing.T) {
 // invariant for the model and LSP info: activeAgent, lspInfo, and
 // lspErrorCount render from memoized state only. They run on every frame
 // (landing view, sidebar, compact header), and the probes behind them
-// (AgentIsReady, AgentActive, LSPGetStates, LSPGetDiagnosticCounts) are
-// synchronous HTTP round-trips in client/server mode.
+// (AgentIsReady, AgentActive, LSPGetStates, LSPGetDiagnosticCounts) may
+// block.
 func TestRenderHelpersDoNotProbeWorkspace(t *testing.T) {
 	pinTTLs(t)
 
@@ -1245,8 +1244,8 @@ func TestMCPStateChangedRefreshesModel(t *testing.T) {
 
 // TestLSPEventRefreshIsOffThreadAndDeduped pins the LSP side of the
 // invariant: an LSP event must not fetch states synchronously in Update
-// (LSPGetStates + per-server LSPGetDiagnosticCounts are HTTP round-trips in
-// client/server mode, and diagnostics events arrive per edited file). It
+// (LSPGetStates + per-server LSPGetDiagnosticCounts may block, and
+// diagnostics events arrive per edited file). It
 // schedules one off-thread fetch, dedups while one is in flight, and
 // re-dispatches a queued refresh when the in-flight fetch lands.
 func TestLSPEventRefreshIsOffThreadAndDeduped(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -652,6 +653,38 @@ func TestCancel(t *testing.T) {
 		h.ws.snapshot(func() {
 			require.Equal(t, []string{"begin", "run", "cancel"}, h.ws.trace,
 				"the reservation must exist before the run starts, or an early cancel is dropped")
+		})
+	})
+
+	t.Run("a cancel while the prompt is still being set up finds the reservation", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sid := h.newSession(t)
+
+		inSetup := make(chan struct{})
+		release := make(chan struct{})
+		var once sync.Once
+		h.ws.snapshot(func() {
+			h.ws.onActive = func() {
+				once.Do(func() {
+					close(inSetup)
+					<-release
+				})
+			}
+		})
+		h.ws.run = h.completeWith(notify.RunComplete{Cancelled: true})
+
+		result := h.promptAsync(t, sid)
+		<-inSetup
+		require.NoError(t, h.agent.Cancel(t.Context(), protocol.CancelRequest{SessionID: sid}))
+		close(release)
+
+		got := await(t, result)
+		require.NoError(t, got.err)
+		require.Equal(t, protocol.StopReasonCancelled, got.resp.StopReason)
+		h.ws.snapshot(func() {
+			require.Equal(t, []string{"begin", "cancel", "run"}, h.ws.trace,
+				"a cancel during setup must land on a held reservation, or the run starts as if it never came")
 		})
 	})
 }

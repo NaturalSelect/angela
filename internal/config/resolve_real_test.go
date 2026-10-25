@@ -443,11 +443,9 @@ func TestLSPConfig_ResolvedEnv_RealShell(t *testing.T) {
 	})
 }
 
-// TestLSPConfig_IdentityResolver pins the client-mode contract: both
+// TestLSPConfig_IdentityResolver pins the pass-through contract: both
 // ResolvedArgs and ResolvedEnv round-trip the template verbatim under
-// IdentityResolver and never error on unset variables. Local
-// expansion would double-expand when the server does its own — this
-// has to stay a pure pass-through.
+// IdentityResolver and never error on unset variables.
 func TestLSPConfig_IdentityResolver(t *testing.T) {
 	t.Parallel()
 
@@ -469,10 +467,9 @@ func TestLSPConfig_IdentityResolver(t *testing.T) {
 	require.Equal(t, l.Env, envs)
 }
 
-// TestMCPConfig_IdentityResolver pins the client-mode contract: every
+// TestMCPConfig_IdentityResolver pins the pass-through contract: every
 // Resolved* method round-trips the template verbatim and never errors
-// on unset variables. Local expansion would double-expand when the
-// server does its own — this has to stay a pure pass-through.
+// on unset variables.
 func TestMCPConfig_IdentityResolver(t *testing.T) {
 	t.Parallel()
 

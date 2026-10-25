@@ -43,6 +43,9 @@ type fakeWorkspace struct {
 	events chan pubsub.Event[tea.Msg]
 
 	run func(ctx context.Context, sessionID, prompt string, atts []message.Attachment) error
+	// onActive runs inside AgentActive, outside the lock, so a test can hold
+	// a prompt in its setup.
+	onActive func()
 
 	deleted         []string
 	trace           []string
@@ -125,8 +128,13 @@ func (f *fakeWorkspace) ListMessages(_ context.Context, id string) ([]message.Me
 
 func (f *fakeWorkspace) AgentActive(context.Context, string) (workspace.ActiveAgent, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.active, nil
+	hook := f.onActive
+	active := f.active
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return active, nil
 }
 
 func (f *fakeWorkspace) AgentEditActive(_ context.Context, _ string, edit config.ActiveAgentEdit) (workspace.ActiveAgent, error) {

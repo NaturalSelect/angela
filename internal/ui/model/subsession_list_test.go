@@ -174,7 +174,7 @@ func TestOpenSubSessionsDialogListsTheChildren(t *testing.T) {
 	require.True(t, m.dialog.ContainsDialog(dialog.SubSessionsID))
 }
 
-// Reading the children may be a network call, so the dialog must not open
+// Reading the children may block, so the dialog must not open
 // before the command has run.
 func TestOpenSubSessionsDialogReadsTheChildrenOnlyWhenTheCommandRuns(t *testing.T) {
 	t.Parallel()
@@ -214,7 +214,7 @@ func TestOpenSubSessionsDialogWithoutChildrenOnlyReportsInfo(t *testing.T) {
 func TestOpenSubSessionsDialogReportsALoadError(t *testing.T) {
 	t.Parallel()
 	m, ws := newSubSessionListUI(t)
-	ws.EXPECT().AgentSubSessions(gomock.Any(), "root").Return(nil, errors.New("daemon unreachable"))
+	ws.EXPECT().AgentSubSessions(gomock.Any(), "root").Return(nil, errors.New("workspace unreachable"))
 
 	msgs := runCmds(m, m.openSubSessionsDialog())
 
@@ -226,7 +226,7 @@ func TestOpenSubSessionsDialogReportsALoadError(t *testing.T) {
 	}
 	require.NotNil(t, info)
 	require.Equal(t, util.InfoTypeError, info.Type)
-	require.Contains(t, info.Msg, "daemon unreachable")
+	require.Contains(t, info.Msg, "workspace unreachable")
 	require.False(t, m.dialog.ContainsDialog(dialog.SubSessionsID))
 }
 

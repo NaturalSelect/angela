@@ -1356,11 +1356,10 @@ func ProjectConfigs(cwd string) []string {
 	return lookupConfigs(cwd)
 }
 
-// GlobalWorkspaceDir returns the path to the global server workspace
-// directory. This directory acts as a meta-workspace for the server
-// process, giving it a real workingDir so that config loading, scoped
-// writes, and provider resolution behave identically to project
-// workspaces.
+// GlobalWorkspaceDir returns the directory that holds the global config
+// file. It is a real directory that can serve as a workingDir, so config
+// loading, scoped writes, and provider resolution behave identically to
+// project workspaces.
 func GlobalWorkspaceDir() string {
 	return filepath.Dir(GlobalConfig())
 }

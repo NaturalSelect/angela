@@ -112,9 +112,8 @@ type Coordinator interface {
 	// SetMainAgent(string)
 	Run(ctx context.Context, sessionID, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error)
 	// RunAccepted runs a call that was already accepted via
-	// BeginAccepted on the fire-and-forget dispatch path. The handle is
-	// the only carrier of accept-state across the backend.runAgent /
-	// Coordinator / sessionAgent.Run layers: it reaches
+	// BeginAccepted. The handle is the only carrier of accept-state
+	// across the Coordinator / sessionAgent.Run layers: it reaches
 	// sessionAgent.Run as SessionAgentCall.Accepted, where it is
 	// consumed under dispatchMu once the accepted -> (cancel-on-entry |
 	// queued | active) transition is chosen.
@@ -319,10 +318,9 @@ type CoordinatorOptions struct {
 }
 
 func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, error) {
-	// Skills are pre-discovered by the caller (see app.New /
-	// backend.CreateWorkspace) and passed in via the manager. If no
-	// manager was provided (legacy callers), fall back to an in-line
-	// discovery so the coordinator still works.
+	// Skills are pre-discovered by the caller (see app.New) and passed in
+	// via the manager. If no manager was provided (legacy callers), fall
+	// back to an in-line discovery so the coordinator still works.
 	var allSkills, activeSkills []*skills.Skill
 	if opts.Skills != nil {
 		allSkills = opts.Skills.AllSkills()
@@ -388,7 +386,7 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 
 // forgetDeletedSessions evicts a session's cached agent and routing entry
 // as the session goes away. Deletion runs through several entry points
-// (CLI, workspace and backend), so the stores follow the event instead of
+// (CLI and workspace), so the stores follow the event instead of
 // asking each of them to remember; a surviving entry would keep answering
 // for a session that no longer exists.
 func (c *coordinator) forgetDeletedSessions(ctx context.Context, events <-chan pubsub.Event[session.Session]) {
@@ -424,8 +422,7 @@ func (c *coordinator) RunAccepted(ctx context.Context, accept *AcceptedRun, sess
 // run is the shared implementation behind Run and RunAccepted. When
 // accept is non-nil it is threaded onto the SessionAgentCall as
 // Accepted so sessionAgent.Run can consume the accept reservation under
-// dispatchMu; when nil (the in-process/local path) no accept tracking
-// applies.
+// dispatchMu; when nil no accept tracking applies.
 func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID string, prompt string, attachments ...message.Attachment) (*fantasy.AgentResult, error) {
 	// MCP servers connect asynchronously (see mcp.Initialize).
 	//
@@ -493,11 +490,10 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 		latest = rc
 		hasLatest = true
 	}
-	// Propagate the caller-supplied RunID (set via agent.WithRunID
-	// at the HTTP boundary in backend.SendMessage) onto the
-	// SessionAgentCall so the terminal RunComplete event echoes it
-	// back. Both attempts in the retry chain reuse the same RunID;
-	// the coalesce closure publishes the final outcome under that
+	// Propagate the caller-supplied RunID (set via agent.WithRunID on
+	// ctx) onto the SessionAgentCall so the terminal RunComplete event
+	// echoes it back. Both attempts in the retry chain reuse the same
+	// RunID; the coalesce closure publishes the final outcome under that
 	// same correlator.
 	runID := RunIDFromContext(ctx)
 	run := func() (*fantasy.AgentResult, error) {
@@ -533,10 +529,10 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 
 	if hasLatest && c.runComplete != nil {
 		c.runComplete.PublishMustDeliver(ctx, pubsub.UpdatedEvent, latest)
-		// Signal to the dispatcher (backend.runAgent) that the
-		// authoritative terminal RunComplete for this run was already
-		// emitted, so it does not publish a duplicate fallback for the
-		// error it is about to receive.
+		// Mark the run as having published its authoritative terminal
+		// RunComplete (see RunCompletePublished), so a caller does not
+		// publish a duplicate fallback for the error it is about to
+		// receive.
 		MarkRunCompletePublished(ctx)
 	}
 	return result, originalErr
@@ -3009,13 +3005,12 @@ func (c *coordinator) updateParentSessionCost(ctx context.Context, childSessionI
 }
 
 // discoverSkills is a thin fallback wrapper used only when no
-// skills.Manager has been threaded through to the coordinator. All
-// production call sites (backend.CreateWorkspace, setupLocalWorkspace)
-// run discovery in advance and pass the results via the manager;
-// reaching this path means a caller bypassed both. It deliberately does
-// NOT publish to the package-level broker — there are no subscribers in
-// that case, so doing so would be misleading without delivering the
-// snapshot anywhere useful.
+// skills.Manager has been threaded through to the coordinator. Production
+// callers run discovery in advance and pass the results via the manager
+// (see app.New); reaching this path means a caller bypassed that. It
+// deliberately does NOT publish to the package-level broker — there are no
+// subscribers in that case, so doing so would be misleading without
+// delivering the snapshot anywhere useful.
 func discoverSkills(cfg *config.ConfigStore) (allSkills, activeSkills []*skills.Skill) {
 	opts := cfg.Config().Options
 	var paths, disabled []string

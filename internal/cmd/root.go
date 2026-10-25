@@ -351,8 +351,6 @@ func permissionModeFromFlags(cmd *cobra.Command) permission.PermissionMode {
 	return permission.ModeManual
 }
 
-// setupLocalWorkspace creates an in-process app.App and wraps it in an
-// AppWorkspace.
 // sandboxResolver builds the sandbox config once the workspace's data
 // directory and permission rules are known. It reports false when no
 // sandbox was requested.
@@ -567,8 +565,7 @@ func MaybePrependStdin(prompt string) (string, error) {
 
 // resolveWorkspaceSessionID resolves a session ID that may be a full
 // UUID, full hash, or hash prefix. Works against the Workspace
-// interface so both local and client/server paths get hash prefix
-// support.
+// interface.
 func resolveWorkspaceSessionID(ctx context.Context, ws workspace.Workspace, id string) (session.Session, error) {
 	if sess, err := ws.GetSession(ctx, id); err == nil {
 		return sess, nil

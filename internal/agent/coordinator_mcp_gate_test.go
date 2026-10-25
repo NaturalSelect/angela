@@ -96,8 +96,8 @@ func newHermeticTestCoordinator(t *testing.T, interactive, trusted bool) *coordi
 // message of a session. Tools from late servers simply miss that run's palette
 // and show up on the next one.
 //
-// Non-interactive runs (`angela run`, both local and client/server) get a single
-// shot at the palette, so they still wait for initialization to settle.
+// Non-interactive runs (`angela run`) get a single shot at the palette, so
+// they still wait for initialization to settle.
 func TestRunWaitsForMCPOnlyWhenNonInteractive(t *testing.T) {
 	t.Run("non-interactive waits", func(t *testing.T) {
 		coord := newGateTestCoordinator(t, false)

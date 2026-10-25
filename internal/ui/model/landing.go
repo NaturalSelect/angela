@@ -30,8 +30,7 @@ const (
 // session than the one on screen — during those windows the answer is
 // "not known yet", never the previous session's agent. It must never
 // probe the workspace: it is called on every frame and
-// AgentIsReady/AgentActive are synchronous HTTP round-trips in
-// client/server mode.
+// AgentIsReady/AgentActive may block.
 func (m *UI) activeAgent() *workspace.ActiveAgent {
 	if !m.agentReady || !m.agentActiveKnown || m.agentActiveSession != m.currentSessionID() {
 		return nil

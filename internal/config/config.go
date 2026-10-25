@@ -654,9 +654,8 @@ func (l LSPs) Sorted() []LSP {
 // (for MCP, via StateError on the status card) rather than silently
 // spawn the server with an empty credential.
 //
-// The resolver choice matters: in server mode pass the shell resolver
-// so $VAR / $(cmd) expand; in client mode pass IdentityResolver so the
-// template is forwarded verbatim and expansion happens on the server.
+// The resolver choice matters: pass the shell resolver so $VAR / $(cmd)
+// expand, or IdentityResolver to forward the template verbatim.
 func (m MCPConfig) ResolvedEnv(r VariableResolver) ([]string, error) {
 	return resolveEnvs(m.Env, r)
 }
@@ -755,9 +754,8 @@ func (m MCPConfig) ResolvedHeaders(r VariableResolver) (map[string]string, error
 // Empty resolved values are kept (a deliberate "empty positional arg"
 // like --flag "" is sometimes valid), matching MCPConfig.ResolvedArgs.
 //
-// The resolver choice matters: in server mode pass the shell resolver
-// so $VAR / $(cmd) expand; in client mode pass IdentityResolver so the
-// template is forwarded verbatim.
+// The resolver choice matters: pass the shell resolver so $VAR / $(cmd)
+// expand, or IdentityResolver to forward the template verbatim.
 func (l LSPConfig) ResolvedArgs(r VariableResolver) ([]string, error) {
 	if len(l.Args) == 0 {
 		return nil, nil

@@ -327,9 +327,9 @@ type UI struct {
 	}
 
 	// lspStates / lspDiagnostics memoize the workspace LSP state and
-	// per-server severity counts (each probe behind them is a synchronous
-	// HTTP round-trip in client/server mode, and the sidebar, landing view,
-	// and compact header render them every frame). LSP events refresh them
+	// per-server severity counts (each probe behind them may block, and
+	// the sidebar, landing view, and compact header render them every
+	// frame). LSP events refresh them
 	// off-thread with a TTL backstop; see lsp.go.
 	lspStates        map[string]workspace.LSPClientInfo
 	lspDiagnostics   map[string]lsp.DiagnosticCounts
@@ -382,8 +382,8 @@ type UI struct {
 	// longer on screen, restored when that session is loaded again.
 	stashedPrompts map[string][]message.QueuedPrompt
 	// agentBusyCache / permissionModeCache memoize the workspace busy and
-	// permission probes (synchronous HTTP round-trips in client/server
-	// mode). Reads never probe; refreshes happen off-thread (see
+	// permission probes (which may block). Reads never probe; refreshes
+	// happen off-thread (see
 	// workspace_cache.go). agentBusyCache covers every session in the
 	// workspace; sessionBusyCache only the one on screen.
 	agentBusyCache      ttlCache[bool]
@@ -401,8 +401,8 @@ type UI struct {
 	// construction and updated write-through by enterSandbox.
 	sandboxActive bool
 	// agentReady / agentActive memoize the coordinator readiness and the
-	// agent the session runs on (AgentIsReady/AgentActive are
-	// synchronous HTTP GETs in client/server mode, and modelInfo renders
+	// agent the session runs on (AgentIsReady/AgentActive may block, and
+	// modelInfo renders
 	// them every frame). Seeded once at construction and refreshed by
 	// the same off-thread probe as agentBusyCache.
 	agentReady  bool
@@ -1138,9 +1138,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pubsub.Event[history.File]:
 		cmds = append(cmds, m.handleFileEvent(msg.Payload))
 	case pubsub.Event[app.LSPEvent]:
-		// Refresh the memoized LSP state off-thread: LSPGetStates is a
-		// synchronous HTTP round-trip in client/server mode and diagnostics
-		// events can arrive per edited file.
+		// Refresh the memoized LSP state off-thread: LSPGetStates may block
+		// and diagnostics events can arrive per edited file.
 		if cmd := m.requestLSPRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
@@ -1744,9 +1743,9 @@ type undoResultMsg struct {
 
 // loadSessionMessagesCmd fetches a session's transcript and builds its
 // chat items off the Update goroutine. Both halves belong here: the
-// fetch is an HTTP round-trip in client/server mode, and resolving
-// nested agent tool calls costs one more round-trip per nested tool, so
-// doing it inline stalls the render loop for the whole tree.
+// fetch may block, and resolving nested agent tool calls costs one more
+// call per nested tool, so doing it inline stalls the render loop for the
+// whole tree.
 func (m *UI) loadSessionMessagesCmd(sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
@@ -1778,9 +1777,8 @@ func lastAssistantIndex(msgs []*message.Message) int {
 }
 
 // hasOrphanedCall reports whether any tool call in the transcript is missing
-// its result. Probing the agent for liveness costs a round trip in
-// client/server mode, and a transcript with every result in place has
-// nothing to decide.
+// its result. Probing the agent for liveness is not free, and a
+// transcript with every result in place has nothing to decide.
 func hasOrphanedCall(msgs []*message.Message, results map[string]message.ToolResult) bool {
 	for _, msg := range msgs {
 		if msg.Role != message.Assistant {
@@ -5042,7 +5040,7 @@ func isWhitespace(b byte) bool {
 // isAgentBusy returns true if the agent coordinator exists and is currently
 // busy processing a request. It only reads the memoized state (it runs in
 // per-message paths like the textarea placeholder, where a workspace probe
-// would be an HTTP round-trip per keystroke in client/server mode); the
+// would block on every keystroke); the
 // value is refreshed off-thread, see workspace_cache.go.
 func (m *UI) isAgentBusy() bool {
 	if m.bangCancel != nil {
@@ -5425,7 +5423,7 @@ func (m *UI) cancelAgent() tea.Cmd {
 	}
 
 	// Gate on the memoized ready state: esc is a hot key and AgentIsReady
-	// is a synchronous HTTP round-trip in client/server mode.
+	// may block.
 	if !m.agentReady {
 		return nil
 	}

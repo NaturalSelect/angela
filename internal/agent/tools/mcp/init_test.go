@@ -173,8 +173,7 @@ func TestCreateTransport_URLResolution(t *testing.T) {
 
 	t.Run("identity resolver round-trips template verbatim", func(t *testing.T) {
 		t.Parallel()
-		// Client mode forwards the template to the server; no local
-		// expansion, no error on unset vars.
+		// No local expansion, no error on unset vars.
 		tmpl := "https://$MCP_MISSING_HOST/api"
 		m := config.MCPConfig{Type: config.MCPHttp, URL: tmpl}
 		tr, _, err := createTransport(t.Context(), nil, "test", m, config.IdentityResolver())
@@ -310,7 +309,7 @@ func TestCreateTransport_StdioResolution(t *testing.T) {
 
 	t.Run("identity resolver round-trips templates verbatim", func(t *testing.T) {
 		t.Parallel()
-		// Client mode: no local expansion, no error on unset vars.
+		// No local expansion, no error on unset vars.
 		m := config.MCPConfig{
 			Type:    config.MCPStdio,
 			Command: "forgejo-mcp",

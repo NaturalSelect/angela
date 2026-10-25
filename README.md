@@ -126,7 +126,9 @@ agents and background agents are not available, and the question tool works
 only when the editor supports forms. Permission prompts go to the editor and
 offer allow and deny, each either once or for the rest of the session;
 `--yolo` and `--auto-accept-edits` apply as usual. Editors can load a session
-with its history or resume it without the history.
+with its history or resume it without the history. Closing a session stops its
+work and releases it, but keeps it on disk so it can be opened again; only
+deleting it removes it.
 
 The editor's `/` menu lists a few built-in commands, your custom commands,
 user-invocable skills and MCP prompts, and updates when an MCP server connects

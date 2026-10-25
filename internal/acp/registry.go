@@ -166,6 +166,16 @@ func (s *liveSession) signalCancelled() {
 	}
 }
 
+// abandonTurns ends every waiting turn as cancelled without waiting for the
+// run's own completion event.
+func (s *liveSession) abandonTurns() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.turns {
+		t.deliver(turnEnd{rc: notify.RunComplete{Cancelled: true}})
+	}
+}
+
 // registry holds the sessions this connection created or loaded and has not
 // deleted. Only the Agent writes it; the event pump reads it.
 type registry struct {

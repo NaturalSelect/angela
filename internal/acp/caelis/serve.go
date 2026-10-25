@@ -77,6 +77,7 @@ var (
 	_ acp.AgentSessionResumer = (*sdkAgent)(nil)
 	_ acp.AgentSessionLister  = (*sdkAgent)(nil)
 	_ acp.AgentSessionDeleter = (*sdkAgent)(nil)
+	_ acp.AgentSessionCloser  = (*sdkAgent)(nil)
 	_ acp.AgentSessionConfig  = (*sdkAgent)(nil)
 )
 
@@ -140,6 +141,14 @@ func (a *sdkAgent) DeleteSession(ctx context.Context, p acp.DeleteSessionRequest
 		return acp.DeleteSessionResponse{}, toRequestError(err)
 	}
 	return acp.DeleteSessionResponse{}, nil
+}
+
+func (a *sdkAgent) CloseSession(ctx context.Context, p acp.CloseSessionRequest) (acp.CloseSessionResponse, error) {
+	<-a.ready
+	if err := a.inner.CloseSession(ctx, toCloseSession(p)); err != nil {
+		return acp.CloseSessionResponse{}, toRequestError(err)
+	}
+	return acp.CloseSessionResponse{}, nil
 }
 
 func (a *sdkAgent) SetSessionConfigOption(ctx context.Context, p acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {

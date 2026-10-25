@@ -65,6 +65,9 @@ func fromInitializeResponse(r protocol.InitializeResponse) acp.InitializeRespons
 	if r.DeleteSessions {
 		caps.SessionCapabilities.Delete = &acp.SessionDeleteCapabilities{}
 	}
+	if r.CloseSession {
+		caps.SessionCapabilities.Close = &acp.SessionCloseCapabilities{}
+	}
 	return acp.InitializeResponse{
 		ProtocolVersion:   acp.ProtocolVersion(r.ProtocolVersion),
 		AgentCapabilities: caps,
@@ -126,6 +129,10 @@ func fromListSessions(r protocol.ListSessionsResponse) acp.ListSessionsResponse 
 
 func toDeleteSession(p acp.DeleteSessionRequest) protocol.DeleteSessionRequest {
 	return protocol.DeleteSessionRequest{SessionID: string(p.SessionId)}
+}
+
+func toCloseSession(p acp.CloseSessionRequest) protocol.CloseSessionRequest {
+	return protocol.CloseSessionRequest{SessionID: string(p.SessionId)}
 }
 
 func toCancel(p acp.CancelNotification) protocol.CancelRequest {

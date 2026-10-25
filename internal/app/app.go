@@ -88,10 +88,10 @@ type App struct {
 	agentNotifications *pubsub.Broker[notify.Notification]
 	// runCompletions is the authoritative per-run completion signal,
 	// emitted once per top-level agent turn after all message
-	// updates have been flushed. Bridged into app.events so SSE
-	// subscribers (notably `angela run` in client/server mode) can
-	// drive their exit on a deterministic, payload-bearing event
-	// instead of guessing from message finish parts.
+	// updates have been flushed. Bridged into app.events so event
+	// subscribers (notably the ACP front end) can drive their exit on a
+	// deterministic, payload-bearing event instead of guessing from
+	// message finish parts.
 	runCompletions *pubsub.Broker[notify.RunComplete]
 
 	// herdrClient reports agent state to herdr when running inside
@@ -318,9 +318,7 @@ func (app *App) AgentNotifications() *pubsub.Broker[notify.Notification] {
 }
 
 // RunCompletions returns the broker for the authoritative per-run
-// terminal RunComplete events. The dispatcher (backend.runAgent) uses
-// it to emit a reliable terminal event when a run fails before the
-// coordinator could publish one of its own.
+// terminal RunComplete events.
 func (app *App) RunCompletions() *pubsub.Broker[notify.RunComplete] {
 	return app.runCompletions
 }
@@ -422,9 +420,9 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 
 	// Non-interactive runs get a single shot at the tool palette, so wait for
 	// MCP initialization to settle before reading MCP tools. The coordinator
-	// waits again for the same reason (it is the gate the client/server path
-	// goes through); doing it here too surfaces the failure before we create a
-	// session, and lets the UpdateModels below see every MCP tool.
+	// waits again for the same reason; doing it here too surfaces the failure
+	// before we create a session, and lets the UpdateModels below see every
+	// MCP tool.
 	if err := mcp.WaitForInit(ctx); err != nil {
 		return "", fmt.Errorf("failed to wait for MCP initialization: %w", err)
 	}

@@ -172,11 +172,10 @@ type SessionAgentCall struct {
 	// publish keeps the event visible to subscribers.
 	OnComplete func(notify.RunComplete)
 	// Accepted, when non-nil, is the accept reservation taken by
-	// BeginAccepted before the call was dispatched onto a goroutine
-	// (the client/server fire-and-forget path). Run consumes it under
-	// dispatchMu[SessionID] once the accepted -> (cancel-on-entry |
-	// queued | active) transition has been chosen. When nil
-	// (in-process / local callers like AppWorkspace), behavior is
+	// BeginAccepted before the call was dispatched onto a goroutine.
+	// Run consumes it under dispatchMu[SessionID] once the accepted ->
+	// (cancel-on-entry | queued | active) transition has been chosen.
+	// When nil (callers like AppWorkspace.AgentRun), behavior is
 	// unchanged and no accept tracking applies.
 	Accepted *AcceptedRun
 
@@ -400,7 +399,7 @@ func NewSessionAgent(
 
 // AcceptedRun owns exactly one accept reservation taken by
 // BeginAccepted. It is the only carrier of accept-state across the
-// backend.runAgent / Coordinator.Run / sessionAgent.Run layers: a
+// Coordinator.RunAccepted / sessionAgent.Run layers: a
 // counter > 0 means a dispatched prompt is in flight and has not yet
 // completed the dispatch handoff in Run. Close is the only way to
 // release the reservation and is idempotent.
@@ -610,8 +609,8 @@ func (a *sessionAgent) publishRunComplete(ctx context.Context, call SessionAgent
 // sessionAgent.Run requires before a call can be dispatched: a call must
 // carry either a non-empty prompt or at least one attachment, and it must
 // name a session. It is exported so callers that accept a run before
-// dispatching it (e.g. backend.SendMessage) can apply the same checks and
-// keep the error contract consistent.
+// dispatching it can apply the same checks and keep the error contract
+// consistent.
 func ValidateCall(call SessionAgentCall) error {
 	if call.Prompt == "" && len(call.Attachments) == 0 && !call.noticeWake {
 		return ErrEmptyPrompt

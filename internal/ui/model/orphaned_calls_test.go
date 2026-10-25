@@ -93,7 +93,7 @@ func TestBuildSessionItemsKeepsOnlyTheLastAssistantRunning(t *testing.T) {
 		"the live turn's own call is genuinely pending")
 }
 
-// The probe is a round trip in client/server mode, and a transcript with
+// The probe is not free, and a transcript with
 // every result in place has nothing to decide. Paying for it on every load
 // would double the cost of opening a session for no answer.
 func TestBuildSessionItemsSkipsTheProbeWithoutOrphans(t *testing.T) {

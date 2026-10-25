@@ -12,15 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestCallerCancellationDoesNotBreakLaterTurns guards a client/server
-// hang that used to strand every session on a workspace.
+// TestCallerCancellationDoesNotBreakLaterTurns guards a hang that used to
+// strand every session on a workspace.
 //
 // Agent construction ran its setup — system prompt, tool list — on
 // goroutines in a coordinator-wide errgroup, seeded with the caller's
-// context. The server builds the coder from a short-lived HTTP request
-// context, so when that handler returned, the cancellation landed in
-// the shared errgroup and every later run failed at its Wait() before
-// emitting anything.
+// context. When that caller's context was short-lived and got canceled,
+// the cancellation landed in the shared errgroup and every later run
+// failed at its Wait() before emitting anything.
 //
 // Resolution is now per turn and runs on the turn's own context, so a
 // dead caller cannot leave anything behind. This test pins that: cancel
@@ -64,8 +63,7 @@ func TestCallerCancellationDoesNotBreakLaterTurns(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	coord.currentAgent = coord.buildAgent(agentCfg.ID, false)
-	// The caller goes away, mirroring an HTTP handler returning and
-	// canceling its request context.
+	// The caller goes away, canceling the context it built the agent with.
 	cancel()
 	require.Error(t, ctx.Err(), "sanity check: the building caller's context is dead")
 

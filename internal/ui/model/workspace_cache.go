@@ -2,13 +2,13 @@ package model
 
 // Memoized workspace state.
 //
-// In client/server mode every workspace probe (busy checks, permission mode,
-// queued prompts, agent readiness/model, LSP state) is a synchronous HTTP
-// round-trip, and the Update goroutine is the render loop — blocking it
-// freezes typing. The UI therefore never probes the workspace synchronously
-// from Update or View. (The constructor is the one carve-out: New seeds the
-// permission-mode and ready/model caches synchronously so the first frame
-// has values to render; Init then refreshes them off-thread.)
+// Every workspace probe (busy checks, permission mode, queued prompts, agent
+// readiness/model, LSP state) may block, and the Update goroutine is the
+// render loop — blocking it freezes typing. The UI therefore never probes
+// the workspace synchronously from Update or View. (The constructor is the
+// one carve-out: New seeds the permission-mode and ready/model caches
+// synchronously so the first frame has values to render; Init then
+// refreshes them off-thread.)
 //
 //   - Reads (isAgentBusy, permissionModeCached, promptQueue, activeAgent,
 //     lspInfo) always return the memoized value, stale or not.
@@ -229,7 +229,7 @@ func (m *UI) dispatchBusyRefresh() tea.Cmd {
 // AgentEditActive, or a coordinator rebuild via UpdateAgentModel) with a
 // re-probe of the memoized ready/active state. Callers wrap their work
 // in pre; the memoized agent must only be re-probed after the change
-// lands (a synchronous HTTP round-trip in client/server mode), so the
+// lands (the probe may block), so the
 // message drives the refresh instead of each call site remembering to.
 func (m *UI) refreshActiveAgentCmd(pre tea.Cmd) tea.Cmd {
 	return tea.Sequence(pre, agentModelChangedCmd)

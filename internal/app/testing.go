@@ -22,7 +22,7 @@ import (
 //   - A real [permission.Service] whose request and notification
 //     brokers are fanned into the events broker, so subscribers to
 //     [App.Events] observe the same permission events the production
-//     wiring would deliver to SSE clients.
+//     wiring would deliver to event subscribers.
 //   - An [App.agentNotifications] broker.
 //
 // The caller owns lifetime: cancel ctx (or call [App.Shutdown]) to

@@ -6,19 +6,18 @@ import (
 )
 
 // runCompleteMarkerKey is the unexported context key carrying a
-// [runCompleteMarker] from the dispatch boundary (backend.runAgent)
-// down into the coordinator. It lets the dispatcher learn whether the
-// coordinator already published the authoritative terminal
-// notify.RunComplete for the run, so a fallback terminal event is only
-// emitted when one is actually missing (e.g. an error returned before
-// sessionAgent.Run ever executed). It avoids a breaking change to the
-// Coordinator interface.
+// [runCompleteMarker] from the caller that starts a run down into the
+// coordinator. It lets the caller learn whether the coordinator already
+// published the authoritative terminal notify.RunComplete for the run,
+// so a fallback terminal event is only emitted when one is actually
+// missing (e.g. an error returned before sessionAgent.Run ever
+// executed). It avoids a breaking change to the Coordinator interface.
 type runCompleteMarkerKey struct{}
 
 // runCompleteMarker records whether a terminal RunComplete has been
 // published for a run. It is shared by pointer through the context so
-// a publish deep in the call stack is observable by the dispatcher
-// after the call returns.
+// a publish deep in the call stack is observable by the caller after
+// the call returns.
 type runCompleteMarker struct {
 	published atomic.Bool
 }
@@ -34,8 +33,8 @@ func WithRunCompleteMarker(ctx context.Context) context.Context {
 
 // MarkRunCompletePublished records that the authoritative terminal
 // RunComplete has been published for the run carried by ctx. It is a
-// no-op when no marker is present (e.g. the in-process/local Run path,
-// which is not dispatched through backend.runAgent).
+// no-op when no marker is present (e.g. a caller that never attached
+// one with [WithRunCompleteMarker]).
 func MarkRunCompletePublished(ctx context.Context) {
 	if m, ok := ctx.Value(runCompleteMarkerKey{}).(*runCompleteMarker); ok {
 		m.published.Store(true)

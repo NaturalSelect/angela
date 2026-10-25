@@ -84,9 +84,8 @@ func TestMCPConfig_ResolvedURL(t *testing.T) {
 
 	t.Run("identity resolver round-trips template verbatim", func(t *testing.T) {
 		t.Parallel()
-		// In client mode expansion happens server-side; the client must
-		// forward the template without touching it and without erroring
-		// on unset vars.
+		// The template must be forwarded without touching it and without
+		// erroring on unset vars.
 		tmpl := "https://$MCP_HOST/$(vault read -f url)"
 		m := MCPConfig{Type: MCPHttp, URL: tmpl}
 		got, err := m.ResolvedURL(IdentityResolver())

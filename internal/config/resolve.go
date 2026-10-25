@@ -19,7 +19,6 @@ type VariableResolver interface {
 }
 
 // identityResolver is a no-op resolver that returns values unchanged.
-// Used in client mode where variable resolution is handled server-side.
 type identityResolver struct{}
 
 func (identityResolver) ResolveValue(value string) (string, error) {

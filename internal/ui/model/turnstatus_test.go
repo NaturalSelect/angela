@@ -366,8 +366,8 @@ func TestTurnStatusEmptyWithoutSession(t *testing.T) {
 	require.Empty(t, m.renderTurnStatus(120))
 }
 
-// The status line renders every frame; probing the workspace there is a
-// synchronous HTTP round-trip in client/server mode.
+// The status line renders every frame; probing the workspace there may
+// block.
 func TestTurnStatusDoesNotProbeWorkspace(t *testing.T) {
 	pinTTLs(t)
 

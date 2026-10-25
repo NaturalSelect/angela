@@ -173,8 +173,7 @@ func TestConnect_SkipLockEnvBypassesAcquisition(t *testing.T) {
 
 // TestConnect_DefaultIgnoresContendedLock confirms that without
 // WithDataDirLock(true) the lock file is irrelevant: a contender can
-// hold lock.TryFile and Connect still succeeds. This pins the
-// local-mode default to its pre-lock behavior.
+// hold lock.TryFile and Connect still succeeds.
 func TestConnect_DefaultIgnoresContendedLock(t *testing.T) {
 	t.Cleanup(ResetPool)
 
@@ -189,25 +188,6 @@ func TestConnect_DefaultIgnoresContendedLock(t *testing.T) {
 	require.NoError(t, err, "default Connect must not take the lock and must succeed under contention")
 	require.NoError(t, conn.PingContext(context.Background()))
 	require.NoError(t, Release(dataDir))
-}
-
-// TestConnect_ServerPathFailsWhenDataDirLocked is the server's
-// workspace-bootstrap analogue of TestConnect_FailsWhenDataDirLocked:
-// passing WithDataDirLock(true) must surface ErrDataDirLocked when a
-// contender already holds the lock.
-func TestConnect_ServerPathFailsWhenDataDirLocked(t *testing.T) {
-	t.Cleanup(ResetPool)
-
-	dataDir := t.TempDir()
-	lockPath := filepath.Join(dataDir, dataDirLockFile)
-
-	release, err := lock.TryFile(lockPath)
-	require.NoError(t, err, "expected to take the data-dir lock for the first time")
-	t.Cleanup(release)
-
-	_, err = Connect(context.Background(), dataDir, WithDataDirLock(true))
-	require.Error(t, err, "server-path Connect must refuse to open a locked data dir")
-	require.ErrorIs(t, err, ErrDataDirLocked)
 }
 
 func TestConnect_FailsWhenDataDirEmpty(t *testing.T) {

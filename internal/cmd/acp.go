@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -54,7 +56,14 @@ angela acp --auto-accept-edits
 		// NOTE: Until the workspace is open the file logger does not exist yet.
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
-		return runACP(cmd.Context(), os.Stdin, protocolOut, localWorkspaceOptionsFromFlags(cmd, ""))
+		// NOTE: fang only turns SIGINT into a cancelled context. An editor
+		// that stops its child with SIGTERM would otherwise kill the process
+		// before the workspace flushes pending message updates and stops
+		// its background shells and language servers.
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		return runACP(ctx, os.Stdin, protocolOut, localWorkspaceOptionsFromFlags(cmd, ""))
 	},
 }
 

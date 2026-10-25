@@ -180,9 +180,8 @@ type subSessionsLoadedMsg struct {
 	subs      []agenttools.SubSession
 }
 
-// loadSubSessionsCmd asks the workspace for the children of a session. In
-// client/server mode that is a network call, so it must not run on the
-// Update goroutine.
+// loadSubSessionsCmd asks the workspace for the children of a session. That
+// call may block, so it must not run on the Update goroutine.
 func (m *UI) loadSubSessionsCmd(sessionID string) tea.Cmd {
 	ws := m.com.Workspace
 	return func() tea.Msg {

@@ -18,11 +18,11 @@ import (
 
 // lspStatesTTL bounds how long the memoized LSP state may go without a
 // re-probe being scheduled; LSP events normally refresh it much sooner. The
-// backstop covers events missed across SSE reconnects in client/server
-// mode, so it can be an order of magnitude looser than the busy/permission
-// TTL (which drives interactive affordances like the spinner and queue
-// pill): a few seconds of stale LSP counts is invisible, a few seconds of
-// stale busy state is not. Package var so tests can pin it.
+// backstop covers missed events, so it can be an order of magnitude looser
+// than the busy/permission TTL (which drives interactive affordances like
+// the spinner and queue pill): a few seconds of stale LSP counts is
+// invisible, a few seconds of stale busy state is not. Package var so tests
+// can pin it.
 var lspStatesTTL = 5 * time.Second
 
 // lspStatesMsg delivers LSP states and per-server diagnostic counts fetched
@@ -50,8 +50,8 @@ func (m *UI) requestLSPRefresh() tea.Cmd {
 }
 
 // dispatchLSPRefresh returns a command that fetches the LSP states and
-// per-server diagnostic counts off the Update goroutine (each a synchronous
-// HTTP round-trip in client/server mode), delivering an lspStatesMsg. It
+// per-server diagnostic counts off the Update goroutine (each call may
+// block), delivering an lspStatesMsg. It
 // returns nil while a fetch is already in flight. The closure captures only
 // locals (never m) so it is safe off-thread.
 func (m *UI) dispatchLSPRefresh() tea.Cmd {
@@ -99,9 +99,9 @@ func (m *UI) lspErrorCount() int {
 
 // lspInfo renders the LSP status section showing active LSP clients and their
 // diagnostic counts. It renders from the memoized state only: this runs on
-// every frame, and the workspace probes behind it are synchronous HTTP
-// round-trips in client/server mode. LSP events (plus the TTL backstop)
-// keep the memoized state fresh off-thread; see requestLSPRefresh.
+// every frame, and the workspace probes behind it may block. LSP events
+// (plus the TTL backstop) keep the memoized state fresh off-thread; see
+// requestLSPRefresh.
 func (m *UI) lspInfo(width, maxItems int, isSection bool) string {
 	t := m.com.Styles
 

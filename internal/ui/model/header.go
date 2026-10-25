@@ -64,7 +64,7 @@ func (h *header) refresh() {
 // drawHeader draws the one-row header band: the wordmark, the session
 // breadcrumb, and the working directory flush right. lspErrorCount comes from
 // the UI's memoized state — drawing runs on every frame and must not probe the
-// workspace (a synchronous HTTP round-trip in client/server mode).
+// workspace (a call that may block).
 func (h *header) drawHeader(
 	scr uv.Screen,
 	area uv.Rectangle,

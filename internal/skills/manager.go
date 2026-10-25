@@ -19,8 +19,7 @@ import (
 // PublishStates, SubscribeEvents) are preserved for callers that share a
 // process with the TUI. To bridge a Manager to those globals, construct
 // it with WithGlobalMirror. Only do this when the process hosts a single
-// workspace (local mode or a client process); the backend server hosts
-// multiple workspaces concurrently and must not enable mirroring.
+// workspace.
 type Manager struct {
 	mu           sync.RWMutex
 	allSkills    []*Skill
@@ -42,8 +41,7 @@ type ManagerOption func(*Manager)
 
 // WithGlobalMirror causes the manager to forward SetLatestStates and
 // PublishStates calls to the package-level cache and broker. Only safe
-// when the process hosts at most one Manager (e.g. local mode or the
-// client process).
+// when the process hosts at most one Manager.
 func WithGlobalMirror() ManagerOption {
 	return func(m *Manager) {
 		m.globalMirror = true
@@ -133,9 +131,8 @@ func (m *Manager) SetLatestStates(states []*SkillState) {
 // PublishStates updates the manager's cached snapshot and publishes a
 // discovery event to subscribers. Callers should not call
 // SetLatestStates separately — PublishStates is the single mutation
-// point, keeping Manager.States(), workspaceToProto, and (when
-// WithGlobalMirror is set) skills.GetLatestStates consistent with what
-// subscribers observe.
+// point, keeping Manager.States() and (when WithGlobalMirror is set)
+// skills.GetLatestStates consistent with what subscribers observe.
 func (m *Manager) PublishStates(states []*SkillState) {
 	m.mu.Lock()
 	m.states = cloneStates(states)

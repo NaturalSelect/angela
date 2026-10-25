@@ -60,9 +60,9 @@ func pickMockWorkspace(t *testing.T) *MockWorkspace {
 	return ws
 }
 
-// TestASessionPickWritesNothingInsideUpdate is B5. RecordRecentModel is
-// an HTTP round-trip in client/server mode, and it used to run on the
-// Update goroutine, where the render loop stalls on it.
+// TestASessionPickWritesNothingInsideUpdate is B5. RecordRecentModel may
+// block, and it used to run on the Update goroutine, where the render loop
+// stalls on it.
 func TestASessionPickWritesNothingInsideUpdate(t *testing.T) {
 	pinTTLs(t)
 
@@ -199,7 +199,7 @@ func TestALandingPickIsEphemeral(t *testing.T) {
 }
 
 // TestOnboardingStartsTheAgentOffThread covers the third write on this
-// path: bringing the coder agent up is an HTTP round-trip too.
+// path: bringing the coder agent up may block too.
 func TestOnboardingStartsTheAgentOffThread(t *testing.T) {
 	pinTTLs(t)
 

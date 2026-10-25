@@ -57,6 +57,15 @@ type fakeWorkspace struct {
 	mcpPrompts     []commands.MCPPrompt
 	promptText     func(clientID, promptID string, args map[string]string) (string, error)
 
+	// summarize, regenerateTitle and sideQuestion stand in for the agent's
+	// own work. A nil one succeeds without doing anything.
+	summarize       func(ctx context.Context, sessionID string) error
+	regenerateTitle func(ctx context.Context, sessionID string) error
+	sideQuestion    func(ctx context.Context, sessionID, question string) (string, error)
+	initPrompt      string
+	initErr         error
+	initMarked      int
+
 	deleted         []string
 	trace           []string
 	cancelled       []string
@@ -304,6 +313,52 @@ func (f *fakeWorkspace) setMCPPrompts(prompts ...commands.MCPPrompt) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mcpPrompts = prompts
+}
+
+func (f *fakeWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
+	f.mu.Lock()
+	f.trace = append(f.trace, "summarize")
+	do := f.summarize
+	f.mu.Unlock()
+	if do == nil {
+		return nil
+	}
+	return do(ctx, sessionID)
+}
+
+func (f *fakeWorkspace) AgentRegenerateTitle(ctx context.Context, sessionID string) error {
+	f.mu.Lock()
+	f.trace = append(f.trace, "title")
+	do := f.regenerateTitle
+	f.mu.Unlock()
+	if do == nil {
+		return nil
+	}
+	return do(ctx, sessionID)
+}
+
+func (f *fakeWorkspace) AgentAskSideQuestion(ctx context.Context, sessionID, question string) (string, error) {
+	f.mu.Lock()
+	f.trace = append(f.trace, "btw")
+	do := f.sideQuestion
+	f.mu.Unlock()
+	if do == nil {
+		return "", nil
+	}
+	return do(ctx, sessionID, question)
+}
+
+func (f *fakeWorkspace) InitializePrompt() (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.initPrompt, f.initErr
+}
+
+func (f *fakeWorkspace) MarkProjectInitialized() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.initMarked++
+	return nil
 }
 
 func (f *fakeWorkspace) WorkingDir() string { return f.cwd }

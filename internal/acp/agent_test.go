@@ -214,6 +214,7 @@ func TestLoadSession(t *testing.T) {
 			answer("a1", "done"),
 			protocol.SessionInfoUpdate{Title: new("Fix bug")},
 			protocol.Plan{Entries: []protocol.PlanEntry{}},
+			protocol.AvailableCommandsUpdate{Commands: builtinAdverts},
 		}
 		require.Equal(t, replay, h.client.updates("old"))
 
@@ -268,6 +269,7 @@ func TestResumeSession(t *testing.T) {
 		require.Equal(t, []protocol.SessionUpdate{
 			protocol.SessionInfoUpdate{Title: new("Fix bug")},
 			protocol.Plan{Entries: []protocol.PlanEntry{}},
+			protocol.AvailableCommandsUpdate{Commands: builtinAdverts},
 		}, h.client.updates("old"))
 	})
 

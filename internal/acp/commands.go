@@ -15,12 +15,24 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 )
 
-// slashCommand is one entry of the editor's "/" menu. Exactly one of custom
-// and prompt is set. A custom command that carries a skill is a skill.
+// slashCommand is one entry of the editor's "/" menu. Exactly one of custom,
+// prompt and builtin is set. A custom command that carries a skill is a
+// skill.
 type slashCommand struct {
-	name   string
-	custom *commands.CustomCommand
-	prompt *commands.MCPPrompt
+	name    string
+	custom  *commands.CustomCommand
+	prompt  *commands.MCPPrompt
+	builtin *builtinCommand
+}
+
+// expansion is what a slash command turns a prompt into. Most commands give
+// the text and files for a model turn. A built-in that answers by itself
+// sets act instead, and its result is the reply shown to the editor.
+type expansion struct {
+	text        string
+	attachments []message.Attachment
+	act         func(ctx context.Context) (string, error)
+	command     string
 }
 
 func (c slashCommand) skill() bool {
@@ -28,14 +40,20 @@ func (c slashCommand) skill() bool {
 }
 
 func (c slashCommand) arguments() []commands.Argument {
-	if c.prompt != nil {
+	switch {
+	case c.prompt != nil:
 		return c.prompt.Arguments
+	case c.builtin != nil:
+		return c.builtin.args
+	default:
+		return c.custom.Arguments
 	}
-	return c.custom.Arguments
 }
 
 func (c slashCommand) description() string {
 	switch {
+	case c.builtin != nil:
+		return c.builtin.description
 	case c.prompt != nil:
 		return cmp.Or(c.prompt.Description, c.prompt.Title, "Prompt from MCP server "+c.prompt.ClientID)
 	case c.skill():
@@ -65,9 +83,10 @@ func (c slashCommand) inputHint() string {
 	}
 }
 
-// loadCommands gathers everything the TUI's command palette offers: custom
-// command files, user-invocable skills and MCP prompts. The first command
-// with a given name wins, and names the editor could not type are skipped.
+// loadCommands gathers everything the editor's "/" menu offers: the built-in
+// commands, custom command files, user-invocable skills and MCP prompts. The
+// first command with a given name wins, and names the editor could not type
+// are skipped.
 //
 // NOTE: MCP prompts come out of a map, so they are sorted. Otherwise every
 // load would look like a change and the list would be sent again.
@@ -85,6 +104,9 @@ func loadCommands(ctx context.Context, ws Workspace) []slashCommand {
 		out = append(out, c)
 	}
 
+	for _, c := range builtinCommands() {
+		add(c)
+	}
 	custom, err := ws.ListCustomCommands(ctx)
 	if err != nil {
 		slog.Warn("Failed to load custom commands", "error", err)
@@ -168,17 +190,17 @@ func sendCommands(ctx context.Context, c protocol.Client, s *liveSession, list [
 // the TUI would have sent for it, plus any files the command attaches.
 // Anything else is returned unchanged, because a leading slash is as likely
 // to be a path.
-func expandCommand(ctx context.Context, ws Workspace, text string) (string, []message.Attachment, error) {
+func expandCommand(ctx context.Context, ws Workspace, sessionID, text string) (expansion, error) {
 	name, input, ok := splitCommand(text)
 	if !ok {
-		return text, nil, nil
+		return expansion{text: text}, nil
 	}
 	cmds := loadCommands(ctx, ws)
 	i := slices.IndexFunc(cmds, func(c slashCommand) bool { return c.name == name })
 	if i < 0 {
-		return text, nil, nil
+		return expansion{text: text}, nil
 	}
-	return cmds[i].expand(ctx, ws, input)
+	return cmds[i].expand(ctx, ws, sessionID, input)
 }
 
 func splitCommand(text string) (name, input string, ok bool) {
@@ -191,43 +213,56 @@ func splitCommand(text string) (name, input string, ok bool) {
 }
 
 // expand mirrors the TUI. A custom command has its placeholders filled in,
-// a skill is attached as a markdown file next to what the user typed, and
-// an MCP prompt is fetched from its server.
-func (c slashCommand) expand(ctx context.Context, ws Workspace, input string) (string, []message.Attachment, error) {
+// a skill is attached as a markdown file next to what the user typed, an MCP
+// prompt is fetched from its server, and a built-in does what its palette
+// entry does.
+func (c slashCommand) expand(ctx context.Context, ws Workspace, sessionID, input string) (expansion, error) {
 	switch {
+	case c.builtin != nil:
+		if len(c.builtin.args) == 0 && input != "" {
+			return expansion{}, invalidParams("/%s takes no input", c.name)
+		}
+		values, err := bindArguments(c.builtin.args, input)
+		if err != nil {
+			return expansion{}, c.usageError(err)
+		}
+		exp, err := c.builtin.run(ws, sessionID, values)
+		exp.command = c.name
+		return exp, err
+
 	case c.skill():
 		content, res, err := ws.ReadSkill(ctx, c.custom.Skill.SkillFilePath)
 		if err != nil {
-			return "", nil, internalError("read skill /%s: %v", c.name, err)
+			return expansion{}, internalError("read skill /%s: %v", c.name, err)
 		}
 		name := cmp.Or(res.Name, c.custom.Skill.Name)
 		skill := message.Attachment{FilePath: name, FileName: name, MimeType: "text/markdown", Content: content}
-		return input, []message.Attachment{skill}, nil
+		return expansion{text: input, attachments: []message.Attachment{skill}}, nil
 
 	case c.prompt != nil:
 		values, err := bindArguments(c.arguments(), input)
 		if err != nil {
-			return "", nil, c.usageError(err)
+			return expansion{}, c.usageError(err)
 		}
 		text, err := ws.GetMCPPrompt(c.prompt.ClientID, c.prompt.PromptID, values)
 		if err != nil {
-			return "", nil, internalError("run /%s: %v", c.name, err)
+			return expansion{}, internalError("run /%s: %v", c.name, err)
 		}
 		if strings.TrimSpace(text) == "" {
-			return "", nil, internalError("/%s returned no text", c.name)
+			return expansion{}, internalError("/%s returned no text", c.name)
 		}
-		return text, nil, nil
+		return expansion{text: text}, nil
 
 	default:
 		values, err := bindArguments(c.arguments(), input)
 		if err != nil {
-			return "", nil, c.usageError(err)
+			return expansion{}, c.usageError(err)
 		}
 		text := substituteArguments(c.custom.Content, values)
 		if len(c.arguments()) == 0 && input != "" {
 			text += "\n\n" + input
 		}
-		return text, nil, nil
+		return expansion{text: text}, nil
 	}
 }
 

@@ -29,7 +29,7 @@ func (a *Agent) Prompt(ctx context.Context, req protocol.PromptRequest) (protoco
 		return protocol.PromptResponse{}, notFound("session %s not found", req.SessionID)
 	}
 	ws, _ := a.current()
-	return runTurn(ctx, ws, s, req, a.completionGrace)
+	return runTurn(ctx, ws, a.client, s, req, a.completionGrace)
 }
 
 func (a *Agent) Cancel(_ context.Context, req protocol.CancelRequest) error {
@@ -51,11 +51,12 @@ func cancelTurn(ws Workspace, s *liveSession) {
 // event never arrives, the turn still returns: shortly after the run
 // reports back, or shortly after a cancel. A queued turn behind a busy
 // session has no such signal and waits until it is cancelled.
-func runTurn(ctx context.Context, ws Workspace, s *liveSession, req protocol.PromptRequest, grace time.Duration) (protocol.PromptResponse, error) {
+func runTurn(ctx context.Context, ws Workspace, c protocol.Client, s *liveSession, req protocol.PromptRequest, grace time.Duration) (protocol.PromptResponse, error) {
 	// NOTE: The reservation comes first, so a cancel that lands while the
 	// turn is still being set up, or while the run waits on MCP servers, is
 	// recorded against it instead of being dropped.
 	accept := ws.AgentBeginAccepted(ctx, s.id)
+	cancelsBefore := s.cancelCount()
 
 	active, _ := ws.AgentActive(ctx, s.id)
 	text, attachments, err := promptInput(req.Prompt, active.CatwalkCfg.SupportsImages)
@@ -63,12 +64,17 @@ func runTurn(ctx context.Context, ws Workspace, s *liveSession, req protocol.Pro
 		accept.Close()
 		return protocol.PromptResponse{}, err
 	}
-	text, extra, err := expandCommand(ctx, ws, text)
+	exp, err := expandCommand(ctx, ws, s.id, text)
 	if err != nil {
 		accept.Close()
 		return protocol.PromptResponse{}, err
 	}
-	attachments = append(attachments, extra...)
+	if exp.act != nil {
+		accept.Close()
+		return runAction(ctx, c, s, exp, cancelsBefore)
+	}
+	text = exp.text
+	attachments = append(attachments, exp.attachments...)
 
 	runID := uuid.NewString()
 	t := s.expect(runID)
@@ -115,6 +121,56 @@ func runTurn(ctx context.Context, ws Workspace, s *liveSession, req protocol.Pro
 			return protocol.PromptResponse{}, ctx.Err()
 		}
 	}
+}
+
+// runAction carries out a built-in command that answers by itself, then
+// shows its reply as the agent's message.
+//
+// NOTE: The action is registered as a turn so session/cancel reaches it. A
+// cancel ends the action's context, which stops a compaction part-way. One
+// that landed before the action registered is told apart by the cancel
+// count, and the action is then not started at all.
+func runAction(ctx context.Context, c protocol.Client, s *liveSession, exp expansion, cancelsBefore int) (protocol.PromptResponse, error) {
+	runID := uuid.NewString()
+	t := s.expect(runID)
+	defer s.forget(runID)
+
+	if s.cancelCount() > cancelsBefore {
+		return protocol.PromptResponse{StopReason: protocol.StopReasonCancelled}, nil
+	}
+
+	actCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	go func() {
+		select {
+		case <-t.cancelled:
+			stop()
+		case <-actCtx.Done():
+		}
+	}()
+
+	reply, err := exp.act(actCtx)
+	select {
+	case <-t.cancelled:
+		return protocol.PromptResponse{StopReason: protocol.StopReasonCancelled}, nil
+	default:
+	}
+	if ctx.Err() != nil {
+		return protocol.PromptResponse{}, ctx.Err()
+	}
+	if err != nil {
+		return protocol.PromptResponse{}, builtinError(exp.command, err)
+	}
+	if strings.TrimSpace(reply) != "" {
+		note := protocol.SessionNotification{
+			SessionID: s.id,
+			Update:    protocol.AgentMessageChunk{Content: protocol.TextBlock{Text: reply}},
+		}
+		if err := c.SessionUpdate(ctx, note); err != nil {
+			slog.Warn("Failed to send command reply", "session_id", s.id, "error", err)
+		}
+	}
+	return protocol.PromptResponse{StopReason: protocol.StopReasonEndTurn}, nil
 }
 
 func runError(err error) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -166,7 +167,7 @@ func TestNewSession(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t)
 		h.newSession(t)
-		_, err := h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: "/work/other"})
+		_, err := h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: filepath.Join(filepath.Dir(testCwd), "other")})
 		requireCode(t, err, protocol.CodeInvalidParams)
 	})
 

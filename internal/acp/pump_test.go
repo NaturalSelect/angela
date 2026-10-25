@@ -2,6 +2,7 @@ package acp
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -243,7 +244,7 @@ func TestPermissionRequestContents(t *testing.T) {
 			Params: editPreview{path: "main.go", before: "old", after: "new"},
 		}, testCwd)
 		require.Equal(t, []protocol.ToolCallContent{
-			protocol.ToolDiff{Path: testCwd + "/main.go", OldText: new("old"), NewText: "new"},
+			protocol.ToolDiff{Path: filepath.Join(testCwd, "main.go"), OldText: new("old"), NewText: "new"},
 		}, req.ToolCall.Content)
 	})
 

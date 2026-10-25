@@ -59,7 +59,7 @@ var _ Workspace = (*fakeWorkspace)(nil)
 func newFakeWorkspace() *fakeWorkspace {
 	return &fakeWorkspace{
 		cfg:      &config.Config{},
-		cwd:      "/work/proj",
+		cwd:      testCwd,
 		sessions: make(map[string]session.Session),
 		messages: make(map[string][]message.Message),
 		busy:     make(map[string]bool),

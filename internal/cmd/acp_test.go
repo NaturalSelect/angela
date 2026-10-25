@@ -107,9 +107,23 @@ func (p *acpPeer) finish() {
 	}
 }
 
+// acpDataDir returns a data directory whose removal may fail without failing
+// the test.
+//
+// NOTE: The process-wide logger keeps the first workspace's log file open for
+// the rest of the run, and Windows refuses to delete an open file, so
+// t.TempDir would fail whichever test happens to open that workspace first.
+func acpDataDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "angela-acp-*")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func acpTestBase(t *testing.T) localWorkspaceOptions {
 	t.Helper()
-	return localWorkspaceOptions{DataDir: t.TempDir(), PermissionMode: permission.ModeManual}
+	return localWorkspaceOptions{DataDir: acpDataDir(t), PermissionMode: permission.ModeManual}
 }
 
 func initializeParams() map[string]any {
@@ -228,7 +242,7 @@ func TestACPCmd_ProtocolStreamStaysClean(t *testing.T) {
 	previousLogger := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 
-	cmd := newSetupWorkspaceTestCmd(t, t.TempDir())
+	cmd := newSetupWorkspaceTestCmd(t, acpDataDir(t))
 	cmd.SetContext(t.Context())
 
 	stdinR, stdinW, err := os.Pipe()

@@ -385,6 +385,10 @@ func (w *AppWorkspace) PermissionGrantPersistent(perm permission.PermissionReque
 	return w.app.Permissions.GrantPersistent(perm)
 }
 
+func (w *AppWorkspace) PermissionDenyPersistent(perm permission.PermissionRequest) bool {
+	return w.app.Permissions.DenyPersistent(perm)
+}
+
 func (w *AppWorkspace) PermissionDeny(perm permission.PermissionRequest) bool {
 	return w.app.Permissions.Deny(perm)
 }
@@ -681,6 +685,10 @@ func (w *AppWorkspace) Subscribe(program *tea.Program) {
 // ends.
 func (w *AppWorkspace) Events(ctx context.Context) <-chan pubsub.Event[tea.Msg] {
 	return w.app.Events(ctx)
+}
+
+func (w *AppWorkspace) ListCustomCommands(context.Context) ([]commands.CustomCommand, error) {
+	return commands.LoadCustomCommands(w.store.Config())
 }
 
 func (w *AppWorkspace) Shutdown() {

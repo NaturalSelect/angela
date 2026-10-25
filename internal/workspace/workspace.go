@@ -206,6 +206,9 @@ type Workspace interface {
 	// won the race.
 	PermissionGrant(perm permission.PermissionRequest) bool
 	PermissionGrantPersistent(perm permission.PermissionRequest) bool
+	// PermissionDenyPersistent denies the request and refuses the same
+	// access for the rest of the session.
+	PermissionDenyPersistent(perm permission.PermissionRequest) bool
 	PermissionDeny(perm permission.PermissionRequest) bool
 	// PermissionMode reports the current permission mode.
 	PermissionMode() permission.PermissionMode

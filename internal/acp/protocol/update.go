@@ -132,15 +132,28 @@ type ConfigOptionUpdate struct {
 	ConfigOptions []ConfigOption
 }
 
-func (UserMessageChunk) isSessionUpdate()   {}
-func (AgentMessageChunk) isSessionUpdate()  {}
-func (AgentThoughtChunk) isSessionUpdate()  {}
-func (ToolCallStart) isSessionUpdate()      {}
-func (ToolCallUpdate) isSessionUpdate()     {}
-func (Plan) isSessionUpdate()               {}
-func (SessionInfoUpdate) isSessionUpdate()  {}
-func (UsageUpdate) isSessionUpdate()        {}
-func (ConfigOptionUpdate) isSessionUpdate() {}
+// NOTE: InputHint is empty when the command takes no text after its name.
+type AvailableCommand struct {
+	Name        string
+	Description string
+	InputHint   string
+}
+
+// NOTE: Each update replaces the whole list.
+type AvailableCommandsUpdate struct {
+	Commands []AvailableCommand
+}
+
+func (UserMessageChunk) isSessionUpdate()        {}
+func (AgentMessageChunk) isSessionUpdate()       {}
+func (AgentThoughtChunk) isSessionUpdate()       {}
+func (ToolCallStart) isSessionUpdate()           {}
+func (ToolCallUpdate) isSessionUpdate()          {}
+func (Plan) isSessionUpdate()                    {}
+func (SessionInfoUpdate) isSessionUpdate()       {}
+func (UsageUpdate) isSessionUpdate()             {}
+func (ConfigOptionUpdate) isSessionUpdate()      {}
+func (AvailableCommandsUpdate) isSessionUpdate() {}
 
 func (ToolContent) isToolCallContent() {}
 func (ToolDiff) isToolCallContent()    {}

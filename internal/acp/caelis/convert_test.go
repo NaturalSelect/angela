@@ -137,6 +137,22 @@ func TestFromSessionUpdateWireFormat(t *testing.T) {
 			}}},
 			want: `{"sessionUpdate":"config_option_update","configOptions":[{"type":"select","id":"model","name":"Model","category":"model","currentValue":"a","options":[{"value":"a","name":"A"}]}]}`,
 		},
+		{
+			name: "available commands with and without an input hint",
+			in: protocol.AvailableCommandsUpdate{Commands: []protocol.AvailableCommand{
+				{Name: "user:review", Description: "Review a file", InputHint: "FILE"},
+				{Name: "project:notes", Description: "Take notes"},
+			}},
+			want: `{"sessionUpdate":"available_commands_update","availableCommands":[
+				{"name":"user:review","description":"Review a file","input":{"hint":"FILE"}},
+				{"name":"project:notes","description":"Take notes"}
+			]}`,
+		},
+		{
+			name: "an empty command list still sends an array",
+			in:   protocol.AvailableCommandsUpdate{},
+			want: `{"sessionUpdate":"available_commands_update","availableCommands":[]}`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -197,10 +213,11 @@ func TestFromInitializeResponseDeclaresOnlyEnabledCapabilities(t *testing.T) {
 
 	full := fromInitializeResponse(protocol.InitializeResponse{
 		ProtocolVersion: 1, AgentName: "angela", AgentVersion: "v1",
-		LoadSession: true, ListSessions: true, DeleteSessions: true,
+		LoadSession: true, ResumeSession: true, ListSessions: true, DeleteSessions: true,
 		PromptImage: true, PromptEmbeddedContext: true,
 	})
 	require.True(t, full.AgentCapabilities.LoadSession)
+	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.Resume)
 	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.List)
 	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.Delete)
 	require.True(t, full.AgentCapabilities.PromptCapabilities.Image)

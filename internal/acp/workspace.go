@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/NaturalSelect/angela/internal/agent"
+	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/workspace"
@@ -21,6 +22,8 @@ import (
 type Workspace interface {
 	workspace.Workspace
 	Events(ctx context.Context) <-chan pubsub.Event[tea.Msg]
+	// ListCustomCommands reads the user's and the project's command files.
+	ListCustomCommands(ctx context.Context) ([]commands.CustomCommand, error)
 	// AgentBeginAccepted reserves a run on the session. The caller must
 	// close the handle, and may get nil when the session has no executor.
 	AgentBeginAccepted(ctx context.Context, sessionID string) *agent.AcceptedRun

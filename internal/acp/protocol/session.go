@@ -1,6 +1,9 @@
 package protocol
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type InitializeRequest struct {
 	ProtocolVersion int
@@ -13,6 +16,7 @@ type InitializeResponse struct {
 	AgentVersion    string
 
 	LoadSession    bool
+	ResumeSession  bool
 	ListSessions   bool
 	DeleteSessions bool
 
@@ -27,6 +31,10 @@ type NewSessionRequest struct {
 type NewSessionResponse struct {
 	SessionID     string
 	ConfigOptions []ConfigOption
+	// NOTE: AfterSent runs once the response has been written. The editor
+	// learns the session ID from that response and cannot route updates
+	// for a session it has not heard of yet.
+	AfterSent func(ctx context.Context)
 }
 
 type LoadSessionRequest struct {
@@ -35,6 +43,15 @@ type LoadSessionRequest struct {
 }
 
 type LoadSessionResponse struct {
+	ConfigOptions []ConfigOption
+}
+
+type ResumeSessionRequest struct {
+	SessionID string
+	Cwd       string
+}
+
+type ResumeSessionResponse struct {
 	ConfigOptions []ConfigOption
 }
 

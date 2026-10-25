@@ -955,6 +955,20 @@ func (mr *MockWorkspaceMockRecorder) PermissionDeny(perm any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PermissionDeny", reflect.TypeOf((*MockWorkspace)(nil).PermissionDeny), perm)
 }
 
+// PermissionDenyPersistent mocks base method.
+func (m *MockWorkspace) PermissionDenyPersistent(perm permission.PermissionRequest) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PermissionDenyPersistent", perm)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// PermissionDenyPersistent indicates an expected call of PermissionDenyPersistent.
+func (mr *MockWorkspaceMockRecorder) PermissionDenyPersistent(perm any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PermissionDenyPersistent", reflect.TypeOf((*MockWorkspace)(nil).PermissionDenyPersistent), perm)
+}
+
 // PermissionGrant mocks base method.
 func (m *MockWorkspace) PermissionGrant(perm permission.PermissionRequest) bool {
 	m.ctrl.T.Helper()

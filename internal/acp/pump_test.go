@@ -196,6 +196,15 @@ func TestPermissionRoundTrip(t *testing.T) {
 			want:   func(t *testing.T, ws *fakeWorkspace) { require.Len(t, ws.denied, 1) },
 		},
 		{
+			name:   "reject always",
+			answer: protocol.PermissionResponse{OptionID: permRejectAlways},
+			want: func(t *testing.T, ws *fakeWorkspace) {
+				require.Len(t, ws.deniedAlways, 1)
+				require.Empty(t, ws.denied)
+				require.Empty(t, ws.granted)
+			},
+		},
+		{
 			name:   "the editor dismisses the prompt",
 			answer: protocol.PermissionResponse{Cancelled: true},
 			want:   func(t *testing.T, ws *fakeWorkspace) { require.Len(t, ws.denied, 1) },
@@ -222,7 +231,7 @@ func TestPermissionRoundTrip(t *testing.T) {
 			resolved := func() bool {
 				h.ws.mu.Lock()
 				defer h.ws.mu.Unlock()
-				return len(h.ws.granted)+len(h.ws.grantedAlways)+len(h.ws.denied) == 1
+				return len(h.ws.granted)+len(h.ws.grantedAlways)+len(h.ws.denied)+len(h.ws.deniedAlways) == 1
 			}
 			eventually(t, resolved)
 			h.ws.snapshot(func() { tt.want(t, h.ws) })
@@ -264,7 +273,7 @@ func TestPermissionRequestContents(t *testing.T) {
 		require.Empty(t, req.ToolCall.Content)
 	})
 
-	t.Run("every option has a distinct id and the three kinds Angela can honor", func(t *testing.T) {
+	t.Run("every option has a distinct id and a kind the editor can show", func(t *testing.T) {
 		t.Parallel()
 		req := permissionRequestFor("s1", "c1", permission.PermissionRequest{}, testCwd)
 		kinds := map[string]protocol.PermissionKind{}
@@ -272,9 +281,10 @@ func TestPermissionRequestContents(t *testing.T) {
 			kinds[o.ID] = o.Kind
 		}
 		require.Equal(t, map[string]protocol.PermissionKind{
-			permAllowOnce:   protocol.PermissionKindAllowOnce,
-			permAllowAlways: protocol.PermissionKindAllowAlways,
-			permReject:      protocol.PermissionKindRejectOnce,
+			permAllowOnce:    protocol.PermissionKindAllowOnce,
+			permAllowAlways:  protocol.PermissionKindAllowAlways,
+			permReject:       protocol.PermissionKindRejectOnce,
+			permRejectAlways: protocol.PermissionKindRejectAlways,
 		}, kinds)
 	})
 }

@@ -214,6 +214,11 @@ type Service interface {
 	// actually resolved the pending request; false if the request had
 	// already been resolved or is unknown.
 	Deny(permission PermissionRequest) bool
+	// DenyPersistent denies a permission request and remembers the refusal
+	// for the session: the same access is refused later without asking, and
+	// other pending requests for it are refused now. It returns true if
+	// this call actually resolved the pending request.
+	DenyPersistent(permission PermissionRequest) bool
 	// Gate settles one access. Unless the request asks to defer, it
 	// prompts when it must and blocks until the user answers.
 	Gate(ctx context.Context, req GateRequest) Decision
@@ -277,8 +282,11 @@ type permissionService struct {
 	readRoots          []string
 	policy             *Policy
 	sessionPermissions *csync.Map[GrantKey, bool]
-	pendingRequests    *csync.Map[string, chan resolution]
-	pendingGrants      *csync.Map[string, Ticket]
+	// sessionDenials holds what the user refused for the rest of the
+	// session. It is checked before any form of approval.
+	sessionDenials  *csync.Map[GrantKey, bool]
+	pendingRequests *csync.Map[string, chan resolution]
+	pendingGrants   *csync.Map[string, Ticket]
 	// sessionParents maps a derived session (sub-agent, branch) to
 	// whichever session spawned it, so attendedness and grants can be
 	// resolved by walking up to the root rather than copied at spawn
@@ -321,6 +329,7 @@ func NewPermissionService(workingDir string, initialMode PermissionMode, policy 
 		readRoots:          roots,
 		policy:             policy,
 		sessionPermissions: csync.NewMap[GrantKey, bool](),
+		sessionDenials:     csync.NewMap[GrantKey, bool](),
 		pendingRequests:    csync.NewMap[string, chan resolution](),
 		pendingGrants:      csync.NewMap[string, Ticket](),
 		sessionParents:     csync.NewMap[string, string](),
@@ -362,11 +371,6 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 		forced, forcedReason = true, verdict.Reason
 	}
 
-	if !forced && hookApproved(ctx, req.ToolCallID) {
-		s.notify(req.ToolCallID, true, false)
-		return Decision{Outcome: OutcomeAllow, Reason: "approved by a PreToolUse hook"}
-	}
-
 	// Grants live at the session tree's root, so a sub-agent and the
 	// session that dispatched it share one approval rather than each
 	// asking on its own.
@@ -375,6 +379,18 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 		Action:    access.Action,
 		Dir:       s.grantDir(access),
 		Scope:     s.grantScope(access),
+	}
+
+	// The user's own refusal outranks every automatic approval below,
+	// and unlike a grant it applies to a forced request too, since
+	// refusing is never the unsafe direction.
+	if _, ok := s.sessionDenials.Get(grant); ok {
+		return sessionDenial()
+	}
+
+	if !forced && hookApproved(ctx, req.ToolCallID) {
+		s.notify(req.ToolCallID, true, false)
+		return Decision{Outcome: OutcomeAllow, Reason: "approved by a PreToolUse hook"}
 	}
 
 	if !forced {
@@ -406,6 +422,16 @@ func (s *permissionService) Gate(ctx context.Context, req GateRequest) Decision 
 		reason:     forcedReason,
 	}
 	return s.prompt(ctx, ticket, req.Preview)
+}
+
+// sessionDenial is what a request gets when the user already refused it
+// for the session. The reason keeps the turn going, because the model can
+// still take another route, which a bare denial would cut off.
+func sessionDenial() Decision {
+	return Decision{
+		Outcome: OutcomeUserDeny,
+		Reason:  "the user refused this earlier in the session; use a different approach",
+	}
 }
 
 // promptRefusal settles a request that must never reach a prompt. Two
@@ -446,7 +472,12 @@ func (s *permissionService) prompt(ctx context.Context, ticket *Ticket, preview 
 	}
 	defer release()
 
-	// A grant may have arrived while this request waited its turn.
+	// A grant or a refusal may have arrived while this request waited
+	// its turn.
+	if _, ok := s.sessionDenials.Get(ticket.grant); ok {
+		s.notify(ticket.toolCallID, false, true)
+		return sessionDenial()
+	}
 	if !ticket.forced {
 		if _, ok := s.sessionPermissions.Get(ticket.grant); ok {
 			s.notify(ticket.toolCallID, true, false)
@@ -818,6 +849,32 @@ func (s *permissionService) Grant(permission PermissionRequest) bool {
 
 func (s *permissionService) Deny(permission PermissionRequest) bool {
 	return s.resolve(permission, false, true, nil)
+}
+
+// DenyPersistent records the refusal only if this call wins the
+// pending-request race, for the same reason GrantPersistent does: a
+// losing call must not leave a rule behind that the user never chose.
+func (s *permissionService) DenyPersistent(permission PermissionRequest) bool {
+	return s.resolve(permission, false, true, func() {
+		ticket, ok := s.pendingGrants.Get(permission.ID)
+		if !ok {
+			return
+		}
+		s.sessionDenials.Set(ticket.grant, true)
+		s.denyPendingSiblings(permission.ID, ticket.grant)
+	})
+}
+
+// denyPendingSiblings refuses every other still-pending request that
+// shares grant's key, so a sibling sub-agent parked in prompt() is not
+// left waiting on a question whose answer is already known.
+func (s *permissionService) denyPendingSiblings(exclude string, grant GrantKey) {
+	for id, ticket := range s.pendingGrants.Seq2() {
+		if id == exclude || ticket.grant != grant {
+			continue
+		}
+		s.resolve(PermissionRequest{ID: id, ToolCallID: ticket.toolCallID}, false, true, nil)
+	}
 }
 
 func (s *permissionService) SubscribeNotifications(ctx context.Context) <-chan pubsub.Event[PermissionNotification] {

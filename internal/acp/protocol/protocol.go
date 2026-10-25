@@ -13,6 +13,8 @@ type Agent interface {
 	Initialize(ctx context.Context, req InitializeRequest) (InitializeResponse, error)
 	NewSession(ctx context.Context, req NewSessionRequest) (NewSessionResponse, error)
 	LoadSession(ctx context.Context, req LoadSessionRequest) (LoadSessionResponse, error)
+	// NOTE: ResumeSession is LoadSession without the history replay.
+	ResumeSession(ctx context.Context, req ResumeSessionRequest) (ResumeSessionResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (ListSessionsResponse, error)
 	DeleteSession(ctx context.Context, req DeleteSessionRequest) error
 	Prompt(ctx context.Context, req PromptRequest) (PromptResponse, error)

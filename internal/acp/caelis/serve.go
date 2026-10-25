@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"time"
 
 	acp "github.com/caelis-labs/acp-go-sdk"
@@ -73,6 +74,7 @@ type sdkAgent struct {
 var (
 	_ acp.Agent               = (*sdkAgent)(nil)
 	_ acp.AgentLoader         = (*sdkAgent)(nil)
+	_ acp.AgentSessionResumer = (*sdkAgent)(nil)
 	_ acp.AgentSessionLister  = (*sdkAgent)(nil)
 	_ acp.AgentSessionDeleter = (*sdkAgent)(nil)
 	_ acp.AgentSessionConfig  = (*sdkAgent)(nil)
@@ -93,6 +95,15 @@ func (a *sdkAgent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp
 	if err != nil {
 		return acp.NewSessionResponse{}, toRequestError(err)
 	}
+	if after := resp.AfterSent; after != nil {
+		err := acp.AfterResponse(ctx, func(ctx context.Context) error {
+			after(ctx)
+			return nil
+		})
+		if err != nil {
+			slog.Warn("Failed to schedule work after session/new", "error", err)
+		}
+	}
 	return fromNewSession(resp), nil
 }
 
@@ -103,6 +114,15 @@ func (a *sdkAgent) LoadSession(ctx context.Context, p acp.LoadSessionRequest) (a
 		return acp.LoadSessionResponse{}, toRequestError(err)
 	}
 	return fromLoadSession(resp), nil
+}
+
+func (a *sdkAgent) ResumeSession(ctx context.Context, p acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
+	<-a.ready
+	resp, err := a.inner.ResumeSession(ctx, toResumeSession(p))
+	if err != nil {
+		return acp.ResumeSessionResponse{}, toRequestError(err)
+	}
+	return fromResumeSession(resp), nil
 }
 
 func (a *sdkAgent) ListSessions(ctx context.Context, p acp.ListSessionsRequest) (acp.ListSessionsResponse, error) {

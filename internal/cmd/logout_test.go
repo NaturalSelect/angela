@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"errors"
+	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
@@ -125,4 +127,40 @@ func TestLogoutCopilot_PropagatesRemoveError(t *testing.T) {
 
 	require.ErrorIs(t, logoutCopilot(ws), boom)
 	require.Len(t, ws.removed(), 2, "the second removal still runs after the first fails")
+}
+
+func TestExitOnSignal_ExitsWithFailureCode(t *testing.T) {
+	t.Parallel()
+
+	signals := make(chan os.Signal, 1)
+	exited := make(chan int, 1)
+	stop := exitOnSignal(signals, func(code int) { exited <- code })
+	t.Cleanup(stop)
+
+	signals <- os.Interrupt
+
+	select {
+	case code := <-exited:
+		require.Equal(t, 1, code)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the process did not exit after the interrupt")
+	}
+}
+
+func TestExitOnSignal_StopPreventsExit(t *testing.T) {
+	t.Parallel()
+
+	signals := make(chan os.Signal, 1)
+	exited := make(chan int, 1)
+	stop := exitOnSignal(signals, func(code int) { exited <- code })
+
+	stop()
+	stop()
+	signals <- os.Interrupt
+
+	select {
+	case code := <-exited:
+		t.Fatalf("exited with %d after the watcher was stopped", code)
+	case <-time.After(100 * time.Millisecond):
+	}
 }

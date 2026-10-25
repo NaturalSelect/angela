@@ -34,6 +34,8 @@ angela acp --auto-accept-edits
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		defer serveProfiles()()
+
 		protocolOut := os.Stdout
 		// NOTE: Anything that prints to os.Stdout by mistake lands on stderr
 		// instead of corrupting the protocol stream.

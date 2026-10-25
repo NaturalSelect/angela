@@ -15,6 +15,17 @@ func usageIsZero(usage fantasy.Usage) bool {
 		usage.CacheReadTokens == 0
 }
 
+func addUsage(a, b fantasy.Usage) fantasy.Usage {
+	return fantasy.Usage{
+		InputTokens:         a.InputTokens + b.InputTokens,
+		OutputTokens:        a.OutputTokens + b.OutputTokens,
+		TotalTokens:         a.TotalTokens + b.TotalTokens,
+		ReasoningTokens:     a.ReasoningTokens + b.ReasoningTokens,
+		CacheCreationTokens: a.CacheCreationTokens + b.CacheCreationTokens,
+		CacheReadTokens:     a.CacheReadTokens + b.CacheReadTokens,
+	}
+}
+
 func fallbackStepUsage(messages []fantasy.Message, step fantasy.StepResult) (fantasy.Usage, bool) {
 	if !usageIsZero(step.Usage) {
 		return step.Usage, false

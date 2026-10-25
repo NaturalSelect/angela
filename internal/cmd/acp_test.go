@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/acp"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/profiling"
 	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
@@ -237,8 +239,23 @@ func TestOpenACPWorkspace_MissingDirectory(t *testing.T) {
 // TestACPCmd_ProtocolStreamStaysClean runs the real command against the
 // process's own stdin and stdout: the protocol goes to the original stdout,
 // and os.Stdout is put back afterwards.
+// servesProfiles reports whether this process is listed by "angela pprof".
+func servesProfiles(t *testing.T) bool {
+	t.Helper()
+	processes, err := profiling.Running(t.Context())
+	require.NoError(t, err)
+	return slices.ContainsFunc(processes, func(p profiling.Process) bool { return p.PID == os.Getpid() })
+}
+
 func TestACPCmd_ProtocolStreamStaysClean(t *testing.T) {
 	isolateSessionEnv(t)
+	// NOTE: A short directory keeps the endpoint socket under the platform
+	// path limit, which t.TempDir() can exceed on macOS.
+	runtimeDir, err := os.MkdirTemp("", "pp")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(runtimeDir) })
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+
 	previousLogger := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 
@@ -274,6 +291,7 @@ func TestACPCmd_ProtocolStreamStaysClean(t *testing.T) {
 	case <-time.After(acpTestTimeout):
 		t.Fatal("the initialize response never reached stdout")
 	}
+	require.True(t, servesProfiles(t), "angela pprof must be able to reach a running angela acp")
 	require.NoError(t, stdinW.Close())
 
 	select {
@@ -282,6 +300,7 @@ func TestACPCmd_ProtocolStreamStaysClean(t *testing.T) {
 	case <-time.After(acpTestTimeout):
 		t.Fatal("angela acp did not stop after its input closed")
 	}
+	require.False(t, servesProfiles(t), "the profile endpoint must go away with the process")
 	require.Same(t, stdoutW, os.Stdout, "os.Stdout must be restored")
 	_ = stdoutW.Close()
 

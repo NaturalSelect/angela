@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"fmt"
 	"os"
+	"os/signal"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/config"
@@ -37,6 +39,8 @@ angela logout copilot
 	},
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		defer exitOnInterrupt()()
+
 		ws, cleanup, err := setupLocalWorkspace(cmd)
 		if err != nil {
 			return err
@@ -140,4 +144,36 @@ func pickLoggedInProvider(cfg *config.Config) (string, error) {
 
 func init() {
 	logoutCmd.Flags().BoolP("force", "f", false, "Skip logout confirmation prompt")
+}
+
+// exitOnInterrupt ends the process on Ctrl-C until the returned function is
+// called.
+//
+// NOTE: The prompts read stdin with fmt.Scanln, which nothing can wake up,
+// and the root command turns SIGINT into a context nobody here reads. The
+// process has to exit itself or Ctrl-C does nothing until Enter is pressed.
+func exitOnInterrupt() (stop func()) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt)
+	stopWatching := exitOnSignal(signals, os.Exit)
+	return func() {
+		signal.Stop(signals)
+		stopWatching()
+	}
+}
+
+func exitOnSignal(signals <-chan os.Signal, exit func(code int)) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-signals:
+			select {
+			case <-done:
+			default:
+				exit(1)
+			}
+		case <-done:
+		}
+	}()
+	return sync.OnceFunc(func() { close(done) })
 }

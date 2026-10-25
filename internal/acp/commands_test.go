@@ -2,6 +2,7 @@ package acp
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -144,6 +145,19 @@ func reviewCommand() commands.CustomCommand {
 	}
 }
 
+var builtinAdverts = availableCommands(builtinCommands())
+
+// withBuiltins is what the editor is sent when the workspace offers extra
+// on top of the built-in commands.
+func withBuiltins(extra ...protocol.AvailableCommand) []protocol.AvailableCommand {
+	return append(slices.Clone(builtinAdverts), extra...)
+}
+
+// beyondBuiltins drops the built-in commands from a loaded list.
+func beyondBuiltins(cmds []slashCommand) []slashCommand {
+	return cmds[len(builtinAdverts):]
+}
+
 func TestLoadCommands(t *testing.T) {
 	t.Parallel()
 
@@ -159,13 +173,24 @@ func TestLoadCommands(t *testing.T) {
 
 		got := availableCommands(loadCommands(t.Context(), ws))
 
-		require.Equal(t, []protocol.AvailableCommand{
-			{Name: "user:review", Description: "Custom command", InputHint: "FILE"},
-			{Name: "project:notes", Description: "Custom command"},
-			{Name: "user:jq", Description: "Does jq", InputHint: "what to do with this skill (optional)"},
-			{Name: "srv:alpha", Description: "Alpha"},
-			{Name: "srv:zeta", Description: "Z"},
-		}, got)
+		require.Equal(t, withBuiltins(
+			protocol.AvailableCommand{Name: "user:review", Description: "Custom command", InputHint: "FILE"},
+			protocol.AvailableCommand{Name: "project:notes", Description: "Custom command"},
+			protocol.AvailableCommand{Name: "user:jq", Description: "Does jq", InputHint: "what to do with this skill (optional)"},
+			protocol.AvailableCommand{Name: "srv:alpha", Description: "Alpha"},
+			protocol.AvailableCommand{Name: "srv:zeta", Description: "Z"},
+		), got)
+	})
+
+	t.Run("a built-in command cannot be replaced", func(t *testing.T) {
+		t.Parallel()
+		ws := newFakeWorkspace()
+		ws.customCommands = []commands.CustomCommand{{ID: "compact", Name: "compact", Content: "mine"}}
+
+		cmds := loadCommands(t.Context(), ws)
+
+		require.Len(t, cmds, len(builtinAdverts))
+		require.NotNil(t, cmds[0].builtin)
 	})
 
 	t.Run("the first command with a name wins", func(t *testing.T) {
@@ -174,7 +199,7 @@ func TestLoadCommands(t *testing.T) {
 		ws.customCommands = []commands.CustomCommand{reviewCommand()}
 		ws.skillEntries = []skills.CatalogEntry{{ID: "/skills/review/SKILL.md", Name: "review", Label: "user:review", UserInvocable: true}}
 
-		cmds := loadCommands(t.Context(), ws)
+		cmds := beyondBuiltins(loadCommands(t.Context(), ws))
 
 		require.Len(t, cmds, 1)
 		require.False(t, cmds[0].skill())
@@ -185,7 +210,7 @@ func TestLoadCommands(t *testing.T) {
 		ws := newFakeWorkspace()
 		ws.mcpPrompts = []commands.MCPPrompt{{ID: "my server:greet"}, {ID: "srv:greet"}}
 
-		cmds := loadCommands(t.Context(), ws)
+		cmds := beyondBuiltins(loadCommands(t.Context(), ws))
 
 		require.Len(t, cmds, 1)
 		require.Equal(t, "srv:greet", cmds[0].name)
@@ -196,7 +221,7 @@ func TestLoadCommands(t *testing.T) {
 		ws := newFakeWorkspace()
 		ws.mcpPrompts = []commands.MCPPrompt{{ID: "srv:p", Arguments: []commands.Argument{{ID: "A"}, {ID: "B"}}}}
 
-		got := availableCommands(loadCommands(t.Context(), ws))
+		got := availableCommands(beyondBuiltins(loadCommands(t.Context(), ws)))
 
 		require.Equal(t, "A=value B=value", got[0].InputHint)
 	})
@@ -229,10 +254,10 @@ func TestCommandsAreAdvertised(t *testing.T) {
 
 		resp.AfterSent(t.Context())
 
-		require.Equal(t, [][]protocol.AvailableCommand{{reviewAdvert}}, commandLists(h.client, resp.SessionID))
+		require.Equal(t, [][]protocol.AvailableCommand{withBuiltins(reviewAdvert)}, commandLists(h.client, resp.SessionID))
 	})
 
-	t.Run("a new session with no commands sends nothing", func(t *testing.T) {
+	t.Run("a new session with nothing else still gets the built-ins", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t)
 
@@ -240,7 +265,7 @@ func TestCommandsAreAdvertised(t *testing.T) {
 		require.NoError(t, err)
 		resp.AfterSent(t.Context())
 
-		require.Empty(t, commandLists(h.client, resp.SessionID))
+		require.Equal(t, [][]protocol.AvailableCommand{withBuiltins()}, commandLists(h.client, resp.SessionID))
 	})
 
 	t.Run("loading and resuming a session send them", func(t *testing.T) {
@@ -251,11 +276,11 @@ func TestCommandsAreAdvertised(t *testing.T) {
 
 		_, err := h.agent.LoadSession(t.Context(), protocol.LoadSessionRequest{SessionID: "old", Cwd: testCwd})
 		require.NoError(t, err)
-		require.Equal(t, [][]protocol.AvailableCommand{{reviewAdvert}}, commandLists(h.client, "old"))
+		require.Equal(t, [][]protocol.AvailableCommand{withBuiltins(reviewAdvert)}, commandLists(h.client, "old"))
 
 		_, err = h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "old", Cwd: testCwd})
 		require.NoError(t, err)
-		require.Equal(t, [][]protocol.AvailableCommand{{reviewAdvert}, {reviewAdvert}}, commandLists(h.client, "old"))
+		require.Equal(t, [][]protocol.AvailableCommand{withBuiltins(reviewAdvert), withBuiltins(reviewAdvert)}, commandLists(h.client, "old"))
 	})
 
 	t.Run("an MCP change sends the new list, and only when it differs", func(t *testing.T) {
@@ -273,8 +298,8 @@ func TestCommandsAreAdvertised(t *testing.T) {
 
 		eventually(t, func() bool { return len(commandLists(h.client, resp.SessionID)) == 2 })
 		require.Equal(t, [][]protocol.AvailableCommand{
-			{reviewAdvert},
-			{reviewAdvert, {Name: "srv:greet", Description: "Greet"}},
+			withBuiltins(reviewAdvert),
+			withBuiltins(reviewAdvert, protocol.AvailableCommand{Name: "srv:greet", Description: "Greet"}),
 		}, commandLists(h.client, resp.SessionID))
 	})
 
@@ -290,7 +315,7 @@ func TestCommandsAreAdvertised(t *testing.T) {
 		h.ws.publish(pubsub.Event[mcp.Event]{Type: pubsub.UpdatedEvent, Payload: mcp.Event{Type: mcp.EventStateChanged, Name: "srv"}})
 
 		eventually(t, func() bool { return len(commandLists(h.client, resp.SessionID)) == 2 })
-		require.Empty(t, commandLists(h.client, resp.SessionID)[1])
+		require.Equal(t, withBuiltins(), commandLists(h.client, resp.SessionID)[1])
 	})
 
 	t.Run("an MCP change before the response is written sends nothing yet", func(t *testing.T) {
@@ -316,7 +341,7 @@ func TestCommandsAreAdvertised(t *testing.T) {
 
 		resp.AfterSent(t.Context())
 
-		require.Equal(t, [][]protocol.AvailableCommand{{{Name: "srv:greet", Description: "Greet"}}}, commandLists(h.client, resp.SessionID))
+		require.Equal(t, [][]protocol.AvailableCommand{withBuiltins(protocol.AvailableCommand{Name: "srv:greet", Description: "Greet"})}, commandLists(h.client, resp.SessionID))
 	})
 }
 

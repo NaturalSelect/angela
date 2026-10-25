@@ -128,12 +128,21 @@ offer allow and deny, each either once or for the rest of the session;
 `--yolo` and `--auto-accept-edits` apply as usual. Editors can load a session
 with its history or resume it without the history.
 
-The editor's `/` menu lists your custom commands, user-invocable skills and
-MCP prompts, and updates when an MCP server connects or changes its prompts.
-Start a prompt with one of them to run it, as in the terminal UI. A command
-with one argument takes the rest of the line. A command with several takes
-`NAME=value` pairs, and a value with spaces goes in double quotes. A skill is
-attached to the prompt, and any text after its name is sent alongside it.
+The editor's `/` menu lists a few built-in commands, your custom commands,
+user-invocable skills and MCP prompts, and updates when an MCP server connects
+or changes its prompts. Start a prompt with one of them to run it, as in the
+terminal UI. A command with one argument takes the rest of the line. A command
+with several takes `NAME=value` pairs, and a value with spaces goes in double
+quotes. A skill is attached to the prompt, and any text after its name is sent
+alongside it.
+
+The built-in commands are `/compact` to summarize the conversation, `/title`
+to generate the session title again, `/btw <question>` to ask a side question
+that stays out of the conversation, and `/init` to have Angela write the
+project context file. The first three answer in the chat without starting a
+model turn, and `session/cancel` stops them. Other palette entries, such as
+scrolling and themes, only make sense in the terminal, and `/undo` is left out
+because it reverts files without a confirmation step.
 
 ## Configuration
 

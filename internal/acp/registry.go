@@ -23,8 +23,11 @@ type liveSession struct {
 	started   map[string]struct{}
 	lastState []protocol.SessionUpdate
 
-	mu    sync.Mutex
-	turns map[string]*turn
+	// cancels counts session/cancel requests, so a built-in command can tell
+	// that one arrived before it registered as a turn.
+	mu      sync.Mutex
+	turns   map[string]*turn
+	cancels int
 
 	// cmdOpen and commands are guarded by cmdMu. commands is the last list
 	// the editor was sent.
@@ -148,9 +151,16 @@ func (s *liveSession) hasTurns() bool {
 	return len(s.turns) > 0
 }
 
+func (s *liveSession) cancelCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cancels
+}
+
 func (s *liveSession) signalCancelled() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.cancels++
 	for _, t := range s.turns {
 		t.signalCancelled()
 	}

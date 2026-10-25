@@ -195,7 +195,7 @@ MCP 的状态不挂在 App 上，而是 mcp 包里的全局变量。</code></pre
   <li>运行界面 <code>program.Run()</code>，直到你退出，见 <code>root.go:199</code>。</li>
   <li>退出后打印"如何继续这个会话"的提示，见 <code>root.go:204</code>。</li>
 </ol>
-<p><code>setupWorkspace</code> 在 <code>root.go:373</code> 做模式选择。没开客户端/服务器模式时，走 <code>setupLocalWorkspace</code>。</p>
+<p><code>setupWorkspaceWithProgressBar</code> 在 <code>root.go:325</code>，只是在终端支持时给 <code>setupLocalWorkspace</code> 加上进度条，没有别的模式可选。</p>
 
 <h3 id="s3">第 3 步：读配置</h3>
 <p><code>setupLocalWorkspace</code> 在 <code>internal/cmd/root.go:396</code>。它先读出命令行参数，算出工作目录，然后调用 <code>config.Init</code>，见 <code>root.go:412</code>。</p>
@@ -365,7 +365,7 @@ MCP 的状态不挂在 App 上，而是 mcp 包里的全局变量。</code></pre
   <li>返回一个清理函数，它调用 <code>App.Shutdown</code>，见 <code>root.go:496</code>。</li>
 </ol>
 <p><code>AppWorkspace</code> 定义在 <code>internal/workspace/app_workspace.go:34</code>，只有三个字段：<code>app</code>、<code>store</code> 和是否运行在 Docker 里。它的方法大多直接转调 <code>App</code> 上对应的服务。<span class="tag">根据读过的几个方法推断</span></p>
-<p><code>Workspace</code> 接口定义在 <code>internal/workspace/workspace.go:126</code>。注释说明它包含前端需要的一切操作，不管后端在本进程还是远程。界面只认这个接口，所以同一套界面代码可以同时用于本地模式和客户端/服务器模式。</p>
+<p><code>Workspace</code> 接口定义在 <code>internal/workspace/workspace.go:87</code>。注释说明它包含前端需要的一切操作，终端界面、命令行和 ACP 三种前端共用它。界面只认这个接口，不直接碰 <code>App</code>。</p>
 
 <h2 id="shutdown">退出过程</h2>
 <p><code>App.Shutdown</code> 在 <code>internal/app/app.go:785</code>，顺序有讲究：</p>

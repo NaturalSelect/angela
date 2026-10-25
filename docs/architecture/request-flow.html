@@ -280,7 +280,7 @@ message.Service 每次写库后发布事件
   <tr><td><code>activeRequests</code></td><td>会话编号到"取消函数"的映射。有条目就说明这个会话正在跑</td></tr>
   <tr><td><code>messageQueue</code></td><td>会话编号到排队调用列表的映射。会话忙时，新消息排在这里</td></tr>
   <tr><td><code>dispatchMu</code></td><td>每个会话一把锁，保证"判断忙不忙"和"登记为正在跑"是原子的</td></tr>
-  <tr><td><code>cancelMark</code> <code>acceptedRuns</code></td><td>客户端/服务器模式下处理"取消和排队同时发生"的记账，本地模式可以先忽略</td></tr>
+  <tr><td><code>cancelMark</code> <code>acceptedRuns</code></td><td>处理"取消和排队同时发生"的记账：取消落在排队消息交给下一轮的空档里时，靠它们让取消不被漏掉，见 <code>agent.go:1637</code> 和 <code>agent.go:1703</code></td></tr>
 </table>
 
 <h2 id="flow">一次请求，一步一步</h2>
@@ -295,7 +295,7 @@ message.Service 每次写库后发布事件
   <li>先把界面标记为"忙"，这样你紧接着按 Esc 能正确取消，见 <code>ui.go:5124</code>。</li>
   <li>在后台调用 <code>Workspace.AgentRun</code>，见 <code>ui.go:5136</code>。</li>
 </ol>
-<p>本地模式下，<code>AgentRun</code> 会一直阻塞到这一轮结束。注释说明，这就是它放在后台命令里执行的原因，见 <code>ui.go:5128</code> 到 <code>5135</code>。成功返回 <code>agentRunSubmittedMsg</code>，失败返回 <code>agentRunFailedMsg</code>。</p>
+<p><code>AgentRun</code> 会一直阻塞到这一轮结束。注释说明，这就是它放在后台命令里执行的原因，见 <code>ui.go:5328</code> 到 <code>5333</code>。成功返回 <code>agentRunSubmittedMsg</code>，失败返回 <code>agentRunFailedMsg</code>。</p>
 <p>这一步没有把你的话直接画到屏幕上。屏幕上出现你的话，要等第 4 步消息写进数据库并发出事件之后。</p>
 <p class="meta">数据此时是：一个会话编号、一段文字 "README 里有拼写错误，帮我改掉"、空的附件列表。</p>
 
@@ -484,7 +484,7 @@ message.Service 每次写库后发布事件
 
 <h2 id="pitfalls">容易踩坑的地方</h2>
 <ul>
-  <li><strong>本地模式下 AgentRun 是同步的。</strong> 它要等整轮跑完才返回。客户端/服务器模式下则是发出即返回。两种模式的错误处理路径不同，见 <code>ui.go:5128</code> 到 <code>5135</code> 的注释。</li>
+  <li><strong>AgentRun 是同步的。</strong> 它要等整轮跑完才返回，失败就在返回值里。不是这个界面发起的那一轮出错时，错误改走事件通知，见 <code>ui.go:948</code> 到 <code>952</code> 和 <code>ui.go:5328</code> 到 <code>5333</code> 的注释。</li>
   <li><strong>你的话不是发送时画上屏幕的。</strong> 它要等写进数据库、发出事件后才出现。如果写库失败，屏幕上不会有这句话。</li>
   <li><strong>系统提醒在数据库里是 user 消息。</strong> 查数据库时会看到一些不是你写的 <code>user</code> 消息。界面用 <code>IsReminder</code> 把它们和真正的输入区分开，见 <code>content.go:206</code>。</li>
   <li><strong>写库用的上下文不一样。</strong> 文字增量用本轮可取消的上下文，工具调用和工具结果用外层上下文。改代码时如果换错，取消时会丢数据，见 <code>agent.go:1013</code>。</li>

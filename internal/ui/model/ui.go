@@ -945,9 +945,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	case agentRunFailedMsg:
-		// AppWorkspace's in-process AgentRun blocks for the whole turn and
-		// reports a terminal failure right here; the client/server
-		// transport instead reports it later via handleAgentNotification's
+		// AgentRun blocks for the whole turn and reports a terminal failure
+		// right here. A failure that happens outside a turn this UI
+		// started arrives instead through handleAgentNotification's
 		// TypeAgentError case. Both restore whatever this session still
 		// has queued behind the failed turn.
 		cmds = append(cmds, util.ReportError(msg.err))
@@ -5325,14 +5325,12 @@ func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.
 	m.busyFetchGen++
 	m.invalidatePromptQueue()
 	cmds = append(cmds, func() tea.Msg {
-		// AgentRun is fire-and-forget over the client/server transport:
-		// it returns once the prompt is accepted, and a run failure
-		// arrives later as an SSE-derived TypeAgentError notification
-		// (handleAgentNotification). AppWorkspace's in-process path
-		// instead runs the turn synchronously and reports the outcome
-		// right here. Either way a terminal failure must restore
-		// whatever this session still has queued behind it, so both
-		// paths funnel through restoreQueueOnAgentError.
+		// AgentRun blocks for the whole turn and reports a terminal
+		// failure right here. A failure outside a turn this UI started
+		// arrives as a TypeAgentError notification
+		// (handleAgentNotification). Either way a terminal failure must
+		// restore whatever this session still has queued behind it, so
+		// both paths funnel through restoreQueueOnAgentError.
 		err := m.com.Workspace.AgentRun(context.Background(), sessionID, content, attachments...)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return agentRunFailedMsg{sessionID: sessionID, err: err}

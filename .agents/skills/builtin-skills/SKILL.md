@@ -51,7 +51,7 @@ These are always available without user configuration.
 | `angela-migrate`     | `builtin/angela-migrate/`      | Migrate config from Claude Code, OpenCode, Cursor |
 | `angela-permissions` | `builtin/angela-permissions/`  | Permission rules: allow/ask/deny precedence, shell and MCP judgment |
 | `angela-sandbox`     | `builtin/angela-sandbox/`      | OS-level sandbox: Landlock/Seatbelt/Docker backends, CLI flags |
-| `angela-sessions`    | `builtin/angela-sessions/`     | Session CLI, headless mode, client-server daemon mode |
+| `angela-sessions`    | `builtin/angela-sessions/`     | Session CLI, headless mode                        |
 | `angela-setup`       | `builtin/angela-setup/`        | Interactive new-user onboarding and setup guide   |
 | `angela-shell`       | `builtin/angela-shell/`        | Embedded POSIX shell semantics, background jobs, permission judgment |
 | `angela-skills`           | `builtin/angela-skills/`            | Authoring and discovering skills, frontmatter fields, precedence        |

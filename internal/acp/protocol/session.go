@@ -8,6 +8,9 @@ import (
 type InitializeRequest struct {
 	ProtocolVersion int
 	ElicitationForm bool
+	// NOTE: Compaction means the editor can show a compaction as its own
+	// entry. The agent must not send CompactionUpdate without it.
+	Compaction bool
 }
 
 type InitializeResponse struct {

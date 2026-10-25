@@ -1946,9 +1946,20 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 	}
 
 	var (
-		resp      *fantasy.AgentResult
-		extracted string
+		resp       *fantasy.AgentResult
+		extracted  string
+		spentUsage fantasy.Usage
+		spentCost  *float64
+		billed     bool
 	)
+	// NOTE: Every response is paid for, adopted or not. Without this, the
+	// attempts a retry throws away, or the ones of a compaction that fails
+	// outright, would never reach the session cost.
+	defer func() {
+		if !billed && !usageIsZero(spentUsage) {
+			a.chargeDiscardedSummary(context.WithoutCancel(ctx), compact.Model, sessionID, spentUsage, spentCost)
+		}
+	}()
 	for attempt := 1; ; attempt++ {
 		resp, err = agent.Stream(genCtx, streamCall)
 		if err != nil {
@@ -1973,6 +1984,9 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 			}
 			return nil, err
 		}
+
+		spentUsage = addUsage(spentUsage, resp.TotalUsage)
+		spentCost = addOpenrouterCosts(spentCost, resp.Steps)
 
 		if resp.Response.FinishReason == fantasy.FinishReasonLength {
 			// Accepting this as SummaryMessageID would make the truncated text
@@ -2024,19 +2038,7 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 		return nil, err
 	}
 
-	var costOverride *float64
-	for _, step := range resp.Steps {
-		stepCost := openrouterCost(step.ProviderMetadata)
-		if stepCost != nil {
-			newCost := *stepCost
-			if costOverride != nil {
-				newCost += *costOverride
-			}
-			costOverride = &newCost
-		}
-	}
-
-	a.updateSessionUsage(compact.Model, &currentSession, resp.TotalUsage, costOverride, false)
+	a.updateSessionUsage(compact.Model, &currentSession, spentUsage, spentCost, false)
 
 	// Just in case, get just the last usage info.
 	usage := resp.Response.Usage
@@ -2048,6 +2050,7 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 	if err != nil {
 		return nil, err
 	}
+	billed = true
 
 	// Release the active request before processing queued messages so that
 	// Run() does not see the session as busy. Conditional so a run that
@@ -2521,6 +2524,43 @@ func openrouterCost(metadata fantasy.ProviderMetadata) *float64 {
 		return nil
 	}
 	return &opts.Usage.Cost
+}
+
+// addOpenrouterCosts adds the cost OpenRouter reported for each step to
+// total. The result stays nil until some step reports one, so a provider
+// without reported costs keeps being priced from the model's rates.
+func addOpenrouterCosts(total *float64, steps []fantasy.StepResult) *float64 {
+	for _, step := range steps {
+		stepCost := openrouterCost(step.ProviderMetadata)
+		if stepCost == nil {
+			continue
+		}
+		sum := *stepCost
+		if total != nil {
+			sum += *total
+		}
+		total = &sum
+	}
+	return total
+}
+
+// chargeDiscardedSummary bills summarize responses that never became the
+// session's summary.
+//
+// NOTE: Only the cost is written. The token counters hold the session's
+// current context size, which these responses have no part in, and a Save
+// would write back a whole row that may be stale.
+func (a *sessionAgent) chargeDiscardedSummary(ctx context.Context, model Model, sessionID string, usage fantasy.Usage, cost *float64) {
+	// A scratch session lets updateSessionUsage keep owning the pricing and
+	// telemetry rules instead of repeating them here.
+	charge := session.Session{ID: sessionID}
+	a.updateSessionUsage(model, &charge, usage, cost, false)
+	if charge.Cost == 0 {
+		return
+	}
+	if err := a.sessions.AddCost(ctx, sessionID, charge.Cost); err != nil {
+		slog.Error("Failed to record the cost of discarded summaries", "session_id", sessionID, "error", err)
+	}
 }
 
 func (a *sessionAgent) updateSessionUsage(model Model, session *session.Session, usage fantasy.Usage, overrideCost *float64, estimated bool) {

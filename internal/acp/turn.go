@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -216,6 +217,15 @@ func resourceInput(b protocol.ResourceBlock, supportsImages bool) (message.Attac
 }
 
 func resourcePath(uri string) string {
+	return fileURIPath(uri, runtime.GOOS == "windows")
+}
+
+// fileURIPath turns a file:// URI into a path the tools can open.
+//
+// NOTE: Windows editors send file:///C:/proj/main.go, whose URL path is
+// /C:/proj/main.go. Windows treats a leading slash as absolute, so left
+// alone the path would point at the current drive's root instead of C:.
+func fileURIPath(uri string, windows bool) string {
 	if !strings.HasPrefix(uri, "file://") {
 		return uri
 	}
@@ -223,7 +233,21 @@ func resourcePath(uri string) string {
 	if err != nil || u.Path == "" {
 		return uri
 	}
-	return u.Path
+	if !windows {
+		return u.Path
+	}
+
+	path := u.Path
+	if len(path) >= 3 && path[0] == '/' && path[2] == ':' && isASCIILetter(path[1]) {
+		path = path[1:]
+	} else if u.Host != "" && u.Host != "localhost" {
+		path = "//" + u.Host + path
+	}
+	return strings.ReplaceAll(path, "/", `\`)
+}
+
+func isASCIILetter(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
 func baseName(path string) string {

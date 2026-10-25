@@ -146,6 +146,7 @@ func (a *Agent) Initialize(_ context.Context, req protocol.InitializeRequest) (p
 		ResumeSession:         true,
 		ListSessions:          true,
 		DeleteSessions:        true,
+		CloseSession:          true,
 		PromptImage:           true,
 		PromptEmbeddedContext: true,
 	}, nil
@@ -363,6 +364,25 @@ func (a *Agent) DeleteSession(ctx context.Context, req protocol.DeleteSessionReq
 		return internalError("delete session: %v", err)
 	}
 	a.reg.remove(req.SessionID)
+	return nil
+}
+
+// CloseSession stops the session's work and forgets it on this connection.
+// The stored session stays, so the editor can load or resume it later.
+//
+// NOTE: The registry entry goes last. The event pump drops events for
+// sessions it does not know, so a waiting prompt is ended here instead of
+// waiting for a completion event that would never be delivered.
+func (a *Agent) CloseSession(_ context.Context, req protocol.CloseSessionRequest) error {
+	s, ok := a.reg.get(req.SessionID)
+	if !ok {
+		return nil
+	}
+	ws, _ := a.current()
+	cancelTurn(ws, s)
+	ws.AgentClearQueue(s.id)
+	s.abandonTurns()
+	a.reg.remove(s.id)
 	return nil
 }
 

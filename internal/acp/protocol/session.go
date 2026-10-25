@@ -19,6 +19,7 @@ type InitializeResponse struct {
 	ResumeSession  bool
 	ListSessions   bool
 	DeleteSessions bool
+	CloseSession   bool
 
 	PromptImage           bool
 	PromptEmbeddedContext bool
@@ -73,6 +74,10 @@ type SessionInfo struct {
 }
 
 type DeleteSessionRequest struct {
+	SessionID string
+}
+
+type CloseSessionRequest struct {
 	SessionID string
 }
 

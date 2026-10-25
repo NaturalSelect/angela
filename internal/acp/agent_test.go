@@ -130,6 +130,7 @@ func TestInitialize(t *testing.T) {
 	require.True(t, resp.ResumeSession)
 	require.True(t, resp.ListSessions)
 	require.True(t, resp.DeleteSessions)
+	require.True(t, resp.CloseSession)
 	require.True(t, resp.PromptImage)
 	require.True(t, resp.PromptEmbeddedContext)
 
@@ -431,6 +432,99 @@ func TestDeleteSession(t *testing.T) {
 		h := newHarness(t)
 		err := h.agent.DeleteSession(t.Context(), protocol.DeleteSessionRequest{SessionID: "x"})
 		requireCode(t, err, protocol.CodeInvalidParams)
+	})
+}
+
+func TestCloseSession(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ends the running turn at once and forgets the session", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sid := h.newSession(t)
+
+		started := make(chan struct{})
+		release := make(chan struct{})
+		t.Cleanup(func() { close(release) })
+		h.ws.run = func(context.Context, string, string, []message.Attachment) error {
+			close(started)
+			<-release
+			return nil
+		}
+
+		result := h.promptAsync(t, sid)
+		<-started
+		require.NoError(t, h.agent.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: sid}))
+
+		// NOTE: The default grace period is far longer than await waits, so
+		// this passes only if close ends the turn itself.
+		got := await(t, result)
+		require.NoError(t, got.err)
+		require.Equal(t, protocol.StopReasonCancelled, got.resp.StopReason)
+
+		h.ws.snapshot(func() {
+			require.Equal(t, []string{sid}, h.ws.cancelled)
+			require.Equal(t, []string{sid}, h.ws.queueCleared)
+		})
+		require.Empty(t, h.agent.reg.ids())
+
+		_, err := h.agent.Prompt(t.Context(), textPrompt(sid, "hi"))
+		requireCode(t, err, protocol.CodeNotFound)
+	})
+
+	t.Run("keeps the stored session so it can be resumed", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sid := h.newSession(t)
+
+		require.NoError(t, h.agent.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: sid}))
+		h.ws.snapshot(func() { require.Empty(t, h.ws.deleted) })
+
+		_, err := h.ws.GetSession(t.Context(), sid)
+		require.NoError(t, err)
+		_, err = h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: sid, Cwd: testCwd})
+		require.NoError(t, err)
+		require.Equal(t, []string{sid}, h.agent.reg.ids())
+	})
+
+	t.Run("leaves other sessions alone", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		first := h.newSession(t)
+		second := h.newSession(t)
+
+		require.NoError(t, h.agent.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: first}))
+		require.Equal(t, []string{second}, h.agent.reg.ids())
+		h.ws.snapshot(func() { require.Equal(t, []string{first}, h.ws.cancelled) })
+	})
+
+	t.Run("a session that is already closed is not an error", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sid := h.newSession(t)
+
+		require.NoError(t, h.agent.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: sid}))
+		require.NoError(t, h.agent.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: sid}))
+		h.ws.snapshot(func() { require.Equal(t, []string{sid}, h.ws.cancelled) })
+	})
+
+	t.Run("unknown session is not an error", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sid := h.newSession(t)
+
+		require.NoError(t, h.agent.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: "ghost"}))
+		require.Equal(t, []string{sid}, h.agent.reg.ids())
+		h.ws.snapshot(func() {
+			require.Empty(t, h.ws.cancelled)
+			require.Empty(t, h.ws.queueCleared)
+		})
+	})
+
+	t.Run("before a project is open", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		require.NoError(t, h.agent.CloseSession(t.Context(), protocol.CloseSessionRequest{SessionID: "x"}))
 	})
 }
 

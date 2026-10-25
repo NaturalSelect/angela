@@ -69,6 +69,7 @@ type fakeWorkspace struct {
 	deleted         []string
 	trace           []string
 	cancelled       []string
+	queueCleared    []string
 	edits           []config.ActiveAgentEdit
 	granted         []permission.PermissionRequest
 	grantedAlways   []permission.PermissionRequest
@@ -207,6 +208,12 @@ func (f *fakeWorkspace) AgentCancel(sessionID string) {
 	defer f.mu.Unlock()
 	f.trace = append(f.trace, "cancel")
 	f.cancelled = append(f.cancelled, sessionID)
+}
+
+func (f *fakeWorkspace) AgentClearQueue(sessionID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.queueCleared = append(f.queueCleared, sessionID)
 }
 
 func (f *fakeWorkspace) PermissionMode() permission.PermissionMode {

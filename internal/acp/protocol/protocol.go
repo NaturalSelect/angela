@@ -17,6 +17,9 @@ type Agent interface {
 	ResumeSession(ctx context.Context, req ResumeSessionRequest) (ResumeSessionResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (ListSessionsResponse, error)
 	DeleteSession(ctx context.Context, req DeleteSessionRequest) error
+	// NOTE: CloseSession cancels the session's work and frees it on the
+	// connection. Unlike DeleteSession it keeps the stored session.
+	CloseSession(ctx context.Context, req CloseSessionRequest) error
 	Prompt(ctx context.Context, req PromptRequest) (PromptResponse, error)
 	Cancel(ctx context.Context, req CancelRequest) error
 	SetConfigOption(ctx context.Context, req SetConfigOptionRequest) (SetConfigOptionResponse, error)

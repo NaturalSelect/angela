@@ -28,6 +28,7 @@ type fakeAgent struct {
 	resumeSession   func(context.Context, protocol.ResumeSessionRequest) (protocol.ResumeSessionResponse, error)
 	listSessions    func(context.Context, protocol.ListSessionsRequest) (protocol.ListSessionsResponse, error)
 	deleteSession   func(context.Context, protocol.DeleteSessionRequest) error
+	closeSession    func(context.Context, protocol.CloseSessionRequest) error
 	prompt          func(context.Context, protocol.PromptRequest) (protocol.PromptResponse, error)
 	cancel          func(context.Context, protocol.CancelRequest) error
 	setConfigOption func(context.Context, protocol.SetConfigOptionRequest) (protocol.SetConfigOptionResponse, error)
@@ -80,6 +81,13 @@ func (f *fakeAgent) DeleteSession(ctx context.Context, r protocol.DeleteSessionR
 		return nil
 	}
 	return f.deleteSession(ctx, r)
+}
+
+func (f *fakeAgent) CloseSession(ctx context.Context, r protocol.CloseSessionRequest) error {
+	if f.closeSession == nil {
+		return nil
+	}
+	return f.closeSession(ctx, r)
 }
 
 func (f *fakeAgent) Prompt(ctx context.Context, r protocol.PromptRequest) (protocol.PromptResponse, error) {
@@ -287,7 +295,7 @@ func TestServeInitializeWireFormat(t *testing.T) {
 			name: "every capability enabled",
 			resp: protocol.InitializeResponse{
 				ProtocolVersion: 1, AgentName: "angela", AgentVersion: "v1",
-				LoadSession: true, ResumeSession: true, ListSessions: true, DeleteSessions: true,
+				LoadSession: true, ResumeSession: true, ListSessions: true, DeleteSessions: true, CloseSession: true,
 				PromptImage: true, PromptEmbeddedContext: true,
 			},
 			want: `{
@@ -299,7 +307,7 @@ func TestServeInitializeWireFormat(t *testing.T) {
 					"mcpCapabilities":{},
 					"loadSession":true,
 					"promptCapabilities":{"image":true,"embeddedContext":true},
-					"sessionCapabilities":{"list":{},"delete":{},"resume":{}}
+					"sessionCapabilities":{"list":{},"delete":{},"resume":{},"close":{}}
 				}
 			}`,
 		},
@@ -387,6 +395,7 @@ func TestServeRoutesSessionRequests(t *testing.T) {
 		resumed  protocol.ResumeSessionRequest
 		listed   protocol.ListSessionsRequest
 		deleted  protocol.DeleteSessionRequest
+		closed   protocol.CloseSessionRequest
 		configed protocol.SetConfigOptionRequest
 		created  protocol.NewSessionRequest
 	)
@@ -428,6 +437,12 @@ func TestServeRoutesSessionRequests(t *testing.T) {
 			deleted = r
 			return nil
 		},
+		closeSession: func(_ context.Context, r protocol.CloseSessionRequest) error {
+			mu.Lock()
+			defer mu.Unlock()
+			closed = r
+			return nil
+		},
 		setConfigOption: func(_ context.Context, r protocol.SetConfigOptionRequest) (protocol.SetConfigOptionResponse, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -461,6 +476,9 @@ func TestServeRoutesSessionRequests(t *testing.T) {
 	_, err = h.conn.DeleteSession(ctx, acp.DeleteSessionRequest{SessionId: "s1"})
 	require.NoError(t, err)
 
+	_, err = h.conn.CloseSession(ctx, acp.CloseSessionRequest{SessionId: "s1"})
+	require.NoError(t, err)
+
 	setResp, err := h.conn.SetSessionConfigOption(ctx, acp.SetSessionConfigOptionRequest{
 		ValueId: &acp.SetSessionConfigOptionValueId{SessionId: "s1", ConfigId: "model", Value: "b"},
 	})
@@ -474,6 +492,7 @@ func TestServeRoutesSessionRequests(t *testing.T) {
 	require.Equal(t, protocol.ResumeSessionRequest{SessionID: "s1", Cwd: "/p"}, resumed)
 	require.Equal(t, protocol.ListSessionsRequest{Cwd: "/p", Cursor: "c1"}, listed)
 	require.Equal(t, protocol.DeleteSessionRequest{SessionID: "s1"}, deleted)
+	require.Equal(t, protocol.CloseSessionRequest{SessionID: "s1"}, closed)
 	require.Equal(t, protocol.SetConfigOptionRequest{SessionID: "s1", ConfigID: "model", Value: "b"}, configed)
 }
 
@@ -841,10 +860,6 @@ func TestServeAnswersUnsupportedMethodsWithMethodNotFound(t *testing.T) {
 	h := newHarness(t, &fakeAgent{})
 	ctx := t.Context()
 	calls := map[string]func() error{
-		"session/close": func() error {
-			_, err := h.conn.CloseSession(ctx, acp.CloseSessionRequest{SessionId: "s1"})
-			return err
-		},
 		"session/set_mode": func() error {
 			_, err := h.conn.SetSessionMode(ctx, acp.SetSessionModeRequest{SessionId: "s1", ModeId: "m"})
 			return err

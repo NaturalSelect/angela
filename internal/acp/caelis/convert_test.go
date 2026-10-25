@@ -213,13 +213,14 @@ func TestFromInitializeResponseDeclaresOnlyEnabledCapabilities(t *testing.T) {
 
 	full := fromInitializeResponse(protocol.InitializeResponse{
 		ProtocolVersion: 1, AgentName: "angela", AgentVersion: "v1",
-		LoadSession: true, ResumeSession: true, ListSessions: true, DeleteSessions: true,
+		LoadSession: true, ResumeSession: true, ListSessions: true, DeleteSessions: true, CloseSession: true,
 		PromptImage: true, PromptEmbeddedContext: true,
 	})
 	require.True(t, full.AgentCapabilities.LoadSession)
 	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.Resume)
 	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.List)
 	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.Delete)
+	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.Close)
 	require.True(t, full.AgentCapabilities.PromptCapabilities.Image)
 	require.True(t, full.AgentCapabilities.PromptCapabilities.EmbeddedContext)
 	require.Equal(t, "angela", full.AgentInfo.Name)

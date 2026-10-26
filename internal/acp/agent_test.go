@@ -183,6 +183,39 @@ func TestNewSession(t *testing.T) {
 		require.Empty(t, h.agent.reg.ids())
 	})
 
+	t.Run("a provider set up later is picked up without a restart", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		h.ws.readyErr = errors.New("no model")
+		_, err := h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
+		requireCode(t, err, protocol.CodeInternal)
+
+		ws, cwd := h.agent.current()
+		require.Nil(t, ws, "an unready workspace must not be kept")
+		require.Empty(t, cwd)
+		h.ws.snapshot(func() { require.Equal(t, 1, h.ws.shutdowns, "the unready workspace is released") })
+
+		h.ws.mu.Lock()
+		h.ws.readyErr = nil
+		h.ws.mu.Unlock()
+		resp, err := h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
+		require.NoError(t, err)
+		require.NotEmpty(t, resp.SessionID)
+		require.Len(t, h.opened, 2, "the second request opens the workspace again")
+	})
+
+	t.Run("load and resume also refuse an unready workspace", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		h.ws.readyErr = errors.New("no model")
+		_, err := h.agent.LoadSession(t.Context(), protocol.LoadSessionRequest{SessionID: "old", Cwd: testCwd})
+		requireCode(t, err, protocol.CodeInternal)
+		_, err = h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "old", Cwd: testCwd})
+		requireCode(t, err, protocol.CodeInternal)
+		ws, _ := h.agent.current()
+		require.Nil(t, ws)
+	})
+
 	t.Run("workspace cannot be opened", func(t *testing.T) {
 		t.Parallel()
 		a := NewAgent(t.Context(), &fakeClient{}, func(context.Context, string, ClientCaps) (Workspace, error) {

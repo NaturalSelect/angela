@@ -60,6 +60,32 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, newAgent func(protocol
 	return err
 }
 
+// NOTE: Angela connects only the MCP servers in its own config, so the ones
+// the editor passes with a session request are dropped. Say so in the log
+// instead of leaving the user to wonder where the tools went.
+func warnIgnoredMCPServers(method string, servers []acp.McpServer) {
+	if len(servers) == 0 {
+		return
+	}
+	slog.Warn("Ignoring MCP servers passed by the editor; add them to angela.json to use them",
+		"method", method, "servers", mcpServerNames(servers))
+}
+
+func mcpServerNames(servers []acp.McpServer) []string {
+	names := make([]string, 0, len(servers))
+	for _, s := range servers {
+		switch {
+		case s.Stdio != nil:
+			names = append(names, s.Stdio.Name)
+		case s.Http != nil:
+			names = append(names, s.Http.Name)
+		case s.Sse != nil:
+			names = append(names, s.Sse.Name)
+		}
+	}
+	return names
+}
+
 // NOTE: The optional SDK interfaces sdkAgent implements must match the
 // methods of protocol.Agent, or the SDK would advertise methods the adapter
 // cannot serve.
@@ -92,6 +118,7 @@ func (a *sdkAgent) Initialize(ctx context.Context, p acp.InitializeRequest) (acp
 
 func (a *sdkAgent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp.NewSessionResponse, error) {
 	<-a.ready
+	warnIgnoredMCPServers("session/new", p.McpServers)
 	resp, err := a.inner.NewSession(ctx, toNewSession(p))
 	if err != nil {
 		return acp.NewSessionResponse{}, toRequestError(err)
@@ -110,6 +137,7 @@ func (a *sdkAgent) NewSession(ctx context.Context, p acp.NewSessionRequest) (acp
 
 func (a *sdkAgent) LoadSession(ctx context.Context, p acp.LoadSessionRequest) (acp.LoadSessionResponse, error) {
 	<-a.ready
+	warnIgnoredMCPServers("session/load", p.McpServers)
 	resp, err := a.inner.LoadSession(ctx, toLoadSession(p))
 	if err != nil {
 		return acp.LoadSessionResponse{}, toRequestError(err)
@@ -119,6 +147,7 @@ func (a *sdkAgent) LoadSession(ctx context.Context, p acp.LoadSessionRequest) (a
 
 func (a *sdkAgent) ResumeSession(ctx context.Context, p acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
 	<-a.ready
+	warnIgnoredMCPServers("session/resume", p.McpServers)
 	resp, err := a.inner.ResumeSession(ctx, toResumeSession(p))
 	if err != nil {
 		return acp.ResumeSessionResponse{}, toRequestError(err)

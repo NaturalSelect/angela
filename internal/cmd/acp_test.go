@@ -220,6 +220,54 @@ func TestRunACP_RejectsARelativeDirectory(t *testing.T) {
 	p.finish()
 }
 
+// NOTE: Building an app and then dropping it is not harmless. Shutting it down
+// closes process-wide state for good, such as the MCP event stream, so an
+// attempt that finds no provider must stop before it builds anything. The
+// data directory is the visible trace: it is created right before the
+// database is opened.
+func TestOpenACPWorkspace_NoProviderStartsNothing(t *testing.T) {
+	isolateSessionEnv(t)
+	project, err := os.Getwd()
+	require.NoError(t, err)
+	base := acpTestBase(t)
+	base.DataDir = filepath.Join(base.DataDir, "data")
+
+	ws, err := openACPWorkspace(t.Context(), base, project, acp.ClientCaps{})
+	require.ErrorIs(t, err, workspace.ErrAgentNotInitialized)
+	require.Nil(t, ws, "a failure must not return a non-nil interface wrapping nil")
+	require.NoDirExists(t, base.DataDir, "nothing may be set up for a workspace that is not used")
+
+	writeModelsFixtureConfig(t, project)
+	ws, err = openACPWorkspace(t.Context(), base, project, acp.ClientCaps{})
+	require.NoError(t, err)
+	t.Cleanup(ws.Shutdown)
+	require.NoError(t, ws.AgentReadyErr())
+}
+
+// TestRunACP_ProviderSetUpAfterAFailedAttempt is the editor's view: the first
+// session fails with a message that says what to do, and once the user has
+// done it the same agent process serves the next session.
+func TestRunACP_ProviderSetUpAfterAFailedAttempt(t *testing.T) {
+	isolateSessionEnv(t)
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	p := startACP(t, acpTestBase(t))
+	p.result(p.call(1, "initialize", initializeParams()))
+
+	failed := p.call(2, "session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}})
+	rpcErr, ok := failed["error"].(map[string]any)
+	require.True(t, ok, "a missing provider must be an error: %v", failed)
+	require.EqualValues(t, -32603, rpcErr["code"])
+	require.Contains(t, rpcErr["message"], "no LLM provider is configured")
+
+	writeModelsFixtureConfig(t, cwd)
+	created := p.result(p.call(3, "session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}}))
+	require.NotEmpty(t, created["sessionId"])
+
+	p.finish()
+}
+
 // TestOpenACPWorkspace pins what the editor's capabilities and the ACP
 // session model change about the workspace.
 func TestOpenACPWorkspace(t *testing.T) {
@@ -235,6 +283,7 @@ func TestOpenACPWorkspace(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			isolateSessionEnv(t)
 			project := t.TempDir()
+			writeModelsFixtureConfig(t, project)
 
 			ws, err := openACPWorkspace(t.Context(), acpTestBase(t), project, tt.caps)
 			require.NoError(t, err)

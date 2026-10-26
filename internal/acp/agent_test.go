@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
 type harness struct {
@@ -118,6 +120,23 @@ func requireCode(t *testing.T, err error, code protocol.ErrorCode) {
 	require.Equal(t, code, perr.Code, perr.Message)
 }
 
+// agentWithoutProvider returns an agent whose first failures workspace opens
+// fail the way the real one does when no provider is configured, and which
+// then succeeds. The counter is the number of opens so far.
+func agentWithoutProvider(t *testing.T, failures int64) (*Agent, *atomic.Int64) {
+	t.Helper()
+	var opens atomic.Int64
+	ws := newFakeWorkspace()
+	a := NewAgent(t.Context(), &fakeClient{}, func(context.Context, string, ClientCaps) (Workspace, error) {
+		if opens.Add(1) <= failures {
+			return nil, fmt.Errorf("open: %w", workspace.ErrAgentNotInitialized)
+		}
+		return ws, nil
+	})
+	t.Cleanup(a.Close)
+	return a, &opens
+}
+
 func TestInitialize(t *testing.T) {
 	t.Parallel()
 
@@ -176,43 +195,38 @@ func TestNewSession(t *testing.T) {
 
 	t.Run("no provider configured", func(t *testing.T) {
 		t.Parallel()
-		h := newHarness(t)
-		h.ws.readyErr = errors.New("no model")
-		_, err := h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
+		a, _ := agentWithoutProvider(t, 1)
+		_, err := a.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
 		requireCode(t, err, protocol.CodeInternal)
-		require.Empty(t, h.agent.reg.ids())
+		require.ErrorContains(t, err, "no LLM provider is configured")
+		require.Empty(t, a.reg.ids())
 	})
 
 	t.Run("a provider set up later is picked up without a restart", func(t *testing.T) {
 		t.Parallel()
-		h := newHarness(t)
-		h.ws.readyErr = errors.New("no model")
-		_, err := h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
+		a, opens := agentWithoutProvider(t, 1)
+		_, err := a.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
 		requireCode(t, err, protocol.CodeInternal)
-
-		ws, cwd := h.agent.current()
-		require.Nil(t, ws, "an unready workspace must not be kept")
+		ws, cwd := a.current()
+		require.Nil(t, ws, "a failed open must not be remembered")
 		require.Empty(t, cwd)
-		h.ws.snapshot(func() { require.Equal(t, 1, h.ws.shutdowns, "the unready workspace is released") })
 
-		h.ws.mu.Lock()
-		h.ws.readyErr = nil
-		h.ws.mu.Unlock()
-		resp, err := h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
+		resp, err := a.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
 		require.NoError(t, err)
 		require.NotEmpty(t, resp.SessionID)
-		require.Len(t, h.opened, 2, "the second request opens the workspace again")
+		require.EqualValues(t, 2, opens.Load(), "the second request opens the workspace again")
 	})
 
-	t.Run("load and resume also refuse an unready workspace", func(t *testing.T) {
+	t.Run("load and resume are refused too", func(t *testing.T) {
 		t.Parallel()
-		h := newHarness(t)
-		h.ws.readyErr = errors.New("no model")
-		_, err := h.agent.LoadSession(t.Context(), protocol.LoadSessionRequest{SessionID: "old", Cwd: testCwd})
+		a, _ := agentWithoutProvider(t, 2)
+		_, err := a.LoadSession(t.Context(), protocol.LoadSessionRequest{SessionID: "old", Cwd: testCwd})
 		requireCode(t, err, protocol.CodeInternal)
-		_, err = h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "old", Cwd: testCwd})
+		require.ErrorContains(t, err, "no LLM provider is configured")
+		_, err = a.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: "old", Cwd: testCwd})
 		requireCode(t, err, protocol.CodeInternal)
-		ws, _ := h.agent.current()
+		require.ErrorContains(t, err, "no LLM provider is configured")
+		ws, _ := a.current()
 		require.Nil(t, ws)
 	})
 

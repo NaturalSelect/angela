@@ -19,6 +19,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/version"
+	"github.com/NaturalSelect/angela/internal/workspace"
 )
 
 const (
@@ -35,6 +36,11 @@ type ClientCaps struct {
 
 // OpenWorkspace builds the workspace for cwd. It is slow: it opens the
 // database and starts MCP servers.
+//
+// NOTE: With no provider configured it must return an error wrapping
+// workspace.ErrAgentNotInitialized before it starts anything. Shutting an app
+// down closes process-wide state for good, such as the MCP event stream, so
+// a workspace that is built only to be dropped would break the next attempt.
 type OpenWorkspace func(ctx context.Context, cwd string, caps ClientCaps) (Workspace, error)
 
 func invalidParams(format string, args ...any) protocol.Error {
@@ -99,11 +105,9 @@ func (a *Agent) current() (Workspace, string) {
 // context. The SDK cancels the request context when the request returns,
 // and the app treats the context it is given as its whole lifetime.
 //
-// NOTE: A workspace without a usable provider is shut down and not kept.
-// It never becomes ready on its own, so keeping it would make every later
-// request fail until the editor restarted the agent, even after the user
-// has set a provider up. The next request opens it again and rereads the
-// config.
+// NOTE: A failed open is not remembered, so the next request opens the
+// workspace again and rereads the config. That is how a provider the user
+// sets up in a terminal is picked up without restarting the agent.
 func (a *Agent) workspaceFor(cwd string) (Workspace, error) {
 	if !filepath.IsAbs(cwd) {
 		return nil, invalidParams("cwd must be an absolute path")
@@ -121,12 +125,11 @@ func (a *Agent) workspaceFor(cwd string) (Workspace, error) {
 
 	elicitation := a.elicitForm.Load()
 	ws, err := a.open(a.ctx, cwd, ClientCaps{Elicitation: elicitation})
+	if errors.Is(err, workspace.ErrAgentNotInitialized) {
+		return nil, internalError("no LLM provider is configured; run angela in a terminal once to set one up")
+	}
 	if err != nil {
 		return nil, internalError("open workspace: %v", err)
-	}
-	if err := readyWorkspace(ws); err != nil {
-		ws.Shutdown()
-		return nil, err
 	}
 	a.ws, a.cwd = ws, cwd
 	a.pumpDone = startPump(a.ctx, ws, a.client, a.reg, cwd, elicitation, a.compaction.Load())
@@ -162,13 +165,6 @@ func (a *Agent) Initialize(_ context.Context, req protocol.InitializeRequest) (p
 		PromptImage:           true,
 		PromptEmbeddedContext: true,
 	}, nil
-}
-
-func readyWorkspace(ws Workspace) error {
-	if err := ws.AgentReadyErr(); err != nil {
-		return internalError("no LLM provider is configured; run angela in a terminal once to set one up")
-	}
-	return nil
 }
 
 func (a *Agent) NewSession(ctx context.Context, req protocol.NewSessionRequest) (protocol.NewSessionResponse, error) {

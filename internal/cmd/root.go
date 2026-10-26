@@ -374,6 +374,11 @@ type localWorkspaceOptions struct {
 	// them.
 	NonInteractive bool
 	NoBranchAgents bool
+	// RequireProvider makes openLocalWorkspace fail with
+	// workspace.ErrAgentNotInitialized when no provider is configured,
+	// before anything is started. The TUI leaves it off because it
+	// onboards the user inside an unconfigured workspace.
+	RequireProvider bool
 }
 
 func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspaceOptions {
@@ -424,6 +429,15 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	}
 
 	cfg := store.Config()
+
+	// NOTE: This must stay ahead of everything that starts or registers
+	// something process-wide. Shutting an app down closes the MCP event
+	// broker for good, so a workspace that is built and then dropped would
+	// break the next one opened in the same process.
+	if o.RequireProvider && !cfg.IsConfigured() {
+		return nil, nil, workspace.ErrAgentNotInitialized
+	}
+
 	overrides := store.Overrides()
 	overrides.PermissionMode = o.PermissionMode
 	overrides.EnabledChannels = o.Channels

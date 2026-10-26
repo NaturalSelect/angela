@@ -1010,6 +1010,16 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			// RunComplete) via the recursive run path below.
 			fold, canceledRunIDs := a.drainQueueForStep(call.SessionID)
 			a.publishCanceledQueueDrops(canceledRunIDs)
+			if len(fold) > 0 {
+				announceMsg, createErr := a.messages.Create(callContext, call.SessionID, message.CreateMessageParams{
+					Role:  message.User,
+					Parts: []message.ContentPart{message.TextContent{Text: reminder.Wrap(foldedPromptStatement)}},
+				})
+				if createErr != nil {
+					return callContext, prepared, createErr
+				}
+				prepared.Messages = append(prepared.Messages, announceMsg.ToAIMessage()...)
+			}
 			for _, queued := range fold {
 				userMessage, createErr := a.createUserMessage(callContext, queued)
 				if createErr != nil {
@@ -2217,6 +2227,15 @@ func (a *sessionAgent) createUserMessage(ctx context.Context, call SessionAgentC
 	}
 	return msg, nil
 }
+
+// foldedPromptStatement announces queued prompts folded into a running
+// turn. They land right after the step's tool results, so without it a
+// model reads them as more tool output rather than new requests. It is
+// persisted as its own reminder ahead of the prompts, like every other
+// reminder, so the next turn replays the same bytes this turn sent.
+const foldedPromptStatement = "The user sent more messages while you were working. " +
+	"The user messages that follow are new requests, not tool output. " +
+	"Address them now, then continue with your task."
 
 // assistantTurns counts the assistant messages in msgs. After a summary the
 // slice starts at that summary, so this doubles as the number of turns taken

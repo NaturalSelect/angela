@@ -467,6 +467,112 @@ func TestRun_QueuedPromptFoldedIntoATurnStaysVisibleOnLaterSteps(t *testing.T) {
 	}
 }
 
+// userTexts lists the text of every user-role message, in order.
+func userTexts(msgs []fantasy.Message) []string {
+	var texts []string
+	for _, m := range msgs {
+		if m.Role != fantasy.MessageRoleUser {
+			continue
+		}
+		for _, part := range m.Content {
+			if text, ok := part.(fantasy.TextPart); ok {
+				texts = append(texts, text.Text)
+			}
+		}
+	}
+	return texts
+}
+
+func TestRun_QueuedPromptFoldedIntoATurnReplaysIdentically(t *testing.T) {
+	t.Parallel()
+
+	e := newNoticeAgentEnv(t)
+	sess, err := e.env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	e.sa.enqueueCall(SessionAgentCall{SessionID: sess.ID, Prompt: "queued-followup"})
+
+	var steps []fantasy.Call
+	model := newMockLanguageModel(t)
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+			steps = append(steps, call)
+			return streamOf([]string{"done"}, fantasy.FinishReasonStop), nil
+		})
+
+	_, err = e.sa.Run(t.Context(), SessionAgentCall{Agent: largeWindowAgent(model), SessionID: sess.ID, Prompt: "go"})
+	require.NoError(t, err)
+	require.Len(t, steps, 1)
+
+	stored, err := e.env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	history, _ := e.sa.preparePrompt(stored, true)
+
+	sent := userTexts(steps[0].Prompt)
+	require.Equal(t, []string{"go", reminder.Wrap(foldedPromptStatement), "queued-followup"}, sent,
+		"the statement is its own reminder, ahead of the user's untouched text")
+	replayed := userTexts(history)
+	require.GreaterOrEqual(t, len(replayed), len(sent))
+	require.Equal(t, sent, replayed[:len(sent)],
+		"the next turn must replay exactly what this turn sent, or the provider's prompt cache misses from the folded prompt onward")
+}
+
+func TestRun_PromptQueuedDuringAToolCallReplaysIdentically(t *testing.T) {
+	t.Parallel()
+
+	e := newNoticeAgentEnv(t)
+	sess, err := e.env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+
+	type noParams struct{}
+	step := tools.NewTool("some_tool", "does nothing", func(_ context.Context, _ noParams, _ fantasy.ToolCall) tools.Result {
+		e.sa.enqueueCall(SessionAgentCall{SessionID: sess.ID, Prompt: "mid-followup"})
+		return tools.Ok("tool done")
+	})
+
+	var steps []fantasy.Call
+	recordStep := func(response fantasy.StreamResponse) func(context.Context, fantasy.Call) (fantasy.StreamResponse, error) {
+		return func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+			steps = append(steps, call)
+			return response, nil
+		}
+	}
+	model := newMockLanguageModel(t)
+	gomock.InOrder(
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			DoAndReturn(recordStep(toolCallStream("call-1"))),
+		model.EXPECT().Stream(gomock.Any(), gomock.Any()).
+			DoAndReturn(recordStep(streamOf([]string{"done"}, fantasy.FinishReasonStop))),
+	)
+
+	agent := largeWindowAgent(model)
+	agent.Tools = []fantasy.AgentTool{step}
+	_, err = e.sa.Run(t.Context(), SessionAgentCall{Agent: agent, SessionID: sess.ID, Prompt: "go"})
+	require.NoError(t, err)
+	require.Len(t, steps, 2)
+
+	sent := steps[1].Prompt
+	require.Equal(t, []string{"go", reminder.Wrap(foldedPromptStatement), "mid-followup"}, userTexts(sent))
+
+	stored, err := e.env.messages.List(t.Context(), sess.ID)
+	require.NoError(t, err)
+	history, _ := e.sa.preparePrompt(stored, true)
+
+	roles := func(msgs []fantasy.Message) []fantasy.MessageRole {
+		var out []fantasy.MessageRole
+		for _, m := range msgs {
+			if m.Role != fantasy.MessageRoleSystem {
+				out = append(out, m.Role)
+			}
+		}
+		return out
+	}
+	sentRoles := roles(sent)
+	require.Equal(t, sentRoles, roles(history)[:len(sentRoles)],
+		"the folded prompt must sit after the tool results in the replay, as it did when sent")
+	require.Equal(t, userTexts(sent), userTexts(history)[:len(userTexts(sent))])
+}
+
 // indexOfPromptText returns the index of the first prompt message with a
 // text part containing needle, or -1.
 func indexOfPromptText(call fantasy.Call, needle string) int {

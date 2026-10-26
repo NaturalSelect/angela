@@ -98,6 +98,12 @@ func (a *Agent) current() (Workspace, string) {
 // NOTE: The workspace is built with the connection context, not the request
 // context. The SDK cancels the request context when the request returns,
 // and the app treats the context it is given as its whole lifetime.
+//
+// NOTE: A workspace without a usable provider is shut down and not kept.
+// It never becomes ready on its own, so keeping it would make every later
+// request fail until the editor restarted the agent, even after the user
+// has set a provider up. The next request opens it again and rereads the
+// config.
 func (a *Agent) workspaceFor(cwd string) (Workspace, error) {
 	if !filepath.IsAbs(cwd) {
 		return nil, invalidParams("cwd must be an absolute path")
@@ -117,6 +123,10 @@ func (a *Agent) workspaceFor(cwd string) (Workspace, error) {
 	ws, err := a.open(a.ctx, cwd, ClientCaps{Elicitation: elicitation})
 	if err != nil {
 		return nil, internalError("open workspace: %v", err)
+	}
+	if err := readyWorkspace(ws); err != nil {
+		ws.Shutdown()
+		return nil, err
 	}
 	a.ws, a.cwd = ws, cwd
 	a.pumpDone = startPump(a.ctx, ws, a.client, a.reg, cwd, elicitation, a.compaction.Load())
@@ -166,9 +176,6 @@ func (a *Agent) NewSession(ctx context.Context, req protocol.NewSessionRequest) 
 	if err != nil {
 		return protocol.NewSessionResponse{}, err
 	}
-	if err := readyWorkspace(ws); err != nil {
-		return protocol.NewSessionResponse{}, err
-	}
 	sess, err := ws.CreateSession(ctx, defaultTitle)
 	if err != nil {
 		return protocol.NewSessionResponse{}, internalError("create session: %v", err)
@@ -213,9 +220,6 @@ func (a *Agent) ResumeSession(ctx context.Context, req protocol.ResumeSessionReq
 func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, replay bool) ([]protocol.ConfigOption, error) {
 	ws, err := a.workspaceFor(cwd)
 	if err != nil {
-		return nil, err
-	}
-	if err := readyWorkspace(ws); err != nil {
 		return nil, err
 	}
 

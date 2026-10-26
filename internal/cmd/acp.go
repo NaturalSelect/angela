@@ -93,7 +93,9 @@ func runACP(ctx context.Context, in io.Reader, out io.Writer, base localWorkspac
 // NOTE: The process changes into the project directory. The editor starts
 // the agent from wherever it likes, and a few places read the process
 // directory directly, such as a shell command without an explicit one. The
-// agent refuses a second project, so this happens at most once.
+// agent refuses a second project, so the directory is the same on every call.
+// It is called again only when an earlier workspace had no provider and was
+// shut down.
 func openACPWorkspace(ctx context.Context, base localWorkspaceOptions, cwd string, caps acp.ClientCaps) (acp.Workspace, error) {
 	if err := os.Chdir(cwd); err != nil {
 		return nil, err

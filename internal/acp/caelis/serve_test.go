@@ -534,6 +534,41 @@ func TestServeNewSessionWorkRunsAfterTheResponseIsWritten(t *testing.T) {
 	}`, string(second.Params))
 }
 
+func TestMCPServerNames(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, mcpServerNames(nil))
+	require.Equal(t, []string{"files", "docs", "events"}, mcpServerNames([]acp.McpServer{
+		{Stdio: &acp.McpServerStdio{Name: "files"}},
+		{Http: &acp.McpServerHttpInline{Name: "docs"}},
+		{Sse: &acp.McpServerSseInline{Name: "events"}},
+	}))
+}
+
+// NOTE: The servers the editor passes are ignored, but a request that
+// carries them must still be served.
+func TestServeAcceptsEditorMCPServers(t *testing.T) {
+	t.Parallel()
+
+	created := make(chan protocol.NewSessionRequest, 1)
+	agent := &fakeAgent{}
+	agent.newSession = func(_ context.Context, r protocol.NewSessionRequest) (protocol.NewSessionResponse, error) {
+		created <- r
+		return protocol.NewSessionResponse{SessionID: "s1"}, nil
+	}
+	p, _ := serveOnPipes(t, agent.factory)
+	raw := newRawConn(t, p)
+
+	raw.send(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/p","mcpServers":[` +
+		`{"name":"files","command":"/bin/files","args":[],"env":[]},` +
+		`{"type":"http","name":"docs","url":"https://example.com/mcp","headers":[]}]}}`)
+
+	reply := raw.readReply()
+	require.Nil(t, reply.Error)
+	require.JSONEq(t, `{"sessionId":"s1"}`, string(reply.Result))
+	require.Equal(t, protocol.NewSessionRequest{Cwd: "/p"}, recv(t, created, "session/new"))
+}
+
 func TestServePromptDeliversEveryBlockType(t *testing.T) {
 	t.Parallel()
 

@@ -268,6 +268,41 @@ func TestRunACP_ProviderSetUpAfterAFailedAttempt(t *testing.T) {
 	p.finish()
 }
 
+// TestOpenACPWorkspace_RecoversFromAFailedBuild covers a provider that is set
+// up but a config the app refuses. The agent opens the workspace again on the
+// next request, and that retry must get a working database: a failed build
+// that leaves its closed handle in the pool hands it to the retry, whose open
+// succeeds and whose first query then fails for the rest of the process.
+func TestOpenACPWorkspace_RecoversFromAFailedBuild(t *testing.T) {
+	isolateSessionEnv(t)
+	project, err := os.Getwd()
+	require.NoError(t, err)
+	base := acpTestBase(t)
+
+	writeModelsFixtureConfig(t, project)
+	path := filepath.Join(project, "angela.json")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal(raw, &cfg))
+	cfg["permissions"] = map[string]any{"prompt": "bogus"}
+	broken, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(path, broken, 0o644))
+
+	ws, err := openACPWorkspace(t.Context(), base, project, acp.ClientCaps{})
+	require.ErrorContains(t, err, "invalid permissions prompt policy")
+	require.Nil(t, ws, "a failure must not return a non-nil interface wrapping nil")
+
+	writeModelsFixtureConfig(t, project)
+	ws, err = openACPWorkspace(t.Context(), base, project, acp.ClientCaps{})
+	require.NoError(t, err)
+	t.Cleanup(ws.Shutdown)
+
+	_, err = ws.CreateSession(t.Context(), "after the retry")
+	require.NoError(t, err, "the retry must not be handed the database handle the failed build closed")
+}
+
 // TestOpenACPWorkspace pins what the editor's capabilities and the ACP
 // session model change about the workspace.
 func TestOpenACPWorkspace(t *testing.T) {

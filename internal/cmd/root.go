@@ -510,7 +510,9 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 
 	appInstance, err := app.New(ctx, conn, store, skillsMgr)
 	if err != nil {
-		_ = conn.Close()
+		// NOTE: Release, not conn.Close. A closed handle left in the pool is
+		// what the next Connect for this directory would be given.
+		_ = db.Release(cfg.Options.DataDirectory)
 		slog.Error("Failed to create app instance", "error", err)
 		return nil, nil, err
 	}

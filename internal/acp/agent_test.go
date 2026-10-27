@@ -725,6 +725,15 @@ func TestPrompt(t *testing.T) {
 				sid := h.newSession(t)
 				h.ws.run = h.completeWith(tt.rc)
 				resp, err := h.agent.Prompt(t.Context(), textPrompt(sid, "hi"))
+
+				// NOTE: Only a failed run leaves its queue behind. A cancel
+				// already cleared it inside the agent.
+				var wantCleared []string
+				if tt.failed {
+					wantCleared = []string{sid}
+				}
+				h.ws.snapshot(func() { require.Equal(t, wantCleared, h.ws.queueCleared) })
+
 				if tt.failed {
 					requireCode(t, err, protocol.CodeInternal)
 					require.ErrorContains(t, err, tt.rc.Error)
@@ -734,6 +743,52 @@ func TestPrompt(t *testing.T) {
 				require.Equal(t, tt.want, resp.StopReason)
 			})
 		}
+	})
+
+	t.Run("a prompt queued behind a run that fails is ended, not left waiting", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sid := h.newSession(t)
+
+		var calls atomic.Int32
+		firstStarted := make(chan struct{})
+		releaseFirst := make(chan struct{})
+		queuedRunID := make(chan string, 1)
+		h.ws.run = func(ctx context.Context, sessionID, _ string, _ []message.Attachment) error {
+			if calls.Add(1) == 1 {
+				close(firstStarted)
+				<-releaseFirst
+				h.finishRun(ctx, sessionID, notify.RunComplete{Error: "provider exploded"})
+				return nil
+			}
+			// NOTE: A busy session queues the prompt and returns at once,
+			// with no result and no completion event of its own.
+			queuedRunID <- agent.RunIDFromContext(ctx)
+			return nil
+		}
+		// NOTE: The agent reports every prompt it drops as cancelled.
+		h.ws.onClearQueue = func(sessionID string) {
+			h.ws.publish(pubsub.Event[notify.RunComplete]{
+				Type:    pubsub.UpdatedEvent,
+				Payload: notify.RunComplete{SessionID: sessionID, RunID: <-queuedRunID, Cancelled: true},
+			})
+		}
+
+		first := h.promptAsync(t, sid)
+		<-firstStarted
+		second := h.promptAsync(t, sid)
+		// The queued prompt has reached the agent once its run id is known.
+		eventually(t, func() bool { return len(queuedRunID) == 1 })
+		close(releaseFirst)
+
+		failed := await(t, first)
+		requireCode(t, failed.err, protocol.CodeInternal)
+		require.ErrorContains(t, failed.err, "provider exploded")
+
+		queued := await(t, second)
+		require.NoError(t, queued.err)
+		require.Equal(t, protocol.StopReasonCancelled, queued.resp.StopReason)
+		h.ws.snapshot(func() { require.Equal(t, []string{sid}, h.ws.queueCleared) })
 	})
 
 	t.Run("a run that fails before it can report returns its error", func(t *testing.T) {

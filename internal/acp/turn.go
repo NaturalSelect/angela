@@ -50,7 +50,16 @@ func cancelTurn(ws Workspace, s *liveSession) {
 // NOTE: ctx ends only when the connection closes. If the run's completion
 // event never arrives, the turn still returns: shortly after the run
 // reports back, or shortly after a cancel. A queued turn behind a busy
-// session has no such signal and waits until it is cancelled.
+// session has no such signal of its own. It ends when the running turn
+// finishes and hands off to it, when it is cancelled, or when the running
+// turn reports a failure, which clears the queue.
+//
+// NOTE: A failed turn never hands off to its queue, and the prompts in it
+// carry no completion hook, so each one would wait until the editor cancels
+// it. Clearing reports every dropped prompt as cancelled, which ends those
+// waits. It is done only for a run that reported its own failure. A run that
+// failed before it became active may have prompts queued behind another run,
+// and that run still hands off to them.
 func runTurn(ctx context.Context, ws Workspace, c protocol.Client, s *liveSession, req protocol.PromptRequest, grace time.Duration) (protocol.PromptResponse, error) {
 	// NOTE: The reservation comes first, so a cancel that lands while the
 	// turn is still being set up, or while the run waits on MCP servers, is
@@ -95,7 +104,11 @@ func runTurn(ctx context.Context, ws Workspace, c protocol.Client, s *liveSessio
 	for {
 		select {
 		case end := <-t.done:
-			return stopReasonOf(end)
+			resp, err := stopReasonOf(end)
+			if err != nil {
+				ws.AgentClearQueue(s.id)
+			}
+			return resp, err
 		case err := <-runDone:
 			runDone = nil
 			if !agent.RunCompletePublished(runCtx) {
@@ -116,7 +129,11 @@ func runTurn(ctx context.Context, ws Workspace, c protocol.Client, s *liveSessio
 			}
 		case <-graceDone:
 			slog.Warn("Run completion not received in time", "session_id", s.id, "run_id", runID)
-			return fallback()
+			resp, err := fallback()
+			if err != nil {
+				ws.AgentClearQueue(s.id)
+			}
+			return resp, err
 		case <-ctx.Done():
 			return protocol.PromptResponse{}, ctx.Err()
 		}

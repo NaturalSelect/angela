@@ -50,6 +50,9 @@ type fakeWorkspace struct {
 	// onActive runs inside AgentActive, outside the lock, so a test can hold
 	// a prompt in its setup.
 	onActive func()
+	// onClearQueue runs inside AgentClearQueue, outside the lock, so a test
+	// can report the dropped prompts the way the agent does.
+	onClearQueue func(sessionID string)
 
 	customCommands []commands.CustomCommand
 	skillEntries   []skills.CatalogEntry
@@ -212,8 +215,12 @@ func (f *fakeWorkspace) AgentCancel(sessionID string) {
 
 func (f *fakeWorkspace) AgentClearQueue(sessionID string) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.queueCleared = append(f.queueCleared, sessionID)
+	hook := f.onClearQueue
+	f.mu.Unlock()
+	if hook != nil {
+		hook(sessionID)
+	}
 }
 
 func (f *fakeWorkspace) PermissionMode() permission.PermissionMode {

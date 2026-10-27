@@ -10,6 +10,9 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/acp/protocol"
 	"github.com/NaturalSelect/angela/internal/agent"
+	"github.com/NaturalSelect/angela/internal/agent/notify"
+	"github.com/NaturalSelect/angela/internal/message"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 )
 
 func (h *harness) traceHas(step string) bool {
@@ -216,6 +219,79 @@ func TestBuiltinCommandsOnlyCountAtTheStartOfAPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "please /compact this", got.text)
 	require.False(t, h.traceHas("summarize"))
+}
+
+func TestFailedBuiltinCommandAndTheQueueBehindIt(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a prompt queued behind a failed compaction is ended, not left waiting", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sessionID := h.newSession(t)
+
+		releaseCompact := make(chan struct{})
+		h.ws.summarize = func(context.Context, string) error {
+			<-releaseCompact
+			return errors.New("summarization hit the output token limit")
+		}
+		// NOTE: A busy session queues the prompt and returns at once, with
+		// no result and no completion event of its own.
+		queuedRunID := make(chan string, 1)
+		h.ws.run = func(ctx context.Context, _, _ string, _ []message.Attachment) error {
+			queuedRunID <- agent.RunIDFromContext(ctx)
+			return nil
+		}
+		// NOTE: The agent reports every prompt it drops as cancelled.
+		h.ws.onClearQueue = func(id string) {
+			h.ws.publish(pubsub.Event[notify.RunComplete]{
+				Type:    pubsub.UpdatedEvent,
+				Payload: notify.RunComplete{SessionID: id, RunID: <-queuedRunID, Cancelled: true},
+			})
+		}
+
+		compact := make(chan promptResult, 1)
+		go func() {
+			resp, err := h.agent.Prompt(t.Context(), textPrompt(sessionID, "/compact"))
+			compact <- promptResult{resp: resp, err: err}
+		}()
+		eventually(t, func() bool { return h.traceHas("summarize") })
+		queued := h.promptAsync(t, sessionID)
+		eventually(t, func() bool { return len(queuedRunID) == 1 })
+		close(releaseCompact)
+
+		failed := await(t, compact)
+		requireCode(t, failed.err, protocol.CodeInternal)
+		require.ErrorContains(t, failed.err, "/compact: summarization hit the output token limit")
+
+		ended := await(t, queued)
+		require.NoError(t, ended.err)
+		require.Equal(t, protocol.StopReasonCancelled, ended.resp.StopReason)
+		h.ws.snapshot(func() { require.Equal(t, []string{sessionID}, h.ws.queueCleared) })
+	})
+
+	t.Run("a command refused because a turn is running leaves that turn's queue alone", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sessionID := h.newSession(t)
+		h.ws.busy[sessionID] = true
+		h.ws.summarize = func(context.Context, string) error { return agent.ErrSessionBusy }
+
+		_, err := h.agent.Prompt(t.Context(), textPrompt(sessionID, "/compact"))
+
+		requireCode(t, err, protocol.CodeInternal)
+		h.ws.snapshot(func() { require.Empty(t, h.ws.queueCleared) })
+	})
+
+	t.Run("a command that succeeds leaves the queue alone", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sessionID := h.newSession(t)
+
+		_, err := h.agent.Prompt(t.Context(), textPrompt(sessionID, "/compact"))
+
+		require.NoError(t, err)
+		h.ws.snapshot(func() { require.Empty(t, h.ws.queueCleared) })
+	})
 }
 
 func TestCancellingABuiltinCommand(t *testing.T) {

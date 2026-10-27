@@ -59,7 +59,8 @@ func cancelTurn(ws Workspace, s *liveSession) {
 // it. Clearing reports every dropped prompt as cancelled, which ends those
 // waits. It is done only for a run that reported its own failure. A run that
 // failed before it became active may have prompts queued behind another run,
-// and that run still hands off to them.
+// and that run still hands off to them. A built-in command that fails, such
+// as a compaction, is treated the same way once the session is idle again.
 func runTurn(ctx context.Context, ws Workspace, c protocol.Client, s *liveSession, req protocol.PromptRequest, grace time.Duration) (protocol.PromptResponse, error) {
 	// NOTE: The reservation comes first, so a cancel that lands while the
 	// turn is still being set up, or while the run waits on MCP servers, is
@@ -80,7 +81,14 @@ func runTurn(ctx context.Context, ws Workspace, c protocol.Client, s *liveSessio
 	}
 	if exp.act != nil {
 		accept.Close()
-		return runAction(ctx, c, s, exp, cancelsBefore)
+		resp, err := runAction(ctx, c, s, exp, cancelsBefore)
+		// NOTE: A failed action never hands off to its queue. If the
+		// session is still busy the action did not own it, so the run that
+		// does will hand off to those prompts and they must stay.
+		if err != nil && !ws.AgentIsSessionBusy(s.id) {
+			ws.AgentClearQueue(s.id)
+		}
+		return resp, err
 	}
 	text = exp.text
 	attachments = append(attachments, exp.attachments...)

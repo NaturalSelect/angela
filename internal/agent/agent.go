@@ -169,7 +169,10 @@ type SessionAgentCall struct {
 	// a busy-session call (see Run): the originating
 	// coordinator.Run has long returned by the time the queued
 	// recursion drains, so falling back to the default broker
-	// publish keeps the event visible to subscribers.
+	// publish keeps the event visible to subscribers. A turn that
+	// hands off to a queued prompt is the exception: that prompt runs
+	// inside this same call, so the turn's completion goes straight to
+	// the broker instead (see runQueued).
 	OnComplete func(notify.RunComplete)
 	// Accepted, when non-nil, is the accept reservation taken by
 	// BeginAccepted before the call was dispatched onto a goroutine.
@@ -1716,6 +1719,12 @@ func (a *sessionAgent) dequeueNext(call SessionAgentCall) *queuedHandoff {
 // runQueued publishes the terminal RunComplete call's own turn still owes,
 // then runs the handed-off prompt as its own turn. turnErr is how call's
 // turn ended, nil for a normal finish, and turnResult is what it produced.
+//
+// NOTE: The event goes straight to the broker, not through call.OnComplete.
+// The hook holds it until the coordinator's Run returns, which is after the
+// handed-off prompt has run to the end, so the finished turn's caller would
+// wait on the next prompt's work. The turn is over, so there is no later
+// attempt for the hook to merge it with.
 func (a *sessionAgent) runQueued(ctx context.Context, call SessionAgentCall, currentAssistant *message.Message, turnResult *fantasy.AgentResult, turnErr error, handoff *queuedHandoff) (*fantasy.AgentResult, error) {
 	if handoff.ownerOwesRunComplete {
 		complete := notify.RunComplete{SessionID: call.SessionID, RunID: call.RunID}
@@ -1732,7 +1741,15 @@ func (a *sessionAgent) runQueued(ctx context.Context, call SessionAgentCall, cur
 		default:
 			complete.Truncated = OutputTruncated(turnResult)
 		}
-		a.publishRunComplete(ctx, call, complete)
+		if a.runComplete != nil {
+			a.runComplete.PublishMustDeliver(ctx, pubsub.UpdatedEvent, complete)
+			// Flag it as the coordinator would, so a caller that gets the
+			// next prompt's failure back does not publish a second
+			// terminal event for this turn's RunID.
+			MarkRunCompletePublished(ctx)
+		} else {
+			a.publishRunComplete(ctx, call, complete)
+		}
 	}
 	return a.Run(ctx, reresolve(ctx, handoff.next))
 }

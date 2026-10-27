@@ -94,8 +94,10 @@ func runACP(ctx context.Context, in io.Reader, out io.Writer, base localWorkspac
 // the agent from wherever it likes, and a few places read the process
 // directory directly, such as a shell command without an explicit one. The
 // agent refuses a second project, so the directory is the same on every call.
-// It is called again only after an attempt that found no provider, and that
-// attempt starts nothing, so the retry sees a clean process.
+// It is called again after any failed attempt, because the agent does not
+// remember one. A failure must therefore leave nothing behind that the retry
+// would trip over: a missing provider fails before anything starts, and a
+// failed build gives its database connection back to the pool.
 func openACPWorkspace(ctx context.Context, base localWorkspaceOptions, cwd string, caps acp.ClientCaps) (acp.Workspace, error) {
 	if err := os.Chdir(cwd); err != nil {
 		return nil, err

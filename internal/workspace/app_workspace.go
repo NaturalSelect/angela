@@ -687,6 +687,17 @@ func (w *AppWorkspace) Events(ctx context.Context) <-chan pubsub.Event[tea.Msg] 
 	return w.app.Events(ctx)
 }
 
+// NOTE: Servers a config file already defines are skipped, so an editor
+// cannot replace what the user wrote. The rest are merged into the config for
+// this process and never persisted.
+func (w *AppWorkspace) AttachMCP(ctx context.Context, servers map[string]config.MCPConfig) {
+	added := w.store.AddRuntimeMCP(servers)
+	if len(added) == 0 {
+		return
+	}
+	mcptools.Attach(ctx, w.store, added)
+}
+
 func (w *AppWorkspace) ListCustomCommands(context.Context) ([]commands.CustomCommand, error) {
 	return commands.LoadCustomCommands(w.store.Config())
 }

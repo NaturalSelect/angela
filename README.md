@@ -130,12 +130,16 @@ with its history or resume it without the history. Closing a session stops its
 work and releases it, but keeps it on disk so it can be opened again; only
 deleting it removes it.
 
-Angela connects only the MCP servers in its own `angela.json`. The servers an
-editor passes when it opens a session, such as Zed's context servers, are
-ignored, and a warning in the log names them. Add them to `angela.json` to use
-them. If no provider is configured, opening a session fails with a message
-saying so; set one up by running `angela` in a terminal, and the editor's next
-attempt works without restarting the agent.
+Angela connects the MCP servers in its own `angela.json` and the ones an editor
+passes when it opens a session, such as Zed's context servers. Angela declares
+HTTP and SSE support, so editors send those servers as well as stdio ones. The
+editor's servers last for the life of the process and are never written to
+`angela.json`. If `angela.json` already has a server of the same name, its
+entry wins. Their commands, arguments, URLs and headers are used exactly as
+the editor sent them, without `$VAR` or `$(command)` expansion. If no provider
+is configured, opening a session fails with a message saying so; set one up by
+running `angela` in a terminal, and the editor's next attempt works without
+restarting the agent.
 
 The editor's `/` menu lists a few built-in commands, your custom commands,
 user-invocable skills and MCP prompts, and updates when an MCP server connects

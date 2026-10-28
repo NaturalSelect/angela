@@ -57,6 +57,10 @@ func fromInitializeResponse(r protocol.InitializeResponse) acp.InitializeRespons
 			Image:           r.PromptImage,
 			EmbeddedContext: r.PromptEmbeddedContext,
 		},
+		McpCapabilities: acp.McpCapabilities{
+			Http: r.MCPHTTP,
+			Sse:  r.MCPSSE,
+		},
 	}
 	if r.ResumeSession {
 		caps.SessionCapabilities.Resume = &acp.SessionResumeCapabilities{}
@@ -78,8 +82,58 @@ func fromInitializeResponse(r protocol.InitializeResponse) acp.InitializeRespons
 	}
 }
 
+func toMCPServers(servers []acp.McpServer) []protocol.MCPServer {
+	if len(servers) == 0 {
+		return nil
+	}
+	out := make([]protocol.MCPServer, 0, len(servers))
+	for _, s := range servers {
+		switch {
+		case s.Stdio != nil:
+			out = append(out, protocol.MCPServer{
+				Name:      s.Stdio.Name,
+				Transport: protocol.MCPTransportStdio,
+				Command:   s.Stdio.Command,
+				Args:      s.Stdio.Args,
+				Env:       toEnvVariables(s.Stdio.Env),
+			})
+		case s.Http != nil:
+			out = append(out, protocol.MCPServer{
+				Name:      s.Http.Name,
+				Transport: protocol.MCPTransportHTTP,
+				URL:       s.Http.Url,
+				Headers:   toHTTPHeaders(s.Http.Headers),
+			})
+		case s.Sse != nil:
+			out = append(out, protocol.MCPServer{
+				Name:      s.Sse.Name,
+				Transport: protocol.MCPTransportSSE,
+				URL:       s.Sse.Url,
+				Headers:   toHTTPHeaders(s.Sse.Headers),
+			})
+		}
+	}
+	return out
+}
+
+func toEnvVariables(vars []acp.EnvVariable) []protocol.NameValue {
+	out := make([]protocol.NameValue, 0, len(vars))
+	for _, v := range vars {
+		out = append(out, protocol.NameValue{Name: v.Name, Value: v.Value})
+	}
+	return out
+}
+
+func toHTTPHeaders(headers []acp.HttpHeader) []protocol.NameValue {
+	out := make([]protocol.NameValue, 0, len(headers))
+	for _, h := range headers {
+		out = append(out, protocol.NameValue{Name: h.Name, Value: h.Value})
+	}
+	return out
+}
+
 func toNewSession(p acp.NewSessionRequest) protocol.NewSessionRequest {
-	return protocol.NewSessionRequest{Cwd: p.Cwd}
+	return protocol.NewSessionRequest{Cwd: p.Cwd, MCPServers: toMCPServers(p.McpServers)}
 }
 
 func fromNewSession(r protocol.NewSessionResponse) acp.NewSessionResponse {
@@ -90,7 +144,7 @@ func fromNewSession(r protocol.NewSessionResponse) acp.NewSessionResponse {
 }
 
 func toLoadSession(p acp.LoadSessionRequest) protocol.LoadSessionRequest {
-	return protocol.LoadSessionRequest{SessionID: string(p.SessionId), Cwd: p.Cwd}
+	return protocol.LoadSessionRequest{SessionID: string(p.SessionId), Cwd: p.Cwd, MCPServers: toMCPServers(p.McpServers)}
 }
 
 func fromLoadSession(r protocol.LoadSessionResponse) acp.LoadSessionResponse {
@@ -98,7 +152,7 @@ func fromLoadSession(r protocol.LoadSessionResponse) acp.LoadSessionResponse {
 }
 
 func toResumeSession(p acp.ResumeSessionRequest) protocol.ResumeSessionRequest {
-	return protocol.ResumeSessionRequest{SessionID: string(p.SessionId), Cwd: p.Cwd}
+	return protocol.ResumeSessionRequest{SessionID: string(p.SessionId), Cwd: p.Cwd, MCPServers: toMCPServers(p.McpServers)}
 }
 
 func fromResumeSession(r protocol.ResumeSessionResponse) acp.ResumeSessionResponse {

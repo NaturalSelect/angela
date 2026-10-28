@@ -152,6 +152,8 @@ func TestInitialize(t *testing.T) {
 	require.True(t, resp.CloseSession)
 	require.True(t, resp.PromptImage)
 	require.True(t, resp.PromptEmbeddedContext)
+	require.True(t, resp.MCPHTTP)
+	require.True(t, resp.MCPSSE)
 
 	h.newSession(t)
 	require.Equal(t, []ClientCaps{{Elicitation: true}}, h.opened)

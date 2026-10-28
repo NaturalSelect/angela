@@ -534,20 +534,35 @@ func TestServeNewSessionWorkRunsAfterTheResponseIsWritten(t *testing.T) {
 	}`, string(second.Params))
 }
 
-func TestMCPServerNames(t *testing.T) {
+func TestToMCPServers(t *testing.T) {
 	t.Parallel()
 
-	require.Empty(t, mcpServerNames(nil))
-	require.Equal(t, []string{"files", "docs", "events"}, mcpServerNames([]acp.McpServer{
-		{Stdio: &acp.McpServerStdio{Name: "files"}},
-		{Http: &acp.McpServerHttpInline{Name: "docs"}},
-		{Sse: &acp.McpServerSseInline{Name: "events"}},
+	require.Empty(t, toMCPServers(nil))
+	require.Equal(t, []protocol.MCPServer{
+		{
+			Name: "files", Transport: protocol.MCPTransportStdio, Command: "/bin/files",
+			Args: []string{"--root", "/p"}, Env: []protocol.NameValue{{Name: "K", Value: "v"}},
+		},
+		{
+			Name: "docs", Transport: protocol.MCPTransportHTTP, URL: "https://example.com/mcp",
+			Headers: []protocol.NameValue{{Name: "Authorization", Value: "Bearer x"}},
+		},
+		{Name: "events", Transport: protocol.MCPTransportSSE, URL: "https://example.com/sse", Headers: []protocol.NameValue{}},
+	}, toMCPServers([]acp.McpServer{
+		{Stdio: &acp.McpServerStdio{
+			Name: "files", Command: "/bin/files", Args: []string{"--root", "/p"},
+			Env: []acp.EnvVariable{{Name: "K", Value: "v"}},
+		}},
+		{Http: &acp.McpServerHttpInline{
+			Name: "docs", Url: "https://example.com/mcp",
+			Headers: []acp.HttpHeader{{Name: "Authorization", Value: "Bearer x"}},
+		}},
+		{Sse: &acp.McpServerSseInline{Name: "events", Url: "https://example.com/sse"}},
 	}))
 }
 
-// NOTE: The servers the editor passes are ignored, but a request that
-// carries them must still be served.
-func TestServeAcceptsEditorMCPServers(t *testing.T) {
+// NOTE: The servers the editor passes reach the agent in the request.
+func TestServePassesEditorMCPServers(t *testing.T) {
 	t.Parallel()
 
 	created := make(chan protocol.NewSessionRequest, 1)
@@ -566,7 +581,13 @@ func TestServeAcceptsEditorMCPServers(t *testing.T) {
 	reply := raw.readReply()
 	require.Nil(t, reply.Error)
 	require.JSONEq(t, `{"sessionId":"s1"}`, string(reply.Result))
-	require.Equal(t, protocol.NewSessionRequest{Cwd: "/p"}, recv(t, created, "session/new"))
+	require.Equal(t, protocol.NewSessionRequest{
+		Cwd: "/p",
+		MCPServers: []protocol.MCPServer{
+			{Name: "files", Transport: protocol.MCPTransportStdio, Command: "/bin/files", Args: []string{}, Env: []protocol.NameValue{}},
+			{Name: "docs", Transport: protocol.MCPTransportHTTP, URL: "https://example.com/mcp", Headers: []protocol.NameValue{}},
+		},
+	}, recv(t, created, "session/new"))
 }
 
 func TestServePromptDeliversEveryBlockType(t *testing.T) {

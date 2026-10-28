@@ -26,10 +26,41 @@ type InitializeResponse struct {
 
 	PromptImage           bool
 	PromptEmbeddedContext bool
+
+	// NOTE: An editor passes MCP servers over HTTP or SSE only when the
+	// agent says it can connect them.
+	MCPHTTP bool
+	MCPSSE  bool
+}
+
+type MCPTransport int
+
+const (
+	MCPTransportStdio MCPTransport = iota
+	MCPTransportHTTP
+	MCPTransportSSE
+)
+
+type NameValue struct {
+	Name  string
+	Value string
+}
+
+// NOTE: MCPServer is one server the editor wants the agent to use. Command,
+// Args and Env apply to stdio; URL and Headers apply to HTTP and SSE.
+type MCPServer struct {
+	Name      string
+	Transport MCPTransport
+	Command   string
+	Args      []string
+	Env       []NameValue
+	URL       string
+	Headers   []NameValue
 }
 
 type NewSessionRequest struct {
-	Cwd string
+	Cwd        string
+	MCPServers []MCPServer
 }
 
 type NewSessionResponse struct {
@@ -42,8 +73,9 @@ type NewSessionResponse struct {
 }
 
 type LoadSessionRequest struct {
-	SessionID string
-	Cwd       string
+	SessionID  string
+	Cwd        string
+	MCPServers []MCPServer
 }
 
 type LoadSessionResponse struct {
@@ -51,8 +83,9 @@ type LoadSessionResponse struct {
 }
 
 type ResumeSessionRequest struct {
-	SessionID string
-	Cwd       string
+	SessionID  string
+	Cwd        string
+	MCPServers []MCPServer
 }
 
 type ResumeSessionResponse struct {

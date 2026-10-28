@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -210,8 +211,8 @@ func TestAppWorkspace_GetGeneratedImage_Success(t *testing.T) {
 
 // TestAppWorkspace_GetGeneratedImage_NotFound pins that the images
 // package's sentinel error survives the AppWorkspace passthrough
-// unwrapped, since callers above this layer (the server's
-// GetGeneratedImage handler) branch on errors.Is(err, images.ErrNotFound).
+// unwrapped, since callers above this layer (the UI's image preview)
+// branch on errors.Is(err, images.ErrNotFound).
 func TestAppWorkspace_GetGeneratedImage_NotFound(t *testing.T) {
 	t.Parallel()
 	a, _ := newTestImagesApp(t)
@@ -538,4 +539,26 @@ func TestAppWorkspace_Events(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, eventsProbe{name: "after"}, ev.Payload)
 	})
+}
+
+// NOTE: Not parallel, because newTestConfigStore calls t.Setenv.
+func TestAppWorkspace_ListCustomCommands(t *testing.T) {
+	store := newTestConfigStore(t)
+	ws := NewAppWorkspace(nil, store)
+
+	got, err := ws.ListCustomCommands(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, got, "a fresh data directory has no custom commands")
+
+	dir := filepath.Join(store.Config().Options.DataDirectory, "commands")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "greet.md"), []byte("Say hello to $NAME."), 0o644))
+
+	got, err = ws.ListCustomCommands(t.Context())
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, "project:greet", got[0].ID)
+	require.Equal(t, "Say hello to $NAME.", got[0].Content)
+	require.Len(t, got[0].Arguments, 1)
+	require.Equal(t, "NAME", got[0].Arguments[0].ID)
 }

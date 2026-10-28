@@ -98,7 +98,8 @@ type RuntimeOverrides struct {
 	NoBranchAgents bool
 	// Env, when set, is an environment snapshot as KEY=VALUE strings that
 	// checks like TERM_PROGRAM read instead of this process's own. It is
-	// nil in normal use, where os.Getenv already reflects the user's terminal.
+	// nil in normal use, where os.Getenv already reflects the user's
+	// terminal.
 	Env []string
 }
 
@@ -781,9 +782,8 @@ func (s *ConfigStore) SetProviderAPIKey(scope Scope, providerID string, apiKey a
 	}
 
 	// Signal here rather than at a caller: this is where a credential
-	// actually lands, and both the in-process workspace and the server's
-	// config endpoint reach it. A turn parked in
-	// WaitForTokenChangeSince is waiting for exactly this.
+	// actually lands, and every path that stores one reaches it. A turn
+	// parked in WaitForTokenChangeSince is waiting for exactly this.
 	s.SignalAuthComplete(providerID)
 	return nil
 }

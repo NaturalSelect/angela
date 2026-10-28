@@ -9,6 +9,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/commands"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/workspace"
@@ -30,6 +31,9 @@ type Workspace interface {
 	// AgentRunAccepted runs a prompt under a reservation taken by
 	// AgentBeginAccepted.
 	AgentRunAccepted(ctx context.Context, accept *agent.AcceptedRun, sessionID, prompt string, attachments ...message.Attachment) error
+	// AttachMCP registers servers for this process only and returns once
+	// each has connected or failed. ctx is the lifetime of their sessions.
+	AttachMCP(ctx context.Context, servers map[string]config.MCPConfig)
 }
 
 var _ Workspace = (*workspace.AppWorkspace)(nil)

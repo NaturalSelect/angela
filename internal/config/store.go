@@ -101,6 +101,11 @@ type RuntimeOverrides struct {
 	// nil in normal use, where os.Getenv already reflects the user's
 	// terminal.
 	Env []string
+	// MCP holds servers a front end registered for this process only, such
+	// as the ones an ACP editor passes with a session request. They are
+	// merged into the config after every reload and never written to disk.
+	// Only AddRuntimeMCP and reload touch it, both under writeMu.
+	MCP map[string]MCPConfig
 }
 
 // ConfigStore is the single entry point for all config access. It owns the
@@ -230,6 +235,9 @@ func (s *ConfigStore) ProviderFieldResolver(providerID, field string) VariableRe
 func (s *ConfigStore) MCPFieldResolver(name, field string) VariableResolver {
 	s.writeMu.RLock()
 	defer s.writeMu.RUnlock()
+	if _, ok := s.overrides.MCP[name]; ok {
+		return IdentityResolver()
+	}
 	if s.dataTrust.mcpUntrusted(name, field) {
 		return s.envOnlyResolver
 	}
@@ -1399,6 +1407,7 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	// regardless of whether any provider is configured.
 	prepareResolvedConfig(cfg)
 
+	s.reapplyRuntimeMCP(cfg)
 	s.setConfig(cfg)
 	s.loadedPaths = loadedPaths
 	s.resolver = resolver

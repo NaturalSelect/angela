@@ -81,6 +81,7 @@ type fakeWorkspace struct {
 	answers         [][]question.Answer
 	questionCancels int
 	shutdowns       int
+	attached        []map[string]config.MCPConfig
 }
 
 var _ Workspace = (*fakeWorkspace)(nil)
@@ -376,6 +377,12 @@ func (f *fakeWorkspace) MarkProjectInitialized() error {
 }
 
 func (f *fakeWorkspace) WorkingDir() string { return f.cwd }
+
+func (f *fakeWorkspace) AttachMCP(_ context.Context, servers map[string]config.MCPConfig) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attached = append(f.attached, servers)
+}
 
 func (f *fakeWorkspace) Shutdown() {
 	f.mu.Lock()

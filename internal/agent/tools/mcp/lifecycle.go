@@ -124,6 +124,43 @@ func Reinitialize(ctx context.Context, cfg *config.ConfigStore) {
 	}
 }
 
+// Attach connects the named servers, which must already be in the config, and
+// returns once every attempt has settled. A server that is already connected
+// with the same config is left alone.
+//
+// NOTE: ctx is the lifetime of the sessions it starts, so it must outlive the
+// request that asked for them.
+func Attach(ctx context.Context, cfg *config.ConfigStore, names []string) {
+	current := cfg.Config().MCP
+	running := states.Copy()
+	wanted := make(config.MCPs, len(names))
+	runningWanted := make(map[string]ClientInfo, len(names))
+	for _, name := range names {
+		if m, ok := current[name]; ok {
+			wanted[name] = m
+		}
+		if info, ok := running[name]; ok {
+			runningWanted[name] = info
+		}
+	}
+
+	var wg sync.WaitGroup
+	for name, action := range reconcile(wanted, runningWanted) {
+		switch action {
+		case reinitDisable:
+			DisableSingle(cfg, name)
+		case reinitStart:
+			m := wanted[name]
+			slog.Info("Connecting MCP server", "name", name)
+			teardown(name)
+			updateState(name, StateStarting, nil, nil, Counts{}, withPending(m))
+			wg.Add(1)
+			goInitClient(ctx, cfg, name, m, &wg)
+		}
+	}
+	wg.Wait()
+}
+
 // reconcileOnce applies one reconciliation pass against the current config.
 func reconcileOnce(ctx context.Context, cfg *config.ConfigStore) {
 	current := cfg.Config().MCP

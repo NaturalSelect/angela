@@ -164,6 +164,8 @@ func (a *Agent) Initialize(_ context.Context, req protocol.InitializeRequest) (p
 		CloseSession:          true,
 		PromptImage:           true,
 		PromptEmbeddedContext: true,
+		MCPHTTP:               true,
+		MCPSSE:                true,
 	}, nil
 }
 
@@ -172,6 +174,7 @@ func (a *Agent) NewSession(ctx context.Context, req protocol.NewSessionRequest) 
 	if err != nil {
 		return protocol.NewSessionResponse{}, err
 	}
+	a.attachMCP(ws, req.MCPServers)
 	sess, err := ws.CreateSession(ctx, defaultTitle)
 	if err != nil {
 		return protocol.NewSessionResponse{}, internalError("create session: %v", err)
@@ -192,7 +195,7 @@ func (a *Agent) NewSession(ctx context.Context, req protocol.NewSessionRequest) 
 // NOTE: The replay runs on the request goroutine. The session is not
 // registered yet, so the event pump cannot write to it concurrently.
 func (a *Agent) LoadSession(ctx context.Context, req protocol.LoadSessionRequest) (protocol.LoadSessionResponse, error) {
-	opts, err := a.restoreSession(ctx, req.SessionID, req.Cwd, true)
+	opts, err := a.restoreSession(ctx, req.SessionID, req.Cwd, req.MCPServers, true)
 	if err != nil {
 		return protocol.LoadSessionResponse{}, err
 	}
@@ -203,7 +206,7 @@ func (a *Agent) LoadSession(ctx context.Context, req protocol.LoadSessionRequest
 // history. The editor keeps the transcript it already has, so only the
 // title, usage and plan are sent.
 func (a *Agent) ResumeSession(ctx context.Context, req protocol.ResumeSessionRequest) (protocol.ResumeSessionResponse, error) {
-	opts, err := a.restoreSession(ctx, req.SessionID, req.Cwd, false)
+	opts, err := a.restoreSession(ctx, req.SessionID, req.Cwd, req.MCPServers, false)
 	if err != nil {
 		return protocol.ResumeSessionResponse{}, err
 	}
@@ -213,11 +216,12 @@ func (a *Agent) ResumeSession(ctx context.Context, req protocol.ResumeSessionReq
 // restoreSession registers an existing session with the event pump. Either
 // way the pump must know the messages that already exist, or it would send
 // them to the editor again as if they were new.
-func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, replay bool) ([]protocol.ConfigOption, error) {
+func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, servers []protocol.MCPServer, replay bool) ([]protocol.ConfigOption, error) {
 	ws, err := a.workspaceFor(cwd)
 	if err != nil {
 		return nil, err
 	}
+	a.attachMCP(ws, servers)
 
 	sess, err := ws.GetSession(ctx, sessionID)
 	switch {

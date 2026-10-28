@@ -1118,6 +1118,12 @@ func mcpFieldResolver(cfg *config.ConfigStore, resolver config.VariableResolver,
 }
 
 func createTransport(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, *mcpoauth.Handler, error) {
+	// NOTE: Values an editor passes are literal. Expanding them would let a
+	// "$(...)" in an argument or header run a command, and would mangle a
+	// literal "$" in a token.
+	if cfg != nil && cfg.IsRuntimeMCP(name) {
+		resolver = config.IdentityResolver()
+	}
 	switch m.Type {
 	case config.MCPStdio:
 		command, err := resolver.ResolveValue(m.Command)

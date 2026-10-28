@@ -235,7 +235,10 @@ func TestFromInitializeResponseDeclaresOnlyEnabledCapabilities(t *testing.T) {
 		ProtocolVersion: 1, AgentName: "angela", AgentVersion: "v1",
 		LoadSession: true, ResumeSession: true, ListSessions: true, DeleteSessions: true, CloseSession: true,
 		PromptImage: true, PromptEmbeddedContext: true,
+		MCPHTTP: true, MCPSSE: true,
 	})
+	require.True(t, full.AgentCapabilities.McpCapabilities.Http)
+	require.True(t, full.AgentCapabilities.McpCapabilities.Sse)
 	require.True(t, full.AgentCapabilities.LoadSession)
 	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.Resume)
 	require.NotNil(t, full.AgentCapabilities.SessionCapabilities.List)
@@ -252,6 +255,8 @@ func TestFromInitializeResponseDeclaresOnlyEnabledCapabilities(t *testing.T) {
 	require.Nil(t, bare.AgentCapabilities.SessionCapabilities.Resume)
 	require.Nil(t, bare.AgentCapabilities.SessionCapabilities.Close)
 	require.False(t, bare.AgentCapabilities.PromptCapabilities.Audio)
+	require.False(t, bare.AgentCapabilities.McpCapabilities.Http)
+	require.False(t, bare.AgentCapabilities.McpCapabilities.Sse)
 }
 
 func TestToInitializeReadsElicitationForm(t *testing.T) {

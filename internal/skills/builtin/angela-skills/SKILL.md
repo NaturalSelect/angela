@@ -40,7 +40,7 @@ Instructions for the model, in plain markdown.
 | Field | Required | Notes |
 |---|---|---|
 | `name` | yes | Must match `^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`, max 64 chars, and must equal the containing directory's name (case-insensitive). |
-| `description` | yes | Max 1024 chars. Trigger-oriented: describe *when* to use the skill, not just what it does — this is what the model reads to decide relevance. |
+| `description` | yes | Max 10240 chars. Trigger-oriented: describe *when* to use the skill, not just what it does — this is what the model reads to decide relevance. |
 | `user-invocable` | no | If `true`, shown as a `/command` the user can invoke directly. |
 | `disable-model-invocation` | no | If `true`, hidden from the model's automatic skill list — only reachable via explicit user invocation. |
 | `license` | no | Free text. |

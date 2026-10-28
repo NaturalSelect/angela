@@ -23,7 +23,7 @@ import (
 const (
 	SkillFileName          = "SKILL.md"
 	MaxNameLength          = 64
-	MaxDescriptionLength   = 1024
+	MaxDescriptionLength   = 10240
 	MaxCompatibilityLength = 500
 )
 

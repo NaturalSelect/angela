@@ -191,20 +191,20 @@ func TestSkillValidate(t *testing.T) {
 		},
 		{
 			name:    "description too long",
-			skill:   Skill{Name: "my-skill", Description: strings.Repeat("a", 1025), Path: "/skills/my-skill"},
+			skill:   Skill{Name: "my-skill", Description: strings.Repeat("a", 10241), Path: "/skills/my-skill"},
 			wantErr: true,
 			errMsg:  "description exceeds",
 		},
 		{
-			// "中" is 3 bytes in UTF-8, so 342 runes is 1026 bytes: over the
+			// "中" is 3 bytes in UTF-8, so 3414 runes is 10242 bytes: over the
 			// limit in bytes but under it in runes. The limit is rune-based.
 			name:    "multi-byte description under rune limit but over byte limit",
-			skill:   Skill{Name: "my-skill", Description: strings.Repeat("中", 342), Path: "/skills/my-skill"},
+			skill:   Skill{Name: "my-skill", Description: strings.Repeat("中", 3414), Path: "/skills/my-skill"},
 			wantErr: false,
 		},
 		{
 			name:    "multi-byte description over rune limit",
-			skill:   Skill{Name: "my-skill", Description: strings.Repeat("中", 1025), Path: "/skills/my-skill"},
+			skill:   Skill{Name: "my-skill", Description: strings.Repeat("中", 10241), Path: "/skills/my-skill"},
 			wantErr: true,
 			errMsg:  "description exceeds",
 		},

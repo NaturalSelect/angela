@@ -27,8 +27,8 @@ import (
 )
 
 // ErrAgentNotInitialized means the workspace exists but its coder agent has
-// not been configured/initialized (e.g. no model set). Workspace.AgentReadyErr
-// returns it.
+// not been configured/initialized (e.g. no model set).
+// Workspace.AgentReadyErr returns it.
 var ErrAgentNotInitialized = errors.New("coder agent is not initialized")
 
 // ShellCommandResponse is the result of a shell command the user ran

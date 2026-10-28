@@ -53,7 +53,8 @@ angela acp --auto-accept-edits
 		os.Stdout = os.Stderr
 		defer func() { os.Stdout = protocolOut }()
 
-		// NOTE: Until the workspace is open the file logger does not exist yet.
+		// NOTE: Until the workspace is open the file logger does not exist
+		// yet.
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 		// NOTE: fang only turns SIGINT into a cancelled context. An editor
@@ -108,6 +109,10 @@ func openACPWorkspace(ctx context.Context, base localWorkspaceOptions, cwd strin
 	o.NonInteractive = !caps.Elicitation
 	o.NoBranchAgents = true
 	o.RequireProvider = true
+	// NOTE: The editor already reviews edits through the ACP permission
+	// prompt, and acp has no --no-vscode-diff flag to opt out of a second
+	// review.
+	o.NoVSCodeDiff = true
 
 	ws, _, err := openLocalWorkspace(ctx, o)
 	if err != nil {

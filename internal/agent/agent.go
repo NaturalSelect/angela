@@ -2015,10 +2015,11 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 		spentCost = addOpenrouterCosts(spentCost, resp.Steps)
 
 		if resp.Response.FinishReason == fantasy.FinishReasonLength {
-			// Accepting this as SummaryMessageID would make the truncated text
-			// the session's only memory of everything before it, discarding
-			// the rest of the history the summary was supposed to preserve.
-			// Not retried: the same prompt hits the same output cap again.
+			// Accepting this as SummaryMessageID would make the truncated
+			// text the session's only memory of everything before it,
+			// discarding the rest of the history the summary was supposed
+			// to preserve. Not retried: the same prompt hits the same
+			// output cap again.
 			summaryMessage.AddFinish(message.FinishReasonMaxTokens, "Summarization Error", "the summary hit the output token limit before it finished")
 			if updateErr := a.messages.Update(ctx, summaryMessage); updateErr != nil {
 				return nil, updateErr

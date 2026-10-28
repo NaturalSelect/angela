@@ -97,9 +97,9 @@ type SessionFile struct {
 // returns a sessionFilesLoadedMsg containing the processed session files.
 //
 // The returned batch also reports the new current-session selection to
-// the workspace so the server can update its per-client presence map.
-// That report is fire-and-forget: errors are logged at debug and the
-// UI never blocks on the call.
+// the workspace so herdr can track which session is live. That report is
+// fire-and-forget: errors are logged at debug and the UI never blocks on
+// the call.
 func (m *UI) loadSession(sessionID string, opts ...loadSessionOpt) tea.Cmd {
 	var o loadSessionOpt
 	if len(opts) > 0 {
@@ -139,8 +139,7 @@ func (m *UI) loadSession(sessionID string, opts ...loadSessionOpt) tea.Cmd {
 // reportCurrentSession returns a fire-and-forget tea.Cmd that
 // informs the workspace which session this client is currently
 // viewing. Errors are logged at debug only; the call is a hint
-// for server-side presence tracking, not correctness-critical
-// state.
+// for herdr session tracking, not correctness-critical state.
 func (m *UI) reportCurrentSession(sessionID string) tea.Cmd {
 	return func() tea.Msg {
 		if err := m.com.Workspace.SetCurrentSession(context.Background(), sessionID); err != nil {

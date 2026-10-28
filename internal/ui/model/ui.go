@@ -5248,8 +5248,8 @@ func (m *UI) drawPromptLabel(scr uv.Screen, box uv.Rectangle, row int) {
 // attachSkill reads a skill's content by ID and returns it as a markdown
 // attachment to be added to the attachment toolbar. The user can then
 // compose a message and send it with the skill attached.
-// The name parameter is used as a fallback when the server does not
-// return one.
+// The name parameter is used as a fallback when the skill does not
+// report one.
 func (m *UI) attachSkill(skillID, name string) tea.Cmd {
 	return func() tea.Msg {
 		content, result, err := m.com.Workspace.ReadSkill(context.Background(), skillID)
@@ -5338,8 +5338,8 @@ func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.
 	return tea.Batch(cmds...)
 }
 
-// runShellCommand executes a shell command server-side without triggering
-// the LLM. The result is displayed as a tool-style item in the chat.
+// runShellCommand executes a shell command without triggering the LLM. The
+// result is displayed as a tool-style item in the chat.
 // Callers must ensure a session already exists.
 func (m *UI) runShellCommand(command string) tea.Cmd {
 	var cmds []tea.Cmd
@@ -5575,7 +5575,7 @@ func (m *UI) applyQueuedPromptsTaken(msg queuedPromptsTakenMsg) tea.Cmd {
 		m.stashRestoredPrompts(msg.sessionID, msg.prompts)
 	default:
 		if msg.usedLocalCopy && len(msg.prompts) > 0 {
-			cmds = append(cmds, util.ReportWarn("Could not fetch queued prompts from the server; restored the local copy (attachments may be missing)."))
+			cmds = append(cmds, util.ReportWarn("Could not take queued prompts; restored the local copy (attachments may be missing)."))
 		}
 		cmds = append(cmds, m.restoreQueuedPrompts(msg.prompts))
 	}

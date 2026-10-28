@@ -329,6 +329,7 @@ func TestOpenACPWorkspace(t *testing.T) {
 			overrides := appWs.Store().Overrides()
 			require.Equal(t, tt.wantNonInteractive, overrides.NonInteractive)
 			require.True(t, overrides.NoBranchAgents, "ACP has no way to hand a conversation to a branch")
+			require.True(t, overrides.NoVSCodeDiff, "the editor reviews edits through the ACP permission prompt")
 
 			cwd, err := os.Getwd()
 			require.NoError(t, err)

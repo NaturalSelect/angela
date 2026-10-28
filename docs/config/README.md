@@ -240,6 +240,13 @@ how hidden agents work.
 }
 ```
 
+> [!NOTE]
+> Angela does not support native computer use (screenshots, mouse, keyboard,
+> or GUI control). If you need it, deploy an MCP server that provides these
+> tools on the computer you want to operate, and connect Angela to it through
+> the `mcp` section above. Use `stdio` when the server runs on the same
+> machine as Angela, or `http`/`sse` when it runs on a remote machine.
+
 ### LSP Servers
 
 ```jsonc

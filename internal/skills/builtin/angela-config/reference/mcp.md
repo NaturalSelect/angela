@@ -21,6 +21,10 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `oauth_client_secret`  | string | Secret paired with `oauth_client_id`; shell-expanded, `$(cmd)` only from system/global |
 | `oauth_callback_port`  | int    | Pin the localhost redirect port when the provider enforces exact-match redirect URIs |
 
+Angela has no native computer use. For GUI control, deploy an MCP server on
+the computer to be operated and add it here (`stdio` if local, `http`/`sse`
+if remote).
+
 The token from an `oauth` login is persisted to `oauth_token` by Angela
 itself — it isn't meant to be hand-written. The server name `docker` is
 reserved: enabling Docker MCP support configures it automatically as

@@ -102,6 +102,19 @@ images, Angela also saves the payload under the data directory in `mcp-media/`
 <path>." to the tool output. A model without image support gets an error
 instead.
 
+## Computer Use
+
+Angela does **not** support native computer use: it has no built-in tool for
+screenshots, mouse, keyboard, or GUI control. When the user wants this
+capability, tell them so and tell them to deploy an MCP server that provides
+it on the computer they want to operate, then connect Angela to that server
+through the `mcp` config. Use a `stdio` server when it runs on the same
+machine as Angela, or an `http`/`sse` server when it runs on a remote machine.
+Do not suggest that a built-in tool, flag, or option enables computer use.
+
+Screenshots returned by such a server follow the media handling described
+above, and the model must support images to see them.
+
 ## Docker MCP
 
 The server name `docker` is special-cased: the TUI shows it as "Docker MCP" and

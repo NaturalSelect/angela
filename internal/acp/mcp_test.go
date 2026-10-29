@@ -1,7 +1,9 @@
 package acp
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -67,6 +69,24 @@ func TestMCPConfigs(t *testing.T) {
 		t.Parallel()
 		require.Empty(t, mcpConfigs(nil))
 	})
+
+	t.Run("names that collide once sanitized keep the first", func(t *testing.T) {
+		t.Parallel()
+		got := mcpConfigs([]protocol.MCPServer{
+			{Name: "my server", Transport: protocol.MCPTransportStdio, Command: "first"},
+			{Name: "my-server", Transport: protocol.MCPTransportStdio, Command: "second"},
+		})
+		require.Len(t, got, 1)
+		require.Equal(t, "first", got["my-server"].Command)
+	})
+
+	t.Run("an unknown transport is dropped", func(t *testing.T) {
+		t.Parallel()
+		got := mcpConfigs([]protocol.MCPServer{
+			{Name: "odd", Transport: protocol.MCPTransport(99), Command: "run", URL: "https://example.com"},
+		})
+		require.Empty(t, got)
+	})
 }
 
 func TestEditorMCPServersAreAttached(t *testing.T) {
@@ -114,5 +134,97 @@ func TestEditorMCPServersAreAttached(t *testing.T) {
 		h := newHarness(t)
 		h.newSession(t)
 		require.Empty(t, attached(h))
+	})
+
+	t.Run("a refused load attaches nothing", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		h.ws.addSession(session.Session{ID: "child", ParentSessionID: "root"})
+		h.ws.addSession(session.Session{ID: "busy"})
+		h.ws.busy["busy"] = true
+
+		for _, id := range []string{"missing", "child", "busy"} {
+			_, err := h.agent.LoadSession(t.Context(), protocol.LoadSessionRequest{SessionID: id, Cwd: testCwd, MCPServers: servers})
+			require.Error(t, err, id)
+			_, err = h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: id, Cwd: testCwd, MCPServers: servers})
+			require.Error(t, err, id)
+		}
+		require.Empty(t, attached(h), "servers must not start for a request that is then refused")
+	})
+}
+
+func TestAttachMCPWaitIsBounded(t *testing.T) {
+	t.Parallel()
+
+	servers := []protocol.MCPServer{
+		{Name: "slow", Transport: protocol.MCPTransportHTTP, URL: "https://example.com/mcp"},
+	}
+	stuck := func(t *testing.T) *harness {
+		t.Helper()
+		h := newHarness(t)
+		h.ws.attachSettled = make(chan struct{})
+		h.agent.mcpWait = time.Minute
+		return h
+	}
+	returns := func(t *testing.T, run func()) <-chan struct{} {
+		t.Helper()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			run()
+		}()
+		return done
+	}
+	requireDone := func(t *testing.T, done <-chan struct{}, msg string) {
+		t.Helper()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal(msg)
+		}
+	}
+
+	t.Run("a server that never settles does not hold the request past the wait", func(t *testing.T) {
+		t.Parallel()
+		h := stuck(t)
+		h.agent.mcpWait = 50 * time.Millisecond
+		done := returns(t, func() { h.agent.attachMCP(t.Context(), h.ws, servers) })
+		requireDone(t, done, "attachMCP outlived its wait")
+	})
+
+	t.Run("a cancelled request stops waiting", func(t *testing.T) {
+		t.Parallel()
+		h := stuck(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := returns(t, func() { h.agent.attachMCP(ctx, h.ws, servers) })
+		select {
+		case <-done:
+			t.Fatal("attachMCP returned before the servers settled or the request ended")
+		case <-time.After(50 * time.Millisecond):
+		}
+		cancel()
+		requireDone(t, done, "attachMCP ignored the cancelled request")
+	})
+
+	t.Run("servers that settle release the request at once", func(t *testing.T) {
+		t.Parallel()
+		h := stuck(t)
+		done := returns(t, func() { h.agent.attachMCP(t.Context(), h.ws, servers) })
+		close(h.ws.attachSettled)
+		requireDone(t, done, "attachMCP did not return after the servers settled")
+	})
+
+	t.Run("new session returns while a server is still connecting", func(t *testing.T) {
+		t.Parallel()
+		h := stuck(t)
+		h.agent.mcpWait = 50 * time.Millisecond
+		var resp protocol.NewSessionResponse
+		var err error
+		done := returns(t, func() {
+			resp, err = h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd, MCPServers: servers})
+		})
+		requireDone(t, done, "session/new hung on a server that never connects")
+		require.NoError(t, err)
+		require.NotEmpty(t, resp.SessionID)
 	})
 }

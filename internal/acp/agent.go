@@ -26,6 +26,11 @@ const (
 	sessionPageSize = 50
 	defaultTitle    = "New Session"
 	closeTimeout    = 3 * time.Second
+
+	// NOTE: A session request waits this long for the editor's MCP servers
+	// so the first prompt can see their tools. A slower server is not held
+	// against the request: the tools appear in later runs once it connects.
+	defaultMCPWait = 5 * time.Second
 )
 
 // ClientCaps are the editor capabilities that must be known before the
@@ -70,6 +75,7 @@ type Agent struct {
 	elicitForm      atomic.Bool
 	compaction      atomic.Bool
 	completionGrace time.Duration
+	mcpWait         time.Duration
 
 	mu       sync.Mutex
 	ws       Workspace
@@ -90,6 +96,7 @@ func NewAgent(ctx context.Context, c protocol.Client, open OpenWorkspace) *Agent
 		open:            open,
 		reg:             newRegistry(),
 		completionGrace: defaultCompletionGrace,
+		mcpWait:         defaultMCPWait,
 	}
 }
 
@@ -174,11 +181,11 @@ func (a *Agent) NewSession(ctx context.Context, req protocol.NewSessionRequest) 
 	if err != nil {
 		return protocol.NewSessionResponse{}, err
 	}
-	a.attachMCP(ws, req.MCPServers)
 	sess, err := ws.CreateSession(ctx, defaultTitle)
 	if err != nil {
 		return protocol.NewSessionResponse{}, internalError("create session: %v", err)
 	}
+	a.attachMCP(ctx, ws, req.MCPServers)
 	s := a.reg.add(sess.ID)
 	return protocol.NewSessionResponse{
 		SessionID:     sess.ID,
@@ -221,7 +228,6 @@ func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, serve
 	if err != nil {
 		return nil, err
 	}
-	a.attachMCP(ws, servers)
 
 	sess, err := ws.GetSession(ctx, sessionID)
 	switch {
@@ -236,6 +242,7 @@ func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, serve
 	if ws.AgentIsSessionBusy(sess.ID) {
 		return nil, invalidParams("session %s is running", sess.ID)
 	}
+	a.attachMCP(ctx, ws, servers)
 
 	a.reg.remove(sess.ID)
 	msgs, err := ws.ListMessages(ctx, sess.ID)

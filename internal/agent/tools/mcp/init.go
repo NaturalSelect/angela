@@ -588,7 +588,10 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 		return nil, context.Canceled
 	}
 
-	toolList, err := getTools(ctx, session)
+	listTimeout := mcpTimeout(ctx, m)
+	toolList, err := listBounded(ctx, listTimeout, "tools", func(c context.Context) ([]*Tool, error) {
+		return getTools(c, session)
+	})
 	if err != nil {
 		slog.Error("Error listing tools", "error", err)
 		failIfCurrent(name, gen, err)
@@ -596,7 +599,9 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 		return nil, err
 	}
 
-	prompts, err := getPrompts(ctx, session)
+	prompts, err := listBounded(ctx, listTimeout, "prompts", func(c context.Context) ([]*Prompt, error) {
+		return getPrompts(c, session)
+	})
 	if err != nil {
 		slog.Error("Error listing prompts", "error", err)
 		failIfCurrent(name, gen, err)
@@ -626,8 +631,20 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 	return session, nil
 }
 
-// persistOAuthToken saves the OAuth token from a session to the global
-// config so it survives restarts.
+// listBounded runs list with ctx limited to timeout.
+//
+// NOTE: The connect step has its own timeout, but a server that answers
+// initialize and then never answers a list call would otherwise hold the
+// attempt, and everything waiting on it, until ctx ends.
+func listBounded[T any](ctx context.Context, timeout time.Duration, what string, list func(context.Context) (T, error)) (T, error) {
+	lctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	v, err := list(lctx)
+	if err != nil && ctx.Err() == nil && errors.Is(lctx.Err(), context.DeadlineExceeded) {
+		err = fmt.Errorf("listing %s timed out after %s", what, timeout)
+	}
+	return v, err
+}
 
 // DisableSingle disables and closes a single MCP client by name.
 func DisableSingle(cfg *config.ConfigStore, name string) error {
@@ -648,7 +665,9 @@ func DisableSingle(cfg *config.ConfigStore, name string) error {
 // invalidates its result rather than letting it register a stale session.
 func goInitClient(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, wg *sync.WaitGroup) {
 	gen := currentGen(name)
+	settle := trackAttempt(name)
 	go func() {
+		defer settle()
 		if wg != nil {
 			defer wg.Done()
 		}
@@ -675,6 +694,43 @@ func goInitClient(ctx context.Context, cfg *config.ConfigStore, name string, m c
 			"error", err,
 		)
 	}()
+}
+
+// attempts holds, per server, a channel that closes when its latest
+// initialization attempt settles. Attach waits on it, so a caller that finds a
+// connect already in flight still waits for that connect.
+var (
+	attemptsMu sync.Mutex
+	attempts   = map[string]chan struct{}{}
+)
+
+// trackAttempt records an initialization attempt for name and returns the
+// function that settles it. A newer attempt replaces the record, so waiters
+// follow the latest one.
+func trackAttempt(name string) (settle func()) {
+	done := make(chan struct{})
+	attemptsMu.Lock()
+	attempts[name] = done
+	attemptsMu.Unlock()
+	return func() {
+		attemptsMu.Lock()
+		if attempts[name] == done {
+			delete(attempts, name)
+		}
+		attemptsMu.Unlock()
+		close(done)
+	}
+}
+
+// attemptDone returns the channel that closes when name's in-flight attempt
+// settles, or nil when none is running.
+func attemptDone(name string) <-chan struct{} {
+	attemptsMu.Lock()
+	defer attemptsMu.Unlock()
+	if done, ok := attempts[name]; ok {
+		return done
+	}
+	return nil
 }
 
 // currentGen returns a server's current generation without bumping it.

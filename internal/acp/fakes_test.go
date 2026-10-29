@@ -82,6 +82,8 @@ type fakeWorkspace struct {
 	questionCancels int
 	shutdowns       int
 	attached        []map[string]config.MCPConfig
+	// attachSettled is what AttachMCP returns. Nil means already settled.
+	attachSettled chan struct{}
 }
 
 var _ Workspace = (*fakeWorkspace)(nil)
@@ -378,10 +380,16 @@ func (f *fakeWorkspace) MarkProjectInitialized() error {
 
 func (f *fakeWorkspace) WorkingDir() string { return f.cwd }
 
-func (f *fakeWorkspace) AttachMCP(_ context.Context, servers map[string]config.MCPConfig) {
+func (f *fakeWorkspace) AttachMCP(_ context.Context, servers map[string]config.MCPConfig) <-chan struct{} {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.attached = append(f.attached, servers)
+	if f.attachSettled != nil {
+		return f.attachSettled
+	}
+	done := make(chan struct{})
+	close(done)
+	return done
 }
 
 func (f *fakeWorkspace) Shutdown() {

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	acp "github.com/caelis-labs/acp-go-sdk"
@@ -111,6 +112,8 @@ func toMCPServers(servers []acp.McpServer) []protocol.MCPServer {
 				URL:       s.Sse.Url,
 				Headers:   toHTTPHeaders(s.Sse.Headers),
 			})
+		default:
+			slog.Warn("Editor MCP server ignored: it names no transport")
 		}
 	}
 	return out

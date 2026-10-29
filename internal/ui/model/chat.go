@@ -84,6 +84,11 @@ type Chat struct {
 	// animations are restarted.
 	pausedAnimations map[string]struct{}
 
+	// NOTE: Only the leader runs a tick chain; it steps the followers.
+	animLeader    string
+	animLeaderAt  time.Time
+	animFollowers map[string]struct{}
+
 	// Mouse state
 	mouseDown     bool
 	mouseDownItem int // Item index where mouse was pressed
@@ -165,6 +170,7 @@ func NewChat(com *common.Common, scrollbarMode string) *Chat {
 		com:              com,
 		idInxMap:         make(map[string]int),
 		pausedAnimations: make(map[string]struct{}),
+		animFollowers:    make(map[string]struct{}),
 		scrollbarMode:    scrollbarMode,
 	}
 	l := list.NewList()
@@ -413,7 +419,7 @@ func (m *Chat) InvalidateRenderCaches() {
 // SetMessages sets the chat messages to the provided list of message items.
 func (m *Chat) SetMessages(msgs ...chat.MessageItem) tea.Cmd {
 	m.idInxMap = make(map[string]int)
-	m.pausedAnimations = make(map[string]struct{})
+	m.resetAnimations()
 	m.scrollbarVisible = false // Reset scrollbar visibility on new session load
 	m.queued = nil             // The whole list is replaced, tail included.
 
@@ -584,12 +590,24 @@ func (m *Chat) UpdateNestedToolIDs(containerID string) {
 	}
 }
 
-// Animate animates items in the chat list. Only propagates animation messages
-// to visible items to save CPU. When items are not visible, their animation ID
-// is tracked so it can be restarted when they become visible again.
+// NOTE: A leader silent for longer than this loses the clock.
+var animLeaderLease = 500 * time.Millisecond
+
+func (m *Chat) resetAnimations() {
+	m.pausedAnimations = make(map[string]struct{})
+	m.animFollowers = make(map[string]struct{})
+	m.animLeader = ""
+}
+
+// Animate animates items in the chat list. The first chain to tick leads and
+// steps every other animating item, so N spinners cost one frame per tick.
 func (m *Chat) Animate(msg anim.StepMsg) tea.Cmd {
 	idx, ok := m.idInxMap[msg.ID]
 	if !ok {
+		if msg.ID == m.animLeader {
+			startIdx, endIdx := m.list.VisibleItemIndices()
+			return m.passClock(startIdx, endIdx)
+		}
 		return nil
 	}
 
@@ -598,20 +616,89 @@ func (m *Chat) Animate(msg anim.StepMsg) tea.Cmd {
 		return nil
 	}
 
-	// Check if item is currently visible.
-	startIdx, endIdx := m.list.VisibleItemIndices()
-	isVisible := idx >= startIdx && idx <= endIdx
-
-	if !isVisible {
-		// Item not visible - pause animation by not propagating.
-		// Track it so we can restart when it becomes visible.
-		m.pausedAnimations[msg.ID] = struct{}{}
+	if m.animLeader != "" && m.animLeader != msg.ID && time.Since(m.animLeaderAt) < animLeaderLease {
+		if animatable.Animating() {
+			m.animFollowers[msg.ID] = struct{}{}
+		} else {
+			delete(m.animFollowers, msg.ID)
+		}
 		return nil
 	}
 
-	// Item is visible - remove from paused set and animate.
+	startIdx, endIdx := m.list.VisibleItemIndices()
+	if idx < startIdx || idx > endIdx {
+		m.pausedAnimations[msg.ID] = struct{}{}
+		delete(m.animFollowers, msg.ID)
+		return m.passClock(startIdx, endIdx)
+	}
+
 	delete(m.pausedAnimations, msg.ID)
-	return animatable.Animate(msg)
+	cmd := animatable.Animate(msg)
+	if cmd == nil && animatable.Animating() {
+		// NOTE: A stale tick from a superseded chain must not move the clock.
+		return nil
+	}
+	m.animLeader, m.animLeaderAt = msg.ID, time.Now()
+	delete(m.animFollowers, msg.ID)
+	m.advanceFollowers(startIdx, endIdx)
+	if cmd != nil {
+		return cmd
+	}
+	return m.passClock(startIdx, endIdx)
+}
+
+func (m *Chat) advanceFollowers(startIdx, endIdx int) {
+	for id := range m.animFollowers {
+		idx, ok := m.idInxMap[id]
+		var follower chat.Animatable
+		if ok {
+			follower, ok = m.list.ItemAt(idx).(chat.Animatable)
+		}
+		if !ok || !follower.Animating() {
+			delete(m.animFollowers, id)
+			continue
+		}
+		if idx >= startIdx && idx <= endIdx {
+			follower.AdvanceFrame()
+		}
+	}
+}
+
+func (m *Chat) passClock(startIdx, endIdx int) tea.Cmd {
+	m.animLeader = ""
+
+	var next chat.Animatable
+	nextID, nextIdx := "", -1
+	for id := range m.animFollowers {
+		idx, ok := m.idInxMap[id]
+		var follower chat.Animatable
+		if ok {
+			follower, ok = m.list.ItemAt(idx).(chat.Animatable)
+		}
+		if !ok || !follower.Animating() {
+			delete(m.animFollowers, id)
+			continue
+		}
+		if idx >= startIdx && idx <= endIdx && (nextIdx == -1 || idx < nextIdx) {
+			next, nextID, nextIdx = follower, id, idx
+		}
+	}
+
+	if next != nil {
+		if cmd := next.StartAnimation(); cmd != nil {
+			delete(m.animFollowers, nextID)
+			delete(m.pausedAnimations, nextID)
+			m.animLeader, m.animLeaderAt = nextID, time.Now()
+			return cmd
+		}
+	}
+
+	// NOTE: Parked as paused so scrolling back into view restarts them.
+	for id := range m.animFollowers {
+		m.pausedAnimations[id] = struct{}{}
+	}
+	clear(m.animFollowers)
+	return nil
 }
 
 // RestartPausedVisibleAnimations restarts animations for items that were paused
@@ -948,7 +1035,7 @@ func (m *Chat) SelectClosestInView() {
 // ClearMessages removes all messages from the chat list.
 func (m *Chat) ClearMessages() {
 	m.idInxMap = make(map[string]int)
-	m.pausedAnimations = make(map[string]struct{})
+	m.resetAnimations()
 	m.scrollbarVisible = false
 	m.list.SetItems()
 	m.ClearMouse()
@@ -976,6 +1063,7 @@ func (m *Chat) RemoveMessage(id string) {
 
 	// Clean up any paused animations for this message
 	delete(m.pausedAnimations, id)
+	delete(m.animFollowers, id)
 }
 
 // RemoveMessageWithToolCalls removes a message and all tool call items that

@@ -298,6 +298,11 @@ func (a *AssistantMessageItem) Animate(msg anim.StepMsg) tea.Cmd {
 	return a.anim.Animate(msg)
 }
 
+// Animating implements [Animatable].
+func (a *AssistantMessageItem) Animating() bool {
+	return a.isSpinning()
+}
+
 // AdvanceFrame advances the animation by one frame without scheduling a new
 // tick. Called by a parent container that drives the tick centrally.
 func (a *AssistantMessageItem) AdvanceFrame() {

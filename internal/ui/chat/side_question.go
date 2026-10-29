@@ -110,6 +110,11 @@ func (s *SideQuestionItem) Animate(msg anim.StepMsg) tea.Cmd {
 	return s.anim.Animate(msg)
 }
 
+// Animating implements [Animatable].
+func (s *SideQuestionItem) Animating() bool {
+	return s.pending
+}
+
 // AdvanceFrame advances the animation by one frame without scheduling a new
 // tick. Called by a parent container that drives the tick centrally.
 func (s *SideQuestionItem) AdvanceFrame() {

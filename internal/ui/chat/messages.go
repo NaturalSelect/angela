@@ -34,6 +34,9 @@ type Identifiable interface {
 type Animatable interface {
 	StartAnimation() tea.Cmd
 	Animate(msg anim.StepMsg) tea.Cmd
+	// NOTE: Animate returns no command for both a finished item and a stale
+	// tick, so only Animating tells the two apart.
+	Animating() bool
 	// AdvanceFrame advances the animation by one frame without scheduling a
 	// new tick. Use this when a parent container drives the tick so this
 	// item's frame progresses without starting its own independent tick chain.

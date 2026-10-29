@@ -58,14 +58,25 @@ type testAnimatableItem struct {
 	testMessageItem
 	animateCalls        int
 	startAnimationCalls int
+	advanceCalls        int
+	// done makes the item report it has nothing left to animate.
+	done bool
+	// stale makes Animate behave like a tick from a superseded chain: it
+	// returns no command even though the item still animates.
+	stale bool
 }
 
 func (m *testAnimatableItem) Animate(msg anim.StepMsg) tea.Cmd {
 	m.animateCalls++
+	if m.done || m.stale {
+		return nil
+	}
 	return func() tea.Msg { return nil }
 }
 
-func (m *testAnimatableItem) AdvanceFrame() {}
+func (m *testAnimatableItem) Animating() bool { return !m.done }
+
+func (m *testAnimatableItem) AdvanceFrame() { m.advanceCalls++ }
 
 func (m *testAnimatableItem) StartAnimation() tea.Cmd {
 	m.startAnimationCalls++

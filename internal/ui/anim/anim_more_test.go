@@ -20,6 +20,34 @@ func TestNew_DefaultsAndCaching(t *testing.T) {
 	require.Equal(t, a1.cyclingFrames, a2.cyclingFrames)
 }
 
+func TestNew_CacheKeySeparatesNoScramble(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		label      string
+		noScramble bool
+	}{
+		{"scramble first", "cache-scramble-first", false},
+		{"no scramble first", "cache-plain-first", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			first := New(Settings{Label: tt.label, NoScramble: tt.noScramble})
+			second := New(Settings{Label: tt.label, NoScramble: !tt.noScramble})
+
+			scrambled, plain := first, second
+			if tt.noScramble {
+				scrambled, plain = second, first
+			}
+			require.Equal(t, defaultNumCyclingChars+labelGapWidth+len(tt.label), scrambled.width)
+			require.Equal(t, len(tt.label), plain.width)
+		})
+	}
+}
+
 func TestNew_CycleColorsProducesFrames(t *testing.T) {
 	t.Parallel()
 

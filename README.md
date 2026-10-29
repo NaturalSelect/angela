@@ -134,12 +134,22 @@ Angela connects the MCP servers in its own `angela.json` and the ones an editor
 passes when it opens a session, such as Zed's context servers. Angela declares
 HTTP and SSE support, so editors send those servers as well as stdio ones. The
 editor's servers last for the life of the process and are never written to
-`angela.json`. If `angela.json` already has a server of the same name, its
-entry wins. Their commands, arguments, URLs and headers are used exactly as
-the editor sent them, without `$VAR` or `$(command)` expansion. If no provider
-is configured, opening a session fails with a message saying so; set one up by
-running `angela` in a terminal, and the editor's next attempt works without
-restarting the agent.
+`angela.json`. Opening a session waits up to five seconds for them to connect.
+A slower server keeps connecting in the background, and its tools reach the
+agent in later runs, so a session never hangs on a server that is slow or
+stuck. A server that failed is tried again the next time a session opens.
+Their commands, arguments, URLs and headers are used exactly as the editor
+sent them, without `$VAR` or `$(command)` expansion.
+
+The editor's servers are shared by every session in the process. If
+`angela.json` already has a server of the same name, its entry wins. If an
+earlier session already runs a server of that name with a different config,
+that one keeps running and the later one is ignored. Two names that become the
+same once characters other than letters, digits and hyphens are replaced keep
+only the first. Each ignored server is named in the log with the reason. If no
+provider is configured, opening a session fails with a message saying so; set
+one up by running `angela` in a terminal, and the editor's next attempt works
+without restarting the agent.
 
 The editor's `/` menu lists a few built-in commands, your custom commands,
 user-invocable skills and MCP prompts, and updates when an MCP server connects

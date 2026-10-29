@@ -31,9 +31,11 @@ type Workspace interface {
 	// AgentRunAccepted runs a prompt under a reservation taken by
 	// AgentBeginAccepted.
 	AgentRunAccepted(ctx context.Context, accept *agent.AcceptedRun, sessionID, prompt string, attachments ...message.Attachment) error
-	// AttachMCP registers servers for this process only and returns once
-	// each has connected or failed. ctx is the lifetime of their sessions.
-	AttachMCP(ctx context.Context, servers map[string]config.MCPConfig)
+	// AttachMCP registers servers for this process only and starts
+	// connecting them. It does not wait: the returned channel closes once
+	// every attempt has settled, and the caller decides how long to wait on
+	// it. ctx is the lifetime of their sessions.
+	AttachMCP(ctx context.Context, servers map[string]config.MCPConfig) <-chan struct{}
 }
 
 var _ Workspace = (*workspace.AppWorkspace)(nil)

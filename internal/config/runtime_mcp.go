@@ -1,13 +1,17 @@
 package config
 
-import "slices"
+import (
+	"log/slog"
+	"slices"
+)
 
 // AddRuntimeMCP registers MCP servers for this process only. They appear in
 // Config().MCP like any configured server, survive a reload, and are never
 // written to disk. It returns the names it registered, sorted.
 //
 // NOTE: A name that a config file defines is left alone, so an editor cannot
-// replace what the user wrote. A name an earlier call registered is replaced.
+// replace what the user wrote, and the skip is logged because the editor shows
+// nothing. A name an earlier call registered is replaced.
 func (s *ConfigStore) AddRuntimeMCP(servers map[string]MCPConfig) []string {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
@@ -20,6 +24,7 @@ func (s *ConfigStore) AddRuntimeMCP(servers map[string]MCPConfig) []string {
 	for name, m := range servers {
 		_, runtime := s.overrides.MCP[name]
 		if _, exists := nc.MCP[name]; exists && !runtime {
+			slog.Warn("Editor MCP server ignored: the config file already defines a server with this name", "name", name)
 			continue
 		}
 		if s.overrides.MCP == nil {

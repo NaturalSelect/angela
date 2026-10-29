@@ -689,13 +689,28 @@ func (w *AppWorkspace) Events(ctx context.Context) <-chan pubsub.Event[tea.Msg] 
 
 // NOTE: Servers a config file already defines are skipped, so an editor
 // cannot replace what the user wrote. The rest are merged into the config for
-// this process and never persisted.
-func (w *AppWorkspace) AttachMCP(ctx context.Context, servers map[string]config.MCPConfig) {
-	added := w.store.AddRuntimeMCP(servers)
-	if len(added) == 0 {
-		return
+// this process and never persisted. The returned channel closes when their
+// connect attempts have settled; the caller bounds how long it waits.
+//
+// A name an earlier session registered keeps its running server when a later
+// session passes a different config for it. Replacing it would close the
+// connection the earlier session is using.
+func (w *AppWorkspace) AttachMCP(ctx context.Context, servers map[string]config.MCPConfig) <-chan struct{} {
+	usable := make(map[string]config.MCPConfig, len(servers))
+	for name, m := range servers {
+		if w.store.IsRuntimeMCP(name) && mcptools.RunningWithDifferentConfig(name, m) {
+			slog.Warn("Editor MCP server ignored: a server with this name is already running with a different config", "name", name)
+			continue
+		}
+		usable[name] = m
 	}
-	mcptools.Attach(ctx, w.store, added)
+	added := w.store.AddRuntimeMCP(usable)
+	if len(added) == 0 {
+		done := make(chan struct{})
+		close(done)
+		return done
+	}
+	return mcptools.Attach(ctx, w.store, added)
 }
 
 func (w *AppWorkspace) ListCustomCommands(context.Context) ([]commands.CustomCommand, error) {

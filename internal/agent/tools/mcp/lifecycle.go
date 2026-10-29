@@ -124,13 +124,39 @@ func Reinitialize(ctx context.Context, cfg *config.ConfigStore) {
 	}
 }
 
-// Attach connects the named servers, which must already be in the config, and
-// returns once every attempt has settled. A server that is already connected
-// with the same config is left alone.
+// RunningWithDifferentConfig reports whether name is connected, or connecting,
+// with a config other than m. Restarting it would close a session something
+// else may be using.
+func RunningWithDifferentConfig(name string, m config.MCPConfig) bool {
+	info, ok := states.Get(name)
+	if !ok {
+		return false
+	}
+	switch info.State {
+	case StateConnected:
+		return !mcpConfigEqual(info.Config, m)
+	case StateStarting:
+		return info.PendingConfig != nil && !mcpConfigEqual(*info.PendingConfig, m)
+	}
+	return false
+}
+
+// attachMu orders concurrent Attach calls. Without it, a second caller can
+// see a server marked as starting before its attempt is registered, and so
+// find nothing to wait for.
+var attachMu sync.Mutex
+
+// Attach starts connecting the named servers, which must already be in the
+// config, and returns a channel that closes once every attempt for them has
+// settled. A server that is already connected with the same config is left
+// alone. A server whose attempt is already in flight is not restarted, but the
+// channel still waits for that attempt.
 //
-// NOTE: ctx is the lifetime of the sessions it starts, so it must outlive the
-// request that asked for them.
-func Attach(ctx context.Context, cfg *config.ConfigStore, names []string) {
+// NOTE: Attach never blocks. The caller decides how long to wait, so a server
+// that is slow or stuck cannot hold up a request. ctx is the lifetime of the
+// sessions it starts, so it must outlive the request that asked for them.
+func Attach(ctx context.Context, cfg *config.ConfigStore, names []string) <-chan struct{} {
+	attachMu.Lock()
 	current := cfg.Config().MCP
 	running := states.Copy()
 	wanted := make(config.MCPs, len(names))
@@ -144,7 +170,6 @@ func Attach(ctx context.Context, cfg *config.ConfigStore, names []string) {
 		}
 	}
 
-	var wg sync.WaitGroup
 	for name, action := range reconcile(wanted, runningWanted) {
 		switch action {
 		case reinitDisable:
@@ -154,11 +179,29 @@ func Attach(ctx context.Context, cfg *config.ConfigStore, names []string) {
 			slog.Info("Connecting MCP server", "name", name)
 			teardown(name)
 			updateState(name, StateStarting, nil, nil, Counts{}, withPending(m))
-			wg.Add(1)
-			goInitClient(ctx, cfg, name, m, &wg)
+			goInitClient(ctx, cfg, name, m, nil)
 		}
 	}
-	wg.Wait()
+	var pending []<-chan struct{}
+	for _, name := range names {
+		if done := attemptDone(name); done != nil {
+			pending = append(pending, done)
+		}
+	}
+	attachMu.Unlock()
+
+	settled := make(chan struct{})
+	go func() {
+		defer close(settled)
+		for _, done := range pending {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return settled
 }
 
 // reconcileOnce applies one reconciliation pass against the current config.

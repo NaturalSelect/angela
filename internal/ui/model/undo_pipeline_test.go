@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/undo"
@@ -131,4 +132,31 @@ func TestUndoConfirmDialogRestoresPoppedTextAheadOfDraft(t *testing.T) {
 	m.Update(cmd())
 
 	require.Equal(t, "restore me\n\nhalf-typed draft", m.textarea.Value())
+}
+
+// TestUndoResultRestoresPoppedAttachmentsAheadOfDraft checks that the files
+// and images of the undone message return to the editor, ahead of any
+// attachment already on the draft.
+func TestUndoResultRestoresPoppedAttachmentsAheadOfDraft(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return((*config.Config)(nil)).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+
+	m := newBusyUIWithWorkspace(ws)
+	m.attachments.Update(message.Attachment{FileName: "draft.txt"})
+
+	m.Update(undoResultMsg{result: undo.Result{
+		PoppedText: "restore me",
+		PoppedAttachments: []message.Attachment{
+			{FileName: "a.png", MimeType: "image/png"},
+			{FileName: "b.txt", MimeType: "text/plain"},
+		},
+	}})
+
+	var names []string
+	for _, a := range m.attachments.List() {
+		names = append(names, a.FileName)
+	}
+	require.Equal(t, []string{"a.png", "b.txt", "draft.txt"}, names)
 }

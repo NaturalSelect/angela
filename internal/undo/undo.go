@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -67,11 +68,15 @@ type Preview struct {
 
 // Result is what undoing a session's last turn actually did.
 type Result struct {
-	PoppedText   string        `json:"popped_text"`
-	Reverted     []string      `json:"reverted"`
-	Deleted      []string      `json:"deleted"`
-	Skipped      []SkippedFile `json:"skipped"`
-	MessageCount int           `json:"message_count"`
+	PoppedText string `json:"popped_text"`
+	// PoppedAttachments are the files and images the removed user
+	// messages carried, in message order, so they can be attached to
+	// the next prompt along with PoppedText.
+	PoppedAttachments []message.Attachment `json:"popped_attachments"`
+	Reverted          []string             `json:"reverted"`
+	Deleted           []string             `json:"deleted"`
+	Skipped           []SkippedFile        `json:"skipped"`
+	MessageCount      int                  `json:"message_count"`
 }
 
 // Service rolls back the last turn of a session: the files its tools
@@ -267,7 +272,7 @@ func (s *service) Undo(ctx context.Context, sessionID, cutMessageID string) (Res
 		return Result{}, ErrStale
 	}
 
-	result := Result{PoppedText: p.poppedText}
+	result := Result{PoppedText: p.poppedText, PoppedAttachments: p.poppedAttachments}
 
 	// Files first, messages last: if a message delete were to fail
 	// after files had already been reverted, the user still gets
@@ -364,6 +369,7 @@ func (s *service) resolve(ctx context.Context, sessionID string) (turnPlan, []re
 type turnPlan struct {
 	cutMessageID      string
 	poppedText        string
+	poppedAttachments []message.Attachment
 	messageCount      int
 	deletedMessageIDs map[string]bool
 	childSessions     []string
@@ -397,10 +403,18 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 	toDelete := msgs[cut:]
 	deletedIDs := make(map[string]bool, len(toDelete))
 	var poppedTexts []string
+	var poppedAttachments []message.Attachment
 	for _, m := range toDelete {
 		deletedIDs[m.ID] = true
 		if m.Role == message.User && !m.IsReminder() {
 			poppedTexts = append(poppedTexts, m.Content().Text)
+			for _, bc := range m.BinaryContent() {
+				att := message.Attachment{FilePath: bc.Path, MimeType: bc.MIMEType, Content: bc.Data}
+				if bc.Path != "" {
+					att.FileName = filepath.Base(bc.Path)
+				}
+				poppedAttachments = append(poppedAttachments, att)
+			}
 		}
 	}
 
@@ -412,6 +426,7 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 	return turnPlan{
 		cutMessageID:      msgs[cut].ID,
 		poppedText:        strings.Join(poppedTexts, "\n\n"),
+		poppedAttachments: poppedAttachments,
 		messageCount:      len(toDelete),
 		deletedMessageIDs: deletedIDs,
 		childSessions:     walk.childSessions,

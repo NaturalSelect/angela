@@ -367,6 +367,37 @@ func TestUndoStopsAtABranchStartingPoint(t *testing.T) {
 	require.ErrorIs(t, err, ErrNothingToUndo)
 }
 
+// The files and images a popped user message carried must come back
+// with its text, or undoing a turn silently drops them.
+func TestUndoPopsAttachmentsWithTheText(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := t.Context()
+	sessionID := f.newSession(t)
+
+	f.userMessage(t, sessionID, "first turn")
+	_, err := f.messages.Create(ctx, sessionID, message.CreateMessageParams{
+		Role: message.User,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "look at these"},
+			message.BinaryContent{Path: "/work/notes.txt", MIMEType: "text/plain", Data: []byte("notes")},
+			message.BinaryContent{Path: "paste_1.png", MIMEType: "image/png", Data: []byte{0x89, 0x50}},
+		},
+	})
+	require.NoError(t, err)
+
+	preview, err := f.svc.Preview(ctx, sessionID)
+	require.NoError(t, err)
+
+	result, err := f.svc.Undo(ctx, sessionID, preview.CutMessageID)
+	require.NoError(t, err)
+	require.Equal(t, "first turn\n\nlook at these", result.PoppedText)
+	require.Equal(t, []message.Attachment{
+		{FilePath: "/work/notes.txt", FileName: "notes.txt", MimeType: "text/plain", Content: []byte("notes")},
+		{FilePath: "paste_1.png", FileName: "paste_1.png", MimeType: "image/png", Content: []byte{0x89, 0x50}},
+	}, result.PoppedAttachments)
+}
+
 func TestUndoRevertsTheLastTurnAndPopsItsText(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

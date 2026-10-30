@@ -881,6 +881,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	case undoResultMsg:
+		m.prependAttachments(msg.result.PoppedAttachments)
 		if msg.result.PoppedText != "" {
 			if cmd := m.prependToEditor(msg.result.PoppedText); cmd != nil {
 				cmds = append(cmds, cmd)
@@ -5513,16 +5514,7 @@ func (m *UI) restoreQueuedPrompts(items []message.QueuedPrompt) tea.Cmd {
 		texts[i] = qp.Prompt
 		atts = append(atts, qp.Attachments...)
 	}
-	if len(atts) > 0 {
-		draft := m.attachments.List()
-		m.attachments.Reset()
-		for _, a := range atts {
-			m.attachments.Update(a)
-		}
-		for _, a := range draft {
-			m.attachments.Update(a)
-		}
-	}
+	m.prependAttachments(atts)
 
 	return m.prependToEditor(strings.Join(texts, "\n\n"))
 }
@@ -5599,6 +5591,22 @@ func (m *UI) restoreStashedPrompts(sessionID string) tea.Cmd {
 	}
 	delete(m.stashedPrompts, sessionID)
 	return m.restoreQueuedPrompts(prompts)
+}
+
+// prependAttachments places atts ahead of the attachments already on the
+// draft, mirroring how prependToEditor treats text.
+func (m *UI) prependAttachments(atts []message.Attachment) {
+	if len(atts) == 0 {
+		return
+	}
+	draft := m.attachments.List()
+	m.attachments.Reset()
+	for _, a := range atts {
+		m.attachments.Update(a)
+	}
+	for _, a := range draft {
+		m.attachments.Update(a)
+	}
 }
 
 // prependToEditor places text ahead of whatever draft is being composed,

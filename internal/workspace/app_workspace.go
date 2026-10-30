@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -35,6 +36,8 @@ type AppWorkspace struct {
 	app      *app.App
 	store    *config.ConfigStore
 	inDocker bool
+
+	attachMCPMu sync.Mutex
 }
 
 // NewAppWorkspace creates a new AppWorkspace wrapping the given app
@@ -695,7 +698,13 @@ func (w *AppWorkspace) Events(ctx context.Context) <-chan pubsub.Event[tea.Msg] 
 // A name an earlier session registered keeps its running server when a later
 // session passes a different config for it. Replacing it would close the
 // connection the earlier session is using.
+//
+// NOTE: Concurrent calls run one at a time up to the point where the servers
+// are starting, so a later call sees the pending config of an earlier one.
 func (w *AppWorkspace) AttachMCP(ctx context.Context, servers map[string]config.MCPConfig) <-chan struct{} {
+	w.attachMCPMu.Lock()
+	defer w.attachMCPMu.Unlock()
+
 	usable := make(map[string]config.MCPConfig, len(servers))
 	for name, m := range servers {
 		if w.store.IsRuntimeMCP(name) && mcptools.RunningWithDifferentConfig(name, m) {

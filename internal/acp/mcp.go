@@ -6,6 +6,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/acp/protocol"
@@ -26,7 +27,7 @@ func mcpConfigs(servers []protocol.MCPServer) map[string]config.MCPConfig {
 	origin := make(map[string]string, len(servers))
 	for _, s := range servers {
 		name := invalidMCPNameChars.ReplaceAllString(s.Name, "-")
-		if name == "" {
+		if strings.Trim(name, "-") == "" {
 			slog.Warn("Editor MCP server ignored: its name has no usable characters", "name", s.Name)
 			continue
 		}

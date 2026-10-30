@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -107,4 +109,75 @@ func TestAppWorkspace_AttachMCP_SameConfigAgainIsHarmless(t *testing.T) {
 
 	require.Equal(t, mcptools.StateConnected, after.State)
 	require.True(t, after.ConnectedAt.Equal(before.ConnectedAt), "the connection was not restarted")
+}
+
+// countingMCPServer is httpMCPServer that also counts the requests it gets.
+func countingMCPServer(t *testing.T, hits *atomic.Int64) *httptest.Server {
+	t.Helper()
+	server := mcp.NewServer(&mcp.Implementation{Name: "editor-srv"}, nil)
+	mcp.AddTool(
+		server,
+		&mcp.Tool{Name: "ping", Description: "test tool"},
+		func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "pong"}}}, nil, nil
+		},
+	)
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// NOTE: Sessions that disagree about one server's config, arriving together,
+// must not each register their own. Only the first may start, or the second
+// restart would close the connection the first session is waiting on.
+func TestAppWorkspace_AttachMCP_ConcurrentConfigsStartOneServer(t *testing.T) {
+	const (
+		name     = "editor-racing"
+		sessions = 6
+	)
+	store := newTestConfigStore(t)
+	ws := NewAppWorkspace(nil, store)
+	t.Cleanup(func() { _ = mcptools.DisableSingle(store, name) })
+
+	hits := make([]atomic.Int64, sessions)
+	urls := make([]string, sessions)
+	for i := range sessions {
+		urls[i] = countingMCPServer(t, &hits[i]).URL
+	}
+
+	start := make(chan struct{})
+	settled := make([]<-chan struct{}, sessions)
+	var wg sync.WaitGroup
+	for i := range sessions {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			settled[i] = ws.AttachMCP(t.Context(), map[string]config.MCPConfig{
+				name: {Type: config.MCPHttp, URL: urls[i]},
+			})
+		}()
+	}
+	close(start)
+	wg.Wait()
+	for _, ch := range settled {
+		requireSettled(t, ch)
+	}
+
+	info, ok := mcptools.GetState(name)
+	require.True(t, ok)
+	require.Equal(t, mcptools.StateConnected, info.State, "error: %v", info.Error)
+	require.Equal(t, info.Config.URL, store.Config().MCP[name].URL, "the store and the running server agree")
+
+	contacted := 0
+	for i := range hits {
+		if hits[i].Load() > 0 {
+			contacted++
+		}
+	}
+	require.Equal(t, 1, contacted, "only one of the competing servers may be started")
 }

@@ -80,6 +80,19 @@ func TestMCPConfigs(t *testing.T) {
 		require.Equal(t, "first", got["my-server"].Command)
 	})
 
+	t.Run("a name with no letter or digit left is dropped", func(t *testing.T) {
+		t.Parallel()
+		got := mcpConfigs([]protocol.MCPServer{
+			{Name: "日本語", Transport: protocol.MCPTransportStdio, Command: "first"},
+			{Name: "한국어", Transport: protocol.MCPTransportStdio, Command: "second"},
+			{Name: "___", Transport: protocol.MCPTransportStdio, Command: "third"},
+			{Name: "-", Transport: protocol.MCPTransportStdio, Command: "fourth"},
+			{Name: "ok", Transport: protocol.MCPTransportStdio, Command: "run"},
+		})
+		require.Len(t, got, 1)
+		require.Contains(t, got, "ok")
+	})
+
 	t.Run("an unknown transport is dropped", func(t *testing.T) {
 		t.Parallel()
 		got := mcpConfigs([]protocol.MCPServer{

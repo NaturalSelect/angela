@@ -909,6 +909,8 @@ func TestPrettifyToolName(t *testing.T) {
 		{toolnames.Todos, "To-Do"},
 		{toolnames.Read, toolnames.Read},
 		{toolnames.Write, toolnames.Write},
+		{toolnames.ProposalRead, toolnames.ProposalRead},
+		{toolnames.LoadReport, toolnames.LoadReport},
 		{"custom_tool_name", "Custom Tool Name"},
 	}
 	for _, tt := range tests {

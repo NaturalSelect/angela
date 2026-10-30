@@ -588,7 +588,13 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 		return nil, context.Canceled
 	}
 
-	listTimeout := mcpTimeout(ctx, m)
+	// NOTE: Only editor-supplied servers get a bound on listing. The timeout
+	// of a config-file server is documented as a connection timeout, and a
+	// server that is slow to list must not start failing because of it.
+	var listTimeout time.Duration
+	if cfg.IsRuntimeMCP(name) {
+		listTimeout = mcpTimeout(ctx, m)
+	}
 	toolList, err := listBounded(ctx, listTimeout, "tools", func(c context.Context) ([]*Tool, error) {
 		return getTools(c, session)
 	})
@@ -631,12 +637,16 @@ func connectAndRegister(ctx context.Context, cfg *config.ConfigStore, name strin
 	return session, nil
 }
 
-// listBounded runs list with ctx limited to timeout.
+// listBounded runs list with ctx limited to timeout. A timeout of zero or
+// less leaves ctx as the only bound.
 //
 // NOTE: The connect step has its own timeout, but a server that answers
 // initialize and then never answers a list call would otherwise hold the
 // attempt, and everything waiting on it, until ctx ends.
 func listBounded[T any](ctx context.Context, timeout time.Duration, what string, list func(context.Context) (T, error)) (T, error) {
+	if timeout <= 0 {
+		return list(ctx)
+	}
 	lctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	v, err := list(lctx)

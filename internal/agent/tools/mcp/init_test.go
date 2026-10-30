@@ -984,6 +984,70 @@ func TestConnectAndRegister_RemovedWhileListing(t *testing.T) {
 	}
 }
 
+// TestConnectAndRegister_ListTimeoutAppliesToEditorServersOnly holds
+// tools/list past the server's timeout. A config-file server documents that
+// timeout as a connection timeout, so it must still connect; only a server an
+// editor passed is cut off.
+func TestConnectAndRegister_ListTimeoutAppliesToEditorServersOnly(t *testing.T) {
+	tests := []struct {
+		name    string
+		runtime bool
+	}{
+		{"config file server waits for a slow list", false},
+		{"editor server is cut off", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			const name = "test-connect-list-timeout"
+			cleanupServerGlobals(t, name)
+
+			m := config.MCPConfig{Type: config.MCPStdio, Timeout: 1}
+			cfg := config.NewTestStore(&config.Config{MCP: config.MCPs{}})
+			if tc.runtime {
+				cfg.AddRuntimeMCP(map[string]config.MCPConfig{name: m})
+			} else {
+				cfg = config.NewTestStore(&config.Config{MCP: config.MCPs{name: m}})
+			}
+
+			listing, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			sess := liveSessionIntercept(t, "send_message", "a_prompt", "res://thing",
+				func(ctx context.Context, method string) error {
+					if method != "tools/list" {
+						return nil
+					}
+					once.Do(func() { close(listing) })
+					select {
+					case <-release:
+					case <-ctx.Done():
+					}
+					return nil
+				})
+			stubNewSession(t, func() (*ClientSession, error) { return sess, nil })
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := connectAndRegister(t.Context(), cfg, name, m, currentGen(name), cfg.Resolver(), false)
+				done <- err
+			}()
+
+			awaitSignal(t, listing)
+			time.Sleep(1500 * time.Millisecond)
+			close(release)
+			err := <-done
+
+			if tc.runtime {
+				require.ErrorContains(t, err, "listing tools timed out")
+				return
+			}
+			require.NoError(t, err)
+			tools, ok := allTools.Get(name)
+			require.True(t, ok)
+			require.Len(t, tools, 1)
+		})
+	}
+}
+
 // TestGetOrRenewClient_RemovedWhileListing is the renewal-side counterpart:
 // the rebuilt session lists tools, prompts, and resources while the server is
 // removed, and none of those replies may reach the registries.

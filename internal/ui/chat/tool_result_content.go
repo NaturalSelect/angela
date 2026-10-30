@@ -16,30 +16,28 @@ type toolResultContentWidths struct {
 }
 
 func humanizedToolName(name string) string {
-	if isPascalCase(name) {
-		return name
+	if isMixedCase(name) {
+		runes := []rune(name)
+		runes[0] = unicode.ToUpper(runes[0])
+		return string(runes)
 	}
 	name = strings.ReplaceAll(name, "_", " ")
 	name = strings.ReplaceAll(name, "-", " ")
 	return stringext.Capitalize(name)
 }
 
-// NOTE: Title-casing would flatten ProposalRead to Proposalread.
-func isPascalCase(name string) bool {
+// NOTE: Title-casing would flatten ProposalRead and getUser.
+func isMixedCase(name string) bool {
 	if name == "" || strings.ContainsAny(name, "_- ") {
 		return false
 	}
-	runes := []rune(name)
-	if !unicode.IsUpper(runes[0]) {
-		return false
-	}
 	var hasLower, hasInnerUpper bool
-	for _, r := range runes[1:] {
+	for i, r := range []rune(name) {
 		switch {
-		case unicode.IsUpper(r):
-			hasInnerUpper = true
 		case unicode.IsLower(r):
 			hasLower = true
+		case i > 0 && unicode.IsUpper(r):
+			hasInnerUpper = true
 		}
 	}
 	return hasLower && hasInnerUpper

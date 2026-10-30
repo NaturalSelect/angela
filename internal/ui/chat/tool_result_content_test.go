@@ -20,6 +20,12 @@ func TestHumanizedToolName(t *testing.T) {
 		{name: "mixed", input: "job_output-tool", want: "Job Output Tool"},
 		{name: "pascal case", input: "ProposalRead", want: "ProposalRead"},
 		{name: "leading acronym", input: "LSPRename", want: "LSPRename"},
+		{name: "camel case", input: "getUser", want: "GetUser"},
+		{name: "camel case with two words after the first", input: "createIssueComment", want: "CreateIssueComment"},
+		{name: "camel case with trailing acronym", input: "getURL", want: "GetURL"},
+		{name: "camel case matches its pascal case twin", input: "proposalRead", want: "ProposalRead"},
+		{name: "camel case with leading letter", input: "oAuth", want: "OAuth"},
+		{name: "camel case with one lowercase letter", input: "xAPI", want: "XAPI"},
 		{name: "single word", input: "merge", want: "Merge"},
 		{name: "all caps", input: "GITHUB", want: "Github"},
 	}

@@ -18,6 +18,10 @@ func TestHumanizedToolName(t *testing.T) {
 		{name: "snake case", input: "mcp_github_get", want: "Mcp Github Get"},
 		{name: "kebab case", input: "web-fetch", want: "Web Fetch"},
 		{name: "mixed", input: "job_output-tool", want: "Job Output Tool"},
+		{name: "pascal case", input: "ProposalRead", want: "ProposalRead"},
+		{name: "leading acronym", input: "LSPRename", want: "LSPRename"},
+		{name: "single word", input: "merge", want: "Merge"},
+		{name: "all caps", input: "GITHUB", want: "Github"},
 	}
 
 	for _, tt := range tests {

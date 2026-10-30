@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"strings"
+	"unicode"
 
 	"github.com/NaturalSelect/angela/internal/diffdetect"
 	"github.com/NaturalSelect/angela/internal/stringext"
@@ -15,9 +16,33 @@ type toolResultContentWidths struct {
 }
 
 func humanizedToolName(name string) string {
+	if isPascalCase(name) {
+		return name
+	}
 	name = strings.ReplaceAll(name, "_", " ")
 	name = strings.ReplaceAll(name, "-", " ")
 	return stringext.Capitalize(name)
+}
+
+// NOTE: Title-casing would flatten ProposalRead to Proposalread.
+func isPascalCase(name string) bool {
+	if name == "" || strings.ContainsAny(name, "_- ") {
+		return false
+	}
+	runes := []rune(name)
+	if !unicode.IsUpper(runes[0]) {
+		return false
+	}
+	var hasLower, hasInnerUpper bool
+	for _, r := range runes[1:] {
+		switch {
+		case unicode.IsUpper(r):
+			hasInnerUpper = true
+		case unicode.IsLower(r):
+			hasLower = true
+		}
+	}
+	return hasLower && hasInnerUpper
 }
 
 func looksLikeMarkdown(content string) bool {

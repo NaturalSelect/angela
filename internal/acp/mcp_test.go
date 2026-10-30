@@ -9,6 +9,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/acp/protocol"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
 )
 
@@ -164,6 +165,69 @@ func TestEditorMCPServersAreAttached(t *testing.T) {
 		}
 		require.Empty(t, attached(h), "servers must not start for a request that is then refused")
 	})
+}
+
+func TestResumeSessionPromptDuringMCPWait(t *testing.T) {
+	t.Parallel()
+
+	servers := []protocol.MCPServer{
+		{Name: "docs", Transport: protocol.MCPTransportHTTP, URL: "https://example.com/mcp"},
+	}
+	h := newHarness(t)
+	id := h.newSession(t)
+	h.ws.attachSettled = make(chan struct{})
+	h.agent.mcpWait = time.Minute
+
+	started := make(chan struct{})
+	gate := make(chan struct{})
+	reply := h.answerWith("done")
+	h.ws.run = func(ctx context.Context, sessionID, prompt string, atts []message.Attachment) error {
+		close(started)
+		<-gate
+		return reply(ctx, sessionID, prompt, atts)
+	}
+
+	resumed := make(chan error, 1)
+	go func() {
+		_, err := h.agent.ResumeSession(t.Context(), protocol.ResumeSessionRequest{SessionID: id, Cwd: testCwd, MCPServers: servers})
+		resumed <- err
+	}()
+	eventually(t, func() bool {
+		var n int
+		h.ws.snapshot(func() { n = len(h.ws.attached) })
+		return n == 1
+	})
+
+	// NOTE: The resume is now waiting on the servers. A prompt that starts
+	// here must end up on the session the resume leaves registered, or its
+	// completion event finds no one waiting for it.
+	prompt := h.promptAsync(t, id)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the prompt did not start while the servers were connecting")
+	}
+
+	close(h.ws.attachSettled)
+	select {
+	case err := <-resumed:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("resume did not return after the servers settled")
+	}
+	close(gate)
+
+	got := await(t, prompt)
+	require.NoError(t, got.err)
+	require.Equal(t, protocol.StopReasonEndTurn, got.resp.StopReason)
+
+	var sent int
+	for _, u := range h.client.updates(id) {
+		if u == answer("a1", "done") {
+			sent++
+		}
+	}
+	require.Equal(t, 1, sent, "the run's reply must reach the editor exactly once")
 }
 
 func TestAttachMCPWaitIsBounded(t *testing.T) {

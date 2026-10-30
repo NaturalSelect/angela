@@ -242,7 +242,6 @@ func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, serve
 	if ws.AgentIsSessionBusy(sess.ID) {
 		return nil, invalidParams("session %s is running", sess.ID)
 	}
-	a.attachMCP(ctx, ws, servers)
 
 	a.reg.remove(sess.ID)
 	msgs, err := ws.ListMessages(ctx, sess.ID)
@@ -273,6 +272,12 @@ func (a *Agent) restoreSession(ctx context.Context, sessionID, cwd string, serve
 
 	s := a.reg.addLoaded(sess.ID, sent, state)
 	openCommands(ctx, a.client, s, commandsOf(ctx, ws))
+
+	// NOTE: The wait comes last. Once the session is registered a prompt may
+	// start, so nothing that follows the busy check may block before the
+	// registry is rebuilt. Prompts of servers that connect later reach the
+	// editor through the command refresh.
+	a.attachMCP(ctx, ws, servers)
 	return a.configOptions(ctx, ws, sess.ID), nil
 }
 

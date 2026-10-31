@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
@@ -130,4 +131,23 @@ func (m *UI) handleRunMCPPrompt(msg dialog.ActionRunMCPPrompt) tea.Cmd {
 	}
 	cmds = append(cmds, m.runMCPPrompt(msg.ClientID, msg.PromptID, msg.Args))
 	return tea.Batch(cmds...)
+}
+
+// handleMCPEvent handles pubsub.Event[mcp.Event]. handled reports that
+// Update must return cmd right away instead of running its shared tail.
+func (m *UI) handleMCPEvent(msg pubsub.Event[mcp.Event]) (cmd tea.Cmd, handled bool) {
+	switch msg.Payload.Type {
+	case mcp.EventStateChanged:
+		return tea.Batch(
+			m.handleStateChanged(),
+			m.loadMCPrompts,
+		), true
+	case mcp.EventPromptsListChanged:
+		return handleMCPPromptsEvent(m.com.Workspace, msg.Payload.Name), true
+	case mcp.EventToolsListChanged:
+		return handleMCPToolsEvent(m.com.Workspace, msg.Payload.Name), true
+	case mcp.EventResourcesListChanged:
+		return handleMCPResourcesEvent(m.com.Workspace, msg.Payload.Name), true
+	}
+	return nil, false
 }

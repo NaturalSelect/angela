@@ -888,18 +888,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// only way here, and the command and skill lists are stale after it.
 		cmds = append(cmds, m.loadCustomCommands())
 	case pubsub.Event[mcp.Event]:
-		switch msg.Payload.Type {
-		case mcp.EventStateChanged:
-			return m, tea.Batch(
-				m.handleStateChanged(),
-				m.loadMCPrompts,
-			)
-		case mcp.EventPromptsListChanged:
-			return m, handleMCPPromptsEvent(m.com.Workspace, msg.Payload.Name)
-		case mcp.EventToolsListChanged:
-			return m, handleMCPToolsEvent(m.com.Workspace, msg.Payload.Name)
-		case mcp.EventResourcesListChanged:
-			return m, handleMCPResourcesEvent(m.com.Workspace, msg.Payload.Name)
+		if cmd, handled := m.handleMCPEvent(msg); handled {
+			return m, cmd
 		}
 	case pubsub.Event[permission.PermissionRequest]:
 		if cmd := m.queuePermissionRequest(msg.Payload); cmd != nil {

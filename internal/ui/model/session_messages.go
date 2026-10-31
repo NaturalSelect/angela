@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	xstrings "github.com/charmbracelet/x/exp/strings"
+
 	tea "charm.land/bubbletea/v2"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/message"
@@ -743,6 +745,26 @@ func (m *UI) handleMessageEvent(msg pubsub.Event[message.Message]) []tea.Cmd {
 	}
 	// Follow the turn: spin while the agent works, stop when it stops.
 	if cmd := m.syncTurnSpinner(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return cmds
+}
+
+// handleTerminalVersion handles tea.TerminalVersionMsg.
+func (m *UI) handleTerminalVersion(msg tea.TerminalVersionMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	termVersion := strings.ToLower(msg.Name)
+	// Only enable progress bar for the following terminals.
+	if !m.sendProgressBar {
+		m.sendProgressBar = xstrings.ContainsAnyOf(termVersion, "ghostty", "iterm2", "rio")
+	}
+	// XTVERSION can arrive after the Kitty graphics query reply,
+	// so re-evaluate placeholder support now that the terminal
+	// is identified.
+	if cmd := m.maybeReportImageSupport(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if cmd := m.applyImageCaps(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
 	return cmds

@@ -50,7 +50,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
-	xstrings "github.com/charmbracelet/x/exp/strings"
 )
 
 // Compact mode breakpoints.
@@ -932,37 +931,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case cancelTimerExpiredMsg:
 		m.isCanceling = false
 	case tea.TerminalVersionMsg:
-		termVersion := strings.ToLower(msg.Name)
-		// Only enable progress bar for the following terminals.
-		if !m.sendProgressBar {
-			m.sendProgressBar = xstrings.ContainsAnyOf(termVersion, "ghostty", "iterm2", "rio")
-		}
-		// XTVERSION can arrive after the Kitty graphics query reply,
-		// so re-evaluate placeholder support now that the terminal
-		// is identified.
-		if cmd := m.maybeReportImageSupport(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if cmd := m.applyImageCaps(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+		cmds = append(cmds, m.handleTerminalVersion(msg)...)
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		// Suppress the chat's full-height scan during the resize so a drag
-		// only reflows visible items; it settles (and recomputes) shortly
-		// after the last resize event.
-		if m.state == uiChat {
-			cmds = append(cmds, m.chat.BeginResize())
-		}
-		m.updateLayoutAndSize()
-		if m.state == uiChat && m.chat.Follow() {
-			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		if cmd := m.applyImageCaps(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+		cmds = append(cmds, m.handleWindowSize(msg)...)
 	case tea.KeyboardEnhancementsMsg:
 		m.keyenh = msg
 		if msg.SupportsKeyDisambiguation() {

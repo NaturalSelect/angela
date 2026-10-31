@@ -278,3 +278,16 @@ func (q *Queries) ListNewFiles(ctx context.Context) ([]File, error) {
 	}
 	return items, nil
 }
+
+const maxFileVersionByPath = `-- name: MaxFileVersionByPath :one
+SELECT CAST(COALESCE(MAX(version), -1) AS INTEGER) AS max_version
+FROM files
+WHERE path = ?
+`
+
+func (q *Queries) MaxFileVersionByPath(ctx context.Context, path string) (int64, error) {
+	row := q.queryRow(ctx, q.maxFileVersionByPathStmt, maxFileVersionByPath, path)
+	var max_version int64
+	err := row.Scan(&max_version)
+	return max_version, err
+}

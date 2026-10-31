@@ -79,6 +79,26 @@ func TestService_CreateVersion_IncrementsVersion(t *testing.T) {
 	require.Equal(t, "v1", f2.Content)
 }
 
+func TestService_CreateVersion_IncrementsAcrossSessions(t *testing.T) {
+	t.Parallel()
+	env := setupTest(t)
+	env.createSession(t, "session-1")
+	env.createSession(t, "session-2")
+
+	_, err := env.svc.CreateVersion(env.ctx, "session-1", "/a/b.go", "v0")
+	require.NoError(t, err)
+	_, err = env.svc.CreateVersion(env.ctx, "session-1", "/a/b.go", "v1")
+	require.NoError(t, err)
+
+	f, err := env.svc.CreateVersion(env.ctx, "session-2", "/a/b.go", "v2")
+	require.NoError(t, err)
+	require.Equal(t, int64(InitialVersion+2), f.Version)
+
+	other, err := env.svc.CreateVersion(env.ctx, "session-2", "/other.go", "x")
+	require.NoError(t, err)
+	require.Equal(t, int64(InitialVersion), other.Version)
+}
+
 func TestService_Get(t *testing.T) {
 	t.Parallel()
 	env := setupTest(t)

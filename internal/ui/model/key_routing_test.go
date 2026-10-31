@@ -221,7 +221,9 @@ func TestHandleKeyPressMsg_GlobalSessions(t *testing.T) {
 
 	m, _ := newKeyRoutingUI(t)
 
-	m.handleKeyPressMsg(ctrlKey('s'))
+	cmd := m.handleKeyPressMsg(ctrlKey('s'))
+	require.NotNil(t, cmd)
+	m.Update(cmd())
 
 	require.True(t, m.dialog.ContainsDialog(dialog.SessionsID))
 }

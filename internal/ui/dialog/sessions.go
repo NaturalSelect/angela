@@ -59,8 +59,10 @@ type Session struct {
 
 var _ Dialog = (*Session)(nil)
 
-// NewSessions creates a new Session dialog.
-func NewSessions(com *common.Common, selectedSessionID string) (*Session, error) {
+// NewSessions creates a new Session dialog listing sessions, opened on the
+// one matching selectedSessionID. The caller reads the list so that
+// construction never touches the database.
+func NewSessions(com *common.Common, selectedSessionID string, sessions []session.Session) *Session {
 	s := new(Session)
 	s.sessionsMode = sessionsModeNormal
 	s.com = com
@@ -69,11 +71,6 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 		MaxWidth:  defaultDialogMaxWidth,
 		MaxHeight: defaultDialogHeight,
 	})
-	sessions, err := com.Workspace.ListSessions(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
 	s.sessions = sessions
 	for i, sess := range sessions {
 		if sess.ID == selectedSessionID {
@@ -138,7 +135,7 @@ func NewSessions(com *common.Common, selectedSessionID string) (*Session, error)
 	)
 	s.keyMap.Close = CloseKey
 
-	return s, nil
+	return s
 }
 
 // ID implements Dialog.

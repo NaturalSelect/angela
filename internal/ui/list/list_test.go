@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -786,7 +787,7 @@ func TestList_Prewarm(t *testing.T) {
 	l.SetSize(40, 3)
 
 	// Warm the first three items; only those render.
-	next := l.Prewarm(0, 3)
+	next := l.Prewarm(0, 3, 0)
 	require.Equal(t, 3, next)
 	for i := 0; i < 3; i++ {
 		require.Equal(t, 1, tracked[i].renderHits, "warmed item %d", i)
@@ -796,7 +797,7 @@ func TestList_Prewarm(t *testing.T) {
 	}
 
 	// Warm the rest, then TotalHeight must not render anything again.
-	l.Prewarm(next, 3)
+	l.Prewarm(next, 3, 0)
 	before := totalRenderHits(tracked)
 	_ = l.TotalHeight()
 	require.Equal(t, before, totalRenderHits(tracked), "TotalHeight re-rendered after full warm")
@@ -805,6 +806,67 @@ func TestList_Prewarm(t *testing.T) {
 	l.SetSize(40, 3)
 	_ = l.TotalHeight()
 	require.Equal(t, before, totalRenderHits(tracked), "same-width SetSize dropped the warmed cache")
+}
+
+// slowItem burns a fixed amount of time per Render so a time budget can be
+// exercised without depending on how fast the machine renders.
+type slowItem struct {
+	*trackedItem
+	delay time.Duration
+}
+
+func (s *slowItem) Render(width int) string {
+	time.Sleep(s.delay)
+	return s.trackedItem.Render(width)
+}
+
+// TestList_PrewarmBudget covers the time budget: a step stops once the
+// budget is spent, always renders at least one item so warming makes
+// progress, and a zero budget keeps the old fixed-batch behavior.
+func TestList_PrewarmBudget(t *testing.T) {
+	t.Parallel()
+
+	newSlowList := func(n int, delay time.Duration) (*List, []*trackedItem) {
+		items := make([]Item, n)
+		tracked := make([]*trackedItem, n)
+		for i := range items {
+			tracked[i] = newTrackedItem(strconv.Itoa(i), "body", true)
+			items[i] = &slowItem{trackedItem: tracked[i], delay: delay}
+		}
+		l := NewList(items...)
+		l.SetSize(40, 3)
+		return l, tracked
+	}
+
+	t.Run("stops early once the budget is spent", func(t *testing.T) {
+		t.Parallel()
+		l, tracked := newSlowList(10, 20*time.Millisecond)
+
+		next := l.Prewarm(0, 10, 30*time.Millisecond)
+
+		require.Less(t, next, 10, "a spent budget must end the step before the batch does")
+		require.Greater(t, next, 0)
+		require.Equal(t, 0, tracked[next].renderHits, "items past the returned index must be untouched")
+	})
+
+	t.Run("an item slower than the budget still makes progress", func(t *testing.T) {
+		t.Parallel()
+		l, _ := newSlowList(3, 20*time.Millisecond)
+
+		next := l.Prewarm(0, 3, time.Nanosecond)
+
+		require.Equal(t, 1, next, "exactly one item must render when the budget is already spent")
+	})
+
+	t.Run("zero budget renders the whole batch", func(t *testing.T) {
+		t.Parallel()
+		l, tracked := newSlowList(4, time.Millisecond)
+
+		next := l.Prewarm(0, 4, 0)
+
+		require.Equal(t, 4, next)
+		require.Equal(t, 4, totalRenderHits(tracked))
+	})
 }
 
 // TestList_Overflows covers the cheap bounded overflow check: it stops

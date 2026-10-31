@@ -827,6 +827,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.applySessionItems(msg.items); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+		// NOTE: Without this the first scroll computes the total height of
+		// the whole transcript in one blocking pass to size the scrollbar.
+		cmds = append(cmds, m.chat.BeginWarm())
 	case undoPreviewMsg:
 		// Drop a preview for a session the user has already navigated
 		// away from while the fetch was in flight.
@@ -848,6 +851,13 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewReports(m.com, msg.reports, msg.workingDir))
+	case sessionsListedMsg:
+		// A second request may have opened the dialog while this one was
+		// in flight.
+		if m.dialog.ContainsDialog(dialog.SessionsID) {
+			break
+		}
+		m.dialog.OpenDialog(dialog.NewSessions(m.com, m.currentSessionID(), msg.sessions))
 	case subSessionsLoadedMsg:
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight, and one that arrives
@@ -1007,6 +1017,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// answer would gate the new transcript's animations.
 			m.sessionBusyCache = ttlCache[bool]{}
 			m.backgroundAgentsCache = ttlCache[int]{}
+			// NOTE: The previous transcript would otherwise stay on screen,
+			// and be laid out at the new size, until the new one arrives.
+			m.chat.ClearMessages()
 		}
 		m.invalidatePromptQueue()
 		m.promptQueue = 0
@@ -5835,9 +5848,15 @@ func (m *UI) openNotificationsDialog() tea.Cmd {
 	return nil
 }
 
+// sessionsListedMsg carries the session list read off the Update goroutine,
+// so the sessions dialog can be opened once it arrives.
+type sessionsListedMsg struct {
+	sessions []session.Session
+}
+
 // openSessionsDialog opens the sessions dialog. If the dialog is already open,
-// it brings it to the front. Otherwise, it will list all the sessions and open
-// the dialog.
+// it brings it to the front. Otherwise, it lists all the sessions off the
+// Update goroutine and opens the dialog once they arrive.
 func (m *UI) openSessionsDialog() tea.Cmd {
 	if m.dialog.ContainsDialog(dialog.SessionsID) {
 		// Bring to front
@@ -5845,18 +5864,14 @@ func (m *UI) openSessionsDialog() tea.Cmd {
 		return nil
 	}
 
-	selectedSessionID := ""
-	if m.session != nil {
-		selectedSessionID = m.session.ID
+	ws := m.com.Workspace
+	return func() tea.Msg {
+		sessions, err := ws.ListSessions(context.Background())
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		return sessionsListedMsg{sessions: sessions}
 	}
-
-	dialog, err := dialog.NewSessions(m.com, selectedSessionID)
-	if err != nil {
-		return util.ReportError(err)
-	}
-
-	m.dialog.OpenDialog(dialog)
-	return nil
 }
 
 // openSubSessionsDialog opens the picker for the sub-sessions of the session

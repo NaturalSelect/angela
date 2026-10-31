@@ -110,7 +110,12 @@ func TestOpenDialog_RoutesEveryKnownID(t *testing.T) {
 		dialog.SandboxID,
 		dialog.MCPServersID,
 	} {
-		m.openDialog(id)
+		cmd := m.openDialog(id)
+		if id == dialog.SessionsID {
+			// The session list is read off the Update goroutine.
+			require.NotNil(t, cmd)
+			m.Update(cmd())
+		}
 		require.True(t, m.dialog.ContainsDialog(id), "openDialog must route %q to its own dialog", id)
 	}
 }
@@ -405,9 +410,27 @@ func TestOpenSessionsDialog_OpensWithListedSessions(t *testing.T) {
 
 	m := newDialogUI(t, ws)
 
-	cmd := m.openSessionsDialog()
-	require.Nil(t, cmd)
+	openSessions(t, m)
 	require.True(t, m.dialog.ContainsDialog(dialog.SessionsID))
+}
+
+func TestOpenSessionsDialog_SecondListingDoesNotDuplicate(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().ListSessions(gomock.Any()).Return([]session.Session{{ID: "s1"}}, nil).Times(2)
+
+	m := newDialogUI(t, ws)
+
+	first := m.openSessionsDialog()
+	second := m.openSessionsDialog()
+	m.Update(first())
+	m.Update(second())
+
+	m.dialog.CloseDialog(dialog.SessionsID)
+	require.False(t, m.dialog.ContainsDialog(dialog.SessionsID),
+		"a listing that lands after the dialog opened must not open a second one")
 }
 
 func TestOpenSessionsDialog_ReportsListError(t *testing.T) {

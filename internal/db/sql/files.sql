@@ -22,6 +22,11 @@ FROM files
 WHERE path = ?
 ORDER BY version DESC, created_at DESC;
 
+-- name: MaxFileVersionByPath :one
+SELECT CAST(COALESCE(MAX(version), -1) AS INTEGER) AS max_version
+FROM files
+WHERE path = ?;
+
 -- name: CreateFile :one
 INSERT INTO files (
     id,

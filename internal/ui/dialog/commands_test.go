@@ -631,6 +631,42 @@ func TestCommands_HandleMsg_DockerMCPAvailabilityChecked(t *testing.T) {
 		require.False(t, *c.dockerMCPAvailable)
 		require.Equal(t, UserCommands, c.selected, "a non-system view must not be reset")
 	})
+
+	t.Run("keeps what the user has typed", func(t *testing.T) {
+		t.Parallel()
+		c := newTestCommands(t, nil, "", false, nil, nil, nil)
+		for _, r := range "quit" {
+			c.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		require.Equal(t, []string{"quit"}, visibleCommandIDs(c))
+
+		c.HandleMsg(dockerMCPAvailabilityCheckedMsg{available: true})
+
+		require.Equal(t, "quit", c.input.Value())
+		require.Equal(t, []string{"quit"}, visibleCommandIDs(c))
+		selected, ok := c.list.SelectedItem().(*CommandItem)
+		require.True(t, ok)
+		require.Equal(t, "quit", selected.ID())
+	})
+}
+
+// TestCommands_Draw_WidthChangeKeepsTypedFilter verifies a resize while the
+// user is typing rebuilds the width-dependent items without discarding the
+// filter.
+func TestCommands_Draw_WidthChangeKeepsTypedFilter(t *testing.T) {
+	t.Parallel()
+
+	c := newTestCommands(t, nil, "", false, nil, nil, nil)
+	c.Draw(uv.NewScreenBuffer(60, 24), uv.Rect(0, 0, 60, 24))
+	for _, r := range "quit" {
+		c.HandleMsg(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	require.Equal(t, []string{"quit"}, visibleCommandIDs(c))
+
+	c.Draw(uv.NewScreenBuffer(100, 24), uv.Rect(0, 0, 100, 24))
+
+	require.Equal(t, "quit", c.input.Value())
+	require.Equal(t, []string{"quit"}, visibleCommandIDs(c))
 }
 
 // TestCommands_HandleMsg_SpinnerTick verifies the spinner only

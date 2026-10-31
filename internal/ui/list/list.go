@@ -2,6 +2,7 @@ package list
 
 import (
 	"strings"
+	"time"
 )
 
 // List represents a list of items that can be lazily rendered. A list is
@@ -197,13 +198,21 @@ func (l *List) TotalHeight() int {
 // a caller populate the per-item render cache incrementally across frames
 // so a later TotalHeight is instant instead of rendering everything at
 // once. Rendering is otherwise identical to what TotalHeight would do.
-func (l *List) Prewarm(from, batch int) int {
+//
+// A positive budget ends the step early once that much time has been
+// spent, so a run of heavy items cannot hold the caller for a whole batch.
+// At least one item is rendered per call, which guarantees progress.
+func (l *List) Prewarm(from, batch int, budget time.Duration) int {
 	if from < 0 {
 		from = 0
 	}
 	end := min(from+batch, len(l.items))
+	start := time.Now()
 	for idx := from; idx < end; idx++ {
 		l.renderItemEntry(idx)
+		if budget > 0 && time.Since(start) >= budget {
+			return idx + 1
+		}
 	}
 	return end
 }

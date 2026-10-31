@@ -14,6 +14,19 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// openSessions runs the session listing the way the Bubble Tea runtime
+// would: the opener's command reads the sessions, and its message is
+// delivered back to Update, which opens the dialog.
+func openSessions(t *testing.T, m *UI) {
+	t.Helper()
+
+	cmd := m.openSessionsDialog()
+	require.NotNil(t, cmd)
+	msg := cmd()
+	require.IsType(t, sessionsListedMsg{}, msg)
+	m.Update(msg)
+}
+
 // sessionsDlgThreeSessions opens the Sessions dialog on top of a
 // three-session workspace, with the currently active session ("s1")
 // as the first / already-selected item.
@@ -30,7 +43,7 @@ func sessionsDlgThreeSessions(t *testing.T) *UI {
 	}
 	ws.EXPECT().ListSessions(gomock.Any()).Return(sessions, nil)
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	return m
 }
 
@@ -64,8 +77,7 @@ func TestSessionsDialog_OpenEmptyListSucceedsAndSelectIsSafe(t *testing.T) {
 	m := newDialogUI(t, ws)
 	ws.EXPECT().ListSessions(gomock.Any()).Return(nil, nil)
 
-	cmd := m.openSessionsDialog()
-	require.Nil(t, cmd)
+	openSessions(t, m)
 	require.True(t, m.dialog.ContainsDialog(dialog.SessionsID))
 
 	require.NotPanics(t, func() {
@@ -84,7 +96,7 @@ func TestSessionsDialog_ReopenBringsToFrontNotDuplicated(t *testing.T) {
 	// ContainsDialog before ever calling ListSessions again.
 	ws.EXPECT().ListSessions(gomock.Any()).Return([]session.Session{{ID: "s1", Title: "One"}}, nil)
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	require.Nil(t, m.openSessionsDialog())
 	require.True(t, m.dialog.ContainsDialog(dialog.SessionsID))
 
@@ -109,7 +121,7 @@ func TestSessionsDialog_DeleteGatedWhenSessionBusy(t *testing.T) {
 	// Deliberately no DeleteSession expectation: gomock fails the test
 	// if the busy gate does not stop the delete.
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	action := m.dialog.Update(ctrlKey('x'))
 	ac, ok := action.(dialog.ActionCmd)
 	require.True(t, ok)
@@ -143,7 +155,7 @@ func TestSessionsDialog_DeleteNotBusyThenConfirmDeletesSession(t *testing.T) {
 			}
 			ws.EXPECT().DeleteSession(gomock.Any(), "s1").Return(nil)
 
-			require.Nil(t, m.openSessionsDialog())
+			openSessions(t, m)
 			require.Nil(t, m.dialog.Update(ctrlKey('x')), "entering delete-confirm mode returns no action")
 
 			action := m.dialog.Update(keyMsg("y"))
@@ -165,7 +177,7 @@ func TestSessionsDialog_DeleteConfirmWorkspaceErrorSurfaces(t *testing.T) {
 	boom := errors.New("delete failed: locked")
 	ws.EXPECT().DeleteSession(gomock.Any(), "s1").Return(boom)
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	m.dialog.Update(ctrlKey('x'))
 	action := m.dialog.Update(keyMsg("y"))
 	ac, ok := action.(dialog.ActionCmd)
@@ -197,7 +209,7 @@ func TestSessionsDialog_DeleteCancelReturnsToNormalModeAndSelectStillWorks(t *te
 			ws.EXPECT().AgentIsReady().Return(false)
 			// No DeleteSession expectation: cancelling must never call it.
 
-			require.Nil(t, m.openSessionsDialog())
+			openSessions(t, m)
 			m.dialog.Update(ctrlKey('x'))
 			require.Nil(t, m.dialog.Update(keyMsg(tt.cancelKey)))
 
@@ -223,7 +235,7 @@ func TestSessionsDialog_RenameEmptyTitleIsNoOp(t *testing.T) {
 	// No SaveSession expectation: the rename input starts empty, and
 	// confirming with nothing typed must be a silent no-op.
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	m.dialog.Update(ctrlKey('r'))
 	require.Nil(t, m.dialog.Update(keyMsg("enter")))
 }
@@ -237,7 +249,7 @@ func TestSessionsDialog_RenameWhitespaceOnlyIsNoOp(t *testing.T) {
 	ws.EXPECT().ListSessions(gomock.Any()).Return([]session.Session{{ID: "s1", Title: "One"}}, nil)
 	// No SaveSession expectation: TrimSpace must reduce this to empty.
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	m.dialog.Update(ctrlKey('r'))
 	m.dialog.Update(keyMsg("   "))
 	require.Nil(t, m.dialog.Update(keyMsg("enter")))
@@ -257,7 +269,7 @@ func TestSessionsDialog_RenameConfirmSavesTrimmedTitle(t *testing.T) {
 			return sess, nil
 		})
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	m.dialog.Update(ctrlKey('r'))
 	m.dialog.Update(keyMsg("  New Title  "))
 	action := m.dialog.Update(keyMsg("enter"))
@@ -276,7 +288,7 @@ func TestSessionsDialog_RenameConfirmWorkspaceErrorSurfaces(t *testing.T) {
 	boom := errors.New("rename failed: conflict")
 	ws.EXPECT().SaveSession(gomock.Any(), gomock.Any()).Return(session.Session{}, boom)
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	m.dialog.Update(ctrlKey('r'))
 	m.dialog.Update(keyMsg("Renamed"))
 	action := m.dialog.Update(keyMsg("enter"))
@@ -297,7 +309,7 @@ func TestSessionsDialog_RenameCancelDiscardsInput(t *testing.T) {
 	ws.EXPECT().ListSessions(gomock.Any()).Return([]session.Session{{ID: "s1", Title: "One"}}, nil)
 	// No SaveSession expectation: cancelling must never save.
 
-	require.Nil(t, m.openSessionsDialog())
+	openSessions(t, m)
 	m.dialog.Update(ctrlKey('r'))
 	m.dialog.Update(keyMsg("abc"))
 	require.Nil(t, m.dialog.Update(keyMsg("esc")))

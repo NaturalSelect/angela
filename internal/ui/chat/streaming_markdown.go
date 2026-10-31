@@ -71,6 +71,18 @@ func (s *streamingMarkdown) Reset() {
 // trailing render sequence so other goroutines cannot interleave
 // their own Render calls and corrupt goldmark's BlockStack.
 func (s *streamingMarkdown) Render(content string, width int, renderer *glamour.TermRenderer) string {
+	return s.render(content, width, renderer, true)
+}
+
+// RenderFinished is Render for content that will not grow, such as a
+// message loaded from history. It skips seeding the stable-prefix cache,
+// which costs a second glamour render that only pays off when more
+// content is appended later.
+func (s *streamingMarkdown) RenderFinished(content string, width int, renderer *glamour.TermRenderer) string {
+	return s.render(content, width, renderer, false)
+}
+
+func (s *streamingMarkdown) render(content string, width int, renderer *glamour.TermRenderer, seed bool) string {
 	mu := common.LockMarkdownRenderer(renderer)
 	mu.Lock()
 	defer mu.Unlock()
@@ -89,7 +101,9 @@ func (s *streamingMarkdown) Render(content string, width int, renderer *glamour.
 		s.Reset()
 		s.width = width
 		out := full()
-		s.tryAdvanceFromEmpty(content, width, renderer)
+		if seed {
+			s.tryAdvanceFromEmpty(content, width, renderer)
+		}
 		return out
 	}
 

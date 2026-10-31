@@ -62,7 +62,7 @@ func TestCallerCancellationDoesNotBreakLaterTurns(t *testing.T) {
 	agentCfg := cfg.Config().Agents[config.AgentCoder]
 
 	ctx, cancel := context.WithCancel(context.Background())
-	coord.currentAgent = coord.buildAgent(agentCfg.ID, false)
+	coord.rootExecutor = coord.buildAgent(agentCfg.ID, false)
 	// The caller goes away, canceling the context it built the agent with.
 	cancel()
 	require.Error(t, ctx.Err(), "sanity check: the building caller's context is dead")

@@ -251,7 +251,7 @@ func priceMockModels(t *testing.T, coord *coordinator) {
 // primary agent and returns a func that ends it.
 func markBusy(t *testing.T, coord *coordinator, sessionID string) func() {
 	t.Helper()
-	sa, ok := coord.currentAgent.(*sessionAgent)
+	sa, ok := coord.rootExecutor.(*sessionAgent)
 	require.True(t, ok)
 	ac := &activeCancel{cancel: func() {}}
 	sa.activeRequests.Set(sessionID, ac)

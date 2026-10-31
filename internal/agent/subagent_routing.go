@@ -62,11 +62,11 @@ func (c *coordinator) forgetSubagentRoute(sessionID string) {
 // call belongs to, consulting only the in-memory index: these callers carry no
 // context to rebuild a route with, and a cancel must not wait on the database.
 //
-// A child session is never currentAgent's to touch even when its route is
+// A child session is never rootExecutor's to touch even when its route is
 // gone, because the two executors would write the same transcript.
 func (c *coordinator) executorForSession(sessionID string) (SessionAgent, bool) {
 	if !c.sessions.IsAgentToolSession(sessionID) {
-		return c.currentAgent, true
+		return c.rootExecutor, true
 	}
 	route, ok := c.subagentRoutes.Get(sessionID)
 	if !ok {
@@ -88,7 +88,7 @@ func (c *coordinator) executorForSession(sessionID string) (SessionAgent, bool) 
 // arriving before that point would be dropped.
 func (c *coordinator) acceptExecutorFor(ctx context.Context, sessionID string) (SessionAgent, bool) {
 	if !c.sessions.IsAgentToolSession(sessionID) {
-		return c.currentAgent, true
+		return c.rootExecutor, true
 	}
 
 	// Refresh the dispatch table so an agent dropped from config is not
@@ -110,8 +110,8 @@ func (c *coordinator) acceptExecutorFor(ctx context.Context, sessionID string) (
 // summarizeExecutorFor resolves which executor a session's Summarize call
 // must run on. A child session's turns run on its own sub-agent executor,
 // which owns the busy-check and per-session bookkeeping Summarize relies
-// on; routing every session through currentAgent instead would let a
-// summarize pass currentAgent's busy check while the child's own executor
+// on; routing every session through rootExecutor instead would let a
+// summarize pass rootExecutor's busy check while the child's own executor
 // is mid-turn, and then both would write the same session's messages
 // concurrently.
 func (c *coordinator) summarizeExecutorFor(ctx context.Context, sessionID string) (SessionAgent, error) {
@@ -122,13 +122,13 @@ func (c *coordinator) summarizeExecutorFor(ctx context.Context, sessionID string
 	if routed {
 		return route.executor, nil
 	}
-	return c.currentAgent, nil
+	return c.rootExecutor, nil
 }
 
 // turnExecutorFor resolves the executor and agent identity for a new turn.
 //
 // A child session must land on the sub-agent's own executor: the default path
-// resolves an unknown session to coder and runs it on currentAgent, which
+// resolves an unknown session to coder and runs it on rootExecutor, which
 // would continue an explore transcript with coder's model and full tool set,
 // concurrently with the sub-run that may still be streaming into it.
 func (c *coordinator) turnExecutorFor(ctx context.Context, sessionID string) (turnTarget, error) {
@@ -163,7 +163,7 @@ func (c *coordinator) turnExecutorFor(ctx context.Context, sessionID string) (tu
 	if err != nil {
 		return turnTarget{}, fmt.Errorf("failed to resolve the agent: %w", err)
 	}
-	return turnTarget{executor: c.currentAgent, resolved: resolved, resolve: resolve}, nil
+	return turnTarget{executor: c.rootExecutor, resolved: resolved, resolve: resolve}, nil
 }
 
 // resolveSubagent builds the identity a child session's turn runs as, from
@@ -444,12 +444,12 @@ func (c *coordinator) routeFor(ctx context.Context, sessionID string) (subagentR
 	return subagentRoute{agentID: sess.Agent, executor: executor}, true, nil
 }
 
-// eachExecutor calls fn once per distinct executor, currentAgent included.
+// eachExecutor calls fn once per distinct executor, rootExecutor included.
 // Child sessions of the same sub-agent share one executor, so the routing
 // index yields duplicates.
 func (c *coordinator) eachExecutor(fn func(SessionAgent)) {
-	fn(c.currentAgent)
-	seen := map[SessionAgent]struct{}{c.currentAgent: {}}
+	fn(c.rootExecutor)
+	seen := map[SessionAgent]struct{}{c.rootExecutor: {}}
 	for route := range c.subagentRoutes.Seq() {
 		if _, dup := seen[route.executor]; dup {
 			continue

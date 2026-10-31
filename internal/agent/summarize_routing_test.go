@@ -11,10 +11,10 @@ import (
 // coordinator.Summarize itself, not just the routing helper it calls: a
 // session that belongs to a sub-agent must have its Summarize call reach
 // that sub-agent's own executor. Before this was fixed, Summarize always
-// ran on currentAgent regardless of which executor owned the session,
+// ran on rootExecutor regardless of which executor owned the session,
 // racing whatever turn the sub-agent's own executor had in flight on it.
 //
-// currentAgent here is a real executor pointed at an unreachable provider
+// rootExecutor here is a real executor pointed at an unreachable provider
 // URL. If Summarize fell back to it, the call would fail trying to reach
 // that provider instead of returning the nil the mock child executor gives
 // immediately, and the mock would never record the call.

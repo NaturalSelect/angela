@@ -704,8 +704,8 @@ func TestCancelOnTheParentDoesNotAbandonTheBranch(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
 	// Cancel resolves a plain top-level session like the parent through
-	// currentAgent, which the other fixtures here never need.
-	c.currentAgent = newMockSessionAgent(t, "coder", nil)
+	// rootExecutor, which the other fixtures here never need.
+	c.rootExecutor = newMockSessionAgent(t, "coder", nil)
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
 	require.NoError(t, err)
@@ -747,8 +747,8 @@ func TestCancelOnTheParentDoesNotAbandonTheBranch(t *testing.T) {
 func TestCancelOnTheParentInterruptsABusyBranch(t *testing.T) {
 	f := forkBusyBranch(t, nil)
 	// Cancel resolves a plain top-level session like the parent through
-	// currentAgent, which the other fixtures here never need.
-	f.c.currentAgent = newMockSessionAgent(t, "coder", nil)
+	// rootExecutor, which the other fixtures here never need.
+	f.c.rootExecutor = newMockSessionAgent(t, "coder", nil)
 
 	f.c.Cancel(f.parentID)
 	require.True(t, f.c.branches.Waiting(f.branchID),
@@ -771,8 +771,8 @@ func TestCancelOnTheParentInterruptsABusyBranch(t *testing.T) {
 func TestCancelOnTheRootInterruptsANestedBusyBranch(t *testing.T) {
 	f := forkBusyBranch(t, nil)
 	// Cancel resolves a plain top-level session like the root through
-	// currentAgent, which the other fixtures here never need.
-	f.c.currentAgent = newMockSessionAgent(t, "coder", nil)
+	// rootExecutor, which the other fixtures here never need.
+	f.c.rootExecutor = newMockSessionAgent(t, "coder", nil)
 
 	nestedForking, err := f.c.messages.Create(t.Context(), f.branchID, message.CreateMessageParams{Role: message.Assistant})
 	require.NoError(t, err)
@@ -820,7 +820,7 @@ func TestCancelOnAnOrdinarySessionIsUnchanged(t *testing.T) {
 
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
-	c.currentAgent = newMockSessionAgent(t, "coder", nil)
+	c.rootExecutor = newMockSessionAgent(t, "coder", nil)
 
 	c.Cancel("nobody")
 

@@ -542,7 +542,7 @@ func TestWakeForNoticesRunsANoticeOnlyTurnOnTheCoordinatorLifetime(t *testing.T)
 	require.NoError(t, err)
 
 	woken := make(chan SessionAgentCall, 1)
-	coord.currentAgent = newMockSessionAgent(t, config.AgentCoder, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
+	coord.rootExecutor = newMockSessionAgent(t, config.AgentCoder, func(_ context.Context, call SessionAgentCall) (*fantasy.AgentResult, error) {
 		woken <- call
 		return agentResultWithText("noted"), nil
 	})

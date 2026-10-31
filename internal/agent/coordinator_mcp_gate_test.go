@@ -82,7 +82,7 @@ func newHermeticTestCoordinator(t *testing.T, interactive, trusted bool) *coordi
 	coord.reconcileSubagents()
 
 	agentCfg := cfg.Config().Agents[config.AgentCoder]
-	coord.currentAgent = coord.buildAgent(agentCfg.ID, false)
+	coord.rootExecutor = coord.buildAgent(agentCfg.ID, false)
 
 	return coord
 }

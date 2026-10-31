@@ -178,7 +178,9 @@ type coordinator struct {
 	// to a sub-session.
 	noBranchAgents bool
 
-	currentAgent SessionAgent
+	// rootExecutor runs every top-level session. Which agent a turn uses is
+	// decided per session by its ActiveAgent, not by this field.
+	rootExecutor SessionAgent
 	subagents    *subagentRegistry
 
 	// subagentRoutes maps a child session ID to the executor that owns it.
@@ -322,7 +324,7 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 	// still built lazily on first dispatch.
 	c.reconcileSubagents()
 
-	c.currentAgent = c.buildAgent(config.AgentCoder, false)
+	c.rootExecutor = c.buildAgent(config.AgentCoder, false)
 	go c.forgetDeletedSessions(ctx, opts.Sessions.Subscribe(ctx))
 	return c, nil
 }
@@ -1024,8 +1026,8 @@ func (c *coordinator) TakeQueuedPrompts(sessionID string) []message.QueuedPrompt
 func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 	// A child session's turns run on its own sub-agent executor, which
 	// owns the busy-check and per-session bookkeeping Summarize relies
-	// on. Resolving currentAgent unconditionally here would let a
-	// summarize pass currentAgent's busy check while the child's own
+	// on. Resolving rootExecutor unconditionally here would let a
+	// summarize pass rootExecutor's busy check while the child's own
 	// executor is mid-turn, then race that turn writing the same
 	// session's messages.
 	executor, err := c.summarizeExecutorFor(ctx, sessionID)

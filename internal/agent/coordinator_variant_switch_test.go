@@ -75,7 +75,7 @@ func TestSwitchVariantDrivesLaterTurns(t *testing.T) {
 	require.Equal(t, "deep", agentCfg.EffectiveVariant(),
 		"the session's choice outranks the configured default")
 
-	model, err := coord.buildModel(context.Background(), agentCfg, false)
+	model, err := coord.models().buildModel(context.Background(), agentCfg, false)
 	require.NoError(t, err)
 	require.Equal(t, int64(32000), model.CatwalkCfg.DefaultMaxTokens,
 		"the preset actually reached the resolved model")
@@ -98,7 +98,7 @@ func TestSwitchVariantBackToBaseline(t *testing.T) {
 
 	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
 	require.NoError(t, err)
-	model, err := coord.buildModel(context.Background(), agentCfg, false)
+	model, err := coord.models().buildModel(context.Background(), agentCfg, false)
 	require.NoError(t, err)
 	require.Equal(t, baseline, model.CatwalkCfg.DefaultMaxTokens,
 		"the preset is gone, not merely overwritten by another preset")
@@ -146,7 +146,7 @@ func TestSwitchVariantAcceptsSeededReasoningLevels(t *testing.T) {
 
 	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
 	require.NoError(t, err)
-	model, err := coord.buildModel(context.Background(), agentCfg, false)
+	model, err := coord.models().buildModel(context.Background(), agentCfg, false)
 	require.NoError(t, err)
 	require.Equal(t, "high", model.CatwalkCfg.DefaultReasoningEffort)
 }
@@ -182,7 +182,7 @@ func TestSwitchVariantToBaselineOutranksSlotVariant(t *testing.T) {
 	// applies.
 	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
 	require.NoError(t, err)
-	model, err := coord.buildModel(context.Background(), agentCfg, false)
+	model, err := coord.models().buildModel(context.Background(), agentCfg, false)
 	require.NoError(t, err)
 	require.Equal(t, int64(32000), model.CatwalkCfg.DefaultMaxTokens,
 		"the slot's default variant must apply before any pick")
@@ -191,7 +191,7 @@ func TestSwitchVariantToBaselineOutranksSlotVariant(t *testing.T) {
 
 	agentCfg, err = coord.activeAgentFor(t.Context(), sessionID)
 	require.NoError(t, err)
-	model, err = coord.buildModel(context.Background(), agentCfg, false)
+	model, err = coord.models().buildModel(context.Background(), agentCfg, false)
 	require.NoError(t, err)
 	require.Equal(t, baseline, model.CatwalkCfg.DefaultMaxTokens,
 		"an explicit baseline pick must not fall back to the slot's variant")

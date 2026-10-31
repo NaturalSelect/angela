@@ -84,7 +84,7 @@ func (c *coordinator) GenerateCommitMessage(ctx context.Context, sessionID, diff
 	// no model of its own.
 	attributionModel := modelDisplayName(model)
 	if host.Model.Provider != "" && host.Model.Model != "" {
-		attributionModel = c.selectedModelDisplayName(host.Model)
+		attributionModel = c.models().selectedModelDisplayName(host.Model)
 	}
 	message += attribution.CommitTrailer(attributionModel, "")
 	return message, nil

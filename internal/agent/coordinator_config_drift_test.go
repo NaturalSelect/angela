@@ -102,7 +102,7 @@ func TestConcurrentResolutionIsRacefree(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			m, err := coord.buildModel(context.Background(), active, false)
+			m, err := coord.models().buildModel(context.Background(), active, false)
 			if err != nil {
 				t.Error(err)
 				return

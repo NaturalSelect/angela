@@ -167,7 +167,7 @@ func (c *coordinator) EditActiveAgent(ctx context.Context, sessionID string, edi
 		if err != nil || !moved.any() {
 			return config.ActiveAgentState{}, false, err
 		}
-		model, err := c.buildModel(ctx, next, false)
+		model, err := c.models().buildModel(ctx, next, false)
 		if err != nil {
 			return config.ActiveAgentState{}, false, fmt.Errorf("resolve the session's model: %w", err)
 		}

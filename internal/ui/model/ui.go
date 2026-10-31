@@ -212,18 +212,8 @@ type UI struct {
 	pendingPermissions []permission.PermissionRequest
 	status             *Status
 
-	// isCanceling tracks whether the user has pressed escape once to cancel.
-	isCanceling bool
-
-	// retryStatus is the in-progress provider retry to show on the turn
-	// status line, if any. Nil when no retry has been reported for the
-	// turn currently running.
-	retryStatus *retryStatus
-
-	// activeTool is the running time of the tool call last observed by
-	// observeToolCall, used to flag a slow tool or MCP call on the turn
-	// status line. Nil until this turn's first tool call is seen.
-	activeTool *toolTiming
+	// turnState holds what the turn status line reports; see turnstatus.go.
+	turnState
 
 	// sessionIsBranch memoizes whether the loaded session is a branch.
 	// Resolving it reads config through the workspace, which the status
@@ -395,10 +385,6 @@ type UI struct {
 	// discarded and re-fetched instead of clobbering newer state.
 	busyFetchGen uint64
 
-	// Turn status spinner, animated for as long as the agent is busy.
-	turnSpinner    spinner.Model
-	turnIsSpinning bool
-
 	// mouse highlighting related state
 	lastClickTime time.Time
 	hoverX        int
@@ -473,7 +459,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		header:              header,
 		completions:         comp,
 		attachments:         attachments,
-		turnSpinner:         turnSpinner,
+		turnState:           turnState{turnSpinner: turnSpinner},
 		lspCache:            lspCache{lspStates: make(map[string]workspace.LSPClientInfo)},
 		mcpStates:           make(map[string]mcp.ClientInfo),
 		notifyBackend:       notification.NoopBackend{},

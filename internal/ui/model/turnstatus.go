@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/session"
@@ -21,6 +22,27 @@ const narrowWidthBreakpoint = 80
 
 // turnStatusSeparator joins the fields of the status line.
 const turnStatusSeparator = " · "
+
+// turnState holds what the turn status line reports. It is plain state
+// embedded in [UI], not a model of its own.
+type turnState struct {
+	// isCanceling tracks whether the user has pressed escape once to cancel.
+	isCanceling bool
+
+	// retryStatus is the in-progress provider retry to show on the turn
+	// status line, if any. Nil when no retry has been reported for the
+	// turn currently running.
+	retryStatus *retryStatus
+
+	// activeTool is the running time of the tool call last observed by
+	// observeToolCall, used to flag a slow tool or MCP call on the turn
+	// status line. Nil until this turn's first tool call is seen.
+	activeTool *toolTiming
+
+	// Turn status spinner, animated for as long as the agent is busy.
+	turnSpinner    spinner.Model
+	turnIsSpinning bool
+}
 
 // maxActivityTargetWidth caps the tool target so a long shell command cannot
 // crowd out every metric behind it.

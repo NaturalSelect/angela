@@ -398,6 +398,38 @@ func TestUndoPopsAttachmentsWithTheText(t *testing.T) {
 	}, result.PoppedAttachments)
 }
 
+func TestUndoNamesAttachmentsStoredWithoutAPath(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := t.Context()
+	sessionID := f.newSession(t)
+
+	f.userMessage(t, sessionID, "first turn")
+	_, err := f.messages.Create(ctx, sessionID, message.CreateMessageParams{
+		Role: message.User,
+		Parts: []message.ContentPart{
+			message.TextContent{Text: "look at these"},
+			message.BinaryContent{MIMEType: "image/png", Data: []byte{1}},
+			message.BinaryContent{Path: "/work/notes.txt", MIMEType: "text/plain", Data: []byte("notes")},
+			message.BinaryContent{MIMEType: "image/jpeg", Data: []byte{2}},
+			message.BinaryContent{MIMEType: "application/pdf", Data: []byte("%PDF")},
+		},
+	})
+	require.NoError(t, err)
+
+	preview, err := f.svc.Preview(ctx, sessionID)
+	require.NoError(t, err)
+
+	result, err := f.svc.Undo(ctx, sessionID, preview.CutMessageID)
+	require.NoError(t, err)
+
+	var names []string
+	for _, att := range result.PoppedAttachments {
+		names = append(names, att.FileName)
+	}
+	require.Equal(t, []string{"image-1.png", "notes.txt", "image-2.jpg", "attachment-3.pdf"}, names)
+}
+
 func TestUndoRevertsTheLastTurnAndPopsItsText(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

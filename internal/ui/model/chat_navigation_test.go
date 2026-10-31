@@ -747,6 +747,22 @@ func TestChatBeginResize(t *testing.T) {
 	require.NotNil(t, cmd)
 }
 
+func TestChatBeginWarm(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	u.chat.SetMessages(testMessageItem{id: "a", text: "a"})
+	u.updateLayoutAndSize()
+
+	cmd := u.chat.BeginWarm()
+
+	require.True(t, u.chat.resizing)
+	require.Equal(t, 1, u.chat.resizeSettleSeq)
+	require.Equal(t, 0, u.chat.warmNext)
+	require.NotNil(t, cmd)
+	require.Equal(t, chatWarmMsg{seq: 1}, cmd(), "warming starts without a settle delay")
+}
+
 func TestChatWarmStep(t *testing.T) {
 	t.Parallel()
 

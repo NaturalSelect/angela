@@ -533,6 +533,33 @@ func TestStreamingMarkdown_NonPrefixContentInvalidates(t *testing.T) {
 		"render after non-prefix content change must match a fresh render")
 }
 
+// TestStreamingMarkdown_RenderFinishedSkipsSeed verifies that rendering
+// finished content produces the same output as Render but leaves the
+// stable-prefix cache empty, and that a later Render on the same value
+// still works.
+func TestStreamingMarkdown_RenderFinishedSkipsSeed(t *testing.T) {
+	t.Parallel()
+
+	const width = 80
+	r := newTestRenderer(t, width)
+	doc := "Para one.\n\nPara two.\n\nPara three."
+
+	var seeded streamingMarkdown
+	want := seeded.Render(doc, width, r)
+	require.NotEmpty(t, seeded.stablePrefix, "Render must seed the cache for this doc")
+
+	var finished streamingMarkdown
+	got := finished.RenderFinished(doc, width, r)
+	require.Equal(t, want, got)
+	require.Empty(t, finished.stablePrefix)
+	require.Empty(t, finished.stablePrefixRender)
+
+	// Content that later grows is still rendered correctly.
+	grown := doc + "\n\nPara four."
+	out := finished.Render(grown, width, r)
+	require.Equal(t, normalizeRender(freshRender(t, grown, width)), normalizeRender(out))
+}
+
 // TestStreamingMarkdown_ResetClearsCache asserts Reset() drops
 // every cached field; the next render is necessarily a full
 // render path.

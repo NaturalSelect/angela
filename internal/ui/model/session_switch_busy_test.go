@@ -73,6 +73,24 @@ func TestSessionSwitchDropsThePreviousSessionsBusyAnswer(t *testing.T) {
 	require.Zero(t, item.startAnimationCalls)
 }
 
+// TestSessionSwitchClearsThePreviousTranscript pins that the old session's
+// messages are gone as soon as the switch starts, while reloading the open
+// session keeps what is on screen until the fresh transcript replaces it.
+func TestSessionSwitchClearsThePreviousTranscript(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, false)
+	stubSessionSwitch(ws, false)
+	m.chat.SetMessages(testMessageItem{id: "old", text: "old"})
+
+	m.Update(loadSessionMsg{session: &session.Session{ID: "s1"}})
+	require.Equal(t, 1, m.chat.Len(), "reloading the open session keeps its transcript")
+
+	m.Update(loadSessionMsg{session: &session.Session{ID: "s2"}})
+	require.Zero(t, m.chat.Len(), "switching sessions drops the previous transcript")
+}
+
 // TestReloadingTheSameSessionKeepsItsBusyAnswer pins that only a real
 // switch drops the flag: reloading the open session (after a reconnect,
 // say) must not blank a turn that is still running.

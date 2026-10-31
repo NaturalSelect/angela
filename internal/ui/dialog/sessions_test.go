@@ -2,7 +2,6 @@ package dialog
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -16,26 +15,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var errSessionsList = errors.New("list sessions failed")
-
-// sessionsWorkspace is the least workspace the sessions dialog needs:
-// the session list it reads at construction, plus a record of every
-// mutation so a test can assert on what the dialog asked for.
+// sessionsWorkspace is the least workspace the sessions dialog needs: a
+// record of every mutation so a test can assert on what the dialog asked
+// for.
 type sessionsWorkspace struct {
 	workspace.Workspace
 
-	sessions      []session.Session
-	listErr       error
 	deleteErr     error
 	deletedIDs    []string
 	saveErr       error
 	saved         []session.Session
 	agentReady    bool
 	busySessionID string
-}
-
-func (w *sessionsWorkspace) ListSessions(context.Context) ([]session.Session, error) {
-	return w.sessions, w.listErr
 }
 
 func (w *sessionsWorkspace) DeleteSession(_ context.Context, id string) error {
@@ -57,11 +48,9 @@ func (w *sessionsWorkspace) AgentIsSessionBusy(id string) bool { return id == w.
 func newTestSessions(t *testing.T, sessions []session.Session, selectedID string) (*Session, *sessionsWorkspace) {
 	t.Helper()
 	s := styles.CharmtonePantera()
-	ws := &sessionsWorkspace{sessions: sessions, agentReady: true}
+	ws := &sessionsWorkspace{agentReady: true}
 	com := &common.Common{Styles: &s, Workspace: ws}
-	d, err := NewSessions(com, selectedID)
-	require.NoError(t, err)
-	return d, ws
+	return NewSessions(com, selectedID, sessions), ws
 }
 
 func twoTestSessions() []session.Session {
@@ -69,18 +58,6 @@ func twoTestSessions() []session.Session {
 		{ID: "s1", Title: "First"},
 		{ID: "s2", Title: "Second"},
 	}
-}
-
-// TestNewSessions_ListError verifies a failed session listing surfaces
-// as a construction error rather than an empty dialog.
-func TestNewSessions_ListError(t *testing.T) {
-	t.Parallel()
-
-	s := styles.CharmtonePantera()
-	ws := &sessionsWorkspace{listErr: errSessionsList}
-	com := &common.Common{Styles: &s, Workspace: ws}
-	_, err := NewSessions(com, "")
-	require.ErrorIs(t, err, errSessionsList)
 }
 
 // TestNewSessions_SelectsRequestedSession verifies the dialog opens on

@@ -609,7 +609,12 @@ func (a *AssistantMessageItem) cachedError(width int) string {
 func (a *AssistantMessageItem) renderThinking(thinking string, width int) string {
 	contentWidth := width - thinkingBoxIndent
 	renderer := common.QuietMarkdownRenderer(a.sty, contentWidth)
-	rendered := a.streamingThinking.Render(thinking, contentWidth, renderer)
+	var rendered string
+	if a.message.IsFinished() {
+		rendered = a.streamingThinking.RenderFinished(thinking, contentWidth, renderer)
+	} else {
+		rendered = a.streamingThinking.Render(thinking, contentWidth, renderer)
+	}
 	rendered = strings.TrimSpace(rendered)
 
 	// Count lines and, for the windowed view modes, slice the tail
@@ -677,6 +682,9 @@ func (a *AssistantMessageItem) renderThinking(thinking string, width int) string
 // findSafeMarkdownBoundary.
 func (a *AssistantMessageItem) renderMarkdown(content string, width int) string {
 	renderer := common.MarkdownRenderer(a.sty, width)
+	if a.message.IsFinished() {
+		return a.streamingContent.RenderFinished(content, width, renderer)
+	}
 	return a.streamingContent.Render(content, width, renderer)
 }
 

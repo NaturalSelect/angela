@@ -49,10 +49,14 @@ func scrollbarHideCmd(seq int) tea.Cmd {
 // waits before it starts warming the message cache it skipped mid-drag.
 const resizeSettleDuration = 120 * time.Millisecond
 
-// warmBatchSize is how many messages the chat renders into the width cache
-// per warming step. Kept small so no single step blocks the UI thread for
-// more than a frame or so, even on slow-to-render items.
+// warmBatchSize caps how many messages the chat renders into the width cache
+// per warming step.
 const warmBatchSize = 25
+
+// warmStepBudget is the wall-clock time a warming step may spend rendering
+// before it yields, so one step blocks the UI thread for about a frame even
+// when individual messages are slow to render.
+const warmStepBudget = 8 * time.Millisecond
 
 // chatWarmMsg drives one incremental cache-warming step. The first one is
 // delayed until the resize settles; the rest fire immediately, one per
@@ -338,10 +342,21 @@ func drawCachedBuffer(scr uv.Screen, area uv.Rectangle, buf uv.ScreenBuffer) {
 // items. It returns a command that, once resizing settles, starts warming
 // the cache so the scrollbar can recompute without blocking.
 func (m *Chat) BeginResize() tea.Cmd {
+	return m.beginWarm(resizeSettleDuration)
+}
+
+// BeginWarm starts incremental cache warming right away, for a freshly
+// loaded transcript. Like BeginResize it suppresses the scrollbar until every
+// message is cached, but it does not wait for a resize to settle.
+func (m *Chat) BeginWarm() tea.Cmd {
+	return m.beginWarm(0)
+}
+
+func (m *Chat) beginWarm(delay time.Duration) tea.Cmd {
 	m.resizing = true
 	m.resizeSettleSeq++
 	m.warmNext = 0
-	return chatWarmCmd(m.resizeSettleSeq, resizeSettleDuration)
+	return chatWarmCmd(m.resizeSettleSeq, delay)
 }
 
 // WarmStep renders the next batch of messages into the width cache and
@@ -353,7 +368,7 @@ func (m *Chat) WarmStep(seq int) (cmd tea.Cmd, done bool) {
 	if seq != m.resizeSettleSeq {
 		return nil, false
 	}
-	m.warmNext = m.list.Prewarm(m.warmNext, warmBatchSize)
+	m.warmNext = m.list.Prewarm(m.warmNext, warmBatchSize, warmStepBudget)
 	if m.warmNext >= m.list.Len() {
 		m.resizing = false
 		return nil, true
@@ -1037,6 +1052,7 @@ func (m *Chat) ClearMessages() {
 	m.idInxMap = make(map[string]int)
 	m.resetAnimations()
 	m.scrollbarVisible = false
+	m.queued = nil
 	m.list.SetItems()
 	m.ClearMouse()
 }

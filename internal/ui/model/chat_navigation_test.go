@@ -456,6 +456,32 @@ func TestChatClearMessages(t *testing.T) {
 	require.Equal(t, -1, u.chat.mouseDownItem)
 }
 
+// TestChatClearMessagesDropsTheQueuedTail pins that the previous session's
+// queued prompts do not outlive the transcript they were parked under.
+// Left behind, they would be parked again under the next message appended
+// to the new session.
+func TestChatClearMessagesDropsTheQueuedTail(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	u.chat.SetMessages(testMessageItem{id: "a", text: "a"})
+	u.chat.SetQueued(testMessageItem{id: "queued-1", text: "q"})
+	require.Equal(t, 2, u.chat.Len(), "the queued prompt is parked after the transcript")
+
+	u.chat.ClearMessages()
+
+	require.Empty(t, u.chat.queued)
+	require.Zero(t, u.chat.Len())
+
+	u.chat.AppendMessages(testMessageItem{id: "n", text: "n"})
+
+	require.Equal(t, 1, u.chat.Len(), "the old queued prompt must not be parked again")
+	require.Empty(t, u.chat.queued)
+	item, ok := u.chat.list.ItemAt(0).(chat.MessageItem)
+	require.True(t, ok)
+	require.Equal(t, "n", item.ID())
+}
+
 func TestChatRemoveMessage(t *testing.T) {
 	t.Parallel()
 

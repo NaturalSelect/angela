@@ -1688,27 +1688,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 
-	isOnboarding := m.state == uiOnboarding
-
 	switch msg := action.(type) {
 	// Generic dialog messages
 	case dialog.ActionClose:
-		if isOnboarding {
-			if cmd := m.closeOnboardingDialog(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			break
-		}
-
-		if m.dialog.ContainsDialog(dialog.FilePickerID) {
-			defer fimage.ResetCache()
-		}
-
-		m.dialog.CloseFrontDialog()
-
-		if m.focus == uiFocusEditor {
-			cmds = append(cmds, m.textarea.Focus())
-		}
+		return m.handleClose()
 	case dialog.ActionCmd:
 		if msg.Cmd != nil {
 			cmds = append(cmds, msg.Cmd)

@@ -9,6 +9,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
 // sideQuestionAnsweredMsg carries the result of a /btw side question,
@@ -69,4 +70,40 @@ func (m *UI) handleAskSideQuestion(msg dialog.ActionAskSideQuestion) tea.Cmd {
 	cmds = append(cmds, m.askSideQuestion(msg.SessionID, msg.Question))
 	m.dialog.CloseFrontDialog()
 	return tea.Batch(cmds...)
+}
+
+// handleSideQuestionAnswered handles sideQuestionAnsweredMsg.
+func (m *UI) handleSideQuestionAnswered(msg sideQuestionAnsweredMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	completed := false
+	if item := m.chat.MessageItem(msg.pendingID); item != nil {
+		if sq, ok := item.(*chat.SideQuestionItem); ok {
+			if msg.err != nil {
+				sq.Fail(msg.err)
+			} else {
+				sq.Complete(msg.answer)
+			}
+			if m.chat.Follow() {
+				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+			completed = true
+		}
+	}
+	if !completed {
+		if msg.err != nil {
+			cmds = append(cmds, util.ReportError(msg.err))
+			return cmds
+		}
+		if m.hasSession() && m.session.ID == msg.sessionID {
+			item := chat.NewPendingSideQuestionItem(m.com.Styles, msg.question)
+			item.Complete(msg.answer)
+			m.chat.AppendMessages(item)
+			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+	return cmds
 }

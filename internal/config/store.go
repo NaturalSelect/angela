@@ -23,7 +23,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// configLockDeadline bounds how long lockConfig waits for the
+// configLockDeadline bounds how long lockPath waits for the
 // cross-process flock before giving up. A few seconds is plenty for
 // honest contention; longer suggests something is wedged.
 const configLockDeadline = 5 * time.Second
@@ -285,25 +285,15 @@ func (s *ConfigStore) LoadedPaths() []string {
 	return slices.Clone(s.loadedPaths)
 }
 
-// lockConfig acquires both the in-process mutex and a cross-process flock
-// on the config file for the given scope. Callers that need to do I/O
+// lockPath acquires both the in-process mutex and a cross-process flock
+// on the given file. It also guards sidecar files (see recent_models.go)
+// that live outside the scoped config files. Callers that need to do I/O
 // between reading and writing (e.g. an HTTP token exchange) must use
-// lockConfig explicitly rather than atomicWrite.
+// lockPath explicitly rather than atomicWrite.
 //
 // The returned release function drops both locks. Callers must call it
 // as soon as the file access is complete — no I/O should be performed
 // while the lock is held.
-func (s *ConfigStore) lockConfig(scope Scope) (func(), error) {
-	path, err := s.configPath(scope)
-	if err != nil {
-		return nil, err
-	}
-	return s.lockPath(path)
-}
-
-// lockPath is the path-based core of lockConfig, also used to guard
-// sidecar files (see recent_models.go) that live outside the scoped
-// config files.
 func (s *ConfigStore) lockPath(path string) (func(), error) {
 	s.mu.Lock()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -42,10 +42,10 @@ func newCompactPaletteUI(t *testing.T, ws *MockWorkspace) *UI {
 	require.NoError(t, err)
 
 	return &UI{
-		com:        com,
-		session:    &sess,
-		agentReady: true,
-		dialog:     dialog.NewOverlay(cmdsDialog),
+		com:             com,
+		session:         &sess,
+		workspaceProbes: workspaceProbes{agentReady: true},
+		dialog:          dialog.NewOverlay(cmdsDialog),
 	}
 }
 

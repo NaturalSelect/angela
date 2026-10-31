@@ -398,3 +398,25 @@ func (m *UI) editorPromptFunc(mode permission.PermissionMode) func(textarea.Prom
 		return railStyle.Render(editorPromptGlyph)
 	}
 }
+
+// handleWindowSize handles tea.WindowSizeMsg.
+func (m *UI) handleWindowSize(msg tea.WindowSizeMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	m.width, m.height = msg.Width, msg.Height
+	// Suppress the chat's full-height scan during the resize so a drag
+	// only reflows visible items; it settles (and recomputes) shortly
+	// after the last resize event.
+	if m.state == uiChat {
+		cmds = append(cmds, m.chat.BeginResize())
+	}
+	m.updateLayoutAndSize()
+	if m.state == uiChat && m.chat.Follow() {
+		if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if cmd := m.applyImageCaps(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return cmds
+}

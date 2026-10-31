@@ -1878,56 +1878,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		argsDialog.SetValue("OUTPUT", defaultPath)
 		m.dialog.OpenDialog(argsDialog)
 	case dialog.ActionExportReport:
-		if msg.Report.ID == "" {
-			m.dialog.CloseDialog(dialog.CommandsID)
-			if m.session == nil {
-				cmds = append(cmds, util.ReportWarn("Open a session before exporting a report."))
-				break
-			}
-			sessionID := m.session.ID
-			cmds = append(cmds, func() tea.Msg {
-				msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
-				if err != nil {
-					return util.ReportError(err)()
-				}
-				reports := agenttools.ReportsFromMessages(m.com.Workspace, msgs)
-				if len(reports) == 0 {
-					return util.ReportWarn("No agent reports in this session")()
-				}
-
-				workingDir, err := os.Getwd()
-				if err != nil {
-					return util.ReportError(err)()
-				}
-
-				return exportReportsLoadedMsg{sessionID: sessionID, reports: reports, workingDir: workingDir}
-			})
-			break
-		}
-		m.dialog.CloseDialog(dialog.ArgumentsID)
-		report := msg.Report
-		output := msg.Output
-		cmds = append(cmds, func() tea.Msg {
-			workingDir, err := os.Getwd()
-			if err != nil {
-				return util.ReportError(err)()
-			}
-
-			target := chat.ResolveExportTarget(output, report.ID+".md", workingDir)
-
-			outPath, err := chat.UniqueExportPath(target)
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
-				return util.ReportError(err)()
-			}
-			if err := os.WriteFile(outPath, []byte(chat.ReportToMarkdown(report)), 0o644); err != nil {
-				return util.ReportError(err)()
-			}
-
-			return util.ReportInfo("Exported report to " + outPath)()
-		})
+		return m.handleExportReport(msg)
 	case dialog.ActionSelectExportReport:
 		m.dialog.CloseDialog(dialog.ReportsID)
 		defaultPath := filepath.Join(msg.WorkingDir, msg.Report.ID+".md")

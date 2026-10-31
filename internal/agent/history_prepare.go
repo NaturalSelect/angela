@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	_ "embed"
 	"errors"
 	"fmt"
 	"log/slog"

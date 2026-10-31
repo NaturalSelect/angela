@@ -39,6 +39,9 @@ go install github.com/NaturalSelect/angela@latest
 
 Press <kbd>Ctrl+P</kbd> for the command palette. Use `angela --continue` to
 resume the most recent session, or `angela --session <id>` for a specific one.
+To take back the last turn, choose **Undo Last Turn** in the palette once a
+session has started. It restores the files the turn edited and removes its
+messages, and shows a preview first.
 
 Set API keys via environment variables to skip the manual step:
 
@@ -74,7 +77,16 @@ See the [full provider list](./docs/config/) for all supported variables.
 | `angela acp`                 | Run as an ACP agent over stdio (see [Editor integration](#editor-integration-acp)) |
 | `angela update-providers`    | Refresh the provider catalog                             |
 
-Run any command with `--help` for its flags.
+Run any command with `--help` for its flags. These flags work on every
+command:
+
+| Flag                | Purpose                                                  |
+| ------------------- | -------------------------------------------------------- |
+| `-c, --cwd <dir>`   | Run as if started in this directory (not accepted by `angela acp`) |
+| `-D, --data-dir <dir>` | Use a different data directory                        |
+| `-d, --debug`       | Turn on debug logging                                    |
+| `-y, --yolo`        | Accept every permission prompt (see [Permissions](#permissions)) |
+| `--auto-accept-edits` | Accept file edits only (see [Permissions](#permissions)) |
 
 ### Running non-interactively
 
@@ -288,8 +300,16 @@ rules in `angela.json`:
 
 Rules are evaluated deny, then ask, then allow. `tool` is either an access
 category (`read`, `edit`, `execute`, `network`, `mcp`, `list`) or a single
-tool name. `prompt` decides what happens when no rule matches: `ask`
-(default) or `deny`.
+tool name. `mode` says how `pattern` is compared and defaults to `auto`,
+which picks by category:
+
+| `mode`   | Compares `pattern` against                                         |
+| -------- | ------------------------------------------------------------------ |
+| `path`   | A filesystem path, where `*` stops at a separator and `**` crosses it |
+| `free`   | Free text, where `*` matches anything                              |
+| `domain` | The host of a URL, matching that host and any subdomain            |
+
+`prompt` decides what happens when no rule matches: `ask` (default) or `deny`.
 
 Use `--yolo` to skip all prompts (at your own risk). Use
 `--auto-accept-edits` to auto-approve file edits while still being asked
@@ -375,6 +395,33 @@ and it loads the matching skill (`angela-config`, `angela-mcp`,
 unit tests, and code walkthroughs. A skill with the same name in your own
 skill directories replaces the built-in one.
 
+## Environment Variables
+
+| Variable                              | Effect                                              |
+| ------------------------------------- | --------------------------------------------------- |
+| `ANGELA_GLOBAL_CONFIG`                | Directory that holds the global `angela.json`       |
+| `ANGELA_CACHE_DIR`                    | Override the cache directory                        |
+| `ANGELA_SKILLS_DIR`                   | Replace the default global skills directories       |
+| `ANGELA_AGENTS_DIR`                   | Replace the default global agent markdown directory |
+| `ANGELA_DISABLE_METRICS`              | Same as `options.disable_metrics`                   |
+| `ANGELA_DISABLE_PROVIDER_AUTO_UPDATE` | Same as `options.disable_provider_auto_update`      |
+| `ANGELA_DISABLE_DEFAULT_PROVIDERS`    | Same as `options.disable_default_providers`         |
+| `DO_NOT_TRACK`                        | Turns metrics off when set to a true value          |
+
+## Providers
+
+Angela keeps its provider and model list up to date from
+[Catwalk](https://github.com/charmbracelet/catwalk). To stop the automatic
+check, set `options.disable_provider_auto_update` or
+`ANGELA_DISABLE_PROVIDER_AUTO_UPDATE`. To update by hand:
+
+```bash
+angela update-providers                              # from Catwalk
+angela update-providers https://example.com/        # from a custom URL
+angela update-providers /path/to/providers.json      # from a local file
+angela update-providers embedded                     # reset to the bundled list
+```
+
 ## Local Models
 
 Angela auto-discovers models from Ollama, LM Studio, llama.cpp, and other
@@ -393,7 +440,9 @@ local providers:
 
 ## Logging
 
-Logs are stored in `.angela/logs/angela.log` relative to the project.
+Logs are stored in `logs/angela.log` inside the data directory, which is
+`.angela` in the project by default. Change the data directory with
+`options.data_directory` or `--data-dir`.
 
 ```bash
 angela logs              # last 1000 lines
@@ -402,6 +451,20 @@ angela logs --follow     # real-time
 ```
 
 Enable debug logging with `--debug` or `"options": { "debug": true }`.
+
+## Metrics
+
+Angela sends pseudonymous usage metrics to a PostHog server run by Charm at
+`data.charm.land`, unless you turn them off. The prompt and response events
+record the session ID, provider, model, token counts, and cost, not the text
+of your conversation. Every event also carries the operating system, CPU
+architecture, `TERM` value, shell name, Angela and Go versions, and an
+identifier derived from a hash of your machine ID. Errors and panics are
+reported as well. The code that sends them is in
+[`internal/event`](./internal/event).
+
+To opt out, set `"options": { "disable_metrics": true }`, export
+`ANGELA_DISABLE_METRICS=1`, or export `DO_NOT_TRACK=1`.
 
 ## License
 

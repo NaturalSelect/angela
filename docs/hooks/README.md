@@ -19,11 +19,13 @@ forward.
 
 - Hooks are just shell commands
 - Hooks can be written in any language because they’re just executables: Bash, Python, Node, Rust, Haskell, whatever
-- Hooks are Claude Code-compatible
-- Angela ships with a builtin `angela-hook` skill write, edit, and configure
-  hooks; just tell Angela how to configure Angela
+- Hooks are broadly compatible with Claude Code hooks, but not drop-in; see
+  [Claude Code compatibility](#claude-code-compatibility)
+- Angela ships with a builtin `angela-hooks` skill to write, edit, and
+  configure hooks; just tell Angela how to configure Angela
 - Angela currently supports just one hook, `PreToolUse`, with plans to support
-  the full gamut; please let us know which hooks you'd like to see next
+  the full gamut (see [FUTURE.md](./FUTURE.md)); please let us know which hooks
+  you'd like to see next
 - Hooks run in parallel for speed, but their results compose in config order
   for determinism
 
@@ -137,7 +139,14 @@ What this means in practice:
 ## Configuration
 
 Hooks can be added to your `angela.json` (or `.angela.json`) at both the global
-and project-level, with project level hooks taking precedence.
+and project-level. Hook lists from different config layers are **concatenated**,
+not overridden: global hooks come first, then project hooks, and all of them
+run. A project cannot replace or turn off a global hook by redefining it.
+
+Hooks are checked when the config loads. A hook with no `command`, or with a
+`matcher` that isn't a valid regular expression, makes the whole config fail
+to load, and `angela config validate` reports it. An event key Angela doesn't
+know is accepted but never fires.
 
 ```jsonc
 {
@@ -177,7 +186,9 @@ and project-level, with project level hooks taking precedence.
 > ```
 
 Remember, hooks will run in parallel but resolve in config order. Last hook
-wins when rewriting input, but first deny wins when blocking.
+wins when rewriting input, but first deny wins when blocking. Every hook
+receives the same original payload; a hook never sees another hook's
+`updated_input`.
 
 ## Events
 
@@ -190,7 +201,9 @@ enforce policies, rewrite tool input, inject context the model should see, log
 stuff, and so on.
 
 **Matched against**: the tool name (e.g. `Bash`, `Edit`, `Write`,
-`MCP_github_create_pull_request`).
+`MCP_github_create_pull_request`). The `matcher` regex is case-sensitive and
+unanchored, so `Bash` also matches any tool whose name contains `Bash`; write
+`^Bash$` to match exactly.
 
 > [!NOTE]
 > Event names are case insensitive and snake-caseable, so `PreToolUse`,
@@ -234,8 +247,9 @@ When a hook fires, Angela:
 5. Applies the result **before** permission checks. If the aggregated decision
    is `deny`, the tool call is blocked and you never see a permission prompt
    for it. If it's `allow`, Angela treats that as affirmative pre-approval and
-   also skips the prompt. Silence (no decision) falls through to the normal
-   permission flow.
+   skips the prompt, with the exceptions listed under [Output](#output).
+   Silence (no decision) falls through to the normal permission flow. The
+   permission check sees the input after `updated_input` has been applied.
 
 Note that you can omit `matcher` and match in your shell script instead,
 however you'll incur some additional overhead as Angela will still parse and
@@ -257,14 +271,14 @@ The available environment variables are:
 | `AGENT`                      | Always `angela`.                                |
 | `AI_AGENT`                   | Always `angela`.                                |
 | `ANGELA_EVENT`                | The hook event name (e.g. `PreToolUse`).       |
-| `ANGELA_TOOL_NAME`            | The tool being called (e.g. `bash`).           |
+| `ANGELA_TOOL_NAME`            | The tool being called (e.g. `Bash`).           |
 | `ANGELA_SESSION_ID`           | Current session ID.                            |
 | `ANGELA_CWD`                  | Working directory.                             |
-| `ANGELA_PROJECT_DIR`          | Project root directory.                        |
+| `ANGELA_PROJECT_DIR`          | Angela's working directory, the same value as `ANGELA_CWD`. |
 | `ANGELA_AGENT_ID`             | Agent whose call fired the hook (e.g. `coder`).|
 | `ANGELA_AGENT_DEPTH`          | Dispatch nesting level: `0` for the top-level agent, `1`+ for a sub-agent. |
-| `ANGELA_TOOL_INPUT_COMMAND`   | For `bash` calls: the shell command being run. |
-| `ANGELA_TOOL_INPUT_FILE_PATH` | For file tools: the target file path.          |
+| `ANGELA_TOOL_INPUT_COMMAND`   | The `command` field of the tool input, set only when it has one (such as `Bash`). |
+| `ANGELA_TOOL_INPUT_FILE_PATH` | The `file_path` field of the tool input, set only when it has one (such as `Edit`). |
 
 The `ANGELA`, `AGENT`, and `AI_AGENT` markers are also set by the `bash`
 tool, so a script can detect "am I running under Angela?" the same way in
@@ -293,7 +307,7 @@ To parse the stdin JSON in your hook script, read from stdin and use a tool like
 
 ```bash
 #!/usr/bin/env bash
-read -r input
+input=$(cat)
 tool_name=$(echo "$input" | jq -r '.tool_name')
 command=$(echo "$input" | jq -r '.tool_input.command // empty')
 ```
@@ -342,7 +356,8 @@ The difference between exit 2 and exit 49:
 
 That said, if you need more control, or if you need to rewrite input, you can
 use JSON on stdout. Exit 0 and print a JSON object to provide context, update
-the input, or still deny/halt with a reason:
+the input, or still deny/halt with a reason. Output that isn't a JSON object is
+ignored, as if the hook had printed nothing:
 
 ```jsonc
 {
@@ -360,13 +375,26 @@ if omitted. Unknown higher versions are still parsed; the field exists so the
 envelope can evolve without a compatibility shim.
 
 `decision: "allow"` is **affirmative**: it pre-approves the tool call and
-bypasses the permission prompt entirely. Silence (no `decision`, or
-`decision: null`) means "no opinion" — the tool still goes through the
-normal permission flow. Use `"allow"` when you want to auto-approve; omit it
-when you only want to inject context or rewrite input without also vouching
-for the call.
+skips the permission prompt. Silence (no `decision`, or `decision: null`)
+means "no opinion" — the tool still goes through the normal permission flow.
+Use `"allow"` when you want to auto-approve; omit it when you only want to
+inject context or rewrite input without also vouching for the call.
 
-`updated_input` is a shallow-merge patch. Keys you include overwrite matching
+An `allow` does not override everything. These still win over it:
+
+- A `deny` permission rule.
+- An `ask` permission rule, and commands Angela always asks about, such as
+  ones it considers dangerous or cannot analyse.
+- A denial you already gave for the same kind of request earlier in the
+  session.
+
+`decision` is matched case-insensitively. Any value other than `allow` or
+`deny` (such as `ask` or `block`) is treated as no opinion rather than an
+error.
+
+`updated_input` is normally a JSON object, but a JSON string that contains an
+object is accepted too. A value that isn't an object is dropped with a warning.
+It is a shallow-merge patch. Keys you include overwrite matching
 keys in `tool_input`; keys you don't include are preserved. If the model called
 `bash` with `{"command": "npm test", "timeout": 60000}` and your hook returns
 `{"updated_input": {"command": "bun test"}}`, the tool runs with
@@ -377,6 +405,15 @@ merge is shallow: nested objects are replaced wholesale, not deep-merged.
 the user takes over. The exit-code shorthand is `exit 49` with stderr as the
 reason.
 
+When a hook denies or halts without giving a `reason`, Angela supplies
+"blocked by hook" or "turn halted by hook". The model sees a denied call as
+"Tool call blocked by hook. Reason: …".
+
+Angela also accepts Claude Code's `hookSpecificOutput` object (with
+`permissionDecision`, `permissionDecisionReason`, `updatedInput`, and
+`additionalContext`). When it is present, the top-level `decision`, `halt`,
+`reason`, `context`, and `updated_input` fields are ignored.
+
 `context` accepts either a string or an array of strings. Use the string form
 for a single observation; use the array form when a hook produces multiple
 distinct notes and you'd rather not concatenate them by hand. Empty strings and
@@ -386,9 +423,9 @@ Here's a full shell script that produces this JSON:
 
 ```bash
 #!/usr/bin/env bash
-# Example: rewrite a bash command using RTK
+# Example: scrub secrets from a bash command
 
-read -r input
+input=$(cat)
 original_cmd=$(echo "$input" | jq -r '.tool_input.command')
 rewritten=$(secret-scrubber rewrite "$original_cmd")
 
@@ -413,7 +450,8 @@ When multiple hooks match the same tool call:
   concatenated in config order (newline-separated).
 - If **any** hook halts, the turn ends after the tool call is blocked.
 - If no hook denies or halts but at least one allows, the tool call proceeds
-  **and the permission prompt is skipped**.
+  **and the permission prompt is skipped**, unless a permission rule or a
+  forced prompt overrides it (see [Output](#output)).
 - `context` values are concatenated in config order. Strings and arrays compose
   uniformly — each string becomes one entry, and array entries are flattened in.
 - `updated_input` patches shallow-merge in config order against the original
@@ -473,7 +511,7 @@ returns `decision: "allow"`, which tells Angela to pre-approve the call:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^(read|ls|grep|glob)$",
+        "matcher": "^(Read|LS|Grep|Glob)$",
         "command": "echo '{\"decision\":\"allow\"}'",
       },
     ],
@@ -481,9 +519,11 @@ returns `decision: "allow"`, which tells Angela to pre-approve the call:
 }
 ```
 
-No script file needed — the command is inline. Every `read`/`ls`/`grep`/`glob`
-call now runs without prompting. Add the `bash` tool to this list at your own
-risk; consider a more targeted allowlist instead:
+No script file needed — the command is inline. Tool names are case-sensitive,
+so the matcher uses `Read`, not `read`. Every `Read`/`LS`/`Grep`/`Glob` call
+now runs without prompting, unless a deny or ask rule says otherwise. Add the
+`Bash` tool to this list at your own risk; consider a more targeted allowlist
+instead:
 
 ```bash
 #!/usr/bin/env bash
@@ -554,7 +594,17 @@ tool call always proceeds.
 
 For a more practical example, see [`rtk-rewrite.sh`](./examples/rtk-rewrite.sh),
 which demonstrates how to rewrite tool input using
-[RTK](https://github.com/rtk-ai/rtk) to save tokens.
+[RTK](https://github.com/rtk-ai/rtk) to save tokens. It needs `rtk` and `jq`
+on your `PATH`, and it has no tool check of its own, so scope it with a
+matcher:
+
+```jsonc
+{ "matcher": "^Bash$", "command": "/absolute/path/to/rtk-rewrite.sh" }
+```
+
+Whenever it rewrites a command it also returns `decision: "allow"`, so the
+rewritten command skips the permission prompt. Remove that field from the
+script if you want the usual prompt to stay.
 
 ### Using other languages
 
@@ -596,11 +646,29 @@ process.stdin.on("end", () => {
 
 ## Claude Code compatibility
 
-Angela hooks are broadly compatible with [Claude Code
-hooks](https://docs.claude.com/en/docs/claude-code/hooks): the config shape,
-stdin payload, output envelope, and exit codes line up so most Claude Code
-hooks run under Angela unchanged. This document covers the Angela-specific API
-only — anything not documented here isn't guaranteed to work.
+Angela hooks borrow from [Claude Code
+hooks](https://docs.claude.com/en/docs/claude-code/hooks) and accept part of
+its output format, but they are not drop-in compatible. This document covers
+the Angela-specific API only — anything not documented here isn't guaranteed
+to work.
+
+What lines up:
+
+- `tool_name` and `tool_input` are in the stdin payload, and `tool_input` is a
+  JSON object.
+- Exit code `2` blocks the tool call and stderr is the reason.
+- A `hookSpecificOutput` object on stdout is understood.
+
+What differs, so a Claude Code hook may need changes:
+
+- The payload names the event `event`, not `hook_event_name`, and has no
+  `transcript_path`, `tool_use_id`, or `permission_mode`.
+- Config is a flat list of hooks per event, not Claude Code's nested
+  `matcher` plus `hooks` structure.
+- MCP tools are named `MCP_<server>_<tool>`, so Claude Code matchers for MCP
+  tools won't match.
+- `CLAUDE_PROJECT_DIR` is not set. Use `ANGELA_PROJECT_DIR`.
+- Exit code `49` (halt the turn) exists only in Angela.
 
 One intentional divergence: Angela treats `updated_input` as a shallow-merge
 patch against the original `tool_input` rather than a full replacement. Keys
@@ -634,7 +702,8 @@ Each entry under a `hooks.<EventName>` array:
   // string. Required. Shell command to run.
   "command": "./hooks/my-hook.sh",
 
-  // number. Optional. Seconds before the hook is killed. Defaults to 30.
+  // integer. Optional. Seconds before the hook is killed. Defaults to 30;
+  // zero or a negative number also means 30.
   "timeout": 10,
 }
 ```
@@ -716,8 +785,9 @@ Extends the common envelope:
 
   // "allow" | "deny" | null. null/omitted = no opinion, the tool still goes
   // through the normal permission prompt. "allow" is affirmative: pre-approves
-  // the tool call and bypasses the prompt. "deny" blocks the call; the model
-  // sees the error and may try something else.
+  // the tool call and skips the prompt, unless a deny or ask rule, a forced
+  // prompt, or an earlier denial in the session applies. "deny" blocks the
+  // call; the model sees the error and may try something else.
   "decision": "allow",
 
   // object. Shallow-merge patch against tool_input. Nested objects are

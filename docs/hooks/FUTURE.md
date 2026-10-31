@@ -7,6 +7,11 @@ scratchpad for what's next, not as documentation of current behavior.
 > [!NOTE]
 > This document was largely LLM-generated.
 
+> [!WARNING]
+> Hooks are an **experimental** feature, so everything below is a sketch on top
+> of a contract that carries no compatibility guarantee. See
+> [README.md](./README.md) for what exists today.
+
 ## `context_files`
 
 **Status:** planned, not implemented.
@@ -25,7 +30,7 @@ puts there is concatenated into what the model sees. That's fine for short notes
 
 `context_files` is the lazy alternative: the hook returns **paths**, not
 contents. Angela tells the agent the files exist and are relevant, and the agent
-decides whether to open them with its existing `read` tool.
+decides whether to open them with its existing `Read` tool.
 
 ### Proposed shape
 
@@ -52,7 +57,7 @@ Angela appends a short note to the turn's context along the lines of:
 - docs/ARCHITECTURE.md
 ```
 
-No file contents are inlined. The agent opens them with `read` if it decides
+No file contents are inlined. The agent opens them with `Read` if it decides
 they're relevant. This keeps cost proportional to need.
 
 ### Aggregation
@@ -133,13 +138,16 @@ limits — all rabbit holes).
 
 ### Proposed shape
 
-Stdin payload extends the common envelope with the prompt:
+Stdin payload extends the common envelope with the prompt. The common fields
+also include `agent_id` and `depth`, as in the current `PreToolUse` payload:
 
 ```jsonc
 {
   "event": "UserPromptSubmit",
   "session_id": "…",
   "cwd": "/home/user/project",
+  "agent_id": "coder",
+  "depth": 0,
   "prompt": "fix the login flow",
   "attachments": ["screenshot.png"],
 }
@@ -184,8 +192,15 @@ Reuses the universal rules:
 
 ### Implementation sketch
 
-- New event constant `EventUserPromptSubmit` in `internal/hooks/hooks.go`.
-- `Runner.Run` already takes an event name; no interface change.
+- New event constant in `internal/hookevents/hookevents.go` (the canonical name
+  that config and the hook engine share), re-exported as
+  `EventUserPromptSubmit` in `internal/hooks/hooks.go`. `normalizeHookEvent` in
+  `internal/config/load.go` also needs a case for it, or the event key is
+  accepted but never fires.
+- `Runner.Run` takes an event name, but its signature and payload builder are
+  shaped around tool calls (`toolName`, `toolInputJSON`), and the runner is
+  only constructed when `PreToolUse` hooks are configured. This event needs a
+  prompt-shaped entry point and its own runner construction.
 - A new call site in `sessionAgent.Run` (or the coordinator's Run path) that
   fires hooks after creating the user message but before the first LLM call. If
   the aggregate decision is `deny` or `halt`, abort the turn and surface

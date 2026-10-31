@@ -1,13 +1,16 @@
 package model
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 )
 
@@ -107,4 +110,24 @@ func mcpList(t *styles.Styles, mcps []mcp.ClientInfo, width, maxItems int) strin
 		return lipgloss.JoinVertical(lipgloss.Left, visibleItems...)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, renderedMcps...)
+}
+
+// handleRunMCPPrompt handles dialog.ActionRunMCPPrompt.
+func (m *UI) handleRunMCPPrompt(msg dialog.ActionRunMCPPrompt) tea.Cmd {
+	var cmds []tea.Cmd
+	if len(msg.Arguments) > 0 && msg.Args == nil {
+		m.dialog.CloseFrontDialog()
+		title := cmp.Or(msg.Title, "MCP Prompt Arguments")
+		argsDialog := dialog.NewArguments(
+			m.com,
+			title,
+			msg.Description,
+			msg.Arguments,
+			msg, // Pass the action as the result
+		)
+		m.dialog.OpenDialog(argsDialog)
+		return tea.Batch(cmds...)
+	}
+	cmds = append(cmds, m.runMCPPrompt(msg.ClientID, msg.PromptID, msg.Args))
+	return tea.Batch(cmds...)
 }

@@ -2,10 +2,13 @@ package model
 
 import (
 	"context"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
 )
 
 // sideQuestionAnsweredMsg carries the result of a /btw side question,
@@ -45,5 +48,25 @@ func (m *UI) askSideQuestion(sessionID, question string) tea.Cmd {
 		return sideQuestionAnsweredMsg{pendingID: pendingID, sessionID: sessionID, question: question, answer: answer, err: err}
 	})
 
+	return tea.Batch(cmds...)
+}
+
+// handleAskSideQuestion handles dialog.ActionAskSideQuestion.
+func (m *UI) handleAskSideQuestion(msg dialog.ActionAskSideQuestion) tea.Cmd {
+	var cmds []tea.Cmd
+	if strings.TrimSpace(msg.Question) == "" {
+		m.dialog.CloseFrontDialog()
+		argsDialog := dialog.NewArguments(
+			m.com,
+			"Side Question",
+			"Answered from the current conversation only — no tools, and it never enters the session history.",
+			[]commands.Argument{{ID: "QUESTION", Title: "Question", Required: true}},
+			msg, // Pass the action as the result
+		)
+		m.dialog.OpenDialog(argsDialog)
+		return tea.Batch(cmds...)
+	}
+	cmds = append(cmds, m.askSideQuestion(msg.SessionID, msg.Question))
+	m.dialog.CloseFrontDialog()
 	return tea.Batch(cmds...)
 }

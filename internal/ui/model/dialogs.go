@@ -370,3 +370,31 @@ func (m *UI) editorContentWidth() int {
 func (m *UI) shouldCollapseQuestion(qf *dialog.QuestionForm) bool {
 	return m.focus != uiFocusEditor && m.height > 0 && qf.Height(m.editorContentWidth()) > m.height*2/5
 }
+
+// handleRunCustomCommand handles dialog.ActionRunCustomCommand.
+func (m *UI) handleRunCustomCommand(msg dialog.ActionRunCustomCommand) tea.Cmd {
+	var cmds []tea.Cmd
+	if len(msg.Arguments) > 0 && msg.Args == nil {
+		m.dialog.CloseFrontDialog()
+		argsDialog := dialog.NewArguments(
+			m.com,
+			"Custom Command Arguments",
+			"",
+			msg.Arguments,
+			msg, // Pass the action as the result
+		)
+		m.dialog.OpenDialog(argsDialog)
+		return tea.Batch(cmds...)
+	}
+	content := msg.Content
+	if msg.Args != nil {
+		content = substituteArgs(content, msg.Args)
+	}
+	// If this is a skill command, format it using the skill's FormatInvocation method
+	if msg.Skill != nil {
+		content = msg.Skill.FormatInvocation()
+	}
+	cmds = append(cmds, m.sendMessage(content))
+	m.dialog.CloseFrontDialog()
+	return tea.Batch(cmds...)
+}

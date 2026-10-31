@@ -25,6 +25,22 @@ import (
 // can pin it.
 var lspStatesTTL = 5 * time.Second
 
+// lspCache memoizes the workspace LSP state and per-server severity counts.
+// Each probe behind them may block, and the sidebar, landing view, and
+// compact header render them every frame. LSP events refresh them
+// off-thread with a TTL backstop. It is plain state embedded in [UI], not
+// a model of its own.
+type lspCache struct {
+	lspStates        map[string]workspace.LSPClientInfo
+	lspDiagnostics   map[string]lsp.DiagnosticCounts
+	lspFetchInFlight bool
+	// lspRefreshQueued records that an LSP event arrived while a fetch was
+	// already in flight; applyLSPStates re-dispatches so the freshest state
+	// still lands.
+	lspRefreshQueued bool
+	lspCheckedAt     time.Time
+}
+
 // lspStatesMsg delivers LSP states and per-server diagnostic counts fetched
 // off-thread.
 type lspStatesMsg struct {

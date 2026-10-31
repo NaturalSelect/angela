@@ -33,7 +33,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/images"
-	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/profiling"
@@ -313,19 +312,8 @@ type UI struct {
 		catwalkModel config.ProviderModel
 	}
 
-	// lspStates / lspDiagnostics memoize the workspace LSP state and
-	// per-server severity counts (each probe behind them may block, and
-	// the sidebar, landing view, and compact header render them every
-	// frame). LSP events refresh them
-	// off-thread with a TTL backstop; see lsp.go.
-	lspStates        map[string]workspace.LSPClientInfo
-	lspDiagnostics   map[string]lsp.DiagnosticCounts
-	lspFetchInFlight bool
-	// lspRefreshQueued records that an LSP event arrived while a fetch was
-	// already in flight; applyLSPStates re-dispatches so the freshest state
-	// still lands.
-	lspRefreshQueued bool
-	lspCheckedAt     time.Time
+	// lspCache memoizes the workspace LSP state; see lsp.go.
+	lspCache
 
 	// mcp
 	mcpStates map[string]mcp.ClientInfo
@@ -493,7 +481,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		completions:         comp,
 		attachments:         attachments,
 		turnSpinner:         turnSpinner,
-		lspStates:           make(map[string]workspace.LSPClientInfo),
+		lspCache:            lspCache{lspStates: make(map[string]workspace.LSPClientInfo)},
 		mcpStates:           make(map[string]mcp.ClientInfo),
 		notifyBackend:       notification.NoopBackend{},
 		notifyWindowFocused: true,

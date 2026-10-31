@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/stretchr/testify/require"
@@ -331,4 +332,63 @@ func TestLoadSession_GetSessionErrorReportsError(t *testing.T) {
 	errMsg, ok := innerCmd().(util.InfoMsg)
 	require.True(t, ok)
 	require.Equal(t, util.InfoTypeError, errMsg.Type)
+}
+
+// selectSessionFromSwitcher picks "other" in the sessions dialog, the way
+// the switcher does, and returns the commands that pick produced.
+func selectSessionFromSwitcher(m *UI) tea.Cmd {
+	m.dialog = dialog.NewOverlay(passThroughDialog{})
+	return m.handleDialogMsg(dialog.ActionSelectSession{Session: session.Session{ID: "other"}})
+}
+
+func TestSelectSession_ShowsLoadingNoticeUntilTranscriptLands(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+
+	cmd := selectSessionFromSwitcher(m)
+	require.NotNil(t, cmd)
+	require.Equal(t, sessionLoadingInfo, m.status.msg,
+		"the user must be told the session is loading as soon as it is picked")
+	require.NotNil(t, m.status.msgAnim, "the notice animates so it does not read as frozen")
+
+	m.session = &session.Session{ID: "other"}
+	m.Update(sessionMessagesMsg{sessionID: "other"})
+	require.True(t, m.status.msg.IsEmpty(), "the notice must end once the transcript is shown")
+}
+
+func TestSelectSession_StaleTranscriptKeepsLoadingNotice(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+	selectSessionFromSwitcher(m)
+	m.session = &session.Session{ID: "other"}
+
+	m.Update(sessionMessagesMsg{sessionID: "s1"})
+	require.Equal(t, sessionLoadingInfo, m.status.msg,
+		"a dropped transcript for another session says nothing about this load")
+}
+
+func TestSelectSession_LoadingNoticeDoesNotEraseAnError(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+	selectSessionFromSwitcher(m)
+	failure := util.NewErrorMsg(errors.New("not found"))
+	m.status.SetInfoMsg(failure)
+	m.session = &session.Session{ID: "other"}
+
+	m.Update(sessionMessagesMsg{sessionID: "other"})
+	require.Equal(t, failure, m.status.msg)
+}
+
+func TestNewSession_EndsLoadingNotice(t *testing.T) {
+	t.Parallel()
+
+	m, _ := newMockBusyUI(t)
+	selectSessionFromSwitcher(m)
+	require.Equal(t, sessionLoadingInfo, m.status.msg)
+
+	m.newSession()
+	require.True(t, m.status.msg.IsEmpty())
 }

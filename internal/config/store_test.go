@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -292,6 +293,42 @@ func TestConfigStaleness_CleanImmediatelyAfterSnapshot(t *testing.T) {
 	require.False(t, result.Dirty)
 	require.Empty(t, result.Changed)
 	require.Empty(t, result.Missing)
+}
+
+func TestConfigStaleness_NoRaceWithConfigWrites(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "angela.json")
+	require.NoError(t, os.WriteFile(configPath, []byte(`{}`), 0o600))
+
+	store := &ConfigStore{
+		config:         &Config{},
+		globalDataPath: configPath,
+	}
+	store.captureStalenessSnapshot([]string{configPath})
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Reader: the same call AngelaInfo makes from a tool goroutine.
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = store.ConfigStaleness()
+			}
+		}
+	})
+
+	// Writer: every write rebuilds the tracked paths and snapshots.
+	for i := range 100 {
+		require.NoError(t, store.SetCompactMode(ScopeGlobal, i%2 == 0))
+	}
+	close(stop)
+	wg.Wait()
 }
 
 func TestConfigStaleness_DetectsFileContentChange(t *testing.T) {

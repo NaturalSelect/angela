@@ -221,11 +221,11 @@ func TestEscOnAnOrdinarySessionNeverNavigates(t *testing.T) {
 
 	ws, calls := newCancelRecordingWorkspace(t)
 	ui := &UI{
-		com:         &common.Common{Workspace: ws},
-		session:     &session.Session{ID: "root"},
-		agentReady:  true,
-		isCanceling: true,
+		com:       &common.Common{Workspace: ws},
+		session:   &session.Session{ID: "root"},
+		turnState: turnState{isCanceling: true},
 	}
+	ui.agentReady = true
 	ui.agentBusyCache.set(true)
 	ui.sessionBusyCache.set(true)
 

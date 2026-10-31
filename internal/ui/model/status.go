@@ -1,6 +1,7 @@
 package model
 
 import (
+	"log/slog"
 	"strings"
 	"time"
 
@@ -154,4 +155,29 @@ func clearInfoMsgCmd(ttl time.Duration) tea.Cmd {
 	return tea.Tick(ttl, func(time.Time) tea.Msg {
 		return util.ClearStatusMsg{}
 	})
+}
+
+// handleInfoMsg handles util.InfoMsg.
+func (m *UI) handleInfoMsg(msg util.InfoMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	if msg.Type == util.InfoTypeError {
+		slog.Error("Error reported", "error", msg.Msg)
+	}
+	if cmd := m.status.SetInfoMsg(msg); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	// An animated message marks an action still in progress, of
+	// unknown duration: it must stay up until replaced by that
+	// action's outcome, not vanish on a fixed timer while the
+	// action itself may still be running (this is what let a
+	// slow commit's "still working" toast disappear before git
+	// actually finished).
+	if !msg.Animated {
+		ttl := msg.TTL
+		if ttl <= 0 {
+			ttl = DefaultStatusTTL
+		}
+		cmds = append(cmds, clearInfoMsgCmd(ttl))
+	}
+	return cmds
 }

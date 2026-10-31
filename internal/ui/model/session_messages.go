@@ -704,3 +704,46 @@ func (m *UI) handleSessionMessages(msg sessionMessagesMsg) []tea.Cmd {
 	cmds = append(cmds, m.chat.BeginWarm())
 	return cmds
 }
+
+// handleMessageEvent handles pubsub.Event[message.Message].
+func (m *UI) handleMessageEvent(msg pubsub.Event[message.Message]) []tea.Cmd {
+	var cmds []tea.Cmd
+	// Check if this is a child session message for an agent tool.
+	if m.session == nil {
+		return cmds
+	}
+	if msg.Payload.SessionID != m.session.ID {
+		// This might be a child session message from an agent tool.
+		if cmd := m.handleChildSessionMessage(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return cmds
+	}
+	switch msg.Type {
+	case pubsub.CreatedEvent:
+		cmds = append(cmds, m.appendSessionMessage(msg.Payload))
+		// A new message is a run boundary — a user prompt starting
+		// a turn or the agent replying/dequeueing. Drop the
+		// memoized busy state and re-fetch it and the queue
+		// off-thread. Per-chunk UpdatedEvents deliberately do NOT
+		// trigger this: during streaming that would put workspace
+		// probes on every token.
+		m.invalidateBusyCaches()
+		m.invalidatePromptQueue()
+		if cmd := m.dispatchBusyRefresh(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if cmd := m.dispatchPromptQueueRefresh(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	case pubsub.UpdatedEvent:
+		cmds = append(cmds, m.updateSessionMessage(msg.Payload))
+	case pubsub.DeletedEvent:
+		m.chat.RemoveMessageWithToolCalls(msg.Payload.ID)
+	}
+	// Follow the turn: spin while the agent works, stop when it stops.
+	if cmd := m.syncTurnSpinner(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return cmds
+}

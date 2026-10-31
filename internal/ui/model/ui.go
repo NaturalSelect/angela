@@ -1050,62 +1050,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMotionMsg:
-		// Pass mouse events to dialogs first if any are open.
-		if m.dialog.HasDialogs() {
-			if cmd := m.handleDialogMsg(msg); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
+		c, skipTail := m.handleMouseMotion(msg)
+		cmds = append(cmds, c...)
+		if skipTail {
 			return m, tea.Batch(cmds...)
 		}
-
-		// Track hover position for inline editors.
-		if m.activeInline != nil {
-			if m.hoverX != msg.X || m.hoverY != msg.Y {
-				m.hoverX = msg.X
-				m.hoverY = msg.Y
-				if clickable, ok := m.activeInline.(dialog.MouseClickableEditor); ok {
-					clickable.SetHover(msg.X, msg.Y)
-				}
-			}
-		}
-
-		switch m.state {
-		case uiChat:
-			// Skip chat edge-scrolling when an inline editor is
-			// active to prevent accidental scrolling while hovering
-			// over question forms or other inline components.
-			if m.activeInline != nil && m.focus == uiFocusEditor {
-				break
-			}
-			if msg.Y <= 0 {
-				if cmd := m.chat.ScrollByAndAnimate(-1); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				if !m.chat.SelectedItemInView() {
-					m.chat.SelectPrev()
-					if cmd := m.chat.ScrollToSelectedAndAnimate(); cmd != nil {
-						cmds = append(cmds, cmd)
-					}
-				}
-			} else if msg.Y >= m.chat.Height()-1 {
-				if cmd := m.chat.ScrollByAndAnimate(1); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				if !m.chat.SelectedItemInView() {
-					m.chat.SelectNext()
-					if cmd := m.chat.ScrollToSelectedAndAnimate(); cmd != nil {
-						cmds = append(cmds, cmd)
-					}
-				}
-			}
-
-			x, y := msg.X, msg.Y
-			// Adjust for chat area position
-			x -= m.layout.main.Min.X
-			y -= m.layout.main.Min.Y
-			m.chat.HandleMouseDrag(x, y)
-		}
-
 	case tea.MouseReleaseMsg:
 		c, skipTail := m.handleMouseRelease(msg)
 		cmds = append(cmds, c...)

@@ -10,6 +10,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/list"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -190,4 +191,20 @@ func (m *UI) attachSkill(skillID, name string) tea.Cmd {
 			Content:  content,
 		}
 	}
+}
+
+// handleExternalEditor handles dialog.ActionExternalEditor.
+func (m *UI) handleExternalEditor() tea.Cmd {
+	var cmds []tea.Cmd
+	if m.isAgentBusy() {
+		cmds = append(cmds, util.ReportWarn("Agent is working, please wait..."))
+		return tea.Batch(cmds...)
+	}
+	editorValue := m.textarea.Value()
+	if m.bangMode {
+		editorValue = "!" + editorValue
+	}
+	cmds = append(cmds, m.openEditor(editorValue))
+	m.dialog.CloseDialog(dialog.CommandsID)
+	return tea.Batch(cmds...)
 }

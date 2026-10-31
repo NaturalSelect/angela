@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"mvdan.cc/sh/v3/syntax"
 
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
@@ -84,4 +85,19 @@ func signedCommitCommand(message string) (string, error) {
 		return "", fmt.Errorf("cannot quote commit message for shell: %w", err)
 	}
 	return "git commit -s --no-verify -m " + quoted, nil
+}
+
+// handleCommit handles dialog.ActionCommit.
+func (m *UI) handleCommit(msg dialog.ActionCommit) tea.Cmd {
+	var cmds []tea.Cmd
+	// Session-scoped, matching ActionSummarize: committing while a
+	// turn is running risks capturing a half-finished edit.
+	// NOTE: With no session yet (empty ID) there is no turn to wait on.
+	if msg.SessionID != "" && m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
+		cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before committing..."))
+		return tea.Batch(cmds...)
+	}
+	cmds = append(cmds, m.commitStagedChanges(msg.SessionID))
+	m.dialog.CloseDialog(dialog.CommandsID)
+	return tea.Batch(cmds...)
 }

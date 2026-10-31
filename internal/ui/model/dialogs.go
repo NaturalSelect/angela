@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/event"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/question"
@@ -396,5 +397,41 @@ func (m *UI) handleRunCustomCommand(msg dialog.ActionRunCustomCommand) tea.Cmd {
 	}
 	cmds = append(cmds, m.sendMessage(content))
 	m.dialog.CloseFrontDialog()
+	return tea.Batch(cmds...)
+}
+
+// handlePermissionResponse handles dialog.ActionPermissionResponse.
+func (m *UI) handlePermissionResponse(msg dialog.ActionPermissionResponse) tea.Cmd {
+	var cmds []tea.Cmd
+	m.dialog.CloseDialog(dialog.PermissionsID)
+	switch msg.Action {
+	case dialog.PermissionAllow:
+		m.com.Workspace.PermissionGrant(msg.Permission)
+	case dialog.PermissionAllowForSession:
+		m.com.Workspace.PermissionGrantPersistent(msg.Permission)
+	case dialog.PermissionDeny:
+		m.com.Workspace.PermissionDeny(msg.Permission)
+	}
+	if cmd := m.nextPermissionRequest(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
+}
+
+// handleSelectNotificationStyle handles dialog.ActionSelectNotificationStyle.
+func (m *UI) handleSelectNotificationStyle(msg dialog.ActionSelectNotificationStyle) tea.Cmd {
+	var cmds []tea.Cmd
+	cfg := m.com.Config()
+	if cfg != nil && cfg.Options != nil {
+		cfg.Options.Notifications = msg.Style
+		if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.notifications", msg.Style); err != nil {
+			cmds = append(cmds, util.ReportError(err))
+		} else {
+			cmds = append(cmds, util.CmdHandler(util.NewInfoMsg("Notifications set to: "+msg.Style)))
+		}
+		// Reinitialize notification backend with new style.
+		m.notifyBackend = selectNotificationBackend(m.caps, cfg)
+	}
+	m.dialog.CloseDialog(dialog.NotificationsID)
 	return tea.Batch(cmds...)
 }

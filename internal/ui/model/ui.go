@@ -2,7 +2,6 @@ package model
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -2014,61 +2013,14 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		))
 
 	case dialog.ActionRunCustomCommand:
-		if len(msg.Arguments) > 0 && msg.Args == nil {
-			m.dialog.CloseFrontDialog()
-			argsDialog := dialog.NewArguments(
-				m.com,
-				"Custom Command Arguments",
-				"",
-				msg.Arguments,
-				msg, // Pass the action as the result
-			)
-			m.dialog.OpenDialog(argsDialog)
-			break
-		}
-		content := msg.Content
-		if msg.Args != nil {
-			content = substituteArgs(content, msg.Args)
-		}
-		// If this is a skill command, format it using the skill's FormatInvocation method
-		if msg.Skill != nil {
-			content = msg.Skill.FormatInvocation()
-		}
-		cmds = append(cmds, m.sendMessage(content))
-		m.dialog.CloseFrontDialog()
+		return m.handleRunCustomCommand(msg)
 	case dialog.ActionAttachSkill:
 		m.dialog.CloseFrontDialog()
 		cmds = append(cmds, m.attachSkill(msg.ID, msg.Name))
 	case dialog.ActionAskSideQuestion:
-		if strings.TrimSpace(msg.Question) == "" {
-			m.dialog.CloseFrontDialog()
-			argsDialog := dialog.NewArguments(
-				m.com,
-				"Side Question",
-				"Answered from the current conversation only — no tools, and it never enters the session history.",
-				[]commands.Argument{{ID: "QUESTION", Title: "Question", Required: true}},
-				msg, // Pass the action as the result
-			)
-			m.dialog.OpenDialog(argsDialog)
-			break
-		}
-		cmds = append(cmds, m.askSideQuestion(msg.SessionID, msg.Question))
-		m.dialog.CloseFrontDialog()
+		return m.handleAskSideQuestion(msg)
 	case dialog.ActionRunMCPPrompt:
-		if len(msg.Arguments) > 0 && msg.Args == nil {
-			m.dialog.CloseFrontDialog()
-			title := cmp.Or(msg.Title, "MCP Prompt Arguments")
-			argsDialog := dialog.NewArguments(
-				m.com,
-				title,
-				msg.Description,
-				msg.Arguments,
-				msg, // Pass the action as the result
-			)
-			m.dialog.OpenDialog(argsDialog)
-			break
-		}
-		cmds = append(cmds, m.runMCPPrompt(msg.ClientID, msg.PromptID, msg.Args))
+		return m.handleRunMCPPrompt(msg)
 	default:
 		cmds = append(cmds, util.CmdHandler(msg))
 	}

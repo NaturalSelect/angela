@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/charmbracelet/x/ansi"
@@ -328,4 +330,30 @@ func (m *UI) startLSPs(paths []string) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+// handleSummarize handles dialog.ActionSummarize.
+func (m *UI) handleSummarize(msg dialog.ActionSummarize) tea.Cmd {
+	var cmds []tea.Cmd
+	// Session-scoped, not the busy cache: that cache answers for the
+	// whole process, so another session's run would block this one's
+	// compact even while it sits idle.
+	if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
+		cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before summarizing session..."))
+		return tea.Batch(cmds...)
+	}
+	cmds = append(cmds, func() tea.Msg {
+		err := m.com.Workspace.AgentSummarize(context.Background(), msg.SessionID)
+		// NOTE: A cancelled compact is the user's choice, not a failure.
+		if err != nil && !errors.Is(err, context.Canceled) {
+			// Routed through agentRunFailedMsg (rather than a plain
+			// ReportError) so restoreQueueOnAgentError also fires and
+			// hands back whatever the user had queued behind this
+			// compact.
+			return agentRunFailedMsg{sessionID: msg.SessionID, err: err}
+		}
+		return nil
+	})
+	m.dialog.CloseDialog(dialog.CommandsID)
+	return tea.Batch(cmds...)
 }

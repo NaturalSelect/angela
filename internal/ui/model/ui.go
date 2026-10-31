@@ -3,7 +3,6 @@ package model
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"image"
 	"log/slog"
@@ -1755,18 +1754,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		m.cyclePermissionMode()
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionSelectNotificationStyle:
-		cfg := m.com.Config()
-		if cfg != nil && cfg.Options != nil {
-			cfg.Options.Notifications = msg.Style
-			if err := m.com.Workspace.SetConfigField(config.ScopeGlobal, "options.notifications", msg.Style); err != nil {
-				cmds = append(cmds, util.ReportError(err))
-			} else {
-				cmds = append(cmds, util.CmdHandler(util.NewInfoMsg("Notifications set to: "+msg.Style)))
-			}
-			// Reinitialize notification backend with new style.
-			m.notifyBackend = selectNotificationBackend(m.caps, cfg)
-		}
-		m.dialog.CloseDialog(dialog.NotificationsID)
+		return m.handleSelectNotificationStyle(msg)
 	case dialog.ActionNewSession:
 		if m.isAgentBusy() {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before starting a new session..."))
@@ -1777,26 +1765,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionSummarize:
-		// Session-scoped, not the busy cache: that cache answers for the
-		// whole process, so another session's run would block this one's
-		// compact even while it sits idle.
-		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
-			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before summarizing session..."))
-			break
-		}
-		cmds = append(cmds, func() tea.Msg {
-			err := m.com.Workspace.AgentSummarize(context.Background(), msg.SessionID)
-			// NOTE: A cancelled compact is the user's choice, not a failure.
-			if err != nil && !errors.Is(err, context.Canceled) {
-				// Routed through agentRunFailedMsg (rather than a plain
-				// ReportError) so restoreQueueOnAgentError also fires and
-				// hands back whatever the user had queued behind this
-				// compact.
-				return agentRunFailedMsg{sessionID: msg.SessionID, err: err}
-			}
-			return nil
-		})
-		m.dialog.CloseDialog(dialog.CommandsID)
+		return m.handleSummarize(msg)
 	case dialog.ActionReload:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		cmds = append(cmds, func() tea.Msg {
@@ -1810,15 +1779,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, m.generateSessionTitle(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionCommit:
-		// Session-scoped, matching ActionSummarize: committing while a
-		// turn is running risks capturing a half-finished edit.
-		// NOTE: With no session yet (empty ID) there is no turn to wait on.
-		if msg.SessionID != "" && m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
-			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before committing..."))
-			break
-		}
-		cmds = append(cmds, m.commitStagedChanges(msg.SessionID))
-		m.dialog.CloseDialog(dialog.CommandsID)
+		return m.handleCommit(msg)
 	case dialog.ActionExportSession:
 		return m.handleExportSession(msg)
 	case dialog.ActionExportImage:
@@ -1868,16 +1829,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		m.status.ToggleHelp()
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionExternalEditor:
-		if m.isAgentBusy() {
-			cmds = append(cmds, util.ReportWarn("Agent is working, please wait..."))
-			break
-		}
-		editorValue := m.textarea.Value()
-		if m.bangMode {
-			editorValue = "!" + editorValue
-		}
-		cmds = append(cmds, m.openEditor(editorValue))
-		m.dialog.CloseDialog(dialog.CommandsID)
+		return m.handleExternalEditor()
 	case dialog.ActionToggleCompactMode:
 		cmds = append(cmds, m.toggleCompactMode())
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -1986,18 +1938,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		m.dialog.CloseDialog(dialog.CommandsID)
 		cmds = append(cmds, m.clearAgentModelsCmd())
 	case dialog.ActionPermissionResponse:
-		m.dialog.CloseDialog(dialog.PermissionsID)
-		switch msg.Action {
-		case dialog.PermissionAllow:
-			m.com.Workspace.PermissionGrant(msg.Permission)
-		case dialog.PermissionAllowForSession:
-			m.com.Workspace.PermissionGrantPersistent(msg.Permission)
-		case dialog.PermissionDeny:
-			m.com.Workspace.PermissionDeny(msg.Permission)
-		}
-		if cmd := m.nextPermissionRequest(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+		return m.handlePermissionResponse(msg)
 
 	case dialog.ActionFilePickerSelected:
 		cmds = append(cmds, tea.Sequence(

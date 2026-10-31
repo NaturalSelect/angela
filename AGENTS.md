@@ -17,26 +17,32 @@ The module path is `github.com/NaturalSelect/angela`.
 main.go                            CLI entry point (cobra via internal/cmd)
 internal/
   app/app.go                       Top-level wiring: DB, config, agents, LSP, MCP, events
-  cmd/                             CLI commands (root, run, login, models, stats, sessions)
+  cmd/                             CLI commands (root, run, commit, session, agent, acp, config,
+                                    login, logout, models, stats, logs, dirs, projects, pprof,
+                                    update-providers)
   config/
     config.go                      Config struct, context file paths, agent definitions
     load.go                        angela.json loading and validation
     provider.go                    Provider configuration and model resolution
   agent/
     agent.go                       SessionAgent: runs LLM conversations per session
-    coordinator.go                 Coordinator: manages named agents ("coder", "task")
+    coordinator.go                 Coordinator: manages named agents ("coder", "explore", "general",
+                                    "web-fetch", "plan", "co-design", "deep-research") and
+                                    resolves the "compact" agent that summarizes sessions
     hooked_tool.go                 Decorator that runs PreToolUse hooks before tool execution
     prompts.go                     Loads Go-template system prompts
     agenttest/                     Test helpers for Coordinator construction (mock providers)
     notify/                        Agent lifecycle notification events (done, error, auth, SSO)
     prompt/                        System prompt template engine (Go templates + runtime data)
-    templates/                     System prompt templates (coder.md.tpl, task.md.tpl, etc.)
+    templates/                     System prompt templates (coder.md.tpl, explore.md.tpl, plan.md.tpl, etc.)
     tools/                         All built-in tools (bash, edit, read, grep, glob, etc.)
       mcp/                         MCP client integration
   acp/                             Agent Client Protocol agent for editors (`angela acp`, stdio)
     protocol/                      Angela's own ACP types and ports (no SDK imports)
     caelis/                        The only package allowed to import the ACP SDK (depguard)
   workspace/                       Workspace interface and its in-process AppWorkspace
+  hookevents/                      Canonical hook event names (lets config and hooks share them
+                                    without an import cycle)
   hooks/                           Hook engine: runs user shell commands on hook events
     hooks.go                       Decision types, aggregation logic, event constants
     runner.go                      Parallel hook execution, timeout, dedup
@@ -50,6 +56,8 @@ internal/
   ui/                              Bubble Tea v2 TUI (see internal/ui/AGENTS.md)
   permission/                      Tool permission checking and allow-lists
     shellscan/                     Shell command AST scanner for permission decisions
+  sandbox/                         OS-level isolation for the process and the commands it runs
+                                    (Landlock, Seatbelt, Docker detection)
   editorapproval/                  External-editor diff review (VS Code MCP `open_diff` channel)
   skills/                          Skill file discovery and loading
     builtin/                       Embedded builtin skills (setup, hooks, config, jq, etc.)
@@ -60,6 +68,9 @@ internal/
   event/                           Telemetry (PostHog)
   pubsub/                          Internal pub/sub for cross-component messaging
   filetracker/                     Tracks files touched per session
+  undo/                            Reverts the last turn's file edits, messages and sub-sessions
+  imagegen/                        Provider-agnostic wrapper over the OpenAI Images API
+  images/                          SQLite storage for images produced by the image tools
   history/                         Prompt history
   projects/                        Recent projects tracking & persistence
   oauth/                           OAuth2 token models & credential persistence (Copilot, MCP)

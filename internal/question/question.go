@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/google/uuid"
@@ -95,14 +96,14 @@ func (q Question) Validate() error {
 	if q.Text == "" {
 		return fmt.Errorf("%s: question text is required", label)
 	}
-	if len(q.Text) > MaxQuestionLength {
-		return fmt.Errorf("%s: text exceeds %d characters (got %d)", label, MaxQuestionLength, len(q.Text))
+	if n := utf8.RuneCountInString(q.Text); n > MaxQuestionLength {
+		return fmt.Errorf("%s: text exceeds %d characters (got %d)", label, MaxQuestionLength, n)
 	}
 	if q.Description == "" {
 		return fmt.Errorf("%s: description is required", label)
 	}
-	if len(q.Description) > MaxDescriptionLength {
-		return fmt.Errorf("%s: description exceeds %d characters (got %d)", label, MaxDescriptionLength, len(q.Description))
+	if n := utf8.RuneCountInString(q.Description); n > MaxDescriptionLength {
+		return fmt.Errorf("%s: description exceeds %d characters (got %d)", label, MaxDescriptionLength, n)
 	}
 	switch q.Type {
 	case TypeYesNo, TypeFreeText:
@@ -126,11 +127,11 @@ func (q Question) Validate() error {
 			if c.Label == "" {
 				return fmt.Errorf("%s: choice %d (%s) must have a \"label\" field", label, i+1, c.ID)
 			}
-			if len(c.Label) > MaxChoiceLabelLength {
-				return fmt.Errorf("%s: choice %d label exceeds %d characters (got %d)", label, i+1, MaxChoiceLabelLength, len(c.Label))
+			if n := utf8.RuneCountInString(c.Label); n > MaxChoiceLabelLength {
+				return fmt.Errorf("%s: choice %d label exceeds %d characters (got %d)", label, i+1, MaxChoiceLabelLength, n)
 			}
-			if len(c.Description) > MaxChoiceDescriptionLength {
-				return fmt.Errorf("%s: choice %d description exceeds %d characters (got %d)", label, i+1, MaxChoiceDescriptionLength, len(c.Description))
+			if n := utf8.RuneCountInString(c.Description); n > MaxChoiceDescriptionLength {
+				return fmt.Errorf("%s: choice %d description exceeds %d characters (got %d)", label, i+1, MaxChoiceDescriptionLength, n)
 			}
 		}
 	default:

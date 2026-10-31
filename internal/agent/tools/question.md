@@ -22,13 +22,16 @@ Every question MUST include:
 
 These are enforced. Violations return an error and waste a round trip.
 
+- **Question text** at most 240 characters.
+- **Description required** on every question, at most 1000 characters.
 - **Max 5 choices** per question. If you have more, group or prioritize.
 - **Choices required** for `single_choice` and `multi_choice`. A
   single_choice without choices is an error.
-- **Description required** on every question. Keep it under 1000 chars.
-- **Choice descriptions** must be under 100 chars each.
+- **Choice labels and descriptions** at most 200 characters each.
 - **Max 5 questions** per batch. If you need more, split into multiple
   batches and tell the user there will be follow-up questions.
+
+Lengths count characters, not bytes, so a CJK character counts as one.
 
 ## Question types
 

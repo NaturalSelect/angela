@@ -3,8 +3,10 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/undo"
@@ -59,4 +61,35 @@ func (m *UI) handleUndoConfirmed(msg dialog.ActionUndoConfirmed) tea.Cmd {
 		return undoResultMsg{sessionID: sessionID, result: result}
 	})
 	return tea.Batch(cmds...)
+}
+
+// handleUndoResult handles undoResultMsg.
+func (m *UI) handleUndoResult(msg undoResultMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	if msg.sessionID != m.currentSessionID() {
+		// NOTE: The messages are already deleted, so hold the text and
+		// files until that session is shown again.
+		if msg.result.PoppedText != "" || len(msg.result.PoppedAttachments) > 0 {
+			m.stashRestoredPrompts(msg.sessionID, []message.QueuedPrompt{{
+				Prompt:      msg.result.PoppedText,
+				Attachments: msg.result.PoppedAttachments,
+			}})
+		}
+	} else {
+		m.prependAttachments(msg.result.PoppedAttachments)
+		if msg.result.PoppedText != "" {
+			if cmd := m.prependToEditor(msg.result.PoppedText); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+	switch {
+	case len(msg.result.Skipped) > 0:
+		cmds = append(cmds, util.ReportWarn(fmt.Sprintf("Undid last turn, but skipped %d file(s) modified outside the session", len(msg.result.Skipped))))
+	case len(msg.result.Reverted) > 0 || len(msg.result.Deleted) > 0:
+		cmds = append(cmds, util.ReportInfo(fmt.Sprintf("Undid last turn: %d file(s) reverted, %d deleted", len(msg.result.Reverted), len(msg.result.Deleted))))
+	default:
+		cmds = append(cmds, util.ReportInfo("Undid last turn"))
+	}
+	return cmds
 }

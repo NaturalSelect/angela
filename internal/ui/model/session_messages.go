@@ -601,3 +601,106 @@ func (m *UI) handleChildSessionMessage(event pubsub.Event[message.Message]) tea.
 
 	return tea.Sequence(cmds...)
 }
+
+// handleLoadSession handles loadSessionMsg.
+func (m *UI) handleLoadSession(msg loadSessionMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	// Sub-session navigation: push/pop deferred to here so a
+	// failed load (which sends ReportError, not loadSessionMsg)
+	// never touches the stack.
+	if msg.enterFrame != nil {
+		m.sessionStack = append(m.sessionStack, *msg.enterFrame)
+	}
+	if msg.leaveLevel && len(m.sessionStack) > 0 {
+		m.sessionStack = m.sessionStack[:len(m.sessionStack)-1]
+	}
+	if msg.truncateStackTo != nil && *msg.truncateStackTo <= len(m.sessionStack) {
+		m.sessionStack = m.sessionStack[:*msg.truncateStackTo]
+	}
+	if msg.clearStack {
+		m.sessionStack = nil
+	}
+	if msg.draftAfter != nil {
+		m.applyDraft(*msg.draftAfter)
+	}
+	if m.forceCompactMode {
+		m.isCompact = true
+	}
+	focus := m.focus
+	isBranch := msg.isBranch
+	if msg.session.ParentSessionID != "" && !isBranch {
+		// The editor is closed off down here, so leaving focus in it
+		// would strand the user in a box that cannot take input. A
+		// branch keeps its editor, so it keeps the focus too.
+		focus = uiFocusMain
+		m.textarea.Blur()
+		m.chat.Focus()
+	}
+	m.setState(uiChat, focus)
+	switched := !m.hasSession() || m.session.ID != msg.session.ID
+	m.session = msg.session
+	m.sessionIsBranch = isBranch
+	m.sessionFiles = msg.files
+	// Session switch: the memoized busy state and queued prompts
+	// belong to the previous session. Drop them and re-fetch
+	// off-thread so the queue pill and esc behavior track the new
+	// session instead of a stale one.
+	m.invalidateBusyCaches()
+	if switched {
+		// NOTE: Invalidating keeps the value, and the probe for the new
+		// session may be a cycle away. Until it lands the old session's
+		// answer would gate the new transcript's animations.
+		m.sessionBusyCache = ttlCache[bool]{}
+		m.backgroundAgentsCache = ttlCache[int]{}
+		// NOTE: The previous transcript would otherwise stay on screen,
+		// and be laid out at the new size, until the new one arrives.
+		m.chat.ClearMessages()
+	}
+	m.invalidatePromptQueue()
+	m.promptQueue = 0
+	m.promptQueueItems = nil
+	m.promptQueueCheckedAt = time.Time{}
+	if cmd := m.restoreStashedPrompts(msg.session.ID); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if cmd := m.dispatchBusyRefresh(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if cmd := m.dispatchPromptQueueRefresh(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
+	cmds = append(cmds, m.loadSessionMessagesCmd(m.session.ID))
+	if cmd := m.syncTurnSpinner(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	// Reload prompt history for the new session.
+	m.historyReset()
+	cmds = append(cmds, m.loadPromptHistory())
+	m.updateLayoutAndSize()
+	return cmds
+}
+
+// handleSessionMessages handles sessionMessagesMsg.
+func (m *UI) handleSessionMessages(msg sessionMessagesMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	// Drop a load the user has already navigated away from,
+	// otherwise the previous session's transcript lands in the
+	// chat that replaced it.
+	if msg.sessionID != m.currentSessionID() {
+		return cmds
+	}
+	m.clearSessionLoading()
+	m.lastUserMessageTime = msg.lastUserMessageTime
+	if cmd := m.applySessionItems(msg.items); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	// NOTE: Without warming, the first scroll computes the total height
+	// of the whole transcript in one blocking pass to size the
+	// scrollbar. The layout runs first so the list takes the
+	// scrollbar-adjusted width now; otherwise the layout pass at warm
+	// completion changes the width and drops everything just warmed.
+	m.updateLayoutAndSize()
+	cmds = append(cmds, m.chat.BeginWarm())
+	return cmds
+}

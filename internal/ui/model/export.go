@@ -130,3 +130,42 @@ func (m *UI) handleExportReport(msg dialog.ActionExportReport) tea.Cmd {
 	})
 	return tea.Batch(cmds...)
 }
+
+// handleExportSession handles dialog.ActionExportSession.
+func (m *UI) handleExportSession(msg dialog.ActionExportSession) tea.Cmd {
+	var cmds []tea.Cmd
+	m.dialog.CloseDialog(dialog.CommandsID)
+	sessionID := msg.SessionID
+	cmds = append(cmds, func() tea.Msg {
+		ctx := context.Background()
+		sess, err := m.com.Workspace.GetSession(ctx, sessionID)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		sessionMessages, err := m.com.Workspace.ListMessages(ctx, sessionID)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return util.ReportError(err)()
+		}
+
+		outPath, err := chat.UniqueExportPath(filepath.Join(workingDir, chat.SessionExportSlug(sess.Title, sess.ID)+".md"))
+		if err != nil {
+			return util.ReportError(err)()
+		}
+
+		doc, err := chat.SessionToMarkdown(sess, sessionMessages, chat.AssetsDirName(outPath))
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		if err := os.WriteFile(outPath, []byte(doc), 0o644); err != nil {
+			return util.ReportError(err)()
+		}
+
+		return util.ReportInfo("Exported session to " + outPath)()
+	})
+	return tea.Batch(cmds...)
+}

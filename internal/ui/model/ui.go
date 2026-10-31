@@ -1826,39 +1826,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, m.commitStagedChanges(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionExportSession:
-		m.dialog.CloseDialog(dialog.CommandsID)
-		sessionID := msg.SessionID
-		cmds = append(cmds, func() tea.Msg {
-			ctx := context.Background()
-			sess, err := m.com.Workspace.GetSession(ctx, sessionID)
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			sessionMessages, err := m.com.Workspace.ListMessages(ctx, sessionID)
-			if err != nil {
-				return util.ReportError(err)()
-			}
-
-			workingDir, err := os.Getwd()
-			if err != nil {
-				return util.ReportError(err)()
-			}
-
-			outPath, err := chat.UniqueExportPath(filepath.Join(workingDir, chat.SessionExportSlug(sess.Title, sess.ID)+".md"))
-			if err != nil {
-				return util.ReportError(err)()
-			}
-
-			doc, err := chat.SessionToMarkdown(sess, sessionMessages, chat.AssetsDirName(outPath))
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			if err := os.WriteFile(outPath, []byte(doc), 0o644); err != nil {
-				return util.ReportError(err)()
-			}
-
-			return util.ReportInfo("Exported session to " + outPath)()
-		})
+		return m.handleExportSession(msg)
 	case dialog.ActionExportImage:
 		return m.handleExportImage(msg)
 	case dialog.ActionSelectExportImage:

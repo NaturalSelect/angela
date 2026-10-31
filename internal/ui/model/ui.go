@@ -1481,63 +1481,6 @@ func substituteArgs(content string, args map[string]string) string {
 func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 	var cmds []tea.Cmd
 
-	handleGlobalKeys := func(msg tea.KeyPressMsg) bool {
-		switch {
-		case key.Matches(msg, m.keyMap.Help):
-			m.status.ToggleHelp()
-			m.updateLayoutAndSize()
-			return true
-		case key.Matches(msg, m.keyMap.Commands):
-			if cmd := m.openCommandsDialog(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			return true
-		case key.Matches(msg, m.keyMap.Models):
-			if cmd := m.openModelsDialog(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			return true
-		case key.Matches(msg, m.keyMap.Sessions):
-			if cmd := m.openSessionsDialog(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			return true
-		case key.Matches(msg, m.keyMap.CycleVariant):
-			if cmd := m.cycleVariant(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			return true
-		case key.Matches(msg, m.keyMap.Chat.Details) && m.hasSession():
-			m.detailsOpen = !m.detailsOpen
-			m.updateLayoutAndSize()
-			return true
-		case key.Matches(msg, m.keyMap.Chat.ToParent) && m.hasParentSession():
-			if cmd := m.leaveSubSession(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			return true
-		case key.Matches(msg, m.keyMap.Chat.EndFollow):
-			if m.state == uiChat && m.hasSession() {
-				if cmd := m.chat.ScrollToBottomAndSelectLast(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-				return true
-			}
-		case key.Matches(msg, m.keyMap.Suspend):
-			if m.isAgentBusy() {
-				cmds = append(cmds, util.ReportWarn("Agent is busy, please wait..."))
-				return true
-			}
-			cmds = append(cmds, tea.Suspend)
-			return true
-		case key.Matches(msg, m.keyMap.CyclePermissionMode):
-			mode := m.cyclePermissionMode()
-			cmds = append(cmds, util.ReportInfo("Permission mode: "+permissionModeLabel(mode)))
-			return true
-		}
-		return false
-	}
-
 	if key.Matches(msg, m.keyMap.Quit) && !m.dialog.ContainsDialog(dialog.QuitID) {
 		// Always handle quit keys first
 		if cmd := m.openQuitDialog(); cmd != nil {
@@ -1739,7 +1682,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					cmds = append(cmds, cmd)
 				}
 			default:
-				if handleGlobalKeys(msg) {
+				if m.handleGlobalKeys(msg, &cmds) {
 					// Handle global keys first before passing to textarea.
 					break
 				}
@@ -1935,14 +1878,14 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 				if ok, cmd := m.chat.HandleKeyMsg(msg); ok {
 					cmds = append(cmds, cmd)
 				} else {
-					handleGlobalKeys(msg)
+					m.handleGlobalKeys(msg, &cmds)
 				}
 			}
 		default:
-			handleGlobalKeys(msg)
+			m.handleGlobalKeys(msg, &cmds)
 		}
 	default:
-		handleGlobalKeys(msg)
+		m.handleGlobalKeys(msg, &cmds)
 	}
 
 	return tea.Sequence(cmds...)

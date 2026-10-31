@@ -16,6 +16,23 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/completions"
 )
 
+// completionPopup is the state of the "@" and "&" mention popup. It is
+// plain state embedded in [UI], not a model of its own.
+type completionPopup struct {
+	completions              *completions.Completions
+	completionsOpen          bool
+	completionsStartIndex    int
+	completionsQuery         string
+	completionsTrigger       string      // the character that opened the popup
+	completionsPositionStart image.Point // x,y where user typed the trigger
+	// completionsRect is the screen rectangle the popup was drawn into
+	// on the last Draw call, in the same coordinate space as
+	// tea.MouseClickMsg. It resets to the zero Rectangle whenever the
+	// popup isn't drawn, so a stale click target can never linger past
+	// the frame that closed it.
+	completionsRect image.Rectangle
+}
+
 // closeCompletions closes the completions popup and resets state.
 func (m *UI) closeCompletions() {
 	m.completionsOpen = false

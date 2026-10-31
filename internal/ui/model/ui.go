@@ -24,7 +24,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/lipgloss/v2"
-	"github.com/NaturalSelect/angela/internal/agent"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
@@ -1864,59 +1863,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		argsDialog.SetValue("OUTPUT", defaultPath)
 		m.dialog.OpenDialog(argsDialog)
 	case dialog.ActionImportReport:
-		if msg.Path == "" {
-			m.dialog.CloseDialog(dialog.CommandsID)
-			if m.session == nil {
-				cmds = append(cmds, util.ReportWarn("Open a session before importing a report."))
-				break
-			}
-			m.dialog.OpenDialog(dialog.NewArguments(
-				m.com,
-				"Import Report",
-				"Reads an agent report from a file into this session so the agent can load it with LoadReport.",
-				[]commands.Argument{{
-					ID:          "PATH",
-					Title:       "Report File",
-					Description: "Path to an exported report file (absolute or relative)",
-					Required:    true,
-				}},
-				dialog.ActionImportReport{},
-			))
-			break
-		}
-		m.dialog.CloseDialog(dialog.ArgumentsID)
-		if m.session == nil {
-			cmds = append(cmds, util.ReportWarn("Open a session before importing a report."))
-			break
-		}
-		sessionID := m.session.ID
-		// Session-scoped, like ActionUndo: the busy cache answers for the
-		// whole process.
-		if m.com.Workspace.AgentIsSessionBusy(sessionID) {
-			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before importing a report..."))
-			break
-		}
-		path := msg.Path
-		cmds = append(cmds, func() tea.Msg {
-			report, err := readReportFile(path)
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			result, err := m.com.Workspace.ImportReport(context.Background(), sessionID, report)
-			if err != nil {
-				if errors.Is(err, agenttools.ErrEmptyReport) {
-					return util.ReportWarn("Report file is empty")()
-				}
-				if errors.Is(err, agenttools.ErrReportTooLarge) {
-					return util.ReportWarn(err.Error())()
-				}
-				if errors.Is(err, agent.ErrSessionBusy) {
-					return util.ReportWarn("Agent is busy, please wait before importing a report...")()
-				}
-				return util.ReportError(err)()
-			}
-			return util.ReportInfo(importReportSummary(result))()
-		})
+		return m.handleImportReport(msg)
 	case dialog.ActionExportProfile:
 		if msg.Profile.Name == "" {
 			m.dialog.CloseDialog(dialog.CommandsID)

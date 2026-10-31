@@ -152,13 +152,10 @@ type ConfigStore struct {
 	// back to the real provider clients.
 	exchangeToken func(ctx context.Context, providerID, refreshToken string) (*oauth.Token, error)
 
-	// authSignalMu guards authSignals and authGen. authGen counts how
-	// many times each provider's credentials have been replaced;
-	// authSignals holds the broadcast channel current waiters block on,
-	// which SignalAuthComplete closes and drops.
-	authSignalMu sync.Mutex
-	authSignals  map[string]chan struct{}
-	authGen      map[string]uint64
+	// authSignals tracks interactive re-authentication completions. Its
+	// methods are promoted onto ConfigStore, and the zero value is ready
+	// to use.
+	authSignals
 }
 
 // Config returns the pure-data config struct (read-only after load).

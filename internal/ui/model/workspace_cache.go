@@ -45,6 +45,70 @@ var busyCacheTTL = 500 * time.Millisecond
 // state; the queue is otherwise refreshed on event edges.
 var promptQueueTTL = 2 * time.Second
 
+// workspaceProbes memoizes what the workspace reports: busy state, the
+// permission mode, queued prompts, the sandbox flag and the agent the
+// session runs on. It is plain state embedded in [UI], not a model of its
+// own.
+type workspaceProbes struct {
+	// promptQueue / promptQueueItems mirror the session's queued prompts.
+	// They are event-driven with a TTL backstop, fetched off-thread by
+	// dispatchPromptQueueRefresh (see workspace_cache.go); promptQueue is
+	// always len(promptQueueItems).
+	promptQueue          int
+	promptQueueItems     []message.QueuedPrompt
+	promptQueueCheckedAt time.Time
+	promptQueueInFlight  bool
+	// promptQueueGen is bumped by every queue state transition; an
+	// in-flight fetch captures it at dispatch and its result is discarded
+	// if the generation has moved on (see workspace_cache.go).
+	promptQueueGen uint64
+	// agentBusyCache / permissionModeCache memoize the workspace busy and
+	// permission probes (which may block). Reads never probe; refreshes
+	// happen off-thread (see
+	// workspace_cache.go). agentBusyCache covers every session in the
+	// workspace; sessionBusyCache only the one on screen.
+	agentBusyCache      ttlCache[bool]
+	sessionBusyCache    ttlCache[bool]
+	permissionModeCache ttlCache[permission.PermissionMode]
+	// backgroundAgentsCache is how many background agents are running in
+	// the session on screen or any session below it, as the workspace
+	// counts them. It is probed with sessionBusyCache and scoped like it.
+	backgroundAgentsCache ttlCache[int]
+	busyFetchInFlight     bool
+	// sandboxActive reports whether the workspace process is currently
+	// confined by a sandbox. Landlock restriction is irreversible for the
+	// life of the process and a Docker sandbox starts (and stays) active,
+	// so this only ever flips false->true; it is seeded once at
+	// construction and updated write-through by enterSandbox.
+	sandboxActive bool
+	// agentReady / agentActive memoize the coordinator readiness and the
+	// agent the session runs on (AgentIsReady/AgentActive may block, and
+	// modelInfo renders
+	// them every frame). Seeded once at construction and refreshed by
+	// the same off-thread probe as agentBusyCache.
+	agentReady  bool
+	agentActive workspace.ActiveAgent
+	// agentActiveKnown reports that agentActive came from a probe that
+	// resolved. A failed probe leaves it false so the agent reads as
+	// unknown rather than as one running no model.
+	agentActiveKnown bool
+	// agentActiveSession is the session agentActive was probed for. The
+	// agent belongs to a session, so the render path compares this
+	// against the current session and shows nothing on a mismatch
+	// instead of the previous session's agent.
+	agentActiveSession string
+	// pendingReAuth holds the provider from a re-authentication
+	// notification that arrived while the session's agent was still
+	// unknown. The notification is published once and never retried,
+	// so without this the turn would sit blocked behind an auth
+	// dialog that never opened.
+	pendingReAuth string
+	// busyFetchGen is bumped by every busy/permission state transition;
+	// like promptQueueGen it lets a stale in-flight probe result be
+	// discarded and re-fetched instead of clobbering newer state.
+	busyFetchGen uint64
+}
+
 // ttlCache memoizes one workspace probe result.
 type ttlCache[T any] struct {
 	val T

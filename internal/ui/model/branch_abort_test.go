@@ -90,10 +90,10 @@ func newBranchCancelUI(t *testing.T, busy bool) (*UI, *cancelCalls) {
 
 	ws, calls := newCancelRecordingWorkspace(t)
 	ui := &UI{
-		com:          &common.Common{Workspace: ws},
-		session:      &session.Session{ID: "branch-1", ParentSessionID: "parent-1", Agent: "pairing"},
-		sessionStack: []sessionStackFrame{{id: "parent-1", title: "parent"}},
-		agentReady:   true,
+		com:             &common.Common{Workspace: ws},
+		session:         &session.Session{ID: "branch-1", ParentSessionID: "parent-1", Agent: "pairing"},
+		sessionStack:    []sessionStackFrame{{id: "parent-1", title: "parent"}},
+		workspaceProbes: workspaceProbes{agentReady: true},
 	}
 	ui.sessionIsBranch = true
 	ui.agentBusyCache.set(busy)
@@ -138,9 +138,9 @@ func TestEscapeCancelsGate(t *testing.T) {
 		t.Parallel()
 
 		ui := &UI{
-			com:        &common.Common{Workspace: newIdleMockWorkspace(t)},
-			session:    &session.Session{ID: "root"},
-			agentReady: true,
+			com:             &common.Common{Workspace: newIdleMockWorkspace(t)},
+			session:         &session.Session{ID: "root"},
+			workspaceProbes: workspaceProbes{agentReady: true},
 		}
 		ui.agentBusyCache.set(false)
 		ui.sessionBusyCache.set(false)
@@ -152,10 +152,10 @@ func TestEscapeCancelsGate(t *testing.T) {
 		t.Parallel()
 
 		ui := &UI{
-			com:          &common.Common{Workspace: newIdleMockWorkspace(t)},
-			session:      &session.Session{ID: "sub", ParentSessionID: "root", Agent: "task"},
-			sessionStack: []sessionStackFrame{{id: "root", title: "root"}},
-			agentReady:   true,
+			com:             &common.Common{Workspace: newIdleMockWorkspace(t)},
+			session:         &session.Session{ID: "sub", ParentSessionID: "root", Agent: "task"},
+			sessionStack:    []sessionStackFrame{{id: "root", title: "root"}},
+			workspaceProbes: workspaceProbes{agentReady: true},
 		}
 		ui.agentBusyCache.set(false)
 		ui.sessionBusyCache.set(false)
@@ -171,10 +171,10 @@ func TestEscapeCancelsGate(t *testing.T) {
 		t.Parallel()
 
 		ui := &UI{
-			com:          &common.Common{Workspace: newIdleMockWorkspace(t)},
-			session:      &session.Session{ID: "sub", ParentSessionID: "root", Agent: "task"},
-			sessionStack: []sessionStackFrame{{id: "root", title: "root"}},
-			agentReady:   true,
+			com:             &common.Common{Workspace: newIdleMockWorkspace(t)},
+			session:         &session.Session{ID: "sub", ParentSessionID: "root", Agent: "task"},
+			sessionStack:    []sessionStackFrame{{id: "root", title: "root"}},
+			workspaceProbes: workspaceProbes{agentReady: true},
 		}
 		ui.agentBusyCache.set(true)
 		ui.sessionBusyCache.set(true)
@@ -186,9 +186,9 @@ func TestEscapeCancelsGate(t *testing.T) {
 		t.Parallel()
 
 		ui := &UI{
-			com:        &common.Common{Workspace: newIdleMockWorkspace(t)},
-			session:    &session.Session{ID: "root"},
-			agentReady: true,
+			com:             &common.Common{Workspace: newIdleMockWorkspace(t)},
+			session:         &session.Session{ID: "root"},
+			workspaceProbes: workspaceProbes{agentReady: true},
 		}
 		ui.agentBusyCache.set(true)
 		ui.sessionBusyCache.set(true)
@@ -291,9 +291,9 @@ func TestAbortBranchWithNoStackStillReachesTheParent(t *testing.T) {
 
 	ws, calls := newCancelRecordingWorkspace(t)
 	ui := &UI{
-		com:        &common.Common{Workspace: ws},
-		session:    &session.Session{ID: "branch-1", ParentSessionID: "parent-1", Agent: "pairing"},
-		agentReady: true,
+		com:             &common.Common{Workspace: ws},
+		session:         &session.Session{ID: "branch-1", ParentSessionID: "parent-1", Agent: "pairing"},
+		workspaceProbes: workspaceProbes{agentReady: true},
 	}
 	ui.sessionIsBranch = true
 	ui.agentBusyCache.set(true)

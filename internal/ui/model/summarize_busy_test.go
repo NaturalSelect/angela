@@ -22,9 +22,9 @@ func newSummarizeGateUI(t *testing.T, ws *MockWorkspace) *UI {
 	t.Helper()
 
 	m := &UI{
-		com:        &common.Common{Workspace: ws},
-		session:    &session.Session{ID: "current"},
-		agentReady: true,
+		com:             &common.Common{Workspace: ws},
+		session:         &session.Session{ID: "current"},
+		workspaceProbes: workspaceProbes{agentReady: true},
 	}
 	m.dialog = dialog.NewOverlay(passThroughDialog{})
 	return m

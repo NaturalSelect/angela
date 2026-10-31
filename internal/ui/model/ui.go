@@ -1600,9 +1600,8 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 
 				// Otherwise, send the message
 				m.textarea.Reset()
-				if cmd := m.handleTextareaHeightChange(prevHeight); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
+				// NOTE: The returned cmd was always dropped; only the layout update counts.
+				_ = m.handleTextareaHeightChange(prevHeight)
 
 				value = strings.TrimSpace(value)
 				if value == "exit" || value == "quit" {

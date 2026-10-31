@@ -83,13 +83,13 @@ func TestBuildModelResolvesConfiguredName(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
 
 	// The coder is configured to prefer the chore model.
-	chore, err := coord.buildModel(context.Background(), instantiate(t, coord, config.AgentCoder), false)
+	chore, err := coord.models().buildModel(context.Background(), instantiate(t, coord, config.AgentCoder), false)
 	require.NoError(t, err)
 	require.Equal(t, "small-model", chore.ModelCfg.Model)
 
 	// An agent that names no model at all falls back to main.
 	coord.cfg.Config().Agents["unnamed"] = config.Agent{ID: "unnamed"}
-	main, err := coord.buildModel(context.Background(), instantiate(t, coord, "unnamed"), false)
+	main, err := coord.models().buildModel(context.Background(), instantiate(t, coord, "unnamed"), false)
 	require.NoError(t, err)
 	require.Equal(t, "large-model", main.ModelCfg.Model)
 }
@@ -171,7 +171,7 @@ func TestAgentModelPickOutranksAgentConfig(t *testing.T) {
 		}
 		active, err := coord.activeAgentFor(t.Context(), sessionID)
 		require.NoError(t, err)
-		model, err := coord.buildModel(context.Background(), active, false)
+		model, err := coord.models().buildModel(context.Background(), active, false)
 		require.NoError(t, err)
 		require.Equal(t, "large-model", model.ModelCfg.Model,
 			"the pick must outrank the agent's own configured slot (%s)", stage)

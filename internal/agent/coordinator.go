@@ -950,7 +950,7 @@ func (c *coordinator) DefaultModel() Model {
 	if !ok {
 		return Model{}
 	}
-	model, err := c.buildModel(context.Background(), active, false)
+	model, err := c.models().buildModel(context.Background(), active, false)
 	if err != nil {
 		slog.Error("Failed to resolve the primary model", "error", err)
 		return Model{}
@@ -970,7 +970,7 @@ func (c *coordinator) ActiveAgent(ctx context.Context, sessionID string) (config
 	if err != nil {
 		return config.ActiveAgent{}, Model{}, err
 	}
-	model, err := c.buildModel(ctx, active, false)
+	model, err := c.models().buildModel(ctx, active, false)
 	if err != nil {
 		return config.ActiveAgent{}, Model{}, err
 	}

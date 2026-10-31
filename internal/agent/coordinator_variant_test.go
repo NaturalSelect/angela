@@ -45,7 +45,7 @@ func TestAgentVariantReachesTheResolvedModel(t *testing.T) {
 	})
 	setCoderVariant(t, coord, "deep")
 
-	model, err := coord.buildModel(context.Background(),
+	model, err := coord.models().buildModel(context.Background(),
 		instantiate(t, coord, config.AgentCoder), false)
 	require.NoError(t, err)
 
@@ -74,7 +74,7 @@ func TestUnknownAgentVariantStillResolves(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
 	setCoderVariant(t, coord, "vanished")
 
-	model, err := coord.buildModel(context.Background(),
+	model, err := coord.models().buildModel(context.Background(),
 		instantiate(t, coord, config.AgentCoder), false)
 	require.NoError(t, err)
 
@@ -92,7 +92,7 @@ func TestSlotVariantAppliesWhenAgentVariantIsUnset(t *testing.T) {
 	})
 	setChoreSlotVariant(t, coord, "deep")
 
-	model, err := coord.buildModel(context.Background(),
+	model, err := coord.models().buildModel(context.Background(),
 		instantiate(t, coord, config.AgentCoder), false)
 	require.NoError(t, err)
 
@@ -113,7 +113,7 @@ func TestAgentVariantOutranksSlotVariant(t *testing.T) {
 	setChoreSlotVariant(t, coord, "deep")
 	setCoderVariant(t, coord, "high")
 
-	model, err := coord.buildModel(context.Background(),
+	model, err := coord.models().buildModel(context.Background(),
 		instantiate(t, coord, config.AgentCoder), false)
 	require.NoError(t, err)
 

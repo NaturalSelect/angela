@@ -75,7 +75,7 @@ func TestBuildProviderConstructsEveryKnownType(t *testing.T) {
 			t.Parallel()
 
 			coord := newModelPrefTestCoordinator(t, nil)
-			provider, err := coord.buildProvider(tt.providerCfg, config.ProviderModel{Model: catwalk.Model{ID: "m"}}, false, false)
+			provider, err := coord.models().buildProvider(tt.providerCfg, config.ProviderModel{Model: catwalk.Model{ID: "m"}}, false, false)
 			require.NoError(t, err)
 			require.NotNil(t, provider)
 		})
@@ -89,7 +89,7 @@ func TestBuildProviderRejectsUnsupportedType(t *testing.T) {
 	t.Parallel()
 
 	coord := newModelPrefTestCoordinator(t, nil)
-	_, err := coord.buildProvider(
+	_, err := coord.models().buildProvider(
 		config.ProviderConfig{ID: "mystery", Type: "totally-unknown"},
 		config.ProviderModel{Model: catwalk.Model{ID: "m"}}, false, false,
 	)
@@ -161,7 +161,7 @@ func TestBuildProviderConstructsEveryKnownTypeWithDebug(t *testing.T) {
 			coord := newModelPrefTestCoordinator(t, nil)
 			coord.cfg.Config().Options.Debug = true
 
-			provider, err := coord.buildProvider(tt.providerCfg, config.ProviderModel{Model: catwalk.Model{ID: "m"}}, false, false)
+			provider, err := coord.models().buildProvider(tt.providerCfg, config.ProviderModel{Model: catwalk.Model{ID: "m"}}, false, false)
 			require.NoError(t, err)
 			require.NotNil(t, provider)
 		})
@@ -175,7 +175,7 @@ func TestBuildBedrockProviderUsesConfiguredRegion(t *testing.T) {
 	t.Parallel()
 
 	coord := newModelPrefTestCoordinator(t, nil)
-	provider, err := coord.buildBedrockProvider("", map[string]string{"X-Test": "1"}, string(catwalk.InferenceProviderBedrockEurope))
+	provider, err := coord.models().buildBedrockProvider("", map[string]string{"X-Test": "1"}, string(catwalk.InferenceProviderBedrockEurope))
 	require.NoError(t, err)
 	require.NotNil(t, provider)
 }

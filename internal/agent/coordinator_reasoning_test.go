@@ -74,7 +74,7 @@ func streamReasoning(t *testing.T, server *httptest.Server, providerCfg config.P
 	require.True(t, ok)
 
 	model := config.ProviderModel{Model: catwalk.Model{ID: modelID}}
-	provider, err := coord.buildProvider(published, model, false, false)
+	provider, err := coord.models().buildProvider(published, model, false, false)
 	require.NoError(t, err)
 
 	lm, err := provider.LanguageModel(t.Context(), model.ID)

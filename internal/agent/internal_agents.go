@@ -28,7 +28,7 @@ func (c *coordinator) resolveInternalAgent(ctx context.Context, agentID string, 
 		return config.ActiveAgent{}, Model{}, "", fmt.Errorf("agent %q not configured", agentID)
 	}
 
-	model, err = c.buildModel(ctx, active, true)
+	model, err = c.models().buildModel(ctx, active, true)
 	if err != nil {
 		return config.ActiveAgent{}, Model{}, "", err
 	}

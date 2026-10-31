@@ -65,7 +65,7 @@ func (c *coordinator) resolveAgent(ctx context.Context, active config.ActiveAgen
 	agentCfg := active.Agent
 	isSubAgent := depth > 0
 
-	model, err := c.buildModel(ctx, active, isSubAgent)
+	model, err := c.models().buildModel(ctx, active, isSubAgent)
 	if err != nil {
 		return resolvedAgent{}, err
 	}
@@ -96,7 +96,7 @@ func (c *coordinator) resolveAgent(ctx context.Context, active config.ActiveAgen
 		MaxTokens:          maxTokensFor(agentCfg, model),
 		Host:               active,
 		RebuildModel: func(ctx context.Context) (fantasy.LanguageModel, error) {
-			rebuilt, err := c.buildModel(ctx, active, isSubAgent)
+			rebuilt, err := c.models().buildModel(ctx, active, isSubAgent)
 			if err != nil {
 				return nil, err
 			}

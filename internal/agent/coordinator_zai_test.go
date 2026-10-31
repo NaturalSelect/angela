@@ -31,7 +31,7 @@ func TestZAIProviderDoesNotMutateSharedConfig(t *testing.T) {
 	require.True(t, ok)
 
 	model := config.ProviderModel{Model: catwalk.Model{ID: "large-model"}}
-	_, err := coord.buildProvider(published, model, false, false)
+	_, err := coord.models().buildProvider(published, model, false, false)
 	require.NoError(t, err)
 
 	after, ok := coord.cfg.Config().Providers.Get(providerCfg.ID)

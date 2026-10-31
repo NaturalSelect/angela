@@ -823,6 +823,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.sessionID != m.currentSessionID() {
 			break
 		}
+		m.clearSessionLoading()
 		m.lastUserMessageTime = msg.lastUserMessageTime
 		if cmd := m.applySessionItems(msg.items); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -2422,6 +2423,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		// stack, so there is no saved draft to restore — clear the box
 		// rather than carry text typed for the old session into the new
 		// one.
+		//
+		// NOTE: Set before the load starts, so a load error replaces it.
+		if cmd := m.showSessionLoading(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 		cmds = append(cmds, m.loadSession(msg.Session.ID, loadSessionOpt{clearStack: true, draftAfter: &editorDraft{}}))
 
 	case dialog.ActionEnterSubSession:
@@ -6303,6 +6309,8 @@ func (m *UI) newSession() tea.Cmd {
 	m.sessionFiles = nil
 	m.sessionFileReads = nil
 	m.sessionStack = nil
+	// NOTE: The stale-transcript guard drops a pending load, so end it here.
+	m.clearSessionLoading()
 	m.setState(uiLanding, uiFocusEditor)
 	m.textarea.Focus()
 	m.chat.Blur()

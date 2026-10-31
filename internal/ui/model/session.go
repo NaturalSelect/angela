@@ -20,6 +20,24 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// NOTE: Animated, so it has no TTL and stays until the transcript lands.
+var sessionLoadingInfo = util.InfoMsg{
+	Type:     util.InfoTypeInfo,
+	Msg:      "Loading session",
+	Animated: true,
+}
+
+func (m *UI) showSessionLoading() tea.Cmd {
+	return m.status.SetInfoMsg(sessionLoadingInfo)
+}
+
+// NOTE: Clears only its own notice, so a replacing error stays visible.
+func (m *UI) clearSessionLoading() {
+	if m.status.msg == sessionLoadingInfo {
+		m.status.ClearInfoMsg()
+	}
+}
+
 // loadSessionMsg is a message indicating that a session and its files have
 // been loaded.
 type loadSessionMsg struct {

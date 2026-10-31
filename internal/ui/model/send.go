@@ -387,3 +387,61 @@ func (m *UI) prependToEditor(text string) tea.Cmd {
 	m.syncBangModeFromTextarea()
 	return m.updateTextareaWithPrevHeight(nil, prevHeight)
 }
+
+// handleShellStream handles shellStreamMsg.
+func (m *UI) handleShellStream(msg shellStreamMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	if item := m.chat.MessageItem(msg.PendingID); item != nil {
+		if shellItem, ok := item.(*chat.ShellItem); ok {
+			shellItem.AppendOutput(msg.Chunk)
+			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+	}
+	// Continue draining the stream channel.
+	if msg.streamCh != nil {
+		ch := msg.streamCh
+		pid := msg.PendingID
+		cmds = append(cmds, func() tea.Msg {
+			chunk, ok := <-ch
+			if !ok {
+				return nil
+			}
+			return shellStreamMsg{PendingID: pid, Chunk: chunk, streamCh: ch}
+		})
+	}
+	return cmds
+}
+
+// handleShellResult handles shellResultMsg.
+func (m *UI) handleShellResult(msg shellResultMsg) []tea.Cmd {
+	var cmds []tea.Cmd
+	// Clear the bang cancel func — command is done.
+	if m.bangCancel != nil {
+		m.bangCancel()
+		m.bangCancel = nil
+	}
+	// Complete the pending shell item if it exists, otherwise create a new one.
+	completed := false
+	if msg.PendingID != "" {
+		if item := m.chat.MessageItem(msg.PendingID); item != nil {
+			if shellItem, ok := item.(*chat.ShellItem); ok {
+				shellItem.Complete(msg.Output, msg.ExitCode)
+				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				completed = true
+			}
+		}
+	}
+	if !completed {
+		item := chat.NewShellItem(m.com.Styles, msg.Command, msg.Output, msg.ExitCode)
+		m.chat.AppendMessages(item)
+		if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	cmds = append(cmds, m.loadPromptHistory())
+	return cmds
+}

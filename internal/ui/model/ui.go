@@ -870,43 +870,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.session = &msg.Payload
 		}
 	case pubsub.Event[message.Message]:
-		// Check if this is a child session message for an agent tool.
-		if m.session == nil {
-			break
-		}
-		if msg.Payload.SessionID != m.session.ID {
-			// This might be a child session message from an agent tool.
-			if cmd := m.handleChildSessionMessage(msg); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			break
-		}
-		switch msg.Type {
-		case pubsub.CreatedEvent:
-			cmds = append(cmds, m.appendSessionMessage(msg.Payload))
-			// A new message is a run boundary — a user prompt starting
-			// a turn or the agent replying/dequeueing. Drop the
-			// memoized busy state and re-fetch it and the queue
-			// off-thread. Per-chunk UpdatedEvents deliberately do NOT
-			// trigger this: during streaming that would put workspace
-			// probes on every token.
-			m.invalidateBusyCaches()
-			m.invalidatePromptQueue()
-			if cmd := m.dispatchBusyRefresh(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			if cmd := m.dispatchPromptQueueRefresh(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		case pubsub.UpdatedEvent:
-			cmds = append(cmds, m.updateSessionMessage(msg.Payload))
-		case pubsub.DeletedEvent:
-			m.chat.RemoveMessageWithToolCalls(msg.Payload.ID)
-		}
-		// Follow the turn: spin while the agent works, stop when it stops.
-		if cmd := m.syncTurnSpinner(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+		cmds = append(cmds, m.handleMessageEvent(msg)...)
 	case pubsub.Event[history.File]:
 		cmds = append(cmds, m.handleFileEvent(msg.Payload))
 	case pubsub.Event[app.LSPEvent]:
@@ -1307,53 +1271,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncBangModeFromTextarea()
 		cmds = append(cmds, m.updateTextareaWithPrevHeight(msg, prevHeight))
 	case shellStreamMsg:
-		if item := m.chat.MessageItem(msg.PendingID); item != nil {
-			if shellItem, ok := item.(*chat.ShellItem); ok {
-				shellItem.AppendOutput(msg.Chunk)
-				if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-			}
-		}
-		// Continue draining the stream channel.
-		if msg.streamCh != nil {
-			ch := msg.streamCh
-			pid := msg.PendingID
-			cmds = append(cmds, func() tea.Msg {
-				chunk, ok := <-ch
-				if !ok {
-					return nil
-				}
-				return shellStreamMsg{PendingID: pid, Chunk: chunk, streamCh: ch}
-			})
-		}
+		cmds = append(cmds, m.handleShellStream(msg)...)
 	case shellResultMsg:
-		// Clear the bang cancel func — command is done.
-		if m.bangCancel != nil {
-			m.bangCancel()
-			m.bangCancel = nil
-		}
-		// Complete the pending shell item if it exists, otherwise create a new one.
-		completed := false
-		if msg.PendingID != "" {
-			if item := m.chat.MessageItem(msg.PendingID); item != nil {
-				if shellItem, ok := item.(*chat.ShellItem); ok {
-					shellItem.Complete(msg.Output, msg.ExitCode)
-					if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
-						cmds = append(cmds, cmd)
-					}
-					completed = true
-				}
-			}
-		}
-		if !completed {
-			item := chat.NewShellItem(m.com.Styles, msg.Command, msg.Output, msg.ExitCode)
-			m.chat.AppendMessages(item)
-			if cmd := m.chat.ScrollToBottomAndAnimate(); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		cmds = append(cmds, m.loadPromptHistory())
+		cmds = append(cmds, m.handleShellResult(msg)...)
 	case dialog.ModelsCatalogMsg:
 		// Routed here rather than through the overlay: the catalog can
 		// land after another dialog has been stacked on top, and only
@@ -1370,25 +1290,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.SetProviders(msg.Providers)
 		}
 	case util.InfoMsg:
-		if msg.Type == util.InfoTypeError {
-			slog.Error("Error reported", "error", msg.Msg)
-		}
-		if cmd := m.status.SetInfoMsg(msg); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		// An animated message marks an action still in progress, of
-		// unknown duration: it must stay up until replaced by that
-		// action's outcome, not vanish on a fixed timer while the
-		// action itself may still be running (this is what let a
-		// slow commit's "still working" toast disappear before git
-		// actually finished).
-		if !msg.Animated {
-			ttl := msg.TTL
-			if ttl <= 0 {
-				ttl = DefaultStatusTTL
-			}
-			cmds = append(cmds, clearInfoMsgCmd(ttl))
-		}
+		cmds = append(cmds, m.handleInfoMsg(msg)...)
 	case modelSwitchedMsg:
 		cmds = append(cmds, util.CmdHandler(msg.toast))
 		if len(msg.variants) > 0 {

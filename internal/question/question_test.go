@@ -74,6 +74,52 @@ func TestQuestion_Validate(t *testing.T) {
 			wantErr: "exceeds 1000 characters",
 		},
 		{
+			// "中" is 3 bytes in UTF-8, so 100 runes is 300 bytes: over the
+			// 240 limit in bytes but under it in runes. The limit is rune-based.
+			name:    "multi-byte text under rune limit but over byte limit",
+			q:       Question{Type: TypeYesNo, Text: strings.Repeat("中", 100), Description: "d"},
+			wantErr: "",
+		},
+		{
+			name:    "multi-byte text over rune limit",
+			q:       Question{Type: TypeYesNo, Text: strings.Repeat("中", MaxQuestionLength+1), Description: "d"},
+			wantErr: "exceeds 240 characters (got 241)",
+		},
+		{
+			name:    "multi-byte description under rune limit but over byte limit",
+			q:       Question{Type: TypeYesNo, Text: "q", Description: strings.Repeat("中", 400)},
+			wantErr: "",
+		},
+		{
+			name:    "multi-byte description over rune limit",
+			q:       Question{Type: TypeYesNo, Text: "q", Description: strings.Repeat("中", MaxDescriptionLength+1)},
+			wantErr: "exceeds 1000 characters (got 1001)",
+		},
+		{
+			name: "multi-byte choice label and description under rune limit but over byte limit",
+			q: Question{
+				Type: TypeSingleChoice, Text: "q", Description: "d",
+				Choices: []Choice{{ID: "a", Label: strings.Repeat("中", 100), Description: strings.Repeat("中", 100)}, {ID: "b", Label: "B"}},
+			},
+			wantErr: "",
+		},
+		{
+			name: "multi-byte choice label over rune limit",
+			q: Question{
+				Type: TypeSingleChoice, Text: "q", Description: "d",
+				Choices: []Choice{{ID: "a", Label: strings.Repeat("中", MaxChoiceLabelLength+1)}, {ID: "b", Label: "B"}},
+			},
+			wantErr: "label exceeds 200 characters (got 201)",
+		},
+		{
+			name: "multi-byte choice description over rune limit",
+			q: Question{
+				Type: TypeSingleChoice, Text: "q", Description: "d",
+				Choices: []Choice{{ID: "a", Label: "A", Description: strings.Repeat("中", MaxChoiceDescriptionLength+1)}, {ID: "b", Label: "B"}},
+			},
+			wantErr: "description exceeds 200 characters (got 201)",
+		},
+		{
 			name:    "free text needs no choices",
 			q:       Question{Type: TypeFreeText, Text: "q", Description: "d"},
 			wantErr: "",

@@ -58,10 +58,9 @@ code.
   usually work.
 - Weigh alternatives privately. The plan only needs to carry the one you
   recommend, not the ones you ruled out.
-- When a design decision needs the user, ask in your message, not with the
-  Question tool. Describe each option in plain words plus short pseudo-code of
-  what it adds or changes, with file:line, so the user sees its effect on the
-  code. Recommend one.
+- When a design decision needs the user, describe each option in plain words
+  plus short pseudo-code of what it adds or changes, with file:line, so the
+  user sees its effect on the code. Recommend one.
 
 ### Phase 3: Review
 

@@ -1165,7 +1165,13 @@ type StalenessResult struct {
 // since the last snapshot. Returns dirty=true if any files changed or went
 // missing, along with sorted lists of affected paths. Stat errors are
 // captured in Errors map but still treated as non-existence for dirty detection.
+//
+// It takes writeMu.RLock, so it must not be called from a path that already
+// holds writeMu.
 func (s *ConfigStore) ConfigStaleness() StalenessResult {
+	s.writeMu.RLock()
+	defer s.writeMu.RUnlock()
+
 	var result StalenessResult
 	result.Errors = make(map[string]error)
 

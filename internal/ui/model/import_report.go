@@ -1,16 +1,23 @@
 package model
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/agent"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/home"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
 // readReportFile reads the report file at path from this process's own
@@ -72,4 +79,63 @@ func importReportSummary(result agenttools.ImportResult) string {
 	default:
 		return "Imported report " + id
 	}
+}
+
+// handleImportReport handles dialog.ActionImportReport.
+func (m *UI) handleImportReport(msg dialog.ActionImportReport) tea.Cmd {
+	var cmds []tea.Cmd
+	if msg.Path == "" {
+		m.dialog.CloseDialog(dialog.CommandsID)
+		if m.session == nil {
+			cmds = append(cmds, util.ReportWarn("Open a session before importing a report."))
+			return tea.Batch(cmds...)
+		}
+		m.dialog.OpenDialog(dialog.NewArguments(
+			m.com,
+			"Import Report",
+			"Reads an agent report from a file into this session so the agent can load it with LoadReport.",
+			[]commands.Argument{{
+				ID:          "PATH",
+				Title:       "Report File",
+				Description: "Path to an exported report file (absolute or relative)",
+				Required:    true,
+			}},
+			dialog.ActionImportReport{},
+		))
+		return tea.Batch(cmds...)
+	}
+	m.dialog.CloseDialog(dialog.ArgumentsID)
+	if m.session == nil {
+		cmds = append(cmds, util.ReportWarn("Open a session before importing a report."))
+		return tea.Batch(cmds...)
+	}
+	sessionID := m.session.ID
+	// Session-scoped, like ActionUndo: the busy cache answers for the
+	// whole process.
+	if m.com.Workspace.AgentIsSessionBusy(sessionID) {
+		cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before importing a report..."))
+		return tea.Batch(cmds...)
+	}
+	path := msg.Path
+	cmds = append(cmds, func() tea.Msg {
+		report, err := readReportFile(path)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		result, err := m.com.Workspace.ImportReport(context.Background(), sessionID, report)
+		if err != nil {
+			if errors.Is(err, agenttools.ErrEmptyReport) {
+				return util.ReportWarn("Report file is empty")()
+			}
+			if errors.Is(err, agenttools.ErrReportTooLarge) {
+				return util.ReportWarn(err.Error())()
+			}
+			if errors.Is(err, agent.ErrSessionBusy) {
+				return util.ReportWarn("Agent is busy, please wait before importing a report...")()
+			}
+			return util.ReportError(err)()
+		}
+		return util.ReportInfo(importReportSummary(result))()
+	})
+	return tea.Batch(cmds...)
 }

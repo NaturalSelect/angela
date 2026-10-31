@@ -827,8 +827,12 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.applySessionItems(msg.items); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-		// NOTE: Without this the first scroll computes the total height of
-		// the whole transcript in one blocking pass to size the scrollbar.
+		// NOTE: Without warming, the first scroll computes the total height
+		// of the whole transcript in one blocking pass to size the
+		// scrollbar. The layout runs first so the list takes the
+		// scrollbar-adjusted width now; otherwise the layout pass at warm
+		// completion changes the width and drops everything just warmed.
+		m.updateLayoutAndSize()
 		cmds = append(cmds, m.chat.BeginWarm())
 	case undoPreviewMsg:
 		// Drop a preview for a session the user has already navigated
@@ -891,10 +895,21 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	case undoResultMsg:
-		m.prependAttachments(msg.result.PoppedAttachments)
-		if msg.result.PoppedText != "" {
-			if cmd := m.prependToEditor(msg.result.PoppedText); cmd != nil {
-				cmds = append(cmds, cmd)
+		if msg.sessionID != m.currentSessionID() {
+			// NOTE: The messages are already deleted, so hold the text and
+			// files until that session is shown again.
+			if msg.result.PoppedText != "" || len(msg.result.PoppedAttachments) > 0 {
+				m.stashRestoredPrompts(msg.sessionID, []message.QueuedPrompt{{
+					Prompt:      msg.result.PoppedText,
+					Attachments: msg.result.PoppedAttachments,
+				}})
+			}
+		} else {
+			m.prependAttachments(msg.result.PoppedAttachments)
+			if msg.result.PoppedText != "" {
+				if cmd := m.prependToEditor(msg.result.PoppedText); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 		switch {
@@ -1750,9 +1765,12 @@ type exportProfilesLoadedMsg struct {
 }
 
 // undoResultMsg carries the result of an executed undo, so its popped
-// text can be restored to the editor and the outcome reported.
+// text can be restored to the editor and the outcome reported. The
+// session is kept so the text is not dropped into another session's draft
+// when the user navigated away while the undo ran.
 type undoResultMsg struct {
-	result undo.Result
+	sessionID string
+	result    undo.Result
 }
 
 // loadSessionMessagesCmd fetches a session's transcript and builds its
@@ -2789,7 +2807,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 				}
 				return util.ReportError(err)()
 			}
-			return undoResultMsg{result: result}
+			return undoResultMsg{sessionID: sessionID, result: result}
 		})
 	case dialog.ActionAbortBranch:
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -5529,7 +5547,13 @@ func (m *UI) restoreQueuedPrompts(items []message.QueuedPrompt) tea.Cmd {
 	}
 	m.prependAttachments(atts)
 
-	return m.prependToEditor(strings.Join(texts, "\n\n"))
+	// NOTE: A prompt that held only files has no text, and prepending an
+	// empty string would still push the draft down by a blank line.
+	text := strings.Join(texts, "\n\n")
+	if text == "" {
+		return nil
+	}
+	return m.prependToEditor(text)
 }
 
 // restoreQueueOnAgentError pops any prompts still queued behind

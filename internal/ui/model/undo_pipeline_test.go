@@ -146,7 +146,7 @@ func TestUndoResultRestoresPoppedAttachmentsAheadOfDraft(t *testing.T) {
 	m := newBusyUIWithWorkspace(ws)
 	m.attachments.Update(message.Attachment{FileName: "draft.txt"})
 
-	m.Update(undoResultMsg{result: undo.Result{
+	m.Update(undoResultMsg{sessionID: "s1", result: undo.Result{
 		PoppedText: "restore me",
 		PoppedAttachments: []message.Attachment{
 			{FileName: "a.png", MimeType: "image/png"},
@@ -159,4 +159,57 @@ func TestUndoResultRestoresPoppedAttachmentsAheadOfDraft(t *testing.T) {
 		names = append(names, a.FileName)
 	}
 	require.Equal(t, []string{"a.png", "b.txt", "draft.txt"}, names)
+}
+
+// TestUndoResultForAnotherSessionIsHeldNotApplied checks that an undo
+// finishing after the user switched sessions leaves the visible draft
+// alone and hands the popped text and files back once the undone session
+// is shown again.
+func TestUndoResultForAnotherSessionIsHeldNotApplied(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return((*config.Config)(nil)).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+
+	m := newBusyUIWithWorkspace(ws)
+	m.textarea.SetValue("draft in s1")
+	m.attachments.Update(message.Attachment{FileName: "draft.txt"})
+
+	m.Update(undoResultMsg{sessionID: "s2", result: undo.Result{
+		PoppedText:        "from s2",
+		PoppedAttachments: []message.Attachment{{FileName: "s2.png", MimeType: "image/png"}},
+	}})
+
+	require.Equal(t, "draft in s1", m.textarea.Value(), "the visible draft must not take another session's text")
+	require.Len(t, m.attachments.List(), 1, "the visible draft must not take another session's files")
+	require.Len(t, m.stashedPrompts["s2"], 1)
+
+	m.restoreStashedPrompts("s2")
+	require.Equal(t, "from s2\n\ndraft in s1", m.textarea.Value())
+	var names []string
+	for _, a := range m.attachments.List() {
+		names = append(names, a.FileName)
+	}
+	require.Equal(t, []string{"s2.png", "draft.txt"}, names)
+}
+
+// TestRestoredPromptWithOnlyFilesLeavesTheDraftTextAlone checks that
+// restoring a prompt that had files but no text does not push the draft
+// down by a blank line.
+func TestRestoredPromptWithOnlyFilesLeavesTheDraftTextAlone(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().Config().Return((*config.Config)(nil)).AnyTimes()
+	ws.EXPECT().WorkingDir().Return("").AnyTimes()
+
+	m := newBusyUIWithWorkspace(ws)
+	m.textarea.SetValue("draft")
+	m.stashRestoredPrompts("s1", []message.QueuedPrompt{{
+		Attachments: []message.Attachment{{FileName: "only.png", MimeType: "image/png"}},
+	}})
+
+	m.restoreStashedPrompts("s1")
+
+	require.Equal(t, "draft", m.textarea.Value())
+	require.Len(t, m.attachments.List(), 1)
 }

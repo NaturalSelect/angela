@@ -404,6 +404,7 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 	deletedIDs := make(map[string]bool, len(toDelete))
 	var poppedTexts []string
 	var poppedAttachments []message.Attachment
+	unnamed := 0
 	for _, m := range toDelete {
 		deletedIDs[m.ID] = true
 		if m.Role == message.User && !m.IsReminder() {
@@ -412,6 +413,9 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 				att := message.Attachment{FilePath: bc.Path, MimeType: bc.MIMEType, Content: bc.Data}
 				if bc.Path != "" {
 					att.FileName = filepath.Base(bc.Path)
+				} else {
+					unnamed++
+					att.FileName = unnamedAttachmentName(bc.MIMEType, unnamed)
 				}
 				poppedAttachments = append(poppedAttachments, att)
 			}
@@ -432,6 +436,30 @@ func (s *service) plan(ctx context.Context, sessionID string, reserve *sessionRe
 		childSessions:     walk.childSessions,
 		files:             walk.actions,
 	}, nil
+}
+
+// unnamedAttachmentName builds a display name for an attachment that was
+// stored without a path, such as an image sent by an editor over ACP. n
+// numbers the unnamed attachments of one undo so the names stay distinct.
+func unnamedAttachmentName(mimeType string, n int) string {
+	base, _, _ := strings.Cut(mimeType, ";")
+	kind, subtype, _ := strings.Cut(strings.ToLower(strings.TrimSpace(base)), "/")
+	subtype = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, subtype)
+	switch subtype {
+	case "jpeg":
+		subtype = "jpg"
+	case "":
+		subtype = "bin"
+	}
+	if kind == "image" {
+		return fmt.Sprintf("image-%d.%s", n, subtype)
+	}
+	return fmt.Sprintf("attachment-%d.%s", n, subtype)
 }
 
 // firstUndoable returns the index of the first message undo may

@@ -1,8 +1,11 @@
 package model
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -89,6 +92,83 @@ func TestSessionSwitchClearsThePreviousTranscript(t *testing.T) {
 
 	m.Update(loadSessionMsg{session: &session.Session{ID: "s2"}})
 	require.Zero(t, m.chat.Len(), "switching sessions drops the previous transcript")
+}
+
+// renderTrackingItem is a tall chat item that counts how often it was
+// rendered, so a test can tell a warm cache from one that was thrown away.
+type renderTrackingItem struct {
+	id      string
+	lines   int
+	renders *int
+}
+
+func (r renderTrackingItem) ID() string { return r.id }
+func (r renderTrackingItem) Render(int) string {
+	*r.renders++
+	return strings.TrimSuffix(strings.Repeat("line\n", r.lines), "\n")
+}
+func (r renderTrackingItem) RawRender(width int) string { return r.Render(width) }
+func (r renderTrackingItem) Version() uint64            { return 0 }
+func (r renderTrackingItem) Finished() bool             { return true }
+
+var _ chat.MessageItem = renderTrackingItem{}
+
+// settleWarm feeds the warm messages a command tree produces back into
+// Update until warming stops asking for another step, the way the Bubble
+// Tea runtime would.
+func settleWarm(t *testing.T, m *UI, cmd tea.Cmd) {
+	t.Helper()
+	for range 1000 {
+		var warm *chatWarmMsg
+		for _, msg := range runCmds(m, cmd) {
+			if w, ok := msg.(chatWarmMsg); ok {
+				warm = &w
+			}
+		}
+		if warm == nil {
+			return
+		}
+		_, cmd = m.Update(*warm)
+	}
+	t.Fatal("warming did not converge")
+}
+
+// TestSessionLoadWarmSurvivesTheCompletionLayoutPass pins that a transcript
+// taller than the viewport is warmed at the width the scrollbar will
+// leave it. Warming at the full width would have the completion layout
+// pass narrow the list by the scrollbar column, drop the warmed cache,
+// and make the next draw render every item again.
+func TestSessionLoadWarmSurvivesTheCompletionLayoutPass(t *testing.T) {
+	pinTTLs(t)
+
+	m, ws := newMockBusyUI(t)
+	warmCaches(m, false)
+	stubSessionSwitch(ws, false)
+
+	// The layout pass that ran when the previous transcript was cleared
+	// left the list at the full width.
+	m.chat.ClearMessages()
+	m.updateLayoutAndSize()
+
+	var renders int
+	items := make([]chat.MessageItem, 60)
+	for i := range items {
+		items[i] = renderTrackingItem{
+			id:      "m-" + strconv.Itoa(i),
+			lines:   5,
+			renders: &renders,
+		}
+	}
+
+	_, cmd := m.Update(sessionMessagesMsg{sessionID: "s1", items: items})
+	settleWarm(t, m, cmd)
+
+	require.True(t, m.chat.list.Overflows(m.layout.main.Dy()), "the transcript must overflow for the scrollbar to claim a column")
+	require.Equal(t, m.layout.main.Dx()-1, m.chat.list.Width(), "the list gives a column to the scrollbar")
+
+	warmed := renders
+	m.chat.list.TotalHeight()
+	require.Equal(t, warmed, renders, "the scrollbar's total height must come from the warmed cache")
 }
 
 // TestReloadingTheSameSessionKeepsItsBusyAnswer pins that only a real

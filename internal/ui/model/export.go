@@ -2,15 +2,18 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // handleExportImage handles dialog.ActionExportImage.
@@ -168,4 +171,44 @@ func (m *UI) handleExportSession(msg dialog.ActionExportSession) tea.Cmd {
 		return util.ReportInfo("Exported session to " + outPath)()
 	})
 	return tea.Batch(cmds...)
+}
+
+// handleSelectExportImage handles dialog.ActionSelectExportImage.
+func (m *UI) handleSelectExportImage(msg dialog.ActionSelectExportImage) tea.Cmd {
+	m.dialog.CloseDialog(dialog.ImagesID)
+	defaultPath := filepath.Join(msg.WorkingDir, msg.Image.ID+chat.ExtensionForMIME(msg.Image.MIMEType))
+	description := "Writes the generated image's full-size original to a file on disk."
+	if prompt := strings.Join(strings.Fields(msg.Image.Prompt), " "); prompt != "" {
+		description = fmt.Sprintf("Output path for %q.", ansi.Truncate(prompt, 60, "…"))
+	}
+	argsDialog := dialog.NewArguments(
+		m.com,
+		"Export Image",
+		description,
+		[]commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}},
+		dialog.ActionExportImage{ImageID: msg.Image.ID},
+	)
+	argsDialog.SetValue("OUTPUT", defaultPath)
+	m.dialog.OpenDialog(argsDialog)
+	return nil
+}
+
+// handleSelectExportReport handles dialog.ActionSelectExportReport.
+func (m *UI) handleSelectExportReport(msg dialog.ActionSelectExportReport) tea.Cmd {
+	m.dialog.CloseDialog(dialog.ReportsID)
+	defaultPath := filepath.Join(msg.WorkingDir, msg.Report.ID+".md")
+	description := "Writes the agent report to a Markdown file on disk."
+	if task := strings.Join(strings.Fields(msg.Report.Task), " "); task != "" {
+		description = fmt.Sprintf("Output path for %q.", ansi.Truncate(task, 60, "…"))
+	}
+	argsDialog := dialog.NewArguments(
+		m.com,
+		"Export Report",
+		description,
+		[]commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}},
+		dialog.ActionExportReport{Report: msg.Report},
+	)
+	argsDialog.SetValue("OUTPUT", defaultPath)
+	m.dialog.OpenDialog(argsDialog)
+	return nil
 }

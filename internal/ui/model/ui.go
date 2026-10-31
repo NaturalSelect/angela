@@ -55,7 +55,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/version"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
-	"github.com/charmbracelet/x/ansi"
 	xstrings "github.com/charmbracelet/x/exp/strings"
 )
 
@@ -1829,39 +1828,11 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionExportImage:
 		return m.handleExportImage(msg)
 	case dialog.ActionSelectExportImage:
-		m.dialog.CloseDialog(dialog.ImagesID)
-		defaultPath := filepath.Join(msg.WorkingDir, msg.Image.ID+chat.ExtensionForMIME(msg.Image.MIMEType))
-		description := "Writes the generated image's full-size original to a file on disk."
-		if prompt := strings.Join(strings.Fields(msg.Image.Prompt), " "); prompt != "" {
-			description = fmt.Sprintf("Output path for %q.", ansi.Truncate(prompt, 60, "…"))
-		}
-		argsDialog := dialog.NewArguments(
-			m.com,
-			"Export Image",
-			description,
-			[]commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}},
-			dialog.ActionExportImage{ImageID: msg.Image.ID},
-		)
-		argsDialog.SetValue("OUTPUT", defaultPath)
-		m.dialog.OpenDialog(argsDialog)
+		return m.handleSelectExportImage(msg)
 	case dialog.ActionExportReport:
 		return m.handleExportReport(msg)
 	case dialog.ActionSelectExportReport:
-		m.dialog.CloseDialog(dialog.ReportsID)
-		defaultPath := filepath.Join(msg.WorkingDir, msg.Report.ID+".md")
-		description := "Writes the agent report to a Markdown file on disk."
-		if task := strings.Join(strings.Fields(msg.Report.Task), " "); task != "" {
-			description = fmt.Sprintf("Output path for %q.", ansi.Truncate(task, 60, "…"))
-		}
-		argsDialog := dialog.NewArguments(
-			m.com,
-			"Export Report",
-			description,
-			[]commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}},
-			dialog.ActionExportReport{Report: msg.Report},
-		)
-		argsDialog.SetValue("OUTPUT", defaultPath)
-		m.dialog.OpenDialog(argsDialog)
+		return m.handleSelectExportReport(msg)
 	case dialog.ActionImportReport:
 		return m.handleImportReport(msg)
 	case dialog.ActionExportProfile:

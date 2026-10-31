@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	uv "github.com/charmbracelet/ultraviolet"
 )
 
 // handleMouseRelease handles tea.MouseReleaseMsg. skipTail reports that
@@ -143,6 +144,109 @@ func (m *UI) handleMouseMotion(msg tea.MouseMotionMsg) (cmds []tea.Cmd, skipTail
 		x -= m.layout.main.Min.X
 		y -= m.layout.main.Min.Y
 		m.chat.HandleMouseDrag(x, y)
+	}
+
+	return cmds, false
+}
+
+// handleMouseClick handles tea.MouseClickMsg. skipTail reports that
+// Update must return right away instead of running its shared tail.
+func (m *UI) handleMouseClick(msg tea.MouseClickMsg) (cmds []tea.Cmd, skipTail bool) {
+	// Pass mouse events to dialogs first if any are open.
+	if m.dialog.HasDialogs() {
+		if cmd := m.handleDialogMsg(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return cmds, true
+	}
+
+	// Route clicks to inline editors that support mouse interaction.
+	// A collapsed question form (Tab'd away to the chat) only renders
+	// a one-line summary; its component layout is stale, last built
+	// by a full Draw. Skip hit-testing it and fall through instead:
+	// handleClickFocus below re-expands it if the click landed in
+	// the editor area, and the chat pane handles it otherwise.
+	// Hit-testing it anyway risked matching stale coordinates and
+	// swallowing clicks meant for the chat pane underneath, such as
+	// the one that re-enters a parked branch session.
+	qf, isQuestionForm := m.activeInline.(*dialog.QuestionForm)
+	collapsed := isQuestionForm && m.shouldCollapseQuestion(qf)
+	if m.activeInline != nil && !collapsed {
+		if clickable, ok := m.activeInline.(dialog.MouseClickableEditor); ok {
+			if done, handled := clickable.HandleMouseClick(msg.X, msg.Y); handled {
+				if done {
+					m.activeInline = nil
+					m.textarea.Focus()
+					m.updateLayoutAndSize()
+				}
+				return cmds, true
+			}
+		}
+	}
+
+	// Route a click on the mention/file completions popup to the
+	// same insert path Enter uses. The popup renders bottom-to-top
+	// (completions.New sets SetReverse(true)), but
+	// list.ItemIndexAtPosition walks items in un-reversed order, so
+	// the clicked screen row has to be flipped before resolving
+	// which item it landed on.
+	if m.completionsOpen && m.completions.HasItems() && msg.Button == uv.MouseLeft {
+		rect := m.completionsRect
+		if msg.X >= rect.Min.X && msg.X < rect.Max.X && msg.Y >= rect.Min.Y && msg.Y < rect.Max.Y {
+			yInList := (rect.Dy() - 1) - (msg.Y - rect.Min.Y)
+			if cmd, keepOpen, handled := m.applyCompletionSelection(m.completions.SelectAt(yInList)); handled {
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+				if !keepOpen {
+					m.closeCompletions()
+				}
+			}
+			return cmds, true
+		}
+	}
+
+	if cmd := m.handleClickFocus(msg); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	// Check if the click landed on an attachment's remove button.
+	// The attachment chips are rendered on the first row of the
+	// editor layout area, above the textarea.
+	if m.activeInline == nil && msg.Button == uv.MouseLeft && len(m.attachments.List()) > 0 && msg.Y == m.layout.editor.Min.Y {
+		relX := msg.X - m.layout.editor.Min.X
+		if m.attachments.HandleClick(relX) {
+			return cmds, true
+		}
+	}
+
+	// Check if the click landed on an ancestor crumb in the header
+	// breadcrumb. The level in view is never a click target — there
+	// is nowhere to jump to.
+	if msg.Button == uv.MouseLeft && msg.Y == m.layout.header.Min.Y {
+		relX := msg.X - m.layout.header.Min.X
+		if idx, ok := m.header.HitTestBreadcrumb(relX); ok {
+			if cmd := m.goToBreadcrumbLevel(idx); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return cmds, true
+		}
+	}
+
+	switch m.state {
+	case uiChat:
+		x, y := msg.X, msg.Y
+		// Adjust for chat area position
+		x -= m.layout.main.Min.X
+		y -= m.layout.main.Min.Y
+		{
+			if handled, cmd := m.chat.HandleMouseDown(x, y); handled {
+				m.lastClickTime = time.Now()
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		}
 	}
 
 	return cmds, false

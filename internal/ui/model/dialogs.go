@@ -11,6 +11,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	fimage "github.com/NaturalSelect/angela/internal/ui/image"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
@@ -433,5 +434,29 @@ func (m *UI) handleSelectNotificationStyle(msg dialog.ActionSelectNotificationSt
 		m.notifyBackend = selectNotificationBackend(m.caps, cfg)
 	}
 	m.dialog.CloseDialog(dialog.NotificationsID)
+	return tea.Batch(cmds...)
+}
+
+// handleClose handles dialog.ActionClose.
+func (m *UI) handleClose() tea.Cmd {
+	var cmds []tea.Cmd
+	if m.state == uiOnboarding {
+		if cmd := m.closeOnboardingDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return tea.Batch(cmds...)
+	}
+
+	// NOTE: The deferred reset runs after the batch below is built, exactly
+	// as it did when this code sat inline in handleDialogMsg.
+	if m.dialog.ContainsDialog(dialog.FilePickerID) {
+		defer fimage.ResetCache()
+	}
+
+	m.dialog.CloseFrontDialog()
+
+	if m.focus == uiFocusEditor {
+		cmds = append(cmds, m.textarea.Focus())
+	}
 	return tea.Batch(cmds...)
 }

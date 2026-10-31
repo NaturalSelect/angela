@@ -230,15 +230,8 @@ type UI struct {
 	// line renders too often to afford, so it is settled once per load.
 	sessionIsBranch bool
 
-	// bangMode tracks whether the editor is in bang (!) shell mode.
-	bangMode     bool
-	bangWasEmpty bool // true when bang prompt became empty on last keystroke
-
-	// bangCancel cancels a running bang-mode shell command. Nil when no
-	// bang command is in progress. Set by runShellCommand, cleared by
-	// shellResultMsg. Checked by isAgentBusy and cancelAgent so that
-	// Escape works for bang commands the same way it does for agent runs.
-	bangCancel context.CancelFunc
+	// bangState tracks the editor's bang (!) shell mode; see send.go.
+	bangState
 
 	header *header
 

@@ -15,6 +15,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/common"
+	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
@@ -256,4 +257,21 @@ func (m *UI) pasteIdx() int {
 		}
 	}
 	return result + 1
+}
+
+// routePasteMsg handles tea.PasteMsg for Update. skipTail reports that
+// Update must return right away instead of running its shared tail.
+func (m *UI) routePasteMsg(msg tea.PasteMsg) (cmds []tea.Cmd, skipTail bool) {
+	if m.activeInline != nil && m.focus == uiFocusEditor {
+		if p, ok := m.activeInline.(dialog.PasteableEditor); ok {
+			if cmd := p.HandlePaste(msg); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return cmds, true
+		}
+	}
+	if cmd := m.handlePasteMsg(msg); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return cmds, false
 }

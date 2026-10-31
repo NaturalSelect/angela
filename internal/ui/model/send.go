@@ -15,6 +15,20 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
+// bangState is the editor's bang (!) shell mode. It is plain state embedded
+// in [UI], not a model of its own.
+type bangState struct {
+	// bangMode tracks whether the editor is in bang (!) shell mode.
+	bangMode     bool
+	bangWasEmpty bool // true when bang prompt became empty on last keystroke
+
+	// bangCancel cancels a running bang-mode shell command. Nil when no
+	// bang command is in progress. Set by runShellCommand, cleared by
+	// shellResultMsg. Checked by isAgentBusy and cancelAgent so that
+	// Escape works for bang commands the same way it does for agent runs.
+	bangCancel context.CancelFunc
+}
+
 // sendMessage sends a message with the given content and attachments.
 func (m *UI) sendMessage(content string, attachments ...message.Attachment) tea.Cmd {
 	if m.viewingSubAgent() {

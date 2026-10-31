@@ -23,14 +23,14 @@ func mergeCall() fantasy.ToolCall {
 // is wired through the same fake session service and routing table a
 // real coordinator uses, so a successful merge can route its
 // queue-clearing call to whichever executor owns the branch exactly as
-// it would in production. currentAgent stands in for the plain "s1"
+// it would in production. rootExecutor stands in for the plain "s1"
 // session ID these tests favor, which (unlike a real branch's) is not
 // shaped like an agent-tool session and so falls through to it rather
 // than a routed executor — a real coordinator never leaves it nil.
 func mergeCoordinator(t *testing.T) *coordinator {
 	t.Helper()
 	c := newTestCoordinator(t, testEnv(t), branchProviderID, config.ProviderConfig{ID: branchProviderID})
-	c.currentAgent = newMockSessionAgent(t, "coder", nil)
+	c.rootExecutor = newMockSessionAgent(t, "coder", nil)
 	return c
 }
 

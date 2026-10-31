@@ -32,7 +32,7 @@ func mergeToolCallThenFinish(usage fantasy.Usage) fantasy.StreamResponse {
 }
 
 // branchMergeCompactionEnv wires a real sessionAgent in as a
-// coordinator's currentAgent, the way a real branch's executor is
+// coordinator's rootExecutor, the way a real branch's executor is
 // wired, so a merge tool call routed through that coordinator's
 // ClearQueue reaches the very session agent under test instead of a
 // stand-in.
@@ -40,7 +40,7 @@ func branchMergeCompactionEnv(t *testing.T) (*sessionAgent, *coordinator, fakeEn
 	t.Helper()
 	sa, env := summarizeGomockEnv(t)
 	c := newTestCoordinator(t, env, branchProviderID, config.ProviderConfig{ID: branchProviderID})
-	c.currentAgent = sa
+	c.rootExecutor = sa
 	return sa, c, env
 }
 

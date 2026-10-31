@@ -37,7 +37,7 @@ func newRoutingFixture(t *testing.T) routingFixture {
 	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
 
 	main := newMockSessionAgent(t, "coder", nil)
-	coord.currentAgent = main
+	coord.rootExecutor = main
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func (f routingFixture) register() {
 }
 
 // Cancelling a child session must reach the executor actually running it.
-// currentAgent never ran that session, so addressing it there is a silent
+// rootExecutor never ran that session, so addressing it there is a silent
 // no-op — which is what happened before routing existed.
 func TestCancelReachesTheSubAgentExecutor(t *testing.T) {
 	t.Parallel()
@@ -113,7 +113,7 @@ func TestQueueOperationsRouteToTheSubAgentExecutor(t *testing.T) {
 }
 
 // An unrouted child session belongs to no executor in this process. It must
-// not fall through to currentAgent, which would then write the same
+// not fall through to rootExecutor, which would then write the same
 // transcript as the sub-run that produced it. This fixture's child session
 // records no agent, so its route cannot be rebuilt either.
 func TestUnroutedChildSessionIsNeverHandledByTheMainAgent(t *testing.T) {
@@ -175,7 +175,7 @@ func TestBeginAcceptedRebuildsAPersistedChildRoute(t *testing.T) {
 	route, routed := coord.subagentRoutes.Get(childID)
 	require.True(t, routed, "the index Cancel resolves through was not rebuilt")
 	require.Equal(t, config.AgentExplore, route.agentID)
-	require.NotSame(t, coord.currentAgent, route.executor,
+	require.NotSame(t, coord.rootExecutor, route.executor,
 		"the child session fell through to the main agent")
 
 	// The cancel lands in the window this closes: after the prompt was
@@ -217,7 +217,7 @@ func TestBeginAcceptedOnANormalSessionStaysOnTheMainAgent(t *testing.T) {
 }
 
 // A compact triggered on a child session must reach the executor actually
-// running it, the same as Cancel. currentAgent never ran that session, so
+// running it, the same as Cancel. rootExecutor never ran that session, so
 // summarizing there would race whatever turn the sub-agent's own executor
 // still has in flight on it.
 func TestSummarizeExecutorForRoutesToTheSubAgentExecutor(t *testing.T) {
@@ -242,7 +242,7 @@ func TestSummarizeExecutorForOnANormalSessionStaysOnTheMainAgent(t *testing.T) {
 
 // A child session whose route cannot be rebuilt has no executor to
 // summarize on. summarizeExecutorFor must report that rather than fall
-// through to currentAgent, which would then write the same transcript as
+// through to rootExecutor, which would then write the same transcript as
 // whatever sub-run is still using that session.
 func TestSummarizeExecutorForOnAnUnresumableChildSessionErrors(t *testing.T) {
 	t.Parallel()
@@ -264,7 +264,7 @@ func TestSummarizeExecutorForRebuildsAPersistedChildRoute(t *testing.T) {
 
 	executor, err := coord.summarizeExecutorFor(t.Context(), childID)
 	require.NoError(t, err)
-	require.NotSame(t, coord.currentAgent, executor,
+	require.NotSame(t, coord.rootExecutor, executor,
 		"the child session fell through to the main agent")
 
 	route, routed := coord.subagentRoutes.Get(childID)
@@ -338,7 +338,7 @@ func TestTurnOnAChildSessionRunsAsTheSubAgent(t *testing.T) {
 
 	require.True(t, target.child)
 	require.Equal(t, config.AgentExplore, target.resolved.ID)
-	require.NotSame(t, coord.currentAgent, target.executor,
+	require.NotSame(t, coord.rootExecutor, target.executor,
 		"the child session's turn landed on the main agent")
 
 	route, routed := coord.subagentRoutes.Get(childID)
@@ -549,7 +549,7 @@ func TestRunSubAgentRegistersItsRoute(t *testing.T) {
 	const providerID = "test-provider"
 	env := testEnv(t)
 	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
-	coord.currentAgent = newMockSessionAgent(t, "coder", nil)
+	coord.rootExecutor = newMockSessionAgent(t, "coder", nil)
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
 	require.NoError(t, err)
@@ -583,7 +583,7 @@ func TestRunSubAgentRecordsItsAgentOnTheSession(t *testing.T) {
 	const providerID = "test-provider"
 	env := testEnv(t)
 	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
-	coord.currentAgent = newMockSessionAgent(t, "coder", nil)
+	coord.rootExecutor = newMockSessionAgent(t, "coder", nil)
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
 	require.NoError(t, err)
@@ -620,7 +620,7 @@ func TestRunSubAgentDoesNotFreezeTheDispatchersPicks(t *testing.T) {
 	const providerID = "test-provider"
 	env := testEnv(t)
 	coord := newTestCoordinator(t, env, providerID, config.ProviderConfig{ID: providerID})
-	coord.currentAgent = newMockSessionAgent(t, "coder", nil)
+	coord.rootExecutor = newMockSessionAgent(t, "coder", nil)
 
 	parent, err := env.sessions.Create(t.Context(), "Parent")
 	require.NoError(t, err)

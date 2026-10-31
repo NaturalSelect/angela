@@ -71,7 +71,7 @@ func newSplitProviderCoordinator(t *testing.T) *coordinator {
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
 	coord.reconcileSubagents()
-	coord.currentAgent = coord.buildAgent(coderCfg.ID, false)
+	coord.rootExecutor = coord.buildAgent(coderCfg.ID, false)
 
 	return coord
 }

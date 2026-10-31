@@ -31,7 +31,7 @@ func TestUnavailableCompactAgentIsReportedNotPanicked(t *testing.T) {
 	require.Nil(t, compact.Model.Model)
 
 	// Summarize must refuse rather than hand the nil model to fantasy.
-	err := coord.currentAgent.Summarize(t.Context(), "session-does-not-matter", compact, nil, nil)
+	err := coord.rootExecutor.Summarize(t.Context(), "session-does-not-matter", compact, nil, nil)
 	require.Error(t, err)
 	require.NotErrorIs(t, err, ErrSessionBusy)
 	require.Contains(t, err.Error(), "compact agent unavailable")

@@ -53,7 +53,7 @@ func newModelPrefTestCoordinator(t *testing.T, temperature *float64) *coordinato
 		subagentRoutes: csync.NewMap[string, subagentRoute](),
 	}
 	coord.reconcileSubagents()
-	coord.currentAgent = coord.buildAgent(agentCfg.ID, false)
+	coord.rootExecutor = coord.buildAgent(agentCfg.ID, false)
 
 	return coord
 }
@@ -100,7 +100,7 @@ func TestBuildModelResolvesConfiguredName(t *testing.T) {
 func TestBuildAgentWiresTitleGenerator(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
 
-	agent, ok := coord.currentAgent.(*sessionAgent)
+	agent, ok := coord.rootExecutor.(*sessionAgent)
 	require.True(t, ok)
 
 	require.NotNil(t, agent.generateTitle,

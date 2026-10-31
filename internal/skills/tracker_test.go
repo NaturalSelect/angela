@@ -100,3 +100,28 @@ func TestTracker_OverriddenBuiltinNotTracked(t *testing.T) {
 	tracker.MarkLoaded("nonexistent-builtin")
 	require.False(t, tracker.IsLoaded("nonexistent-builtin"))
 }
+
+func TestTracker_SetActiveKeepsLoadedAndAcceptsNewSkills(t *testing.T) {
+	t.Parallel()
+
+	tracker := NewTracker([]*Skill{{Name: "go-doc"}})
+	tracker.MarkLoaded("go-doc")
+	tracker.MarkLoaded("added-later")
+	require.False(t, tracker.IsLoaded("added-later"))
+
+	tracker.SetActive([]*Skill{{Name: "added-later"}})
+
+	require.True(t, tracker.IsLoaded("go-doc"), "loaded records survive a reload")
+	tracker.MarkLoaded("added-later")
+	require.True(t, tracker.IsLoaded("added-later"))
+
+	tracker.MarkLoaded("go-doc")
+	require.Equal(t, []string{"added-later", "go-doc"}, tracker.LoadedNames())
+}
+
+func TestTracker_SetActiveNilSafety(t *testing.T) {
+	t.Parallel()
+
+	var tracker *Tracker
+	tracker.SetActive([]*Skill{{Name: "go-doc"}})
+}

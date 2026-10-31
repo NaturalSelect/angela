@@ -21,17 +21,23 @@ var angelaInfoDescription string
 
 type AngelaInfoParams struct{}
 
+// NewAngelaInfoTool reads the skill lists from skillsMgr on every call, so
+// the report reflects a reload. A nil skillsMgr reports no skills.
 func NewAngelaInfoTool(
 	cfg *config.ConfigStore,
 	lspManager *lsp.Manager,
-	allSkills []*skills.Skill,
-	activeSkills []*skills.Skill,
+	skillsMgr *skills.Manager,
 	skillTracker *skills.Tracker,
 ) fantasy.AgentTool {
 	return NewTool(
 		toolnames.AngelaInfo,
 		angelaInfoDescription,
 		func(ctx context.Context, _ AngelaInfoParams, _ fantasy.ToolCall) Result {
+			var allSkills, activeSkills []*skills.Skill
+			if skillsMgr != nil {
+				allSkills = skillsMgr.AllSkills()
+				activeSkills = skillsMgr.ActiveSkills()
+			}
 			return Ok(buildAngelaInfo(cfg, lspManager, allSkills, activeSkills, skillTracker))
 		},
 	)

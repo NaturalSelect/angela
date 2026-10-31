@@ -51,10 +51,14 @@ Follow this every time, regardless of what's being changed:
    warning unrelated to your edit (e.g. no git repo in a scratch directory)
    isn't yours to fix.
 7. **Report back.** Say which file and which keys changed, and **tell the
-   user whether they need to restart Angela** — editing a config file from
-   outside Angela never hot-reloads; only Angela's own writes do (e.g. a
-   model switch from the TUI). `AngelaInfo`'s `[config] dirty` flag confirms
-   the file changed on disk if you need to double-check.
+   user whether they need to restart Angela** — a config file edited from
+   outside Angela is not picked up automatically; only Angela's own writes
+   are (e.g. a model switch from the TUI). Call `AngelaReload` (or tell the
+   user to run `/reload`) to apply the change without a restart. It reloads
+   config, skills, sub-agents and MCP servers; permission rules, LSP server
+   definitions and TUI startup options still need a restart (LSPs can use
+   `LSPRestart`). `AngelaInfo`'s `[config] dirty` flag confirms the file
+   changed on disk if you need to double-check.
 
 ## Where to write it
 
@@ -227,8 +231,10 @@ stays merged in. If unsure which file defines it, check each candidate from
 - A literal `$` in a URL must be escaped as `\$`.
 - `disable_*` options read backwards on purpose: `true` turns the thing
   **off**.
-- Editing a config file on disk never hot-reloads; only Angela's own writes
-  do. Say so when you report back.
+- A config file edited on disk is not picked up automatically. Run
+  `AngelaReload` (it always asks the user first) or have the user run
+  `/reload`; permission rules, LSP definitions and TUI startup options still
+  need a restart. Say which applies when you report back.
 
 ## Reference index
 

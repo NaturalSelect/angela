@@ -42,7 +42,8 @@ func toolKind(name string) protocol.ToolKind {
 		toolnames.LSPReferences, toolnames.LSPDefinition, toolnames.LSPCallHierarchy,
 		toolnames.LSPDiagnostics, toolnames.LSPSymbols, toolnames.ListMCPResources:
 		return protocol.ToolKindSearch
-	case toolnames.Bash, toolnames.Git, toolnames.JobOutput, toolnames.JobKill:
+	case toolnames.Bash, toolnames.Git, toolnames.JobOutput, toolnames.JobKill,
+		toolnames.AngelaReload:
 		return protocol.ToolKindExecute
 	case toolnames.Fetch, toolnames.WebFetch, toolnames.Download,
 		toolnames.WebSearch, toolnames.MultiSearch:

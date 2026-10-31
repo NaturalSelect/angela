@@ -188,6 +188,31 @@ func TestAppWorkspace_ReadSkill(t *testing.T) {
 	})
 }
 
+func TestAppWorkspace_Reload(t *testing.T) {
+	// Not parallel: newTestConfigStore calls t.Setenv.
+	t.Setenv("ANGELA_DISABLE_PROVIDER_AUTO_UPDATE", "true")
+
+	t.Run("returns the report summary", func(t *testing.T) {
+		fx := newAWFixture(t)
+		fx.app.SetConfigForTest(newTestConfigStore(t))
+		fx.coord.EXPECT().UpdateModels(gomock.Any()).Return(nil)
+
+		got, err := fx.ws.Reload(t.Context())
+		require.NoError(t, err)
+		require.Contains(t, got, "Reloaded from disk.")
+	})
+
+	t.Run("a failed agent refresh is a warning, not an error", func(t *testing.T) {
+		fx := newAWFixture(t)
+		fx.app.SetConfigForTest(newTestConfigStore(t))
+		fx.coord.EXPECT().UpdateModels(gomock.Any()).Return(errors.New("no model"))
+
+		got, err := fx.ws.Reload(t.Context())
+		require.NoError(t, err)
+		require.Contains(t, got, "Warning: agents were not refreshed: no model")
+	})
+}
+
 func TestAppWorkspace_MCPGetStates(t *testing.T) {
 	t.Parallel()
 	fx := newAWFixture(t)

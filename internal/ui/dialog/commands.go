@@ -554,6 +554,8 @@ func (c *Commands) defaultCommands() []*CommandItem {
 
 	commands = append(commands, NewCommandItem(c.com.Styles, "export_profile", "Export Profile", "", ActionExportProfile{}).WithAliases("profile", "pprof"))
 
+	commands = append(commands, NewCommandItem(c.com.Styles, "reload", "Reload Config & Skills", "", ActionReload{}))
+
 	commands = append(commands, NewCommandItem(c.com.Styles, "commit", "Commit Staged Changes", "", ActionCommit{SessionID: c.sessionID}))
 
 	if c.hasSession && !c.viewingSubAgent() {

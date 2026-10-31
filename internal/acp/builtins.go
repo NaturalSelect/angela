@@ -69,6 +69,14 @@ func builtinCommands() []slashCommand {
 				return expansion{text: prompt}, nil
 			},
 		}},
+		{name: "reload", builtin: &builtinCommand{
+			description: "Reload config, skills, MCP servers and commands from disk",
+			run: func(ws Workspace, _ string, _ map[string]string) (expansion, error) {
+				return expansion{act: func(ctx context.Context) (string, error) {
+					return ws.Reload(ctx)
+				}}, nil
+			},
+		}},
 	}
 }
 

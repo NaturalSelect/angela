@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
 	"github.com/NaturalSelect/angela/internal/session"
+	"github.com/NaturalSelect/angela/internal/skills"
 )
 
 const maxSessionDepth = 8
@@ -78,6 +79,8 @@ func (p *pump) handle(ctx context.Context, payload any) {
 		p.onNotice(ctx, e.Payload)
 	case pubsub.Event[mcp.Event]:
 		p.onMCP(ctx, e.Payload)
+	case pubsub.Event[skills.Event]:
+		p.onSkills(ctx)
 	}
 }
 
@@ -90,6 +93,14 @@ func (p *pump) onMCP(ctx context.Context, e mcp.Event) {
 	if e.Type != mcp.EventStateChanged && e.Type != mcp.EventPromptsListChanged {
 		return
 	}
+	for _, s := range p.reg.all() {
+		refreshCommands(ctx, p.client, s, commandsOf(ctx, p.ws))
+	}
+}
+
+// onSkills re-sends the command list after the skill set changes, so a
+// reload shows up in the editor's slash menu.
+func (p *pump) onSkills(ctx context.Context) {
 	for _, s := range p.reg.all() {
 		refreshCommands(ctx, p.client, s, commandsOf(ctx, p.ws))
 	}

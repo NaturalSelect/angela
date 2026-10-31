@@ -331,6 +331,12 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		// Restarts a server the user configured; it starts nothing new.
 		access.Action = permission.ActionRead
 
+	case toolnames.AngelaReload:
+		// Reloading can start MCP server processes named in the config, so
+		// it counts as execution. The empty command keeps it out of scope:
+		// the gate always asks.
+		access.Action = permission.ActionExecute
+
 	case toolnames.Merge:
 		// Reaches no file and runs nothing, but it is the one moment
 		// the user decides whether this branch's result crosses back
@@ -470,6 +476,12 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 				Description: "Read MCP resource from " + p.MCPName,
 				Params:      ReadMCPResourcePermissionsParams(p),
 			}
+		}
+
+	case toolnames.AngelaReload:
+		return permission.Preview{
+			Description: "Reload Angela config, skills and MCP servers from disk (may start, stop or restart MCP server processes)",
+			Params:      AngelaReloadParams{},
 		}
 	}
 

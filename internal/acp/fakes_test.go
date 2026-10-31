@@ -65,6 +65,7 @@ type fakeWorkspace struct {
 	summarize       func(ctx context.Context, sessionID string) error
 	regenerateTitle func(ctx context.Context, sessionID string) error
 	sideQuestion    func(ctx context.Context, sessionID, question string) (string, error)
+	reload          func(ctx context.Context) (string, error)
 	initPrompt      string
 	initErr         error
 	initMarked      int
@@ -363,6 +364,17 @@ func (f *fakeWorkspace) AgentAskSideQuestion(ctx context.Context, sessionID, que
 		return "", nil
 	}
 	return do(ctx, sessionID, question)
+}
+
+func (f *fakeWorkspace) Reload(ctx context.Context) (string, error) {
+	f.mu.Lock()
+	f.trace = append(f.trace, "reload")
+	do := f.reload
+	f.mu.Unlock()
+	if do == nil {
+		return "", nil
+	}
+	return do(ctx)
 }
 
 func (f *fakeWorkspace) InitializePrompt() (string, error) {

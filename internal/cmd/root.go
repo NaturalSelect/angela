@@ -506,6 +506,9 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 		skills.WithGlobalMirror(),
 		skills.WithResolvedPaths(discoveryCfg.ResolvePaths()),
 		skills.WithWorkingDir(discoveryCfg.WorkingDir),
+		skills.WithDiscoverySource(func() skills.DiscoveryConfig {
+			return localSkillsDiscoveryConfig(store)
+		}),
 	)
 
 	appInstance, err := app.New(ctx, conn, store, skillsMgr)

@@ -9,11 +9,8 @@ import (
 	"image"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -1836,43 +1833,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionImportReport:
 		return m.handleImportReport(msg)
 	case dialog.ActionExportProfile:
-		if msg.Profile.Name == "" {
-			m.dialog.CloseDialog(dialog.CommandsID)
-			cmds = append(cmds, func() tea.Msg {
-				// Profiles describe this process, so they are written
-				// through its own filesystem, never the workspace's.
-				workingDir, err := os.Getwd()
-				if err != nil {
-					return util.ReportError(err)()
-				}
-				return exportProfilesLoadedMsg{workingDir: workingDir}
-			})
-			break
-		}
-		m.dialog.CloseDialog(dialog.ArgumentsID)
-		cmds = append(cmds, exportProfile(msg))
+		return m.handleExportProfile(msg)
 	case dialog.ActionSelectExportProfile:
-		m.dialog.CloseDialog(dialog.ProfilesID)
-		profile := msg.Profile
-		defaultName := profile.FileName(os.Getpid(), time.Now(), profile.Extension())
-		arguments := []commands.Argument{{ID: "OUTPUT", Title: "Output Path", Required: true}}
-		description := "Writes a snapshot of this process to a file for `go tool pprof`."
-		if profile.Timed {
-			arguments = append(arguments, commands.Argument{ID: "SECONDS", Title: "Seconds to Record", Required: true})
-			description = "Records this process for a while, then writes the result to a file."
-		}
-		argsDialog := dialog.NewArguments(
-			m.com,
-			"Export Profile: "+profile.Name,
-			description,
-			arguments,
-			dialog.ActionExportProfile{Profile: profile},
-		)
-		argsDialog.SetValue("OUTPUT", filepath.Join(msg.WorkingDir, defaultName))
-		if profile.Timed {
-			argsDialog.SetValue("SECONDS", strconv.Itoa(profiling.DefaultSeconds))
-		}
-		m.dialog.OpenDialog(argsDialog)
+		return m.handleSelectExportProfile(msg)
 	case dialog.ActionUndo:
 		return m.handleUndo(msg)
 	case dialog.ActionUndoConfirmed:

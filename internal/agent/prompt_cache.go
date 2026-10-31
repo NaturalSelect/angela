@@ -2,7 +2,6 @@ package agent
 
 import (
 	"crypto/sha256"
-	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"os"

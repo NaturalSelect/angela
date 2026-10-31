@@ -209,6 +209,7 @@ func TestAccessOfCoversEveryTool(t *testing.T) {
 		toolnames.AgentStop,
 		toolnames.AngelaInfo,
 		toolnames.AngelaLogs,
+		toolnames.AngelaReload,
 		toolnames.Bash,
 		toolnames.Git,
 		toolnames.LSPCallHierarchy,

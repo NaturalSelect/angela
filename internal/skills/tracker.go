@@ -31,6 +31,22 @@ func NewTracker(activeSkills []*Skill) *Tracker {
 	}
 }
 
+// SetActive replaces the set of active skill names after a reload. Skills
+// already marked as loaded stay marked, even if they are no longer active,
+// so the compaction reminder keeps what the model has already read.
+func (t *Tracker) SetActive(activeSkills []*Skill) {
+	if t == nil {
+		return
+	}
+	activeNames := make(map[string]bool, len(activeSkills))
+	for _, s := range activeSkills {
+		activeNames[s.Name] = true
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.activeNames = activeNames
+}
+
 // MarkLoaded marks a skill as having been loaded.
 // Only marks as loaded if the skill is in the active set (not overridden/disabled).
 func (t *Tracker) MarkLoaded(name string) {

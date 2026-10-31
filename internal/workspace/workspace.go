@@ -192,6 +192,10 @@ type Workspace interface {
 	// change reports the value it actually reached.
 	AgentEditActive(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (ActiveAgent, error)
 	UpdateAgentModel(ctx context.Context) error
+	// Reload re-reads config, skills and MCP servers from disk and returns a
+	// human-readable summary of what changed. A config that fails to load
+	// aborts the reload and leaves everything as it was.
+	Reload(ctx context.Context) (string, error)
 	InitCoderAgent(ctx context.Context) error
 	InitCoderAgentNonInteractive(ctx context.Context) error
 

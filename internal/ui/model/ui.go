@@ -1178,6 +1178,9 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case pubsub.Event[skills.Event]:
 		m.skillStates = msg.Payload.States
+		// NOTE: Construction does not publish this event, so a reload is the
+		// only way here, and the command and skill lists are stale after it.
+		cmds = append(cmds, m.loadCustomCommands())
 	case pubsub.Event[mcp.Event]:
 		switch msg.Payload.Type {
 		case mcp.EventStateChanged:
@@ -2489,6 +2492,15 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			return nil
 		})
 		m.dialog.CloseDialog(dialog.CommandsID)
+	case dialog.ActionReload:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		cmds = append(cmds, func() tea.Msg {
+			summary, err := m.com.Workspace.Reload(context.Background())
+			if err != nil {
+				return util.ReportError(err)()
+			}
+			return util.ReportInfo(summary)()
+		})
 	case dialog.ActionGenerateTitle:
 		cmds = append(cmds, m.generateSessionTitle(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)

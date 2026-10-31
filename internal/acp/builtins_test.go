@@ -150,6 +150,46 @@ func TestBuiltinCommandsAnswerWithoutTheModel(t *testing.T) {
 		require.False(t, h.traceHas("btw"))
 	})
 
+	t.Run("reload reloads from disk and shows the summary", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sessionID := h.newSession(t)
+		h.ws.reload = func(context.Context) (string, error) { return "Reloaded from disk.", nil }
+
+		resp, err := h.agent.Prompt(t.Context(), textPrompt(sessionID, "/reload"))
+
+		require.NoError(t, err)
+		require.Equal(t, protocol.StopReasonEndTurn, resp.StopReason)
+		require.True(t, h.traceHas("reload"))
+		require.False(t, h.ran())
+		require.Equal(t, []string{"Reloaded from disk."}, h.replies(sessionID))
+	})
+
+	t.Run("a failed reload is passed on", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sessionID := h.newSession(t)
+		h.ws.reload = func(context.Context) (string, error) { return "", errors.New("invalid angela.json") }
+
+		_, err := h.agent.Prompt(t.Context(), textPrompt(sessionID, "/reload"))
+
+		requireCode(t, err, protocol.CodeInternal)
+		require.ErrorContains(t, err, "/reload: invalid angela.json")
+		require.Empty(t, h.replies(sessionID))
+	})
+
+	t.Run("reload takes no input", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		sessionID := h.newSession(t)
+
+		_, err := h.agent.Prompt(t.Context(), textPrompt(sessionID, "/reload now"))
+
+		requireCode(t, err, protocol.CodeInvalidParams)
+		require.ErrorContains(t, err, "/reload takes no input")
+		require.False(t, h.traceHas("reload"))
+	})
+
 	t.Run("a command that takes no input refuses some", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t)

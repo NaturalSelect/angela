@@ -1220,6 +1220,7 @@ func allToolNames() []string {
 		toolnames.Git,
 		toolnames.AngelaInfo,
 		toolnames.AngelaLogs,
+		toolnames.AngelaReload,
 		toolnames.JobOutput,
 		toolnames.JobKill,
 		toolnames.Download,

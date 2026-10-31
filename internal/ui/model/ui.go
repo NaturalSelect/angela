@@ -256,19 +256,9 @@ type UI struct {
 	// Attachment list
 	attachments *attachments.Attachments
 
-	// Completions state
-	completions              *completions.Completions
-	completionsOpen          bool
-	completionsStartIndex    int
-	completionsQuery         string
-	completionsTrigger       string      // the character that opened the popup
-	completionsPositionStart image.Point // x,y where user typed the trigger
-	// completionsRect is the screen rectangle the popup was drawn into
-	// on the last Draw call, in the same coordinate space as
-	// tea.MouseClickMsg. It resets to the zero Rectangle whenever the
-	// popup isn't drawn, so a stale click target can never linger past
-	// the frame that closed it.
-	completionsRect image.Rectangle
+	// completionPopup holds the "@" and "&" mention popup; see
+	// completion_popup.go.
+	completionPopup
 
 	// Chat components
 	chat *Chat
@@ -457,7 +447,7 @@ func New(com *common.Common, initialSessionID string, continueLast bool) *UI {
 		textarea:            ta,
 		chat:                ch,
 		header:              header,
-		completions:         comp,
+		completionPopup:     completionPopup{completions: comp},
 		attachments:         attachments,
 		turnState:           turnState{turnSpinner: turnSpinner},
 		lspCache:            lspCache{lspStates: make(map[string]workspace.LSPClientInfo)},

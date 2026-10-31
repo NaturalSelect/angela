@@ -1,6 +1,10 @@
 package model
 
-import "charm.land/bubbles/v2/key"
+import (
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/ui/util"
+)
 
 type KeyMap struct {
 	Editor struct {
@@ -294,4 +298,64 @@ func DefaultKeyMap() KeyMap {
 	)
 
 	return km
+}
+
+// handleGlobalKeys handles the shortcuts that work in every focus state and
+// reports whether msg was one of them. It appends to cmds in place, because
+// handleKeyPressMsg runs the collected commands in order.
+func (m *UI) handleGlobalKeys(msg tea.KeyPressMsg, cmds *[]tea.Cmd) bool {
+	switch {
+	case key.Matches(msg, m.keyMap.Help):
+		m.status.ToggleHelp()
+		m.updateLayoutAndSize()
+		return true
+	case key.Matches(msg, m.keyMap.Commands):
+		if cmd := m.openCommandsDialog(); cmd != nil {
+			*cmds = append(*cmds, cmd)
+		}
+		return true
+	case key.Matches(msg, m.keyMap.Models):
+		if cmd := m.openModelsDialog(); cmd != nil {
+			*cmds = append(*cmds, cmd)
+		}
+		return true
+	case key.Matches(msg, m.keyMap.Sessions):
+		if cmd := m.openSessionsDialog(); cmd != nil {
+			*cmds = append(*cmds, cmd)
+		}
+		return true
+	case key.Matches(msg, m.keyMap.CycleVariant):
+		if cmd := m.cycleVariant(); cmd != nil {
+			*cmds = append(*cmds, cmd)
+		}
+		return true
+	case key.Matches(msg, m.keyMap.Chat.Details) && m.hasSession():
+		m.detailsOpen = !m.detailsOpen
+		m.updateLayoutAndSize()
+		return true
+	case key.Matches(msg, m.keyMap.Chat.ToParent) && m.hasParentSession():
+		if cmd := m.leaveSubSession(); cmd != nil {
+			*cmds = append(*cmds, cmd)
+		}
+		return true
+	case key.Matches(msg, m.keyMap.Chat.EndFollow):
+		if m.state == uiChat && m.hasSession() {
+			if cmd := m.chat.ScrollToBottomAndSelectLast(); cmd != nil {
+				*cmds = append(*cmds, cmd)
+			}
+			return true
+		}
+	case key.Matches(msg, m.keyMap.Suspend):
+		if m.isAgentBusy() {
+			*cmds = append(*cmds, util.ReportWarn("Agent is busy, please wait..."))
+			return true
+		}
+		*cmds = append(*cmds, tea.Suspend)
+		return true
+	case key.Matches(msg, m.keyMap.CyclePermissionMode):
+		mode := m.cyclePermissionMode()
+		*cmds = append(*cmds, util.ReportInfo("Permission mode: "+permissionModeLabel(mode)))
+		return true
+	}
+	return false
 }

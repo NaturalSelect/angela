@@ -1903,46 +1903,9 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		}
 		m.dialog.OpenDialog(argsDialog)
 	case dialog.ActionUndo:
-		// Session-scoped, matching ActionSummarize: the busy cache
-		// answers for the whole process and would block this session's
-		// undo even while it sits idle.
-		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
-			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before undoing..."))
-			break
-		}
-		m.dialog.CloseDialog(dialog.CommandsID)
-		sessionID := msg.SessionID
-		cmds = append(cmds, func() tea.Msg {
-			preview, err := m.com.Workspace.PreviewUndo(context.Background(), sessionID)
-			if err != nil {
-				if errors.Is(err, undo.ErrNothingToUndo) {
-					return util.ReportInfo("Nothing to undo")()
-				}
-				if errors.Is(err, undo.ErrSessionBusy) {
-					return util.ReportWarn("Agent is busy, please wait before undoing...")()
-				}
-				return util.ReportError(err)()
-			}
-			return undoPreviewMsg{sessionID: sessionID, preview: preview}
-		})
+		return m.handleUndo(msg)
 	case dialog.ActionUndoConfirmed:
-		m.dialog.CloseDialog(dialog.UndoID)
-		if m.com.Workspace.AgentIsSessionBusy(msg.SessionID) {
-			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before undoing..."))
-			break
-		}
-		sessionID := msg.SessionID
-		cutMessageID := msg.CutMessageID
-		cmds = append(cmds, func() tea.Msg {
-			result, err := m.com.Workspace.Undo(context.Background(), sessionID, cutMessageID)
-			if err != nil {
-				if errors.Is(err, undo.ErrSessionBusy) {
-					return util.ReportWarn("Agent is busy, please wait before undoing...")()
-				}
-				return util.ReportError(err)()
-			}
-			return undoResultMsg{sessionID: sessionID, result: result}
-		})
+		return m.handleUndoConfirmed(msg)
 	case dialog.ActionAbortBranch:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if cmd := m.abortBranch(msg.SessionID); cmd != nil {

@@ -13,7 +13,9 @@
 Angela is configured with JSON. By default, global config lives at
 `~/.config/angela/angela.json` on Unix-like systems and
 `%USERPROFILE%\.config\angela\angela.json` on Windows. It is read when Angela
-starts and configures the agent.
+starts and configures the agent. The file must be strict JSON: comments and
+trailing commas are rejected. Some examples below are tagged `jsonc` and carry
+`//` comments as explanation, so strip those before copying them.
 
 ```json
 {
@@ -21,10 +23,7 @@ starts and configures the agent.
   "providers": {
     "ollama": {
       "type": "ollama",
-      "base_url": "http://localhost:11434/v1",
-      "models": [
-        { "id": "llama3.3", "name": "Llama 3.3", "context_window": 128000 }
-      ]
+      "base_url": "http://localhost:11434/v1"
     }
   },
   "permissions": {
@@ -39,6 +38,9 @@ starts and configures the agent.
   }
 }
 ```
+
+Local providers such as Ollama discover their models automatically. Declare
+models yourself only when you need to; see [Providers](#providers).
 
 Selected string fields — API keys, MCP headers, and similar credential-bearing
 values — run through shell expansion when they are used, so `$VAR` and
@@ -86,23 +88,50 @@ directory whose config you haven't read.
 
 ## Where config lives
 
-Angela looks for config in the following places, with lower numbers taking
+Angela merges config from the following layers, with lower numbers taking
 precedence:
 
-| Priority | Unix-like                           | Windows                              |
-| -------- | ----------------------------------- | ------------------------------------ |
-| 1        | `./.angela.json`                    | `.\.angela.json`                     |
-| 2        | `./angela.json`                     | `.\angela.json`                      |
-| 3        | `$XDG_CONFIG_HOME/angela/angela.json` | `%XDG_CONFIG_HOME%\angela\angela.json` |
+| Priority | Layer     | Unix-like                                                      | Windows                                                            |
+| -------- | --------- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 1        | Workspace | `<data_directory>/angela.json`                                 | `<data_directory>\angela.json`                                     |
+| 2        | Project   | `.angela.json` and `angela.json` in the working directory and each parent up to the git root | same |
+| 3        | Global    | `$XDG_CONFIG_HOME/angela/angela.json` (default `~/.config/angela/angela.json`) | `%XDG_CONFIG_HOME%\angela\angela.json` (default `%USERPROFILE%\.config\angela\angela.json`) |
+| 4        | System    | `/etc/angela/angela.json`                                      | not used                                                           |
+
+`ANGELA_GLOBAL_CONFIG` replaces the directory of the global layer: Angela then
+reads `$ANGELA_GLOBAL_CONFIG/angela.json`.
 
 Project config is discovered by walking up from the working directory to the
-git worktree root, so an unrelated `angela.json` above the project is never
-picked up. Everything found is deep-merged, with project settings overriding
-global ones.
+git worktree root, or only the working directory itself outside a git
+repository, so an unrelated `angela.json` above the project is never picked
+up. A closer directory beats a farther one, and `.angela.json` beats
+`angela.json` in the same directory. A file that several entries resolve to
+(for example a symlink to the global config) is read once, at the highest
+priority it was found.
 
-Data directories (`~/.local/share/angela` on Unix-like systems and
-`%LOCALAPPDATA%\angela` on Windows) hold non-config application data, such
-as the provider catalog cache.
+Layers are merged key by key, and the higher priority wins. Two things work
+differently:
+
+- **Arrays are concatenated**, lowest layer first. A project's `hooks`,
+  `permissions.rules` and similar lists add to the global ones instead of
+  replacing them.
+- **Agent permission fields are replaced.** For each agent, `allowed_tools`,
+  `disabled_tools`, `allowed_mcp` and `allowed_agents` come entirely from the
+  highest layer that sets them, so a project can narrow an agent's tools.
+
+Angela keeps application data in two kinds of data directory:
+
+- The global data directory is `$XDG_DATA_HOME/angela` when that variable is
+  set, otherwise `~/.local/share/angela` on Unix-like systems and
+  `%LOCALAPPDATA%\angela` on Windows. It holds the provider catalog cache.
+- The project data directory is `options.data_directory`, which `--data-dir`
+  overrides. It defaults to the nearest `.angela` directory found by walking
+  up from the working directory, otherwise `<working directory>/.angela`. It
+  holds the session database, the logs and the workspace config layer.
+
+The cache directory is `ANGELA_CACHE_DIR` when set, otherwise
+`$XDG_CACHE_HOME/angela`, otherwise `~/.cache/angela` (`%LOCALAPPDATA%\angela\cache`
+on Windows).
 
 ## Configuration Reference
 
@@ -115,12 +144,12 @@ All configuration is done through `angela.json`. For the complete schema, see
 {
   "providers": {
     "deepseek": {
-      "type": "openai-compat",        // openai, openai-compat, anthropic, ollama, ...
+      "type": "openai-compat",        // see the list of types below
       "base_url": "https://api.deepseek.com/v1",
       "api_key": "$DEEPSEEK_API_KEY", // shell expansion works
-      "disabled": false,              // disable without removing
+      "disable": false,               // disable without removing
       "flat_rate": false,             // use flat-rate billing
-      "discover_models": false,       // auto-discover and merge provider models
+      "discover_models": true,        // default; merge discovered models with yours (yours win)
       "system_prompt_prefix": "",     // text prepended to the system prompt
       "extra_headers": {},            // additional HTTP headers
       "extra_body": {},               // merged into request bodies
@@ -132,11 +161,11 @@ All configuration is done through `angela.json`. For the complete schema, see
           "context_window": 128000,
           "max_tokens": 8192,
           "can_reason": false,
-          "supports_images": false,
-          "price_input": 0.27,        // per 1M tokens
-          "price_output": 1.10,
-          "price_cache_create": 0.0,
-          "price_cache_hit": 0.0,
+          "supports_attachments": false,
+          "cost_per_1m_in": 0.27,         // per 1M input tokens
+          "cost_per_1m_out": 1.10,        // per 1M output tokens
+          "cost_per_1m_in_cached": 0.0,   // per 1M cache-write tokens
+          "cost_per_1m_out_cached": 0.0,  // per 1M cache-read tokens
           "reasoning_effort": "",     // low, medium, or high
           "reasoning_levels": [],     // supported effort levels
           "think": false,             // default thinking mode for this model
@@ -147,6 +176,31 @@ All configuration is done through `angela.json`. For the complete schema, see
   }
 }
 ```
+
+`type` is one of `openai` (the default), `openai-compat`, `openrouter`,
+`vercel`, `anthropic`, `google`, `azure`, `bedrock`, `google-vertex`,
+`litellm`, `llamacpp`, `lmstudio`, `ollama` or `omlx`. To satisfy
+[`schema.json`](../../schema.json), each model needs `id`, `name`, the four
+`cost_per_1m_*` fields, `context_window`, `max_tokens`, `can_reason` and
+`supports_attachments`. The schema rejects unknown keys on providers and
+models, and Angela silently ignores them at load time, so a misspelled key
+such as `disabled` for `disable` has no effect.
+
+A few less common fields are not in the example:
+
+- Provider `id` and `name` set the identifier and display name.
+- `use_responses` forces the OpenAI Responses API on or off. It exists on
+  providers and on individual models.
+- `aws_auth_refresh` is a shell command run when Bedrock credentials expire.
+- `oauth` holds a token that Angela stores itself, for example after
+  `angela login`. Do not write it by hand.
+- A model's `options` object sets default sampling parameters: `temperature`,
+  `top_p`, `top_k`, `frequency_penalty`, `presence_penalty` and
+  `provider_options`.
+
+The old model keys `default_max_tokens` and `default_reasoning_effort` were
+renamed to `max_tokens` and `reasoning_effort`. A config that still uses them
+fails to load.
 
 The `base_url` convention differs by `type`. The Anthropic SDK appends
 `v1/messages` itself, so `type: "anthropic"` wants the bare host
@@ -182,15 +236,21 @@ A slot's `variant` only takes effect when an agent pointed at that slot names
 none of its own; an agent's `variant` field always takes priority (see the
 angela-config skill for the full agent field reference).
 
+`main` and `chore` are the standard slots. An agent can also name any other
+key you add under `slots`, and `inherited` is reserved: an agent set to it
+runs on the model that dispatched it.
+
 Angela also ships a hidden `image` agent pointed at the `image` slot, which
 selects the model used by the built-in `ImageGenerate`/`ImageEdit` tools; it
-needs a provider of type `openai` or `openaicompat` that implements
-`/images/*`. The tools are only registered in a terminal that supports Kitty
+needs a provider of type `openai` or `openai-compat` that implements
+`/images/*`, has an `api_key` and is not disabled. With no `image` slot
+configured, Angela falls back to a provider named `openai` and its default
+image model. The tools are only registered in a terminal that supports Kitty
 graphics Unicode placeholders — auto-detected for kitty, Ghostty, and Rio,
 but not VS Code's integrated terminal or WezTerm. Override detection with
 `--kitty-placeholders`/`--kitty-placeholders=false` (per launch) or
-`options.tui.kitty_placeholders` (persistent). See [Agents](../agents/) for
-how hidden agents work.
+`options.tui.kitty_placeholders` (persistent). See
+[Internal Agents](../agents/#internal-agents) for how hidden agents work.
 
 ```jsonc
 {
@@ -301,8 +361,8 @@ future release. See the [hooks docs](../hooks/) for the full guide.
     // would otherwise skip it.
     "rules": [
       { "action": "deny",  "tool": "read",    "pattern": "**/.env", "mode": "path" },
-      { "action": "ask",   "tool": "bash",    "pattern": "git push*" },
-      { "action": "allow", "tool": "bash",    "pattern": "git status*" },
+      { "action": "ask",   "tool": "Bash",    "pattern": "git push*" },
+      { "action": "allow", "tool": "Bash",    "pattern": "git status*" },
       { "action": "allow", "tool": "network", "pattern": "docs.example.com", "mode": "domain" }
     ],
 
@@ -316,6 +376,22 @@ future release. See the [hooks docs](../hooks/) for the full guide.
 by link — allowing `ls*` does not let `ls && rm -rf /` through. Some
 verbs (`rm`, `kill`, `git push`, ...) always prompt.
 
+A rule's `tool` is either an exact tool name or an access category. Tool
+names are case-sensitive, so `"bash"` matches nothing and `"Bash"` matches
+the Bash tool. The categories are `read`, `list`, `edit`, `execute`,
+`network`, `mcp` and `merge`. Leave `tool` empty or `"*"` to match any tool.
+The older names `download`, `fetch`, `search` and `write` still work as
+aliases for `network` and `edit`.
+
+A rule's `mode` chooses how `pattern` is compared:
+
+| Mode     | Meaning                                                                       |
+| -------- | ----------------------------------------------------------------------------- |
+| `auto`   | The default. `path` for read, list and edit rules, otherwise `free`.          |
+| `path`   | A filesystem path, where `*` stops at a separator and `**` crosses it.         |
+| `free`   | Free text, where `*` crosses anything. Used for commands and URLs.             |
+| `domain` | The host of a URL, matching the host itself and any subdomain of it.          |
+
 ### Options
 
 ```jsonc
@@ -323,7 +399,7 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
   "options": {
     // Paths and directories
     "context_paths": [".cursorrules", "ANGELA.md"],
-    "global_context_paths": ["~/.config/angela/ANGELA.md"],
+    "global_context_paths": ["~/.config/angela/ANGELA.md"], // see the note below
     "skills_paths": ["./skills"],
     "agent_paths": ["~/.config/angela/agents"],
     "data_directory": ".angela",
@@ -369,8 +445,8 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
       "scrollbar": "default",         // default, always, or never
       "kitty_placeholders": true,     // unset = auto-detect Kitty Unicode placeholders
       "completions": {
-        "max_depth": 0,
-        "max_items": 1000
+        "max_depth": 0,              // 0 = no limit
+        "max_items": 0               // 0 = no limit
       }
     }
   }
@@ -383,22 +459,87 @@ verbs (`rm`, `kill`, `git push`, ...) always prompt.
 > `.cursor/skills`.
 
 > [!IMPORTANT]
-> `global_context_paths` already defaults to `~/.config/angela/ANGELA.md`
-> and `~/.config/AGENTS.md` — create either file and Angela loads it into
-> every project's system prompt with no config change. Only set
-> `global_context_paths` yourself to point at a different location.
+> `global_context_paths` already defaults to `ANGELA.md` in the global config
+> directory and `AGENTS.md` one level above it, which is
+> `~/.config/angela/ANGELA.md` and `~/.config/AGENTS.md` unless
+> `XDG_CONFIG_HOME` or `ANGELA_GLOBAL_CONFIG` moves the config directory.
+> Create either file and Angela loads it into every project's system prompt
+> with no config change. Only set `global_context_paths` yourself to point at
+> a different location.
+
+Angela adds these default locations on top of any paths you list. Later
+layers add to the lists instead of replacing them.
+
+| Setting         | Always searched                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `skills_paths`  | Global: `~/.config/angela/skills`, `~/.config/agents/skills`, `~/.agents/skills`, `~/.claude/skills`. Project: `.agents/skills`, `.angela/skills`, `.claude/skills`, `.cursor/skills`. `ANGELA_SKILLS_DIR` replaces the global list. |
+| `agent_paths`   | See [Agents](../agents/). `ANGELA_AGENTS_DIR` replaces the global list.                           |
+
+Two defaults depend on the environment. Outside a git repository, `ls` and
+the file completions are capped at depth 2 and 100 items unless you set
+`tools.ls` or `options.tui.completions` yourself. In Apple Terminal,
+`options.tui.transparent` defaults to `true`.
+
+Some older options were renamed. `options.attribution.co_authored_by` is
+deprecated in favor of `trailer_style`. `options.disable_notifications` and
+`options.notification_style` were folded into `notifications`, and Angela
+rewrites them in the global config file on startup.
+
+### Built-in tools
+
+`tools` tunes the built-in tools. Every key is optional.
+
+```jsonc
+{
+  "tools": {
+    "ls":    { "max_depth": 0, "max_items": 1000 },
+    "grep":  { "timeout": 5000000000 },
+    "glob":  { "timeout": 30000000000 },
+    "read":  { "max_image_size": 204800 },
+    "image": { "timeout": 600000000000 }
+  }
+}
+```
+
+| Key                     | Default             | Notes                                              |
+| ----------------------- | ------------------- | -------------------------------------------------- |
+| `ls.max_depth`          | 0 (no limit)        | Maximum directory depth.                           |
+| `ls.max_items`          | 1000                | Maximum entries returned.                          |
+| `grep.timeout`          | 5 seconds           | In nanoseconds.                                    |
+| `glob.timeout`          | 30 seconds          | In nanoseconds.                                    |
+| `read.max_image_size`   | 204800 bytes        | Largest image file the Read tool returns.          |
+| `image.timeout`         | 10 minutes          | In nanoseconds. For ImageGenerate and ImageEdit.   |
+
+Timeouts are plain JSON numbers of nanoseconds, not strings such as `"5s"`.
+`tools.web_search` has its own section below.
+
+### Environment and agents
+
+`env` sets environment variables for Angela and the commands it starts. Values
+use the same shell expansion as other credential fields, and a value that
+fails to resolve is skipped with a warning.
+
+```json
+{
+  "env": { "GOPATH": "$HOME/go" }
+}
+```
+
+`agents` configures or overrides agents. An agent with an unrecognized key is
+dropped with a warning, so a misspelled `allowed_tool` cannot silently remove
+its restrictions. See [Agents](../agents/) for every field.
 
 ### Web search
 
-`tools.web_search` configures the engines behind the `web_search` and
-`multi_search` tools. Every key is optional; with no config at all, searching
+`tools.web_search` configures the engines behind the `WebSearch` and
+`MultiSearch` tools. Every key is optional; with no config at all, searching
 works without any API key.
 
 ```jsonc
 {
   "tools": {
     "web_search": {
-      "engine": "bing",                 // engine web_search tries first
+      "engine": "bing",                 // engine WebSearch tries first
       "timeout": 30000000000,           // fallback chain budget, in nanoseconds
       "api_keys": {
         "tavily": "$TAVILY_API_KEY",    // only $VAR and ${VAR} are expanded
@@ -424,7 +565,7 @@ The built-in engines, in the fixed order Angela registers them:
 | `firecrawl` | Tried without a key first. Skipped if Firecrawl rejects it.  |
 | `searxng`   | Public instances, or the ones in `searxng_instances`.        |
 
-**`web_search`** tries `engine` first, then the rest in the order above, and
+**`WebSearch`** tries `engine` first, then the rest in the order above, and
 returns the first engine that produces results. When the fallback engine was
 not the preferred one, or ignored a `time_range`, the result carries a note
 saying so. `timeout` caps the whole chain; a single engine attempt is capped
@@ -432,17 +573,17 @@ at 15 seconds within it.
 
 > [!WARNING]
 > `engine` only chooses which engine goes first. If it returns nothing,
-> `web_search` sends the same query to the next engines in the list, which
+> `WebSearch` sends the same query to the next engines in the list, which
 > are third-party services. Every engine in the table can receive a query, and
 > there is no setting to restrict the list. Avoid searching for proprietary
 > identifiers if that matters to you. The `ddg` engine also turns DuckDuckGo
 > SafeSearch off, and there is no setting to change that.
 
-**`multi_search`** queries several engines at once and merges the results by
+**`MultiSearch`** queries several engines at once and merges the results by
 URL, ranking sources that more engines returned above the rest. Without an
 `engines` argument it queries the first three engines in the order above:
 `bing`, `ddg` and `exa`. This default ignores `engine`, so changing the
-preferred engine only affects `web_search`. The model can pass an explicit
+preferred engine only affects `WebSearch`. The model can pass an explicit
 `engines` list to choose others; unknown ids are dropped and repeated ids
 are queried once. Each queried engine receives the query at the same time.
 
@@ -464,26 +605,65 @@ the engines that use one:
 > `timeout` is parsed as a plain JSON number of nanoseconds, so a string such
 > as `"45s"` is rejected when the config loads. `45000000000` is 45 seconds.
 
+## Environment variables and flags
+
+Some settings can also come from the environment or the command line.
+
+| Variable                              | Effect                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| `ANGELA_GLOBAL_CONFIG`                | Directory that holds the global `angela.json`                            |
+| `XDG_CONFIG_HOME`                     | Base of the default global config directory                              |
+| `XDG_DATA_HOME`                       | Base of the global data directory                                        |
+| `ANGELA_CACHE_DIR`, `XDG_CACHE_HOME`  | Cache directory, in that order of priority                               |
+| `ANGELA_SKILLS_DIR`                   | Replaces the default global skills directories                           |
+| `ANGELA_AGENTS_DIR`                   | Replaces the default global agent directories                            |
+| `ANGELA_DISABLE_PROVIDER_AUTO_UPDATE` | Overrides `options.disable_provider_auto_update` when set                |
+| `ANGELA_DISABLE_DEFAULT_PROVIDERS`    | Overrides `options.disable_default_providers` when set                   |
+| `ANGELA_DISABLE_METRICS`, `DO_NOT_TRACK` | Turn metrics off when set to a true value                             |
+| `ANGELA_DISABLE_ANTHROPIC_CACHE`      | Stops Angela from sending Anthropic cache-control markers                |
+| `CATWALK_URL`                         | Provider catalog source used instead of the default Catwalk server       |
+
+| Flag                                  | Effect                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| `-c, --cwd <dir>`                     | Run as if started in this directory                                      |
+| `-D, --data-dir <dir>`                | Overrides `options.data_directory`                                       |
+| `-d, --debug`                         | Turns on debug logging                                                   |
+| `-y, --yolo`                          | Accepts every permission prompt. Dangerous.                              |
+| `--yolo-merge`                        | Lets yolo mode also approve the branch merge tool                        |
+| `--auto-accept-edits`                 | Accepts file edits and still asks about everything else                  |
+| `--disable-image-tools`               | Same as `options.disable_image_tools`                                    |
+| `--kitty-placeholders[=false]`        | Same as `options.tui.kitty_placeholders`                                 |
+| `--sandbox`                           | Restricts Angela and its commands at the OS level                        |
+| `--sandbox-rw`, `--sandbox-ro`        | Extra read-write or read-only directories for `--sandbox`                |
+| `--sandbox-no-network`                | Blocks outbound network access for commands under `--sandbox`            |
+| `--no-docker-sandbox`                 | Applies Landlock even inside a detected container                        |
+
+To see where Angela is reading and writing, run `angela dirs`. To check a file
+after you edit it, run `angela config validate`. To refresh the provider
+catalog, run `angela update-providers`. See the [README](../../README.md) for
+the details.
+
 ## Composing configs
 
 A shared base config is just another layer: put the team's settings in the
 global config and let each project's `angela.json` override what it needs.
-Layers are deep-merged, with the one closest to the project winning.
+See [Where config lives](#where-config-lives) for the merge rules.
 
-```jsonc
-// Unix-like: ~/.config/angela/angela.json
-// Windows:   %USERPROFILE%\.config\angela\angela.json
+```json
 {
   "$schema": "https://raw.githubusercontent.com/NaturalSelect/angela/main/schema.json",
   "providers": {
-    "anthropic": { "api_key": "$ANTHROPIC_API_KEY" },
+    "anthropic": { "api_key": "$ANTHROPIC_API_KEY" }
   },
   "slots": {
-    "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" },
+    "main": { "provider": "anthropic", "model": "claude-sonnet-4-20250514" }
   },
-  "permissions": { "allowed_tools": ["Read", "LS", "Grep"] },
+  "permissions": { "allowed_tools": ["Read", "LS", "Grep"] }
 }
 ```
+
+Save this as `~/.config/angela/angela.json` on Unix-like systems or
+`%USERPROFILE%\.config\angela\angela.json` on Windows.
 
 For a full reference, see the [JSON schema](../../schema.json).
 

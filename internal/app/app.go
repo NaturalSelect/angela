@@ -77,6 +77,8 @@ type App struct {
 
 	config *config.ConfigStore
 
+	// reloadMu serializes Reload calls from the TUI, ACP and the model.
+	reloadMu        sync.Mutex
 	serviceEventsWG *sync.WaitGroup
 	eventsCtx       context.Context
 	events          *pubsub.Broker[tea.Msg]
@@ -771,6 +773,7 @@ func (app *App) initCoderAgent(ctx context.Context, interactive bool) error {
 		Skills:       app.Skills,
 		Images:       app.Images,
 		ImageSupport: app.ClientImageSupported,
+		Reload:       app.reloadForTool,
 		Interactive:  interactive,
 
 		NoBranchAgents: app.config.Overrides().NoBranchAgents,

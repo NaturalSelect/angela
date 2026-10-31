@@ -203,7 +203,7 @@ Config: `{"matcher": "^(Edit|Write|MultiEdit)$", "command": "./hooks/go-context.
 #!/usr/bin/env bash
 set -euo pipefail
 
-read -r input
+input=$(cat)
 rewritten=$(echo "$input" | jq -r '.tool_input.command' | some-rewriter)
 
 cat <<EOF

@@ -279,9 +279,8 @@ type coordinator struct {
 	// session. The zero value is ready to use.
 	titles titleClaims
 
-	// Skills discovery results (session-start snapshot).
-	allSkills    []*skills.Skill // Pre-filter: all discovered after dedup.
-	activeSkills []*skills.Skill // Post-filter: active skills only.
+	// NOTE: Nil only in test struct literals; NewCoordinator always sets it.
+	skills       *skills.Manager
 	skillTracker *skills.Tracker
 
 	// images stores generated images for the built-in ImageGenerate
@@ -292,6 +291,9 @@ type coordinator struct {
 	// imageToolsAvailable.
 	images       images.Service
 	imageSupport func() bool
+
+	// reload backs the AngelaReload tool. Nil leaves the tool unregistered.
+	reload func(context.Context) (string, error)
 }
 
 // CoordinatorOptions holds the dependencies for NewCoordinator. Using a
@@ -311,7 +313,9 @@ type CoordinatorOptions struct {
 	Skills       *skills.Manager
 	Images       images.Service
 	ImageSupport func() bool
-	Interactive  bool
+	// Reload backs the AngelaReload tool. Nil leaves the tool unregistered.
+	Reload      func(context.Context) (string, error)
+	Interactive bool
 	// NoBranchAgents disables branch agents and background agents while
 	// leaving the other interactive tools, such as question, available.
 	NoBranchAgents bool
@@ -321,14 +325,12 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 	// Skills are pre-discovered by the caller (see app.New) and passed in
 	// via the manager. If no manager was provided (legacy callers), fall
 	// back to an in-line discovery so the coordinator still works.
-	var allSkills, activeSkills []*skills.Skill
-	if opts.Skills != nil {
-		allSkills = opts.Skills.AllSkills()
-		activeSkills = opts.Skills.ActiveSkills()
-	} else {
-		allSkills, activeSkills = discoverSkills(opts.Config)
+	skillsMgr := opts.Skills
+	if skillsMgr == nil {
+		allSkills, activeSkills := discoverSkills(opts.Config)
+		skillsMgr = skills.NewManager(allSkills, activeSkills, nil)
 	}
-	skillTracker := skills.NewTracker(activeSkills)
+	skillTracker := skills.NewTracker(skillsMgr.ActiveSkills())
 
 	c := &coordinator{
 		cfg:            opts.Config,
@@ -349,11 +351,11 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		notices:        newNoticeInbox(),
 		lifetime:       ctx,
 		proposals:      tools.NewProposalStore(),
-		allSkills:      allSkills,
-		activeSkills:   activeSkills,
+		skills:         skillsMgr,
 		skillTracker:   skillTracker,
 		images:         opts.Images,
 		imageSupport:   opts.ImageSupport,
+		reload:         opts.Reload,
 		interactive:    opts.Interactive,
 		noBranchAgents: opts.NoBranchAgents,
 	}
@@ -525,7 +527,7 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	}
 	beforeLoaded := c.skillTracker.LoadedNames()
 	result, originalErr := run()
-	logTurnSkillUsage(sessionID, prompt, c.activeSkills, c.skillTracker, beforeLoaded)
+	logTurnSkillUsage(sessionID, prompt, c.activeSkills(), c.skillTracker, beforeLoaded)
 
 	if hasLatest && c.runComplete != nil {
 		c.runComplete.PublishMustDeliver(ctx, pubsub.UpdatedEvent, latest)
@@ -1056,7 +1058,7 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 		allTools,
 		tools.NewBashTool(c.cfg.WorkingDir(), c.cfg.Config().Options.Attribution, modelName),
 		tools.NewGitTool(c.cfg.WorkingDir()),
-		tools.NewAngelaInfoTool(c.cfg, c.lspManager, c.allSkills, c.activeSkills, c.skillTracker),
+		tools.NewAngelaInfoTool(c.cfg, c.lspManager, c.skills, c.skillTracker),
 		tools.NewAngelaLogsTool(logFile),
 		tools.NewJobOutputTool(),
 		tools.NewJobKillTool(),
@@ -1078,6 +1080,10 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 
 	if c.shouldEnableQuestionTool(agent, isSubAgent) {
 		allTools = append(allTools, tools.NewQuestionTool(c.questions))
+	}
+
+	if c.reload != nil {
+		allTools = append(allTools, tools.NewAngelaReloadTool(c.reload))
 	}
 
 	// Add LSP tools if user has configured LSPs or auto_lsp is enabled (nil or true).
@@ -2408,7 +2414,17 @@ func (c *coordinator) UpdateModels(ctx context.Context) error {
 		return errCoderAgentNotConfigured
 	}
 	c.reconcileSubagents()
+	c.skillTracker.SetActive(c.activeSkills())
 	return nil
+}
+
+// activeSkills returns the current active skills, or nil when the
+// coordinator has no skills manager.
+func (c *coordinator) activeSkills() []*skills.Skill {
+	if c.skills == nil {
+		return nil
+	}
+	return c.skills.ActiveSkills()
 }
 
 func (c *coordinator) QueuedPrompts(sessionID string) int {

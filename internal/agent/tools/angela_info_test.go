@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
@@ -522,4 +523,38 @@ func TestAngelaInfo_Hooks_NoHooks(t *testing.T) {
 
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
 	require.NotContains(t, output, "[hooks]")
+}
+
+func TestAngelaInfoTool_ReflectsSkillsReload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	source := func() skills.DiscoveryConfig {
+		return skills.DiscoveryConfig{SkillsPaths: []string{root}}
+	}
+	mgr := skills.NewManager(nil, nil, nil, skills.WithDiscoverySource(source))
+	t.Cleanup(mgr.Shutdown)
+	_, err := mgr.Reload()
+	require.NoError(t, err)
+
+	cfg := config.NewTestStore(&config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+	})
+	tracker := skills.NewTracker(mgr.ActiveSkills())
+	tool := NewAngelaInfoTool(cfg, nil, mgr, tracker)
+
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{Input: `{}`})
+	require.NoError(t, err)
+	require.NotContains(t, resp.Content, "late-skill")
+
+	dir := filepath.Join(root, "late-skill")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	body := "---\nname: late-skill\ndescription: Added after startup.\n---\nDo a thing.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, skills.SkillFileName), []byte(body), 0o644))
+	_, err = mgr.Reload()
+	require.NoError(t, err)
+
+	resp, err = tool.Run(t.Context(), fantasy.ToolCall{Input: `{}`})
+	require.NoError(t, err)
+	require.Contains(t, resp.Content, "late-skill = user, unloaded")
 }

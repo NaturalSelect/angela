@@ -157,6 +157,9 @@ type (
 	ActionSummarize                   struct {
 		SessionID string
 	}
+	// ActionReload asks for config, skills and MCP servers to be re-read
+	// from disk.
+	ActionReload struct{}
 	// ActionGenerateTitle asks for the session to be titled again from
 	// the prompt that opened it, for when the automatic attempt failed.
 	ActionGenerateTitle struct {

@@ -1192,6 +1192,21 @@ func (mr *MockWorkspaceMockRecorder) RefreshOAuthToken(ctx, scope, providerID an
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshOAuthToken", reflect.TypeOf((*MockWorkspace)(nil).RefreshOAuthToken), ctx, scope, providerID)
 }
 
+// Reload mocks base method.
+func (m *MockWorkspace) Reload(ctx context.Context) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Reload", ctx)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Reload indicates an expected call of Reload.
+func (mr *MockWorkspaceMockRecorder) Reload(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reload", reflect.TypeOf((*MockWorkspace)(nil).Reload), ctx)
+}
+
 // RemoveConfigField mocks base method.
 func (m *MockWorkspace) RemoveConfigField(scope config.Scope, key string) error {
 	m.ctrl.T.Helper()

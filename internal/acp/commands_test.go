@@ -303,6 +303,23 @@ func TestCommandsAreAdvertised(t *testing.T) {
 		}, commandLists(h.client, resp.SessionID))
 	})
 
+	t.Run("a skills change sends the new list", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		resp, err := h.agent.NewSession(t.Context(), protocol.NewSessionRequest{Cwd: testCwd})
+		require.NoError(t, err)
+		resp.AfterSent(t.Context())
+
+		h.ws.snapshot(func() { h.ws.customCommands = []commands.CustomCommand{reviewCommand()} })
+		h.ws.publish(pubsub.Event[skills.Event]{Type: pubsub.UpdatedEvent, Payload: skills.Event{}})
+
+		eventually(t, func() bool { return len(commandLists(h.client, resp.SessionID)) == 2 })
+		require.Equal(t, [][]protocol.AvailableCommand{
+			withBuiltins(),
+			withBuiltins(reviewAdvert),
+		}, commandLists(h.client, resp.SessionID))
+	})
+
 	t.Run("a server that goes away shortens the list", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t)

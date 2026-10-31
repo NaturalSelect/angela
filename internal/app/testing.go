@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/agent/notify"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
@@ -60,6 +61,12 @@ func NewForTest(ctx context.Context) *App {
 		return nil
 	})
 	return app
+}
+
+// SetConfigForTest gives an App built by [NewForTest] a config store, for
+// tests that exercise code paths reading it, such as [App.Reload].
+func (app *App) SetConfigForTest(store *config.ConfigStore) {
+	app.config = store
 }
 
 // ShutdownForTest tears down the App's event broker and fan-in

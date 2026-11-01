@@ -129,10 +129,6 @@ Angela keeps application data in two kinds of data directory:
   up from the working directory, otherwise `<working directory>/.angela`. It
   holds the session database, the logs and the workspace config layer.
 
-The cache directory is `ANGELA_CACHE_DIR` when set, otherwise
-`$XDG_CACHE_HOME/angela`, otherwise `~/.cache/angela` (`%LOCALAPPDATA%\angela\cache`
-on Windows).
-
 ## Configuration Reference
 
 All configuration is done through `angela.json`. For the complete schema, see
@@ -177,7 +173,7 @@ All configuration is done through `angela.json`. For the complete schema, see
 }
 ```
 
-`type` is one of `openai` (the default), `openai-compat`, `openrouter`,
+`type` is one of `openai-compat` (the default), `openai`, `openrouter`,
 `vercel`, `anthropic`, `google`, `azure`, `bedrock`, `google-vertex`,
 `litellm`, `llamacpp`, `lmstudio`, `ollama` or `omlx`. To satisfy
 [`schema.json`](../../schema.json), each model needs `id`, `name`, the four
@@ -614,7 +610,6 @@ Some settings can also come from the environment or the command line.
 | `ANGELA_GLOBAL_CONFIG`                | Directory that holds the global `angela.json`                            |
 | `XDG_CONFIG_HOME`                     | Base of the default global config directory                              |
 | `XDG_DATA_HOME`                       | Base of the global data directory                                        |
-| `ANGELA_CACHE_DIR`, `XDG_CACHE_HOME`  | Cache directory, in that order of priority                               |
 | `ANGELA_SKILLS_DIR`                   | Replaces the default global skills directories                           |
 | `ANGELA_AGENTS_DIR`                   | Replaces the default global agent directories                            |
 | `ANGELA_DISABLE_PROVIDER_AUTO_UPDATE` | Overrides `options.disable_provider_auto_update` when set                |
@@ -638,7 +633,7 @@ Some settings can also come from the environment or the command line.
 | `--sandbox-no-network`                | Blocks outbound network access for commands under `--sandbox`            |
 | `--no-docker-sandbox`                 | Applies Landlock even inside a detected container                        |
 
-To see where Angela is reading and writing, run `angela dirs`. To check a file
+To see which config directories Angela reads, run `angela dirs`. To check a file
 after you edit it, run `angela config validate`. To refresh the provider
 catalog, run `angela update-providers`. See the [README](../../README.md) for
 the details.

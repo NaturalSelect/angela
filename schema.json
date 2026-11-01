@@ -809,7 +809,7 @@
             "omlx"
           ],
           "description": "Provider type that determines the API format",
-          "default": "openai"
+          "default": "openai-compat"
         },
         "use_responses": {
           "type": "boolean",

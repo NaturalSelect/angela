@@ -112,7 +112,7 @@ these child sessions.
 | `angela logs` | Prints the data directory's `logs/angela.log`; `-f, --follow`, `-t, --tail N` (default 1000). |
 | `angela stats` | Usage statistics; `--all` aggregates every known project, `--crawl-dir <dir>` scans a directory for projects. |
 | `angela projects` | Lists known project directories; `--json`. |
-| `angela dirs` | Shows the config and data directories. |
+| `angela dirs` | Shows the config directories. |
 | `angela pprof <profile>` | Exports a runtime profile of a running angela process over a private local endpoint (no TCP port). Profiles: `goroutine`, `heap`, `allocs`, `threadcreate`, `cpu`, `trace`. `angela pprof list` shows exportable processes; flags `-p, --pid`, `-o, --output` (`-` for stdout), `--format proto\|text\|full` (`full` is goroutine-only), `--seconds` for `cpu`/`trace`. |
 
 ## Recipes

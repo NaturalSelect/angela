@@ -71,7 +71,7 @@ See the [full provider list](./docs/config/) for all supported variables.
 | `angela login` / `logout`    | Sign in to or out of a platform (`copilot`)              |
 | `angela logs`                | Show the log for the current project                     |
 | `angela stats`               | Show token usage, cost, and activity statistics          |
-| `angela dirs`                | Show config and data directories                         |
+| `angela dirs`                | Show config directories                                  |
 | `angela projects`            | List known project directories                           |
 | `angela pprof ...`           | Export runtime profiles of a running Angela process      |
 | `angela acp`                 | Run as an ACP agent over stdio (see [Editor integration](#editor-integration-acp)) |
@@ -291,7 +291,7 @@ rules in `angela.json`:
     "allowed_tools": ["Read", "LS", "Grep"],
     "rules": [
       { "action": "deny", "tool": "read", "pattern": "**/.env", "mode": "path" },
-      { "action": "allow", "tool": "bash", "pattern": "git status*" }
+      { "action": "allow", "tool": "Bash", "pattern": "git status*" }
     ],
     "prompt": "ask"
   }
@@ -400,7 +400,6 @@ skill directories replaces the built-in one.
 | Variable                              | Effect                                              |
 | ------------------------------------- | --------------------------------------------------- |
 | `ANGELA_GLOBAL_CONFIG`                | Directory that holds the global `angela.json`       |
-| `ANGELA_CACHE_DIR`                    | Override the cache directory                        |
 | `ANGELA_SKILLS_DIR`                   | Replace the default global skills directories       |
 | `ANGELA_AGENTS_DIR`                   | Replace the default global agent markdown directory |
 | `ANGELA_DISABLE_METRICS`              | Same as `options.disable_metrics`                   |

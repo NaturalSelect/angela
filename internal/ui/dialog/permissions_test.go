@@ -385,10 +385,9 @@ func TestPermissions_MergeOffersNoAllowForSession(t *testing.T) {
 	require.Nil(t, p.HandleMsg(keyMsg('s')))
 }
 
-// A reload can start programs named in the config, so the gate never stores a
-// grant for it. Offering "Allow for Session" would promise a skip that never
-// happens.
-func TestPermissions_AngelaReloadOffersNoAllowForSession(t *testing.T) {
+// A forced request is asked every time and the gate never stores a grant for
+// it. Offering "Allow for Session" would promise a skip that never happens.
+func TestPermissions_ForcedRequestOffersNoAllowForSession(t *testing.T) {
 	t.Parallel()
 
 	s := styles.CharmtonePantera()
@@ -397,6 +396,7 @@ func TestPermissions_AngelaReloadOffersNoAllowForSession(t *testing.T) {
 		ID:         "perm-reload",
 		ToolCallID: "tool-call-reload",
 		ToolName:   toolnames.AngelaReload,
+		Forced:     true,
 	})
 
 	var actions []PermissionAction

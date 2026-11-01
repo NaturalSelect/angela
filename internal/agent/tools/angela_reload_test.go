@@ -38,18 +38,31 @@ func TestAngelaReloadTool_ReportsFailure(t *testing.T) {
 	require.Contains(t, resp.Content, "bad json")
 }
 
-// TestAngelaReloadAccessIsExecuteWithoutCommand pins the access shape the
-// permission gate turns into a forced prompt. The gate-level behaviour is
-// tested in the permission package.
-func TestAngelaReloadAccessIsExecuteWithoutCommand(t *testing.T) {
+// TestAngelaReloadAccessAlwaysAsks pins the access shape the permission
+// gate turns into a forced prompt. The gate-level behaviour is tested in
+// the permission package.
+func TestAngelaReloadAccessAlwaysAsks(t *testing.T) {
 	t.Parallel()
 
 	access, ok := AccessOf(toolnames.AngelaReload, `{}`, "/work")
 	require.True(t, ok)
 	require.Equal(t, permission.ActionExecute, access.Action)
-	require.Empty(t, access.Command)
+	require.True(t, access.AlwaysAsk)
 	require.Empty(t, access.Path)
 
 	preview := PreviewOf(toolnames.AngelaReload, `{}`, "/work")
 	require.Contains(t, preview.Description, "MCP server")
+	require.Contains(t, preview.Description, "hook commands")
+}
+
+// An empty Bash command is the tool's own error to report, so it must not
+// be marked to always ask.
+func TestBashWithoutCommandDoesNotAlwaysAsk(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{`{}`, `{"command":""}`} {
+		access, ok := AccessOf(toolnames.Bash, input, "/work")
+		require.True(t, ok)
+		require.False(t, access.AlwaysAsk, input)
+	}
 }

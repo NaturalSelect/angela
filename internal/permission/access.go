@@ -111,4 +111,7 @@ type Access struct {
 	Server string
 	// MCPTool is the bare tool name on the MCP server.
 	MCPTool string
+	// AlwaysAsk marks an access the user must approve every time, so no
+	// stored grant, hook approval or allow rule may stand in for them.
+	AlwaysAsk bool
 }

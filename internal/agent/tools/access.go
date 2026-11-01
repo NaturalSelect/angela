@@ -332,11 +332,12 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 		access.Action = permission.ActionRead
 
 	case toolnames.AngelaReload:
-		// Reloading can start MCP server processes named in the config, so
-		// it counts as execution. The empty command leaves nothing to
-		// judge, so the gate forces a prompt: no grant, hook or allow rule
-		// skips it, and only yolo mode does.
+		// Reloading can start MCP server processes and activate hook
+		// commands named in the config, so it counts as execution. It is
+		// marked to always ask: no grant, hook or allow rule skips the
+		// prompt, and only yolo mode does.
 		access.Action = permission.ActionExecute
+		access.AlwaysAsk = true
 
 	case toolnames.Merge:
 		// Reaches no file and runs nothing, but it is the one moment
@@ -481,7 +482,7 @@ func PreviewOf(toolName, rawInput, workingDir string) permission.Preview {
 
 	case toolnames.AngelaReload:
 		return permission.Preview{
-			Description: "Reload Angela config, skills and MCP servers from disk (may start, stop or restart MCP server processes)",
+			Description: "Reload Angela config, skills and MCP servers from disk (may start or restart MCP server processes and activate changed hook commands)",
 			Params:      AngelaReloadParams{},
 		}
 	}

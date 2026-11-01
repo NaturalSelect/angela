@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-//go:embed page.html page.css page.js heartbit.svg heartbit-grumpy.svg
+//go:embed page.html page.css page.js angela.png angela-grumpy.png
 var assets embed.FS
 
 // closeDelay is how long the page counts down before asking the browser to
@@ -65,11 +65,11 @@ func Write(w io.Writer, r Result) error {
 	if err != nil {
 		return fmt.Errorf("read callback script: %w", err)
 	}
-	mark, err := assets.ReadFile("heartbit.svg")
+	mark, err := assets.ReadFile("angela.png")
 	if err != nil {
 		return fmt.Errorf("read callback artwork: %w", err)
 	}
-	grumpy, err := assets.ReadFile("heartbit-grumpy.svg")
+	grumpy, err := assets.ReadFile("angela-grumpy.png")
 	if err != nil {
 		return fmt.Errorf("read callback grumpy artwork: %w", err)
 	}
@@ -86,8 +86,7 @@ func Write(w io.Writer, r Result) error {
 		CloseDelay       int
 		CSS              template.CSS
 		JS               template.JS
-		Heartbit         template.HTML
-		Favicon          template.URL
+		Mark             template.URL
 	}{
 		Subject:          r.Subject,
 		ErrorCode:        r.ErrorCode,
@@ -96,15 +95,14 @@ func Write(w io.Writer, r Result) error {
 		JS:               template.JS(js),
 	}
 
-	// The artwork reflects the outcome: a smiling heart on success, a
-	// grumpy one when the authorization did not go through. The favicon
-	// matches so the tab itself carries the state.
+	// The artwork reflects the outcome: a smiling Angela on success, a
+	// displeased one when the authorization did not go through. The same
+	// image is the favicon so the tab itself carries the state.
 	art := mark
 	if r.Failed() {
 		art = grumpy
 	}
-	data.Heartbit = template.HTML(art)
-	data.Favicon = template.URL("data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(art))
+	data.Mark = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(art))
 
 	if r.Failed() {
 		data.Title = "Authorization failed — Angela"

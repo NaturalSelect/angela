@@ -1,6 +1,8 @@
 package callback
 
 import (
+	"encoding/base64"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,8 +25,8 @@ func TestWrite_Success(t *testing.T) {
 	require.Contains(t, page, `data-delay="5"`)
 	// Everything needed to render must be inlined, so the page still
 	// works with no network beyond the optional web font.
-	require.Contains(t, page, "<svg")
-	require.Contains(t, page, "data:image/svg")
+	require.Contains(t, page, `<img src="data:image/png;base64,`)
+	require.Contains(t, page, `rel="icon" type="image/png"`)
 }
 
 // TestWrite_FailureDoesNotAutoClose guards the choice not to yank an error
@@ -48,23 +50,25 @@ func TestWrite_FailureDoesNotAutoClose(t *testing.T) {
 	require.NotContains(t, page, `data-delay=`)
 }
 
-// TestWrite_GrumpyOnFailure proves the artwork matches the outcome: a
-// grumpy heart when authorization fails, the smiling one when it works.
-// The two are told apart by a path unique to each drawing.
+// TestWrite_GrumpyOnFailure proves the artwork matches the outcome: the
+// displeased portrait when authorization fails, the smiling one when it
+// works. The two are told apart by their embedded image bytes.
 func TestWrite_GrumpyOnFailure(t *testing.T) {
 	t.Parallel()
 
-	// The grumpy drawing carries a dark red accent (#ab2454) that the
-	// smiling heart does not.
-	const grumpy = "#ab2454"
+	grumpyPNG, err := assets.ReadFile("angela-grumpy.png")
+	require.NoError(t, err)
+	grumpy := base64.StdEncoding.EncodeToString(grumpyPNG)
 
+	// html/template escapes "+" inside attribute values, so unescape the page
+	// the way a browser would before looking for the image.
 	var failed strings.Builder
 	require.NoError(t, Write(&failed, Result{ErrorCode: "access_denied"}))
-	require.Contains(t, failed.String(), grumpy)
+	require.Contains(t, html.UnescapeString(failed.String()), grumpy)
 
 	var ok strings.Builder
 	require.NoError(t, Write(&ok, Result{Subject: "linear"}))
-	require.NotContains(t, ok.String(), grumpy)
+	require.NotContains(t, html.UnescapeString(ok.String()), grumpy)
 }
 
 // TestWrite_TerseFailure covers providers that report an error code with no

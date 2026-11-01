@@ -1,6 +1,10 @@
 # Angela
 
 <p align="center">
+    <img src="docs/assets/angela.png" width="280" alt="Angela">
+</p>
+
+<p align="center">
     <a href="https://github.com/NaturalSelect/angela/releases"><img src="https://img.shields.io/github/release/NaturalSelect/angela" alt="Latest Release"></a>
     <a href="https://github.com/NaturalSelect/angela/actions"><img src="https://github.com/NaturalSelect/angela/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
 </p>

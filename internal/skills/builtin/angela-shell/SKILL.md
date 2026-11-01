@@ -40,7 +40,7 @@ Hook shells additionally receive:
 | `ANGELA_TOOL_NAME` | The tool being called. |
 | `ANGELA_SESSION_ID` | Current session ID. |
 | `ANGELA_CWD` | Working directory. |
-| `ANGELA_PROJECT_DIR` | Project root directory. |
+| `ANGELA_PROJECT_DIR` | Working directory, the same value as `ANGELA_CWD`. |
 | `ANGELA_AGENT_ID` | The agent ID dispatching the tool. |
 | `ANGELA_AGENT_DEPTH` | Sub-agent nesting depth. |
 | `ANGELA_TOOL_INPUT_*` | Derived variables for tool inputs (e.g. `ANGELA_TOOL_INPUT_COMMAND`). |

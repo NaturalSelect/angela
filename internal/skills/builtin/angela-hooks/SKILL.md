@@ -81,7 +81,7 @@ the process environment.
 | `ANGELA_TOOL_NAME`            | Tool being called (e.g. `Bash`)          |
 | `ANGELA_SESSION_ID`           | Current session ID                       |
 | `ANGELA_CWD`                  | Working directory                        |
-| `ANGELA_PROJECT_DIR`          | Project root directory                   |
+| `ANGELA_PROJECT_DIR`          | Working directory, same as `ANGELA_CWD`  |
 | `ANGELA_AGENT_ID`             | Agent making the call (e.g. `coder`)     |
 | `ANGELA_AGENT_DEPTH`          | `0` for the top-level agent, `1+` below  |
 | `ANGELA_TOOL_INPUT_COMMAND`   | For `Bash` calls: the shell command      |

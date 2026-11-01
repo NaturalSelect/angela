@@ -658,7 +658,8 @@ func TestWalkthroughSkill(t *testing.T) {
 
 	data, err := fs.ReadFile(BuiltinFS(), "builtin/builtin-code-walkthrough/SKILL.md")
 	require.NoError(t, err)
-	skill := string(data)
+	// NOTE: A Windows checkout may rewrite the embedded file with CRLF endings.
+	skill := strings.ReplaceAll(string(data), "\r\n", "\n")
 
 	require.Contains(t, skill, "reverse of co-design", "the walkthrough must be framed as co-design run backward")
 	for _, section := range []string{"Background", "Design", "Trade-offs", "Risks and preconditions", "Follow-up work"} {

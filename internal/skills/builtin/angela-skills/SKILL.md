@@ -174,7 +174,7 @@ are readable by the agent on demand but not auto-injected into context. See
 
 **A new or edited skill isn't picked up in a running session** — skills are
 discovered at startup and again on reload. Call `AngelaReload` (it asks the
-user first) or have the user run `/reload`.
+user every time unless yolo mode is on) or have the user run `/reload`.
 
 **Skill doesn't show up at all** — check the directory name matches `name`
 in the frontmatter exactly (case-insensitive). This is the most common

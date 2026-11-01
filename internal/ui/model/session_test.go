@@ -306,11 +306,9 @@ func TestLoadSession_BatchesGetSessionThenReportsCurrentSession(t *testing.T) {
 	require.False(t, loaded.isBranch)
 }
 
-// TestLoadSession_GetSessionErrorReportsError follows loadSession's error
-// path through util.ReportError, which returns a tea.Cmd rather than the
-// InfoMsg directly (unlike handleFileEvent's util.NewErrorMsg). The batch
-// entry must therefore be invoked twice: once to run the load cmd, and
-// again on its returned tea.Cmd to reach the actual InfoMsg.
+// TestLoadSession_GetSessionErrorReportsError checks that a failed lookup
+// makes the load command return the error InfoMsg itself. A tea.Cmd in its
+// place would never be run by Bubble Tea, so the error would be lost.
 func TestLoadSession_GetSessionErrorReportsError(t *testing.T) {
 	t.Parallel()
 
@@ -325,12 +323,25 @@ func TestLoadSession_GetSessionErrorReportsError(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, batch, 2)
 
-	loadResult := batch[0]()
-	innerCmd, ok := loadResult.(tea.Cmd)
-	require.True(t, ok, "GetSession's error path returns util.ReportError, itself a tea.Cmd")
+	errMsg, ok := batch[0]().(util.InfoMsg)
+	require.True(t, ok, "the load command must return the InfoMsg, not a tea.Cmd")
+	require.Equal(t, util.InfoTypeError, errMsg.Type)
+}
 
-	errMsg, ok := innerCmd().(util.InfoMsg)
+func TestLoadSession_LoadFilesErrorReportsError(t *testing.T) {
+	t.Parallel()
+
+	m, ws := newMockBusyUI(t)
+	wantErr := errors.New("history unavailable")
+	ws.EXPECT().GetSession(gomock.Any(), "s2").Return(session.Session{ID: "s2"}, nil)
+	ws.EXPECT().ListSessionHistory(gomock.Any(), "s2").Return(nil, wantErr)
+
+	batch, ok := m.loadSession("s2")().(tea.BatchMsg)
 	require.True(t, ok)
+	require.Len(t, batch, 2)
+
+	errMsg, ok := batch[0]().(util.InfoMsg)
+	require.True(t, ok, "the load command must return the InfoMsg, not a tea.Cmd")
 	require.Equal(t, util.InfoTypeError, errMsg.Type)
 }
 
@@ -380,6 +391,24 @@ func TestSelectSession_LoadingNoticeDoesNotEraseAnError(t *testing.T) {
 
 	m.Update(sessionMessagesMsg{sessionID: "other"})
 	require.Equal(t, failure, m.status.msg)
+}
+
+func TestSelectSession_FailedLoadReplacesLoadingNotice(t *testing.T) {
+	t.Parallel()
+
+	m, ws := newMockBusyUI(t)
+	selectSessionFromSwitcher(m)
+	require.Equal(t, sessionLoadingInfo, m.status.msg)
+
+	ws.EXPECT().GetSession(gomock.Any(), "other").Return(session.Session{}, errors.New("not found"))
+	ws.EXPECT().SetCurrentSession(gomock.Any(), "other").Return(nil)
+	for _, msg := range runCmds(m, m.loadSession("other")) {
+		m.Update(msg)
+	}
+
+	require.Equal(t, util.InfoTypeError, m.status.msg.Type,
+		"a failed load must replace the loading notice with its error")
+	require.False(t, m.status.msg.Animated)
 }
 
 func TestNewSession_EndsLoadingNotice(t *testing.T) {

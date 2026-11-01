@@ -418,9 +418,15 @@ type permissionOption struct {
 // for this request. Merging ends the branch the instant it is approved
 // (mergeTool.apply sets StopTurn), so a session-wide grant for it could
 // never be consulted again — offering the button would only suggest it
-// does something distinct from Allow.
+// does something distinct from Allow. A reload can start programs named in
+// the config, so the gate asks every time and never stores a grant for it.
 func (p *Permissions) allowForSessionOffered() bool {
-	return p.permission.ToolName != toolnames.Merge
+	switch p.permission.ToolName {
+	case toolnames.Merge, toolnames.AngelaReload:
+		return false
+	default:
+		return true
+	}
 }
 
 // options returns the buttons offered for this request, in display and

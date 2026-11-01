@@ -327,10 +327,12 @@ func writeSkills(b *strings.Builder, allSkills []*skills.Skill, activeSkills []*
 	var entries []entry
 
 	// Active skills: loaded or unloaded.
+	loadedActive := 0
 	for _, s := range activeSkills {
 		state := "unloaded"
 		if tracker.IsLoaded(s.Name) {
 			state = "loaded"
+			loadedActive++
 		}
 		origin := originMap[s.Name]
 		entries = append(entries, entry{name: s.Name, origin: origin, state: state})
@@ -347,7 +349,9 @@ func writeSkills(b *strings.Builder, allSkills []*skills.Skill, activeSkills []*
 
 	slices.SortFunc(entries, func(a, b entry) int { return strings.Compare(a.name, b.name) })
 	b.WriteString("[skills]\n")
-	fmt.Fprintf(b, "loaded_this_session = %d/%d\n", tracker.LoadedCount(), len(activeSkills))
+	// NOTE: The tracker keeps marks for skills a reload dropped, so its own
+	// count can exceed the active total.
+	fmt.Fprintf(b, "loaded_this_session = %d/%d\n", loadedActive, len(activeSkills))
 	for _, e := range entries {
 		fmt.Fprintf(b, "%s = %s, %s\n", e.name, e.origin, e.state)
 	}

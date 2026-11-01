@@ -128,12 +128,12 @@ func (m *UI) loadSession(sessionID string, opts ...loadSessionOpt) tea.Cmd {
 	load := func() tea.Msg {
 		session, err := m.com.Workspace.GetSession(context.Background(), sessionID)
 		if err != nil {
-			return util.ReportError(err)
+			return util.ReportError(err)()
 		}
 
 		sessionFiles, err := m.loadSessionFiles(sessionID)
 		if err != nil {
-			return util.ReportError(err)
+			return util.ReportError(err)()
 		}
 
 		readFiles, err := m.com.Workspace.FileTrackerListReadFiles(context.Background(), sessionID)

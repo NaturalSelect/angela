@@ -333,8 +333,9 @@ func AccessOf(toolName, rawInput, workingDir string) (permission.Access, bool) {
 
 	case toolnames.AngelaReload:
 		// Reloading can start MCP server processes named in the config, so
-		// it counts as execution. The empty command keeps it out of scope:
-		// the gate always asks.
+		// it counts as execution. The empty command leaves nothing to
+		// judge, so the gate forces a prompt: no grant, hook or allow rule
+		// skips it, and only yolo mode does.
 		access.Action = permission.ActionExecute
 
 	case toolnames.Merge:

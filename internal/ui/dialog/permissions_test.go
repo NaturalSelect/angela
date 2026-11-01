@@ -385,6 +385,28 @@ func TestPermissions_MergeOffersNoAllowForSession(t *testing.T) {
 	require.Nil(t, p.HandleMsg(keyMsg('s')))
 }
 
+// A reload can start programs named in the config, so the gate never stores a
+// grant for it. Offering "Allow for Session" would promise a skip that never
+// happens.
+func TestPermissions_AngelaReloadOffersNoAllowForSession(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{Styles: &s}
+	p := NewPermissions(com, permission.PermissionRequest{
+		ID:         "perm-reload",
+		ToolCallID: "tool-call-reload",
+		ToolName:   toolnames.AngelaReload,
+	})
+
+	var actions []PermissionAction
+	for _, o := range p.options() {
+		actions = append(actions, o.action)
+	}
+	require.Equal(t, []PermissionAction{PermissionAllow, PermissionDeny, PermissionDenyWithReason}, actions)
+	require.Nil(t, p.HandleMsg(keyMsg('s')), "the session shortcut must be a no-op")
+}
+
 // buttonScreenPos scans a drawn dialog for the screen cell whose hit
 // compositor resolves to the given button index, mirroring how a real
 // mouse click would land on it.

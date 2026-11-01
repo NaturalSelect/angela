@@ -65,7 +65,8 @@ Each tool call walks this ladder; the first step that settles it wins:
 2. In `yolo` mode the call is approved (a `merge` still prompts unless
    `--yolo-merge` is set).
 3. Forced prompt: a matching `ask` rule, a dangerous command, a command that
-   can carry another command, or a command the scanner cannot analyse.
+   can carry another command, a command the scanner cannot analyse, or an
+   execute action with no command to inspect (`AngelaReload`).
    Nothing below this step can approve these.
 4. A PreToolUse hook approval.
 5. `auto_accept_edits` mode, for edits.

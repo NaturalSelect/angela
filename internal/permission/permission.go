@@ -591,8 +591,13 @@ func (s *permissionService) editorReview(ctx context.Context, reviewer EditorRev
 // treated the same as a dangerous one: not knowing what a command
 // touches is a reason to ask, never a reason to allow.
 func (s *permissionService) forcedPrompt(access Access) (bool, string) {
-	if access.Action != ActionExecute || access.Command == "" {
+	if access.Action != ActionExecute {
 		return false, ""
+	}
+	// NOTE: With no command there is nothing to scan, so nothing can be
+	// judged.
+	if access.Command == "" {
+		return true, "execution without a command to inspect always needs approval"
 	}
 	scan := shellscan.Scan(access.Command, s.commandDir(access))
 	if scan.Opaque {

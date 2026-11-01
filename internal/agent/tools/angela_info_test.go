@@ -454,6 +454,30 @@ func TestAngelaInfo_Skills_DisabledSkills(t *testing.T) {
 	require.Contains(t, output, "image-convert = user, disabled")
 }
 
+func TestAngelaInfo_Skills_LoadedCountIgnoresSkillsRemovedByReload(t *testing.T) {
+	t.Parallel()
+
+	x := &skills.Skill{Name: "x-skill"}
+	y := &skills.Skill{Name: "y-skill"}
+	tracker := skills.NewTracker([]*skills.Skill{x, y})
+	tracker.MarkLoaded("x-skill")
+
+	// A reload drops x-skill from the active set but keeps its loaded mark.
+	active := []*skills.Skill{y}
+	tracker.SetActive(active)
+	require.Equal(t, 1, tracker.LoadedCount(), "the tracker keeps the mark for the compaction reminder")
+
+	cfg := config.NewTestStore(&config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+		Options:   &config.Options{DisabledSkills: []string{"x-skill"}},
+	})
+	output := buildAngelaInfo(cfg, nil, []*skills.Skill{x, y}, active, tracker)
+
+	require.Contains(t, output, "loaded_this_session = 0/1")
+	require.Contains(t, output, "y-skill = user, unloaded")
+	require.Contains(t, output, "x-skill = user, disabled")
+}
+
 func TestAngelaInfo_Skills_Ordering(t *testing.T) {
 	t.Parallel()
 

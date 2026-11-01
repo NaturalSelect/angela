@@ -35,6 +35,27 @@ From [GitHub Releases](https://github.com/NaturalSelect/angela/releases)
 go install github.com/NaturalSelect/angela@latest
 ```
 
+### Upgrading
+
+```bash
+angela upgrade                # latest stable release
+angela upgrade --pre-release  # also consider pre-releases (release candidates)
+```
+
+`angela upgrade` downloads the release from GitHub, checks it against the
+release's `checksums.txt`, and replaces the running executable.
+
+- **No downgrades.** Angela only moves to a strictly newer version. A
+  pre-release build is never rolled back to an older stable release. It moves
+  on to its own stable release once that is published, or to a newer
+  pre-release when you pass `--pre-release`.
+- **Package managers.** If `dpkg`, `rpm`, `apk` or `pacman` owns the
+  executable, the release's package file is installed with that tool, through
+  `sudo` when you are not root, so the package database stays correct.
+- **Go installs and local builds.** A build without a release version, such
+  as one from `go install` or `go build`, cannot be compared with releases and
+  is not upgraded. Install a release instead, or run `go install` again.
+
 ## Getting Started
 
 1. Run `angela` in your project directory.
@@ -80,6 +101,7 @@ See the [full provider list](./docs/config/) for all supported variables.
 | `angela pprof ...`           | Export runtime profiles of a running Angela process      |
 | `angela acp`                 | Run as an ACP agent over stdio (see [Editor integration](#editor-integration-acp)) |
 | `angela update-providers`    | Refresh the provider catalog                             |
+| `angela upgrade`             | Upgrade Angela to the latest release (see [Upgrading](#upgrading)) |
 
 Run any command with `--help` for its flags. These flags work on every
 command:

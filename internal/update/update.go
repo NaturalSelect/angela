@@ -14,12 +14,16 @@ import (
 )
 
 const (
-	githubApiUrl = "https://api.github.com/repos/NaturalSelect/angela/releases/latest"
-	userAgent    = "angela/1.0"
+	githubApiUrl      = "https://api.github.com/repos/NaturalSelect/angela/releases/latest"
+	githubReleasesUrl = "https://api.github.com/repos/NaturalSelect/angela/releases?per_page=100"
+	userAgent         = "angela/1.0"
 )
 
 // Default is the default [Client].
 var Default Client = &github{}
+
+// DefaultSource lists the releases published on GitHub.
+var DefaultSource Source = &github{}
 
 // Info contains information about an available update.
 type Info struct {
@@ -76,8 +80,17 @@ func Check(ctx context.Context, current string, client Client) (Info, error) {
 
 // Release represents a GitHub release.
 type Release struct {
-	TagName string `json:"tag_name"`
-	HTMLURL string `json:"html_url"`
+	TagName    string  `json:"tag_name"`
+	HTMLURL    string  `json:"html_url"`
+	Prerelease bool    `json:"prerelease"`
+	Draft      bool    `json:"draft"`
+	Assets     []Asset `json:"assets"`
+}
+
+type Asset struct {
+	Name string `json:"name"`
+	URL  string `json:"browser_download_url"`
+	Size int64  `json:"size"`
 }
 
 // Client is a client that can get the latest release.
@@ -85,36 +98,52 @@ type Client interface {
 	Latest(ctx context.Context) (*Release, error)
 }
 
+type Source interface {
+	Releases(ctx context.Context) ([]Release, error)
+}
+
 type github struct{}
 
 // Latest implements [Client].
 func (c *github) Latest(ctx context.Context) (*Release, error) {
+	var release Release
+	if err := getJSON(ctx, githubApiUrl, &release); err != nil {
+		return nil, err
+	}
+	return &release, nil
+}
+
+// Releases implements [Source].
+func (c *github) Releases(ctx context.Context) ([]Release, error) {
+	var releases []Release
+	if err := getJSON(ctx, githubReleasesUrl, &releases); err != nil {
+		return nil, err
+	}
+	return releases, nil
+}
+
+func getJSON(ctx context.Context, url string, v any) error {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", githubApiUrl, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var release Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, err
-	}
-
-	return &release, nil
+	return json.NewDecoder(resp.Body).Decode(v)
 }

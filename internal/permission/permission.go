@@ -88,7 +88,8 @@ type Ticket struct {
 	access     Access
 	grant      GrantKey
 	// forced marks a request no stored grant may satisfy, because the
-	// command is dangerous or could not be analysed.
+	// access always needs approval, the command is dangerous or it could
+	// not be analysed.
 	forced bool
 	reason string
 }
@@ -187,6 +188,10 @@ type PermissionRequest struct {
 	// denying this request. It rides along on the same request value
 	// passed back to Deny, and is empty for every other action.
 	DenyReason string `json:"deny_reason,omitempty"`
+	// Forced reports that the gate never stores a session grant for this
+	// request, so an "always allow" choice would promise a skip that
+	// never happens. Refusing for the session still works.
+	Forced bool `json:"forced,omitempty"`
 }
 
 // EditorReviewer is the one call prompt makes on an external code
@@ -498,6 +503,7 @@ func (s *permissionService) prompt(ctx context.Context, ticket *Ticket, preview 
 		Path:        ticket.access.Path,
 		Description: description,
 		Params:      preview.Params,
+		Forced:      ticket.forced,
 	}
 
 	respCh := make(chan resolution, 1)
@@ -591,13 +597,11 @@ func (s *permissionService) editorReview(ctx context.Context, reviewer EditorRev
 // treated the same as a dangerous one: not knowing what a command
 // touches is a reason to ask, never a reason to allow.
 func (s *permissionService) forcedPrompt(access Access) (bool, string) {
-	if access.Action != ActionExecute {
-		return false, ""
+	if access.AlwaysAsk {
+		return true, "this action always needs approval"
 	}
-	// NOTE: With no command there is nothing to scan, so nothing can be
-	// judged.
-	if access.Command == "" {
-		return true, "execution without a command to inspect always needs approval"
+	if access.Action != ActionExecute || access.Command == "" {
+		return false, ""
 	}
 	scan := shellscan.Scan(access.Command, s.commandDir(access))
 	if scan.Opaque {

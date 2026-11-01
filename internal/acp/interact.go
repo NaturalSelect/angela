@@ -60,7 +60,9 @@ func (p *pump) onPermission(ctx context.Context, req permission.PermissionReques
 
 // NOTE: A denial without a reason ends the turn, as it does in the
 // terminal UI. Both always options last for this process and session tree
-// only, because Angela stores no permanent rule from a prompt.
+// only, because Angela stores no permanent rule from a prompt. A forced
+// request never stores a grant, so it offers no "always allow", but a
+// refusal for the session still holds and stays on offer.
 func permissionRequestFor(sessionID, toolCallID string, req permission.PermissionRequest, cwd string) protocol.PermissionRequest {
 	call := protocol.ToolCallUpdate{ID: toolCallID}
 	if preview, ok := req.Params.(diffPreviewer); ok {
@@ -73,15 +75,22 @@ func permissionRequestFor(sessionID, toolCallID string, req permission.Permissio
 			call.Content = []protocol.ToolCallContent{diff}
 		}
 	}
+	options := []protocol.PermissionOption{
+		{ID: permAllowOnce, Name: "Allow", Kind: protocol.PermissionKindAllowOnce},
+	}
+	if !req.Forced {
+		options = append(options, protocol.PermissionOption{
+			ID: permAllowAlways, Name: "Always allow (this session)", Kind: protocol.PermissionKindAllowAlways,
+		})
+	}
+	options = append(options,
+		protocol.PermissionOption{ID: permReject, Name: "Deny", Kind: protocol.PermissionKindRejectOnce},
+		protocol.PermissionOption{ID: permRejectAlways, Name: "Always deny (this session)", Kind: protocol.PermissionKindRejectAlways},
+	)
 	return protocol.PermissionRequest{
 		SessionID: sessionID,
 		ToolCall:  call,
-		Options: []protocol.PermissionOption{
-			{ID: permAllowOnce, Name: "Allow", Kind: protocol.PermissionKindAllowOnce},
-			{ID: permAllowAlways, Name: "Always allow (this session)", Kind: protocol.PermissionKindAllowAlways},
-			{ID: permReject, Name: "Deny", Kind: protocol.PermissionKindRejectOnce},
-			{ID: permRejectAlways, Name: "Always deny (this session)", Kind: protocol.PermissionKindRejectAlways},
-		},
+		Options:   options,
 	}
 }
 

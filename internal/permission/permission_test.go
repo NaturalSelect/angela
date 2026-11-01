@@ -1447,14 +1447,29 @@ func TestAskRuleIsForced(t *testing.T) {
 	})
 }
 
-// TestExecuteWithoutCommandIsForced pins that an execute access carrying no
-// command, which is what AngelaReload sends, is asked about every time. With
-// no command there is nothing to scan, so no stored grant or hook approval
-// may stand in for the user. Only Yolo skips it.
-func TestExecuteWithoutCommandIsForced(t *testing.T) {
+// TestAlwaysAskAccessIsForced pins that an access marked AlwaysAsk, which is
+// what AngelaReload sends, is asked about every time. No stored grant or
+// hook approval may stand in for the user. Only Yolo skips it.
+func TestAlwaysAskAccessIsForced(t *testing.T) {
 	t.Parallel()
 
-	access := Access{Tool: toolnames.AngelaReload, Action: ActionExecute}
+	access := Access{Tool: toolnames.AngelaReload, Action: ActionExecute, AlwaysAsk: true}
+
+	t.Run("the prompt is marked forced", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, nil)
+		events := service.Subscribe(t.Context())
+
+		wait := gateAsync(t.Context(), service, "s1", "call-1", access)
+		select {
+		case ev := <-events:
+			assert.True(t, ev.Payload.Forced, "front ends read this to hide the always-allow choice")
+			service.Grant(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("the call must reach the prompt")
+		}
+		require.True(t, wait().Allowed())
+	})
 
 	t.Run("GrantPersistent does not mint a grant", func(t *testing.T) {
 		t.Parallel()
@@ -1510,6 +1525,21 @@ func TestExecuteWithoutCommandIsForced(t *testing.T) {
 		service := NewPermissionService("/work", ModeYolo, nil)
 		assert.True(t, gate(t.Context(), service, "s1", "call-1", access).Allowed())
 	})
+}
+
+// TestExecuteWithoutCommandIsNotForced pins that an empty command alone is
+// no reason to force a prompt. Only an access marked AlwaysAsk is forced, so
+// a Bash call with no command keeps the ordinary ladder.
+func TestExecuteWithoutCommandIsNotForced(t *testing.T) {
+	t.Parallel()
+
+	service := NewPermissionService("/work", ModeManual, nil).(*permissionService)
+
+	forced, _ := service.forcedPrompt(Access{Tool: toolnames.Bash, Action: ActionExecute})
+	assert.False(t, forced)
+
+	forced, _ = service.forcedPrompt(Access{Tool: toolnames.Bash, Action: ActionExecute, AlwaysAsk: true})
+	assert.True(t, forced)
 }
 
 // TestAskRuleReachesCommandOperands pins the one behavioural change

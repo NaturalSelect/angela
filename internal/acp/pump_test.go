@@ -374,6 +374,20 @@ func TestPermissionRequestContents(t *testing.T) {
 		require.Empty(t, req.ToolCall.Content)
 	})
 
+	t.Run("a forced request offers no always allow", func(t *testing.T) {
+		t.Parallel()
+		req := permissionRequestFor("s1", "c1", permission.PermissionRequest{
+			ToolName: toolnames.AngelaReload,
+			Forced:   true,
+		}, testCwd)
+		ids := make([]string, 0, len(req.Options))
+		for _, o := range req.Options {
+			ids = append(ids, o.ID)
+		}
+		require.Equal(t, []string{permAllowOnce, permReject, permRejectAlways}, ids,
+			"the gate stores no grant for it, so the editor must not be told one was made")
+	})
+
 	t.Run("every option has a distinct id and a kind the editor can show", func(t *testing.T) {
 		t.Parallel()
 		req := permissionRequestFor("s1", "c1", permission.PermissionRequest{}, testCwd)

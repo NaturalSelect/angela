@@ -2,6 +2,8 @@ package skills
 
 import (
 	"context"
+	"encoding/xml"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -648,35 +650,40 @@ func TestDiscoverBuiltin(t *testing.T) {
 	require.Equal(t, 1, angelaConfigCount, "reference/*.md files must not be discovered as their own skills")
 }
 
-func TestWalkthroughTemplate(t *testing.T) {
+func TestWalkthroughSkill(t *testing.T) {
 	t.Parallel()
 
-	data, err := fs.ReadFile(BuiltinFS(), "builtin/builtin-code-walkthrough/template.html")
-	require.NoError(t, err, "walkthrough template must be embedded next to its SKILL.md")
-	html := string(data)
+	_, err := fs.Stat(BuiltinFS(), "builtin/builtin-code-walkthrough/template.html")
+	require.Error(t, err, "the walkthrough is markdown with SVG images, not an HTML page")
 
-	require.NotContains(t, html, "<script", "template must stay script-free so it works offline")
-	require.NotContains(t, html, "http://", "template must not make external requests")
-	require.NotContains(t, html, "https://", "template must not make external requests")
-
-	skill, err := fs.ReadFile(BuiltinFS(), "builtin/builtin-code-walkthrough/SKILL.md")
+	data, err := fs.ReadFile(BuiltinFS(), "builtin/builtin-code-walkthrough/SKILL.md")
 	require.NoError(t, err)
-	require.Contains(t, string(skill), "template.html", "SKILL.md must tell the agent to load the template")
+	skill := string(data)
 
-	ids := map[string]bool{}
-	for _, m := range regexp.MustCompile(`<section id="([^"]+)"`).FindAllStringSubmatch(html, -1) {
-		ids[m[1]] = true
+	require.Contains(t, skill, "reverse of co-design", "the walkthrough must be framed as co-design run backward")
+	for _, section := range []string{"Background", "Design", "Trade-offs", "Risks and preconditions", "Follow-up work"} {
+		require.Contains(t, skill, section, "the outline must keep co-design's section %q", section)
 	}
-	require.NotEmpty(t, ids)
+	require.NotContains(t, skill, "<!DOCTYPE", "the skill must not carry an HTML page")
 
-	navLinks := regexp.MustCompile(`<a href="#([^"]+)"`).FindAllStringSubmatch(html, -1)
-	require.Len(t, navLinks, len(ids), "every section needs exactly one nav link")
-	for _, m := range navLinks {
-		require.True(t, ids[m[1]], "nav link #%s has no matching section", m[1])
+	block := regexp.MustCompile("(?s)```svg\n(.*?)```").FindStringSubmatch(skill)
+	require.Len(t, block, 2, "SKILL.md must carry the SVG skeleton the agent starts every image from")
+	svg := block[1]
+
+	// NOTE: The xmlns attribute is the one URL an SVG needs; it is never fetched.
+	checked := strings.ReplaceAll(svg, `xmlns="http://www.w3.org/2000/svg"`, "")
+	for _, banned := range []string{"<script", "<foreignObject", "<image", "http://", "https://"} {
+		require.NotContains(t, checked, banned, "the SVG skeleton must stay self-contained")
 	}
 
-	for id := range ids {
-		require.Contains(t, string(skill), "`"+id+"`", "SKILL.md content table must name section id %q", id)
+	// NOTE: The skeleton holds «» placeholders, which are valid XML text.
+	dec := xml.NewDecoder(strings.NewReader(svg))
+	for {
+		_, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err, "the SVG skeleton must be well-formed XML")
 	}
 }
 

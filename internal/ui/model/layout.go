@@ -344,24 +344,30 @@ func (m *UI) openEditor(value string) tea.Cmd {
 		return util.ReportError(err)
 	}
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		defer func() {
-			_ = os.Remove(tmpPath)
-		}()
-
-		if err != nil {
-			return util.ReportError(err)
-		}
-		content, err := os.ReadFile(tmpPath)
-		if err != nil {
-			return util.ReportError(err)
-		}
-		if len(content) == 0 {
-			return util.ReportWarn("Message is empty")
-		}
-		return openEditorMsg{
-			Text: strings.TrimSpace(string(content)),
-		}
+		return editorFinished(tmpPath, err)
 	})
+}
+
+// editorFinished turns the outcome of the external editor into a message
+// for Update, and removes the temporary file.
+func editorFinished(tmpPath string, err error) tea.Msg {
+	defer func() {
+		_ = os.Remove(tmpPath)
+	}()
+
+	if err != nil {
+		return util.ReportError(err)()
+	}
+	content, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return util.ReportError(err)()
+	}
+	if len(content) == 0 {
+		return util.ReportWarn("Message is empty")()
+	}
+	return openEditorMsg{
+		Text: strings.TrimSpace(string(content)),
+	}
 }
 
 // setEditorPrompt configures the textarea prompt function. The prompt is a

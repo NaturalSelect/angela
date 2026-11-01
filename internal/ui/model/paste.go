@@ -66,7 +66,7 @@ func (m *UI) handlePasteMsg(msg tea.PasteMsg) tea.Cmd {
 		return func() tea.Msg {
 			content := []byte(msg.Content)
 			if int64(len(content)) > common.MaxAttachmentSize {
-				return util.ReportWarn("Paste is too big (>5mb)")
+				return util.ReportWarn("Paste is too big (>5mb)")()
 			}
 			name := fmt.Sprintf("paste_%d.txt", m.pasteIdx())
 			mimeBufferSize := min(512, len(content))
@@ -142,18 +142,18 @@ func (m *UI) handleFilePathPaste(path string) tea.Cmd {
 	return func() tea.Msg {
 		fileInfo, err := os.Stat(path)
 		if err != nil {
-			return util.ReportError(err)
+			return util.ReportError(err)()
 		}
 		if fileInfo.IsDir() {
-			return util.ReportWarn("Cannot attach a directory")
+			return util.ReportWarn("Cannot attach a directory")()
 		}
 		if fileInfo.Size() > common.MaxAttachmentSize {
-			return util.ReportWarn("File is too big (>5mb)")
+			return util.ReportWarn("File is too big (>5mb)")()
 		}
 
 		content, err := os.ReadFile(path)
 		if err != nil {
-			return util.ReportError(err)
+			return util.ReportError(err)()
 		}
 
 		mimeBufferSize := min(512, len(content))

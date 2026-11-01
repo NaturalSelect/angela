@@ -19,7 +19,7 @@ internal/
   app/app.go                       Top-level wiring: DB, config, agents, LSP, MCP, events
   cmd/                             CLI commands (root, run, commit, session, agent, acp, config,
                                     login, logout, models, stats, logs, dirs, projects, pprof,
-                                    update-providers)
+                                    update-providers, upgrade)
   config/
     config.go                      Config struct, context file paths, agent definitions
     load.go                        angela.json loading and validation
@@ -90,7 +90,9 @@ internal/
   home/                            Home directory & XDG config path resolution
   lock/                            Cross-process advisory file locking
   version/                         App version, commit SHA, build ID
-  update/                          GitHub release update checker
+  update/                          GitHub release update checker and the engine behind
+                                    `angela upgrade` (version selection, checksum-verified
+                                    download, binary or package-manager install)
   ansiext/                         ANSI control char escaping for safe terminal display
   csync/                           Concurrency-safe generic collections (Map, Slice, etc.)
   filepathext/                     Cross-platform filepath utilities (SmartJoin, glob prefix)

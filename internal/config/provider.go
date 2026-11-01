@@ -31,6 +31,10 @@ var (
 
 // file to cache provider data
 func cachePathFor(name string) string {
+	if angelaCache := os.Getenv("ANGELA_CACHE_DIR"); angelaCache != "" {
+		return filepath.Join(angelaCache, name+".json")
+	}
+
 	xdgDataHome := os.Getenv("XDG_DATA_HOME")
 	if xdgDataHome != "" {
 		return filepath.Join(xdgDataHome, appName, name+".json")

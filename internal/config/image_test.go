@@ -21,7 +21,7 @@ import (
 func TestLoad_ImageSlotResolvesWithoutCatalogModel(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	t.Cleanup(resetProviderState)
 

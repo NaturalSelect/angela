@@ -25,7 +25,7 @@ func TestAgentPrompt_SubagentTemplatesRenderContextFiles(t *testing.T) {
 	dir := t.TempDir()
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	t.Setenv("ANGELA_CACHE_DIR", globalDir)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(marker), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
@@ -77,7 +77,7 @@ func TestAgentPrompt_UnknownAgentRendersContextFiles(t *testing.T) {
 	dir := t.TempDir()
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	t.Setenv("ANGELA_CACHE_DIR", globalDir)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(marker), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
@@ -113,7 +113,7 @@ func TestAgentPrompt_CompactModeFallsBackToSummaryTemplate(t *testing.T) {
 	dir := t.TempDir()
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	t.Setenv("ANGELA_CACHE_DIR", globalDir)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
 		[]byte(`{
@@ -148,7 +148,7 @@ func TestInitializePrompt_OverridableViaConfig(t *testing.T) {
 
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	t.Setenv("ANGELA_CACHE_DIR", globalDir)
 
 	t.Run("override wins", func(t *testing.T) {
 		dir := t.TempDir()
@@ -198,7 +198,7 @@ func TestAgentPrompt_BranchPreamble(t *testing.T) {
 	dir := t.TempDir()
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	t.Setenv("ANGELA_CACHE_DIR", globalDir)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
 		[]byte(`{
@@ -407,7 +407,7 @@ func TestCommitPrompt_Builds(t *testing.T) {
 	dir := t.TempDir()
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	t.Setenv("ANGELA_CACHE_DIR", globalDir)
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
 		[]byte(`{

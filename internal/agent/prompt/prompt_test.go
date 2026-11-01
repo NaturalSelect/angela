@@ -26,7 +26,7 @@ func TestPrompt_AgentContextPathsOverrideGlobal(t *testing.T) {
 	// touch the real user's ~/.local/share/angela.
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	t.Setenv("ANGELA_CACHE_DIR", globalDir)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "angela.json"),
 		[]byte(`{
 			"options": {"disable_default_providers": true},
@@ -169,7 +169,7 @@ func newContextTestStore(t *testing.T, agentsMD string) *config.ConfigStore {
 	dir := t.TempDir()
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	t.Setenv("ANGELA_GLOBAL_DATA", globalDir)
+	t.Setenv("ANGELA_CACHE_DIR", globalDir)
 
 	if agentsMD != "" {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(agentsMD), 0o644))

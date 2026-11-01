@@ -16,7 +16,7 @@ func BenchmarkUpdatePreferredModel(b *testing.B) {
 	configPath := filepath.Join(dir, "angela.json")
 
 	b.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	b.Setenv("ANGELA_GLOBAL_DATA", dir)
+	b.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	b.Cleanup(resetProviderState)
 
@@ -78,7 +78,7 @@ func BenchmarkReloadFromDisk(b *testing.B) {
 	configPath := filepath.Join(dir, "angela.json")
 
 	b.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	b.Setenv("ANGELA_GLOBAL_DATA", dir)
+	b.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	b.Cleanup(resetProviderState)
 

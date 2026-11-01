@@ -55,6 +55,6 @@ These are always available without user configuration.
 | `angela-setup`       | `builtin/angela-setup/`        | Interactive new-user onboarding and setup guide   |
 | `angela-shell`       | `builtin/angela-shell/`        | Embedded POSIX shell semantics, background jobs, permission judgment |
 | `angela-skills`           | `builtin/angela-skills/`            | Authoring and discovering skills, frontmatter fields, precedence        |
-| `builtin-code-walkthrough` | `builtin/builtin-code-walkthrough/` | Evidence-backed walkthroughs of unfamiliar projects, modules, and flows, delivered as an offline HTML page built from `template.html` |
+| `builtin-code-walkthrough` | `builtin/builtin-code-walkthrough/` | Reverse of `co-design`: recovers the design document (background, design, trade-offs) from existing code, delivered as markdown with hand-drawn SVG images |
 | `builtin-write-unit-tests` | `builtin/builtin-write-unit-tests/` | General-purpose guide for writing unit and E2E tests in any project     |
 | `jq`                       | `builtin/jq/`                       | jq JSON processor usage guide                                           |

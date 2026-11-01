@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -151,9 +152,12 @@ func TestUpgrade_ReplacesBinary(t *testing.T) {
 	got, err := os.ReadFile(u.Exe)
 	require.NoError(t, err)
 	require.Equal(t, "new binary", string(got))
-	info, err := os.Stat(u.Exe)
-	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+	// NOTE: Windows does not store Unix permission bits, so every file reports 0o666.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(u.Exe)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
+	}
 	require.Contains(t, out.String(), "Upgrading Angela from v0.0.5 to v0.0.6")
 	require.Contains(t, out.String(), "Checksum verified")
 

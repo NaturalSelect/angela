@@ -172,7 +172,7 @@ func TestReloadFromDisk_PublishesAgentsExactlyOnce(t *testing.T) {
 	configPath := filepath.Join(dir, "angela.json")
 
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	t.Cleanup(resetProviderState)
 
@@ -239,7 +239,7 @@ func TestLoad_ResolvesAgentsWithoutProvider(t *testing.T) {
 	dir := t.TempDir()
 
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	t.Cleanup(resetProviderState)
 
@@ -478,7 +478,7 @@ func TestReloadFromDisk_UsesNewConfigValues(t *testing.T) {
 	// Isolate from the host's global config so only test-provided
 	// providers are visible.
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	t.Cleanup(resetProviderState)
 
@@ -548,7 +548,7 @@ func TestSetConfigField_AutoReloads(t *testing.T) {
 	// shared, so a parallel sibling writing one of them races this
 	// test's read of it — on Windows that read fails outright.
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 
 	// Create initial config file with debug = false
 	initialConfig := `{"options": {"debug": false}}`
@@ -587,7 +587,7 @@ func TestRemoveConfigField_AutoReloads(t *testing.T) {
 	// cannot read the real user data directory while a sibling rewrites
 	// it.
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 
 	// Create initial config file with a custom option
 	initialConfig := `{"options": {"debug": true, "custom_field": "value"}}`
@@ -650,7 +650,7 @@ func TestAutoReloadDisabledDuringReload(t *testing.T) {
 	// directory — deleting a developer's anthropic config as a side
 	// effect of running the suite.
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 
 	// Create initial config with a provider that will trigger config modification during reload
 	// (simulating the anthropic OAuth token removal case)
@@ -690,7 +690,7 @@ func TestSetConfigFields_AutoReloadsAtomically(t *testing.T) {
 
 	// See TestSetConfigField_AutoReloads.
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 
 	// Create initial config file.
 	initialConfig := `{"options": {"debug": false}}`
@@ -964,7 +964,7 @@ func TestLoad_RejectsNegativeSubagentDepth(t *testing.T) {
 	configPath := filepath.Join(dir, "angela.json")
 
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	t.Cleanup(resetProviderState)
 
@@ -1018,7 +1018,7 @@ func TestReloadFromDisk_InvalidJSONKeepsOldConfig(t *testing.T) {
 	configPath := filepath.Join(dir, "angela.json")
 
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	t.Cleanup(resetProviderState)
 

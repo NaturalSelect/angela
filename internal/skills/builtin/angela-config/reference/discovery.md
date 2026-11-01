@@ -131,6 +131,7 @@ sets variables for the Angela *process* (see `reference/options.md`).
 | Variable                               | Effect                                               |
 | --------------------------------------- | ----------------------------------------------------- |
 | `ANGELA_GLOBAL_CONFIG`                | Directory holding the global `angela.json`            |
+| `ANGELA_CACHE_DIR`                    | Directory for the provider catalog cache              |
 | `ANGELA_SKILLS_DIR`                   | Replace the default global skills directories         |
 | `ANGELA_AGENTS_DIR`                   | Replace the default global agent-markdown directory   |
 | `ANGELA_DISABLE_METRICS`              | Same as `options.disable_metrics`                      |

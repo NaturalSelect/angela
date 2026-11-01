@@ -123,7 +123,9 @@ Angela keeps application data in two kinds of data directory:
 
 - The global data directory is `$XDG_DATA_HOME/angela` when that variable is
   set, otherwise `~/.local/share/angela` on Unix-like systems and
-  `%LOCALAPPDATA%\angela` on Windows. It holds the provider catalog cache.
+  `%LOCALAPPDATA%\angela` on Windows. It holds the provider catalog cache,
+  unless `ANGELA_CACHE_DIR` is set. Then the cache is
+  `$ANGELA_CACHE_DIR/providers.json` instead.
 - The project data directory is `options.data_directory`, which `--data-dir`
   overrides. It defaults to the nearest `.angela` directory found by walking
   up from the working directory, otherwise `<working directory>/.angela`. It
@@ -610,6 +612,7 @@ Some settings can also come from the environment or the command line.
 | `ANGELA_GLOBAL_CONFIG`                | Directory that holds the global `angela.json`                            |
 | `XDG_CONFIG_HOME`                     | Base of the default global config directory                              |
 | `XDG_DATA_HOME`                       | Base of the global data directory                                        |
+| `ANGELA_CACHE_DIR`                    | Directory for the provider catalog cache, instead of the data directory  |
 | `ANGELA_SKILLS_DIR`                   | Replaces the default global skills directories                           |
 | `ANGELA_AGENTS_DIR`                   | Replaces the default global agent directories                            |
 | `ANGELA_DISABLE_PROVIDER_AUTO_UPDATE` | Overrides `options.disable_provider_auto_update` when set                |

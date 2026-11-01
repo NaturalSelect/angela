@@ -103,9 +103,10 @@ func TestCache_GetInvalidJSON(t *testing.T) {
 
 func TestCachePathFor(t *testing.T) {
 	tests := []struct {
-		name        string
-		xdgDataHome string
-		expected    string
+		name           string
+		angelaCacheDir string
+		xdgDataHome    string
+		expected       string
 	}{
 		{
 			name:        "with XDG_DATA_HOME",
@@ -117,10 +118,17 @@ func TestCachePathFor(t *testing.T) {
 			xdgDataHome: "",
 			expected:    "", // Will use platform-specific default.
 		},
+		{
+			name:           "ANGELA_CACHE_DIR wins over XDG_DATA_HOME",
+			angelaCacheDir: "/custom/cache",
+			xdgDataHome:    "/custom/data",
+			expected:       "/custom/cache/providers.json",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ANGELA_CACHE_DIR", tt.angelaCacheDir)
 			if tt.xdgDataHome != "" {
 				t.Setenv("XDG_DATA_HOME", tt.xdgDataHome)
 			} else {

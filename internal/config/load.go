@@ -1332,25 +1332,6 @@ func GlobalConfig() string {
 	return filepath.Join(home.Config(), appName, fmt.Sprintf("%s.json", appName))
 }
 
-// GlobalCacheDir returns the path to the global cache directory for the
-// application.
-func GlobalCacheDir() string {
-	if angelaCache := os.Getenv("ANGELA_CACHE_DIR"); angelaCache != "" {
-		return angelaCache
-	}
-	if xdgCacheHome := os.Getenv("XDG_CACHE_HOME"); xdgCacheHome != "" {
-		return filepath.Join(xdgCacheHome, appName)
-	}
-	if runtime.GOOS == "windows" {
-		localAppData := cmp.Or(
-			os.Getenv("LOCALAPPDATA"),
-			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local"),
-		)
-		return filepath.Join(localAppData, appName, "cache")
-	}
-	return filepath.Join(home.Dir(), ".cache", appName)
-}
-
 // ProjectConfigs returns list of current project configs paths.
 func ProjectConfigs(cwd string) []string {
 	return lookupConfigs(cwd)

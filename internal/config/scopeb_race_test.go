@@ -21,7 +21,7 @@ func TestScopeB_InPlaceMutationRace(t *testing.T) {
 	configPath := filepath.Join(dir, "angela.json")
 
 	t.Setenv("ANGELA_GLOBAL_CONFIG", dir)
-	t.Setenv("ANGELA_GLOBAL_DATA", dir)
+	t.Setenv("ANGELA_CACHE_DIR", dir)
 	resetProviderState()
 	t.Cleanup(resetProviderState)
 

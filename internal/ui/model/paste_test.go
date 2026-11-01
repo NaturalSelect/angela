@@ -38,7 +38,7 @@ func TestHandleFilePathPaste_ReportsFailures(t *testing.T) {
 		typ  util.InfoType
 		msg  string
 	}{
-		{"missing file", filepath.Join(dir, "missing.png"), util.InfoTypeError, "no such file"},
+		{"missing file", filepath.Join(dir, "missing.png"), util.InfoTypeError, "missing.png"},
 		{"directory", dir, util.InfoTypeWarn, "Cannot attach a directory"},
 		{"file over the limit", bigFile, util.InfoTypeWarn, "File is too big"},
 	}

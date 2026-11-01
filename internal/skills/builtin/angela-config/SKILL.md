@@ -232,7 +232,7 @@ stays merged in. If unsure which file defines it, check each candidate from
 - `disable_*` options read backwards on purpose: `true` turns the thing
   **off**.
 - A config file edited on disk is not picked up automatically. Run
-  `AngelaReload` (it always asks the user first) or have the user run
+  `AngelaReload` (it asks the user every time unless yolo mode is on) or have the user run
   `/reload`; permission rules, LSP definitions and TUI startup options still
   need a restart. Say which applies when you report back.
 

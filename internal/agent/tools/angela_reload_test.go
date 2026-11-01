@@ -38,9 +38,10 @@ func TestAngelaReloadTool_ReportsFailure(t *testing.T) {
 	require.Contains(t, resp.Content, "bad json")
 }
 
-// TestAngelaReloadAccessAlwaysAsks pins that reloading is execution with no
-// command, which the permission ladder never treats as in scope.
-func TestAngelaReloadAccessAlwaysAsks(t *testing.T) {
+// TestAngelaReloadAccessIsExecuteWithoutCommand pins the access shape the
+// permission gate turns into a forced prompt. The gate-level behaviour is
+// tested in the permission package.
+func TestAngelaReloadAccessIsExecuteWithoutCommand(t *testing.T) {
 	t.Parallel()
 
 	access, ok := AccessOf(toolnames.AngelaReload, `{}`, "/work")

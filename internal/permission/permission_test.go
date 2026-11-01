@@ -12,6 +12,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/editorapproval"
 	"github.com/NaturalSelect/angela/internal/pubsub"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1443,6 +1444,71 @@ func TestAskRuleIsForced(t *testing.T) {
 		service := NewPermissionService("/work", ModeYolo, policy)
 		decision := gate(t.Context(), service, "s1", "call-1", editAccess("/work/.env"))
 		assert.True(t, decision.Allowed())
+	})
+}
+
+// TestExecuteWithoutCommandIsForced pins that an execute access carrying no
+// command, which is what AngelaReload sends, is asked about every time. With
+// no command there is nothing to scan, so no stored grant or hook approval
+// may stand in for the user. Only Yolo skips it.
+func TestExecuteWithoutCommandIsForced(t *testing.T) {
+	t.Parallel()
+
+	access := Access{Tool: toolnames.AngelaReload, Action: ActionExecute}
+
+	t.Run("GrantPersistent does not mint a grant", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, nil)
+		events := service.Subscribe(t.Context())
+
+		wait := gateAsync(t.Context(), service, "s1", "call-1", access)
+		select {
+		case ev := <-events:
+			service.GrantPersistent(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("the first call must reach the prompt")
+		}
+		require.True(t, wait().Allowed())
+
+		wait2 := gateAsync(t.Context(), service, "s1", "call-2", access)
+		select {
+		case ev := <-events:
+			service.Deny(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("the second call must prompt again despite the earlier grant")
+		}
+		assert.Equal(t, OutcomeUserDeny, wait2().Outcome)
+	})
+
+	t.Run("a hook approval does not skip it", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, nil)
+		ctx := WithHookApproval(t.Context(), "call-1")
+		events := service.Subscribe(t.Context())
+
+		wait := gateAsync(ctx, service, "s1", "call-1", access)
+		select {
+		case ev := <-events:
+			service.Grant(ev.Payload)
+		case <-time.After(2 * time.Second):
+			t.Fatal("the call must reach the prompt despite the hook approval")
+		}
+		assert.True(t, wait().Allowed())
+	})
+
+	t.Run("an unattended session is refused", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeManual, nil)
+		service.SetSessionUnattended("s1", true)
+
+		decision := gate(t.Context(), service, "s1", "call-1", access)
+		assert.Equal(t, OutcomePolicyDeny, decision.Outcome)
+	})
+
+	t.Run("yolo still skips it", func(t *testing.T) {
+		t.Parallel()
+		service := NewPermissionService("/work", ModeYolo, nil)
+		assert.True(t, gate(t.Context(), service, "s1", "call-1", access).Allowed())
 	})
 }
 

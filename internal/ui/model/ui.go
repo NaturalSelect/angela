@@ -752,6 +752,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.appendTPSNotice(msg.dist, msg.ok, msg.avgTokens, msg.avgDurationMs); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case reloadDoneMsg:
+		cmds = append(cmds, m.handleReloadDone(msg)...)
 	case cacheComputedMsg:
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
@@ -1268,13 +1270,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		return m.handleSummarize(msg)
 	case dialog.ActionReload:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, func() tea.Msg {
-			summary, err := m.com.Workspace.Reload(context.Background())
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			return util.ReportInfo(summary)()
-		})
+		cmds = append(cmds, m.reloadCmd())
 	case dialog.ActionGenerateTitle:
 		cmds = append(cmds, m.generateSessionTitle(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)

@@ -2,7 +2,7 @@ Reload Angela's configuration, skills and MCP servers from disk; use after editi
 
 <usage>
 - Re-reads every angela.json layer, rediscovers skills, refreshes the sub-agent table and starts, stops or restarts MCP servers to match the new config
-- The user is asked to approve every call, because reloading can start MCP server processes named in the config
+- The user is asked to approve every call, with no "Allow for Session" option, because reloading can start MCP server processes named in the config; only yolo mode skips the prompt
 - If the config fails to parse, nothing changes and the parse error is returned
 </usage>
 

@@ -70,7 +70,7 @@ wants top-level calls filters on `depth` or `agent_id`.
 | `ANGELA_TOOL_NAME`            | Name of the tool being called                     |
 | `ANGELA_SESSION_ID`           | Current session ID                                |
 | `ANGELA_CWD`                  | Current working directory                         |
-| `ANGELA_PROJECT_DIR`          | Project root directory                            |
+| `ANGELA_PROJECT_DIR`          | Working directory, same as `ANGELA_CWD`           |
 | `ANGELA_AGENT_ID`             | Agent making the call (e.g. `coder`)              |
 | `ANGELA_AGENT_DEPTH`          | `0` for the top-level agent, `1+` below it        |
 | `ANGELA_TOOL_INPUT_COMMAND`   | Value of `command` from tool input (if present)   |

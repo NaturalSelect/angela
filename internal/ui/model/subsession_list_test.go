@@ -187,7 +187,7 @@ func TestOpenSubSessionsDialogReadsTheChildrenOnlyWhenTheCommandRuns(t *testing.
 
 	ws.EXPECT().AgentSubSessions(gomock.Any(), "root").
 		Return([]agenttools.SubSession{subSession("child", agenttools.SubSessionKindForeground, agenttools.SubSessionRunning)}, nil)
-	msg, ok := cmd().(subSessionsLoadedMsg)
+	msg, ok := workMsg(t, cmd).(subSessionsLoadedMsg)
 	require.True(t, ok)
 	require.Equal(t, "root", msg.sessionID)
 }
@@ -237,7 +237,7 @@ func TestSubSessionsLoadedForAnotherSessionIsDropped(t *testing.T) {
 	m, ws := newSubSessionListUI(t)
 	ws.EXPECT().AgentSubSessions(gomock.Any(), "root").
 		Return([]agenttools.SubSession{subSession("child", agenttools.SubSessionKindForeground, agenttools.SubSessionRunning)}, nil)
-	msg := m.openSubSessionsDialog()()
+	msg := workMsg(t, m.openSubSessionsDialog())
 
 	m.session = &session.Session{ID: "elsewhere", Title: "Elsewhere"}
 	m.Update(msg)

@@ -129,7 +129,7 @@ func TestUndoConfirmDialogRestoresPoppedTextAheadOfDraft(t *testing.T) {
 	cmd := m.handleDialogMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.NotNil(t, cmd, "confirming undo produced no command")
 
-	m.Update(cmd())
+	m.Update(workMsg(t, cmd))
 
 	require.Equal(t, "restore me\n\nhalf-typed draft", m.textarea.Value())
 }

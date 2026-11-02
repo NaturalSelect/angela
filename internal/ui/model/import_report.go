@@ -117,7 +117,7 @@ func (m *UI) handleImportReport(msg dialog.ActionImportReport) tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 	path := msg.Path
-	cmds = append(cmds, func() tea.Msg {
+	cmds = append(cmds, m.showPending(importingReportInfo), func() tea.Msg {
 		report, err := readReportFile(path)
 		if err != nil {
 			return util.ReportError(err)()

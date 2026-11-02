@@ -227,6 +227,8 @@ func (m *UI) openNotificationsDialog() tea.Cmd {
 	return nil
 }
 
+var sessionsListingInfo = pendingInfo("Loading sessions")
+
 // sessionsListedMsg carries the session list read off the Update goroutine,
 // so the sessions dialog can be opened once it arrives.
 type sessionsListedMsg struct {
@@ -244,13 +246,13 @@ func (m *UI) openSessionsDialog() tea.Cmd {
 	}
 
 	ws := m.com.Workspace
-	return func() tea.Msg {
+	return tea.Batch(m.showPending(sessionsListingInfo), func() tea.Msg {
 		sessions, err := ws.ListSessions(context.Background())
 		if err != nil {
 			return util.ReportError(err)()
 		}
 		return sessionsListedMsg{sessions: sessions}
-	}
+	})
 }
 
 // openSubSessionsDialog opens the picker for the sub-sessions of the session
@@ -264,7 +266,7 @@ func (m *UI) openSubSessionsDialog() tea.Cmd {
 	if m.session == nil {
 		return nil
 	}
-	return m.loadSubSessionsCmd(m.session.ID)
+	return tea.Batch(m.showPending(subSessionsListingInfo), m.loadSubSessionsCmd(m.session.ID))
 }
 
 // openFilesDialog opens the file picker dialog.

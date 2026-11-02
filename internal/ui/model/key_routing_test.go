@@ -223,7 +223,7 @@ func TestHandleKeyPressMsg_GlobalSessions(t *testing.T) {
 
 	cmd := m.handleKeyPressMsg(ctrlKey('s'))
 	require.NotNil(t, cmd)
-	m.Update(cmd())
+	m.Update(workMsg(t, cmd))
 
 	require.True(t, m.dialog.ContainsDialog(dialog.SessionsID))
 }

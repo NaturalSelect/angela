@@ -307,7 +307,7 @@ func TestHandleDialogMsg_ActionExportImage_EmptyIDOpensPicker(t *testing.T) {
 	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the picker opens")
 	require.NotNil(t, cmd)
 
-	m.Update(cmd())
+	m.Update(workMsg(t, cmd))
 	require.True(t, m.dialog.ContainsDialog(dialog.ImagesID))
 }
 
@@ -324,7 +324,7 @@ func TestHandleDialogMsg_ActionExportImage_NoSession(t *testing.T) {
 	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID))
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeWarn, info.Type)
@@ -346,7 +346,7 @@ func TestHandleDialogMsg_ActionExportImage_NoImagesInSession(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionExportImage{ImageID: ""})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeWarn, info.Type)
@@ -420,7 +420,7 @@ func TestHandleDialogMsg_ActionExportReport_EmptyIDOpensPicker(t *testing.T) {
 	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID), "the palette must close before the picker opens")
 	require.NotNil(t, cmd)
 
-	m.Update(cmd())
+	m.Update(workMsg(t, cmd))
 	require.True(t, m.dialog.ContainsDialog(dialog.ReportsID))
 }
 
@@ -437,7 +437,7 @@ func TestHandleDialogMsg_ActionExportReport_NoSession(t *testing.T) {
 	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID))
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeWarn, info.Type)
@@ -461,7 +461,7 @@ func TestHandleDialogMsg_ActionExportReport_NoReportsInSession(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionExportReport{})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeWarn, info.Type)
@@ -555,7 +555,7 @@ func TestHandleDialogMsg_ActionImportReport_BusySession(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: filepath.Join(t.TempDir(), "rpt.md")})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeWarn, info.Type)
@@ -595,7 +595,7 @@ func TestHandleDialogMsg_ActionImportReport_ImportsAnExportedFile(t *testing.T) 
 	require.NotNil(t, cmd)
 	require.False(t, m.dialog.ContainsDialog(dialog.ArgumentsID), "the path prompt must close once a path is submitted")
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected an info message, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeInfo, info.Type)
@@ -635,7 +635,7 @@ func TestHandleDialogMsg_ActionImportReport_ReadsARelativePathFromTheWorkingDire
 	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: "notes.md"})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected an info message, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeInfo, info.Type)
@@ -659,7 +659,7 @@ func TestHandleDialogMsg_ActionImportReport_MissingFile(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: filepath.Join(t.TempDir(), "missing.md")})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected an error message, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeError, info.Type)
@@ -679,7 +679,7 @@ func TestHandleDialogMsg_ActionImportReport_DirectoryIsRejected(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: t.TempDir()})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected an error message, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeError, info.Type)
@@ -705,7 +705,7 @@ func TestHandleDialogMsg_ActionImportReport_EmptyFileWarns(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeWarn, info.Type)
@@ -730,7 +730,7 @@ func TestHandleDialogMsg_ActionImportReport_BusyAfterTheCheck(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeWarn, info.Type)
@@ -755,7 +755,7 @@ func TestHandleDialogMsg_ActionImportReport_TooLargeWarns(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected a warning, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeWarn, info.Type)
@@ -779,7 +779,7 @@ func TestHandleDialogMsg_ActionImportReport_WorkspaceErrorIsReported(t *testing.
 	cmd := m.handleDialogMsg(dialog.ActionImportReport{Path: path})
 	require.NotNil(t, cmd)
 
-	msg := cmd()
+	msg := workMsg(t, cmd)
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "expected an error message, got %T: %v", msg, msg)
 	require.Equal(t, util.InfoTypeError, info.Type)
@@ -871,7 +871,7 @@ func TestHandleDialogMsg_ActionEnterSandbox(t *testing.T) {
 	cmd := m.handleDialogMsg(dialog.ActionEnterSandbox{Config: wantCfg})
 	require.False(t, m.dialog.ContainsDialog(dialog.SandboxID), "applying the sandbox config must close its dialog")
 	require.NotNil(t, cmd)
-	require.Equal(t, sandboxEnteredMsg{}, cmd())
+	require.Equal(t, sandboxEnteredMsg{}, workMsg(t, cmd))
 	require.Equal(t, wantCfg, gotCfg)
 }
 
@@ -1030,7 +1030,7 @@ func TestHandleDialogMsg_ActionShowTPS(t *testing.T) {
 		require.False(t, m.dialog.HasDialogs())
 		require.NotNil(t, cmd)
 
-		m.Update(cmd())
+		m.Update(workMsg(t, cmd))
 		require.Equal(t, 1, m.chat.Len())
 	})
 
@@ -1077,7 +1077,7 @@ func TestHandleDialogMsg_ActionShowCache(t *testing.T) {
 		require.False(t, m.dialog.HasDialogs())
 		require.NotNil(t, cmd)
 
-		m.Update(cmd())
+		m.Update(workMsg(t, cmd))
 		require.Equal(t, 1, m.chat.Len())
 	})
 
@@ -1637,7 +1637,7 @@ func TestHandleDialogMsg_ActionExportSession_WritesToLocalWorkingDirectory(t *te
 
 	cmd := m.handleDialogMsg(dialog.ActionExportSession{SessionID: "current"})
 	require.NotNil(t, cmd)
-	msg := cmd()
+	msg := workMsg(t, cmd)
 
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "export must report success, got %T: %v", msg, msg)
@@ -1675,7 +1675,7 @@ func TestHandleDialogMsg_ActionExportImage_WritesToLocalWorkingDirectory(t *test
 
 	cmd := m.handleDialogMsg(dialog.ActionExportImage{ImageID: "img_1a2b3c4d5e6f"})
 	require.NotNil(t, cmd)
-	msg := cmd()
+	msg := workMsg(t, cmd)
 
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "export must report success, got %T: %v", msg, msg)
@@ -1719,7 +1719,7 @@ func TestHandleDialogMsg_ActionExportReport_WritesToLocalWorkingDirectory(t *tes
 
 	cmd := m.handleDialogMsg(dialog.ActionExportReport{Report: report})
 	require.NotNil(t, cmd)
-	msg := cmd()
+	msg := workMsg(t, cmd)
 
 	info, ok := msg.(util.InfoMsg)
 	require.True(t, ok, "export must report success, got %T: %v", msg, msg)

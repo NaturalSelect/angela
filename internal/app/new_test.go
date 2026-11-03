@@ -230,7 +230,7 @@ func TestApp_RunNonInteractive_InvalidModelOverride(t *testing.T) {
 	require.NoError(t, err)
 	defer application.Shutdown()
 
-	_, err = application.RunNonInteractive(ctx, io.Discard, "prompt", "does-not-exist-model", "", true, "", false)
+	_, err = application.RunNonInteractive(ctx, io.Discard, "prompt", "does-not-exist-model", "", nil, "", false)
 	require.ErrorContains(t, err, "failed to override models")
 }
 
@@ -299,7 +299,7 @@ func TestApp_RunNonInteractive_ReturnsTheFinalResponse(t *testing.T) {
 	application := newRunApp(t, server.URL+"/v1")
 
 	var streamed bytes.Buffer
-	final, err := application.RunNonInteractive(t.Context(), &streamed, "prompt", "", "", true, "", false)
+	final, err := application.RunNonInteractive(t.Context(), &streamed, "prompt", "", "", nil, "", false)
 	require.NoError(t, err)
 	require.Equal(t, "the final answer", final)
 	require.Contains(t, streamed.String(), "the final answer", "the conversation still streams to the output writer")
@@ -320,7 +320,7 @@ func TestApp_RunNonInteractive_CancelledRunIsAnError(t *testing.T) {
 		cancel()
 	}()
 
-	final, err := application.RunNonInteractive(ctx, io.Discard, "prompt", "", "", true, "", false)
+	final, err := application.RunNonInteractive(ctx, io.Discard, "prompt", "", "", nil, "", false)
 	require.Error(t, err)
 	require.Empty(t, final)
 }

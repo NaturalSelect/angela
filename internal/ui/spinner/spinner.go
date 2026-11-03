@@ -1,4 +1,4 @@
-package format
+package spinner
 
 import (
 	"context"
@@ -41,8 +41,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// NewSpinner creates a new spinner with the given message
-func NewSpinner(ctx context.Context, cancel context.CancelFunc, animSettings anim.Settings) *Spinner {
+// New creates a new spinner with the given message
+func New(ctx context.Context, cancel context.CancelFunc, animSettings anim.Settings) *Spinner {
 	m := model{
 		anim:   anim.New(animSettings),
 		cancel: cancel,

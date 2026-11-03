@@ -84,7 +84,6 @@ internal/
   diff/                            Unified diff text generation & line stats
   diffdetect/                      Detect unified diff format markers in text
   clipboard/                       Cross-platform clipboard read/write (text + PNG)
-  format/                          Non-interactive spinner & display formatting
   log/                             Structured logging (slog + lumberjack rotation)
   env/                             Environment variable abstraction (testable)
   home/                            Home directory & XDG config path resolution
@@ -143,6 +142,10 @@ lib/
   generated code in `internal/db/`. Migrations in `internal/db/migrations/`.
 - **Pub/sub**: `internal/pubsub` for decoupled communication between agent,
   UI, and services.
+- **UI boundary**: only `internal/ui/**` and `internal/cmd/**` may import
+  `internal/ui`. Core packages stay UI-free; the `ui-boundary` depguard rule
+  in `.golangci.yml` enforces it. `angela run` hands its spinner to
+  `app.RunNonInteractive` through `app.SpinnerFunc`.
 - **Hooks**: User-defined shell commands in `angela.json`
   that fire before tool execution. The engine (`internal/hooks/`) is
   independent of fantasy and agent — it takes inputs, runs commands,

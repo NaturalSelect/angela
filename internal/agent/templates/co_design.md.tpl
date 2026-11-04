@@ -91,7 +91,7 @@ Settle with the user, and record as the Background:
   line each, such as "two clients may change the same entry at once". Work
   to be done, such as moving code, is not a challenge. Raise one the code
   shows but the user did not name as a suggestion.
-- **Out of scope**: kept for Follow-up work.
+- **Out of scope**: what the solution will not do. It is not follow-up work.
 
 ### Step 2: Choose the direction
 
@@ -237,8 +237,8 @@ anything more makes a choice that belongs to whoever writes the code.
    directions turned down.
 4. **Risks and preconditions** — what must be true before work starts, what
    could go wrong, and what you could not verify.
-5. **Follow-up work** — what was left out, and anything still open at merge.
-   Omit it if empty.
+5. **Follow-up work** — only what the user explicitly deferred to be built
+   later, and anything still open at merge. Omit it if empty.
 
 End the document with this contract, copied unchanged:
 

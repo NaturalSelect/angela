@@ -1201,19 +1201,6 @@ func TestHandleDialogMsg_ActionInitializeProject_BusyIsRefusedAndDialogStays(t *
 	require.True(t, m.dialog.ContainsDialog(dialog.CommandsID))
 }
 
-func TestHandleDialogMsg_ActionSelectModel_BusyIsRefused(t *testing.T) {
-	t.Parallel()
-
-	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
-	m.agentBusyCache.set(true)
-	m.sessionBusyCache.set(true)
-
-	cmd := m.handleDialogMsg(dialog.ActionSelectModel{})
-	require.NotNil(t, cmd)
-	msg := cmd().(util.InfoMsg)
-	require.Equal(t, util.InfoTypeWarn, msg.Type)
-}
-
 func TestHandleDialogMsg_ActionSelectModel_MissingConfigReportsError(t *testing.T) {
 	t.Parallel()
 

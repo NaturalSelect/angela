@@ -163,6 +163,36 @@ func TestASessionPickReportsPlainSuccess(t *testing.T) {
 	require.Equal(t, "Main model changed to picked-model", toast.Msg)
 }
 
+func TestASessionPickIsAcceptedWhileBusy(t *testing.T) {
+	pinTTLs(t)
+
+	ws := pickMockWorkspace(t)
+	active := workspace.ActiveAgent{Slot: config.SlotMain}
+	m := newBusyUIWithWorkspace(ws)
+	warmCaches(m, true)
+	m.agentActive = active
+
+	cmd := m.handleSelectModel(pickAction(config.SlotMain))
+	require.NotNil(t, cmd)
+
+	var editCalls int
+	ws.EXPECT().RecordRecentModel(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	ws.EXPECT().AgentEditActive(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(context.Context, string, config.ActiveAgentEdit) (workspace.ActiveAgent, error) {
+			editCalls++
+			return active, nil
+		})
+
+	var toast util.InfoMsg
+	for _, msg := range runCmds(m, cmd) {
+		if switched, ok := msg.(modelSwitchedMsg); ok {
+			toast, _ = switched.toast.(util.InfoMsg)
+		}
+	}
+	require.Equal(t, 1, editCalls, "a busy session must still take the pick")
+	require.Equal(t, util.InfoTypeInfo, toast.Type)
+}
+
 // TestALandingPickIsEphemeral pins the fix for a real bug: picking a
 // model before any session exists (the landing screen, reached
 // straight from "Switch Model" with nothing open yet) used to go

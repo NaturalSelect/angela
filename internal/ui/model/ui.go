@@ -1439,9 +1439,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionSelectAgentModelVariant:
 		m.dialog.CloseDialog(dialog.AgentModelVariantsID)
 		cmds = append(cmds, m.applyAgentModelCmd(msg.AgentID, msg.Model, msg.Variant))
-	case dialog.ActionClearAgentModelOverrides:
+	case dialog.ActionClearSessionModel:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, m.clearAgentModelsCmd())
+		cmds = append(cmds, m.clearSessionModelCmd())
+	case dialog.ActionClearAgentModels:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		cmds = append(cmds, m.clearAgentPicksCmd())
 	case dialog.ActionPermissionResponse:
 		return m.handlePermissionResponse(msg)
 

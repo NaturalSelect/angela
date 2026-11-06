@@ -127,9 +127,13 @@ type ActionSelectAgentModelVariant struct {
 	Variant string
 }
 
-// ActionClearAgentModelOverrides drops every model and preset pick the
-// current session holds, returning every agent to its configured model.
-type ActionClearAgentModelOverrides struct{}
+// ActionClearSessionModel drops the current session's own model, preset
+// and thinking pick, so it follows the layers below it again.
+type ActionClearSessionModel struct{}
+
+// ActionClearAgentModels drops every per-agent pick the current session
+// tree holds, returning every agent to its configured model.
+type ActionClearAgentModels struct{}
 
 // Messages for commands
 type (

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"log/slog"
 )
 
@@ -33,20 +32,23 @@ type ActiveAgent struct {
 	// runs.
 	Model SelectedModel
 
-	// AgentModels is the session's model-pick table, keyed by agent
-	// ID. It is the single source of truth for what the user chose:
-	// the entry for this instance's own agent is what Switch Model
-	// writes, and the entries for other agents are what Switch Agent
-	// Model writes. It travels from a session to every agent that
-	// session dispatches or hosts, which is how those agents find the
-	// pick made for them.
-	AgentModels map[string]AgentModelPick
+	// SessionModel is the model and preset picked for the session this
+	// instance runs in, the nearest layer of the model stack. Switch
+	// Model writes it. An instance that was dispatched or hosted holds
+	// none, since it has no session of its own to pick for.
+	SessionModel AgentModelPick
 
-	// ModelPick is the model AgentModels holds for this instance's own
-	// agent once ApplyPicks accepted it, or nil when the session never
-	// chose one, in which case Model still tracks whatever the config
-	// resolves for Slot. It is a derived view and is never persisted
-	// on its own: State reads AgentModels only.
+	// AgentPicks is the session tree's per-agent model-pick table,
+	// keyed by agent ID, the middle layer of the model stack. Switch
+	// Agent Model writes it, on the root session. It travels from a
+	// session to every agent that session dispatches or hosts, which
+	// is how those agents find the pick made for them.
+	AgentPicks map[string]AgentModelPick
+
+	// ModelPick is the model a pick layer supplied for this instance,
+	// or nil when none did, in which case Model still tracks whatever
+	// the config resolves for Slot. It is a derived view and is never
+	// persisted on its own: State reads the layers only.
 	ModelPick *SelectedModel
 
 	// Think is the current thinking-mode state, resolved from the
@@ -60,13 +62,12 @@ type ActiveAgent struct {
 	// Mirrors VariantPick's reasoning.
 	ThinkPick *bool
 
-	// VariantPick is the preset AgentModels holds for this instance's
-	// own agent, or nil when the session never chose one, in which
-	// case EffectiveVariant falls back to Agent.Variant and then the
-	// model's own default. Like ModelPick it is a derived view of
-	// AgentModels. Only a pick is worth persisting: a session that
-	// never touched the preset has to keep following the config, the
-	// same way its prompt and tools do.
+	// VariantPick is the preset a pick layer supplied for this
+	// instance, or nil when none did, in which case EffectiveVariant
+	// falls back to Agent.Variant and then the model's own default.
+	// Like ModelPick it is a derived view. Only a pick is worth
+	// persisting: a session that never touched the preset has to keep
+	// following the config, the same way its prompt and tools do.
 	VariantPick *string
 }
 
@@ -113,65 +114,36 @@ func clonePicks(picks map[string]AgentModelPick) map[string]AgentModelPick {
 
 // ActiveAgentState is the persisted, session-scoped delta of an
 // ActiveAgent: which agent it runs and which models the user actually
-// picked for which agents, if any. The agent definition itself is
-// deliberately absent — prompts, tools and permissions are re-read from
-// the config files on every load so a session never runs a stale copy of
-// them. The slot a model happens to run on is absent for the same reason:
-// it is implementation-detail plumbing that InstantiateAgent always
-// derives fresh from the config, never a user choice worth freezing
-// here.
+// picked, if any. The agent definition itself is deliberately absent —
+// prompts, tools and permissions are re-read from the config files on
+// every load so a session never runs a stale copy of them. The slot a
+// model happens to run on is absent for the same reason: it is
+// implementation-detail plumbing that InstantiateAgent always derives
+// fresh from the config, never a user choice worth freezing here.
+//
+// A row written before the model stack existed held its picks under
+// other keys. They are not read: those keys decode into nothing, so
+// such a session starts on the config's models.
 type ActiveAgentState struct {
 	Agent string `json:"agent,omitempty"`
 
-	// AgentModels holds the model and preset the user picked, keyed
-	// by the agent they were picked for. The running agent's own
-	// entry is what Switch Model writes; the entries for other
-	// agents are what Switch Agent Model writes. It is absent when
-	// the user never picked anything: a config default must keep
-	// reaching a session that never overrode it.
-	AgentModels map[string]AgentModelPick `json:"agent_models,omitempty"`
+	// SessionModel is the model and preset picked for this session
+	// alone, the nearest layer of the model stack. Switch Model writes
+	// it. It is absent when the user never picked one: a config
+	// default must keep reaching a session that never overrode it.
+	SessionModel AgentModelPick `json:"session_model,omitzero"`
 
-	// Think is the thinking-mode value the user picked, and is absent
-	// when they never touched it, for the same reason AgentModels is
-	// sparse: a model's catalog default must keep reaching a session
-	// that never overrode it.
+	// AgentPicks holds the model and preset picked per agent for a
+	// whole session tree, keyed by the agent they were picked for.
+	// Switch Agent Model writes it, always on the root session. A
+	// child session's row never holds one: the child reads the root's.
+	AgentPicks map[string]AgentModelPick `json:"agent_picks,omitempty"`
+
+	// Think is the thinking-mode value the user picked for this
+	// session, and is absent when they never touched it, for the same
+	// reason SessionModel is sparse: a model's catalog default must
+	// keep reaching a session that never overrode it.
 	Think *bool `json:"think,omitempty"`
-}
-
-// UnmarshalJSON reads both the current layout and the one written
-// before picks were keyed by agent, where the running agent's model and
-// preset sat at the top level as "model" and "variant". Those are
-// folded into the entry for the recorded agent, unless the new layout
-// already holds one. Writing always produces the current layout.
-func (s *ActiveAgentState) UnmarshalJSON(data []byte) error {
-	var wire struct {
-		Agent       string                    `json:"agent"`
-		AgentModels map[string]AgentModelPick `json:"agent_models"`
-		Think       *bool                     `json:"think"`
-		Model       SelectedModel             `json:"model"`
-		Variant     *string                   `json:"variant"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-
-	*s = ActiveAgentState{
-		Agent:       wire.Agent,
-		AgentModels: wire.AgentModels,
-		Think:       wire.Think,
-	}
-	legacy := AgentModelPick{Model: wire.Model, Variant: wire.Variant}
-	if wire.Agent == "" || legacy.IsZero() {
-		return nil
-	}
-	if _, exists := s.AgentModels[wire.Agent]; exists {
-		return nil
-	}
-	if s.AgentModels == nil {
-		s.AgentModels = make(map[string]AgentModelPick, 1)
-	}
-	s.AgentModels[wire.Agent] = legacy
-	return nil
 }
 
 // IsZero reports whether the state names no agent, meaning the session
@@ -221,62 +193,101 @@ func (c *Config) InstantiateAgent(agentID string) (ActiveAgent, bool) {
 }
 
 // InstantiateWith builds an agent the way InstantiateAgent does and then
-// applies the session's picks to it, so a caller that only holds the
-// pick table sees the model that agent would actually run on.
+// lays a tree's pick table over it, so a caller that only holds the
+// table sees the model that agent would actually run on in the global
+// view: no session of its own, no dispatcher.
 func (c *Config) InstantiateWith(agentID string, picks map[string]AgentModelPick) (ActiveAgent, bool) {
-	active, ok := c.InstantiateAgent(agentID)
-	if !ok {
-		return ActiveAgent{}, false
-	}
-	active, _ = c.ApplyPicks(active, picks)
-	return active, true
+	return c.InstantiateLayered(agentID, AgentModelPick{}, picks, ActiveAgent{})
 }
 
-// ApplyPicks lays a session's pick table over active and reports
-// whether a model pick for active's own agent took effect. The whole
-// table is kept on the result, not only the entry for this agent, so
-// the agents it dispatches or hosts can find theirs.
+// InstantiateLayered builds agentID from the model stack, nearest layer
+// last, and reports false when no such agent is resolved:
+//
+//  1. the configuration: the agent's slot, or, for a SlotInherited agent
+//     with a dispatcher that runs a model, the dispatcher's own model;
+//  2. picks[agentID], the pick made for this agent across the whole
+//     session tree;
+//  3. local, the pick made for the session the agent runs in.
+//
+// A layer that names a model replaces everything below it. A layer that
+// names only a preset changes the preset and leaves the model to the
+// layers below, since the user asked for a different way to call the
+// model they were running, not for a different model.
 //
 // A model pick that no longer resolves, because its provider was
 // disabled or the model left the catalog, is skipped with a warning
 // and its preset with it, since a preset only means something on the
-// model it was chosen for. The entry stays in the table, so the pick
-// takes effect again once the model comes back. A pick that names only
-// a preset applies that preset and reports false, because the model
-// still comes from the config or from whoever dispatched the agent.
+// model it was chosen for. The entry stays in its table, so the pick
+// takes effect again once the model comes back.
 //
-// Slot is left pointing at the agent's normal slot, so
+// The whole of picks is kept on the result, not only the entry for this
+// agent, so the agents it dispatches or hosts can find theirs. Slot is
+// left pointing at the agent's normal slot when a pick took effect, so
 // InstantiateFor's same-slot inheritance still applies to a picked
 // model. Think is re-derived only when a model pick took effect and
 // the user never picked a thinking value of their own.
-func (c *Config) ApplyPicks(active ActiveAgent, picks map[string]AgentModelPick) (ActiveAgent, bool) {
-	active.AgentModels = clonePicks(picks)
-	active.ModelPick = nil
-	active.VariantPick = nil
-
-	pick, ok := active.AgentModels[active.Agent.ID]
+func (c *Config) InstantiateLayered(
+	agentID string,
+	local AgentModelPick,
+	picks map[string]AgentModelPick,
+	dispatcher ActiveAgent,
+) (ActiveAgent, bool) {
+	active, ok := c.InstantiateAgent(agentID)
 	if !ok {
-		return active, false
+		return ActiveAgent{}, false
 	}
+	own := active.Slot
+	if active.Agent.Slot == SlotInherited && dispatcher.Model.Provider != "" && dispatcher.Model.Model != "" {
+		active = c.inheritFrom(active, dispatcher)
+	}
+	active, pinned := c.layPicks(active, local, picks)
+	if pinned {
+		active.Slot = own
+	}
+	return active.Clone(), true
+}
 
-	pinned := false
-	if pick.Model.Provider != "" && pick.Model.Model != "" {
-		if err := c.ValidateAgentModelOverride(active.Agent.ID, pick.Model); err != nil {
-			slog.Warn("Ignoring a model pick that no longer resolves",
-				"agent", active.Agent.ID, "error", err)
-			return active, false
+// layPicks lays the pick the tree holds for active's agent over it, then
+// the session's own pick, and reports whether either took effect on the
+// model. Both tables are recorded on the result whole.
+func (c *Config) layPicks(active ActiveAgent, local AgentModelPick, picks map[string]AgentModelPick) (ActiveAgent, bool) {
+	active.AgentPicks = clonePicks(picks)
+	active.SessionModel = local.clone()
+
+	var pinned bool
+	for _, pick := range []AgentModelPick{picks[active.Agent.ID], local} {
+		var layered bool
+		if active, layered = c.layPick(active, pick); layered {
+			pinned = true
 		}
-		picked := pick.Model
-		active.Model = picked
-		active.ModelPick = &picked
-		pinned = true
 	}
-	active.VariantPick = clonePtr(pick.Variant)
-
 	if pinned && active.ThinkPick == nil {
 		active.Think = c.EffectiveThink(active.Model, active.EffectiveVariant())
 	}
-	return active.Clone(), pinned
+	return active, pinned
+}
+
+// layPick lays one pick over active and reports whether its model took
+// effect. A pick that names a model also decides the preset, even when
+// it names none: the preset of a layer below belonged to a model this
+// one just replaced.
+func (c *Config) layPick(active ActiveAgent, pick AgentModelPick) (ActiveAgent, bool) {
+	if pick.Model.Provider == "" || pick.Model.Model == "" {
+		if pick.Variant != nil {
+			active.VariantPick = clonePtr(pick.Variant)
+		}
+		return active, false
+	}
+	if err := c.ValidateAgentModelOverride(active.Agent.ID, pick.Model); err != nil {
+		slog.Warn("Ignoring a model pick that no longer resolves",
+			"agent", active.Agent.ID, "error", err)
+		return active, false
+	}
+	picked := pick.Model.clone()
+	active.Model = picked.clone()
+	active.ModelPick = &picked
+	active.VariantPick = clonePtr(pick.Variant)
+	return active, true
 }
 
 // coderSlot returns the model-config slot the coder agent resolved
@@ -330,25 +341,14 @@ func (c *Config) inheritFrom(active, parent ActiveAgent) ActiveAgent {
 // coder's slot — parent is the instance that actually dispatched this
 // agent, which InstantiateAgent has no way to know about.
 //
-// An explicit model pick for this agent in parent's pick table still
-// wins over inheritance, the same way it wins over a named slot: the
-// user asked to override this agent specifically. A zero parent —
-// nothing actually dispatched this agent, such as a primary agent's
-// own top-level instantiation — leaves InstantiateAgent's coder-slot
-// fallback in place.
+// An explicit model pick for this agent in the tree's pick table, which
+// parent carries, still wins over inheritance, the same way it wins over
+// a named slot: the user asked to override this agent specifically. A
+// zero parent — nothing actually dispatched this agent, such as a primary
+// agent's own top-level instantiation — leaves InstantiateAgent's
+// coder-slot fallback in place.
 func (c *Config) InstantiateUnder(agentID string, parent ActiveAgent) (ActiveAgent, bool) {
-	active, ok := c.InstantiateAgent(agentID)
-	if !ok {
-		return ActiveAgent{}, false
-	}
-	active, pinned := c.ApplyPicks(active, parent.AgentModels)
-	if pinned {
-		return active, true
-	}
-	if active.Agent.Slot != SlotInherited || parent.Model.Provider == "" || parent.Model.Model == "" {
-		return active, true
-	}
-	return c.inheritFrom(active, parent), true
+	return c.InstantiateLayered(agentID, AgentModelPick{}, parent.AgentPicks, parent)
 }
 
 // EffectiveThink resolves the thinking-mode default for model, as
@@ -394,23 +394,42 @@ type ActiveAgentEdit struct {
 	// another edit. It takes precedence over Think.
 	ToggleThink bool `json:"toggle_think,omitempty"`
 
-	// ForAgent names the agent Model and Variant are picked for. Empty
-	// means the agent the session runs once Agent has taken effect,
-	// which is all that Switch Model is: Switch Agent Model without a
-	// target. Any configured agent may be named, including hidden ones
-	// and subagents, since a pick is only ever read when that agent is
-	// dispatched.
+	// ForAgent names the agent Model and Variant are picked for across
+	// the whole session tree: the middle layer of the model stack, which
+	// every session under the root reads. Empty means the session's own
+	// pick, the nearest layer, which is all that Switch Model is. Any
+	// configured agent may be named, including hidden ones and
+	// subagents, since a pick is only ever read when that agent is
+	// dispatched. The edit lands on the root session however deep in the
+	// tree it is made.
 	ForAgent string `json:"for_agent,omitempty"`
 
-	// ClearModels drops every model and preset pick the session holds,
-	// for every agent, so each one goes back to following the config.
-	ClearModels bool `json:"clear_models,omitempty"`
+	// ClearAgentPicks drops every per-agent pick the session tree
+	// holds, so each agent goes back to following the config. It lands
+	// on the root session, like ForAgent.
+	ClearAgentPicks bool `json:"clear_agent_picks,omitempty"`
+
+	// ClearSessionModel drops the session's own model, preset and
+	// thinking pick, so it goes back to following the layers below.
+	ClearSessionModel bool `json:"clear_session_model,omitempty"`
+}
+
+// TreeWide reports whether the edit changes the session tree's picks
+// rather than the session's own.
+func (e ActiveAgentEdit) TreeWide() bool {
+	return e.ForAgent != "" || e.ClearAgentPicks
+}
+
+// SessionWide reports whether the edit changes the session's own state.
+// A Model or Variant counts only when no ForAgent aims it at the tree.
+func (e ActiveAgentEdit) SessionWide() bool {
+	return e.Agent != "" || e.Think != nil || e.ToggleThink || e.ClearSessionModel ||
+		(e.ForAgent == "" && (e.Model != nil || e.Variant != nil))
 }
 
 // IsZero reports whether the edit asks for nothing.
 func (e ActiveAgentEdit) IsZero() bool {
-	return e.Agent == "" && e.Model == nil && e.Variant == nil &&
-		e.Think == nil && !e.ToggleThink && !e.ClearModels
+	return !e.TreeWide() && !e.SessionWide()
 }
 
 // InstantiateFor builds an agent instance that runs on behalf of a
@@ -428,27 +447,26 @@ func (e ActiveAgentEdit) IsZero() bool {
 // the same way InstantiateUnder follows a dispatcher.
 //
 // A zero host applies no override, so callers outside any session get
-// plain config resolution.
+// plain config resolution. The tree's picks, which host carries, are laid
+// over whatever the host supplied: a pick made for this agent specifically
+// wins over inheriting the host's model, not the other way round.
 func (c *Config) InstantiateFor(agentID string, host ActiveAgent) (ActiveAgent, bool) {
 	active, ok := c.InstantiateAgent(agentID)
 	if !ok {
 		return ActiveAgent{}, false
 	}
-	active, pinned := c.ApplyPicks(active, host.AgentModels)
+	own := active.Slot
+	switch {
+	case active.Agent.Slot == SlotInherited && host.Model.Provider != "" && host.Model.Model != "":
+		active = c.inheritFrom(active, host)
+	case active.Slot == host.Slot:
+		active.Model = host.Model
+		active.Think = host.Think
+	}
+	active, pinned := c.layPicks(active, AgentModelPick{}, host.AgentPicks)
 	if pinned {
-		// An explicit pick on this agent wins over inheriting the
-		// host's model: the user asked to override this agent
-		// specifically, not whatever session it happens to run in.
-		return active, true
+		active.Slot = own
 	}
-	if active.Agent.Slot == SlotInherited && host.Model.Provider != "" && host.Model.Model != "" {
-		return c.inheritFrom(active, host), true
-	}
-	if active.Slot != host.Slot {
-		return active, true
-	}
-	active.Model = host.Model
-	active.Think = host.Think
 	return active.Clone(), true
 }
 
@@ -480,7 +498,8 @@ func (c *Config) CompactAgentIDFor(host Agent) string {
 func (a ActiveAgent) Clone() ActiveAgent {
 	a.Agent = a.Agent.clone()
 	a.Model = a.Model.clone()
-	a.AgentModels = clonePicks(a.AgentModels)
+	a.AgentPicks = clonePicks(a.AgentPicks)
+	a.SessionModel = a.SessionModel.clone()
 	a.ModelPick = clonePtr(a.ModelPick)
 	a.ThinkPick = clonePtr(a.ThinkPick)
 	a.VariantPick = clonePtr(a.VariantPick)
@@ -510,14 +529,15 @@ func (a ActiveAgent) EffectiveVariant() string {
 
 // State reduces the instance to the part worth persisting: what the
 // user chose, never what the config supplied or what InstantiateAgent
-// happened to derive. The pick table is the only place model and
-// preset choices are read from; ModelPick and VariantPick are views
-// of it and add nothing.
+// happened to derive. SessionModel and AgentPicks are the only places
+// model and preset choices are read from; ModelPick and VariantPick are
+// views of them and add nothing.
 func (a ActiveAgent) State() ActiveAgentState {
 	return ActiveAgentState{
-		Agent:       a.Agent.ID,
-		AgentModels: clonePicks(a.AgentModels),
-		Think:       clonePtr(a.ThinkPick),
+		Agent:        a.Agent.ID,
+		SessionModel: a.SessionModel.clone(),
+		AgentPicks:   clonePicks(a.AgentPicks),
+		Think:        clonePtr(a.ThinkPick),
 	}
 }
 
@@ -537,7 +557,7 @@ func (a ActiveAgent) State() ActiveAgentState {
 // It reports false when the recorded agent no longer resolves, which
 // leaves the caller to decide on a fallback.
 func (c *Config) Restore(state ActiveAgentState) (ActiveAgent, bool) {
-	active, ok := c.InstantiateAgent(state.Agent)
+	active, ok := c.InstantiateLayered(state.Agent, state.SessionModel, state.AgentPicks, ActiveAgent{})
 	if !ok {
 		return ActiveAgent{}, false
 	}
@@ -546,6 +566,5 @@ func (c *Config) Restore(state ActiveAgentState) (ActiveAgent, bool) {
 		active.Think = pick
 		active.ThinkPick = &pick
 	}
-	active, _ = c.ApplyPicks(active, state.AgentModels)
 	return active, true
 }

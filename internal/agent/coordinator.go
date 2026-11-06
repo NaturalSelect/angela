@@ -33,14 +33,25 @@ import (
 
 // Coordinator errors.
 //
-// The exported two are what a caller can get wrong: they name an
-// agent or a preset that does not fit. Transports answer them as a
-// bad request, so they have to be nameable from outside this package.
-// The rest describe a broken configuration or a broken process, which
-// is nobody's request to fix.
+// The exported ones are what a caller can get wrong: they name an
+// agent or a preset that does not fit, ask for a model change a session
+// may not make, or mix edits that land in different places. Transports
+// answer them as a bad request, so they have to be nameable from
+// outside this package. The rest describe a broken configuration or a
+// broken process, which is nobody's request to fix.
 var (
 	ErrAgentNotAvailable   = errors.New("agent not available")
 	ErrVariantNotAvailable = errors.New("model variant not available")
+
+	// ErrSubAgentModelLocked reports a session-level model edit aimed at a
+	// sub-agent's session. Its model follows the session tree, so the
+	// change belongs on the agent, not on this session.
+	ErrSubAgentModelLocked = errors.New("a sub-agent's model follows its session tree; switch the agent's model instead")
+
+	// ErrMixedActiveAgentEdit reports an edit that changes the session
+	// tree's picks and the session's own state at once. The two land on
+	// different sessions, so one request cannot be atomic across them.
+	ErrMixedActiveAgentEdit = errors.New("an edit cannot change both the session tree's agent picks and the session's own model")
 
 	errCoderAgentNotConfigured    = errors.New("coder agent not configured")
 	errModelProviderNotConfigured = errors.New("model provider not configured")

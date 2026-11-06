@@ -100,9 +100,7 @@ func TestConcurrentActiveAgentEditsDoNotLoseUpdates(t *testing.T) {
 				func(current config.ActiveAgent) (config.ActiveAgent, bool, error) {
 					next := current.Clone()
 					pick := "deep"
-					next.AgentModels = map[string]config.AgentModelPick{
-						next.Agent.ID: {Variant: &pick},
-					}
+					next.SessionModel = config.AgentModelPick{Variant: &pick}
 					return next, true, nil
 				})
 		}()

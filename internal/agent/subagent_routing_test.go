@@ -630,9 +630,10 @@ func TestRunSubAgentDoesNotFreezeTheDispatchersPicks(t *testing.T) {
 	})
 	resolved.ID = "explore"
 	resolved.Host = config.ActiveAgent{
-		Agent: config.Agent{ID: "explore"},
-		AgentModels: map[string]config.AgentModelPick{
-			"explore": {Model: config.SelectedModel{Provider: providerID, Model: "dispatcher-pick"}},
+		Agent:        config.Agent{ID: "explore"},
+		SessionModel: config.AgentModelPick{Model: config.SelectedModel{Provider: providerID, Model: "dispatcher-pick"}},
+		AgentPicks: map[string]config.AgentModelPick{
+			"explore": {Model: config.SelectedModel{Provider: providerID, Model: "tree-pick"}},
 		},
 	}
 
@@ -650,8 +651,12 @@ func TestRunSubAgentDoesNotFreezeTheDispatchersPicks(t *testing.T) {
 	stored, err := env.sessions.Get(t.Context(), childID)
 	require.NoError(t, err)
 	require.Equal(t, "explore", stored.Agent, "test premise: the child still records its agent")
-	require.Empty(t, stored.ActiveAgent.AgentModels,
-		"the dispatcher's pick table was copied onto the child's row and will outrank its later picks")
+	require.True(t, stored.ActiveAgent.SessionModel.IsZero(),
+		"the dispatcher's own model was copied onto the child's row and will outrank its later picks")
+	require.Empty(t, stored.ActiveAgent.AgentPicks,
+		"the tree's pick table was copied onto the child's row and will outrank its later picks")
+	require.Nil(t, stored.ActiveAgent.Think,
+		"the dispatcher's thinking flag was frozen onto the child's row")
 }
 
 // Cost has to climb the whole chain, one level at a time. Stats count only

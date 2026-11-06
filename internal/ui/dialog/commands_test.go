@@ -350,28 +350,121 @@ func TestDefaultCommands_SwitchAgentModelAlwaysVisible(t *testing.T) {
 	require.Contains(t, ids, "switch_agent_model")
 }
 
-// TestDefaultCommands_ClearAgentModelOverridesGating verifies "Reset
-// Model Picks" only appears once the session carries a pick to clear.
-func TestDefaultCommands_ClearAgentModelOverridesGating(t *testing.T) {
+// TestDefaultCommands_ResetCommandsGating verifies each reset only
+// appears once there is something for it to clear: the session reset
+// needs a model of the session's own, the agent reset needs a pick in
+// the tree's table.
+func TestDefaultCommands_ResetCommandsGating(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no picks hides the command", func(t *testing.T) {
+	pick := config.AgentModelPick{Model: config.SelectedModel{Provider: "acme", Model: "big"}}
+
+	t.Run("nothing picked hides both", func(t *testing.T) {
 		t.Parallel()
-		active := &workspace.ActiveAgent{}
-		ids := commandIDs(newCommandsForDefaults(t, &config.Config{}, true, active, nil).defaultCommands())
-		require.NotContains(t, ids, "clear_agent_model_overrides")
+		ids := commandIDs(newCommandsForDefaults(t, &config.Config{}, true, &workspace.ActiveAgent{}, nil).defaultCommands())
+		require.NotContains(t, ids, "reset_session_model")
+		require.NotContains(t, ids, "reset_agent_models")
 	})
 
-	t.Run("a pick reveals the command", func(t *testing.T) {
+	t.Run("a session model reveals only the session reset", func(t *testing.T) {
 		t.Parallel()
-		active := &workspace.ActiveAgent{
-			AgentModels: map[string]config.AgentModelPick{
-				"coder": {Model: config.SelectedModel{Provider: "acme", Model: "big"}},
-			},
-		}
+		active := &workspace.ActiveAgent{SessionModel: pick}
 		ids := commandIDs(newCommandsForDefaults(t, &config.Config{}, true, active, nil).defaultCommands())
-		require.Contains(t, ids, "clear_agent_model_overrides")
+		require.Contains(t, ids, "reset_session_model")
+		require.NotContains(t, ids, "reset_agent_models")
 	})
+
+	t.Run("a tree pick reveals only the agent reset", func(t *testing.T) {
+		t.Parallel()
+		active := &workspace.ActiveAgent{AgentPicks: map[string]config.AgentModelPick{"coder": pick}}
+		ids := commandIDs(newCommandsForDefaults(t, &config.Config{}, true, active, nil).defaultCommands())
+		require.NotContains(t, ids, "reset_session_model")
+		require.Contains(t, ids, "reset_agent_models")
+	})
+}
+
+// TestDefaultCommands_ResetCommandsRunTheirOwnAction pins that the two
+// resets are wired to different actions, since mixing them up would clear
+// the wrong layer.
+func TestDefaultCommands_ResetCommandsRunTheirOwnAction(t *testing.T) {
+	t.Parallel()
+
+	pick := config.AgentModelPick{Model: config.SelectedModel{Provider: "acme", Model: "big"}}
+	active := &workspace.ActiveAgent{
+		SessionModel: pick,
+		AgentPicks:   map[string]config.AgentModelPick{"coder": pick},
+	}
+	items := newCommandsForDefaults(t, &config.Config{}, true, active, nil).defaultCommands()
+
+	session := commandByID(items, "reset_session_model")
+	require.NotNil(t, session)
+	require.Equal(t, ActionClearSessionModel{}, session.Action())
+
+	agents := commandByID(items, "reset_agent_models")
+	require.NotNil(t, agents)
+	require.Equal(t, ActionClearAgentModels{}, agents.Action())
+}
+
+// TestDefaultCommands_ModelCommandsBySessionKind pins which model
+// commands each kind of session offers. A sub-agent runs on what its
+// session tree gives it, so the commands that edit a model of its own
+// are hidden there; a branch is driven by the user and keeps them all.
+// The commands that edit the tree are offered everywhere.
+func TestDefaultCommands_ModelCommandsBySessionKind(t *testing.T) {
+	t.Parallel()
+
+	pick := config.AgentModelPick{Model: config.SelectedModel{Provider: "acme", Model: "big"}}
+	active := &workspace.ActiveAgent{
+		CatwalkCfg: config.ProviderModel{
+			Model:    catwalk.Model{CanReason: true},
+			Variants: map[string]config.SelectedModelOverride{"terse": {}},
+		},
+		SessionModel: pick,
+		AgentPicks:   map[string]config.AgentModelPick{"coder": pick},
+	}
+	// The thinking toggle and the preset selector exclude each other,
+	// so a second model without presets covers the toggle.
+	reasoning := &workspace.ActiveAgent{
+		CatwalkCfg:   config.ProviderModel{Model: catwalk.Model{CanReason: true}},
+		SessionModel: pick,
+		AgentPicks:   map[string]config.AgentModelPick{"coder": pick},
+	}
+
+	local := []string{"switch_model", "select_variant", "toggle_thinking", "reset_session_model"}
+	tree := []string{"switch_agent_model", "reset_agent_models"}
+
+	for _, tt := range []struct {
+		name      string
+		hasParent bool
+		inBranch  bool
+		hidden    bool
+	}{
+		{"top-level session", false, false, false},
+		{"branch", true, true, false},
+		{"sub-agent", true, false, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var ids []string
+			for _, a := range []*workspace.ActiveAgent{active, reasoning} {
+				c := newCommandsForDefaults(t, &config.Config{}, true, a, nil)
+				c.hasParent, c.inBranch = tt.hasParent, tt.inBranch
+				ids = append(ids, commandIDs(c.defaultCommands())...)
+			}
+
+			for _, id := range local {
+				if tt.hidden {
+					require.NotContains(t, ids, id, "%s must be hidden in a %s", id, tt.name)
+				} else {
+					require.Contains(t, ids, id, "%s must be offered in a %s", id, tt.name)
+				}
+			}
+			for _, id := range tree {
+				require.Contains(t, ids, id, "%s edits the tree and must be offered in a %s", id, tt.name)
+			}
+		})
+	}
 }
 
 func TestCommands_HandleMsg_Close(t *testing.T) {

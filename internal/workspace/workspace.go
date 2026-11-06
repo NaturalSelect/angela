@@ -68,17 +68,19 @@ type LSPEvent struct {
 
 // ActiveAgent is what a session is currently running, as the UI needs to
 // display it: the agent it belongs to, and the model resolved from that
-// agent with the session's preset already folded in. AgentModels is the
-// session's model-pick table, keyed by agent.
+// agent with the session's preset already folded in. SessionModel is the
+// session's own pick, the nearest layer of the model stack. AgentPicks is
+// the per-agent pick table its session tree shares, keyed by agent.
 type ActiveAgent struct {
-	AgentID     string
-	AgentName   string
-	Slot        config.SlotName
-	CatwalkCfg  config.ProviderModel
-	ModelCfg    config.SelectedModel
-	Think       bool
-	Variant     string
-	AgentModels map[string]config.AgentModelPick
+	AgentID      string
+	AgentName    string
+	Slot         config.SlotName
+	CatwalkCfg   config.ProviderModel
+	ModelCfg     config.SelectedModel
+	Think        bool
+	Variant      string
+	SessionModel config.AgentModelPick
+	AgentPicks   map[string]config.AgentModelPick
 }
 
 // Workspace is the main abstraction consumed by the TUI, CLI and ACP front

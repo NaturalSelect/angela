@@ -47,10 +47,8 @@ func TestACorruptActiveAgentIsNotAFreshSession(t *testing.T) {
 	created, err := sessions.Create(t.Context(), "test")
 	require.NoError(t, err)
 	require.NoError(t, sessions.UpdateActiveAgent(t.Context(), created.ID, config.ActiveAgentState{
-		Agent: "reviewer",
-		AgentModels: map[string]config.AgentModelPick{
-			"reviewer": {Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
-		},
+		Agent:        "reviewer",
+		SessionModel: config.AgentModelPick{Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
 	}))
 
 	corruptActiveAgent(t, conn, created.ID)
@@ -97,9 +95,10 @@ func TestAStoredActiveAgentRoundTrips(t *testing.T) {
 	require.NoError(t, err)
 
 	want := config.ActiveAgentState{
-		Agent: "reviewer",
-		AgentModels: map[string]config.AgentModelPick{
-			"reviewer": {Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
+		Agent:        "reviewer",
+		SessionModel: config.AgentModelPick{Model: config.SelectedModel{Provider: "mock", Model: "large-model"}},
+		AgentPicks: map[string]config.AgentModelPick{
+			"explore": {Model: config.SelectedModel{Provider: "mock", Model: "small-model"}},
 		},
 	}
 	require.NoError(t, sessions.UpdateActiveAgent(t.Context(), created.ID, want))
@@ -107,6 +106,28 @@ func TestAStoredActiveAgentRoundTrips(t *testing.T) {
 	fetched, err := sessions.Get(t.Context(), created.ID)
 	require.NoError(t, err)
 	require.Equal(t, want, fetched.ActiveAgent)
+}
+
+// TestARowFromBeforeTheModelStackDecodesToNoPicks pins that rows written
+// under the old keys are dropped rather than migrated: the session loads,
+// keeps its agent and thinking flag, and starts on the config's models.
+func TestARowFromBeforeTheModelStackDecodesToNoPicks(t *testing.T) {
+	sessions, conn := newActiveAgentTestService(t)
+
+	created, err := sessions.Create(t.Context(), "test")
+	require.NoError(t, err)
+
+	legacy := `{"agent":"reviewer","model":{"model":"old","provider":"old"},"variant":"careful",` +
+		`"agent_models":{"reviewer":{"model":{"model":"old","provider":"old"}}},"think":true}`
+	_, err = conn.ExecContext(t.Context(),
+		"UPDATE sessions SET active_agent = ? WHERE id = ?", legacy, created.ID)
+	require.NoError(t, err)
+
+	fetched, err := sessions.Get(t.Context(), created.ID)
+	require.NoError(t, err)
+
+	think := true
+	require.Equal(t, config.ActiveAgentState{Agent: "reviewer", Think: &think}, fetched.ActiveAgent)
 }
 
 // TestDeletingASessionWithACorruptAgentStillAnnounces pins the one

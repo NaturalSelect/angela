@@ -315,14 +315,15 @@ func (w *AppWorkspace) AgentActive(ctx context.Context, sessionID string) (Activ
 		return ActiveAgent{}, err
 	}
 	return ActiveAgent{
-		AgentID:     active.Agent.ID,
-		AgentName:   active.Agent.Name,
-		Slot:        active.Slot,
-		ModelCfg:    model.ModelCfg,
-		CatwalkCfg:  model.CatwalkCfg,
-		Think:       model.Think,
-		Variant:     model.Variant,
-		AgentModels: active.AgentModels,
+		AgentID:      active.Agent.ID,
+		AgentName:    active.Agent.Name,
+		Slot:         active.Slot,
+		ModelCfg:     model.ModelCfg,
+		CatwalkCfg:   model.CatwalkCfg,
+		Think:        model.Think,
+		Variant:      model.Variant,
+		SessionModel: active.SessionModel,
+		AgentPicks:   active.AgentPicks,
 	}, nil
 }
 

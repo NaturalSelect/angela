@@ -488,8 +488,9 @@ func (c *Commands) buildCommandItems() []list.FilterableItem {
 // viewingSubAgent reports whether the menu was opened on an ordinary
 // sub-agent transcript rather than a branch: a session with a parent
 // that is not itself a branch. That transcript is read-only — the run
-// takes its instructions from the parent's model, not the user — so
-// undo must not be offered there. Mirrors UI.viewingSubAgent.
+// takes its instructions and its model from its session tree, not the
+// user — so undo and the session's own model commands must not be
+// offered there. Mirrors UI.viewingSubAgent.
 func (c *Commands) viewingSubAgent() bool {
 	return c.hasParent && !c.inBranch
 }
@@ -499,12 +500,21 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	commands := []*CommandItem{
 		NewCommandItem(c.com.Styles, "new_session", "New Session", "ctrl+n", ActionNewSession{}).WithAliases("clear"),
 		NewCommandItem(c.com.Styles, "switch_session", "Sessions", "ctrl+s", ActionOpenDialog{SessionsID}),
-		NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}),
+	}
+
+	// A sub-agent runs on what its session tree gives it, so the commands
+	// that edit a session's own model are not offered there. Switch Agent
+	// Model is, since it edits the tree.
+	if !c.viewingSubAgent() {
+		commands = append(commands, NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}))
+	}
+
+	commands = append(commands,
 		NewCommandItem(c.com.Styles, "switch_agent", "Switch Agent", "", ActionOpenDialog{AgentsID}).WithAliases("agent"),
 		NewCommandItem(c.com.Styles, "switch_agent_model", "Switch Agent Model", "", ActionOpenDialog{AgentModelAgentsID}).WithAliases("agent-model", "override-model"),
 		NewCommandItem(c.com.Styles, "manage_mcp", "Manage MCP Servers", "", ActionOpenDialog{MCPServersID}).WithAliases("mcp", "mcps"),
 		NewCommandItem(c.com.Styles, "suspend", "Suspend", "ctrl+z", ActionSuspend{}),
-	}
+	)
 
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "session_details", "Session Details", "ctrl+d", ActionToggleDetails{}))
@@ -582,7 +592,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "abort_branch", "Abort Branch", "", ActionAbortBranch{SessionID: c.sessionID}).WithAliases("abort"))
 	}
 
-	if c.active != nil {
+	if c.active != nil && !c.viewingSubAgent() {
 		// A model that reasons without naming levels has one knob
 		// and no presets to seed, so it keeps its own toggle.
 		if c.active.CatwalkCfg.CanReason && len(c.active.CatwalkCfg.ReasoningLevels) == 0 {
@@ -633,11 +643,14 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "disable_docker_mcp", "Disable Docker MCP Catalog", "", ActionDisableDockerMCP{}))
 	}
 
-	// Offered only once the session holds a model pick to clear: an
-	// empty pick table means every agent is already on its configured
-	// model, so there would be nothing for the command to do.
-	if c.active != nil && len(c.active.AgentModels) > 0 {
-		commands = append(commands, NewCommandItem(c.com.Styles, "clear_agent_model_overrides", "Reset Model Picks", "", ActionClearAgentModelOverrides{}))
+	// Each reset is offered only once there is something for it to clear:
+	// without a pick the session or the tree is already following the
+	// layers below it.
+	if c.active != nil && !c.viewingSubAgent() && !c.active.SessionModel.IsZero() {
+		commands = append(commands, NewCommandItem(c.com.Styles, "reset_session_model", "Reset Session Model", "", ActionClearSessionModel{}))
+	}
+	if c.active != nil && len(c.active.AgentPicks) > 0 {
+		commands = append(commands, NewCommandItem(c.com.Styles, "reset_agent_models", "Reset Agent Models", "", ActionClearAgentModels{}))
 	}
 
 	// Sandbox restriction is irreversible for the life of the process, so

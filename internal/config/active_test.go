@@ -115,16 +115,14 @@ func TestActiveAgentStateRoundTripKeepsModelAndRefreshesDefinition(t *testing.T)
 
 	cfg := activeTestConfig()
 
-	active, ok := cfg.InstantiateAgent("coder")
-	require.True(t, ok)
-
 	// The session picks a model the config never named for it.
 	picked := SelectedModel{Provider: "groq", Model: "llama"}
-	active, _ = cfg.ApplyPicks(active, map[string]AgentModelPick{"coder": {Model: picked}})
+	active, ok := cfg.InstantiateLayered("coder", AgentModelPick{Model: picked}, nil, ActiveAgent{})
+	require.True(t, ok)
 	state := active.State()
 
 	require.Equal(t, "coder", state.Agent)
-	require.Equal(t, picked, state.AgentModels["coder"].Model)
+	require.Equal(t, picked, state.SessionModel.Model)
 
 	// Meanwhile the config file changed the agent's prompt.
 	agent := cfg.Agents["coder"]
@@ -154,8 +152,8 @@ func TestRestoreSlotAlwaysFollowsTheCurrentConfigLayout(t *testing.T) {
 
 	picked := SelectedModel{Provider: "groq", Model: "llama"}
 	state := ActiveAgentState{
-		Agent:       "coder",
-		AgentModels: map[string]AgentModelPick{"coder": {Model: picked}},
+		Agent:        "coder",
+		SessionModel: AgentModelPick{Model: picked},
 	}
 
 	restored, ok := cfg.Restore(state)
@@ -187,7 +185,8 @@ func TestStateOmitsModelWhenNothingWasPicked(t *testing.T) {
 	require.Nil(t, active.ModelPick, "a freshly instantiated agent has picked nothing")
 
 	state := active.State()
-	require.Empty(t, state.AgentModels, "no pick may be persisted until the user actually makes one")
+	require.Empty(t, state.AgentPicks, "no pick may be persisted until the user actually makes one")
+	require.True(t, state.SessionModel.IsZero(), "no pick may be persisted until the user actually makes one")
 }
 
 func TestRestoreFallsBackWhenStateCarriesNoModel(t *testing.T) {
@@ -354,8 +353,8 @@ func TestRestoreExplicitBaselinePickOutranksSlotVariant(t *testing.T) {
 
 	pick := ""
 	active, ok := cfg.Restore(ActiveAgentState{
-		Agent:       "coder",
-		AgentModels: map[string]AgentModelPick{"coder": {Variant: &pick}},
+		Agent:        "coder",
+		SessionModel: AgentModelPick{Variant: &pick},
 	})
 	require.True(t, ok)
 	require.Empty(t, active.EffectiveVariant(),
@@ -402,7 +401,7 @@ func TestInstantiateForIgnoresHostWhenTargetHasItsOwnPick(t *testing.T) {
 	host, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
 	host.Model = SelectedModel{Provider: "anthropic", Model: "claude-opus"}
-	host.AgentModels = map[string]AgentModelPick{
+	host.AgentPicks = map[string]AgentModelPick{
 		"compact": {Model: SelectedModel{Provider: "groq", Model: "llama"}},
 	}
 
@@ -412,17 +411,17 @@ func TestInstantiateForIgnoresHostWhenTargetHasItsOwnPick(t *testing.T) {
 		"compact's own pick must win over inheriting the host's model")
 }
 
-// TestRestoreKeepsPicksMadeForOtherAgents pins that the pick table is
-// restored whole: the running agent runs on its own entry while the
-// entries for other agents stay available to whatever it dispatches.
-func TestRestoreKeepsPicksMadeForOtherAgents(t *testing.T) {
+// TestRestoreKeepsBothPickLayers pins that both layers are restored
+// whole: the running agent runs on its session model while the table
+// for other agents stays available to whatever it dispatches.
+func TestRestoreKeepsBothPickLayers(t *testing.T) {
 	t.Parallel()
 
 	cfg := activeTestConfig()
 	state := ActiveAgentState{
-		Agent: "coder",
-		AgentModels: map[string]AgentModelPick{
-			"coder": {Model: SelectedModel{Provider: "openai", Model: "gpt-mini"}},
+		Agent:        "coder",
+		SessionModel: AgentModelPick{Model: SelectedModel{Provider: "openai", Model: "gpt-mini"}},
+		AgentPicks: map[string]AgentModelPick{
 			"scout": {Model: SelectedModel{Provider: "anthropic", Model: "claude"}},
 		},
 	}
@@ -430,10 +429,10 @@ func TestRestoreKeepsPicksMadeForOtherAgents(t *testing.T) {
 	restored, ok := cfg.Restore(state)
 	require.True(t, ok)
 	require.Equal(t, "gpt-mini", restored.Model.Model)
-	require.Equal(t, "claude", restored.AgentModels["scout"].Model.Model,
+	require.Equal(t, "claude", restored.AgentPicks["scout"].Model.Model,
 		"a pick made for another agent must survive the restore")
-	require.Equal(t, state.AgentModels, restored.State().AgentModels,
-		"the table must round-trip through State unchanged")
+	require.Equal(t, state, restored.State(),
+		"both layers must round-trip through State unchanged")
 }
 
 // TestInstantiateUnderWithoutParentFallsBackToCoderSlot pins
@@ -578,7 +577,7 @@ func TestInstantiateUnderPickOutranksInheritance(t *testing.T) {
 
 	parent, ok := cfg.InstantiateAgent("coder")
 	require.True(t, ok)
-	parent.AgentModels = map[string]AgentModelPick{
+	parent.AgentPicks = map[string]AgentModelPick{
 		"inherits": {Model: SelectedModel{Provider: "groq", Model: "llama"}},
 	}
 
@@ -669,4 +668,183 @@ func TestInternalAgentInheritedSlotFollowsHostRegardlessOfRole(t *testing.T) {
 		"an inherited internal agent must follow the host even though its own coder-slot fallback names a different slot")
 	require.Equal(t, "llama", compact.Model.Model)
 	require.Equal(t, host.Slot, compact.Slot)
+}
+
+// TestSessionModelOutranksTheTreePickOutranksTheConfig pins the order of
+// the stack, nearest layer winning.
+func TestSessionModelOutranksTheTreePickOutranksTheConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	tree := map[string]AgentModelPick{"scout": {Model: SelectedModel{Provider: "anthropic", Model: "claude"}}}
+	session := AgentModelPick{Model: SelectedModel{Provider: "openai", Model: "gpt-mini"}}
+
+	configOnly, ok := cfg.InstantiateLayered("scout", AgentModelPick{}, nil, ActiveAgent{})
+	require.True(t, ok)
+	require.Equal(t, "llama", configOnly.Model.Model)
+
+	withTree, ok := cfg.InstantiateLayered("scout", AgentModelPick{}, tree, ActiveAgent{})
+	require.True(t, ok)
+	require.Equal(t, "claude", withTree.Model.Model, "the tree's pick must outrank the config")
+
+	withSession, ok := cfg.InstantiateLayered("scout", session, tree, ActiveAgent{})
+	require.True(t, ok)
+	require.Equal(t, "gpt-mini", withSession.Model.Model, "the session's pick must outrank the tree's")
+	require.Equal(t, SlotName("fast"), withSession.Slot, "a pick never moves the agent off its own slot")
+}
+
+// TestAPresetOnlySessionPickKeepsTheTreesModel pins the overlay rule: a
+// layer that names only a preset changes the preset and leaves the model
+// to the layer below.
+func TestAPresetOnlySessionPickKeepsTheTreesModel(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	variant := "careful"
+	tree := map[string]AgentModelPick{"scout": {Model: SelectedModel{Provider: "anthropic", Model: "claude"}}}
+
+	active, ok := cfg.InstantiateLayered("scout", AgentModelPick{Variant: &variant}, tree, ActiveAgent{})
+	require.True(t, ok)
+	require.Equal(t, "claude", active.Model.Model, "the model must come from the tree's pick")
+	require.Equal(t, "careful", active.EffectiveVariant())
+}
+
+// TestAModelSessionPickDropsTheTreesPreset pins the other half: a layer
+// that names a model owns the preset too, since the tree's preset was
+// chosen for a model this layer replaced.
+func TestAModelSessionPickDropsTheTreesPreset(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	variant := "careful"
+	tree := map[string]AgentModelPick{"coder": {
+		Model:   SelectedModel{Provider: "anthropic", Model: "claude"},
+		Variant: &variant,
+	}}
+
+	active, ok := cfg.InstantiateLayered("coder", AgentModelPick{Model: SelectedModel{Provider: "groq", Model: "llama"}}, tree, ActiveAgent{})
+	require.True(t, ok)
+	require.Equal(t, "llama", active.Model.Model)
+	require.Nil(t, active.VariantPick)
+}
+
+// TestAnInheritedAgentFollowsTheDispatchersSessionModel pins live
+// inheritance: the dispatcher's own session pick is what it actually
+// runs, so it is what an inherited child runs.
+func TestAnInheritedAgentFollowsTheDispatchersSessionModel(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+
+	dispatcher, ok := cfg.Restore(ActiveAgentState{
+		Agent:        "coder",
+		SessionModel: AgentModelPick{Model: SelectedModel{Provider: "groq", Model: "llama"}},
+	})
+	require.True(t, ok)
+
+	child, ok := cfg.InstantiateUnder("inherits", dispatcher)
+	require.True(t, ok)
+	require.Equal(t, "llama", child.Model.Model)
+	require.True(t, child.SessionModel.IsZero(), "an inherited model is not the child's own session pick")
+	require.Nil(t, child.ModelPick)
+}
+
+// TestATreePickOutranksInheritingTheDispatchersSessionModel pins that the
+// middle layer still sits above inheritance, which is the bottom layer.
+func TestATreePickOutranksInheritingTheDispatchersSessionModel(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["inherits"] = Agent{ID: "inherits", Slot: SlotInherited}
+
+	dispatcher, ok := cfg.Restore(ActiveAgentState{
+		Agent:        "coder",
+		SessionModel: AgentModelPick{Model: SelectedModel{Provider: "groq", Model: "llama"}},
+		AgentPicks: map[string]AgentModelPick{
+			"inherits": {Model: SelectedModel{Provider: "openai", Model: "gpt-mini"}},
+		},
+	})
+	require.True(t, ok)
+
+	child, ok := cfg.InstantiateUnder("inherits", dispatcher)
+	require.True(t, ok)
+	require.Equal(t, "gpt-mini", child.Model.Model)
+}
+
+// TestAnAgentThatIsNotInheritedIgnoresTheDispatchersSessionModel pins
+// that a session pick reaches only the agents that inherit.
+func TestAnAgentThatIsNotInheritedIgnoresTheDispatchersSessionModel(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+
+	dispatcher, ok := cfg.Restore(ActiveAgentState{
+		Agent:        "coder",
+		SessionModel: AgentModelPick{Model: SelectedModel{Provider: "openai", Model: "gpt-mini"}},
+	})
+	require.True(t, ok)
+
+	child, ok := cfg.InstantiateUnder("scout", dispatcher)
+	require.True(t, ok)
+	require.Equal(t, "llama", child.Model.Model, "scout is pinned to its own slot")
+}
+
+// TestAHostedAgentFollowsTheSessionModelUnlessItHasAPick pins hosted
+// calls: compaction on the host's role follows the session's model, and
+// a pick made for compact specifically still wins over that.
+func TestAHostedAgentFollowsTheSessionModelUnlessItHasAPick(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["compact"] = Agent{ID: "compact", Slot: SlotMain}
+	session := AgentModelPick{Model: SelectedModel{Provider: "groq", Model: "llama"}}
+
+	host, ok := cfg.InstantiateLayered("coder", session, nil, ActiveAgent{})
+	require.True(t, ok)
+	compact, ok := cfg.InstantiateFor("compact", host)
+	require.True(t, ok)
+	require.Equal(t, "llama", compact.Model.Model, "compaction must follow the session's model")
+
+	host, ok = cfg.InstantiateLayered("coder", session, map[string]AgentModelPick{
+		"compact": {Model: SelectedModel{Provider: "openai", Model: "gpt-mini"}},
+	}, ActiveAgent{})
+	require.True(t, ok)
+	compact, ok = cfg.InstantiateFor("compact", host)
+	require.True(t, ok)
+	require.Equal(t, "gpt-mini", compact.Model.Model, "a pick for compact must outrank the host's model")
+	require.Equal(t, SlotMain, compact.Slot)
+}
+
+// TestAPickThatNoLongerResolvesStaysInItsLayer pins that skipping a pick
+// at resolve time never rewrites the persisted layers.
+func TestAPickThatNoLongerResolvesStaysInItsLayer(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	gone := AgentModelPick{Model: SelectedModel{Provider: "ghost", Model: "gone"}}
+	state := ActiveAgentState{
+		Agent:        "coder",
+		SessionModel: gone,
+		AgentPicks:   map[string]AgentModelPick{"scout": gone},
+	}
+
+	restored, ok := cfg.Restore(state)
+	require.True(t, ok)
+	require.Equal(t, "claude", restored.Model.Model, "the agent must fall back to the config")
+	require.Equal(t, state, restored.State(), "both layers must stay as they were written")
+}
+
+// TestAFallenBackSessionPickStillLetsTheTreePickApply pins that an
+// unresolvable nearest layer does not hide the layer below it.
+func TestAFallenBackSessionPickStillLetsTheTreePickApply(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	tree := map[string]AgentModelPick{"coder": {Model: SelectedModel{Provider: "groq", Model: "llama"}}}
+	gone := AgentModelPick{Model: SelectedModel{Provider: "ghost", Model: "gone"}}
+
+	active, ok := cfg.InstantiateLayered("coder", gone, tree, ActiveAgent{})
+	require.True(t, ok)
+	require.Equal(t, "llama", active.Model.Model)
 }

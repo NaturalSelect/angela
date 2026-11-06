@@ -1445,7 +1445,45 @@ func TestHandleDialogMsg_ActionSelectAgentModel(t *testing.T) {
 		})
 		require.False(t, m.dialog.ContainsDialog(dialog.AgentModelModelsID))
 		require.NotNil(t, cmd)
-		require.Equal(t, "Reviewer now runs Plain Model for this session", agentModelInfoText(t, cmd()))
+		require.Equal(t, "Reviewer now runs Plain Model in this session tree", agentModelInfoText(t, cmd()))
+	})
+
+	t.Run("a session model above the pick is called out when the agent is the one on screen", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := gomock.NewController(t)
+		ws := NewMockWorkspace(ctrl)
+		ws.EXPECT().Config().Return(agentModelTestConfig()).AnyTimes()
+		model := config.SelectedModel{Provider: "acme", Model: "plain"}
+		emptyVariant := ""
+		ws.EXPECT().RecordRecentModel(config.ScopeGlobal, config.SlotMain, model).Return(nil)
+		// The session keeps its own model, so the agent it runs did not
+		// move to the one just picked for the tree.
+		ws.EXPECT().AgentEditActive(gomock.Any(), "s1", config.ActiveAgentEdit{
+			ForAgent: "reviewer", Model: &model, Variant: &emptyVariant,
+		}).Return(workspace.ActiveAgent{
+			AgentID:      "reviewer",
+			ModelCfg:     config.SelectedModel{Provider: "acme", Model: "fancy"},
+			SessionModel: config.AgentModelPick{Model: config.SelectedModel{Provider: "acme", Model: "fancy"}},
+		}, nil)
+
+		m := newHandleDialogUI(t, ws)
+		m.dialog = dialog.NewOverlay(idOnlyDialog{id: dialog.AgentModelModelsID})
+		m.session = &session.Session{ID: "s1"}
+		m.agentReady = true
+		m.agentActiveKnown = true
+		m.agentActiveSession = "s1"
+		m.agentActive.AgentID = "reviewer"
+
+		cmd := m.handleDialogMsg(dialog.ActionSelectAgentModel{
+			AgentID:  "reviewer",
+			Provider: catwalk.Provider{ID: "acme"},
+			Model:    model,
+		})
+		require.NotNil(t, cmd)
+		require.Equal(t,
+			"Reviewer now runs Plain Model in this session tree. This session keeps its own model (Reset Session Model to follow it)",
+			agentModelInfoText(t, cmd()))
 	})
 
 	t.Run("variants open the variant picker instead of applying immediately", func(t *testing.T) {
@@ -1491,24 +1529,41 @@ func TestHandleDialogMsg_ActionSelectAgentModelVariant(t *testing.T) {
 	})
 	require.False(t, m.dialog.ContainsDialog(dialog.AgentModelVariantsID))
 	require.NotNil(t, cmd)
-	require.Equal(t, "Reviewer now runs Fancy Model (careful) for this session", agentModelInfoText(t, cmd()))
+	require.Equal(t, "Reviewer now runs Fancy Model (careful) in this session tree", agentModelInfoText(t, cmd()))
 }
 
-func TestHandleDialogMsg_ActionClearAgentModelOverrides(t *testing.T) {
+func TestHandleDialogMsg_ActionClearSessionModel(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
-	ws.EXPECT().AgentEditActive(gomock.Any(), "s1", config.ActiveAgentEdit{ClearModels: true}).
+	ws.EXPECT().AgentEditActive(gomock.Any(), "s1", config.ActiveAgentEdit{ClearSessionModel: true}).
 		Return(workspace.ActiveAgent{}, nil)
 
 	m := newHandleDialogUI(t, ws)
 	m.session = &session.Session{ID: "s1"}
 
-	cmd := m.handleDialogMsg(dialog.ActionClearAgentModelOverrides{})
+	cmd := m.handleDialogMsg(dialog.ActionClearSessionModel{})
 	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID))
 	require.NotNil(t, cmd)
-	require.Equal(t, "Model picks reset for this session", infoText(t, cmd()))
+	require.Equal(t, "Session model reset", infoText(t, cmd()))
+}
+
+func TestHandleDialogMsg_ActionClearAgentModels(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	ws := NewMockWorkspace(ctrl)
+	ws.EXPECT().AgentEditActive(gomock.Any(), "s1", config.ActiveAgentEdit{ClearAgentPicks: true}).
+		Return(workspace.ActiveAgent{}, nil)
+
+	m := newHandleDialogUI(t, ws)
+	m.session = &session.Session{ID: "s1"}
+
+	cmd := m.handleDialogMsg(dialog.ActionClearAgentModels{})
+	require.False(t, m.dialog.ContainsDialog(dialog.CommandsID))
+	require.NotNil(t, cmd)
+	require.Equal(t, "Agent model picks reset for this session tree", infoText(t, cmd()))
 }
 
 func TestHandleDialogMsg_ActionPermissionResponse(t *testing.T) {

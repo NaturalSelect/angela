@@ -39,7 +39,7 @@ func TestSwitchVariantRecordsItAndLeavesTrail(t *testing.T) {
 
 	sess, err := coord.sessions.Get(t.Context(), sessionID)
 	require.NoError(t, err)
-	picked := sess.ActiveAgent.AgentModels[config.AgentCoder].Variant
+	picked := sess.ActiveAgent.SessionModel.Variant
 	require.NotNil(t, picked, "an explicit switch must record a pick")
 	require.Equal(t, "deep", *picked)
 
@@ -94,7 +94,7 @@ func TestSwitchVariantBackToBaseline(t *testing.T) {
 
 	sess, err := coord.sessions.Get(t.Context(), sessionID)
 	require.NoError(t, err)
-	require.Empty(t, sess.ActiveAgent.AgentModels[config.AgentCoder].Variant)
+	require.Empty(t, sess.ActiveAgent.SessionModel.Variant)
 
 	agentCfg, err := coord.activeAgentFor(t.Context(), sessionID)
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestSwitchVariantRejectsUnknownNames(t *testing.T) {
 
 	sess, err := coord.sessions.Get(t.Context(), sessionID)
 	require.NoError(t, err)
-	require.Empty(t, sess.ActiveAgent.AgentModels[config.AgentCoder].Variant, "a rejected switch changes nothing")
+	require.Empty(t, sess.ActiveAgent.SessionModel.Variant, "a rejected switch changes nothing")
 
 	msgs, err := coord.messages.List(t.Context(), sessionID)
 	require.NoError(t, err)
@@ -225,7 +225,7 @@ func TestModelSwitchDropsStaleVariantPick(t *testing.T) {
 
 	sess, err := coord.sessions.Get(t.Context(), sessionID)
 	require.NoError(t, err)
-	pick := sess.ActiveAgent.AgentModels[config.AgentCoder]
+	pick := sess.ActiveAgent.SessionModel
 	require.Equal(t, "large-model", pick.Model.Model)
 	require.Nil(t, pick.Variant,
 		"a model switch must drop the stale pick rather than persist it")

@@ -310,8 +310,10 @@ func (s *service) Undo(ctx context.Context, sessionID, cutMessageID string) (Res
 	// Subagent sessions are not linked to their parent by a foreign
 	// key, so nothing deletes them on its own; Undo must do it, or
 	// they and their file history outlive the turn that created them.
+	// Deleting a session also deletes its descendants, so a nested
+	// one may already be gone by the time its entry comes up.
 	for _, childID := range p.childSessions {
-		if err := s.sessions.Delete(ctx, childID); err != nil {
+		if err := s.sessions.Delete(ctx, childID); err != nil && !errors.Is(err, session.ErrSessionNotFound) {
 			slog.Error("Failed to delete subagent session during undo", "session_id", childID, "error", err)
 		}
 	}

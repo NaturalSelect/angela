@@ -243,11 +243,16 @@ selects the model used by the built-in `ImageGenerate`/`ImageEdit` tools; it
 needs a provider of type `openai` or `openai-compat` that implements
 `/images/*`, has an `api_key` and is not disabled. With no `image` slot
 configured, Angela falls back to a provider named `openai` and its default
-image model. The tools are only registered in a terminal that supports Kitty
-graphics Unicode placeholders — auto-detected for kitty, Ghostty, and Rio,
-but not VS Code's integrated terminal or WezTerm. Override detection with
-`--kitty-placeholders`/`--kitty-placeholders=false` (per launch) or
-`options.tui.kitty_placeholders` (persistent). See
+image model. By default the tools are only registered in a terminal that
+supports Kitty graphics Unicode placeholders — auto-detected for kitty,
+Ghostty, and Rio, but not VS Code's integrated terminal or WezTerm. Override
+detection with `--kitty-placeholders`/`--kitty-placeholders=false` (per
+launch) or `options.tui.kitty_placeholders` (persistent). Set
+`options.enable_image_tools` to `true` (or pass `--enable-image-tools`) to
+register the tools in any terminal; where inline previews are unsupported no
+image is shown, and the original can be saved with the "Export Image"
+command. Set it to `false` (or pass `--enable-image-tools=false`) to turn the
+tools off. See
 [Internal Agents](../agents/#internal-agents) for how hidden agents work.
 
 ```jsonc
@@ -417,7 +422,7 @@ A rule's `mode` chooses how `pattern` is compared:
     "disable_metrics": false,
     "disable_provider_auto_update": false,
     "disable_default_providers": false,
-    "disable_image_tools": false,     // turns off ImageGenerate/ImageEdit
+    "enable_image_tools": true,         // unset = only with Kitty previews; true = any terminal; false = off
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
 
@@ -629,7 +634,7 @@ Some settings can also come from the environment or the command line.
 | `-y, --yolo`                          | Accepts every permission prompt. Dangerous.                              |
 | `--yolo-merge`                        | Lets yolo mode also approve the branch merge tool                        |
 | `--auto-accept-edits`                 | Accepts file edits and still asks about everything else                  |
-| `--disable-image-tools`               | Same as `options.disable_image_tools`                                    |
+| `--enable-image-tools[=false]`        | Same as `options.enable_image_tools`                                     |
 | `--kitty-placeholders[=false]`        | Same as `options.tui.kitty_placeholders`                                 |
 | `--sandbox`                           | Restricts Angela and its commands at the OS level                        |
 | `--sandbox-rw`, `--sandbox-ro`        | Extra read-write or read-only directories for `--sandbox`                |

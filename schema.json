@@ -715,10 +715,9 @@
             3
           ]
         },
-        "disable_image_tools": {
+        "enable_image_tools": {
           "type": "boolean",
-          "description": "Disable the built-in image generation and editing tools",
-          "default": false
+          "description": "Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported, images can still be saved with Export Image); false disables them"
         }
       },
       "additionalProperties": false,
@@ -1095,7 +1094,7 @@
         },
         "kitty_placeholders": {
           "type": "boolean",
-          "description": "Override detection of Kitty graphics Unicode placeholder support, needed for inline images and the ImageGenerate/ImageEdit tools; unset auto-detects"
+          "description": "Override detection of Kitty graphics Unicode placeholder support, needed for inline images and (unless options.enable_image_tools is true) the ImageGenerate/ImageEdit tools; unset auto-detects"
         }
       },
       "additionalProperties": false,

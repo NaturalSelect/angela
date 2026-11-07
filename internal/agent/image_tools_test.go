@@ -56,8 +56,10 @@ func newImageReadyCoordinator(t *testing.T) *coordinator {
 
 // TestBuildToolsImageToolsGating pins every precondition ImageGenerate
 // and ImageEdit share: both are registered only when every one of
-// depth, interactivity, client image support, the images store,
-// config's disable switches, and a usable image-model provider holds.
+// depth, interactivity, the images store, a usable image-model
+// provider, and either client image support or an explicit
+// enable_image_tools=true holds. enable_image_tools=false turns both
+// tools off even when everything else holds.
 // Flipping any single one must drop both tools, and appending them
 // ahead of the allowed_tools/disabled_tools filter (rather than
 // special-casing it) must still let that filter exclude them.
@@ -103,15 +105,45 @@ func TestBuildToolsImageToolsGating(t *testing.T) {
 			},
 		},
 		{
-			name: "disabled via options.disable_image_tools",
+			name: "disabled via options.enable_image_tools=false",
 			mutate: func(t *testing.T, coord *coordinator) {
-				coord.cfg.Config().Options.DisableImageTools = true
+				coord.cfg.Config().Options.EnableImageTools = new(false)
 			},
 		},
 		{
-			name: "disabled via --disable-image-tools runtime override",
+			name: "disabled via --enable-image-tools=false runtime override",
 			mutate: func(t *testing.T, coord *coordinator) {
-				coord.cfg.Overrides().DisableImageTools = true
+				coord.cfg.Overrides().EnableImageTools = new(false)
+			},
+		},
+		{
+			name: "--enable-image-tools=false override wins over options.enable_image_tools=true",
+			mutate: func(t *testing.T, coord *coordinator) {
+				coord.cfg.Config().Options.EnableImageTools = new(true)
+				coord.cfg.Overrides().EnableImageTools = new(false)
+			},
+		},
+		{
+			name: "options.enable_image_tools=true registers tools without client image support",
+			mutate: func(t *testing.T, coord *coordinator) {
+				coord.imageSupport = nil
+				coord.cfg.Config().Options.EnableImageTools = new(true)
+			},
+			wantOK: true,
+		},
+		{
+			name: "--enable-image-tools override registers tools when client reports no support",
+			mutate: func(t *testing.T, coord *coordinator) {
+				coord.imageSupport = func() bool { return false }
+				coord.cfg.Overrides().EnableImageTools = new(true)
+			},
+			wantOK: true,
+		},
+		{
+			name: "options.enable_image_tools=true does not bypass the interactive gate",
+			mutate: func(t *testing.T, coord *coordinator) {
+				coord.interactive = false
+				coord.cfg.Config().Options.EnableImageTools = new(true)
 			},
 		},
 		{

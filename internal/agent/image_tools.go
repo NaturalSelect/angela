@@ -123,6 +123,7 @@ func (c *coordinator) newImageClient(ctx context.Context) (imagegen.Client, erro
 		Model:      model.Model,
 		BaseURL:    baseURL,
 		APIKey:     apiKey,
+		UserAgent:  userAgent,
 		Headers:    maps.Clone(providerCfg.ExtraHeaders),
 		Timeout:    c.cfg.Config().Tools.Image.GetTimeout(),
 	}), nil

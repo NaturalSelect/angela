@@ -8,6 +8,7 @@ import (
 	"image"
 	_ "image/jpeg" // register JPEG format for image.Decode
 	_ "image/png"  // register PNG format for image.Decode
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
@@ -185,8 +186,7 @@ func (t *ImageToolMessageItem) ImageTransmitCmd(width int) tea.Cmd {
 // at for the given width, from the image's own aspect ratio in result's
 // metadata.
 func (t *ImageToolMessageItem) gridSize(width int, result *message.ToolResult) (cols, rows int) {
-	var meta tools.ImageResponseMetadata
-	_ = json.Unmarshal([]byte(result.Metadata), &meta)
+	meta, _ := parseImageMetadata(result)
 
 	cols = max(1, min(width-toolBodyLeftPaddingTotal, imageGridMaxCols))
 
@@ -210,6 +210,42 @@ func gridKey(cols, rows int) string {
 	return fmt.Sprintf("%dx%d", cols, rows)
 }
 
+// parseImageMetadata decodes the ImageResponseMetadata attached to an image
+// tool result. The boolean reports whether it carried an image ID, which is
+// what distinguishes a real image tool result from one with missing or
+// malformed metadata.
+func parseImageMetadata(result *message.ToolResult) (tools.ImageResponseMetadata, bool) {
+	var meta tools.ImageResponseMetadata
+	if err := json.Unmarshal([]byte(result.Metadata), &meta); err != nil {
+		return tools.ImageResponseMetadata{}, false
+	}
+	return meta, meta.ImageID != ""
+}
+
+// imageToolFallbackContent renders the plain-text summary shown when no
+// inline preview is available: the image ID, its dimensions, and a hint to
+// save it with the Export Image command. Results without usable metadata
+// fall back to the generic loaded-image line.
+func imageToolFallbackContent(sty *styles.Styles, result *message.ToolResult) string {
+	meta, ok := parseImageMetadata(result)
+	if !ok {
+		return toolOutputImageContent(sty, result.Data, result.MIMEType)
+	}
+
+	size := ""
+	if meta.Width > 0 && meta.Height > 0 {
+		size = fmt.Sprintf("%dx%d", meta.Width, meta.Height)
+	}
+
+	return sty.Tool.Body.Render(fmt.Sprintf(
+		"%s %s %s %s",
+		sty.Tool.ResourceLoadedText.Render("Image"),
+		sty.Tool.ResourceLoadedIndicator.Render(styles.ArrowRightIcon),
+		sty.Tool.ResourceName.Render(meta.ImageID),
+		sty.Tool.ResourceSize.Render(strings.TrimSpace(size+` · use "Export Image" to save`)),
+	))
+}
+
 // renderBody draws the tool's successful output: the Kitty placeholder
 // grid once the image has been transmitted at the current size, or a
 // plain-text summary otherwise (no Kitty support, or a (re)transmit
@@ -226,7 +262,7 @@ func (t *ImageToolMessageItem) renderBody(sty *styles.Styles, result *message.To
 		return sty.Tool.Body.Render(fimage.KittyPlaceholders(t.ID(), cols, rows))
 	}
 
-	return toolOutputImageContent(sty, result.Data, result.MIMEType)
+	return imageToolFallbackContent(sty, result)
 }
 
 // imageToolHeaderParams captures the one field ImageGenerateParams and

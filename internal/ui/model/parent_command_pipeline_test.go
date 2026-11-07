@@ -31,7 +31,12 @@ func newParentPaletteUI(t *testing.T, ws *MockWorkspace) *UI {
 	m.sessionIsBranch = true
 	m.sessionStack = nil
 
-	cmdsDialog, err := dialog.NewCommands(m.com, m.session.ID, true, false, false, m.viewingBranch(), m.hasParentSession(), nil, nil, nil)
+	cmdsDialog, err := dialog.NewCommands(m.com, dialog.CommandsSpec{
+		SessionID:  m.session.ID,
+		HasSession: true,
+		InBranch:   m.viewingBranch(),
+		HasParent:  m.hasParentSession(),
+	})
 	require.NoError(t, err)
 	m.dialog = dialog.NewOverlay(cmdsDialog)
 

@@ -127,9 +127,13 @@ type ActionSelectAgentModelVariant struct {
 	Variant string
 }
 
-// ActionClearAgentModelOverrides drops every model and preset pick the
-// current session holds, returning every agent to its configured model.
-type ActionClearAgentModelOverrides struct{}
+// ActionClearSessionModel drops the current session's own model, preset
+// and thinking pick, so it follows the layers below it again.
+type ActionClearSessionModel struct{}
+
+// ActionClearAgentModels drops every per-agent pick the current session
+// tree holds, returning every agent to its configured model.
+type ActionClearAgentModels struct{}
 
 // Messages for commands
 type (
@@ -195,6 +199,12 @@ type (
 		Image      images.Image
 		WorkingDir string
 	}
+	// ActionOpenImage asks for a generated image's full-size original to be
+	// shown in VS Code. An empty ImageID means the user picked the command
+	// from the palette but has not chosen an image yet.
+	ActionOpenImage struct {
+		ImageID string
+	}
 	// ActionExportReport asks for an agent report to be written to disk as
 	// Markdown. A zero Report means the user picked the command from the
 	// palette but has not chosen one yet. The report travels in the action
@@ -210,6 +220,14 @@ type (
 	ActionSelectExportReport struct {
 		Report     tools.Report
 		WorkingDir string
+	}
+	// ActionOpenReport asks for an agent report to be shown: in VS Code
+	// when the TUI runs in its terminal, in a Viewer dialog otherwise. A
+	// zero Report means the user picked the command from the palette but
+	// has not chosen one yet. The report travels in the action because it
+	// was already loaded to fill the picker.
+	ActionOpenReport struct {
+		Report tools.Report
 	}
 	// ActionImportReport asks for an agent report to be read from a file
 	// into the current session. An empty Path means the user picked the

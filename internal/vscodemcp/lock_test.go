@@ -1,4 +1,4 @@
-package editorapproval
+package vscodemcp
 
 import (
 	"encoding/json"
@@ -9,7 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func writeLock(t *testing.T, dir, name string, lock lockFile) {
+// writeLock is kept local rather than shared from vscodemcptest: that
+// package imports this one, so using it from here would be an import
+// cycle.
+func writeLock(t *testing.T, dir, name string, lock LockFile) {
 	t.Helper()
 	data, err := json.Marshal(lock)
 	require.NoError(t, err)
@@ -30,9 +33,9 @@ func TestLockFileJSON_MatchesUpstreamShape(t *testing.T) {
 		"workspaceFolders": ["/home/user/project"],
 		"isTrusted": true
 	}`
-	var lock lockFile
+	var lock LockFile
 	require.NoError(t, json.Unmarshal([]byte(raw), &lock))
-	require.Equal(t, lockFile{
+	require.Equal(t, LockFile{
 		SocketPath:       "/tmp/mcp.sock",
 		Scheme:           "unix",
 		Headers:          map[string]string{"Authorization": "Nonce abc-123"},
@@ -46,7 +49,7 @@ func TestLockFileJSON_MatchesUpstreamShape(t *testing.T) {
 
 func TestFindLock_StalePIDSkipped(t *testing.T) {
 	dir, work := t.TempDir(), t.TempDir()
-	writeLock(t, dir, "a.lock", lockFile{
+	writeLock(t, dir, "a.lock", LockFile{
 		SocketPath: "/tmp/sock", Scheme: "unix",
 		PID:              999999999,
 		WorkspaceFolders: []string{work},
@@ -59,7 +62,7 @@ func TestFindLock_StalePIDSkipped(t *testing.T) {
 
 func TestFindLock_WorkspaceMismatchSkipped(t *testing.T) {
 	dir, work, other := t.TempDir(), t.TempDir(), t.TempDir()
-	writeLock(t, dir, "a.lock", lockFile{
+	writeLock(t, dir, "a.lock", LockFile{
 		SocketPath: "/tmp/sock", Scheme: "unix",
 		PID:              os.Getpid(),
 		WorkspaceFolders: []string{other},
@@ -72,7 +75,7 @@ func TestFindLock_WorkspaceMismatchSkipped(t *testing.T) {
 
 func TestFindLock_UnsupportedSchemeSkipped(t *testing.T) {
 	dir, work := t.TempDir(), t.TempDir()
-	writeLock(t, dir, "a.lock", lockFile{
+	writeLock(t, dir, "a.lock", LockFile{
 		SocketPath: "/tmp/sock", Scheme: "tcp",
 		PID:              os.Getpid(),
 		WorkspaceFolders: []string{work},
@@ -87,7 +90,7 @@ func TestFindLock_NestedWorkingDirMatched(t *testing.T) {
 	dir, work := t.TempDir(), t.TempDir()
 	nested := filepath.Join(work, "sub", "dir")
 	require.NoError(t, os.MkdirAll(nested, 0o755))
-	writeLock(t, dir, "a.lock", lockFile{
+	writeLock(t, dir, "a.lock", LockFile{
 		SocketPath: "/tmp/sock", Scheme: "unix",
 		PID:              os.Getpid(),
 		WorkspaceFolders: []string{work},
@@ -101,13 +104,13 @@ func TestFindLock_NestedWorkingDirMatched(t *testing.T) {
 
 func TestFindLock_NewestWins(t *testing.T) {
 	dir, work := t.TempDir(), t.TempDir()
-	writeLock(t, dir, "old.lock", lockFile{
+	writeLock(t, dir, "old.lock", LockFile{
 		SocketPath: "old", Scheme: "unix",
 		PID:              os.Getpid(),
 		WorkspaceFolders: []string{work},
 		Timestamp:        1,
 	})
-	writeLock(t, dir, "new.lock", lockFile{
+	writeLock(t, dir, "new.lock", LockFile{
 		SocketPath: "new", Scheme: "unix",
 		PID:              os.Getpid(),
 		WorkspaceFolders: []string{work},
@@ -122,7 +125,7 @@ func TestFindLock_NewestWins(t *testing.T) {
 func TestFindLock_MalformedJSONSkipped(t *testing.T) {
 	dir, work := t.TempDir(), t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.lock"), []byte("{not json"), 0o600))
-	writeLock(t, dir, "good.lock", lockFile{
+	writeLock(t, dir, "good.lock", LockFile{
 		SocketPath: "good", Scheme: "unix",
 		PID:              os.Getpid(),
 		WorkspaceFolders: []string{work},

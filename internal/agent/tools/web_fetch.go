@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -26,8 +25,8 @@ var webFetchDescriptionTpl = template.Must(
 // NewWebFetchTool creates a web fetch tool. scratchDir is the root where
 // large pages get saved for grep/read; each session gets its own
 // subdirectory under it, created on first use, so cleanup can discard one
-// session's pages without touching a concurrent session's. Session
-// directories left untouched for a day are pruned on the next large save.
+// session's pages without touching a concurrent session's. Nothing prunes
+// them automatically; `angela vacuum` deletes the old ones.
 func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 	if client == nil {
 		client = browserhttp.NewClient(browserhttp.Options{})
@@ -55,9 +54,6 @@ func NewWebFetchTool(scratchDir string, client *http.Client) fantasy.AgentTool {
 			var result strings.Builder
 
 			if hasLargeContent {
-				if err := PruneSessionScratch(scratchDir, SessionScratchRetention); err != nil {
-					slog.Warn("Failed to prune old web_fetch pages", "error", err)
-				}
 				sessionScratchDir, err := SessionScratchDir(scratchDir, sessionID)
 				if err != nil {
 					return Fail(err.Error())

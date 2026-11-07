@@ -77,9 +77,10 @@ func TestActiveAgentCloneSharesNothing(t *testing.T) {
 				Servers: map[string][]string{"github": {"create_issue"}},
 			},
 		},
-		Model:       SelectedModel{Provider: "openai", Model: "gpt-4"},
-		VariantPick: &pick,
-		AgentModels: map[string]AgentModelPick{
+		Model:        SelectedModel{Provider: "openai", Model: "gpt-4"},
+		VariantPick:  &pick,
+		SessionModel: AgentModelPick{Model: SelectedModel{Provider: "openai", Model: "gpt-4"}, Variant: &pick},
+		AgentPicks: map[string]AgentModelPick{
 			"coder": {Model: SelectedModel{Provider: "openai", Model: "gpt-4"}, Variant: &pick},
 		},
 	}
@@ -99,8 +100,9 @@ func TestActiveAgentCloneSharesNothing(t *testing.T) {
 
 	*clone.VariantPick = "high"
 
-	clone.AgentModels["explore"] = AgentModelPick{Model: SelectedModel{Provider: "groq", Model: "llama"}}
-	*clone.AgentModels["coder"].Variant = "high"
+	clone.AgentPicks["explore"] = AgentModelPick{Model: SelectedModel{Provider: "groq", Model: "llama"}}
+	*clone.AgentPicks["coder"].Variant = "high"
+	*clone.SessionModel.Variant = "high"
 
 	// Nothing above may be visible through the original.
 	require.True(t, *orig.Agent.Disabled, "Agent.Disabled leaked")
@@ -114,8 +116,9 @@ func TestActiveAgentCloneSharesNothing(t *testing.T) {
 	require.NotContains(t, orig.Agent.AllowedMCP.Servers, "gitlab", "AllowedMCP.Servers leaked")
 
 	require.Equal(t, "low", *orig.VariantPick, "VariantPick leaked")
-	require.NotContains(t, orig.AgentModels, "explore", "AgentModels leaked")
-	require.Equal(t, "low", *orig.AgentModels["coder"].Variant, "AgentModels variant leaked")
+	require.NotContains(t, orig.AgentPicks, "explore", "AgentPicks leaked")
+	require.Equal(t, "low", *orig.AgentPicks["coder"].Variant, "AgentPicks variant leaked")
+	require.Equal(t, "low", *orig.SessionModel.Variant, "SessionModel variant leaked")
 }
 
 // TestProviderModelCloneSharesNothing pins the same isolation contract

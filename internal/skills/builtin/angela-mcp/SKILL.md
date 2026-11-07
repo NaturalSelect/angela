@@ -98,7 +98,8 @@ text. They are governed by `allowed_tools` and `options.disabled_tools`, not
 
 When an MCP tool returns an image or other media and the model supports
 images, Angela also saves the payload under the data directory in `mcp-media/`
-(files older than 24 hours are pruned) and appends "The file is saved at
+(Angela never deletes them on its own; `angela vacuum` removes the old ones)
+and appends "The file is saved at
 <path>." to the tool output. A model without image support gets an error
 instead.
 

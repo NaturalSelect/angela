@@ -349,6 +349,55 @@ func TestDeletedSessionDoesNotLeaveItsThinkingClockBehind(t *testing.T) {
 	require.NotContains(t, impl.thinkingStartedAt, created.ID)
 }
 
+func TestDeleteRemovesTheWholeSubtree(t *testing.T) {
+	sessions := newThinkingTestService(t)
+
+	parent, err := sessions.Create(t.Context(), "parent")
+	require.NoError(t, err)
+	other, err := sessions.Create(t.Context(), "other")
+	require.NoError(t, err)
+	child, err := sessions.CreateTaskSession(t.Context(), "call-1", parent.ID, "child")
+	require.NoError(t, err)
+	sibling, err := sessions.CreateTaskSession(t.Context(), "call-2", parent.ID, "sibling")
+	require.NoError(t, err)
+	grandchild, err := sessions.CreateTaskSession(t.Context(), "call-3", child.ID, "grandchild")
+	require.NoError(t, err)
+	otherChild, err := sessions.CreateTaskSession(t.Context(), "call-4", other.ID, "other child")
+	require.NoError(t, err)
+
+	events := sessions.Subscribe(t.Context())
+	require.NoError(t, sessions.Delete(t.Context(), parent.ID))
+
+	for _, gone := range []Session{parent, child, sibling, grandchild} {
+		_, err := sessions.Get(t.Context(), gone.ID)
+		require.ErrorIs(t, err, ErrSessionNotFound, gone.Title)
+	}
+	for _, kept := range []Session{other, otherChild} {
+		_, err := sessions.Get(t.Context(), kept.ID)
+		require.NoError(t, err, kept.Title)
+	}
+
+	var deleted []string
+	for len(deleted) < 4 {
+		select {
+		case ev := <-events:
+			require.Equal(t, pubsub.DeletedEvent, ev.Type)
+			deleted = append(deleted, ev.Payload.ID)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("only %d deleted events were published", len(deleted))
+		}
+	}
+	require.ElementsMatch(t, []string{parent.ID, child.ID, sibling.ID, grandchild.ID}, deleted)
+	require.Equal(t, parent.ID, deleted[len(deleted)-1])
+}
+
+func TestDeleteReportsAMissingSession(t *testing.T) {
+	sessions := newThinkingTestService(t)
+
+	err := sessions.Delete(t.Context(), "missing")
+	require.ErrorIs(t, err, ErrSessionNotFound)
+}
+
 func TestListChildrenReturnsOnlyDirectChildrenInCreationOrder(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Cleanup(func() {

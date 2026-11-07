@@ -48,6 +48,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/NaturalSelect/angela/internal/version"
+	"github.com/NaturalSelect/angela/internal/vscodemcp"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
 )
@@ -224,6 +225,10 @@ type UI struct {
 
 	// caps hold different terminal capabilities that we query for.
 	caps common.Capabilities
+
+	// openInVSCode shows a file in VS Code. Nil means a zero
+	// [vscodemcp.Client]'s Open; tests stub it.
+	openInVSCode func(context.Context, vscodemcp.OpenRequest) error
 
 	// imageSupportReported tracks whether this session has already
 	// told the workspace the client can render images (Kitty graphics
@@ -510,15 +515,15 @@ func (m *UI) loadInitialSession() tea.Cmd {
 		// Only load if we're in landing state (i.e., fully configured)
 		return nil
 	case m.initialSessionID != "":
-		return m.loadSession(m.initialSessionID)
+		return tea.Batch(m.showSessionLoading(), m.loadSession(m.initialSessionID))
 	case m.continueLastSession:
-		return func() tea.Msg {
+		return tea.Batch(m.showSessionLoading(), func() tea.Msg {
 			sessions, err := m.com.Workspace.ListSessions(context.Background())
 			if err != nil || len(sessions) == 0 {
-				return nil
+				return pendingDoneMsg{info: sessionLoadingInfo}
 			}
 			return m.loadSession(sessions[0].ID)()
-		}
+		})
 	default:
 		return nil
 	}
@@ -702,27 +707,37 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionMessagesMsg:
 		cmds = append(cmds, m.handleSessionMessages(msg)...)
 	case undoPreviewMsg:
+		m.clearPending(undoPreviewingInfo)
 		// Drop a preview for a session the user has already navigated
 		// away from while the fetch was in flight.
 		if msg.sessionID != m.currentSessionID() {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewUndo(m.com, msg.sessionID, msg.preview))
-	case exportImagesLoadedMsg:
+	case sessionImagesLoadedMsg:
+		m.clearPending(imagesListingInfo)
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
 		if msg.sessionID != m.currentSessionID() {
 			break
 		}
-		m.dialog.OpenDialog(dialog.NewImages(m.com, msg.images, msg.workingDir))
-	case exportReportsLoadedMsg:
+		m.dialog.OpenDialog(dialog.NewImages(m.com, msg.images, msg.workingDir, msg.purpose))
+	case sessionReportsLoadedMsg:
+		m.clearPending(reportsListingInfo)
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
 		if msg.sessionID != m.currentSessionID() {
 			break
 		}
-		m.dialog.OpenDialog(dialog.NewReports(m.com, msg.reports, msg.workingDir))
+		m.dialog.OpenDialog(dialog.NewReports(m.com, msg.reports, msg.workingDir, msg.purpose))
+	case reportOpenFallbackMsg:
+		m.clearPending(openingReportInfo)
+		m.openReportViewer(msg.report)
+		cmds = append(cmds, util.ReportWarn("Could not open the report in VS Code, showing it here: "+msg.err.Error()))
+	case pendingDoneMsg:
+		m.clearPending(msg.info)
 	case sessionsListedMsg:
+		m.clearPending(sessionsListingInfo)
 		// A second request may have opened the dialog while this one was
 		// in flight.
 		if m.dialog.ContainsDialog(dialog.SessionsID) {
@@ -730,6 +745,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.dialog.OpenDialog(dialog.NewSessions(m.com, m.currentSessionID(), msg.sessions))
 	case subSessionsLoadedMsg:
+		m.clearPending(subSessionsListingInfo)
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight, and one that arrives
 		// after the list was opened by a second request.
@@ -744,6 +760,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case exportProfilesLoadedMsg:
 		m.dialog.OpenDialog(dialog.NewProfiles(m.com, profiling.Profiles, msg.workingDir))
 	case tpsComputedMsg:
+		m.clearPending(tpsComputingInfo)
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
 		if msg.sessionID != m.currentSessionID() {
@@ -755,6 +772,7 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reloadDoneMsg:
 		cmds = append(cmds, m.handleReloadDone(msg)...)
 	case cacheComputedMsg:
+		m.clearPending(cacheComputingInfo)
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
 		if msg.sessionID != m.currentSessionID() {
@@ -1146,22 +1164,24 @@ type undoPreviewMsg struct {
 	preview   undo.Preview
 }
 
-// exportImagesLoadedMsg carries a session's generated images, fetched
-// off the Update goroutine, so the "Export Image" picker dialog can
-// be opened with them once they arrive.
-type exportImagesLoadedMsg struct {
+// sessionImagesLoadedMsg carries a session's generated images, fetched
+// off the Update goroutine, so the image picker dialog can be opened
+// with them once they arrive. The zero purpose is an export.
+type sessionImagesLoadedMsg struct {
 	sessionID  string
 	images     []images.Image
 	workingDir string
+	purpose    dialog.ImagesPurpose
 }
 
-// exportReportsLoadedMsg carries a session's agent reports, collected
-// off the Update goroutine, so the "Export Report" picker dialog can be
-// opened with them once they arrive.
-type exportReportsLoadedMsg struct {
+// sessionReportsLoadedMsg carries a session's agent reports, collected
+// off the Update goroutine, so the report picker dialog can be opened
+// with them once they arrive. The zero purpose is an export.
+type sessionReportsLoadedMsg struct {
 	sessionID  string
 	reports    []agenttools.Report
 	workingDir string
+	purpose    dialog.ReportsPurpose
 }
 
 // exportProfilesLoadedMsg carries the working directory the "Export Profile"
@@ -1270,7 +1290,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		return m.handleSummarize(msg)
 	case dialog.ActionReload:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, m.reloadCmd())
+		cmds = append(cmds, m.showPending(reloadingInfo), m.reloadCmd())
 	case dialog.ActionGenerateTitle:
 		cmds = append(cmds, m.generateSessionTitle(msg.SessionID))
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -1282,10 +1302,14 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		return m.handleExportImage(msg)
 	case dialog.ActionSelectExportImage:
 		return m.handleSelectExportImage(msg)
+	case dialog.ActionOpenImage:
+		return m.handleOpenImage(msg)
 	case dialog.ActionExportReport:
 		return m.handleExportReport(msg)
 	case dialog.ActionSelectExportReport:
 		return m.handleSelectExportReport(msg)
+	case dialog.ActionOpenReport:
+		return m.handleOpenReport(msg)
 	case dialog.ActionImportReport:
 		return m.handleImportReport(msg)
 	case dialog.ActionExportProfile:
@@ -1343,12 +1367,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionShowTPS:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if cmd := m.showTPS(); cmd != nil {
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, m.showPending(tpsComputingInfo), cmd)
 		}
 	case dialog.ActionShowCache:
 		m.dialog.CloseDialog(dialog.CommandsID)
 		if cmd := m.showCache(); cmd != nil {
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, m.showPending(cacheComputingInfo), cmd)
 		}
 	case dialog.ActionSuspend:
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -1367,10 +1391,10 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, tea.Quit)
 	case dialog.ActionEnableDockerMCP:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, m.enableDockerMCP)
+		cmds = append(cmds, m.showPending(dockerMCPStartingInfo), m.enableDockerMCP)
 	case dialog.ActionDisableDockerMCP:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, m.disableDockerMCP)
+		cmds = append(cmds, m.showPending(dockerMCPStoppingInfo), m.disableDockerMCP)
 	case dialog.ActionEnableYoloSkipMerge:
 		m.com.Workspace.PermissionSetYoloSkipMerge(true)
 		cmds = append(cmds, util.CmdHandler(util.NewInfoMsg("Yolo mode will skip merge approval")))
@@ -1386,7 +1410,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionEnterSandbox:
 		m.dialog.CloseDialog(dialog.SandboxID)
 		cfg := msg.Config
-		cmds = append(cmds, func() tea.Msg { return m.enterSandbox(cfg) })
+		cmds = append(cmds, m.showPending(sandboxEnteringInfo), func() tea.Msg { return m.enterSandbox(cfg) })
 	case dialog.ActionInitializeProject:
 		if m.isAgentBusy() {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before summarizing session..."))
@@ -1430,9 +1454,12 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 	case dialog.ActionSelectAgentModelVariant:
 		m.dialog.CloseDialog(dialog.AgentModelVariantsID)
 		cmds = append(cmds, m.applyAgentModelCmd(msg.AgentID, msg.Model, msg.Variant))
-	case dialog.ActionClearAgentModelOverrides:
+	case dialog.ActionClearSessionModel:
 		m.dialog.CloseDialog(dialog.CommandsID)
-		cmds = append(cmds, m.clearAgentModelsCmd())
+		cmds = append(cmds, m.clearSessionModelCmd())
+	case dialog.ActionClearAgentModels:
+		m.dialog.CloseDialog(dialog.CommandsID)
+		cmds = append(cmds, m.clearAgentPicksCmd())
 	case dialog.ActionPermissionResponse:
 		return m.handlePermissionResponse(msg)
 

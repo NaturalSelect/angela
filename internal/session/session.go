@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -213,29 +214,46 @@ func (s *service) Delete(ctx context.Context, id string) error {
 
 	dbSession, err := qtx.GetSessionByID(ctx, id)
 	if err != nil {
-		return err
+		return notFound(err, id)
 	}
-	if err = qtx.DeleteSessionMessages(ctx, dbSession.ID); err != nil {
-		return fmt.Errorf("deleting session messages: %w", err)
+
+	// NOTE: Subagent sessions point at their parent only through
+	// parent_session_id, with no foreign key, so the database never
+	// removes them. The whole subtree goes in the same transaction.
+	doomed := []db.Session{dbSession}
+	for i := 0; i < len(doomed); i++ {
+		children, err := qtx.ListChildSessions(ctx, sql.NullString{String: doomed[i].ID, Valid: true})
+		if err != nil {
+			return fmt.Errorf("listing child sessions: %w", err)
+		}
+		doomed = append(doomed, children...)
 	}
-	if err = qtx.DeleteSessionFiles(ctx, dbSession.ID); err != nil {
-		return fmt.Errorf("deleting session files: %w", err)
-	}
-	if err = qtx.DeleteSession(ctx, dbSession.ID); err != nil {
-		return fmt.Errorf("deleting session: %w", err)
+	for _, row := range doomed {
+		if err = qtx.DeleteSessionMessages(ctx, row.ID); err != nil {
+			return fmt.Errorf("deleting session messages: %w", err)
+		}
+		if err = qtx.DeleteSessionFiles(ctx, row.ID); err != nil {
+			return fmt.Errorf("deleting session files: %w", err)
+		}
+		if err = qtx.DeleteSession(ctx, row.ID); err != nil {
+			return fmt.Errorf("deleting session: %w", err)
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
-	// The row is gone, so what it ran is moot: subscribers need the
-	// identity of the session that went away, and refusing to announce
-	// a deletion because the deleted row held a bad blob would leave
-	// every listener holding it forever.
-	session := s.sessionFromRow(dbSession)
-	s.clearEstimatedUsageState(dbSession.ID)
-	s.clearThinkingState(dbSession.ID)
-	s.Publish(pubsub.DeletedEvent, session)
+	// The rows are gone, so what they ran is moot: subscribers need the
+	// identity of each session that went away, and refusing to announce
+	// a deletion because a deleted row held a bad blob would leave
+	// every listener holding it forever. Descendants are announced
+	// first so the requested session is the last to go.
+	for _, row := range slices.Backward(doomed) {
+		session := s.sessionFromRow(row)
+		s.clearEstimatedUsageState(row.ID)
+		s.clearThinkingState(row.ID)
+		s.Publish(pubsub.DeletedEvent, session)
+	}
 	event.SessionDeleted()
 	return nil
 }

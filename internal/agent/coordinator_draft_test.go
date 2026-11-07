@@ -81,7 +81,7 @@ func TestAdoptDraftCopiesThePickOntoANewSession(t *testing.T) {
 
 	record, err := coord.sessions.Get(t.Context(), sess.ID)
 	require.NoError(t, err)
-	adopted := record.ActiveAgent.AgentModels[config.AgentCoder].Variant
+	adopted := record.ActiveAgent.SessionModel.Variant
 	require.NotNil(t, adopted,
 		"the adoption must be durable, not merely land in the in-memory cache")
 	require.Equal(t, "deep", *adopted)

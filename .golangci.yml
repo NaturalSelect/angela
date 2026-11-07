@@ -41,6 +41,15 @@ linters:
           deny:
             - pkg: github.com/caelis-labs/acp-go-sdk
               desc: only internal/acp/caelis may import the ACP SDK
+        ui-boundary:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/internal/ui/**"
+            - "!**/internal/cmd/**"
+          deny:
+            - pkg: github.com/NaturalSelect/angela/internal/ui
+              desc: only internal/ui and internal/cmd may import the TUI; core packages must stay UI-free
   exclusions:
     generated: lax
     presets:

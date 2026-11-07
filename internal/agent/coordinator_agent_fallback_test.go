@@ -34,8 +34,8 @@ func TestFallbackSessionKeepsThePicksItHolds(t *testing.T) {
 	active, err := coord.activeAgentFor(t.Context(), parentID)
 	require.NoError(t, err)
 	require.Equal(t, config.AgentCoder, active.Agent.ID)
-	require.Contains(t, active.AgentModels, config.AgentExplore)
-	require.Contains(t, active.AgentModels, testReviewerAgent)
+	require.Contains(t, active.AgentPicks, config.AgentExplore)
+	require.Contains(t, active.AgentPicks, testReviewerAgent)
 
 	resolved, err := coord.resolveSubagent(t.Context(), config.AgentExplore, childID)
 	require.NoError(t, err)
@@ -61,9 +61,9 @@ func TestEditingAFallbackSessionKeepsThePicksItHolds(t *testing.T) {
 
 			stored, err := coord.sessions.Get(t.Context(), parentID)
 			require.NoError(t, err)
-			require.Contains(t, stored.ActiveAgent.AgentModels, config.AgentExplore,
+			require.Contains(t, stored.ActiveAgent.AgentPicks, config.AgentExplore,
 				"the pick for an agent that is still configured must survive the edit")
-			require.Contains(t, stored.ActiveAgent.AgentModels, testReviewerAgent,
+			require.Contains(t, stored.ActiveAgent.AgentPicks, testReviewerAgent,
 				"the pick for the agent that left must survive too, for when it returns")
 		})
 	}

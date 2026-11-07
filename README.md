@@ -1,6 +1,10 @@
 # Angela
 
 <p align="center">
+    <img src="docs/assets/angela.png" width="280" alt="Angela">
+</p>
+
+<p align="center">
     <a href="https://github.com/NaturalSelect/angela/releases"><img src="https://img.shields.io/github/release/NaturalSelect/angela" alt="Latest Release"></a>
     <a href="https://github.com/NaturalSelect/angela/actions"><img src="https://github.com/NaturalSelect/angela/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
 </p>
@@ -30,6 +34,31 @@ From [GitHub Releases](https://github.com/NaturalSelect/angela/releases)
 ```bash
 go install github.com/NaturalSelect/angela@latest
 ```
+
+### Upgrading
+
+```bash
+angela upgrade                # latest stable release
+angela upgrade --pre-release  # also consider pre-releases (release candidates)
+```
+
+`angela upgrade` downloads the release from GitHub and verifies the cosign
+signature on the release's `checksums.txt`, which must come from the release
+workflow for that tag. It then checks the download against that file and
+replaces the running executable. Verification needs access to the Sigstore
+trust root at `tuf-repo-cdn.sigstore.dev`, and a release without a valid
+signature is refused.
+
+- **No downgrades.** Angela only moves to a strictly newer version. A
+  pre-release build is never rolled back to an older stable release. It moves
+  on to its own stable release once that is published, or to a newer
+  pre-release when you pass `--pre-release`.
+- **Package managers.** If `dpkg`, `rpm`, `apk` or `pacman` owns the
+  executable, the release's package file is installed with that tool, through
+  `sudo` when you are not root, so the package database stays correct.
+- **Go installs and local builds.** A build without a release version, such
+  as one from `go install` or `go build`, cannot be compared with releases and
+  is not upgraded. Install a release instead, or run `go install` again.
 
 ## Getting Started
 
@@ -71,11 +100,13 @@ See the [full provider list](./docs/config/) for all supported variables.
 | `angela login` / `logout`    | Sign in to or out of a platform (`copilot`)              |
 | `angela logs`                | Show the log for the current project                     |
 | `angela stats`               | Show token usage, cost, and activity statistics          |
+| `angela vacuum` (`gc`)       | Compact the database and delete temporary files older than an hour (`--dry-run` previews) |
 | `angela dirs`                | Show config directories                                  |
 | `angela projects`            | List known project directories                           |
 | `angela pprof ...`           | Export runtime profiles of a running Angela process      |
 | `angela acp`                 | Run as an ACP agent over stdio (see [Editor integration](#editor-integration-acp)) |
 | `angela update-providers`    | Refresh the provider catalog                             |
+| `angela upgrade`             | Upgrade Angela to the latest release (see [Upgrading](#upgrading)) |
 
 Run any command with `--help` for its flags. These flags work on every
 command:
@@ -363,15 +394,20 @@ a native VS Code diff tab with Accept/Reject buttons, alongside the usual
 terminal dialog — whichever you answer first settles the request. Pass
 `--no-vscode-diff` to always use the terminal dialog only.
 
-Inline image previews and the built-in `ImageGenerate`/`ImageEdit` tools
-need a terminal that supports Kitty graphics protocol Unicode placeholders.
-Angela auto-detects kitty, Ghostty, and Rio; VS Code's integrated terminal
-and WezTerm answer the basic Kitty query but don't render placeholders
-correctly, so the tools stay hidden there. Override the detection with
+Inline image previews need a terminal that supports Kitty graphics protocol
+Unicode placeholders. Angela auto-detects kitty, Ghostty, and Rio; VS Code's
+integrated terminal and WezTerm answer the basic Kitty query but don't render
+placeholders correctly. Override the detection with
 `--kitty-placeholders`/`--kitty-placeholders=false` (per launch) or
-`options.tui.kitty_placeholders` (persistent, in `angela.json`). Turn the
-image tools off entirely with `--disable-image-tools` or
-`options.disable_image_tools`.
+`options.tui.kitty_placeholders` (persistent, in `angela.json`).
+
+The built-in `ImageGenerate`/`ImageEdit` tools follow the same detection by
+default, so they stay hidden in terminals without placeholder support. Pass
+`--enable-image-tools` or set `options.enable_image_tools` to `true` to use
+them in any terminal. Where inline previews are unsupported, Angela shows no
+image in the terminal and instead prints the image ID and size; save the
+original with the "Export Image" command. Turn the tools off entirely with
+`--enable-image-tools=false` or `options.enable_image_tools: false`.
 
 ## Skills
 

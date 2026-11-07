@@ -11,6 +11,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
@@ -32,7 +33,7 @@ func newSpillingTool(inner fantasy.AgentTool, root string) *spillingTool {
 // directory. The permission service must treat it as readable, so the
 // writer and the app wiring share this one definition.
 func ToolOutputRoot(dataDirectory string) string {
-	return filepath.Join(dataDirectory, "tool-output")
+	return filepath.Join(dataDirectory, scratch.ToolOutputDir)
 }
 
 // spillExempt lists the tools whose results must reach the model, or the
@@ -43,7 +44,7 @@ func ToolOutputRoot(dataDirectory string) string {
 // proposal the model has to see whole. Merge carries the proposal into
 // the branch's own stored result, the only copy that outlives the branch,
 // so a preview there would leave the user a note pointing at a file that
-// is pruned after a day.
+// `angela vacuum` can delete.
 var spillExempt = map[string]struct{}{
 	toolnames.Read:         {},
 	toolnames.Agent:        {},
@@ -107,15 +108,11 @@ func hasLineTooLongForRead(content string) bool {
 }
 
 // spillToolOutput writes content to a new file under the session's
-// directory in root and returns its path. Session directories left
-// untouched past tools.SessionScratchRetention are pruned first.
+// directory in root and returns its path.
 func spillToolOutput(root, sessionID, content string) (string, error) {
 	dir, err := tools.SessionScratchDir(root, sessionID)
 	if err != nil {
 		return "", err
-	}
-	if err := tools.PruneSessionScratch(root, tools.SessionScratchRetention); err != nil {
-		slog.Warn("Failed to prune old tool output", "error", err)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("creating tool output directory: %w", err)

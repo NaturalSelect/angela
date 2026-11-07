@@ -24,7 +24,7 @@ func (m *UI) handleUndo(msg dialog.ActionUndo) tea.Cmd {
 	}
 	m.dialog.CloseDialog(dialog.CommandsID)
 	sessionID := msg.SessionID
-	cmds = append(cmds, func() tea.Msg {
+	cmds = append(cmds, m.showPending(undoPreviewingInfo), func() tea.Msg {
 		preview, err := m.com.Workspace.PreviewUndo(context.Background(), sessionID)
 		if err != nil {
 			if errors.Is(err, undo.ErrNothingToUndo) {
@@ -50,7 +50,7 @@ func (m *UI) handleUndoConfirmed(msg dialog.ActionUndoConfirmed) tea.Cmd {
 	}
 	sessionID := msg.SessionID
 	cutMessageID := msg.CutMessageID
-	cmds = append(cmds, func() tea.Msg {
+	cmds = append(cmds, m.showPending(undoingInfo), func() tea.Msg {
 		result, err := m.com.Workspace.Undo(context.Background(), sessionID, cutMessageID)
 		if err != nil {
 			if errors.Is(err, undo.ErrSessionBusy) {

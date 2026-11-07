@@ -315,6 +315,10 @@ func (m *UI) handleGlobalKeys(msg tea.KeyPressMsg, cmds *[]tea.Cmd) bool {
 		}
 		return true
 	case key.Matches(msg, m.keyMap.Models):
+		if m.viewingSubAgent() {
+			*cmds = append(*cmds, util.ReportWarn(subAgentModelLockedHint))
+			return true
+		}
 		if cmd := m.openModelsDialog(); cmd != nil {
 			*cmds = append(*cmds, cmd)
 		}
@@ -325,6 +329,10 @@ func (m *UI) handleGlobalKeys(msg tea.KeyPressMsg, cmds *[]tea.Cmd) bool {
 		}
 		return true
 	case key.Matches(msg, m.keyMap.CycleVariant):
+		if m.viewingSubAgent() {
+			*cmds = append(*cmds, util.ReportWarn(subAgentModelLockedHint))
+			return true
+		}
 		if cmd := m.cycleVariant(); cmd != nil {
 			*cmds = append(*cmds, cmd)
 		}

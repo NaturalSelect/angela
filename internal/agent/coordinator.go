@@ -26,6 +26,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -33,14 +34,25 @@ import (
 
 // Coordinator errors.
 //
-// The exported two are what a caller can get wrong: they name an
-// agent or a preset that does not fit. Transports answer them as a
-// bad request, so they have to be nameable from outside this package.
-// The rest describe a broken configuration or a broken process, which
-// is nobody's request to fix.
+// The exported ones are what a caller can get wrong: they name an
+// agent or a preset that does not fit, ask for a model change a session
+// may not make, or mix edits that land in different places. Transports
+// answer them as a bad request, so they have to be nameable from
+// outside this package. The rest describe a broken configuration or a
+// broken process, which is nobody's request to fix.
 var (
 	ErrAgentNotAvailable   = errors.New("agent not available")
 	ErrVariantNotAvailable = errors.New("model variant not available")
+
+	// ErrSubAgentModelLocked reports a session-level model edit aimed at a
+	// sub-agent's session. Its model follows the session tree, so the
+	// change belongs on the agent, not on this session.
+	ErrSubAgentModelLocked = errors.New("a sub-agent's model follows its session tree; switch the agent's model instead")
+
+	// ErrMixedActiveAgentEdit reports an edit that changes the session
+	// tree's picks and the session's own state at once. The two land on
+	// different sessions, so one request cannot be atomic across them.
+	ErrMixedActiveAgentEdit = errors.New("an edit cannot change both the session tree's agent picks and the session's own model")
 
 	errCoderAgentNotConfigured    = errors.New("coder agent not configured")
 	errModelProviderNotConfigured = errors.New("model provider not configured")
@@ -615,7 +627,7 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 		tools.NewEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
 		tools.NewMultiEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
 		tools.NewFetchTool(c.cfg.WorkingDir(), pageClient),
-		tools.NewWebFetchTool(filepath.Join(c.cfg.Config().Options.DataDirectory, "webfetch"), pageClient),
+		tools.NewWebFetchTool(filepath.Join(c.cfg.Config().Options.DataDirectory, scratch.WebFetchDir), pageClient),
 		tools.NewWebSearchTool(webSearchRouter),
 		tools.NewMultiSearchTool(webSearchRouter),
 		tools.NewGlobTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Glob),
@@ -760,7 +772,7 @@ func (c *coordinator) shouldEnableQuestionTool(agent config.Agent, isSubAgent bo
 // triggered a large fetch never created the directory, so this is a
 // no-op for them.
 func removeWebFetchScratch(dataDirectory, sessionID string) {
-	dir, err := tools.SessionScratchDir(filepath.Join(dataDirectory, "webfetch"), sessionID)
+	dir, err := tools.SessionScratchDir(filepath.Join(dataDirectory, scratch.WebFetchDir), sessionID)
 	if err != nil {
 		slog.Warn("Refusing to remove web_fetch scratch directory", "session", sessionID, "error", err)
 		return

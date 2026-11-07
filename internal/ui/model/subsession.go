@@ -170,7 +170,7 @@ func (m *UI) enterSubSessionByID(childID string) tea.Cmd {
 	// The child starts with an empty box: whatever the parent's held
 	// belongs to the parent, and comes back on the way out rather than
 	// sitting in a transcript it was never composed for.
-	return m.loadSession(childID, loadSessionOpt{enterFrame: &frame, draftAfter: &editorDraft{}})
+	return tea.Batch(m.showSessionLoading(), m.loadSession(childID, loadSessionOpt{enterFrame: &frame, draftAfter: &editorDraft{}}))
 }
 
 // subSessionsLoadedMsg carries the children of a session, read off the
@@ -262,12 +262,12 @@ func (m *UI) leaveSubSession() tea.Cmd {
 	if top := len(m.sessionStack) - 1; top >= 0 {
 		parent := m.sessionStack[top]
 		draft := editorDraft{text: parent.draftText, attachments: parent.draftAttachments}
-		return m.loadSession(parent.id, loadSessionOpt{leaveLevel: true, draftAfter: &draft})
+		return tea.Batch(m.showSessionLoading(), m.loadSession(parent.id, loadSessionOpt{leaveLevel: true, draftAfter: &draft}))
 	}
 	// No frame to restore from: whatever is in the box was typed for the
 	// session being left, not the parent about to come into view, so
 	// clear it rather than carry it across.
-	return m.loadSession(m.session.ParentSessionID, loadSessionOpt{draftAfter: &editorDraft{}})
+	return tea.Batch(m.showSessionLoading(), m.loadSession(m.session.ParentSessionID, loadSessionOpt{draftAfter: &editorDraft{}}))
 }
 
 // goToBreadcrumbLevel jumps directly to the ancestor session at the given
@@ -280,7 +280,7 @@ func (m *UI) goToBreadcrumbLevel(index int) tea.Cmd {
 	}
 	frame := m.sessionStack[index]
 	draft := editorDraft{text: frame.draftText, attachments: frame.draftAttachments}
-	return m.loadSession(frame.id, loadSessionOpt{truncateStackTo: &index, draftAfter: &draft})
+	return tea.Batch(m.showSessionLoading(), m.loadSession(frame.id, loadSessionOpt{truncateStackTo: &index, draftAfter: &draft}))
 }
 
 // escapeCancels reports whether the escape key means "stop what is running"

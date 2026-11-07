@@ -76,10 +76,9 @@ type RuntimeOverrides struct {
 	// is detected, so an edit-shaped prompt only ever opens in the
 	// terminal.
 	NoVSCodeDiff bool
-	// DisableImageTools disables the built-in image generation and
-	// editing tools (via the --disable-image-tools flag), on top of
-	// whatever options.disable_image_tools already says.
-	DisableImageTools bool
+	// EnableImageTools is set by the --enable-image-tools flag. Nil means
+	// the flag was not passed, so options.enable_image_tools applies.
+	EnableImageTools *bool
 	// NonInteractive starts the coder agent without interactive-only tools
 	// such as question, for front ends that cannot ask the user anything.
 	NonInteractive bool
@@ -263,16 +262,18 @@ func (s *ConfigStore) Overrides() *RuntimeOverrides {
 	return &s.overrides
 }
 
-// ImageToolsDisabled reports whether the built-in image generation
-// and editing tools are disabled, either persistently via
-// options.disable_image_tools or for this run via the
-// --disable-image-tools flag.
-func (s *ConfigStore) ImageToolsDisabled() bool {
-	var persisted bool
-	if cfg := s.Config(); cfg != nil && cfg.Options != nil {
-		persisted = cfg.Options.DisableImageTools
+// ImageToolsEnabled returns the effective tri-state image tools
+// setting: the --enable-image-tools override when passed, else
+// options.enable_image_tools. Nil means "auto": enable the tools only
+// once the client reports image rendering support.
+func (s *ConfigStore) ImageToolsEnabled() *bool {
+	if enabled := s.Overrides().EnableImageTools; enabled != nil {
+		return enabled
 	}
-	return persisted || s.Overrides().DisableImageTools
+	if cfg := s.Config(); cfg != nil && cfg.Options != nil {
+		return cfg.Options.EnableImageTools
+	}
+	return nil
 }
 
 // LoadedPaths returns the config file paths that were successfully loaded.

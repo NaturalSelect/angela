@@ -28,7 +28,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/editorapproval"
 	"github.com/NaturalSelect/angela/internal/event"
 	"github.com/NaturalSelect/angela/internal/filetracker"
-	"github.com/NaturalSelect/angela/internal/format"
 	"github.com/NaturalSelect/angela/internal/herdr"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/images"
@@ -42,8 +41,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/shell"
 	"github.com/NaturalSelect/angela/internal/skills"
-	"github.com/NaturalSelect/angela/internal/ui/anim"
-	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/NaturalSelect/angela/internal/update"
 	"github.com/NaturalSelect/angela/internal/version"
@@ -365,12 +362,22 @@ func (app *App) resolveSession(ctx context.Context, continueSessionID string, us
 	}
 }
 
+// Spinner is the progress indicator a non-interactive run shows on stderr.
+type Spinner interface {
+	Start()
+	Stop()
+}
+
+// SpinnerFunc builds the spinner for a non-interactive run. Calling cancel
+// aborts the run, so a spinner that reads keys can stop it.
+type SpinnerFunc func(ctx context.Context, cancel context.CancelFunc) Spinner
+
 // RunNonInteractive runs the application in non-interactive mode with the
 // given prompt, streaming every assistant message to output. It returns the
 // text of the run's final response. A run that was cancelled, or that ended
 // without a result, is an error, so a caller never mistakes it for a run
 // that completed with nothing to say.
-func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt, largeModel, smallModel string, hideSpinner bool, continueSessionID string, useLast bool) (string, error) {
+func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt, largeModel, smallModel string, newSpinner SpinnerFunc, continueSessionID string, useLast bool) (string, error) {
 	slog.Info("Running in non-interactive mode")
 
 	// Re-initialize the coder agent without interactive-only tools.
@@ -391,7 +398,7 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	}
 
 	var (
-		spinner   *format.Spinner
+		spinner   Spinner
 		stderrTTY bool
 		progress  bool
 	)
@@ -399,22 +406,14 @@ func (app *App) RunNonInteractive(ctx context.Context, output io.Writer, prompt,
 	stderrTTY = term.IsTerminal(os.Stderr.Fd())
 	progress = app.config.Config().Options.Progress == nil || *app.config.Config().Options.Progress
 
-	if !hideSpinner && stderrTTY {
-		t := styles.AngelaTeal()
-
-		spinner = format.NewSpinner(ctx, cancel, anim.Settings{
-			Size:        10,
-			Label:       "Generating",
-			GradColorA:  t.WorkingGradFromColor,
-			GradColorB:  t.WorkingGradToColor,
-			CycleColors: true,
-		})
+	if newSpinner != nil && stderrTTY {
+		spinner = newSpinner(ctx, cancel)
 		spinner.Start()
 	}
 
 	// Helper function to stop spinner once.
 	stopSpinner := func() {
-		if !hideSpinner && spinner != nil {
+		if spinner != nil {
 			spinner.Stop()
 			spinner = nil
 		}

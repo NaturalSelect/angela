@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/ui/completions"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
+	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -216,6 +217,49 @@ func TestHandleKeyPressMsg_GlobalModels(t *testing.T) {
 	require.True(t, m.dialog.ContainsDialog(dialog.ModelsID))
 }
 
+// TestHandleKeyPressMsg_ModelShortcutsInASubAgent pins that a sub-agent's
+// transcript refuses the shortcuts that would edit a model of its own,
+// and says where the model is changed instead, while a branch keeps them.
+func TestHandleKeyPressMsg_ModelShortcutsInASubAgent(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		key  tea.KeyPressMsg
+		open string
+	}{
+		{"ctrl+l", ctrlKey('l'), dialog.ModelsID},
+		{"ctrl+e", ctrlKey('e'), dialog.VariantsID},
+	} {
+		t.Run(tt.name+" warns in a sub-agent", func(t *testing.T) {
+			t.Parallel()
+			m, _ := newKeyRoutingUI(t)
+			m.session = &session.Session{ID: "child1", ParentSessionID: "parent1"}
+			m.sessionIsBranch = false
+
+			cmd := m.handleKeyPressMsg(tt.key)
+
+			require.NotNil(t, cmd)
+			msg, ok := cmd().(util.InfoMsg)
+			require.True(t, ok, "the shortcut must answer with a message")
+			require.Equal(t, util.InfoTypeWarn, msg.Type)
+			require.Contains(t, msg.Msg, "Switch Agent Model")
+			require.False(t, m.dialog.ContainsDialog(tt.open), "no dialog may open")
+		})
+	}
+
+	t.Run("ctrl+l opens the dialog in a branch", func(t *testing.T) {
+		t.Parallel()
+		m, _ := newKeyRoutingUI(t)
+		m.session = &session.Session{ID: "child1", ParentSessionID: "parent1"}
+		m.sessionIsBranch = true
+
+		m.handleKeyPressMsg(ctrlKey('l'))
+
+		require.True(t, m.dialog.ContainsDialog(dialog.ModelsID))
+	})
+}
+
 func TestHandleKeyPressMsg_GlobalSessions(t *testing.T) {
 	t.Parallel()
 
@@ -223,7 +267,7 @@ func TestHandleKeyPressMsg_GlobalSessions(t *testing.T) {
 
 	cmd := m.handleKeyPressMsg(ctrlKey('s'))
 	require.NotNil(t, cmd)
-	m.Update(cmd())
+	m.Update(workMsg(t, cmd))
 
 	require.True(t, m.dialog.ContainsDialog(dialog.SessionsID))
 }

@@ -90,8 +90,9 @@ full text is saved to `<data_dir>/tool-output/<session>/output-*.txt` so it
 can be paged through with Read or Grep (the permission system treats that
 directory as readable). This applies to Bash and to every other tool except
 Read, Agent, LoadReport, ProposalRead, and Merge. If the file can't be
-written, the notice says the full output could not be saved. Session
-directories untouched for 24 hours are pruned.
+written, the notice says the full output could not be saved. Angela never
+deletes these files on its own; `angela vacuum` removes the old ones
+(anything modified in the last hour is kept).
 
 ## Shell Semantics
 

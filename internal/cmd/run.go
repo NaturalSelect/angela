@@ -11,7 +11,11 @@ import (
 	"strings"
 
 	"charm.land/log/v2"
+	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/event"
+	"github.com/NaturalSelect/angela/internal/ui/anim"
+	"github.com/NaturalSelect/angela/internal/ui/spinner"
+	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -141,7 +145,21 @@ angela run --continue "Follow up on your last response"
 			sessionID = sess.ID
 		}
 
-		final, err := appWs.App().RunNonInteractive(ctx, os.Stdout, prompt, largeModel, smallModel, quiet || verbose, sessionID, useLast)
+		var newSpinner app.SpinnerFunc
+		if !quiet && !verbose {
+			t := styles.AngelaTeal()
+			newSpinner = func(ctx context.Context, cancel context.CancelFunc) app.Spinner {
+				return spinner.New(ctx, cancel, anim.Settings{
+					Size:        10,
+					Label:       "Generating",
+					GradColorA:  t.WorkingGradFromColor,
+					GradColorB:  t.WorkingGradToColor,
+					CycleColors: true,
+				})
+			}
+		}
+
+		final, err := appWs.App().RunNonInteractive(ctx, os.Stdout, prompt, largeModel, smallModel, newSpinner, sessionID, useLast)
 		return saveRunResult(resultFile, final, err, cmd.ErrOrStderr())
 	},
 }

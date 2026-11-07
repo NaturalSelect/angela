@@ -78,16 +78,15 @@ body {
   margin: 0 auto 1.75rem;
 }
 
-.mark svg {
+/* Crop the portrait to a disc and ring it in the outcome colour so the
+   state is legible before a single word is read. */
+.mark img {
   width: 100%;
   height: auto;
   display: block;
-}
-
-/* Tint the heart to match the outcome so the state is legible before a
-   single word is read. */
-.card.failed .mark .heart {
-  fill: var(--coral);
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  background: var(--bg-inset);
 }
 
 h1 {

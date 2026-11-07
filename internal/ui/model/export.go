@@ -25,30 +25,13 @@ func (m *UI) handleExportImage(msg dialog.ActionExportImage) tea.Cmd {
 			cmds = append(cmds, util.ReportWarn("Open a session before exporting an image."))
 			return tea.Batch(cmds...)
 		}
-		sessionID := m.session.ID
-		cmds = append(cmds, func() tea.Msg {
-			ctx := context.Background()
-			imgs, err := m.com.Workspace.ListSessionImages(ctx, sessionID)
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			if len(imgs) == 0 {
-				return util.ReportWarn("No generated images in this session")()
-			}
-
-			workingDir, err := os.Getwd()
-			if err != nil {
-				return util.ReportError(err)()
-			}
-
-			return exportImagesLoadedMsg{sessionID: sessionID, images: imgs, workingDir: workingDir}
-		})
+		cmds = append(cmds, m.showPending(imagesListingInfo), m.loadSessionImagesCmd(m.session.ID, dialog.ImagesExport))
 		return tea.Batch(cmds...)
 	}
 	m.dialog.CloseDialog(dialog.ArgumentsID)
 	imageID := msg.ImageID
 	output := msg.Output
-	cmds = append(cmds, func() tea.Msg {
+	cmds = append(cmds, m.showPending(exportingImageInfo), func() tea.Msg {
 		ctx := context.Background()
 		img, err := m.com.Workspace.GetGeneratedImage(ctx, imageID)
 		if err != nil {
@@ -78,6 +61,50 @@ func (m *UI) handleExportImage(msg dialog.ActionExportImage) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// loadSessionImagesCmd fetches sessionID's generated images off the Update
+// goroutine, for the picker opened for purpose.
+func (m *UI) loadSessionImagesCmd(sessionID string, purpose dialog.ImagesPurpose) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		imgs, err := m.com.Workspace.ListSessionImages(ctx, sessionID)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		if len(imgs) == 0 {
+			return util.ReportWarn("No generated images in this session")()
+		}
+
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return util.ReportError(err)()
+		}
+
+		return sessionImagesLoadedMsg{sessionID: sessionID, images: imgs, workingDir: workingDir, purpose: purpose}
+	}
+}
+
+// loadSessionReportsCmd collects sessionID's agent reports off the Update
+// goroutine, for the picker opened for purpose.
+func (m *UI) loadSessionReportsCmd(sessionID string, purpose dialog.ReportsPurpose) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		reports := agenttools.ReportsFromMessages(m.com.Workspace, msgs)
+		if len(reports) == 0 {
+			return util.ReportWarn("No agent reports in this session")()
+		}
+
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return util.ReportError(err)()
+		}
+
+		return sessionReportsLoadedMsg{sessionID: sessionID, reports: reports, workingDir: workingDir, purpose: purpose}
+	}
+}
+
 // handleExportReport handles dialog.ActionExportReport.
 func (m *UI) handleExportReport(msg dialog.ActionExportReport) tea.Cmd {
 	var cmds []tea.Cmd
@@ -87,30 +114,13 @@ func (m *UI) handleExportReport(msg dialog.ActionExportReport) tea.Cmd {
 			cmds = append(cmds, util.ReportWarn("Open a session before exporting a report."))
 			return tea.Batch(cmds...)
 		}
-		sessionID := m.session.ID
-		cmds = append(cmds, func() tea.Msg {
-			msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			reports := agenttools.ReportsFromMessages(m.com.Workspace, msgs)
-			if len(reports) == 0 {
-				return util.ReportWarn("No agent reports in this session")()
-			}
-
-			workingDir, err := os.Getwd()
-			if err != nil {
-				return util.ReportError(err)()
-			}
-
-			return exportReportsLoadedMsg{sessionID: sessionID, reports: reports, workingDir: workingDir}
-		})
+		cmds = append(cmds, m.showPending(reportsListingInfo), m.loadSessionReportsCmd(m.session.ID, dialog.ReportsExport))
 		return tea.Batch(cmds...)
 	}
 	m.dialog.CloseDialog(dialog.ArgumentsID)
 	report := msg.Report
 	output := msg.Output
-	cmds = append(cmds, func() tea.Msg {
+	cmds = append(cmds, m.showPending(exportingReportInfo), func() tea.Msg {
 		workingDir, err := os.Getwd()
 		if err != nil {
 			return util.ReportError(err)()
@@ -139,7 +149,7 @@ func (m *UI) handleExportSession(msg dialog.ActionExportSession) tea.Cmd {
 	var cmds []tea.Cmd
 	m.dialog.CloseDialog(dialog.CommandsID)
 	sessionID := msg.SessionID
-	cmds = append(cmds, func() tea.Msg {
+	cmds = append(cmds, m.showPending(exportingSessionInfo), func() tea.Msg {
 		ctx := context.Background()
 		sess, err := m.com.Workspace.GetSession(ctx, sessionID)
 		if err != nil {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 
 	"charm.land/fantasy"
 
@@ -262,13 +261,13 @@ func (c *coordinator) runningInstance(ctx context.Context, sessionID string) (co
 
 // sessionScope is what a session's own record is laid over. A top-level
 // session runs exactly what its record says. A child also runs under the
-// session that dispatched it, whose picks reach it, and under the agent
-// its route binds it to, whatever its record says.
+// session that dispatched it, whose tree-wide picks reach it, and under
+// the agent its route binds it to, whatever its record says.
 //
 // The record and the instance are different things for a child, and an
-// edit must keep them apart: the instance carries the dispatcher's picks,
-// and writing it back would copy them onto the child's row, where they
-// would outrank every pick the dispatcher makes later.
+// edit must keep them apart: the instance carries the tree's picks, and
+// writing it back would copy them onto the child's row, where they would
+// outlive every pick made on the root afterwards.
 type sessionScope struct {
 	child      bool
 	agentID    string
@@ -300,33 +299,29 @@ func (c *coordinator) childScope(ctx context.Context, agentID string, child sess
 	}
 }
 
-// inherited is the pick table the session's own is laid over.
-func (s sessionScope) inherited() map[string]config.AgentModelPick {
-	return s.dispatcher.AgentModels
-}
-
 // ownState is the state an edit in a child starts from: its record,
-// naming the agent its route binds it to, with the pick table copied so
-// an edit that fails leaves the cached record alone.
+// naming the agent its route binds it to. A child's row never holds the
+// tree's pick table, which lives on the root, so it is cleared here and
+// no write can put a copy of it back.
 func (s sessionScope) ownState(record config.ActiveAgentState) config.ActiveAgentState {
 	record.Agent = s.agentID
-	record.AgentModels = maps.Clone(record.AgentModels)
+	record.AgentPicks = nil
 	return record
 }
 
 // resolve builds the instance record describes in this scope, and
 // reports false when the agent it names is no longer configured.
 //
-// A child's own picks are laid over its dispatcher's, one agent at a
-// time, and its thinking flag applies only if it made a pick of its own.
+// A child is laid out by the model stack: the config, the dispatcher
+// when the agent inherits, the tree's pick for the agent, and last the
+// child's own session pick. Its thinking flag applies only if it made a
+// pick of its own.
 func (s sessionScope) resolve(cfg *config.Config, record config.ActiveAgentState) (config.ActiveAgent, bool) {
 	if !s.child {
 		return cfg.Restore(record)
 	}
 
-	dispatcher := s.dispatcher
-	dispatcher.AgentModels = overlayPicks(dispatcher.AgentModels, record.AgentModels)
-	active, ok := cfg.InstantiateUnder(s.agentID, dispatcher)
+	active, ok := cfg.InstantiateLayered(s.agentID, record.SessionModel, s.dispatcher.AgentPicks, s.dispatcher)
 	if !ok {
 		return config.ActiveAgent{}, false
 	}
@@ -343,49 +338,35 @@ func (s sessionScope) resolve(cfg *config.Config, record config.ActiveAgentState
 // choices the user made in the child itself laid over that.
 //
 // The child's own record matters because a user can talk to a child
-// directly, as in a branch, and Switch Model or Switch Agent Model there
-// are written to the child's row and nowhere else.
+// directly, as in a branch, and Switch Model there is written to the
+// child's row and nowhere else.
 func (c *coordinator) childInstance(ctx context.Context, agentID string, child session.Session) (config.ActiveAgent, bool) {
 	return c.childScope(ctx, agentID, child).resolve(c.cfg.Config(), child.ActiveAgent)
 }
 
-// overlayPicks returns base with over laid over it, one agent at a time,
-// leaving both inputs untouched.
-func overlayPicks(base, over map[string]config.AgentModelPick) map[string]config.AgentModelPick {
-	if len(over) == 0 {
-		return base
-	}
-	merged := make(map[string]config.AgentModelPick, len(base)+len(over))
-	maps.Copy(merged, base)
-	for agentID, pick := range over {
-		merged[agentID] = overlayPick(base[agentID], pick)
-	}
-	return merged
-}
-
-// overlayPick lays over on base. A pick that names a model stands on its
-// own, because a preset only means something on the model it was picked
-// for. A pick that names only a preset changes the preset and leaves the
-// model to base: the user asked for a different way to call the model
-// they were running, not for a different model.
-func overlayPick(base, over config.AgentModelPick) config.AgentModelPick {
-	if over.Model.Provider != "" && over.Model.Model != "" {
-		return over
-	}
-	over.Model = base.Model
-	return over
-}
-
 // dispatchedState is what a newly created child session records about
-// its own agent. The host's pick table is the dispatcher's, passed down
-// so the child's agents can find theirs; persisting it would freeze a
-// copy on the child's row that childInstance then lets outrank every
-// pick the dispatcher makes afterwards. Only picks made in the child
-// itself belong on its row.
+// its own agent: the agent, and nothing else. Everything else it runs on
+// is read live from the stack on every turn, so recording the
+// dispatcher's picks or thinking flag here would freeze a copy that then
+// outranks every change made afterwards.
 func dispatchedState(host config.ActiveAgent) config.ActiveAgentState {
-	state := host.State()
-	state.AgentModels = nil
-	return state
+	return config.ActiveAgentState{Agent: host.Agent.ID}
+}
+
+// rootSessionID walks sessionID's parent chain to the session that heads
+// its tree, which is where tree-wide model picks live. A session that
+// cannot be read ends the walk there, and the draft is its own root.
+func (c *coordinator) rootSessionID(ctx context.Context, sessionID string) string {
+	if sessionID == draftSessionID {
+		return sessionID
+	}
+	for {
+		sess, err := c.sessions.Get(ctx, sessionID)
+		if err != nil || sess.ParentSessionID == "" {
+			return sessionID
+		}
+		sessionID = sess.ParentSessionID
+	}
 }
 
 // dispatchDepth counts how many parent_session_id hops separate sessionID

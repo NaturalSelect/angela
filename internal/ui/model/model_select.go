@@ -208,11 +208,6 @@ func (m *UI) handleSelectModel(msg dialog.ActionSelectModel) tea.Cmd {
 		return m.openOnboardingStep(onboardingStepModel)
 	}
 
-	// we ignore dialogs with the oauth id as they need to be able to be dismissed
-	if m.isAgentBusy() && !m.dialog.ContainsDialog(dialog.OAuthID) {
-		return util.ReportWarn("Agent is busy, please wait...")
-	}
-
 	cfg := m.com.Config()
 	if cfg == nil {
 		return util.ReportError(errors.New("configuration not found"))
@@ -423,7 +418,7 @@ func (m *UI) handleSelectAgentModelTarget(msg dialog.ActionSelectAgentModelTarge
 	if cfg == nil {
 		return util.ReportError(errors.New("configuration not found"))
 	}
-	target, ok := agentModelDialogTarget(cfg, msg.AgentID, m.sessionAgentModels())
+	target, ok := agentModelDialogTarget(cfg, msg.AgentID, m.sessionAgentPicks())
 	if !ok {
 		return util.ReportError(fmt.Errorf("agent not found: %s", msg.AgentID))
 	}
@@ -466,7 +461,7 @@ func (m *UI) handleSelectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 	// different model always drops whatever preset was in effect
 	// before, the same rule a session's own pick follows.
 	var current string
-	if target, ok := agentModelDialogTarget(cfg, msg.AgentID, m.sessionAgentModels()); ok &&
+	if target, ok := agentModelDialogTarget(cfg, msg.AgentID, m.sessionAgentPicks()); ok &&
 		target.ModelCfg.Provider == msg.Model.Provider && target.ModelCfg.Model == msg.Model.Model {
 		current = target.Variant
 	}
@@ -481,22 +476,27 @@ func (m *UI) handleSelectAgentModel(msg dialog.ActionSelectAgentModel) tea.Cmd {
 	return nil
 }
 
-// sessionAgentModels returns the current session's model-pick table,
-// or nil when no agent state has been loaded yet.
-func (m *UI) sessionAgentModels() map[string]config.AgentModelPick {
+// subAgentModelLockedHint is what a sub-agent's transcript answers to a
+// shortcut that would edit a model of its own.
+const subAgentModelLockedHint = "This sub-agent's model follows its session tree. Use Switch Agent Model to change it."
+
+// sessionAgentPicks returns the per-agent pick table the current session
+// tree shares, or nil when no agent state has been loaded yet.
+func (m *UI) sessionAgentPicks() map[string]config.AgentModelPick {
 	if active := m.activeAgent(); active != nil {
-		return active.AgentModels
+		return active.AgentPicks
 	}
 	return nil
 }
 
 // applyAgentModelCmd picks model+variant for agentID in the current
-// session: the session itself, every subagent it dispatches and every
-// internal call it hosts resolve that agent to it from then on. The
-// pick is written into the session's persisted agent state, so it
-// survives a restart, and never reaches any config file or any other
-// session. A turn already streaming keeps the instance it started on.
-// Switch Model is this same edit without a target agent.
+// session tree: every session under the same root, the subagents it
+// dispatches and the internal calls it hosts resolve that agent to it
+// from the next turn on. The pick is written into the root session's
+// persisted agent state, so it survives a restart, and never reaches any
+// config file or any other session tree. A turn already streaming keeps
+// the instance it started on. A session's own model, set by Switch
+// Model, still outranks it.
 func (m *UI) applyAgentModelCmd(agentID string, model config.SelectedModel, variant string) tea.Cmd {
 	sessionID := m.currentSessionID()
 
@@ -518,10 +518,18 @@ func (m *UI) applyAgentModelCmd(agentID string, model config.SelectedModel, vari
 
 	applyCmd := func() tea.Msg {
 		edit := config.ActiveAgentEdit{ForAgent: agentID, Model: &model, Variant: &variant}
-		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
+		after, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit)
+		if err != nil {
 			return util.ReportError(err)()
 		}
-		return util.NewInfoMsg(fmt.Sprintf("%s now runs %s%s for this session", agentName, modelName, variantSuffix))
+		text := fmt.Sprintf("%s now runs %s%s in this session tree", agentName, modelName, variantSuffix)
+		// The session's own model sits above the tree's pick, so the
+		// agent this session runs would not move until that is reset.
+		if after.AgentID == agentID && !after.SessionModel.IsZero() &&
+			(after.ModelCfg.Provider != model.Provider || after.ModelCfg.Model != model.Model) {
+			text += ". This session keeps its own model (Reset Session Model to follow it)"
+		}
+		return util.NewInfoMsg(text)
 	}
 
 	return m.refreshActiveAgentCmd(tea.Sequence(
@@ -530,18 +538,32 @@ func (m *UI) applyAgentModelCmd(agentID string, model config.SelectedModel, vari
 	))
 }
 
-// clearAgentModelsCmd drops every model and preset pick the current
-// session holds. A turn already streaming keeps running on the model it
-// started with; only the next instantiation of each agent reverts to
-// its configured model.
-func (m *UI) clearAgentModelsCmd() tea.Cmd {
+// clearSessionModelCmd drops the current session's own model, preset and
+// thinking pick. A turn already streaming keeps running on the model it
+// started with; the next one follows the layers below.
+func (m *UI) clearSessionModelCmd() tea.Cmd {
 	sessionID := m.currentSessionID()
 	return m.refreshActiveAgentCmd(func() tea.Msg {
-		edit := config.ActiveAgentEdit{ClearModels: true}
+		edit := config.ActiveAgentEdit{ClearSessionModel: true}
 		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
 			return util.ReportError(err)()
 		}
-		return util.NewInfoMsg("Model picks reset for this session")
+		return util.NewInfoMsg("Session model reset")
+	})
+}
+
+// clearAgentPicksCmd drops every per-agent pick the current session tree
+// holds, whichever session in it is on screen. A turn already streaming
+// keeps running on the model it started with; only the next
+// instantiation of each agent reverts to its configured model.
+func (m *UI) clearAgentPicksCmd() tea.Cmd {
+	sessionID := m.currentSessionID()
+	return m.refreshActiveAgentCmd(func() tea.Msg {
+		edit := config.ActiveAgentEdit{ClearAgentPicks: true}
+		if _, err := m.com.Workspace.AgentEditActive(context.Background(), sessionID, edit); err != nil {
+			return util.ReportError(err)()
+		}
+		return util.NewInfoMsg("Agent model picks reset for this session tree")
 	})
 }
 

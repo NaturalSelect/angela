@@ -298,9 +298,15 @@ func TestAppWorkspace_AgentActive(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 		fx := newAWFixture(t)
+		sessionPick := config.AgentModelPick{Model: config.SelectedModel{Provider: "anthropic", Model: "claude"}}
+		treePicks := map[string]config.AgentModelPick{
+			"explore": {Model: config.SelectedModel{Provider: "anthropic", Model: "haiku"}},
+		}
 		active := config.ActiveAgent{
-			Agent: config.Agent{ID: "coder", Name: "Coder", Variant: "default"},
-			Slot:  "main",
+			Agent:        config.Agent{ID: "coder", Name: "Coder", Variant: "default"},
+			Slot:         "main",
+			SessionModel: sessionPick,
+			AgentPicks:   treePicks,
 		}
 		model := agent.Model{
 			ModelCfg:   config.SelectedModel{Provider: "anthropic", Model: "claude"},
@@ -312,12 +318,14 @@ func TestAppWorkspace_AgentActive(t *testing.T) {
 		got, err := fx.ws.AgentActive(t.Context(), "sess-1")
 		require.NoError(t, err)
 		require.Equal(t, ActiveAgent{
-			AgentID:    "coder",
-			AgentName:  "Coder",
-			Slot:       "main",
-			ModelCfg:   model.ModelCfg,
-			CatwalkCfg: model.CatwalkCfg,
-			Variant:    "default",
+			AgentID:      "coder",
+			AgentName:    "Coder",
+			Slot:         "main",
+			ModelCfg:     model.ModelCfg,
+			CatwalkCfg:   model.CatwalkCfg,
+			Variant:      "default",
+			SessionModel: sessionPick,
+			AgentPicks:   treePicks,
 		}, got)
 	})
 

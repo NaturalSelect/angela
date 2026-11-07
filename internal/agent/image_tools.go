@@ -22,6 +22,11 @@ const defaultImageProvider = "openai"
 // surfacing later as a runtime tool failure. The second return value
 // is a short, human-readable reason suitable for a debug log; it is
 // set regardless of the boolean outcome.
+//
+// options.enable_image_tools (or --enable-image-tools) is tri-state.
+// Unset requires the client to have reported Kitty graphics support,
+// true skips only that requirement so the tools work in any terminal
+// (without an inline preview), and false turns the tools off.
 func (c *coordinator) imageToolsAvailable(agent config.Agent, depth int) (bool, string) {
 	if depth != 0 {
 		return false, "image tools are only available to the primary agent, not a dispatched sub-agent"
@@ -29,11 +34,12 @@ func (c *coordinator) imageToolsAvailable(agent config.Agent, depth int) (bool, 
 	if !c.interactive {
 		return false, "image tools require an interactive session"
 	}
-	if c.cfg.ImageToolsDisabled() {
+	enabled := c.cfg.ImageToolsEnabled()
+	if enabled != nil && !*enabled {
 		return false, "image tools are disabled by configuration"
 	}
-	if c.imageSupport == nil || !c.imageSupport() {
-		return false, "client has not reported image rendering support (terminal must support Kitty graphics Unicode placeholders)"
+	if enabled == nil && (c.imageSupport == nil || !c.imageSupport()) {
+		return false, "client has not reported image rendering support (terminal must support Kitty graphics Unicode placeholders, or set options.enable_image_tools to true)"
 	}
 	if c.images == nil {
 		return false, "no image storage service is configured"

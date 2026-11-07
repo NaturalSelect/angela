@@ -2,11 +2,13 @@ package model
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
@@ -23,6 +25,21 @@ func (m *UI) inVSCode() bool {
 	return vscodemcp.InIntegratedTerminal(m.caps.Env.Getenv)
 }
 
+// viewerDir returns the directory for files written so VS Code can open
+// them.
+//
+// NOTE: It sits in the data directory, not a fixed name under the system
+// temp dir. On a shared host another user could create that name first and
+// swap the file before `code` opens it. The data directory is also what
+// `angela vacuum` cleans.
+func (m *UI) viewerDir() (string, error) {
+	cfg := m.com.Config()
+	if cfg == nil || cfg.Options == nil || cfg.Options.DataDirectory == "" {
+		return "", errors.New("the data directory is not set")
+	}
+	return filepath.Join(cfg.Options.DataDirectory, scratch.ViewerDir), nil
+}
+
 // handleOpenImage handles dialog.ActionOpenImage.
 func (m *UI) handleOpenImage(msg dialog.ActionOpenImage) tea.Cmd {
 	if msg.ImageID == "" {
@@ -34,6 +51,10 @@ func (m *UI) handleOpenImage(msg dialog.ActionOpenImage) tea.Cmd {
 	}
 
 	m.dialog.CloseDialog(dialog.ImagesID)
+	dir, err := m.viewerDir()
+	if err != nil {
+		return util.ReportError(err)
+	}
 	imageID := msg.ImageID
 	open := m.openInVSCode
 	if open == nil {
@@ -49,9 +70,8 @@ func (m *UI) handleOpenImage(msg dialog.ActionOpenImage) tea.Cmd {
 		}
 
 		// NOTE: The image only lives in SQLite and `code` opens files, so it
-		// goes to a fixed name under the temp dir. Reopening an image reuses
-		// the file, and VS Code reuses its tab.
-		dir := filepath.Join(os.TempDir(), "angela-images")
+		// goes to a fixed name in the viewer directory. Reopening an image
+		// reuses the file, and VS Code reuses its tab.
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return util.ReportError(err)()
 		}

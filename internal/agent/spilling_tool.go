@@ -11,6 +11,7 @@ import (
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
@@ -32,7 +33,7 @@ func newSpillingTool(inner fantasy.AgentTool, root string) *spillingTool {
 // directory. The permission service must treat it as readable, so the
 // writer and the app wiring share this one definition.
 func ToolOutputRoot(dataDirectory string) string {
-	return filepath.Join(dataDirectory, "tool-output")
+	return filepath.Join(dataDirectory, scratch.ToolOutputDir)
 }
 
 // spillExempt lists the tools whose results must reach the model, or the

@@ -26,6 +26,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -626,7 +627,7 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 		tools.NewEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
 		tools.NewMultiEditTool(c.lspManager, c.history, c.filetracker, c.cfg.WorkingDir()),
 		tools.NewFetchTool(c.cfg.WorkingDir(), pageClient),
-		tools.NewWebFetchTool(filepath.Join(c.cfg.Config().Options.DataDirectory, "webfetch"), pageClient),
+		tools.NewWebFetchTool(filepath.Join(c.cfg.Config().Options.DataDirectory, scratch.WebFetchDir), pageClient),
 		tools.NewWebSearchTool(webSearchRouter),
 		tools.NewMultiSearchTool(webSearchRouter),
 		tools.NewGlobTool(c.cfg.WorkingDir(), c.cfg.Config().Tools.Glob),
@@ -771,7 +772,7 @@ func (c *coordinator) shouldEnableQuestionTool(agent config.Agent, isSubAgent bo
 // triggered a large fetch never created the directory, so this is a
 // no-op for them.
 func removeWebFetchScratch(dataDirectory, sessionID string) {
-	dir, err := tools.SessionScratchDir(filepath.Join(dataDirectory, "webfetch"), sessionID)
+	dir, err := tools.SessionScratchDir(filepath.Join(dataDirectory, scratch.WebFetchDir), sessionID)
 	if err != nil {
 		slog.Warn("Refusing to remove web_fetch scratch directory", "session", sessionID, "error", err)
 		return

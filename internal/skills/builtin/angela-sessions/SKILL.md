@@ -111,6 +111,7 @@ these child sessions.
 | `angela commit` | Generates a commit message for the staged diff (`commit` agent, `chore` slot) and runs `git commit -s --no-verify`. Fails with "nothing staged to commit" when nothing is staged. |
 | `angela logs` | Prints the data directory's `logs/angela.log`; `-f, --follow`, `-t, --tail N` (default 1000). |
 | `angela stats` | Usage statistics; `--all` aggregates every known project, `--crawl-dir <dir>` scans a directory for projects. |
+| `angela vacuum` | Alias `gc`. Runs SQLite `VACUUM` on the project database and deletes saved tool output, fetched pages, MCP media and viewer files under the data directory. Anything modified in the last hour is kept, and sessions, messages and config are never touched. `--dry-run` only reports. Run it while no other Angela uses the project. |
 | `angela projects` | Lists known project directories; `--json`. |
 | `angela dirs` | Shows the config directories. |
 | `angela pprof <profile>` | Exports a runtime profile of a running angela process over a private local endpoint (no TCP port). Profiles: `goroutine`, `heap`, `allocs`, `threadcreate`, `cpu`, `trace`. `angela pprof list` shows exportable processes; flags `-p, --pid`, `-o, --output` (`-` for stdout), `--format proto\|text\|full` (`full` is goroutine-only), `--seconds` for `cpu`/`trace`. |

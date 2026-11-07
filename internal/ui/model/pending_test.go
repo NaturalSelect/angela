@@ -9,6 +9,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/anim"
@@ -421,8 +422,11 @@ func TestToastNotices_ShownOnTriggerAndReplacedByTheOutcomeToast(t *testing.T) {
 			action: dialog.ActionExportImage{ImageID: "img_1a2b3c4d5e6f"},
 		},
 		{
-			name:   "open image",
-			info:   openingImageInfo,
+			name: "open image",
+			info: openingImageInfo,
+			prepare: func(ws *MockWorkspace) {
+				ws.EXPECT().Config().Return(&config.Config{Options: &config.Options{DataDirectory: t.TempDir()}}).AnyTimes()
+			},
 			action: dialog.ActionOpenImage{ImageID: "img_1a2b3c4d5e6f"},
 		},
 		{

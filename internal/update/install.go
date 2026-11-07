@@ -46,23 +46,46 @@ func (u *Upgrader) get(ctx context.Context, url string) (*http.Response, error) 
 	return resp, nil
 }
 
-// expectedChecksum returns the SHA-256 that the release's checksums file
-// lists for the asset called name.
-func (u *Upgrader) expectedChecksum(ctx context.Context, r Release, name string) (string, error) {
-	sums, ok := r.FindAsset(checksumsAsset)
-	if !ok {
-		return "", fmt.Errorf("release %s has no %s, so the download cannot be verified", r.TagName, checksumsAsset)
+func (u *Upgrader) verifier() ChecksumsVerifier {
+	if u.Verifier != nil {
+		return u.Verifier
 	}
-	resp, err := u.get(ctx, sums.URL)
+	return sigstoreVerifier{}
+}
+
+// fetchReleaseFile returns the contents of the small release asset called
+// name.
+func (u *Upgrader) fetchReleaseFile(ctx context.Context, r Release, name string) ([]byte, error) {
+	asset, ok := r.FindAsset(name)
+	if !ok {
+		return nil, fmt.Errorf("release %s has no %s, so the download cannot be verified", r.TagName, name)
+	}
+	resp, err := u.get(ctx, asset.URL)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxChecksumsSize))
+	return io.ReadAll(io.LimitReader(resp.Body, maxChecksumsSize))
+}
+
+// expectedChecksum returns the SHA-256 that the release's checksums file
+// lists for the asset called name. The checksums file is only trusted once
+// its signature has been verified as coming from the release workflow.
+func (u *Upgrader) expectedChecksum(ctx context.Context, r Release, name string) (string, error) {
+	sums, err := u.fetchReleaseFile(ctx, r, checksumsAsset)
 	if err != nil {
 		return "", err
 	}
-	want, ok := parseChecksums(string(data))[name]
+	bundle, err := u.fetchReleaseFile(ctx, r, checksumsBundleAsset)
+	if err != nil {
+		return "", err
+	}
+	if err := u.verifier().Verify(ctx, r.TagName, sums, bundle); err != nil {
+		return "", fmt.Errorf("%s of release %s is not signed by the Angela release workflow: %w", checksumsAsset, r.TagName, err)
+	}
+	fmt.Fprintf(u.Out, "Verified the signature on %s.\n", checksumsAsset)
+
+	want, ok := parseChecksums(string(sums))[name]
 	if !ok {
 		return "", fmt.Errorf("%s does not list %s", checksumsAsset, name)
 	}

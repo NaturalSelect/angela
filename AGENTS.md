@@ -98,8 +98,8 @@ internal/
   lock/                            Cross-process advisory file locking
   version/                         App version, commit SHA, build ID
   update/                          GitHub release update checker and the engine behind
-                                    `angela upgrade` (version selection, checksum-verified
-                                    download, binary or package-manager install)
+                                    `angela upgrade` (version selection, cosign-verified
+                                    checksums, download, binary or package-manager install)
   ansiext/                         ANSI control char escaping for safe terminal display
   csync/                           Concurrency-safe generic collections (Map, Slice, etc.)
   filepathext/                     Cross-platform filepath utilities (SmartJoin, glob prefix)

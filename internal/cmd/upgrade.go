@@ -15,6 +15,12 @@ var upgradeCmd = &cobra.Command{
 	Short: "Upgrade Angela to the latest release",
 	Long: `Download the latest Angela release from GitHub and install it.
 
+Before anything is installed, Angela verifies the Sigstore (cosign) signature
+on the release's checksums.txt, which must come from the release workflow for
+that tag, and checks the download against it. This needs access to the
+Sigstore trust root at tuf-repo-cdn.sigstore.dev. A release without a valid
+signature is refused.
+
 Angela never installs an older version than the one running. A pre-release
 build stays where it is until a newer release is published, and it is never
 rolled back to an older stable release. Pre-releases are only offered as

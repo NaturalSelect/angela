@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -57,6 +58,19 @@ func (f *fakeSystem) Run(_ context.Context, name string, args ...string) error {
 }
 
 func (f *fakeSystem) IsRoot() bool { return f.root }
+
+// fakeVerifier records what it was asked to verify and fails with err.
+type fakeVerifier struct {
+	err       error
+	gotTag    string
+	gotSums   []byte
+	gotBundle []byte
+}
+
+func (f *fakeVerifier) Verify(_ context.Context, tag string, checksums, bundleJSON []byte) error {
+	f.gotTag, f.gotSums, f.gotBundle = tag, checksums, bundleJSON
+	return f.err
+}
 
 func tarGz(t *testing.T, files map[string]string) []byte {
 	t.Helper()
@@ -108,12 +122,15 @@ func releaseServer(t *testing.T, tag string, files map[string][]byte, badSum ...
 		rel.Assets = append(rel.Assets, Asset{Name: name, Size: int64(len(data))})
 	}
 	mux.HandleFunc("/"+checksumsAsset, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(sums.String())) })
+	mux.HandleFunc("/"+checksumsBundleAsset, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("{}")) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	for i := range rel.Assets {
 		rel.Assets[i].URL = srv.URL + "/" + rel.Assets[i].Name
 	}
-	rel.Assets = append(rel.Assets, Asset{Name: checksumsAsset, URL: srv.URL + "/" + checksumsAsset})
+	rel.Assets = append(rel.Assets,
+		Asset{Name: checksumsBundleAsset, URL: srv.URL + "/" + checksumsBundleAsset},
+		Asset{Name: checksumsAsset, URL: srv.URL + "/" + checksumsAsset})
 	return rel
 }
 
@@ -131,6 +148,7 @@ func newTestUpgrader(t *testing.T, current string, platform Platform, sys *fakeS
 		Platform: platform,
 		Source:   fakeSource{releases: releases},
 		System:   sys,
+		Verifier: &fakeVerifier{},
 		Out:      &out,
 	}, &out
 }
@@ -159,7 +177,13 @@ func TestUpgrade_ReplacesBinary(t *testing.T) {
 		require.Equal(t, os.FileMode(0o755), info.Mode().Perm())
 	}
 	require.Contains(t, out.String(), "Upgrading Angela from v0.0.5 to v0.0.6")
+	require.Contains(t, out.String(), "Verified the signature on checksums.txt")
 	require.Contains(t, out.String(), "Checksum verified")
+
+	v := u.Verifier.(*fakeVerifier)
+	require.Equal(t, "v0.0.6", v.gotTag)
+	require.Contains(t, string(v.gotSums), "angela_0.0.6_Linux_x86_64.tar.gz")
+	require.Equal(t, "{}", string(v.gotBundle))
 
 	entries, err := os.ReadDir(filepath.Dir(u.Exe))
 	require.NoError(t, err)
@@ -213,6 +237,43 @@ func TestUpgrade_MissingChecksumsRefused(t *testing.T) {
 	err := u.Upgrade(t.Context(), false)
 
 	require.ErrorContains(t, err, "cannot be verified")
+	got, readErr := os.ReadFile(u.Exe)
+	require.NoError(t, readErr)
+	require.Equal(t, "old binary", string(got))
+}
+
+func TestUpgrade_MissingSignatureRefused(t *testing.T) {
+	t.Parallel()
+
+	rel := releaseServer(t, "v0.0.6", map[string][]byte{
+		"angela_0.0.6_Linux_x86_64.tar.gz": tarGz(t, map[string]string{"angela_0.0.6_Linux_x86_64/angela": "new"}),
+	})
+	rel.Assets = slices.DeleteFunc(rel.Assets, func(a Asset) bool { return a.Name == checksumsBundleAsset })
+	u, _ := newTestUpgrader(t, "v0.0.5", Platform{"linux", "amd64"}, &fakeSystem{}, rel)
+
+	err := u.Upgrade(t.Context(), false)
+
+	require.ErrorContains(t, err, "cannot be verified")
+	require.ErrorContains(t, err, checksumsBundleAsset)
+	got, readErr := os.ReadFile(u.Exe)
+	require.NoError(t, readErr)
+	require.Equal(t, "old binary", string(got))
+}
+
+func TestUpgrade_BadSignatureRefused(t *testing.T) {
+	t.Parallel()
+
+	rel := releaseServer(t, "v0.0.6", map[string][]byte{
+		"angela_0.0.6_Linux_x86_64.tar.gz": tarGz(t, map[string]string{"angela_0.0.6_Linux_x86_64/angela": "new"}),
+	})
+	u, out := newTestUpgrader(t, "v0.0.5", Platform{"linux", "amd64"}, &fakeSystem{}, rel)
+	u.Verifier = &fakeVerifier{err: fmt.Errorf("identity mismatch")}
+
+	err := u.Upgrade(t.Context(), false)
+
+	require.ErrorContains(t, err, "not signed by the Angela release workflow")
+	require.ErrorContains(t, err, "identity mismatch")
+	require.NotContains(t, out.String(), "Checksum verified")
 	got, readErr := os.ReadFile(u.Exe)
 	require.NoError(t, readErr)
 	require.Equal(t, "old binary", string(got))
@@ -404,6 +465,24 @@ func TestUpgrade_PackageChecksumMismatch(t *testing.T) {
 
 	require.ErrorContains(t, u.Upgrade(t.Context(), false), "checksum mismatch")
 	require.Empty(t, sys.ran, "an unverified package must never reach the package manager")
+}
+
+func TestUpgrade_PackageBadSignatureNeverReachesPackageManager(t *testing.T) {
+	t.Parallel()
+
+	for _, owner := range []string{"dpkg", "apk"} {
+		t.Run(owner, func(t *testing.T) {
+			t.Parallel()
+			asset := map[string]string{"dpkg": "angela_0.0.6_amd64.deb", "apk": "angela_0.0.6_x86_64.apk"}[owner]
+			rel := releaseServer(t, "v0.0.6", map[string][]byte{asset: []byte("package")})
+			sys := &fakeSystem{owner: owner, root: true}
+			u, _ := newTestUpgrader(t, "v0.0.5", Platform{"linux", "amd64"}, sys, rel)
+			u.Verifier = &fakeVerifier{err: fmt.Errorf("bad signature")}
+
+			require.ErrorContains(t, u.Upgrade(t.Context(), false), "not signed")
+			require.Empty(t, sys.ran, "a package from an unsigned checksums file must never reach the package manager")
+		})
+	}
 }
 
 func TestUpgrade_PackageManagersOnlyConsultedOnLinux(t *testing.T) {

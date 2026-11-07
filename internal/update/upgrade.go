@@ -24,6 +24,9 @@ type Upgrader struct {
 	Source   Source
 	System   System
 	Client   *http.Client
+	// Verifier checks the signature on a release's checksums file. It
+	// defaults to the Sigstore verifier.
+	Verifier ChecksumsVerifier
 	Out      io.Writer
 }
 

@@ -10,16 +10,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
 	checksumsAsset   = "checksums.txt"
 	maxChecksumsSize = 1 << 20
+	// oldSuffix marks the executable that an upgrade moved aside on Windows.
+	oldSuffix = ".old"
 )
 
 func (u *Upgrader) client() *http.Client {
@@ -226,8 +230,11 @@ func (u *Upgrader) replaceExecutable(newPath string) error {
 	if u.Platform.OS != "windows" {
 		return os.Rename(newPath, u.Exe)
 	}
-	old := u.Exe + ".old"
-	os.Remove(old)
+	old := u.Exe + oldSuffix
+	if err := os.Remove(old); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		// NOTE: Another running instance can still hold the previous upgrade's file open.
+		old = fmt.Sprintf("%s%s-%d", u.Exe, oldSuffix, time.Now().UnixNano())
+	}
 	if err := os.Rename(u.Exe, old); err != nil {
 		return err
 	}
@@ -237,4 +244,24 @@ func (u *Upgrader) replaceExecutable(newPath string) error {
 	}
 	os.Remove(old)
 	return nil
+}
+
+// removeStaleBinaries deletes the executables that earlier upgrades moved
+// aside on Windows. Files still held open by a running instance are left for
+// a later run.
+func (u *Upgrader) removeStaleBinaries() {
+	if u.Platform.OS != "windows" {
+		return
+	}
+	dir := filepath.Dir(u.Exe)
+	prefix := filepath.Base(u.Exe) + oldSuffix
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) {
+			os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
 }

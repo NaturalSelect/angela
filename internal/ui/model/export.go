@@ -83,6 +83,28 @@ func (m *UI) loadSessionImagesCmd(sessionID string, purpose dialog.ImagesPurpose
 	}
 }
 
+// loadSessionReportsCmd collects sessionID's agent reports off the Update
+// goroutine, for the picker opened for purpose.
+func (m *UI) loadSessionReportsCmd(sessionID string, purpose dialog.ReportsPurpose) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		reports := agenttools.ReportsFromMessages(m.com.Workspace, msgs)
+		if len(reports) == 0 {
+			return util.ReportWarn("No agent reports in this session")()
+		}
+
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return util.ReportError(err)()
+		}
+
+		return sessionReportsLoadedMsg{sessionID: sessionID, reports: reports, workingDir: workingDir, purpose: purpose}
+	}
+}
+
 // handleExportReport handles dialog.ActionExportReport.
 func (m *UI) handleExportReport(msg dialog.ActionExportReport) tea.Cmd {
 	var cmds []tea.Cmd
@@ -92,24 +114,7 @@ func (m *UI) handleExportReport(msg dialog.ActionExportReport) tea.Cmd {
 			cmds = append(cmds, util.ReportWarn("Open a session before exporting a report."))
 			return tea.Batch(cmds...)
 		}
-		sessionID := m.session.ID
-		cmds = append(cmds, m.showPending(reportsListingInfo), func() tea.Msg {
-			msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			reports := agenttools.ReportsFromMessages(m.com.Workspace, msgs)
-			if len(reports) == 0 {
-				return util.ReportWarn("No agent reports in this session")()
-			}
-
-			workingDir, err := os.Getwd()
-			if err != nil {
-				return util.ReportError(err)()
-			}
-
-			return exportReportsLoadedMsg{sessionID: sessionID, reports: reports, workingDir: workingDir}
-		})
+		cmds = append(cmds, m.showPending(reportsListingInfo), m.loadSessionReportsCmd(m.session.ID, dialog.ReportsExport))
 		return tea.Batch(cmds...)
 	}
 	m.dialog.CloseDialog(dialog.ArgumentsID)

@@ -20,6 +20,7 @@ var (
 	exportingImageInfo     = pendingInfo("Exporting image")
 	openingImageInfo       = pendingInfo("Opening image")
 	exportingReportInfo    = pendingInfo("Exporting report")
+	openingReportInfo      = pendingInfo("Opening report")
 	importingReportInfo    = pendingInfo("Importing report")
 	undoingInfo            = pendingInfo("Undoing last turn")
 )

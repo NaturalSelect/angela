@@ -576,6 +576,7 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "export_image", "Export Image", "", ActionExportImage{}).WithAliases("image"))
 		commands = append(commands, NewCommandItem(c.com.Styles, "export_report", "Export Report", "", ActionExportReport{}).WithAliases("report", "reports"))
+		commands = append(commands, NewCommandItem(c.com.Styles, "open_report", "Open Report", "", ActionOpenReport{}).WithAliases("view", "read"))
 	}
 
 	if c.hasSession && c.inVSCode {

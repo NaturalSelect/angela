@@ -722,14 +722,18 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewImages(m.com, msg.images, msg.workingDir, msg.purpose))
-	case exportReportsLoadedMsg:
+	case sessionReportsLoadedMsg:
 		m.clearPending(reportsListingInfo)
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
 		if msg.sessionID != m.currentSessionID() {
 			break
 		}
-		m.dialog.OpenDialog(dialog.NewReports(m.com, msg.reports, msg.workingDir))
+		m.dialog.OpenDialog(dialog.NewReports(m.com, msg.reports, msg.workingDir, msg.purpose))
+	case reportOpenFallbackMsg:
+		m.clearPending(openingReportInfo)
+		m.openReportViewer(msg.report)
+		cmds = append(cmds, util.ReportWarn("Could not open the report in VS Code, showing it here: "+msg.err.Error()))
 	case pendingDoneMsg:
 		m.clearPending(msg.info)
 	case sessionsListedMsg:
@@ -1170,13 +1174,14 @@ type sessionImagesLoadedMsg struct {
 	purpose    dialog.ImagesPurpose
 }
 
-// exportReportsLoadedMsg carries a session's agent reports, collected
-// off the Update goroutine, so the "Export Report" picker dialog can be
-// opened with them once they arrive.
-type exportReportsLoadedMsg struct {
+// sessionReportsLoadedMsg carries a session's agent reports, collected
+// off the Update goroutine, so the report picker dialog can be opened
+// with them once they arrive. The zero purpose is an export.
+type sessionReportsLoadedMsg struct {
 	sessionID  string
 	reports    []agenttools.Report
 	workingDir string
+	purpose    dialog.ReportsPurpose
 }
 
 // exportProfilesLoadedMsg carries the working directory the "Export Profile"
@@ -1303,6 +1308,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		return m.handleExportReport(msg)
 	case dialog.ActionSelectExportReport:
 		return m.handleSelectExportReport(msg)
+	case dialog.ActionOpenReport:
+		return m.handleOpenReport(msg)
 	case dialog.ActionImportReport:
 		return m.handleImportReport(msg)
 	case dialog.ActionExportProfile:

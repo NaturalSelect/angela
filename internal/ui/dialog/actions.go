@@ -221,6 +221,14 @@ type (
 		Report     tools.Report
 		WorkingDir string
 	}
+	// ActionOpenReport asks for an agent report to be shown: in VS Code
+	// when the TUI runs in its terminal, in a Viewer dialog otherwise. A
+	// zero Report means the user picked the command from the palette but
+	// has not chosen one yet. The report travels in the action because it
+	// was already loaded to fill the picker.
+	ActionOpenReport struct {
+		Report tools.Report
+	}
 	// ActionImportReport asks for an agent report to be read from a file
 	// into the current session. An empty Path means the user picked the
 	// command from the palette but has not entered one yet.

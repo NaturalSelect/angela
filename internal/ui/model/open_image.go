@@ -13,9 +13,9 @@ import (
 	"github.com/NaturalSelect/angela/internal/vscodemcp"
 )
 
-// openImageTimeout bounds the whole open so a stuck `code` CLI cannot leave
-// the pending notice up forever.
-const openImageTimeout = 30 * time.Second
+// openInVSCodeTimeout bounds the whole open so a stuck `code` CLI cannot
+// leave the pending notice up forever.
+const openInVSCodeTimeout = 30 * time.Second
 
 // inVSCode reports whether the TUI runs in VS Code's integrated terminal,
 // read from the environment the terminal reported rather than os.Getenv.
@@ -40,7 +40,7 @@ func (m *UI) handleOpenImage(msg dialog.ActionOpenImage) tea.Cmd {
 		open = (&vscodemcp.Client{}).Open
 	}
 	return tea.Batch(m.showPending(openingImageInfo), func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), openImageTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), openInVSCodeTimeout)
 		defer cancel()
 
 		img, err := m.com.Workspace.GetGeneratedImage(ctx, imageID)

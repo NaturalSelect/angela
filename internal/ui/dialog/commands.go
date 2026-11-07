@@ -96,21 +96,36 @@ type Commands struct {
 
 var _ Dialog = (*Commands)(nil)
 
+// CommandsSpec is the state [NewCommands] gates and fills the palette
+// from. Each field maps to the Commands field of the same name.
+type CommandsSpec struct {
+	SessionID      string
+	HasSession     bool
+	HasTodos       bool
+	HasQueue       bool
+	InBranch       bool
+	HasParent      bool
+	InVSCode       bool
+	Active         *workspace.ActiveAgent
+	CustomCommands []commands.CustomCommand
+	MCPPrompts     []commands.MCPPrompt
+}
+
 // NewCommands creates a new commands dialog.
-func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue, inBranch, hasParent, inVSCode bool, active *workspace.ActiveAgent, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
+func NewCommands(com *common.Common, spec CommandsSpec) (*Commands, error) {
 	c := &Commands{
 		com:            com,
 		selected:       SystemCommands,
-		sessionID:      sessionID,
-		hasSession:     hasSession,
-		hasTodos:       hasTodos,
-		hasQueue:       hasQueue,
-		inBranch:       inBranch,
-		hasParent:      hasParent,
-		inVSCode:       inVSCode,
-		active:         active,
-		customCommands: customCommands,
-		mcpPrompts:     mcpPrompts,
+		sessionID:      spec.SessionID,
+		hasSession:     spec.HasSession,
+		hasTodos:       spec.HasTodos,
+		hasQueue:       spec.HasQueue,
+		inBranch:       spec.InBranch,
+		hasParent:      spec.HasParent,
+		inVSCode:       spec.InVSCode,
+		active:         spec.Active,
+		customCommands: spec.CustomCommands,
+		mcpPrompts:     spec.MCPPrompts,
 	}
 
 	help := help.New()

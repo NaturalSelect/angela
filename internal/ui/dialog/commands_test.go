@@ -28,7 +28,13 @@ func newTestCommands(t *testing.T, cfg *config.Config, sessionID string, hasSess
 		Styles:    &s,
 		Workspace: &configWorkspace{cfg: cfg},
 	}
-	c, err := NewCommands(com, sessionID, hasSession, false, false, false, false, false, active, custom, prompts)
+	c, err := NewCommands(com, CommandsSpec{
+		SessionID:      sessionID,
+		HasSession:     hasSession,
+		Active:         active,
+		CustomCommands: custom,
+		MCPPrompts:     prompts,
+	})
 	require.NoError(t, err)
 	return c
 }

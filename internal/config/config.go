@@ -110,9 +110,6 @@ const (
 	AgentImage         string = "image"
 )
 
-//go:fix inline
-func ptr[T any](v T) *T { return new(v) }
-
 // AgentMode determines how an agent can be used.
 type AgentMode string
 

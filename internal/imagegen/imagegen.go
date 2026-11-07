@@ -53,8 +53,12 @@ type Endpoint struct {
 	BaseURL string
 	// APIKey authenticates requests.
 	APIKey string
+	// UserAgent replaces the SDK's default User-Agent when non-empty.
+	// Gateways behind bot protection may reject the SDK's default.
+	UserAgent string
 	// Headers are extra HTTP headers sent with every request, e.g. for
-	// gateway routing.
+	// gateway routing. They are applied after UserAgent, so a
+	// User-Agent entry here wins.
 	Headers map[string]string
 	// Timeout bounds a single Generate or Edit call. Zero or negative
 	// uses DefaultRequestTimeout.
@@ -129,6 +133,9 @@ func New(ep Endpoint) Client {
 	opts := []option.RequestOption{option.WithAPIKey(ep.APIKey)}
 	if baseURL := config.NormalizeBaseURL(ep.BaseURL, catwalk.TypeOpenAI); baseURL != "" {
 		opts = append(opts, option.WithBaseURL(baseURL))
+	}
+	if ep.UserAgent != "" {
+		opts = append(opts, option.WithHeader("User-Agent", ep.UserAgent))
 	}
 	for k, v := range ep.Headers {
 		opts = append(opts, option.WithHeader(k, v))

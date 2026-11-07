@@ -131,6 +131,57 @@ func TestGenerate_HitsGenerationsEndpointWithAuthHeadersAndBody(t *testing.T) {
 	require.Equal(t, "a revised prompt", out.RevisedPrompt)
 }
 
+func TestUserAgent(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		userAgent string
+		headers   map[string]string
+		want      func(t *testing.T, got string)
+	}{
+		{
+			name:      "endpoint user agent replaces the SDK default",
+			userAgent: "Angela/test",
+			want: func(t *testing.T, got string) {
+				require.Equal(t, "Angela/test", got)
+			},
+		},
+		{
+			name: "unset keeps the SDK default",
+			want: func(t *testing.T, got string) {
+				require.Contains(t, got, "OpenAI/Go")
+			},
+		},
+		{
+			name:      "configured header wins over the endpoint user agent",
+			userAgent: "Angela/test",
+			headers:   map[string]string{"User-Agent": "custom-agent"},
+			want: func(t *testing.T, got string) {
+				require.Equal(t, "custom-agent", got)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotUA string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotUA = r.Header.Get("User-Agent")
+				writeImageResponse(t, w, "png", base64.StdEncoding.EncodeToString([]byte("img")))
+			}))
+			defer srv.Close()
+
+			ep := testEndpoint("gpt-image-1", srv, tt.headers)
+			ep.UserAgent = tt.userAgent
+			_, err := New(ep).Generate(t.Context(), Request{Prompt: "a cat"})
+			require.NoError(t, err)
+
+			tt.want(t, gotUA)
+		})
+	}
+}
+
 func TestGenerate_ResponseFormatOnlySetForDallE(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

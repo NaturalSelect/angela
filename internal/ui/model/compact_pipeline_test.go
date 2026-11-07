@@ -38,7 +38,7 @@ func newCompactPaletteUI(t *testing.T, ws *MockWorkspace) *UI {
 	sess := session.Session{ID: "current"}
 	sty := styles.CharmtonePantera()
 	com := &common.Common{Workspace: ws, Styles: &sty}
-	cmdsDialog, err := dialog.NewCommands(com, sess.ID, true, false, false, false, false, nil, nil, nil)
+	cmdsDialog, err := dialog.NewCommands(com, sess.ID, true, false, false, false, false, false, nil, nil, nil)
 	require.NoError(t, err)
 
 	return &UI{

@@ -156,7 +156,18 @@ func (m *UI) openCommandsDialog() tea.Cmd {
 	hasTodos := hasSession && hasIncompleteTodos(m.session.Todos)
 	hasQueue := m.promptQueue > 0
 
-	commands, err := dialog.NewCommands(m.com, sessionID, hasSession, hasTodos, hasQueue, m.viewingBranch(), m.hasParentSession(), m.inVSCode(), m.activeAgent(), m.customCommands, m.mcpPrompts)
+	commands, err := dialog.NewCommands(m.com, dialog.CommandsSpec{
+		SessionID:      sessionID,
+		HasSession:     hasSession,
+		HasTodos:       hasTodos,
+		HasQueue:       hasQueue,
+		InBranch:       m.viewingBranch(),
+		HasParent:      m.hasParentSession(),
+		InVSCode:       m.inVSCode(),
+		Active:         m.activeAgent(),
+		CustomCommands: m.customCommands,
+		MCPPrompts:     m.mcpPrompts,
+	})
 	if err != nil {
 		return util.ReportError(err)
 	}

@@ -389,15 +389,20 @@ a native VS Code diff tab with Accept/Reject buttons, alongside the usual
 terminal dialog — whichever you answer first settles the request. Pass
 `--no-vscode-diff` to always use the terminal dialog only.
 
-Inline image previews and the built-in `ImageGenerate`/`ImageEdit` tools
-need a terminal that supports Kitty graphics protocol Unicode placeholders.
-Angela auto-detects kitty, Ghostty, and Rio; VS Code's integrated terminal
-and WezTerm answer the basic Kitty query but don't render placeholders
-correctly, so the tools stay hidden there. Override the detection with
+Inline image previews need a terminal that supports Kitty graphics protocol
+Unicode placeholders. Angela auto-detects kitty, Ghostty, and Rio; VS Code's
+integrated terminal and WezTerm answer the basic Kitty query but don't render
+placeholders correctly. Override the detection with
 `--kitty-placeholders`/`--kitty-placeholders=false` (per launch) or
-`options.tui.kitty_placeholders` (persistent, in `angela.json`). Turn the
-image tools off entirely with `--disable-image-tools` or
-`options.disable_image_tools`.
+`options.tui.kitty_placeholders` (persistent, in `angela.json`).
+
+The built-in `ImageGenerate`/`ImageEdit` tools follow the same detection by
+default, so they stay hidden in terminals without placeholder support. Pass
+`--enable-image-tools` or set `options.enable_image_tools` to `true` to use
+them in any terminal. Where inline previews are unsupported, Angela shows no
+image in the terminal and instead prints the image ID and size; save the
+original with the "Export Image" command. Turn the tools off entirely with
+`--enable-image-tools=false` or `options.enable_image_tools: false`.
 
 ## Skills
 

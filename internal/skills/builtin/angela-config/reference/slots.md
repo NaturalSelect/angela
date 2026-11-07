@@ -11,11 +11,12 @@ with Angela:
 - **`image`** — the model used by the built-in image generation/editing
   tools. Needs a provider of type `openai` or `openai-compat` that
   implements `/images/*` and has an `api_key`. If this slot is not configured
-  it falls back to provider `openai`, model `gpt-image-1`. The tools are only registered in a terminal
-  that supports Kitty graphics Unicode placeholders (see
-  `options.tui.kitty_placeholders`); on an unsupported terminal (e.g.
-  VS Code's integrated terminal) they stay hidden regardless of this
-  slot's configuration.
+  it falls back to provider `openai`, model `gpt-image-1`. By default the
+  tools are only registered in a terminal that supports Kitty graphics
+  Unicode placeholders (see `options.tui.kitty_placeholders`); on an
+  unsupported terminal (e.g. VS Code's integrated terminal) they stay hidden
+  regardless of this slot's configuration, unless
+  `options.enable_image_tools` is `true`.
 
 Any other slot name may be defined; it takes effect only when an agent's
 `slot` field names it. A slot is mostly a pure reference — thinking mode,

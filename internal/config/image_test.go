@@ -53,30 +53,49 @@ func TestLoad_ImageSlotResolvesWithoutCatalogModel(t *testing.T) {
 	require.True(t, cfg.Agents[AgentImage].IsHidden(), "the image agent must stay hidden from dispatch/completion")
 }
 
-// TestConfigStore_ImageToolsDisabled covers the OR between the
-// persisted options.disable_image_tools setting and the runtime
-// --disable-image-tools override, and that a Config with a nil
+// TestConfigStore_ImageToolsEnabled covers the tri-state resolution of
+// options.enable_image_tools and the runtime --enable-image-tools
+// override (the override wins when set), and that a Config with a nil
 // Options (never defaulted) does not panic.
-func TestConfigStore_ImageToolsDisabled(t *testing.T) {
-	t.Run("false by default", func(t *testing.T) {
+func TestConfigStore_ImageToolsEnabled(t *testing.T) {
+	t.Run("nil by default", func(t *testing.T) {
 		store := &ConfigStore{config: &Config{Options: &Options{}}}
-		require.False(t, store.ImageToolsDisabled())
+		require.Nil(t, store.ImageToolsEnabled())
 	})
 
-	t.Run("persisted option disables", func(t *testing.T) {
-		store := &ConfigStore{config: &Config{Options: &Options{DisableImageTools: true}}}
-		require.True(t, store.ImageToolsDisabled())
+	t.Run("persisted true", func(t *testing.T) {
+		store := &ConfigStore{config: &Config{Options: &Options{EnableImageTools: new(true)}}}
+		got := store.ImageToolsEnabled()
+		require.NotNil(t, got)
+		require.True(t, *got)
 	})
 
-	t.Run("runtime override disables", func(t *testing.T) {
-		store := &ConfigStore{config: &Config{Options: &Options{}}}
-		store.Overrides().DisableImageTools = true
-		require.True(t, store.ImageToolsDisabled())
+	t.Run("persisted false", func(t *testing.T) {
+		store := &ConfigStore{config: &Config{Options: &Options{EnableImageTools: new(false)}}}
+		got := store.ImageToolsEnabled()
+		require.NotNil(t, got)
+		require.False(t, *got)
+	})
+
+	t.Run("override false beats persisted true", func(t *testing.T) {
+		store := &ConfigStore{config: &Config{Options: &Options{EnableImageTools: new(true)}}}
+		store.Overrides().EnableImageTools = new(false)
+		got := store.ImageToolsEnabled()
+		require.NotNil(t, got)
+		require.False(t, *got)
+	})
+
+	t.Run("override true beats persisted false", func(t *testing.T) {
+		store := &ConfigStore{config: &Config{Options: &Options{EnableImageTools: new(false)}}}
+		store.Overrides().EnableImageTools = new(true)
+		got := store.ImageToolsEnabled()
+		require.NotNil(t, got)
+		require.True(t, *got)
 	})
 
 	t.Run("nil Options does not panic", func(t *testing.T) {
 		store := &ConfigStore{config: &Config{}}
-		require.False(t, store.ImageToolsDisabled())
+		require.Nil(t, store.ImageToolsEnabled())
 	})
 }
 

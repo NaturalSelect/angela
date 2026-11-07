@@ -57,8 +57,8 @@ func init() {
 	rootCmd.PersistentFlags().Bool("auto-accept-edits", false, "Automatically accept file edits but still ask about everything else (same as cycling Shift+Tab once)")
 	rootCmd.MarkFlagsMutuallyExclusive("yolo", "auto-accept-edits")
 	rootCmd.Flags().Bool("no-vscode-diff", false, "Do not open edit diffs in VS Code even when running inside its terminal")
-	rootCmd.Flags().Bool("disable-image-tools", false, "Disable the built-in image generation and editing tools")
-	rootCmd.Flags().Bool("kitty-placeholders", false, "Force Kitty graphics Unicode placeholder support on or off (needed for inline images and the ImageGenerate/ImageEdit tools); omit to use options.tui.kitty_placeholders or auto-detection")
+	rootCmd.Flags().Bool("enable-image-tools", false, "Force the built-in ImageGenerate/ImageEdit tools on (even without Kitty inline previews) or off with =false; omit to use options.enable_image_tools or auto-detection")
+	rootCmd.Flags().Bool("kitty-placeholders", false, "Force Kitty graphics Unicode placeholder support on or off (needed for inline images, and for the ImageGenerate/ImageEdit tools unless --enable-image-tools is set); omit to use options.tui.kitty_placeholders or auto-detection")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
 	_ = rootCmd.PersistentFlags().MarkHidden("channels")
 	rootCmd.Flags().StringP("session", "s", "", "Continue a previous session by ID")
@@ -94,6 +94,17 @@ func kittyPlaceholdersFlag(cmd *cobra.Command) *bool {
 	return &v
 }
 
+// enableImageToolsFlag returns the tri-state value of --enable-image-tools:
+// nil when the flag was not passed (defer to options.enable_image_tools or
+// auto-detection), or a pointer to the flag's boolean value when it was.
+func enableImageToolsFlag(cmd *cobra.Command) *bool {
+	if !cmd.Flags().Changed("enable-image-tools") {
+		return nil
+	}
+	v, _ := cmd.Flags().GetBool("enable-image-tools")
+	return &v
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "angela",
 	Short: "A terminal-first AI assistant for software development",
@@ -125,6 +136,9 @@ angela --no-vscode-diff
 
 # Force-enable inline images in a terminal Angela doesn't recognize
 angela --kitty-placeholders
+
+# Use the image tools in a terminal without inline image support
+angela --enable-image-tools
 
 # Run inside an OS-level sandbox instead of relying on prompts
 angela --sandbox
@@ -360,16 +374,16 @@ type sandboxResolver func(workingDir, dataDir string, permissions *config.Permis
 // localWorkspaceOptions is everything openLocalWorkspace needs, so callers
 // other than the cobra commands can build a workspace too.
 type localWorkspaceOptions struct {
-	Cwd               string
-	DataDir           string
-	Debug             bool
-	PermissionMode    permission.PermissionMode
-	YoloMerge         bool
-	NoVSCodeDiff      bool
-	DisableImageTools bool
-	NoDockerSandbox   bool
-	Channels          []string
-	Sandbox           sandboxResolver
+	Cwd              string
+	DataDir          string
+	Debug            bool
+	PermissionMode   permission.PermissionMode
+	YoloMerge        bool
+	NoVSCodeDiff     bool
+	EnableImageTools *bool
+	NoDockerSandbox  bool
+	Channels         []string
+	Sandbox          sandboxResolver
 	// NonInteractive and NoBranchAgents are zero for the TUI. Only a front
 	// end that cannot ask questions or hand a conversation to a branch sets
 	// them.
@@ -386,21 +400,20 @@ func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspa
 	debug, _ := cmd.Flags().GetBool("debug")
 	yoloMerge, _ := cmd.Flags().GetBool("yolo-merge")
 	noVSCodeDiff, _ := cmd.Flags().GetBool("no-vscode-diff")
-	disableImageTools, _ := cmd.Flags().GetBool("disable-image-tools")
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 	noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox")
 
 	return localWorkspaceOptions{
-		Cwd:               cwd,
-		DataDir:           dataDir,
-		Debug:             debug,
-		PermissionMode:    permissionModeFromFlags(cmd),
-		YoloMerge:         yoloMerge,
-		NoVSCodeDiff:      noVSCodeDiff,
-		DisableImageTools: disableImageTools,
-		NoDockerSandbox:   noDockerSandbox,
-		Channels:          channels,
+		Cwd:              cwd,
+		DataDir:          dataDir,
+		Debug:            debug,
+		PermissionMode:   permissionModeFromFlags(cmd),
+		YoloMerge:        yoloMerge,
+		NoVSCodeDiff:     noVSCodeDiff,
+		EnableImageTools: enableImageToolsFlag(cmd),
+		NoDockerSandbox:  noDockerSandbox,
+		Channels:         channels,
 		Sandbox: func(workingDir, dataDir string, permissions *config.Permissions) (sandbox.Config, bool, error) {
 			return sandboxConfigFromFlags(cmd, workingDir, dataDir, permissions)
 		},
@@ -445,7 +458,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	overrides.NoDockerSandbox = o.NoDockerSandbox
 	overrides.YoloMerge = o.YoloMerge
 	overrides.NoVSCodeDiff = o.NoVSCodeDiff
-	overrides.DisableImageTools = o.DisableImageTools
+	overrides.EnableImageTools = o.EnableImageTools
 	overrides.NonInteractive = o.NonInteractive
 	overrides.NoBranchAgents = o.NoBranchAgents
 

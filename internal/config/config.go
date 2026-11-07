@@ -405,12 +405,13 @@ type TUIOptions struct {
 	Scrollbar   string      `json:"scrollbar,omitempty" jsonschema:"description=Chat scrollbar visibility,enum=default,enum=always,enum=never,default=default"`
 	// KittyPlaceholders overrides auto-detection of Kitty graphics Unicode
 	// placeholder (virtual placement) support, which inline image
-	// previews and the built-in ImageGenerate/ImageEdit tools require.
+	// previews require. The built-in ImageGenerate/ImageEdit tools also
+	// require it unless options.enable_image_tools is true.
 	// Auto-detection recognizes kitty\, Ghostty\, and Rio; terminals such
 	// as VS Code's integrated terminal or WezTerm answer the basic Kitty
 	// graphics query but do not render placeholders correctly. Leave
 	// unset to auto-detect.
-	KittyPlaceholders *bool `json:"kitty_placeholders,omitempty" jsonschema:"description=Override detection of Kitty graphics Unicode placeholder support\\, needed for inline images and the ImageGenerate/ImageEdit tools; unset auto-detects"`
+	KittyPlaceholders *bool `json:"kitty_placeholders,omitempty" jsonschema:"description=Override detection of Kitty graphics Unicode placeholder support\\, needed for inline images and (unless options.enable_image_tools is true) the ImageGenerate/ImageEdit tools; unset auto-detects"`
 }
 
 // Completions defines options for the completions UI.
@@ -568,7 +569,7 @@ type Options struct {
 	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=angela-config"`
 	AgentPaths                []string     `json:"agent_paths,omitempty" jsonschema:"description=Paths to directories containing agent markdown files,example=~/.config/angela/agents,example=./agents"`
 	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
-	DisableImageTools         bool         `json:"disable_image_tools,omitempty" jsonschema:"description=Disable the built-in image generation and editing tools,default=false"`
+	EnableImageTools          *bool        `json:"enable_image_tools,omitempty" jsonschema:"description=Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported\\, images can still be saved with Export Image); false disables them"`
 }
 
 // DefaultSubagentDepth is the effective subagent dispatch depth when

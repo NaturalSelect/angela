@@ -187,7 +187,7 @@ func (m *UI) maybeReportImageSupport() tea.Cmd {
 	}
 	if m.caps.SupportsKittyGraphics() && !m.placeholderMismatchLogged {
 		m.placeholderMismatchLogged = true
-		slog.Info("Terminal supports Kitty graphics but not Unicode placeholders; built-in image tools stay disabled",
+		slog.Info("Terminal supports Kitty graphics but not Unicode placeholders; built-in image tools stay disabled unless options.enable_image_tools is true",
 			"terminal", m.caps.TerminalVersion,
 			"term_program", m.caps.Env.Getenv("TERM_PROGRAM"))
 	}

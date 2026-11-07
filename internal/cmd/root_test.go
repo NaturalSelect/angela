@@ -207,15 +207,15 @@ func TestSetupLocalWorkspace_SandboxEnabled_EntersWithoutError(t *testing.T) {
 	}
 }
 
-// TestSetupLocalWorkspace_DisableImageToolsFlagSetsOverride pins that
-// --disable-image-tools reaches the runtime override the same way its
-// sibling boolean flags (--no-vscode-diff, --yolo-merge, ...) do, so
-// the built-in image tools can be turned off for a single run without
-// touching angela.json.
-func TestSetupLocalWorkspace_DisableImageToolsFlagSetsOverride(t *testing.T) {
+// TestSetupLocalWorkspace_EnableImageToolsFlagSetsOverride pins that
+// --enable-image-tools reaches the runtime override as a tri-state
+// value, so the built-in image tools can be forced on for a single run
+// without touching angela.json.
+func TestSetupLocalWorkspace_EnableImageToolsFlagSetsOverride(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cmd := newSetupWorkspaceTestCmd(t, t.TempDir())
-	cmd.Flags().Bool("disable-image-tools", true, "")
+	cmd.Flags().Bool("enable-image-tools", false, "")
+	require.NoError(t, cmd.Flags().Set("enable-image-tools", "true"))
 
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
@@ -227,7 +227,9 @@ func TestSetupLocalWorkspace_DisableImageToolsFlagSetsOverride(t *testing.T) {
 
 	appWs, ok := ws.(*workspace.AppWorkspace)
 	require.True(t, ok, "setupLocalWorkspace must return an *workspace.AppWorkspace in local mode")
-	require.True(t, appWs.Store().Overrides().DisableImageTools)
+	got := appWs.Store().Overrides().EnableImageTools
+	require.NotNil(t, got)
+	require.True(t, *got)
 }
 
 // TestRandomExitMessage pins the two invariants callers rely on: every
@@ -544,6 +546,42 @@ func TestLocalSkillsDiscoveryConfig_PropagatesOptionsAndResolver(t *testing.T) {
 
 func kittyPlaceholdersPtrBool(b bool) *bool {
 	return &b
+}
+
+// TestEnableImageToolsFlag pins the tri-state behavior of
+// --enable-image-tools: unset must defer to config/auto-detection
+// (nil), while an explicit true or false always wins.
+func TestEnableImageToolsFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		set  bool
+		val  string
+		want *bool
+	}{
+		{"not set", false, "", nil},
+		{"set to true", true, "true", kittyPlaceholdersPtrBool(true)},
+		{"set to false", true, "false", kittyPlaceholdersPtrBool(false)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cobra.Command{}
+			cmd.Flags().Bool("enable-image-tools", false, "")
+			if tt.set {
+				require.NoError(t, cmd.Flags().Set("enable-image-tools", tt.val))
+			}
+			got := enableImageToolsFlag(cmd)
+			if tt.want == nil {
+				require.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			require.Equal(t, *tt.want, *got)
+		})
+	}
 }
 
 // TestKittyPlaceholdersFlag pins the tri-state behavior of

@@ -1,6 +1,6 @@
 //go:build windows
 
-package editorapproval
+package vscodemcp
 
 import "golang.org/x/sys/windows"
 

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -34,10 +36,12 @@ var ErrNoEndpoint = errors.New("no VS Code MCP endpoint found")
 // are expected to treat every error as "channel unavailable" and fall
 // back to something else rather than surface it to the user directly.
 //
-// Every call opens its own MCP session. The streamable HTTP transport
+// Every one-shot method (OpenDiff, CloseDiff, Info, Selection,
+// Diagnostics) opens its own MCP session. The streamable HTTP transport
 // doesn't support layering a second concurrent call on top of one
 // already in flight on the same session, and open_diff stays in flight
-// until the user acts.
+// until the user acts. Watch opens the one long-lived Session, for
+// callers that want VS Code's pushed notifications.
 type Client struct {
 	// Command is the VS Code CLI invocation Open uses, e.g.
 	// []string{"code"}. It defaults to []string{"code"} when empty;
@@ -89,6 +93,16 @@ const (
 	DiffRejected DiffStatus = "REJECTED"
 )
 
+// The triggers open_diff reports, i.e. what resolved the diff. Only the
+// first two come from the user acting on the diff itself. A diff that
+// was closed by hand never resolves at all (see OpenDiff).
+const (
+	TriggerAccepted           = "accepted_via_button"
+	TriggerRejected           = "rejected_via_button"
+	TriggerClosedViaTool      = "closed_via_tool"
+	TriggerClientDisconnected = "client_disconnected"
+)
+
 // OpenDiffResult is what open_diff reports once the user resolves it.
 type OpenDiffResult struct {
 	Status  DiffStatus
@@ -108,8 +122,13 @@ type openDiffPayload struct {
 // OpenDiff shows a diff in VS Code and blocks until the user accepts or
 // rejects it. When ctx is cancelled first, it closes the diff tab on a
 // best-effort basis and returns ctx.Err().
+//
+// NOTE: VS Code deliberately never answers when the user closes the diff
+// tab by hand, leaving the caller to time out, so ctx should carry a
+// deadline or be cancelled by some other route (e.g. the user answering
+// elsewhere).
 func (c *Client) OpenDiff(ctx context.Context, req OpenDiffRequest) (OpenDiffResult, error) {
-	session, err := c.connect(ctx)
+	session, err := c.connect(ctx, connectOptions{})
 	if err != nil {
 		return OpenDiffResult{}, fmt.Errorf("connect to VS Code MCP endpoint: %w", err)
 	}
@@ -157,7 +176,7 @@ func (c *Client) OpenDiff(ctx context.Context, req OpenDiffRequest) (OpenDiffRes
 // connects a fresh session rather than reusing OpenDiff's, since that
 // session's open_diff call is still outstanding when this matters.
 func (c *Client) CloseDiff(ctx context.Context, tabName string) error {
-	session, err := c.connect(ctx)
+	session, err := c.connect(ctx, connectOptions{})
 	if err != nil {
 		return fmt.Errorf("connect to VS Code MCP endpoint: %w", err)
 	}
@@ -176,9 +195,36 @@ func (c *Client) CloseDiff(ctx context.Context, tabName string) error {
 	return nil
 }
 
+// connectOptions tunes connect for the one caller that needs more than
+// the plain request/response session the one-shot methods use.
+type connectOptions struct {
+	// headers are sent on every request, on top of the lock file's.
+	headers map[string]string
+	// onNotification, if non-nil, turns on the standalone SSE stream and
+	// receives every notification VS Code pushes down it.
+	onNotification func(method string, params json.RawMessage)
+}
+
+// conn is an MCP client session together with the HTTP client it runs
+// on, so that closing it also drops the connection's idle sockets.
+type conn struct {
+	*mcp.ClientSession
+	httpClient *http.Client
+}
+
+func (c *conn) Close() error {
+	err := c.ClientSession.Close()
+	c.httpClient.CloseIdleConnections()
+	return err
+}
+
 // connect opens one MCP session against the endpoint the lock file
 // advertises.
-func (c *Client) connect(ctx context.Context) (*mcp.ClientSession, error) {
+func (c *Client) connect(ctx context.Context, opts connectOptions) (*conn, error) {
+	headers := make(map[string]string, len(c.lock.Headers)+len(opts.headers))
+	maps.Copy(headers, c.lock.Headers)
+	maps.Copy(headers, opts.headers)
+
 	httpClient := &http.Client{
 		Transport: &lockRoundTripper{
 			base: &http.Transport{
@@ -186,18 +232,24 @@ func (c *Client) connect(ctx context.Context) (*mcp.ClientSession, error) {
 					return dialLock(dialCtx, c.lock)
 				},
 			},
-			headers:   c.lock.Headers,
-			sessionID: uuid.NewString(),
+			headers:        headers,
+			sessionID:      uuid.NewString(),
+			onNotification: opts.onNotification,
 		},
 	}
 
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:             "http://localhost/mcp",
 		HTTPClient:           httpClient,
-		DisableStandaloneSSE: true,
+		DisableStandaloneSSE: opts.onNotification == nil,
 	}
 	client := mcp.NewClient(&mcp.Implementation{Name: "angela", Version: version.Version}, nil)
-	return client.Connect(ctx, transport, nil)
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		httpClient.CloseIdleConnections()
+		return nil, err
+	}
+	return &conn{ClientSession: session, httpClient: httpClient}, nil
 }
 
 func decodeOpenDiffResult(res *mcp.CallToolResult) (OpenDiffResult, error) {
@@ -237,10 +289,17 @@ func contentText(res *mcp.CallToolResult) string {
 // Mcp-Session-Id, using that value verbatim as the session id rather
 // than generating its own — so this sets it unconditionally rather
 // than only once the SDK has learned a session id from a response.
+//
+// When onNotification is set it also taps the standalone SSE stream (the
+// GET response), because the SDK client has no hook for notification
+// methods outside the MCP spec such as selection_changed. Only that
+// stream is tapped: VS Code pushes its notifications there, and leaving
+// the POST streams alone keeps tool results off this code path.
 type lockRoundTripper struct {
-	base      http.RoundTripper
-	headers   map[string]string
-	sessionID string
+	base           http.RoundTripper
+	headers        map[string]string
+	sessionID      string
+	onNotification func(method string, params json.RawMessage)
 }
 
 func (rt *lockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -249,5 +308,13 @@ func (rt *lockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		req.Header.Set(k, v)
 	}
 	req.Header.Set(sessionIDHeader, rt.sessionID)
-	return rt.base.RoundTrip(req)
+
+	resp, err := rt.base.RoundTrip(req)
+	if err != nil || rt.onNotification == nil || req.Method != http.MethodGet {
+		return resp, err
+	}
+	if mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); mediaType == "text/event-stream" {
+		resp.Body = &sseTap{body: resp.Body, emit: rt.onNotification}
+	}
+	return resp, nil
 }

@@ -60,7 +60,11 @@ internal/
                                     (Landlock, Seatbelt, Docker detection)
   editorapproval/                  External-editor diff review, built on vscodemcp
   vscodemcp/                       Client for VS Code's Copilot Chat private MCP endpoint (lock file
-                                    discovery, `open_diff` and `close_diff`) plus `Open`, which
+                                    discovery, all six upstream tools: `open_diff`, `close_diff`,
+                                    `get_vscode_info`, `get_selection`, `get_diagnostics` and
+                                    `update_session_name`), `Watch`, a long-lived session that
+                                    receives the pushed `selection_changed`, `diagnostics_changed`
+                                    and `add_file_reference` notifications, plus `Open`, which
                                     shows a single file through the `code` CLI; `vscodemcptest/`
                                     holds the fake server
   skills/                          Skill file discovery and loading

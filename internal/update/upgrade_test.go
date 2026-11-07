@@ -208,6 +208,63 @@ func TestUpgrade_ReplacesBinaryOnWindows(t *testing.T) {
 	require.NoFileExists(t, u.Exe+".old")
 }
 
+func TestUpgrade_WindowsSucceedsWhenOldBinaryCannotBeRemoved(t *testing.T) {
+	t.Parallel()
+
+	rel := releaseServer(t, "v0.0.6", map[string][]byte{
+		"angela_0.0.6_Windows_x86_64.zip": zipFile(t, map[string]string{
+			"angela_0.0.6_Windows_x86_64/angela.exe": "new binary",
+		}),
+	})
+	u, _ := newTestUpgrader(t, "v0.0.5", Platform{"windows", "amd64"}, &fakeSystem{}, rel)
+	// NOTE: A non-empty directory cannot be removed, which stands in for an old
+	// binary that another running instance still holds open.
+	blocked := u.Exe + ".old"
+	require.NoError(t, os.MkdirAll(filepath.Join(blocked, "keep"), 0o755))
+
+	require.NoError(t, u.Upgrade(t.Context(), false))
+
+	got, err := os.ReadFile(u.Exe)
+	require.NoError(t, err)
+	require.Equal(t, "new binary", string(got))
+	require.DirExists(t, blocked)
+}
+
+func TestUpgrade_WindowsRemovesStaleBinariesWhenUpToDate(t *testing.T) {
+	t.Parallel()
+
+	u, out := newTestUpgrader(t, "v0.0.5", Platform{"windows", "amd64"}, &fakeSystem{},
+		Release{TagName: "v0.0.5"})
+	dir := filepath.Dir(u.Exe)
+	stale := []string{u.Exe + ".old", u.Exe + ".old-1700000000000000000"}
+	unrelated := filepath.Join(dir, "other.exe.old")
+	for _, p := range append([]string{unrelated}, stale...) {
+		require.NoError(t, os.WriteFile(p, []byte("leftover"), 0o644))
+	}
+
+	require.NoError(t, u.Upgrade(t.Context(), false))
+
+	require.Contains(t, out.String(), "already up to date")
+	for _, p := range stale {
+		require.NoFileExists(t, p)
+	}
+	require.FileExists(t, unrelated)
+	require.FileExists(t, u.Exe)
+}
+
+func TestUpgrade_LeavesOldFilesAloneOffWindows(t *testing.T) {
+	t.Parallel()
+
+	u, _ := newTestUpgrader(t, "v0.0.5", Platform{"linux", "amd64"}, &fakeSystem{},
+		Release{TagName: "v0.0.5"})
+	old := u.Exe + ".old"
+	require.NoError(t, os.WriteFile(old, []byte("user file"), 0o644))
+
+	require.NoError(t, u.Upgrade(t.Context(), false))
+
+	require.FileExists(t, old)
+}
+
 func TestUpgrade_ChecksumMismatchKeepsOldBinary(t *testing.T) {
 	t.Parallel()
 

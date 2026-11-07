@@ -73,6 +73,8 @@ func (u *Upgrader) Upgrade(ctx context.Context, includePrerelease bool) error {
 		return fmt.Errorf("this is a development build of Angela (%s) that cannot be compared with releases, install a release from https://github.com/NaturalSelect/angela/releases instead", current)
 	}
 
+	u.removeStaleBinaries()
+
 	releases, err := u.Source.Releases(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list releases: %w", err)
@@ -83,9 +85,6 @@ func (u *Upgrader) Upgrade(ctx context.Context, includePrerelease bool) error {
 		return nil
 	}
 
-	if u.Platform.OS == "windows" {
-		os.Remove(u.Exe + ".old")
-	}
 	fmt.Fprintf(u.Out, "Upgrading Angela from %s to %s.\n", canonical(u.Current), canonical(release.TagName))
 
 	if pm := u.owningPackageManager(ctx); pm != nil {

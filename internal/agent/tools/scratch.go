@@ -1,13 +1,10 @@
 package tools
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/NaturalSelect/angela/internal/session"
 )
@@ -43,42 +40,4 @@ func SessionScratchDir(root, sessionID string) (string, error) {
 		name = session.HashID(sessionID)
 	}
 	return filepath.Join(root, name), nil
-}
-
-// NOTE: The path is handed to the model, so saved files must outlive the
-// turn that wrote them.
-const SessionScratchRetention = 24 * time.Hour
-
-// PruneSessionScratch removes session directories under root whose last
-// file was written more than maxAge ago. A missing root is not an error.
-func PruneSessionScratch(root string, maxAge time.Duration) error {
-	entries, err := os.ReadDir(root)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("listing scratch root: %w", err)
-	}
-
-	cutoff := time.Now().Add(-maxAge)
-	var errs []error
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				errs = append(errs, err)
-			}
-			continue
-		}
-		if info.ModTime().After(cutoff) {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
 }

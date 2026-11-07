@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/toolnames"
@@ -72,37 +71,6 @@ func TestWebFetchToolScopesLargePagesToSession(t *testing.T) {
 	require.True(t, os.IsNotExist(err))
 	_, err = os.Stat(dirB)
 	require.NoError(t, err, "session-b's page must survive session-a's cleanup")
-}
-
-// TestWebFetchToolPrunesStaleSessionsOnLargeSave checks the prune is
-// wired into the tool: a large save clears a stale session's pages but
-// keeps the caller's own.
-func TestWebFetchToolPrunesStaleSessionsOnLargeSave(t *testing.T) {
-	t.Parallel()
-
-	body := strings.Repeat("a", LargeContentThreshold+1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte(body))
-	}))
-	t.Cleanup(srv.Close)
-
-	scratchRoot := t.TempDir()
-	stale := filepath.Join(scratchRoot, "stale-session")
-	require.NoError(t, os.MkdirAll(stale, 0o700))
-	old := time.Now().Add(-2 * SessionScratchRetention)
-	require.NoError(t, os.Chtimes(stale, old, old))
-
-	tool := NewWebFetchTool(scratchRoot, srv.Client())
-	ctx := context.WithValue(context.Background(), SessionIDContextKey, "live-session")
-	input, err := json.Marshal(WebFetchParams{URL: srv.URL})
-	require.NoError(t, err)
-	resp, err := tool.Run(ctx, fantasy.ToolCall{ID: "call-1", Name: toolnames.WebFetch, Input: string(input)})
-	require.NoError(t, err)
-	require.False(t, resp.IsError, resp.Content)
-
-	require.NoDirExists(t, stale)
-	require.DirExists(t, filepath.Join(scratchRoot, "live-session"))
 }
 
 // TestWebFetchToolRejectsPathTraversalSessionID exercises the guard

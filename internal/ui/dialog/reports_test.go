@@ -21,8 +21,13 @@ func twoTestReports() []tools.Report {
 
 func newTestReports(t *testing.T, reports []tools.Report, workingDir string) *Reports {
 	t.Helper()
+	return newTestReportsFor(t, reports, workingDir, ReportsExport)
+}
+
+func newTestReportsFor(t *testing.T, reports []tools.Report, workingDir string, purpose ReportsPurpose) *Reports {
+	t.Helper()
 	com := &common.Common{Styles: testStyles()}
-	return NewReports(com, reports, workingDir)
+	return NewReports(com, reports, workingDir, purpose)
 }
 
 func TestReports_ID(t *testing.T) {
@@ -118,6 +123,26 @@ func TestReports_Draw(t *testing.T) {
 	require.Contains(t, view, "find the parser")
 	require.Contains(t, view, "websocket vs sse")
 	require.Contains(t, view, "deep-research")
+}
+
+// TestReports_OpenPurpose verifies the picker opened for viewing says so
+// and hands the highlighted report back as an open action.
+func TestReports_OpenPurpose(t *testing.T) {
+	t.Parallel()
+
+	d := newTestReportsFor(t, twoTestReports(), "/work", ReportsOpen)
+	const w, h = 60, 20
+	scr := uv.NewScreenBuffer(w, h)
+	d.Draw(scr, image.Rect(0, 0, w, h))
+	view := ansi.Strip(scr.Render())
+	require.Contains(t, view, "Open Report")
+	require.NotContains(t, view, "Export Report")
+
+	d.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+	action := d.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	resp, ok := action.(ActionOpenReport)
+	require.True(t, ok, "expected ActionOpenReport, got %T", action)
+	require.Equal(t, "rpt_bbbbbbbb", resp.Report.ID)
 }
 
 func TestReports_ShortAndFullHelp(t *testing.T) {

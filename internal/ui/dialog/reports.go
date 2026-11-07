@@ -16,19 +16,30 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-// ReportsID is the identifier for the "Export Report" picker dialog.
+// ReportsID is the identifier for the agent report picker dialog.
 const ReportsID = "reports"
 
-// Reports is the first step of the "Export Report" flow: a picker over
-// the agent reports the current session has collected. Selecting one
-// hands off to the Arguments dialog to collect (and default) an output
-// path.
+// ReportsPurpose picks what the report picker hands its selection to.
+type ReportsPurpose int
+
+const (
+	// ReportsExport hands the selection to the Arguments dialog to
+	// collect (and default) an output path.
+	ReportsExport ReportsPurpose = iota
+	// ReportsOpen shows the selection right away.
+	ReportsOpen
+)
+
+// Reports is a picker over the agent reports the current session has
+// collected, the first step of the "Export Report" and "Open Report"
+// flows.
 type Reports struct {
 	com        *common.Common
 	help       help.Model
 	list       *list.FilterableList
 	input      textinput.Model
 	workingDir string
+	purpose    ReportsPurpose
 
 	frame   *Frame
 	metrics FrameMetrics
@@ -64,14 +75,19 @@ var (
 	_ ListItem = (*ReportItem)(nil)
 )
 
-// NewReports creates a new "Export Report" picker dialog over a
-// session's agent reports. workingDir is passed through to the next
-// step so it can default the output path.
-func NewReports(com *common.Common, reports []tools.Report, workingDir string) *Reports {
-	d := &Reports{com: com, workingDir: workingDir}
+// NewReports creates a new picker dialog over a session's agent reports.
+// workingDir is passed through to the export step so it can default the
+// output path; it is unused for [ReportsOpen].
+func NewReports(com *common.Common, reports []tools.Report, workingDir string, purpose ReportsPurpose) *Reports {
+	d := &Reports{com: com, workingDir: workingDir, purpose: purpose}
+
+	title, selectHelp := "Export Report", "export"
+	if purpose == ReportsOpen {
+		title, selectHelp = "Open Report", "open"
+	}
 
 	d.frame = NewFrame(com.Styles, FrameSpec{
-		Title:     "Export Report",
+		Title:     title,
 		MaxWidth:  defaultDialogMaxWidth,
 		MaxHeight: defaultDialogHeight,
 	})
@@ -97,7 +113,7 @@ func NewReports(com *common.Common, reports []tools.Report, workingDir string) *
 
 	d.keyMap.Select = key.NewBinding(
 		key.WithKeys("enter", "ctrl+y"),
-		key.WithHelp("enter", "export"),
+		key.WithHelp("enter", selectHelp),
 	)
 	d.keyMap.Next = key.NewBinding(
 		key.WithKeys("down", "ctrl+n"),
@@ -154,6 +170,9 @@ func (d *Reports) HandleMsg(msg tea.Msg) Action {
 			reportItem, ok := selectedItem.(*ReportItem)
 			if !ok {
 				break
+			}
+			if d.purpose == ReportsOpen {
+				return ActionOpenReport{Report: reportItem.report}
 			}
 			return ActionSelectExportReport{Report: reportItem.report, WorkingDir: d.workingDir}
 		default:

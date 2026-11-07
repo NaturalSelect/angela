@@ -148,6 +148,19 @@ func TestNewCommands_ExportReportNeedsASession(t *testing.T) {
 	require.NotContains(t, withoutSession, "export_report", "no session is open yet")
 }
 
+// TestNewCommands_OpenReportNeedsASession pins that a report can be
+// opened whenever a session exists, in or out of VS Code, because the TUI
+// has its own viewer for it.
+func TestNewCommands_OpenReportNeedsASession(t *testing.T) {
+	t.Parallel()
+
+	withSession := visibleCommandIDs(newTestCommands(t, nil, "sess-1", true, nil, nil, nil))
+	require.Contains(t, withSession, "open_report")
+
+	withoutSession := visibleCommandIDs(newTestCommands(t, nil, "", false, nil, nil, nil))
+	require.NotContains(t, withoutSession, "open_report", "no session is open yet")
+}
+
 // TestNewCommands_ImportReportNeedsASession pins that a report can only
 // be imported once a session exists to receive it.
 func TestNewCommands_ImportReportNeedsASession(t *testing.T) {

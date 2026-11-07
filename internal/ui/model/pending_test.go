@@ -181,7 +181,15 @@ func TestFetchNotices_ShownOnTriggerAndClearedEvenWhenResultIsDropped(t *testing
 			trigger: func(m *UI) tea.Cmd {
 				return m.handleDialogMsg(dialog.ActionExportReport{})
 			},
-			result: exportReportsLoadedMsg{sessionID: "elsewhere"},
+			result: sessionReportsLoadedMsg{sessionID: "elsewhere"},
+		},
+		{
+			name: "open report list",
+			info: reportsListingInfo,
+			trigger: func(m *UI) tea.Cmd {
+				return m.handleDialogMsg(dialog.ActionOpenReport{})
+			},
+			result: sessionReportsLoadedMsg{sessionID: "elsewhere", purpose: dialog.ReportsOpen},
 		},
 		{
 			name: "undo preview",
@@ -244,6 +252,9 @@ func TestFetchNotices_NoSessionShowsNoNotice(t *testing.T) {
 		"open image":   func(m *UI) tea.Cmd { return m.handleDialogMsg(dialog.ActionOpenImage{}) },
 		"export report": func(m *UI) tea.Cmd {
 			return m.handleDialogMsg(dialog.ActionExportReport{})
+		},
+		"open report": func(m *UI) tea.Cmd {
+			return m.handleDialogMsg(dialog.ActionOpenReport{})
 		},
 		"tps":   func(m *UI) tea.Cmd { return m.handleDialogMsg(dialog.ActionShowTPS{}) },
 		"cache": func(m *UI) tea.Cmd { return m.handleDialogMsg(dialog.ActionShowCache{}) },

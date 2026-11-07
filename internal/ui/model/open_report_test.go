@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
@@ -94,18 +96,20 @@ func TestHandleDialogMsg_ActionOpenReport_ClosesPickerBeforeViewer(t *testing.T)
 	require.True(t, m.dialog.ContainsDialog(dialog.ViewerID))
 }
 
-// TestHandleDialogMsg_ActionOpenReport_WritesTempFileAndOpensIt verifies
-// the report's Markdown lands on disk under the temp dir and that exact
-// path is handed to the opener.
-func TestHandleDialogMsg_ActionOpenReport_WritesTempFileAndOpensIt(t *testing.T) {
+// TestHandleDialogMsg_ActionOpenReport_WritesViewerFileAndOpensIt verifies
+// the report's Markdown lands under the data directory's viewer directory
+// and that exact path is handed to the opener.
+func TestHandleDialogMsg_ActionOpenReport_WritesViewerFileAndOpensIt(t *testing.T) {
 	t.Parallel()
 
 	report := agenttools.Report{ID: "rpt_0a1b2c3d", AgentType: "explore", Task: "find the parser", Content: "parse.go"}
-	want := filepath.Join(os.TempDir(), "angela-reports", report.ID+".md")
-	t.Cleanup(func() { _ = os.Remove(want) })
+	dataDir := t.TempDir()
+	want := filepath.Join(dataDir, scratch.ViewerDir, report.ID+".md")
 
 	var opened vscodemcp.OpenRequest
-	m := newHandleDialogUI(t, NewMockWorkspace(gomock.NewController(t)))
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().Config().Return(&config.Config{Options: &config.Options{DataDirectory: dataDir}}).AnyTimes()
+	m := newHandleDialogUI(t, ws)
 	m.caps.Env = uv.Environ{"TERM_PROGRAM=vscode"}
 	m.openInVSCode = func(_ context.Context, req vscodemcp.OpenRequest) error {
 		opened = req
@@ -135,9 +139,9 @@ func TestHandleDialogMsg_ActionOpenReport_OpenerFailureFallsBackToViewer(t *test
 	t.Parallel()
 
 	report := agenttools.Report{ID: "rpt_9f8e7d6c", AgentType: "explore", Task: "find the parser", Content: "parse.go"}
-	t.Cleanup(func() { _ = os.Remove(filepath.Join(os.TempDir(), "angela-reports", report.ID+".md")) })
 
 	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().Config().Return(&config.Config{Options: &config.Options{DataDirectory: t.TempDir()}}).AnyTimes()
 	stubBusyProbe(ws, true, false, permission.ModeManual, &workspace.ActiveAgent{})
 	ws.EXPECT().LSPGetStates().Return(nil).AnyTimes()
 	m := newHandleDialogUI(t, ws)

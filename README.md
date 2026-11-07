@@ -100,6 +100,7 @@ See the [full provider list](./docs/config/) for all supported variables.
 | `angela login` / `logout`    | Sign in to or out of a platform (`copilot`)              |
 | `angela logs`                | Show the log for the current project                     |
 | `angela stats`               | Show token usage, cost, and activity statistics          |
+| `angela vacuum` (`gc`)       | Compact the database and delete temporary files older than an hour (`--dry-run` previews) |
 | `angela dirs`                | Show config directories                                  |
 | `angela projects`            | List known project directories                           |
 | `angela pprof ...`           | Export runtime profiles of a running Angela process      |

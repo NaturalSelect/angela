@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/images"
+	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
 	"github.com/NaturalSelect/angela/internal/ui/util"
@@ -70,19 +72,20 @@ func TestHandleDialogMsg_ActionOpenImage_NoSession(t *testing.T) {
 	require.Equal(t, util.InfoTypeWarn, info.Type)
 }
 
-// TestHandleDialogMsg_ActionOpenImage_WritesTempFileAndOpensIt verifies
-// the image bytes land on disk under the temp dir and that exact path is
-// handed to the opener.
-func TestHandleDialogMsg_ActionOpenImage_WritesTempFileAndOpensIt(t *testing.T) {
+// TestHandleDialogMsg_ActionOpenImage_WritesViewerFileAndOpensIt verifies
+// the image bytes land under the data directory's viewer directory and
+// that exact path is handed to the opener.
+func TestHandleDialogMsg_ActionOpenImage_WritesViewerFileAndOpensIt(t *testing.T) {
 	t.Parallel()
 
 	const id = "img_0a1b2c3d4e5f"
 	img := images.Image{ID: id, MIMEType: "image/png", Data: []byte("fake-png-bytes")}
+	dataDir := t.TempDir()
 	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().Config().Return(&config.Config{Options: &config.Options{DataDirectory: dataDir}}).AnyTimes()
 	ws.EXPECT().GetGeneratedImage(gomock.Any(), id).Return(img, nil)
 
-	want := filepath.Join(os.TempDir(), "angela-images", id+".png")
-	t.Cleanup(func() { _ = os.Remove(want) })
+	want := filepath.Join(dataDir, scratch.ViewerDir, id+".png")
 
 	var opened vscodemcp.OpenRequest
 	m := newHandleDialogUI(t, ws)
@@ -105,15 +108,38 @@ func TestHandleDialogMsg_ActionOpenImage_WritesTempFileAndOpensIt(t *testing.T) 
 	require.Equal(t, img.Data, data)
 }
 
+// TestHandleDialogMsg_ActionOpenImage_WithoutDataDirectoryIsReported
+// verifies nothing is written to a shared location when the data directory
+// is unknown.
+func TestHandleDialogMsg_ActionOpenImage_WithoutDataDirectoryIsReported(t *testing.T) {
+	t.Parallel()
+
+	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().Config().Return(&config.Config{Options: &config.Options{}}).AnyTimes()
+
+	m := newHandleDialogUI(t, ws)
+	m.openInVSCode = func(context.Context, vscodemcp.OpenRequest) error {
+		t.Error("the opener must not run without a data directory")
+		return nil
+	}
+
+	cmd := m.handleDialogMsg(dialog.ActionOpenImage{ImageID: "img_0a1b2c3d4e5f"})
+	require.NotNil(t, cmd)
+
+	msg := workMsg(t, cmd)
+	info, ok := msg.(util.InfoMsg)
+	require.True(t, ok, "expected an error toast, got %T: %v", msg, msg)
+	require.Equal(t, util.InfoTypeError, info.Type)
+}
+
 func TestHandleDialogMsg_ActionOpenImage_OpenerFailureIsReported(t *testing.T) {
 	t.Parallel()
 
 	const id = "img_9f8e7d6c5b4a"
 	img := images.Image{ID: id, MIMEType: "image/png", Data: []byte("fake-png-bytes")}
 	ws := NewMockWorkspace(gomock.NewController(t))
+	ws.EXPECT().Config().Return(&config.Config{Options: &config.Options{DataDirectory: t.TempDir()}}).AnyTimes()
 	ws.EXPECT().GetGeneratedImage(gomock.Any(), id).Return(img, nil)
-
-	t.Cleanup(func() { _ = os.Remove(filepath.Join(os.TempDir(), "angela-images", id+".png")) })
 
 	m := newHandleDialogUI(t, ws)
 	m.openInVSCode = func(context.Context, vscodemcp.OpenRequest) error {

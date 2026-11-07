@@ -80,6 +80,7 @@ func init() {
 		statsCmd,
 		sessionCmd,
 		acpCmd,
+		vacuumCmd,
 	)
 }
 

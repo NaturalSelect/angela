@@ -19,7 +19,7 @@ internal/
   app/app.go                       Top-level wiring: DB, config, agents, LSP, MCP, events
   cmd/                             CLI commands (root, run, commit, session, agent, acp, config,
                                     login, logout, models, stats, logs, dirs, projects, pprof,
-                                    update-providers, upgrade)
+                                    update-providers, upgrade, vacuum)
   config/
     config.go                      Config struct, context file paths, agent definitions
     load.go                        angela.json loading and validation
@@ -79,6 +79,10 @@ internal/
   undo/                            Reverts the last turn's file edits, messages and sub-sessions
   imagegen/                        Provider-agnostic wrapper over the OpenAI Images API
   images/                          SQLite storage for images produced by the image tools
+  scratch/                         Data-directory folders that hold only regenerable files
+                                    (tool-output, webfetch, mcp-media, viewer) and the
+                                    age-guarded sweep behind `angela vacuum`; writers take
+                                    their folder names from here
   history/                         Prompt history
   projects/                        Recent projects tracking & persistence
   oauth/                           OAuth2 token models & credential persistence (Copilot, MCP)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/agent/tools/mcp"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
@@ -133,7 +134,7 @@ func (m *Tool) Run(ctx context.Context, params fantasy.ToolCall) (fantasy.ToolRe
 
 // mcpMediaDirName is the subdirectory of the data directory that holds
 // image and media payloads returned by MCP tools.
-const mcpMediaDirName = "mcp-media"
+const mcpMediaDirName = scratch.MCPMediaDir
 
 // mcpMediaRetention is how long a saved payload stays on disk. The path is
 // handed to the model, so it has to outlive the turn that produced it, but

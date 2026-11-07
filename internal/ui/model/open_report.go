@@ -43,17 +43,21 @@ func (m *UI) handleOpenReport(msg dialog.ActionOpenReport) tea.Cmd {
 	return tea.Batch(m.showPending(openingReportInfo), m.openReportInVSCodeCmd(msg.Report, open))
 }
 
-// openReportInVSCodeCmd writes report to a temp file and opens it in VS Code,
-// handing the report back as a reportOpenFallbackMsg when any step fails.
+// openReportInVSCodeCmd writes report to the viewer directory and opens it in
+// VS Code, handing the report back as a reportOpenFallbackMsg when any step
+// fails.
 func (m *UI) openReportInVSCodeCmd(report agenttools.Report, open func(context.Context, vscodemcp.OpenRequest) error) tea.Cmd {
+	dir, dirErr := m.viewerDir()
 	return func() tea.Msg {
+		if dirErr != nil {
+			return reportOpenFallbackMsg{report: report, err: dirErr}
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), openInVSCodeTimeout)
 		defer cancel()
 
 		// NOTE: The report only lives in the session's messages and `code`
-		// opens files, so it goes to a fixed name under the temp dir.
+		// opens files, so it goes to a fixed name in the viewer directory.
 		// Reopening a report reuses the file, and VS Code reuses its tab.
-		dir := filepath.Join(os.TempDir(), "angela-reports")
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return reportOpenFallbackMsg{report: report, err: err}
 		}

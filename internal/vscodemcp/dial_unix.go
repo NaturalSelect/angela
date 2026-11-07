@@ -1,6 +1,6 @@
 //go:build !windows
 
-package editorapproval
+package vscodemcp
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 )
 
 // dialLock connects to the Unix domain socket a lock file advertises.
-func dialLock(ctx context.Context, lock lockFile) (net.Conn, error) {
+func dialLock(ctx context.Context, lock LockFile) (net.Conn, error) {
 	if lock.Scheme != "unix" {
 		return nil, fmt.Errorf("unsupported lock scheme %q on this platform", lock.Scheme)
 	}

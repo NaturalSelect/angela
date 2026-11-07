@@ -1,4 +1,4 @@
-package editorapproval
+package vscodemcp
 
 import (
 	"encoding/json"
@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-// lockFile mirrors the JSON that VS Code's Copilot Chat extension writes
+// LockFile mirrors the JSON that VS Code's Copilot Chat extension writes
 // to advertise its local MCP diff-review endpoint for a running window
 // (extensions/copilot/.../vscode-node/lockFile.ts upstream). Only the
 // fields Angela needs are decoded; unknown fields are ignored.
-type lockFile struct {
+type LockFile struct {
 	SocketPath       string            `json:"socketPath"`
 	Scheme           string            `json:"scheme"`
 	Headers          map[string]string `json:"headers"`
@@ -45,13 +45,13 @@ func lockDir(getenv func(string) string) string {
 // malformed lock files are skipped rather than treated as fatal, since
 // they can be left behind by a VS Code window that crashed or is
 // mid-shutdown.
-func findLock(dir, workingDir string) (lockFile, bool) {
+func findLock(dir, workingDir string) (LockFile, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return lockFile{}, false
+		return LockFile{}, false
 	}
 
-	best := lockFile{}
+	best := LockFile{}
 	found := false
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".lock") {
@@ -62,7 +62,7 @@ func findLock(dir, workingDir string) (lockFile, bool) {
 		if err != nil {
 			continue
 		}
-		var lock lockFile
+		var lock LockFile
 		if err := json.Unmarshal(data, &lock); err != nil {
 			continue
 		}

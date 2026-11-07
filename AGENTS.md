@@ -58,7 +58,11 @@ internal/
     shellscan/                     Shell command AST scanner for permission decisions
   sandbox/                         OS-level isolation for the process and the commands it runs
                                     (Landlock, Seatbelt, Docker detection)
-  editorapproval/                  External-editor diff review (VS Code MCP `open_diff` channel)
+  editorapproval/                  External-editor diff review, built on vscodemcp
+  vscodemcp/                       Client for VS Code's Copilot Chat private MCP endpoint (lock file
+                                    discovery, `open_diff` and `close_diff`) plus `Open`, which
+                                    shows a single file through the `code` CLI; `vscodemcptest/`
+                                    holds the fake server
   skills/                          Skill file discovery and loading
     builtin/                       Embedded builtin skills (setup, hooks, config, jq, etc.)
   shell/                           Bash command execution with background job support

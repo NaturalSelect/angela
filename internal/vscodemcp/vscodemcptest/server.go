@@ -6,15 +6,19 @@ package vscodemcptest
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/NaturalSelect/angela/internal/vscodemcp"
 	"github.com/google/uuid"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 )
@@ -42,6 +46,10 @@ type Options struct {
 	// the matching open_diff call when close_diff names its tab) use it
 	// to do so.
 	OnCloseDiff func(tabName string)
+	// Tools adds tools besides open_diff and close_diff, keyed by name.
+	// Their arguments arrive as the raw JSON the client sent, and are not
+	// validated against any schema.
+	Tools map[string]func(ctx context.Context, args json.RawMessage) *mcp.CallToolResult
 }
 
 // Server is a running fake VS Code MCP server.
@@ -53,6 +61,52 @@ type Server struct {
 	Nonce string
 	// CloseDiffCalls receives the tab name of every close_diff call.
 	CloseDiffCalls <-chan string
+	// SessionHeaders receives the headers of the request that started
+	// each session.
+	SessionHeaders <-chan http.Header
+
+	mu    sync.Mutex
+	conns map[string]mcp.Connection
+}
+
+// Notify pushes a notification to every connected session, the way VS
+// Code pushes selection_changed and its siblings. It fails if some
+// session cannot take it right now, notably one that hasn't opened its
+// standalone event stream yet, so tests wait for it with a retry.
+func (s *Server) Notify(method string, params any) error {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	conns := slices.Collect(maps.Values(s.conns))
+	s.mu.Unlock()
+	if len(conns) == 0 {
+		return errors.New("no session connected")
+	}
+
+	var errs []error
+	for _, conn := range conns {
+		errs = append(errs, conn.Write(context.Background(), &jsonrpc.Request{Method: method, Params: raw}))
+	}
+	return errors.Join(errs...)
+}
+
+// recordingTransport hands the connection it creates to onConnect, which
+// is how Server.Notify gets at a session's write side: the SDK server
+// has no API for sending a notification outside the MCP spec.
+type recordingTransport struct {
+	*mcp.StreamableServerTransport
+	onConnect func(mcp.Connection)
+}
+
+func (t *recordingTransport) Connect(ctx context.Context) (mcp.Connection, error) {
+	conn, err := t.StreamableServerTransport.Connect(ctx)
+	if err == nil {
+		t.onConnect(conn)
+	}
+	return conn, err
 }
 
 // Start serves open_diff and close_diff over this platform's lock file
@@ -81,6 +135,7 @@ func Start(t testing.TB, opts Options) *Server {
 
 	nonce := uuid.NewString()
 	closeDiffCh := make(chan string, 4)
+	sessionHeadersCh := make(chan http.Header, 8)
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "fake-vscode"}, nil)
 	mcp.AddTool(server, &mcp.Tool{Name: "open_diff", Description: "fake open_diff"},
@@ -100,8 +155,23 @@ func Start(t testing.TB, opts Options) *Server {
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: `{"success":true}`}}}, nil, nil
 		})
 
+	for name, handler := range opts.Tools {
+		server.AddTool(
+			&mcp.Tool{Name: name, Description: "fake " + name, InputSchema: map[string]any{"type": "object"}},
+			func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return handler(ctx, req.Params.Arguments), nil
+			})
+	}
+
+	srv := &Server{
+		Nonce:          nonce,
+		CloseDiffCalls: closeDiffCh,
+		SessionHeaders: sessionHeadersCh,
+		conns:          map[string]mcp.Connection{},
+	}
+
 	var mu sync.Mutex
-	transports := map[string]*mcp.StreamableServerTransport{}
+	transports := map[string]*recordingTransport{}
 
 	mimicVSCodeSessions := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Nonce "+nonce {
@@ -117,13 +187,24 @@ func Start(t testing.TB, opts Options) *Server {
 		mu.Lock()
 		transport, ok := transports[sessionID]
 		if !ok {
-			transport = &mcp.StreamableServerTransport{SessionID: sessionID}
+			transport = &recordingTransport{
+				StreamableServerTransport: &mcp.StreamableServerTransport{SessionID: sessionID},
+				onConnect: func(conn mcp.Connection) {
+					srv.mu.Lock()
+					defer srv.mu.Unlock()
+					srv.conns[sessionID] = conn
+				},
+			}
 			if _, err := server.Connect(r.Context(), transport, nil); err != nil {
 				mu.Unlock()
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			transports[sessionID] = transport
+			select {
+			case sessionHeadersCh <- r.Header.Clone():
+			default:
+			}
 		}
 		mu.Unlock()
 
@@ -136,12 +217,8 @@ func Start(t testing.TB, opts Options) *Server {
 	go func() { _ = httpSrv.Serve(l) }()
 	t.Cleanup(func() { _ = httpSrv.Close() })
 
-	return &Server{
-		Scheme:         scheme,
-		SocketPath:     sockPath,
-		Nonce:          nonce,
-		CloseDiffCalls: closeDiffCh,
-	}
+	srv.Scheme, srv.SocketPath = scheme, sockPath
+	return srv
 }
 
 // Lock returns a lock file advertising s for a VS Code window that has

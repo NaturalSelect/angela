@@ -116,4 +116,8 @@ jobs:
           # (BSD-3-Clause OR GPL-2.0-only); we use it under BSD-3-Clause.
           # ClearlyDefined's scan of the dual-license text mis-detects it
           # as BSD-3-Clause AND multiple GPL-2.0 variants.
-          allow-dependencies-licenses: "pkg:golang/kernel.org/pub/linux/libs/security/libcap/psx@v1.2.77"
+          # github.com/opencontainers/go-digest code is Apache-2.0. Only its
+          # README.md and CONTRIBUTING.md are CC-BY-SA-4.0, and neither is
+          # compiled into the binary. The scan reports the package as
+          # Apache-2.0 AND CC-BY-SA-4.0.
+          allow-dependencies-licenses: "pkg:golang/kernel.org/pub/linux/libs/security/libcap/psx@v1.2.77, pkg:golang/github.com/opencontainers/go-digest@v1.0.0"

@@ -48,6 +48,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/undo"
 	"github.com/NaturalSelect/angela/internal/version"
+	"github.com/NaturalSelect/angela/internal/vscodemcp"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
 )
@@ -224,6 +225,10 @@ type UI struct {
 
 	// caps hold different terminal capabilities that we query for.
 	caps common.Capabilities
+
+	// openInVSCode shows a file in VS Code. Nil means a zero
+	// [vscodemcp.Client]'s Open; tests stub it.
+	openInVSCode func(context.Context, vscodemcp.OpenRequest) error
 
 	// imageSupportReported tracks whether this session has already
 	// told the workspace the client can render images (Kitty graphics
@@ -709,14 +714,14 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.dialog.OpenDialog(dialog.NewUndo(m.com, msg.sessionID, msg.preview))
-	case exportImagesLoadedMsg:
+	case sessionImagesLoadedMsg:
 		m.clearPending(imagesListingInfo)
 		// Drop a result for a session the user has already navigated
 		// away from while the fetch was in flight.
 		if msg.sessionID != m.currentSessionID() {
 			break
 		}
-		m.dialog.OpenDialog(dialog.NewImages(m.com, msg.images, msg.workingDir))
+		m.dialog.OpenDialog(dialog.NewImages(m.com, msg.images, msg.workingDir, msg.purpose))
 	case exportReportsLoadedMsg:
 		m.clearPending(reportsListingInfo)
 		// Drop a result for a session the user has already navigated
@@ -1155,13 +1160,14 @@ type undoPreviewMsg struct {
 	preview   undo.Preview
 }
 
-// exportImagesLoadedMsg carries a session's generated images, fetched
-// off the Update goroutine, so the "Export Image" picker dialog can
-// be opened with them once they arrive.
-type exportImagesLoadedMsg struct {
+// sessionImagesLoadedMsg carries a session's generated images, fetched
+// off the Update goroutine, so the image picker dialog can be opened
+// with them once they arrive. The zero purpose is an export.
+type sessionImagesLoadedMsg struct {
 	sessionID  string
 	images     []images.Image
 	workingDir string
+	purpose    dialog.ImagesPurpose
 }
 
 // exportReportsLoadedMsg carries a session's agent reports, collected
@@ -1291,6 +1297,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		return m.handleExportImage(msg)
 	case dialog.ActionSelectExportImage:
 		return m.handleSelectExportImage(msg)
+	case dialog.ActionOpenImage:
+		return m.handleOpenImage(msg)
 	case dialog.ActionExportReport:
 		return m.handleExportReport(msg)
 	case dialog.ActionSelectExportReport:

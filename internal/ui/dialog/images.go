@@ -18,18 +18,29 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
-// ImagesID is the identifier for the "Export Image" picker dialog.
+// ImagesID is the identifier for the generated-image picker dialog.
 const ImagesID = "images"
 
-// Images is the first step of the "Export Image" flow: a picker over
-// the current session's generated images. Selecting one hands off to
-// the Arguments dialog to collect (and default) an output path.
+// ImagesPurpose picks what the image picker hands its selection to.
+type ImagesPurpose int
+
+const (
+	// ImagesExport hands the selection to the Arguments dialog to
+	// collect (and default) an output path.
+	ImagesExport ImagesPurpose = iota
+	// ImagesOpen opens the selection in VS Code right away.
+	ImagesOpen
+)
+
+// Images is a picker over the current session's generated images, the
+// first step of the "Export Image" and "Open Image" flows.
 type Images struct {
 	com        *common.Common
 	help       help.Model
 	list       *list.FilterableList
 	input      textinput.Model
 	workingDir string
+	purpose    ImagesPurpose
 
 	frame   *Frame
 	metrics FrameMetrics
@@ -65,14 +76,19 @@ var (
 	_ ListItem = (*ImageItem)(nil)
 )
 
-// NewImages creates a new "Export Image" picker dialog over a
-// session's generated images. workingDir is passed through to the
-// next step so it can default the output path.
-func NewImages(com *common.Common, imgs []images.Image, workingDir string) *Images {
-	d := &Images{com: com, workingDir: workingDir}
+// NewImages creates a new picker dialog over a session's generated
+// images. workingDir is passed through to the export step so it can
+// default the output path; it is unused for [ImagesOpen].
+func NewImages(com *common.Common, imgs []images.Image, workingDir string, purpose ImagesPurpose) *Images {
+	d := &Images{com: com, workingDir: workingDir, purpose: purpose}
+
+	title, selectHelp := "Export Image", "export"
+	if purpose == ImagesOpen {
+		title, selectHelp = "Open Image", "open"
+	}
 
 	d.frame = NewFrame(com.Styles, FrameSpec{
-		Title:     "Export Image",
+		Title:     title,
 		MaxWidth:  defaultDialogMaxWidth,
 		MaxHeight: defaultDialogHeight,
 	})
@@ -98,7 +114,7 @@ func NewImages(com *common.Common, imgs []images.Image, workingDir string) *Imag
 
 	d.keyMap.Select = key.NewBinding(
 		key.WithKeys("enter", "ctrl+y"),
-		key.WithHelp("enter", "export"),
+		key.WithHelp("enter", selectHelp),
 	)
 	d.keyMap.Next = key.NewBinding(
 		key.WithKeys("down", "ctrl+n"),
@@ -155,6 +171,9 @@ func (d *Images) HandleMsg(msg tea.Msg) Action {
 			imageItem, ok := selectedItem.(*ImageItem)
 			if !ok {
 				break
+			}
+			if d.purpose == ImagesOpen {
+				return ActionOpenImage{ImageID: imageItem.image.ID}
 			}
 			return ActionSelectExportImage{Image: imageItem.image, WorkingDir: d.workingDir}
 		default:

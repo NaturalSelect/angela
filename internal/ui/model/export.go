@@ -25,24 +25,7 @@ func (m *UI) handleExportImage(msg dialog.ActionExportImage) tea.Cmd {
 			cmds = append(cmds, util.ReportWarn("Open a session before exporting an image."))
 			return tea.Batch(cmds...)
 		}
-		sessionID := m.session.ID
-		cmds = append(cmds, m.showPending(imagesListingInfo), func() tea.Msg {
-			ctx := context.Background()
-			imgs, err := m.com.Workspace.ListSessionImages(ctx, sessionID)
-			if err != nil {
-				return util.ReportError(err)()
-			}
-			if len(imgs) == 0 {
-				return util.ReportWarn("No generated images in this session")()
-			}
-
-			workingDir, err := os.Getwd()
-			if err != nil {
-				return util.ReportError(err)()
-			}
-
-			return exportImagesLoadedMsg{sessionID: sessionID, images: imgs, workingDir: workingDir}
-		})
+		cmds = append(cmds, m.showPending(imagesListingInfo), m.loadSessionImagesCmd(m.session.ID, dialog.ImagesExport))
 		return tea.Batch(cmds...)
 	}
 	m.dialog.CloseDialog(dialog.ArgumentsID)
@@ -76,6 +59,28 @@ func (m *UI) handleExportImage(msg dialog.ActionExportImage) tea.Cmd {
 		return util.ReportInfo("Exported image to " + outPath)()
 	})
 	return tea.Batch(cmds...)
+}
+
+// loadSessionImagesCmd fetches sessionID's generated images off the Update
+// goroutine, for the picker opened for purpose.
+func (m *UI) loadSessionImagesCmd(sessionID string, purpose dialog.ImagesPurpose) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		imgs, err := m.com.Workspace.ListSessionImages(ctx, sessionID)
+		if err != nil {
+			return util.ReportError(err)()
+		}
+		if len(imgs) == 0 {
+			return util.ReportWarn("No generated images in this session")()
+		}
+
+		workingDir, err := os.Getwd()
+		if err != nil {
+			return util.ReportError(err)()
+		}
+
+		return sessionImagesLoadedMsg{sessionID: sessionID, images: imgs, workingDir: workingDir, purpose: purpose}
+	}
 }
 
 // handleExportReport handles dialog.ActionExportReport.

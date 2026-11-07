@@ -64,7 +64,11 @@ type Commands struct {
 	// inBranch: it also offers the jump from an ordinary sub-agent
 	// transcript, not only a branch.
 	hasParent bool
-	selected  CommandType
+	// inVSCode gates commands that hand work to VS Code through its CLI.
+	// The caller resolves it from the terminal's environment, so the
+	// dialog does no IO of its own.
+	inVSCode bool
+	selected CommandType
 	// active is the agent the session runs on, or nil when it is not
 	// known yet. The model-dependent commands (thinking, variants, file
 	// picker) are gated on it rather than on the global config, so the
@@ -93,7 +97,7 @@ type Commands struct {
 var _ Dialog = (*Commands)(nil)
 
 // NewCommands creates a new commands dialog.
-func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue, inBranch, hasParent bool, active *workspace.ActiveAgent, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
+func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, hasQueue, inBranch, hasParent, inVSCode bool, active *workspace.ActiveAgent, customCommands []commands.CustomCommand, mcpPrompts []commands.MCPPrompt) (*Commands, error) {
 	c := &Commands{
 		com:            com,
 		selected:       SystemCommands,
@@ -103,6 +107,7 @@ func NewCommands(com *common.Common, sessionID string, hasSession, hasTodos, has
 		hasQueue:       hasQueue,
 		inBranch:       inBranch,
 		hasParent:      hasParent,
+		inVSCode:       inVSCode,
 		active:         active,
 		customCommands: customCommands,
 		mcpPrompts:     mcpPrompts,
@@ -556,6 +561,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 	if c.hasSession {
 		commands = append(commands, NewCommandItem(c.com.Styles, "export_image", "Export Image", "", ActionExportImage{}).WithAliases("image"))
 		commands = append(commands, NewCommandItem(c.com.Styles, "export_report", "Export Report", "", ActionExportReport{}).WithAliases("report", "reports"))
+	}
+
+	if c.hasSession && c.inVSCode {
+		commands = append(commands, NewCommandItem(c.com.Styles, "open_image", "Open Image", "", ActionOpenImage{}).WithAliases("view", "vscode"))
 	}
 
 	if c.hasSession && !c.viewingSubAgent() {

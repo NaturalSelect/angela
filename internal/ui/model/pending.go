@@ -18,6 +18,7 @@ var (
 	sandboxEnteringInfo    = pendingInfo("Entering sandbox")
 	exportingSessionInfo   = pendingInfo("Exporting session")
 	exportingImageInfo     = pendingInfo("Exporting image")
+	openingImageInfo       = pendingInfo("Opening image")
 	exportingReportInfo    = pendingInfo("Exporting report")
 	importingReportInfo    = pendingInfo("Importing report")
 	undoingInfo            = pendingInfo("Undoing last turn")

@@ -165,7 +165,15 @@ func TestFetchNotices_ShownOnTriggerAndClearedEvenWhenResultIsDropped(t *testing
 			trigger: func(m *UI) tea.Cmd {
 				return m.handleDialogMsg(dialog.ActionExportImage{})
 			},
-			result: exportImagesLoadedMsg{sessionID: "elsewhere"},
+			result: sessionImagesLoadedMsg{sessionID: "elsewhere"},
+		},
+		{
+			name: "open image list",
+			info: imagesListingInfo,
+			trigger: func(m *UI) tea.Cmd {
+				return m.handleDialogMsg(dialog.ActionOpenImage{})
+			},
+			result: sessionImagesLoadedMsg{sessionID: "elsewhere", purpose: dialog.ImagesOpen},
 		},
 		{
 			name: "export report list",
@@ -233,6 +241,7 @@ func TestFetchNotices_NoSessionShowsNoNotice(t *testing.T) {
 	triggers := map[string]func(m *UI) tea.Cmd{
 		"sub-sessions": func(m *UI) tea.Cmd { return m.openSubSessionsDialog() },
 		"export image": func(m *UI) tea.Cmd { return m.handleDialogMsg(dialog.ActionExportImage{}) },
+		"open image":   func(m *UI) tea.Cmd { return m.handleDialogMsg(dialog.ActionOpenImage{}) },
 		"export report": func(m *UI) tea.Cmd {
 			return m.handleDialogMsg(dialog.ActionExportReport{})
 		},
@@ -399,6 +408,11 @@ func TestToastNotices_ShownOnTriggerAndReplacedByTheOutcomeToast(t *testing.T) {
 			name:   "export image",
 			info:   exportingImageInfo,
 			action: dialog.ActionExportImage{ImageID: "img_1a2b3c4d5e6f"},
+		},
+		{
+			name:   "open image",
+			info:   openingImageInfo,
+			action: dialog.ActionOpenImage{ImageID: "img_1a2b3c4d5e6f"},
 		},
 		{
 			name:   "export report",

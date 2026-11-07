@@ -28,7 +28,7 @@ func newTestCommands(t *testing.T, cfg *config.Config, sessionID string, hasSess
 		Styles:    &s,
 		Workspace: &configWorkspace{cfg: cfg},
 	}
-	c, err := NewCommands(com, sessionID, hasSession, false, false, false, false, active, custom, prompts)
+	c, err := NewCommands(com, sessionID, hasSession, false, false, false, false, false, active, custom, prompts)
 	require.NoError(t, err)
 	return c
 }
@@ -354,6 +354,38 @@ func TestDefaultCommands_SwitchAgentModelAlwaysVisible(t *testing.T) {
 // appears once there is something for it to clear: the session reset
 // needs a model of the session's own, the agent reset needs a pick in
 // the tree's table.
+// TestDefaultCommands_OpenImageGating verifies "Open Image" is offered
+// only with a session and only inside VS Code, since it hands the file to
+// the `code` CLI.
+func TestDefaultCommands_OpenImageGating(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		hasSession bool
+		inVSCode   bool
+		want       bool
+	}{
+		{name: "session in VS Code", hasSession: true, inVSCode: true, want: true},
+		{name: "session elsewhere", hasSession: true, inVSCode: false, want: false},
+		{name: "no session in VS Code", hasSession: false, inVSCode: true, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := newCommandsForDefaults(t, nil, tc.hasSession, nil, nil)
+			c.inVSCode = tc.inVSCode
+			ids := commandIDs(c.defaultCommands())
+			if tc.want {
+				require.Contains(t, ids, "open_image")
+			} else {
+				require.NotContains(t, ids, "open_image")
+			}
+		})
+	}
+}
+
 func TestDefaultCommands_ResetCommandsGating(t *testing.T) {
 	t.Parallel()
 

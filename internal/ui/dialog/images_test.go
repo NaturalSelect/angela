@@ -21,8 +21,13 @@ func twoTestImages() []images.Image {
 
 func newTestImages(t *testing.T, imgs []images.Image, workingDir string) *Images {
 	t.Helper()
+	return newTestImagesFor(t, imgs, workingDir, ImagesExport)
+}
+
+func newTestImagesFor(t *testing.T, imgs []images.Image, workingDir string, purpose ImagesPurpose) *Images {
+	t.Helper()
 	com := &common.Common{Styles: testStyles()}
-	return NewImages(com, imgs, workingDir)
+	return NewImages(com, imgs, workingDir, purpose)
 }
 
 func TestImages_ID(t *testing.T) {
@@ -82,6 +87,33 @@ func TestImages_HandleMsg_Select(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "img_bbbbbbbbbbbb", resp.Image.ID)
 	require.Equal(t, "/work", resp.WorkingDir)
+}
+
+// TestImages_HandleMsg_SelectOpen verifies that a picker opened to open
+// an image emits the highlighted image's ID, ready for the open step.
+func TestImages_HandleMsg_SelectOpen(t *testing.T) {
+	t.Parallel()
+
+	d := newTestImagesFor(t, twoTestImages(), "/work", ImagesOpen)
+	d.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+
+	action := d.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Equal(t, ActionOpenImage{ImageID: "img_bbbbbbbbbbbb"}, action)
+}
+
+// TestImages_Draw_OpenTitle verifies the picker is titled after what the
+// selection will do.
+func TestImages_Draw_OpenTitle(t *testing.T) {
+	t.Parallel()
+
+	d := newTestImagesFor(t, twoTestImages(), "/work", ImagesOpen)
+	const w, h = 60, 20
+	scr := uv.NewScreenBuffer(w, h)
+	d.Draw(scr, image.Rect(0, 0, w, h))
+
+	view := ansi.Strip(scr.Render())
+	require.Contains(t, view, "Open Image")
+	require.NotContains(t, view, "Export Image")
 }
 
 // TestImages_HandleMsg_TypingFiltersList verifies free text narrows

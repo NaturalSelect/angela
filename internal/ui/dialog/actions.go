@@ -199,6 +199,12 @@ type (
 		Image      images.Image
 		WorkingDir string
 	}
+	// ActionOpenImage asks for a generated image's full-size original to be
+	// shown in VS Code. An empty ImageID means the user picked the command
+	// from the palette but has not chosen an image yet.
+	ActionOpenImage struct {
+		ImageID string
+	}
 	// ActionExportReport asks for an agent report to be written to disk as
 	// Markdown. A zero Report means the user picked the command from the
 	// palette but has not chosen one yet. The report travels in the action

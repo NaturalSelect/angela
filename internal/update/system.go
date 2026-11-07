@@ -61,6 +61,11 @@ type packageManager struct {
 // installing the downloaded file. rpm needs --oldpackage because it orders
 // 0.0.5.rc9 after 0.0.5 and would refuse to move from a release candidate to
 // the stable release.
+//
+// NOTE: No package manager here checks a publisher signature on these files:
+// dpkg never does, rpm and deb signing is optional, and apk packages are
+// unsigned, hence --allow-untrusted. The upgrader instead only installs a file
+// whose SHA-256 is listed in a cosign-verified checksums.txt.
 var packageManagers = []packageManager{
 	{name: "dpkg", format: "deb", owner: []string{"-S"}, install: []string{"-i"}},
 	{name: "rpm", format: "rpm", owner: []string{"-qf"}, install: []string{"-U", "--oldpackage"}},

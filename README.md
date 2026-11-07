@@ -42,8 +42,12 @@ angela upgrade                # latest stable release
 angela upgrade --pre-release  # also consider pre-releases (release candidates)
 ```
 
-`angela upgrade` downloads the release from GitHub, checks it against the
-release's `checksums.txt`, and replaces the running executable.
+`angela upgrade` downloads the release from GitHub and verifies the cosign
+signature on the release's `checksums.txt`, which must come from the release
+workflow for that tag. It then checks the download against that file and
+replaces the running executable. Verification needs access to the Sigstore
+trust root at `tuf-repo-cdn.sigstore.dev`, and a release without a valid
+signature is refused.
 
 - **No downgrades.** Angela only moves to a strictly newer version. A
   pre-release build is never rolled back to an older stable release. It moves

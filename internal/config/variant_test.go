@@ -21,16 +21,16 @@ func TestVariantOverridesOnlyTheKeysItNames(t *testing.T) {
 			DefaultReasoningEffort: "medium",
 			DefaultMaxTokens:       8000,
 			Options: catwalk.ModelOptions{
-				Temperature:     ptr(0.7),
-				TopP:            ptr(0.9),
+				Temperature:     new(0.7),
+				TopP:            new(0.9),
 				ProviderOptions: map[string]any{"beta": "on", "cache": "yes"},
 			},
 		},
 		Think: true,
 		Variants: map[string]SelectedModelOverride{
 			"deep": {
-				ReasoningEffort: ptr("high"),
-				MaxTokens:       ptr(int64(32000)),
+				ReasoningEffort: new("high"),
+				MaxTokens:       new(int64(32000)),
 				ProviderOptions: map[string]any{"beta": "off"},
 			},
 		},
@@ -46,8 +46,8 @@ func TestVariantOverridesOnlyTheKeysItNames(t *testing.T) {
 
 	// Unnamed keys survive from the baseline.
 	require.True(t, got.Think, "think was not named by the variant")
-	require.Equal(t, ptr(0.7), got.Options.Temperature)
-	require.Equal(t, ptr(0.9), got.Options.TopP)
+	require.Equal(t, new(0.7), got.Options.Temperature)
+	require.Equal(t, new(0.9), got.Options.TopP)
 	require.Equal(t, "yes", got.Options.ProviderOptions["cache"],
 		"provider options merge per key, they do not replace the map")
 
@@ -70,7 +70,7 @@ func TestVariantCanTurnOffWhatTheBaselineTurnedOn(t *testing.T) {
 		Model: catwalk.Model{DefaultMaxTokens: 8000},
 		Think: true,
 		Variants: map[string]SelectedModelOverride{
-			"quick": {Think: ptr(false)},
+			"quick": {Think: new(false)},
 		},
 	}
 
@@ -127,8 +127,8 @@ func TestUserVariantShadowsASeededLevel(t *testing.T) {
 	base := ProviderModel{
 		Model: catwalk.Model{ReasoningLevels: []string{"low", "high"}},
 		Variants: map[string]SelectedModelOverride{
-			"high":  {ReasoningEffort: ptr("high"), MaxTokens: ptr(int64(64000))},
-			"cheap": {MaxTokens: ptr(int64(1000))},
+			"high":  {ReasoningEffort: new("high"), MaxTokens: new(int64(64000))},
+			"cheap": {MaxTokens: new(int64(1000))},
 		},
 	}
 

@@ -28,6 +28,9 @@ type SelectedModelOverride struct {
 	// ProviderOptions merges key by key: the keys a variant names win,
 	// the baseline's other keys survive.
 	ProviderOptions map[string]any `json:"provider_options,omitempty" jsonschema:"description=Provider-specific options merged over the model's own"`
+
+	// AnthropicBeta layers over the model's list, the variant's say winning.
+	AnthropicBeta *AnthropicBeta `json:"anthropic_beta,omitempty" jsonschema:"description=anthropic-beta header values to force on or off\\, layered over the model's own"`
 }
 
 // apply overlays the override onto base and returns the result. base is
@@ -67,6 +70,7 @@ func (o SelectedModelOverride) apply(base ProviderModel) ProviderModel {
 		}
 		base.Options.ProviderOptions = merged
 	}
+	base.AnthropicBeta = base.AnthropicBeta.Overlay(o.AnthropicBeta)
 	return base
 }
 

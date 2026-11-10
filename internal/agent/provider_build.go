@@ -449,27 +449,14 @@ func (f modelFactory) buildGoogleVertexProvider(headers map[string]string, optio
 	return google.New(opts...)
 }
 
-func (f modelFactory) isAnthropicThinking(model config.ProviderModel, think bool) bool {
-	if think {
-		return true
-	}
-	opts, err := anthropic.ParseOptions(model.Options.ProviderOptions)
-	return err == nil && opts.Thinking != nil
-}
-
 func (f modelFactory) buildProvider(providerCfg config.ProviderConfig, model config.ProviderModel, think bool, isSubAgent bool) (fantasy.Provider, error) {
 	headers := maps.Clone(providerCfg.ExtraHeaders)
 	if headers == nil {
 		headers = make(map[string]string)
 	}
 
-	// handle special headers for anthropic
-	if providerCfg.Type == anthropic.Name && f.isAnthropicThinking(model, think) {
-		if v, ok := headers["anthropic-beta"]; ok {
-			headers["anthropic-beta"] = v + ",interleaved-thinking-2025-05-14"
-		} else {
-			headers["anthropic-beta"] = "interleaved-thinking-2025-05-14"
-		}
+	if providerCfg.Type == anthropic.Name {
+		applyAnthropicBetas(headers, providerCfg, model, think)
 	}
 
 	apiKey, _ := f.cfg.ProviderFieldResolver(providerCfg.ID, "api_key").ResolveValue(providerCfg.APIKey)

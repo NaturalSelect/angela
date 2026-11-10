@@ -144,6 +144,26 @@
         }
       ]
     },
+    "AnthropicBeta": {
+      "properties": {
+        "enable": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "anthropic-beta values that are always sent"
+        },
+        "disable": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "anthropic-beta values that are never sent, including ones Angela enables automatically"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Attribution": {
       "properties": {
         "trailer_style": {
@@ -849,6 +869,10 @@
           "type": "object",
           "description": "Additional provider-specific options for this provider"
         },
+        "anthropic_beta": {
+          "$ref": "#/$defs/AnthropicBeta",
+          "description": "anthropic-beta header values to force on or off, only works with anthropic providers"
+        },
         "aws_auth_refresh": {
           "type": "string",
           "description": "Shell command to run when AWS credentials expire (Bedrock only)."
@@ -924,6 +948,10 @@
         "use_responses": {
           "type": "boolean",
           "description": "Force the OpenAI Responses API on or off for this model only"
+        },
+        "anthropic_beta": {
+          "$ref": "#/$defs/AnthropicBeta",
+          "description": "anthropic-beta header values to force on or off for this model only"
         },
         "variants": {
           "additionalProperties": {
@@ -1053,6 +1081,10 @@
         "provider_options": {
           "type": "object",
           "description": "Provider-specific options merged over the model's own"
+        },
+        "anthropic_beta": {
+          "$ref": "#/$defs/AnthropicBeta",
+          "description": "anthropic-beta header values to force on or off, layered over the model's own"
         }
       },
       "additionalProperties": false,

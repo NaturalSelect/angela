@@ -6,7 +6,6 @@ import (
 	"charm.land/fantasy/providers/openai"
 	"github.com/stretchr/testify/require"
 
-	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
@@ -86,7 +85,7 @@ func TestImageToolsUseTheModelPickedForTheTree(t *testing.T) {
 	require.Contains(t, names, toolnames.ImageGenerate)
 	require.Contains(t, names, toolnames.ImageEdit)
 
-	var factory tools.ImageClientFactory = coord.newImageClient(host.AgentPicks)
+	factory := coord.newImageClient(host.AgentPicks)
 	client, err := factory(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "gpt-image-2", client.Model())

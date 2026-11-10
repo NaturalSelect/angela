@@ -26,39 +26,8 @@ import (
 func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCacheKey string) fantasy.ProviderOptions {
 	options := fantasy.ProviderOptions{}
 
-	providerCfgOpts := []byte("{}")
-	catwalkOpts := []byte("{}")
-
-	if providerCfg.ProviderOptions != nil {
-		data, err := json.Marshal(providerCfg.ProviderOptions)
-		if err == nil {
-			providerCfgOpts = data
-		}
-	}
-
-	if model.CatwalkCfg.Options.ProviderOptions != nil {
-		data, err := json.Marshal(model.CatwalkCfg.Options.ProviderOptions)
-		if err == nil {
-			catwalkOpts = data
-		}
-	}
-
-	readers := []io.Reader{
-		bytes.NewReader(catwalkOpts),
-		bytes.NewReader(providerCfgOpts),
-	}
-
-	got, err := jsons.Merge(readers)
+	mergedOptions, err := mergeProviderOptionMaps(model.CatwalkCfg.Options.ProviderOptions, providerCfg.ProviderOptions)
 	if err != nil {
-		slog.Error("Could not merge call config", "err", err)
-		return options
-	}
-
-	mergedOptions := make(map[string]any)
-
-	err = json.Unmarshal([]byte(got), &mergedOptions)
-	if err != nil {
-		slog.Error("Could not create config for call", "err", err)
 		return options
 	}
 
@@ -126,7 +95,7 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 			// support it.
 			if providerCfg.Type == anthropic.Name {
 				existingExtraBody, _ := mergedOptions["extra_body"].(map[string]any)
-				mergedOptions["extra_body"] = withAnthropicUserID(existingExtraBody, promptCacheKey)
+				mergedOptions["extra_body"] = withAnthropicUserID(flattenOutputConfig(existingExtraBody), promptCacheKey)
 			}
 		}
 
@@ -308,6 +277,65 @@ func withPromptCacheKey(extraBody map[string]any, promptCacheKey string) map[str
 	}
 	if _, ok := extraBody["prompt_cache_key"]; !ok && promptCacheKey != "" {
 		extraBody["prompt_cache_key"] = promptCacheKey
+	}
+	return extraBody
+}
+
+// mergeProviderOptionMaps deep-merges a model's provider options with the
+// provider's own, the provider's keys winning. Failures are logged and
+// returned so callers can fall back to no options at all.
+func mergeProviderOptionMaps(modelOpts, providerOpts map[string]any) (map[string]any, error) {
+	providerCfgOpts := []byte("{}")
+	catwalkOpts := []byte("{}")
+
+	if providerOpts != nil {
+		data, err := json.Marshal(providerOpts)
+		if err == nil {
+			providerCfgOpts = data
+		}
+	}
+
+	if modelOpts != nil {
+		data, err := json.Marshal(modelOpts)
+		if err == nil {
+			catwalkOpts = data
+		}
+	}
+
+	readers := []io.Reader{
+		bytes.NewReader(catwalkOpts),
+		bytes.NewReader(providerCfgOpts),
+	}
+
+	got, err := jsons.Merge(readers)
+	if err != nil {
+		slog.Error("Could not merge call config", "err", err)
+		return nil, err
+	}
+
+	merged := make(map[string]any)
+	if err := json.Unmarshal([]byte(got), &merged); err != nil {
+		slog.Error("Could not create config for call", "err", err)
+		return nil, err
+	}
+	return merged, nil
+}
+
+// flattenOutputConfig rewrites a nested extra_body.output_config object into
+// output_config.<key> entries. extra_body keys are written into the request
+// body as JSON paths, so a whole output_config object would replace the one
+// the provider builds for effort, while the dotted keys only add to it.
+func flattenOutputConfig(extraBody map[string]any) map[string]any {
+	outputConfig, ok := extraBody["output_config"].(map[string]any)
+	if !ok {
+		return extraBody
+	}
+	delete(extraBody, "output_config")
+	for k, v := range outputConfig {
+		key := "output_config." + k
+		if _, exists := extraBody[key]; !exists {
+			extraBody[key] = v
+		}
 	}
 	return extraBody
 }

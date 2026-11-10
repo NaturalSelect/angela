@@ -152,6 +152,7 @@ All configuration is done through `angela.json`. For the complete schema, see
       "extra_headers": {},            // additional HTTP headers
       "extra_body": {},               // merged into request bodies
       "provider_options": {},         // provider-specific options
+      "anthropic_beta": {},           // anthropic-beta values to force on or off, see below
       "models": [                     // custom models on this provider
         {
           "id": "deepseek-chat",
@@ -167,6 +168,7 @@ All configuration is done through `angela.json`. For the complete schema, see
           "reasoning_effort": "",     // low, medium, or high
           "reasoning_levels": [],     // supported effort levels
           "think": false,             // default thinking mode for this model
+          "anthropic_beta": {},       // layered over the provider's anthropic_beta
           "variants": {}              // named parameter presets, see below
         }
       ]
@@ -212,10 +214,66 @@ outgoing request.
 A model's `variants` are named parameter presets layered over its own
 defaults: each one overrides only the keys it names (`think`,
 `reasoning_effort`, `max_tokens`, `temperature`, `top_p`, `top_k`,
-`frequency_penalty`, `presence_penalty`, `provider_options`), and an agent
+`frequency_penalty`, `presence_penalty`, `provider_options`,
+`anthropic_beta`), and an agent
 selects one via its `variant` field. A model's own `reasoning_levels` are
 seeded as variants automatically; a user-defined variant that reuses one of
 those names replaces its behavior instead of adding a duplicate.
+
+### Anthropic beta features
+
+For `type: "anthropic"` providers, Angela sends the `anthropic-beta` header
+itself. The final list is the values you wrote in `extra_headers`, plus the
+betas the request needs, plus `anthropic_beta.enable`, minus
+`anthropic_beta.disable`. Duplicates collapse and the header is omitted when
+the list is empty. Bedrock and Vertex are not affected.
+
+```jsonc
+{
+  "providers": {
+    "anthropic": {
+      "anthropic_beta": { "enable": ["advisor-tool-2026-03-01"] },
+      "models": [
+        {
+          "id": "claude-sonnet-5",
+          "anthropic_beta": { "disable": ["interleaved-thinking-2025-05-14"] },
+          "variants": {
+            "mcp": { "anthropic_beta": { "enable": ["mcp-client-2025-11-20"] } }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+`anthropic_beta` exists on the provider, on each model and on each variant.
+The layers stack in that order and the one nearest the request wins for a
+given value, so a variant can enable a beta its provider disabled. Within one
+layer, `disable` beats `enable`.
+
+These betas are added automatically, only when the configuration uses the
+feature they gate. The API rejects beta values it does not know, so nothing
+else is added on its own. Put `extra_body` under `provider_options` for it to
+reach an Anthropic request.
+
+| Beta | Added when |
+| --- | --- |
+| `interleaved-thinking-2025-05-14` | thinking is on for the session, or `provider_options.thinking` is set |
+| `context-management-2025-06-27` | `extra_body.context_management` is set |
+| `compact-2026-01-12` | a `context_management` edit has a `type` starting with `compact_` |
+| `fast-mode-2026-02-01` | `extra_body.speed` is `fast` |
+| `task-budgets-2026-03-13` | `extra_body.output_config.task_budget` is set |
+| `thinking-display-updates-2026-08-18` | `provider_options.thinking_display` is `updates` |
+| `mcp-client-2025-11-20` | `extra_body.mcp_servers` is set |
+
+A nested `extra_body.output_config` is merged into the request instead of
+replacing it, so a reasoning effort Angela sets is kept.
+
+Features that are generally available need no beta, and neither does the
+1M-token context. Name any other beta in `enable`, for example
+`advisor-tool-2026-03-01`. Angela does not imitate Claude Code, so
+`claude-code-20250219` and `oauth-2025-04-20` are never added for you.
 
 ### Slots
 

@@ -54,6 +54,7 @@ func (o SelectedModelOverride) clone() SelectedModelOverride {
 	o.FrequencyPenalty = clonePtr(o.FrequencyPenalty)
 	o.PresencePenalty = clonePtr(o.PresencePenalty)
 	o.ProviderOptions = cloneJSONMap(o.ProviderOptions)
+	o.AnthropicBeta = o.AnthropicBeta.clone()
 	return o
 }
 
@@ -75,6 +76,7 @@ func (m ProviderModel) clone() ProviderModel {
 	m.Options.ProviderOptions = cloneJSONMap(m.Options.ProviderOptions)
 	m.ReasoningLevels = cloneSlice(m.ReasoningLevels)
 	m.UseResponses = clonePtr(m.UseResponses)
+	m.AnthropicBeta = m.AnthropicBeta.clone()
 	if m.Variants != nil {
 		variants := make(map[string]SelectedModelOverride, len(m.Variants))
 		for name, override := range m.Variants {

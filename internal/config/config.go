@@ -204,6 +204,8 @@ type ProviderConfig struct {
 
 	ProviderOptions map[string]any `json:"provider_options,omitempty" jsonschema:"description=Additional provider-specific options for this provider"`
 
+	AnthropicBeta *AnthropicBeta `json:"anthropic_beta,omitempty" jsonschema:"description=anthropic-beta header values to force on or off\\, only works with anthropic providers"`
+
 	// Used to pass extra parameters to the provider.
 	ExtraParams map[string]string `json:"-"`
 
@@ -244,6 +246,8 @@ type ProviderModel struct {
 	// defaults apply in the usual order.
 	UseResponses *bool `json:"use_responses,omitempty" jsonschema:"description=Force the OpenAI Responses API on or off for this model only"`
 
+	AnthropicBeta *AnthropicBeta `json:"anthropic_beta,omitempty" jsonschema:"description=anthropic-beta header values to force on or off for this model only"`
+
 	// Variants are named parameter presets over this model. They
 	// override only the keys they name, so N models by M presets
 	// stays N+M configs instead of N*M. Selecting one is how a
@@ -263,9 +267,9 @@ func providerModelsToCatwalk(models []ProviderModel) []catwalk.Model {
 }
 
 // wrapCatwalkModels re-attaches Angela's own presets to freshly
-// discovered or registry catalog entries, carrying Think and Variants
-// over from any existing entry with the same ID so a rediscovery
-// never wipes out presets the user configured.
+// discovered or registry catalog entries, carrying Think, AnthropicBeta
+// and Variants over from any existing entry with the same ID so a
+// rediscovery never wipes out presets the user configured.
 func wrapCatwalkModels(models []catwalk.Model, existing []ProviderModel) []ProviderModel {
 	byID := make(map[string]ProviderModel, len(existing))
 	for _, m := range existing {
@@ -276,6 +280,7 @@ func wrapCatwalkModels(models []catwalk.Model, existing []ProviderModel) []Provi
 		out[i] = ProviderModel{Model: m}
 		if prev, ok := byID[m.ID]; ok {
 			out[i].Think = prev.Think
+			out[i].AnthropicBeta = prev.AnthropicBeta
 			out[i].Variants = prev.Variants
 		}
 	}

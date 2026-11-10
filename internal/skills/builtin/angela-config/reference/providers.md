@@ -20,6 +20,7 @@ slot's `provider` field references.
 | `extra_headers`        | object            | Extra HTTP headers; values shell-expanded (empty ones dropped), `$(cmd)` only from system/global |
 | `extra_body`           | object            | Merged verbatim into OpenAI-compatible request bodies; **not** shell-expanded |
 | `provider_options`     | object            | Provider-specific options                                       |
+| `anthropic_beta`       | object            | `{"enable": [...], "disable": [...]}` of `anthropic-beta` values to force on or off; `type: anthropic` only, see below |
 | `aws_auth_refresh`     | string            | Shell command run when Bedrock credentials expire               |
 | `oauth`                | object            | OAuth2 token Angela persists after an interactive login (e.g. Copilot); not meant to be hand-written |
 | `models`               | array             | Model catalog, see below. A custom provider left with no models (listed or discovered) is skipped |
@@ -75,6 +76,7 @@ slot's `provider` field references.
 | `options`                                         | object | `temperature`, `top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options` |
 | `think`                                           | bool   | Default thinking mode for Anthropic reasoners |
 | `use_responses`                                   | bool   | Force the OpenAI Responses API on or off for this model only; overrides the provider-level setting |
+| `anthropic_beta`                                  | object | Layered over the provider's `anthropic_beta` for this model only |
 | `variants`                                        | object | Named parameter presets, see below           |
 
 ## variants
@@ -89,7 +91,8 @@ variants automatically, named after each level; a user-defined variant that
 reuses one of those names replaces its behavior instead of adding a duplicate.
 
 Variant fields: `think`, `reasoning_effort`, `max_tokens`, `temperature`,
-`top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options`.
+`top_p`, `top_k`, `frequency_penalty`, `presence_penalty`, `provider_options`,
+`anthropic_beta`.
 Values are validated at load time — `temperature`/`top_p` must be finite and
 in `0`–`1`, `max_tokens` must not be negative (the JSON schema also caps it
 at `200000` and `reasoning_effort` at `low`/`medium`/`high`, which the loader
@@ -125,3 +128,27 @@ failing the whole config load.
 
 A slot or an agent can name one of these variants — see `reference/slots.md`
 and `reference/agents.md`.
+
+## `anthropic_beta`
+
+On a `type: anthropic` provider, Angela builds the `anthropic-beta` header from
+the values in `extra_headers`, the betas the configuration implies, and
+`anthropic_beta.enable`, minus `anthropic_beta.disable`. It is accepted on the
+provider, on a model and on a variant; the layer nearest the request wins per
+value, and `disable` beats `enable` within one layer. Bedrock and Vertex ignore
+it.
+
+Automatic betas, each added only when its feature is configured:
+
+| Beta | Added when |
+| ---- | ---------- |
+| `interleaved-thinking-2025-05-14` | thinking is on, or `provider_options.thinking` is set |
+| `context-management-2025-06-27` | `provider_options.extra_body.context_management` is set |
+| `compact-2026-01-12` | a context-management edit has a `type` starting with `compact_` |
+| `fast-mode-2026-02-01` | `extra_body.speed` is `fast` |
+| `task-budgets-2026-03-13` | `extra_body.output_config.task_budget` is set |
+| `thinking-display-updates-2026-08-18` | `provider_options.thinking_display` is `updates` |
+| `mcp-client-2025-11-20` | `extra_body.mcp_servers` is set |
+
+Anything else, such as `advisor-tool-2026-03-01`, goes in `enable`. Switch an
+automatic one off by listing it in `disable`.

@@ -300,6 +300,20 @@ func (mr *MockWorkspaceMockRecorder) AgentRunShellCommand(ctx, sessionID, comman
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentRunShellCommand", reflect.TypeOf((*MockWorkspace)(nil).AgentRunShellCommand), ctx, sessionID, command, termWidth, onProgress, isFirstMessage)
 }
 
+// AgentSeedDraft mocks base method.
+func (m *MockWorkspace) AgentSeedDraft(ctx context.Context, fromSessionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AgentSeedDraft", ctx, fromSessionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AgentSeedDraft indicates an expected call of AgentSeedDraft.
+func (mr *MockWorkspaceMockRecorder) AgentSeedDraft(ctx, fromSessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentSeedDraft", reflect.TypeOf((*MockWorkspace)(nil).AgentSeedDraft), ctx, fromSessionID)
+}
+
 // AgentSessionStatus mocks base method.
 func (m *MockWorkspace) AgentSessionStatus(sessionID string) (bool, int) {
 	m.ctrl.T.Helper()

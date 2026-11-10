@@ -1282,7 +1282,7 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 			cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before starting a new session..."))
 			break
 		}
-		if cmd := m.newSession(); cmd != nil {
+		if cmd := m.newSessionKeepingModels(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		m.dialog.CloseDialog(dialog.CommandsID)
@@ -1659,7 +1659,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					cmds = append(cmds, util.ReportWarn("Agent is busy, please wait before starting a new session..."))
 					break
 				}
-				if cmd := m.newSession(); cmd != nil {
+				if cmd := m.newSessionKeepingModels(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 			case key.Matches(msg, m.keyMap.Tab):
@@ -1829,7 +1829,7 @@ func (m *UI) handleKeyPressMsg(msg tea.KeyPressMsg) tea.Cmd {
 					break
 				}
 				m.focus = uiFocusEditor
-				if cmd := m.newSession(); cmd != nil {
+				if cmd := m.newSessionKeepingModels(); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 			case key.Matches(msg, m.keyMap.Chat.OpenSubSession):
@@ -1967,6 +1967,30 @@ func permissionModeLabel(mode permission.PermissionMode) string {
 	default:
 		return "Manual"
 	}
+}
+
+// newSessionKeepingModels is newSession for a session the user starts on
+// purpose. The model picks of the session being left, from Switch Model
+// and Switch Agent Model, are carried over to the next session, which
+// would otherwise start from the config's defaults. A sub-session on
+// screen contributes the picks of the tree it belongs to.
+//
+// The seed runs after newSession has cleared the view, so the landing
+// page is re-probed once it lands and shows the models it will run on.
+func (m *UI) newSessionKeepingModels() tea.Cmd {
+	from := m.currentSessionID()
+	cmd := m.newSession()
+	if cmd == nil {
+		return nil
+	}
+	ws := m.com.Workspace
+	seed := m.refreshActiveAgentCmd(func() tea.Msg {
+		if err := ws.AgentSeedDraft(context.Background(), from); err != nil {
+			return util.ReportError(fmt.Errorf("carry the model picks over to the new session: %w", err))()
+		}
+		return nil
+	})
+	return tea.Batch(cmd, seed)
 }
 
 // newSession clears the current session state and prepares for a new session.

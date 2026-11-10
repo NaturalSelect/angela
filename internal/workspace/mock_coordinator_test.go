@@ -379,6 +379,20 @@ func (mr *MockCoordinatorMockRecorder) RunAccepted(ctx, accept, sessionID, promp
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunAccepted", reflect.TypeOf((*MockCoordinator)(nil).RunAccepted), varargs...)
 }
 
+// SeedDraft mocks base method.
+func (m *MockCoordinator) SeedDraft(ctx context.Context, fromSessionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SeedDraft", ctx, fromSessionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SeedDraft indicates an expected call of SeedDraft.
+func (mr *MockCoordinatorMockRecorder) SeedDraft(ctx, fromSessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SeedDraft", reflect.TypeOf((*MockCoordinator)(nil).SeedDraft), ctx, fromSessionID)
+}
+
 // SubSessions mocks base method.
 func (m *MockCoordinator) SubSessions(ctx context.Context, parentSessionID string) ([]tools.SubSession, error) {
 	m.ctrl.T.Helper()

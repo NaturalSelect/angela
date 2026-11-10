@@ -339,6 +339,13 @@ func (w *AppWorkspace) AgentEditActive(ctx context.Context, sessionID string, ed
 	return w.AgentActive(ctx, sessionID)
 }
 
+func (w *AppWorkspace) AgentSeedDraft(ctx context.Context, fromSessionID string) error {
+	if w.app.AgentCoordinator == nil {
+		return errors.New("agent coordinator not initialized")
+	}
+	return w.app.AgentCoordinator.SeedDraft(ctx, fromSessionID)
+}
+
 func (w *AppWorkspace) AgentSummarize(ctx context.Context, sessionID string) error {
 	if w.app.AgentCoordinator == nil {
 		return errors.New("agent coordinator not initialized")

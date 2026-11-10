@@ -171,6 +171,11 @@ type Coordinator interface {
 	// of being silently discarded. A no-op when the draft was never
 	// touched.
 	AdoptDraft(ctx context.Context, sessionID string) error
+
+	// SeedDraft copies the model picks of fromSessionID's session tree
+	// onto the draft, so the next session started in this process
+	// begins on them instead of on the config's defaults.
+	SeedDraft(ctx context.Context, fromSessionID string) error
 }
 
 type coordinator struct {

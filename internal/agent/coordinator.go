@@ -674,11 +674,11 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 	// below, so a restrictive allowed_tools list or a global
 	// disabled_tools entry excludes these two tools the same way it
 	// would any other built-in, with no special-casing needed.
-	if available, reason := c.imageToolsAvailable(agent, depth); available {
+	if available, reason := c.imageToolsAvailable(agent, parent.AgentPicks, depth); available {
 		allTools = append(
 			allTools,
-			tools.NewImageGenerateTool(c.newImageClient, c.images),
-			tools.NewImageEditTool(c.newImageClient, c.images, c.cfg.WorkingDir()),
+			tools.NewImageGenerateTool(c.newImageClient(parent.AgentPicks), c.images),
+			tools.NewImageEditTool(c.newImageClient(parent.AgentPicks), c.images, c.cfg.WorkingDir()),
 		)
 	} else {
 		slog.Debug("Image tools unavailable", "agent", agent.ID, "depth", depth, "reason", reason)

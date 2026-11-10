@@ -217,12 +217,12 @@ func TestImageToolsAvailableAlwaysReturnsAReason(t *testing.T) {
 	coord := newImageReadyCoordinator(t)
 	agentCfg := coord.cfg.Config().Agents[config.AgentCoder]
 
-	ok, reason := coord.imageToolsAvailable(agentCfg, 0)
+	ok, reason := coord.imageToolsAvailable(agentCfg, nil, 0)
 	require.True(t, ok)
 	require.NotEmpty(t, reason)
 
 	coord.interactive = false
-	ok, reason = coord.imageToolsAvailable(agentCfg, 0)
+	ok, reason = coord.imageToolsAvailable(agentCfg, nil, 0)
 	require.False(t, ok)
 	require.NotEmpty(t, reason)
 }
@@ -244,7 +244,7 @@ func TestImageSelectionUsesConfiguredSlot(t *testing.T) {
 		Model:    "custom-image-model",
 	}
 
-	model, providerCfg, err := coord.imageSelection(coord.cfg.Config())
+	model, providerCfg, err := coord.imageSelection(coord.cfg.Config(), nil)
 	require.NoError(t, err)
 	require.Equal(t, config.SelectedModel{Provider: "gateway", Model: "custom-image-model"}, model)
 	require.Equal(t, "gateway", providerCfg.ID)
@@ -264,7 +264,7 @@ func TestImageSelectionTreatsInheritedSlotAsUnset(t *testing.T) {
 	agentCfg.Slot = config.SlotInherited
 	coord.cfg.Config().Agents[config.AgentImage] = agentCfg
 
-	model, providerCfg, err := coord.imageSelection(coord.cfg.Config())
+	model, providerCfg, err := coord.imageSelection(coord.cfg.Config(), nil)
 	require.NoError(t, err)
 	require.Equal(t, defaultImageProvider, model.Provider)
 	require.Equal(t, imagegen.DefaultModel, model.Model)

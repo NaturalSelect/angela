@@ -3,10 +3,12 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 
 	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
+	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/imagegen"
 )
@@ -27,7 +29,10 @@ const defaultImageProvider = "openai"
 // Unset requires the client to have reported Kitty graphics support,
 // true skips only that requirement so the tools work in any terminal
 // (without an inline preview), and false turns the tools off.
-func (c *coordinator) imageToolsAvailable(agent config.Agent, depth int) (bool, string) {
+//
+// picks is the session tree's per-agent model-pick table, which is how a
+// model chosen with Switch Agent Model for the image agent reaches here.
+func (c *coordinator) imageToolsAvailable(agent config.Agent, picks map[string]config.AgentModelPick, depth int) (bool, string) {
 	if depth != 0 {
 		return false, "image tools are only available to the primary agent, not a dispatched sub-agent"
 	}
@@ -44,7 +49,7 @@ func (c *coordinator) imageToolsAvailable(agent config.Agent, depth int) (bool, 
 	if c.images == nil {
 		return false, "no image storage service is configured"
 	}
-	if _, _, err := c.imageSelection(c.cfg.Config()); err != nil {
+	if _, _, err := c.imageSelection(c.cfg.Config(), picks); err != nil {
 		return false, fmt.Sprintf("no usable image model provider is configured: %s", err)
 	}
 	return true, fmt.Sprintf("image tools available for agent %q", agent.ID)
@@ -64,7 +69,12 @@ func (c *coordinator) imageToolsAvailable(agent config.Agent, depth int) (bool, 
 // little sense for image generation anyway. A slot of "inherited" is
 // therefore treated the same as an unset one, falling straight to the
 // default image model.
-func (c *coordinator) imageSelection(cfg *config.Config) (config.SelectedModel, config.ProviderConfig, error) {
+//
+// A model the session tree picked for the image agent outranks both,
+// the same way a pick outranks the slot of any other agent. A pick that
+// no longer resolves is skipped, so a removed provider cannot strip the
+// tools from a session that still has a working default.
+func (c *coordinator) imageSelection(cfg *config.Config, picks map[string]config.AgentModelPick) (config.SelectedModel, config.ProviderConfig, error) {
 	agentCfg, ok := cfg.Agents[config.AgentImage]
 	if !ok {
 		return config.SelectedModel{}, config.ProviderConfig{}, fmt.Errorf("agent %q is not configured", config.AgentImage)
@@ -76,6 +86,14 @@ func (c *coordinator) imageSelection(cfg *config.Config) (config.SelectedModel, 
 	}
 	if !ok {
 		model = config.SelectedModel{Provider: defaultImageProvider, Model: imagegen.DefaultModel}
+	}
+
+	if pick := picks[config.AgentImage].Model; pick.Provider != "" && pick.Model != "" {
+		if err := cfg.ValidateAgentModelOverride(config.AgentImage, pick); err != nil {
+			slog.Warn("Ignoring an image model pick that no longer resolves", "error", err)
+		} else {
+			model = pick
+		}
 	}
 
 	providerCfg, ok := cfg.Providers.Get(model.Provider)
@@ -102,29 +120,34 @@ func (c *coordinator) imageSelection(cfg *config.Config) (config.SelectedModel, 
 	return model, providerCfg, nil
 }
 
-// newImageClient is the tools.ImageClientFactory passed to the
-// built-in image tools. It re-resolves imageSelection on every call
-// instead of caching it, which keeps it cheap, self-contained, and
-// safe to invoke concurrently. Only here, immediately before a tool
+// newImageClient returns the tools.ImageClientFactory passed to the
+// built-in image tools. The factory re-resolves imageSelection on every
+// call instead of caching it, which keeps it cheap, self-contained, and
+// safe to invoke concurrently. Only there, immediately before a tool
 // actually runs, are the provider's api_key and base_url resolved
 // through the shell-expansion-aware resolver — the same mechanism
 // buildProvider uses to build a real LLM client.
-func (c *coordinator) newImageClient(ctx context.Context) (imagegen.Client, error) {
-	model, providerCfg, err := c.imageSelection(c.cfg.Config())
-	if err != nil {
-		return nil, err
+//
+// picks is fixed when the turn's tools are built, so a pick made while
+// the turn streams applies from the next turn, like any other agent's.
+func (c *coordinator) newImageClient(picks map[string]config.AgentModelPick) tools.ImageClientFactory {
+	return func(context.Context) (imagegen.Client, error) {
+		model, providerCfg, err := c.imageSelection(c.cfg.Config(), picks)
+		if err != nil {
+			return nil, err
+		}
+
+		apiKey, _ := c.cfg.ProviderFieldResolver(providerCfg.ID, "api_key").ResolveValue(providerCfg.APIKey)
+		baseURL, _ := c.cfg.ProviderFieldResolver(providerCfg.ID, "base_url").ResolveValue(providerCfg.BaseURL)
+
+		return imagegen.New(imagegen.Endpoint{
+			ProviderID: providerCfg.ID,
+			Model:      model.Model,
+			BaseURL:    baseURL,
+			APIKey:     apiKey,
+			UserAgent:  userAgent,
+			Headers:    maps.Clone(providerCfg.ExtraHeaders),
+			Timeout:    c.cfg.Config().Tools.Image.GetTimeout(),
+		}), nil
 	}
-
-	apiKey, _ := c.cfg.ProviderFieldResolver(providerCfg.ID, "api_key").ResolveValue(providerCfg.APIKey)
-	baseURL, _ := c.cfg.ProviderFieldResolver(providerCfg.ID, "base_url").ResolveValue(providerCfg.BaseURL)
-
-	return imagegen.New(imagegen.Endpoint{
-		ProviderID: providerCfg.ID,
-		Model:      model.Model,
-		BaseURL:    baseURL,
-		APIKey:     apiKey,
-		UserAgent:  userAgent,
-		Headers:    maps.Clone(providerCfg.ExtraHeaders),
-		Timeout:    c.cfg.Config().Tools.Image.GetTimeout(),
-	}), nil
 }

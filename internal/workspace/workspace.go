@@ -193,6 +193,11 @@ type Workspace interface {
 	// answers with the instance the session ends up on so a relative
 	// change reports the value it actually reached.
 	AgentEditActive(ctx context.Context, sessionID string, edit config.ActiveAgentEdit) (ActiveAgent, error)
+	// AgentSeedDraft carries the model picks of fromSessionID's session
+	// tree over to the next session started in this process, which is
+	// what makes Switch Model and Switch Agent Model survive a new
+	// session.
+	AgentSeedDraft(ctx context.Context, fromSessionID string) error
 	UpdateAgentModel(ctx context.Context) error
 	// Reload re-reads config, skills and MCP servers from disk and returns a
 	// human-readable summary of what changed. A config that fails to load

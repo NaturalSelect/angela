@@ -317,6 +317,45 @@ func (c *coordinator) AdoptDraft(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// SeedDraft replaces the draft's model picks with those of the session
+// tree fromSessionID belongs to, so the next session started in this
+// process runs on the models the user chose for the last one. The picks
+// are Switch Model's session pick and Switch Agent Model's per-agent
+// table, both read from the tree's root. The draft keeps its own agent
+// and thinking flag, since neither is a model pick.
+//
+// The picks only reach the next session through AdoptDraft, which
+// consumes them, so a session after that one starts from the config
+// again unless it is seeded in turn.
+func (c *coordinator) SeedDraft(ctx context.Context, fromSessionID string) error {
+	root := c.rootSessionID(ctx, fromSessionID)
+	if root == draftSessionID {
+		return nil
+	}
+	source, err := c.activeAgentFor(ctx, root)
+	if err != nil {
+		return err
+	}
+	picks := source.State()
+
+	return c.active.editState(ctx, draftSessionID, c.activeIO(), func(record config.ActiveAgentState, stored config.ActiveAgent) (config.ActiveAgentState, bool, error) {
+		record.SessionModel = picks.SessionModel
+		record.AgentPicks = picks.AgentPicks
+		if record.Agent == "" {
+			// Nothing to carry and nothing to clear: writing a record
+			// that names the default agent would pin it on the next
+			// session for no reason.
+			if picks.SessionModel.IsZero() && len(picks.AgentPicks) == 0 {
+				return config.ActiveAgentState{}, false, nil
+			}
+			// A record naming no agent reads as a session that never
+			// picked anything, which would hide the picks just copied.
+			record.Agent = stored.Agent.ID
+		}
+		return record, true, nil
+	})
+}
+
 // SwitchAgent points a session at a different agent from the next turn
 // on. Switching to the agent already in effect is a no-op: it writes no
 // trail, so repeated selection does not litter the transcript.

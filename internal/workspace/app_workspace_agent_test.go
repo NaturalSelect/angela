@@ -55,6 +55,8 @@ func TestAppWorkspace_Agent_NilCoordinator(t *testing.T) {
 	_, err = fx.ws.AgentEditActive(t.Context(), "sess-1", config.ActiveAgentEdit{})
 	require.Error(t, err)
 
+	require.Error(t, fx.ws.AgentSeedDraft(t.Context(), "sess-1"))
+
 	require.Error(t, fx.ws.UpdateAgentModel(t.Context()))
 }
 
@@ -337,6 +339,29 @@ func TestAppWorkspace_AgentActive(t *testing.T) {
 
 		_, err := fx.ws.AgentActive(t.Context(), "sess-1")
 		require.ErrorIs(t, err, boom)
+	})
+}
+
+// TestAppWorkspace_AgentSeedDraft verifies the call reaches the
+// coordinator with the session being left and returns its error as is.
+func TestAppWorkspace_AgentSeedDraft(t *testing.T) {
+	t.Parallel()
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		fx.coord.EXPECT().SeedDraft(gomock.Any(), "sess-1").Return(nil)
+
+		require.NoError(t, fx.ws.AgentSeedDraft(t.Context(), "sess-1"))
+	})
+
+	t.Run("propagates coordinator error", func(t *testing.T) {
+		t.Parallel()
+		fx := newAWFixture(t)
+		boom := errors.New("seed failed")
+		fx.coord.EXPECT().SeedDraft(gomock.Any(), "sess-1").Return(boom)
+
+		require.ErrorIs(t, fx.ws.AgentSeedDraft(t.Context(), "sess-1"), boom)
 	})
 }
 

@@ -254,6 +254,36 @@ func TestReportsFromMessagesDropsDispatchesWithoutAUsableResult(t *testing.T) {
 	require.Empty(t, ReportsFromMessages(fixedNamer{}, msgs))
 }
 
+// A branch's history answers the calls of the step that forked it with
+// stand-ins. They are not output anyone produced, so they are no report.
+func TestReportsFromMessagesIgnoresForkPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	msgs := []message.Message{
+		{
+			ID:   "msg-1",
+			Role: message.Assistant,
+			Parts: []message.ContentPart{
+				message.ToolCall{ID: "call-1", Name: toolnames.Agent, Input: `{"subagent_type":"explore"}`, Finished: true},
+			},
+		},
+		{
+			ID:   "msg-2",
+			Role: message.Tool,
+			Parts: []message.ContentPart{
+				message.ToolResult{
+					ToolCallID: "call-1",
+					Name:       toolnames.Agent,
+					Content:    "This call ran in the conversation this branch was forked from.",
+					Metadata:   `{"fork_placeholder":true}`,
+				},
+			},
+		},
+	}
+
+	require.Empty(t, ReportsFromMessages(fixedNamer{}, msgs))
+}
+
 func TestReportBodyStripsTheBanner(t *testing.T) {
 	t.Parallel()
 

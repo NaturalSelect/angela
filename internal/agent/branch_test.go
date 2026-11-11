@@ -73,4 +73,6 @@ func TestForkPromptCarriesInheritanceAndTask(t *testing.T) {
 	require.Contains(t, out, "Work out with me which sessions to invalidate")
 	require.Contains(t, flatten(out), "history",
 		"nothing tells the model the transcript above is inherited")
+	require.Contains(t, flatten(out), "not typed by the user",
+		"nothing tells the model the task came from the forking agent")
 }

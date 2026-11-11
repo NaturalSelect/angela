@@ -38,11 +38,13 @@ func IsAgentID(id string) bool {
 	return ok && len(hash) == reportIDHashLen
 }
 
-// AgentResponseMetadata is the metadata of an Agent tool result. Only a
-// background launch sets it.
+// AgentResponseMetadata is the metadata of an Agent tool result. A
+// background launch sets Background, and the stand-in result a branch's
+// history gives a call from the step that forked it sets ForkPlaceholder.
 type AgentResponseMetadata struct {
-	Background bool   `json:"background,omitempty"`
-	AgentID    string `json:"agent_id,omitempty"`
+	Background      bool   `json:"background,omitempty"`
+	AgentID         string `json:"agent_id,omitempty"`
+	ForkPlaceholder bool   `json:"fork_placeholder,omitempty"`
 }
 
 // ParseAgentResponseMetadata decodes a stored tool result's metadata. A

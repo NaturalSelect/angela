@@ -264,8 +264,12 @@ func ReportsFromMessages(sessions AgentToolSessionNamer, msgs []message.Message)
 			if !ok || result.IsError || result.Content == "" {
 				continue
 			}
-			if meta := ParseAgentResponseMetadata(result.Metadata); meta.Background {
+			meta := ParseAgentResponseMetadata(result.Metadata)
+			if meta.Background {
 				backgroundCalls[meta.AgentID] = result.ToolCallID
+				continue
+			}
+			if meta.ForkPlaceholder {
 				continue
 			}
 			dispatch.Content = result.Content

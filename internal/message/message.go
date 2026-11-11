@@ -48,6 +48,11 @@ type CreateMessageParams struct {
 type Service interface {
 	pubsub.Subscriber[Message]
 	Create(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error)
+
+	// CreateUnpublished is Create without the event, for filling a session
+	// nobody is reading yet. See ForkSession for why a branch's history
+	// must not be announced.
+	CreateUnpublished(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error)
 	Update(ctx context.Context, message Message) error
 	Get(ctx context.Context, id string) (Message, error)
 	List(ctx context.Context, sessionID string) ([]Message, error)
@@ -191,6 +196,21 @@ func (s *service) Delete(ctx context.Context, id string) error {
 }
 
 func (s *service) Create(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error) {
+	message, err := s.insert(ctx, sessionID, params)
+	if err != nil {
+		return Message{}, err
+	}
+	// Clone the message before publishing to avoid race conditions with
+	// concurrent modifications to the Parts slice.
+	s.Publish(pubsub.CreatedEvent, message.Clone())
+	return message, nil
+}
+
+func (s *service) CreateUnpublished(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error) {
+	return s.insert(ctx, sessionID, params)
+}
+
+func (s *service) insert(ctx context.Context, sessionID string, params CreateMessageParams) (Message, error) {
 	if params.Role != Assistant {
 		params.Parts = append(params.Parts, Finish{
 			Reason: "stop",
@@ -217,14 +237,7 @@ func (s *service) Create(ctx context.Context, sessionID string, params CreateMes
 	if err != nil {
 		return Message{}, err
 	}
-	message, err := s.fromDBItem(dbMessage)
-	if err != nil {
-		return Message{}, err
-	}
-	// Clone the message before publishing to avoid race conditions with
-	// concurrent modifications to the Parts slice.
-	s.Publish(pubsub.CreatedEvent, message.Clone())
-	return message, nil
+	return s.fromDBItem(dbMessage)
 }
 
 func (s *service) ForkSession(ctx context.Context, srcSessionID, dstSessionID, sinceMessageID, beforeMessageID string) (string, error) {

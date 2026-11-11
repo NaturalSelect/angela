@@ -165,6 +165,35 @@ func TestForkSessionPublishesNothing(t *testing.T) {
 	require.Empty(t, collector.snapshot(), "forking published events")
 }
 
+// A branch's history is built with Create's rules but must stay off the
+// screen, for the same reason ForkSession publishes nothing.
+func TestCreateUnpublishedStoresTheMessageAndPublishesNothing(t *testing.T) {
+	t.Parallel()
+
+	svc, _, dst := forkFixture(t)
+
+	subCtx, cancelSub := context.WithCancel(t.Context())
+	defer cancelSub()
+	collector := collect(subCtx, svc.Subscribe(subCtx))
+	time.Sleep(5 * time.Millisecond)
+	collector.reset()
+
+	created, err := svc.CreateUnpublished(t.Context(), dst, CreateMessageParams{
+		Role:  Tool,
+		Parts: []ContentPart{ToolResult{ToolCallID: "call-1", Name: "grep", Content: "hit"}},
+	})
+	require.NoError(t, err)
+
+	time.Sleep(20 * time.Millisecond)
+	require.Empty(t, collector.snapshot(), "an unpublished create published an event")
+
+	stored, err := svc.List(t.Context(), dst)
+	require.NoError(t, err)
+	require.Len(t, stored, 1)
+	require.Equal(t, created.ID, stored[0].ID)
+	require.NotNil(t, stored[0].FinishPart(), "a non-assistant message still gets its Finish part")
+}
+
 func TestForkSessionRejectsAForkPointFromAnotherSession(t *testing.T) {
 	t.Parallel()
 

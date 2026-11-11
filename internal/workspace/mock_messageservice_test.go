@@ -57,6 +57,21 @@ func (mr *MockMessageServiceMockRecorder) Create(ctx, sessionID, params any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockMessageService)(nil).Create), ctx, sessionID, params)
 }
 
+// CreateUnpublished mocks base method.
+func (m *MockMessageService) CreateUnpublished(ctx context.Context, sessionID string, params message.CreateMessageParams) (message.Message, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateUnpublished", ctx, sessionID, params)
+	ret0, _ := ret[0].(message.Message)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateUnpublished indicates an expected call of CreateUnpublished.
+func (mr *MockMessageServiceMockRecorder) CreateUnpublished(ctx, sessionID, params any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateUnpublished", reflect.TypeOf((*MockMessageService)(nil).CreateUnpublished), ctx, sessionID, params)
+}
+
 // Delete mocks base method.
 func (m *MockMessageService) Delete(ctx context.Context, id string) error {
 	m.ctrl.T.Helper()

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,7 +11,9 @@ import (
 	"github.com/NaturalSelect/angela/internal/agent/notify"
 	"github.com/NaturalSelect/angela/internal/agent/tools"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 )
 
 // runBranchAgent forks the caller's conversation into a session the user
@@ -52,9 +55,7 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	}
 
 	// Everything the caller had said and seen up to the call that forked
-	// it. The forking message itself is excluded: the branch is told what
-	// to do by the prompt below, so copying a tool call nobody will answer
-	// would only leave a dangling call in its history.
+	// it, then the step that made the call (see seedForkingStep).
 	//
 	// When the parent was compacted, its own turns never see anything
 	// before its summary either — copying further back would hand the
@@ -62,6 +63,9 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 	summaryID, err := c.messages.ForkSession(ctx, params.SessionID, session.ID, parentSession.SummaryMessageID, params.AgentMessageID)
 	if err != nil {
 		return tools.FailErr("fork conversation into branch", err)
+	}
+	if err := c.seedForkingStep(ctx, session.ID, params); err != nil {
+		return tools.FailErr("copy forking step into branch", err)
 	}
 	copied, err := c.messages.List(ctx, session.ID)
 	if err != nil {
@@ -134,6 +138,84 @@ func (c *coordinator) runBranchAgent(ctx context.Context, params subAgentParams)
 		branchStatus = tools.SubSessionStopped
 		return tools.Halt(out.Payload)
 	}
+}
+
+// Stand-in results for the calls of the step that forked a branch. The real
+// results belong to the conversation that made the calls, which is still
+// waiting on them, so the branch only learns that they exist.
+const (
+	forkSelfPlaceholder    = "This call forked the branch you are in. The conversation that made it is suspended, waiting on this branch."
+	forkSiblingPlaceholder = "This call ran in the conversation this branch was forked from. Its result was not carried over."
+)
+
+// seedForkingStep appends the step that forked the branch to the branch's
+// history, after the messages ForkSession copied. That step holds the text
+// and reasoning the caller wrote before the call, and the calls it made in
+// parallel with it.
+//
+// Every call in the step gets a placeholder result. A call left without one
+// would be read back as interrupted, which is wrong for a sibling that is
+// still running in the parent. Nothing is published, for the reason given on
+// message.Service.ForkSession.
+//
+// The row is read after a flush because the call is dispatched only once the
+// whole step has streamed in, but the debounced write may not have landed. A
+// step with no tool calls cannot have dispatched this branch, so it is left
+// out and the branch starts as it did before this step was copied.
+func (c *coordinator) seedForkingStep(ctx context.Context, branchSessionID string, params subAgentParams) error {
+	if err := c.messages.Flush(ctx, params.AgentMessageID); err != nil {
+		return fmt.Errorf("flush forking message: %w", err)
+	}
+	forking, err := c.messages.Get(ctx, params.AgentMessageID)
+	if err != nil {
+		return fmt.Errorf("read forking message: %w", err)
+	}
+	calls := forking.ToolCalls()
+	if len(calls) == 0 {
+		slog.Warn("Forking message has no tool calls", "session", params.SessionID, "message", params.AgentMessageID)
+		return nil
+	}
+
+	step := forking.Clone()
+	step.AddFinish(message.FinishReasonToolUse, "", "")
+	if _, err := c.messages.CreateUnpublished(ctx, branchSessionID, message.CreateMessageParams{
+		Role:     message.Assistant,
+		Parts:    step.Parts,
+		Model:    step.Model,
+		Provider: step.Provider,
+		Agent:    step.Agent,
+	}); err != nil {
+		return fmt.Errorf("copy forking message: %w", err)
+	}
+
+	placeholderMeta, err := json.Marshal(tools.AgentResponseMetadata{ForkPlaceholder: true})
+	if err != nil {
+		return fmt.Errorf("encode placeholder metadata: %w", err)
+	}
+	results := make([]message.ContentPart, len(calls))
+	for i, call := range calls {
+		result := message.ToolResult{
+			ToolCallID: call.ID,
+			Name:       call.Name,
+			Content:    forkSiblingPlaceholder,
+		}
+		if call.ID == params.ToolCallID {
+			result.Content = forkSelfPlaceholder
+		}
+		// NOTE: The marker is only read from Agent results, and other tools
+		// keep metadata of their own shape, so only Agent calls get it.
+		if call.Name == toolnames.Agent {
+			result.Metadata = string(placeholderMeta)
+		}
+		results[i] = result
+	}
+	if _, err := c.messages.CreateUnpublished(ctx, branchSessionID, message.CreateMessageParams{
+		Role:  message.Tool,
+		Parts: results,
+	}); err != nil {
+		return fmt.Errorf("add placeholder results: %w", err)
+	}
+	return nil
 }
 
 // startBranchTurn runs the branch's opening turn, the one seeded with the

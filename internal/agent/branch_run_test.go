@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/pubsub"
+	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,9 +53,10 @@ func branchParams(agent SessionAgent, resolved resolvedAgent, parentID, agentMes
 }
 
 // TestRunBranchAgentForkBoundary pins what the branch inherits. It must see
-// the conversation as it stood when the fork was requested, and nothing
-// after: the forking message carries a tool call the branch will never
-// answer, and a sibling's result belongs to a call it never made.
+// the conversation as it stood when the fork was requested, then the step
+// that made the call with a placeholder answering each of its calls, and
+// nothing after: a sibling's real result belongs to a call the branch never
+// answers, and what comes after it is the parent's own to write.
 func TestRunBranchAgentForkBoundary(t *testing.T) {
 	env := testEnv(t)
 	c := branchCoordinator(t, env)
@@ -67,15 +69,24 @@ func TestRunBranchAgentForkBoundary(t *testing.T) {
 	second, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
 	require.NoError(t, err)
 
-	// The forking message. Its parts stay empty on purpose: a tool call
-	// reaches the row through a debounced update, so at the moment the
-	// tool runs the row often holds nothing. Locating the fork point by
-	// ID rather than by content is what makes that harmless.
+	// The forking step: some words, the call that forks the branch and a
+	// sibling call made in the same step. The branch's own call ID is the
+	// one branchParams dispatches with. The step is unfinished, as it is
+	// while its tools run.
 	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
 	require.NoError(t, err)
+	forking.Parts = []message.ContentPart{
+		message.TextContent{Text: "Let me hand this to you."},
+		message.ToolCall{ID: "call-1", Name: toolnames.Agent, Input: `{"subagent_type":"pairing"}`, Finished: true},
+		message.ToolCall{ID: "call-sibling", Name: toolnames.Agent, Input: `{"subagent_type":"explore"}`, Finished: true},
+	}
+	require.NoError(t, env.messages.Update(t.Context(), forking))
 
 	// A parallel sibling's result, landing after the fork point.
-	sibling, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Tool})
+	sibling, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{
+		Role:  message.Tool,
+		Parts: []message.ContentPart{message.ToolResult{ToolCallID: "call-sibling", Name: toolnames.Agent, Content: "real sibling output"}},
+	})
 	require.NoError(t, err)
 
 	seen := make(chan string, 1)
@@ -94,12 +105,13 @@ func TestRunBranchAgentForkBoundary(t *testing.T) {
 	msgs, err := env.messages.List(t.Context(), branchID)
 	require.NoError(t, err)
 
-	// Only the two messages that preceded the fork. The opening turn's own
-	// message is absent because the agent here is a mock and never writes
-	// one; what it was asked is asserted through the prompt above.
-	require.Len(t, msgs, 2)
+	// The two messages that preceded the fork, the forking step and the
+	// placeholders. The opening turn's own message is absent because the
+	// agent here is a mock and never writes one; what it was asked is
+	// asserted through the prompt above.
+	require.Len(t, msgs, 4)
 	for _, m := range msgs {
-		require.NotEqual(t, forking.ID, m.ID, "the forking message must not be copied")
+		require.NotEqual(t, forking.ID, m.ID, "copied messages must get fresh IDs")
 		require.NotEqual(t, sibling.ID, m.ID, "a message after the fork point must not be copied")
 		require.NotEqual(t, first.ID, m.ID, "copied messages must get fresh IDs")
 		require.NotEqual(t, second.ID, m.ID, "copied messages must get fresh IDs")
@@ -107,11 +119,58 @@ func TestRunBranchAgentForkBoundary(t *testing.T) {
 	require.Equal(t, message.User, msgs[0].Role)
 	require.Equal(t, message.Assistant, msgs[1].Role)
 
+	step := msgs[2]
+	require.Equal(t, message.Assistant, step.Role)
+	require.Equal(t, "Let me hand this to you.", step.Content().Text)
+	require.Len(t, step.ToolCalls(), 2)
+	require.Equal(t, message.FinishReasonToolUse, step.FinishReason(),
+		"the copied step must not look like it is still streaming")
+
+	placeholders := msgs[3]
+	require.Equal(t, message.Tool, placeholders.Role)
+	results := placeholders.ToolResults()
+	require.Len(t, results, 2, "every call in the step needs an answer")
+	for _, result := range results {
+		require.False(t, result.IsError, "a placeholder is not a failure")
+		require.True(t, tools.ParseAgentResponseMetadata(result.Metadata).ForkPlaceholder)
+		require.NotContains(t, result.Content, "real sibling output")
+	}
+	require.Equal(t, "call-1", results[0].ToolCallID)
+	require.Equal(t, forkSelfPlaceholder, results[0].Content)
+	require.Equal(t, "call-sibling", results[1].ToolCallID)
+	require.Equal(t, forkSiblingPlaceholder, results[1].Content)
+
 	// The last inherited message is the branch's starting point, so undo
 	// can tell where the parent's history ends and the branch's own begins.
 	branch, err := env.sessions.Get(t.Context(), branchID)
 	require.NoError(t, err)
-	require.Equal(t, msgs[1].ID, branch.BaseMessageID)
+	require.Equal(t, placeholders.ID, branch.BaseMessageID)
+}
+
+// A forking step that has no tool call to answer cannot have dispatched the
+// branch, so it is left out rather than copied as a bare unfinished message.
+func TestRunBranchAgentSkipsAForkingStepWithoutToolCalls(t *testing.T) {
+	env := testEnv(t)
+	c := branchCoordinator(t, env)
+
+	parent, err := env.sessions.Create(t.Context(), "Parent")
+	require.NoError(t, err)
+	_, err = env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.User})
+	require.NoError(t, err)
+	forking, err := env.messages.Create(t.Context(), parent.ID, message.CreateMessageParams{Role: message.Assistant})
+	require.NoError(t, err)
+
+	seen := make(chan string, 1)
+	agent, resolved := idleBranchAgent(t, seen)
+
+	go func() {
+		c.runBranchAgent(t.Context(), branchParams(agent, resolved, parent.ID, forking.ID))
+	}()
+
+	requireBranchStarted(t, seen)
+	msgs, err := env.messages.List(t.Context(), requireBranchSession(t, c, parent.ID))
+	require.NoError(t, err)
+	require.Len(t, msgs, 1, "only what preceded the fork is copied")
 }
 
 // TestRunBranchAgentForkBoundaryAfterCompaction pins the same boundary as

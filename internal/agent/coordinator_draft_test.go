@@ -2,7 +2,6 @@ package agent
 
 import (
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
@@ -158,25 +157,18 @@ func TestAdoptDraftDoesNotReapplyToASecondSession(t *testing.T) {
 		"the second session must follow the config default, not the already-consumed draft pick")
 }
 
-// TestAdoptDraftLinearizesAgainstConcurrentDraftEdits pins the
-// ordering guarantee AdoptDraft's lock provides: it holds the draft's
-// own lock for its whole operation, not just the initial read, so a
-// concurrent EditActiveAgent call on the draft can never complete
-// "underneath" it and be missed. A narrower lock — held only around
-// the read, released before adopting — would let AdoptDraft capture
-// the draft, lose the lock, and then durably adopt that stale value
-// even though a concurrent edit had already landed and returned
-// successfully to its caller.
+// TestAdoptDraftLinearizesAgainstConcurrentDraftEdits pins that
+// AdoptDraft holds the draft's lock for its whole operation, so a
+// concurrent edit on the draft is never lost. Whichever call reaches
+// the lock first, the edit must survive: either adoption copied it
+// onto the session, or it landed after adoption cleared the draft and
+// is still there. A lock released after the read would let adoption
+// copy the stale pick and then clear the draft, leaving the session
+// on the old pick and the draft empty.
 //
-// Racing the two repeatedly and ranking them by completion order
-// checks exactly that: whenever the edit is observed to finish before
-// adoption does, adoption must have seen it. Under the old, narrower
-// lock this could be violated — the edit could complete inside the
-// gap between AdoptDraft's read and its own write. Under the lock
-// held for the whole operation it cannot: for the edit to finish
-// first, it must have run to completion before AdoptDraft ever
-// acquired the draft's lock, since nothing else can touch the draft
-// while AdoptDraft holds it.
+// The check reads the final state instead of ranking the two calls by
+// when they returned: a call can be descheduled between releasing the
+// lock and returning, so return order says nothing about lock order.
 func TestAdoptDraftLinearizesAgainstConcurrentDraftEdits(t *testing.T) {
 	coord := newModelPrefTestCoordinator(t, nil)
 	setChoreVariants(t, coord, map[string]config.SelectedModelOverride{
@@ -192,11 +184,9 @@ func TestAdoptDraftLinearizesAgainstConcurrentDraftEdits(t *testing.T) {
 		require.NoError(t, err)
 
 		var (
-			seq                 atomic.Int64
-			editRank, adoptRank int64
-			editErr, adoptErr   error
-			start               = make(chan struct{})
-			wg                  sync.WaitGroup
+			editErr, adoptErr error
+			start             = make(chan struct{})
+			wg                sync.WaitGroup
 		)
 
 		wg.Add(2)
@@ -204,13 +194,11 @@ func TestAdoptDraftLinearizesAgainstConcurrentDraftEdits(t *testing.T) {
 			defer wg.Done()
 			<-start
 			editErr = editActive(t, coord, draftSessionID, config.ActiveAgentEdit{Variant: ptrTo("high")})
-			editRank = seq.Add(1)
 		}()
 		go func() {
 			defer wg.Done()
 			<-start
 			adoptErr = coord.AdoptDraft(t.Context(), sess.ID)
-			adoptRank = seq.Add(1)
 		}()
 		close(start)
 		wg.Wait()
@@ -218,12 +206,14 @@ func TestAdoptDraftLinearizesAgainstConcurrentDraftEdits(t *testing.T) {
 		require.NoError(t, editErr)
 		require.NoError(t, adoptErr)
 
-		if editRank < adoptRank {
-			active, _, err := coord.ActiveAgent(t.Context(), sess.ID)
-			require.NoError(t, err)
-			require.Equal(t, "high", active.EffectiveVariant(),
-				"the draft edit finished before adoption did, so adoption must have observed it")
-		}
+		adopted, _, err := coord.ActiveAgent(t.Context(), sess.ID)
+		require.NoError(t, err)
+		draft, _, err := coord.ActiveAgent(t.Context(), draftSessionID)
+		require.NoError(t, err)
+		require.True(t,
+			adopted.EffectiveVariant() == "high" || draft.EffectiveVariant() == "high",
+			"the draft edit was lost: session ended on %q and the draft on %q",
+			adopted.EffectiveVariant(), draft.EffectiveVariant())
 	}
 }
 

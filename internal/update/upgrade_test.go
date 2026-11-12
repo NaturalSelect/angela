@@ -524,6 +524,24 @@ func TestUpgrade_PackageChecksumMismatch(t *testing.T) {
 	require.Empty(t, sys.ran, "an unverified package must never reach the package manager")
 }
 
+func TestUpgrade_PackageListedWithTildeInChecksums(t *testing.T) {
+	t.Parallel()
+
+	// NOTE: GitHub stores a "~" in an asset name as ".", while checksums.txt keeps the name as built.
+	rel := releaseServer(t, "v0.0.6-rc2", map[string][]byte{"angela_0.0.6~rc2_amd64.deb": []byte("deb")})
+	for i := range rel.Assets {
+		rel.Assets[i].Name = strings.ReplaceAll(rel.Assets[i].Name, "~", ".")
+	}
+	sys := &fakeSystem{owner: "dpkg", root: true}
+	u, out := newTestUpgrader(t, "v0.0.6-rc1", Platform{"linux", "amd64"}, sys, rel)
+
+	require.NoError(t, u.Upgrade(t.Context(), true))
+
+	require.Len(t, sys.ran, 1)
+	require.Equal(t, "angela_0.0.6.rc2_amd64.deb", filepath.Base(sys.ran[0][len(sys.ran[0])-1]))
+	require.Contains(t, out.String(), "Checksum verified")
+}
+
 func TestUpgrade_PackageBadSignatureNeverReachesPackageManager(t *testing.T) {
 	t.Parallel()
 

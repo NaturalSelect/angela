@@ -105,6 +105,10 @@ func (r Release) PackageAsset(format, arch string) (Asset, error) {
 	return Asset{}, fmt.Errorf("release %s has no %s package for %s", r.TagName, format, arch)
 }
 
+// NOTE: GitHub stores a "~" in an uploaded file name as ".", but goreleaser
+// writes the name it built into checksums.txt, so a pre-release deb or rpm
+// is listed as angela_0.0.6~rc2_amd64.deb and attached as
+// angela_0.0.6.rc2_amd64.deb.
 func parseChecksums(data string) map[string]string {
 	sums := make(map[string]string)
 	sc := bufio.NewScanner(strings.NewReader(data))
@@ -113,7 +117,8 @@ func parseChecksums(data string) map[string]string {
 		if len(fields) != 2 {
 			continue
 		}
-		sums[strings.TrimPrefix(fields[1], "*")] = strings.ToLower(fields[0])
+		name := strings.ReplaceAll(strings.TrimPrefix(fields[1], "*"), "~", ".")
+		sums[name] = strings.ToLower(fields[0])
 	}
 	return sums
 }

@@ -40,6 +40,7 @@ go install github.com/NaturalSelect/angela@latest
 ```bash
 angela upgrade                # latest stable release
 angela upgrade --pre-release  # also consider pre-releases (release candidates)
+angela upgrade --atom         # read releases from GitHub's Atom feed, not its API
 ```
 
 `angela upgrade` downloads the release from GitHub and verifies the cosign
@@ -48,6 +49,12 @@ workflow for that tag. It then checks the download against that file and
 replaces the running executable. Verification needs access to the Sigstore
 trust root at `tuf-repo-cdn.sigstore.dev`, and a release without a valid
 signature is refused.
+
+- **Rate limits.** GitHub limits anonymous API requests per IP address. Set
+  `GITHUB_TOKEN` or `GH_TOKEN` to authenticate them, or pass `--atom` to read
+  the release list from the Atom feed and release pages on `github.com`
+  instead. The feed only lists the most recent releases and `--atom` relies on
+  the layout of GitHub's release pages, so it is not the default.
 
 - **No downgrades.** Angela only moves to a strictly newer version. A
   pre-release build is never rolled back to an older stable release. It moves

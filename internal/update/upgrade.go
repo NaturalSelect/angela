@@ -84,6 +84,12 @@ func (u *Upgrader) Upgrade(ctx context.Context, includePrerelease bool) error {
 		u.reportUpToDate(current, releases, includePrerelease)
 		return nil
 	}
+	if as, ok := u.Source.(AssetSource); ok && len(release.Assets) == 0 {
+		release.Assets, err = as.Assets(ctx, *release)
+		if err != nil {
+			return fmt.Errorf("failed to list the files of %s: %w", release.TagName, err)
+		}
+	}
 
 	fmt.Fprintf(u.Out, "Upgrading Angela from %s to %s.\n", canonical(u.Current), canonical(release.TagName))
 

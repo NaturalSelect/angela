@@ -105,6 +105,12 @@ type Source interface {
 	Releases(ctx context.Context) ([]Release, error)
 }
 
+// AssetSource is implemented by a [Source] whose releases come without
+// assets. The upgrader asks it for the assets of the release it selected.
+type AssetSource interface {
+	Assets(ctx context.Context, r Release) ([]Asset, error)
+}
+
 type github struct{}
 
 // Latest implements [Client].
@@ -162,7 +168,7 @@ func getJSON(ctx context.Context, url string, v any) error {
 	defer resp.Body.Close()
 
 	if isRateLimited(resp) {
-		return errors.New("GitHub API rate limit exceeded, set GITHUB_TOKEN or GH_TOKEN to authenticate and raise the limit, or try again later")
+		return errors.New("GitHub API rate limit exceeded, set GITHUB_TOKEN or GH_TOKEN to authenticate and raise the limit, or use the --atom flag to read releases from the Atom feed instead")
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

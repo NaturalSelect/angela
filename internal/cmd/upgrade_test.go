@@ -23,6 +23,15 @@ func TestUpgradeCmdPreReleaseFlag(t *testing.T) {
 	require.Equal(t, "false", flag.DefValue, "pre-releases must be opt-in")
 }
 
+func TestUpgradeCmdAtomFlag(t *testing.T) {
+	t.Parallel()
+
+	flag := upgradeCmd.Flags().Lookup("atom")
+	require.NotNil(t, flag, "`angela upgrade` must accept --atom")
+	require.Equal(t, "bool", flag.Value.Type())
+	require.Equal(t, "false", flag.DefValue, "the GitHub API must stay the default")
+}
+
 func TestUpgradeCmdRejectsArguments(t *testing.T) {
 	t.Parallel()
 

@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/mod/semver"
+
+	"github.com/NaturalSelect/angela/internal/env"
 )
 
 const (
@@ -122,6 +125,19 @@ func (c *github) Releases(ctx context.Context) ([]Release, error) {
 	return releases, nil
 }
 
+// githubToken returns the token used to authenticate GitHub API requests, or
+// an empty string when none is set. Anonymous requests share a low hourly
+// limit per IP address, which busy networks exhaust.
+func githubToken() string {
+	e := env.New()
+	for _, key := range []string{"GITHUB_TOKEN", "GH_TOKEN"} {
+		if token := strings.TrimSpace(e.Get(key)); token != "" {
+			return token
+		}
+	}
+	return ""
+}
+
 func getJSON(ctx context.Context, url string, v any) error {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -133,6 +149,11 @@ func getJSON(ctx context.Context, url string, v any) error {
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	// NOTE: Only the fixed GitHub API URLs reach here, so the token never goes
+	// to the release asset hosts.
+	if token := githubToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -140,10 +161,21 @@ func getJSON(ctx context.Context, url string, v any) error {
 	}
 	defer resp.Body.Close()
 
+	if isRateLimited(resp) {
+		return errors.New("GitHub API rate limit exceeded, set GITHUB_TOKEN or GH_TOKEN to authenticate and raise the limit, or try again later")
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	return json.NewDecoder(resp.Body).Decode(v)
+}
+
+func isRateLimited(resp *http.Response) bool {
+	switch resp.StatusCode {
+	case http.StatusForbidden, http.StatusTooManyRequests:
+		return resp.Header.Get("X-RateLimit-Remaining") == "0"
+	}
+	return false
 }

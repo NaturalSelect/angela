@@ -2,6 +2,8 @@ package update
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -83,6 +85,69 @@ func TestInfo_IsDevelopment(t *testing.T) {
 			require.Equal(t, tt.want, info.IsDevelopment())
 		})
 	}
+}
+
+func TestGetJSON_SendsToken(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"no token", nil, ""},
+		{"GITHUB_TOKEN", map[string]string{"GITHUB_TOKEN": "abc"}, "Bearer abc"},
+		{"GH_TOKEN", map[string]string{"GH_TOKEN": "def"}, "Bearer def"},
+		{"GITHUB_TOKEN wins", map[string]string{"GITHUB_TOKEN": "abc", "GH_TOKEN": "def"}, "Bearer abc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GITHUB_TOKEN", "")
+			t.Setenv("GH_TOKEN", "")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			var got string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Get("Authorization")
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			t.Cleanup(srv.Close)
+
+			var v map[string]any
+			require.NoError(t, getJSON(t.Context(), srv.URL, &v))
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGetJSON_RateLimited(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	var v map[string]any
+	err := getJSON(t.Context(), srv.URL, &v)
+	require.ErrorContains(t, err, "rate limit exceeded")
+	require.ErrorContains(t, err, "GITHUB_TOKEN")
+}
+
+func TestGetJSON_ForbiddenWithoutRateLimit(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`forbidden`))
+	}))
+	t.Cleanup(srv.Close)
+
+	var v map[string]any
+	err := getJSON(t.Context(), srv.URL, &v)
+	require.ErrorContains(t, err, "status 403")
 }
 
 func TestGithubLatest_ContextCancelled(t *testing.T) {

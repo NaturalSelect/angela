@@ -21,6 +21,10 @@ that tag, and checks the download against it. This needs access to the
 Sigstore trust root at tuf-repo-cdn.sigstore.dev. A release without a valid
 signature is refused.
 
+GitHub limits anonymous API requests per IP address. If the release list fails
+with a rate limit error, set GITHUB_TOKEN or GH_TOKEN to a GitHub token to
+authenticate the request. The token is only sent to api.github.com.
+
 Angela never installs an older version than the one running. A pre-release
 build stays where it is until a newer release is published, and it is never
 rolled back to an older stable release. Pre-releases are only offered as

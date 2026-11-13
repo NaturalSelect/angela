@@ -71,7 +71,8 @@ func newMockSessionAgent(t *testing.T, agentID string, runFunc func(context.Cont
 			a.summarized = append(a.summarized, sessionID)
 			a.compacted = append(a.compacted, compact)
 			return nil
-		}).AnyTimes()
+		},
+	).AnyTimes()
 	return a
 }
 

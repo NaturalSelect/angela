@@ -572,7 +572,12 @@ type Options struct {
 	AgentPaths                []string     `json:"agent_paths,omitempty" jsonschema:"description=Paths to directories containing agent markdown files,example=~/.config/angela/agents,example=./agents"`
 	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
 	EnableImageTools          *bool        `json:"enable_image_tools,omitempty" jsonschema:"description=Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported\\, images can still be saved with Export Image); false disables them"`
+	CommitDiffRunes           *int         `json:"commit_diff_runes,omitempty" jsonschema:"description=Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. A longer diff is cut off and marked as truncated. Raising it costs more input tokens per commit.,minimum=1,default=48000,example=100000"`
 }
+
+// DefaultCommitDiffRunes is the staged diff budget, in runes, when neither
+// the --max-diff-runes flag nor options.commit_diff_runes is set.
+const DefaultCommitDiffRunes = 48000
 
 // DefaultSubagentDepth is the effective subagent dispatch depth when
 // Options.SubagentDepth is unset: a primary agent may dispatch a
@@ -601,6 +606,9 @@ func (o *Options) SubagentMaxDepth() int {
 func (c *Config) ValidateOptions() error {
 	if c.Options != nil && c.Options.SubagentDepth != nil && *c.Options.SubagentDepth < 0 {
 		return fmt.Errorf("options.subagent_depth must be non-negative, got %d", *c.Options.SubagentDepth)
+	}
+	if c.Options != nil && c.Options.CommitDiffRunes != nil && *c.Options.CommitDiffRunes < 1 {
+		return fmt.Errorf("options.commit_diff_runes must be positive, got %d", *c.Options.CommitDiffRunes)
 	}
 	return nil
 }

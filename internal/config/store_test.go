@@ -993,6 +993,58 @@ func TestValidateOptions_RejectsNegativeSubagentDepth(t *testing.T) {
 	require.NoError(t, cfg.ValidateOptions())
 }
 
+func TestValidateOptions_RejectsNonPositiveCommitDiffRunes(t *testing.T) {
+	t.Parallel()
+
+	for _, n := range []int{0, -5} {
+		cfg := &Config{Options: &Options{CommitDiffRunes: &n}}
+		require.Error(t, cfg.ValidateOptions(), "commit_diff_runes %d must be rejected", n)
+	}
+
+	ok := 1
+	cfg := &Config{Options: &Options{CommitDiffRunes: &ok}}
+	require.NoError(t, cfg.ValidateOptions())
+
+	cfg.Options.CommitDiffRunes = nil
+	require.NoError(t, cfg.ValidateOptions())
+}
+
+func TestConfigStore_CommitDiffRunes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default when unset", func(t *testing.T) {
+		t.Parallel()
+		store := &ConfigStore{config: &Config{Options: &Options{}}}
+		require.Equal(t, DefaultCommitDiffRunes, store.CommitDiffRunes())
+	})
+
+	t.Run("nil Options does not panic", func(t *testing.T) {
+		t.Parallel()
+		store := &ConfigStore{config: &Config{}}
+		require.Equal(t, DefaultCommitDiffRunes, store.CommitDiffRunes())
+	})
+
+	t.Run("option beats default", func(t *testing.T) {
+		t.Parallel()
+		store := &ConfigStore{config: &Config{Options: &Options{CommitDiffRunes: new(1234)}}}
+		require.Equal(t, 1234, store.CommitDiffRunes())
+	})
+
+	t.Run("override beats option", func(t *testing.T) {
+		t.Parallel()
+		store := &ConfigStore{config: &Config{Options: &Options{CommitDiffRunes: new(1234)}}}
+		store.Overrides().CommitDiffRunes = new(99)
+		require.Equal(t, 99, store.CommitDiffRunes())
+	})
+
+	t.Run("non-positive values fall through to the next layer", func(t *testing.T) {
+		t.Parallel()
+		store := &ConfigStore{config: &Config{Options: &Options{CommitDiffRunes: new(1234)}}}
+		store.Overrides().CommitDiffRunes = new(0)
+		require.Equal(t, 1234, store.CommitDiffRunes())
+	})
+}
+
 // TestOptions_SubagentMaxDepthDefaultsToTwo pins the depth an unconfigured
 // Angela allows. The value decides how many hops the coder can delegate
 // through by default, so a silent drift would either disable subagents

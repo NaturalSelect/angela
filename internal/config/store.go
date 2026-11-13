@@ -79,6 +79,10 @@ type RuntimeOverrides struct {
 	// EnableImageTools is set by the --enable-image-tools flag. Nil means
 	// the flag was not passed, so options.enable_image_tools applies.
 	EnableImageTools *bool
+	// CommitDiffRunes is set by the commit command's --max-diff-runes flag.
+	// Nil means the flag was not passed, so options.commit_diff_runes
+	// applies.
+	CommitDiffRunes *int
 	// NonInteractive starts the coder agent without interactive-only tools
 	// such as question, for front ends that cannot ask the user anything.
 	NonInteractive bool
@@ -274,6 +278,21 @@ func (s *ConfigStore) ImageToolsEnabled() *bool {
 		return cfg.Options.EnableImageTools
 	}
 	return nil
+}
+
+// CommitDiffRunes returns how many runes of the staged diff may be sent to
+// the commit message model: the --max-diff-runes override when passed, else
+// options.commit_diff_runes, else DefaultCommitDiffRunes.
+func (s *ConfigStore) CommitDiffRunes() int {
+	if n := s.Overrides().CommitDiffRunes; n != nil && *n > 0 {
+		return *n
+	}
+	if cfg := s.Config(); cfg != nil && cfg.Options != nil {
+		if n := cfg.Options.CommitDiffRunes; n != nil && *n > 0 {
+			return *n
+		}
+	}
+	return DefaultCommitDiffRunes
 }
 
 // LoadedPaths returns the config file paths that were successfully loaded.

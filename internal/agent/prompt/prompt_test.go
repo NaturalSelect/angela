@@ -150,7 +150,8 @@ func TestPrompt_ContextPathsWalksDirectory(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(store.WorkingDir(), "docs"), 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(store.WorkingDir(), "docs", "notes.md"),
-		[]byte("remember the house style"), 0o644))
+		[]byte("remember the house style"), 0o644,
+	))
 
 	p, err := NewPrompt("x", "body", WithContextPaths([]string{"docs"}))
 	require.NoError(t, err)

@@ -413,7 +413,8 @@ func TestChannelConnGateOpenInjects(t *testing.T) {
 	gate.resolve(true)
 	passthrough := &jsonrpc.Request{Method: "notifications/other"}
 	conn := &channelConn{
-		Connection: newConn(t,
+		Connection: newConn(
+			t,
 			channelNotification(t, "build failed"),
 			passthrough,
 		),
@@ -455,7 +456,8 @@ func TestChannelConnGateClosedDropsEvents(t *testing.T) {
 	gate.resolve(false) // closed: not opted in / not a channel
 	passthrough := &jsonrpc.Request{Method: "notifications/other"}
 	conn := &channelConn{
-		Connection: newConn(t,
+		Connection: newConn(
+			t,
 			channelNotification(t, "should be dropped"),
 			passthrough,
 		),
@@ -485,7 +487,8 @@ func TestChannelConnMalformedPayloadDropped(t *testing.T) {
 	gate.resolve(true)
 	bad := &jsonrpc.Request{Method: channelNotificationMethod, Params: json.RawMessage(`{"content":`)}
 	conn := &channelConn{
-		Connection: newConn(t,
+		Connection: newConn(
+			t,
 			bad,
 			&jsonrpc.Request{Method: "notifications/other"},
 		),
@@ -574,7 +577,8 @@ func TestChannelConnBuffersDuringUndecidedGate(t *testing.T) {
 
 	gate := newChannelGate() // starts undecided
 	conn := &channelConn{
-		Connection: newConn(t,
+		Connection: newConn(
+			t,
 			channelNotification(t, "buffered event"),
 			&jsonrpc.Request{Method: "notifications/other"},
 		),
@@ -626,7 +630,8 @@ func TestChannelConnDiscardsBufferOnClosedGate(t *testing.T) {
 
 	gate := newChannelGate()
 	conn := &channelConn{
-		Connection: newConn(t,
+		Connection: newConn(
+			t,
 			channelNotification(t, "should be discarded"),
 			&jsonrpc.Request{Method: "notifications/other"},
 		),

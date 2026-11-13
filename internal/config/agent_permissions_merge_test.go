@@ -37,7 +37,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("a narrower allowed_tools replaces the broader one", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"coder": {"allowed_tools": ["bash", "read", "edit"]}}}`,
 			`{"agents": {"coder": {"allowed_tools": ["read"]}}}`,
 		)
@@ -53,7 +54,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("an empty allowed_tools clears the lower layer", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"coder": {"allowed_tools": ["bash", "read"]}}}`,
 			`{"agents": {"coder": {"allowed_tools": []}}}`,
 		)
@@ -68,7 +70,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("disabled_tools replaces rather than accumulates", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"coder": {"disabled_tools": ["bash", "write"]}}}`,
 			`{"agents": {"coder": {"disabled_tools": ["write"]}}}`,
 		)
@@ -82,7 +85,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("a layer switching to inherited does not break the load", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"coder": {"allowed_tools": ["bash", "read"]}}}`,
 			`{"agents": {"coder": {"allowed_tools": "inherited"}}}`,
 		)
@@ -97,7 +101,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("a field only the low layer names survives", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"coder": {"allowed_tools": ["bash"], "disabled_tools": ["write"]}}}`,
 			`{"agents": {"coder": {"allowed_tools": ["read"]}}}`,
 		)
@@ -113,7 +118,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("a narrower allowed_agents replaces the broader one", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"plan": {"allowed_agents": ["explore", "general"]}}}`,
 			`{"agents": {"plan": {"allowed_agents": ["explore"]}}}`,
 		)
@@ -127,7 +133,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("an empty allowed_agents clears the lower layer", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"plan": {"allowed_agents": ["explore", "general"]}}}`,
 			`{"agents": {"plan": {"allowed_agents": []}}}`,
 		)
@@ -142,7 +149,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("an explicit \"all\" restores dispatch after a lower layer narrowed it", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"plan": {"allowed_agents": ["explore"]}}}`,
 			`{"agents": {"plan": {"allowed_agents": "all"}}}`,
 		)
@@ -156,7 +164,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("allow_yolo_merge overrides across layers", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"coder": {"allow_yolo_merge": true}}}`,
 			`{"agents": {"coder": {"allow_yolo_merge": false}}}`,
 		)
@@ -172,7 +181,8 @@ func TestAgentPermissionsReplaceAcrossLayers(t *testing.T) {
 
 	t.Run("allow_yolo_merge unset preserves lower layer", func(t *testing.T) {
 		t.Parallel()
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"coder": {"allow_yolo_merge": false}}}`,
 			`{"agents": {"coder": {"name": "custom-coder"}}}`,
 		)

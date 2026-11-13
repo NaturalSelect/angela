@@ -232,6 +232,32 @@ func TestSetupLocalWorkspace_EnableImageToolsFlagSetsOverride(t *testing.T) {
 	require.True(t, *got)
 }
 
+// TestSetupLocalWorkspace_CommitDiffRunesFlagSetsOverride pins that
+// --max-diff-runes reaches the runtime override, so a single
+// `angela commit` can raise or lower the diff budget without touching
+// angela.json.
+func TestSetupLocalWorkspace_CommitDiffRunesFlagSetsOverride(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cmd := newSetupWorkspaceTestCmd(t, t.TempDir())
+	cmd.Flags().Int("max-diff-runes", 0, "")
+	require.NoError(t, cmd.Flags().Set("max-diff-runes", "777"))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	cmd.SetContext(ctx)
+
+	ws, cleanup, err := setupLocalWorkspace(cmd)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	appWs, ok := ws.(*workspace.AppWorkspace)
+	require.True(t, ok, "setupLocalWorkspace must return an *workspace.AppWorkspace in local mode")
+	got := appWs.Store().Overrides().CommitDiffRunes
+	require.NotNil(t, got)
+	require.Equal(t, 777, *got)
+	require.Equal(t, 777, appWs.Store().CommitDiffRunes())
+}
+
 // TestRandomExitMessage pins the two invariants callers rely on: every
 // message is short enough for a single status line, and the choice is
 // actually randomized rather than a hardcoded string.

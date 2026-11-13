@@ -156,6 +156,14 @@ git add -p
 angela commit
 ```
 
+Only the first 48,000 characters of the staged diff are sent to the model. Raise
+or lower that budget for one run with `--max-diff-runes`, or permanently with
+`options.commit_diff_runes` in `angela.json`.
+
+```bash
+angela commit --max-diff-runes 100000
+```
+
 ### Editor integration (ACP)
 
 `angela acp` runs Angela as an [Agent Client Protocol](https://agentclientprotocol.com)

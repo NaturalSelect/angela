@@ -15,6 +15,21 @@ import (
 
 var errNothingStaged = errors.New("nothing staged to commit")
 
+func init() {
+	commitCmd.Flags().Int("max-diff-runes", 0, "Maximum characters (runes) of the staged diff sent to the model; overrides options.commit_diff_runes (default 48000)")
+}
+
+// commitDiffRunesFlag returns the value of --max-diff-runes, or nil when the
+// flag was not passed or the command does not define it, so
+// options.commit_diff_runes applies.
+func commitDiffRunesFlag(cmd *cobra.Command) *int {
+	if !cmd.Flags().Changed("max-diff-runes") {
+		return nil
+	}
+	v, _ := cmd.Flags().GetInt("max-diff-runes")
+	return &v
+}
+
 var commitCmd = &cobra.Command{
 	Use:   "commit",
 	Short: "Commit staged changes with a generated message",
@@ -24,10 +39,17 @@ the commit is signed off, repository git hooks are skipped, and nothing
 happens unless changes are staged.`,
 	Example: `# Stage some changes, then commit them with a generated message
 git add internal/cmd
-angela commit`,
+angela commit
+
+# Send more of a large diff to the model
+angela commit --max-diff-runes 100000`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
+
+		if n := commitDiffRunesFlag(cmd); n != nil && *n < 1 {
+			return fmt.Errorf("--max-diff-runes must be positive, got %d", *n)
+		}
 
 		// NOTE: Resolved to an absolute path before setup because
 		// ResolveCwd changes the process directory, which would

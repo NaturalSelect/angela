@@ -50,6 +50,7 @@ func (LandlockSandbox) EnterSandbox(cfg Config) error {
 	}
 
 	restrictChildNetwork.Store(rs.restrictChildNetwork)
+	recordApplied(rs)
 	entered.Store(true)
 	return nil
 }

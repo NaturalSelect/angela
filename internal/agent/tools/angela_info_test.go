@@ -14,6 +14,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 	"github.com/stretchr/testify/require"
@@ -547,6 +548,105 @@ func TestAngelaInfo_Hooks_NoHooks(t *testing.T) {
 
 	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
 	require.NotContains(t, output, "[hooks]")
+}
+
+func TestAngelaInfo_SectionPresent(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewTestStore(&config.Config{
+		Providers: csync.NewMap[string, config.ProviderConfig](),
+	})
+
+	output := buildAngelaInfo(cfg, nil, nil, nil, nil)
+	require.Contains(t, output, "[sandbox]\nbackend = ")
+	require.Contains(t, output, "active = ")
+}
+
+func TestWriteSandbox_Inactive(t *testing.T) {
+	t.Parallel()
+
+	var b strings.Builder
+	writeSandbox(&b, sandbox.Status{Backend: sandbox.BackendLandlock, LandlockABI: 5})
+
+	require.Equal(t, "[sandbox]\nbackend = landlock\nactive = false\nlandlock_abi = 5\n\n", b.String())
+}
+
+func TestWriteSandbox_LandlockUnsupportedKernel(t *testing.T) {
+	t.Parallel()
+
+	var b strings.Builder
+	writeSandbox(&b, sandbox.Status{Backend: sandbox.BackendLandlock})
+
+	require.Contains(t, b.String(), "landlock_abi = unsupported (kernel enforces nothing)")
+}
+
+func TestWriteSandbox_RestrictedFilesystem(t *testing.T) {
+	t.Parallel()
+
+	var b strings.Builder
+	writeSandbox(&b, sandbox.Status{
+		Backend:              sandbox.BackendLandlock,
+		Active:               true,
+		LandlockABI:          4,
+		FilesystemRestricted: true,
+		ReadDirs:             []string{"/", "/work", "/tmp"},
+		WriteDirs:            []string{"/work", "/tmp"},
+		ReadFiles:            []string{"/etc/hosts", "/work/out.log"},
+		WriteFiles:           []string{"/work/out.log"},
+		BlocksChildNetwork:   true,
+	})
+
+	want := "[sandbox]\n" +
+		"backend = landlock\n" +
+		"active = true\n" +
+		"landlock_abi = 4\n" +
+		"filesystem = restricted\n" +
+		"read_write = /work, /tmp\n" +
+		"read_only = /\n" +
+		"read_write_files = /work/out.log\n" +
+		"read_only_files = /etc/hosts\n" +
+		"child_network = blocked\n\n"
+	require.Equal(t, want, b.String())
+}
+
+func TestWriteSandbox_UnrestrictedFilesystem(t *testing.T) {
+	t.Parallel()
+
+	var b strings.Builder
+	writeSandbox(&b, sandbox.Status{Backend: sandbox.BackendSeatbelt, Active: true})
+
+	out := b.String()
+	require.Contains(t, out, "backend = seatbelt")
+	require.Contains(t, out, "filesystem = unrestricted")
+	require.Contains(t, out, "child_network = allowed")
+	require.NotContains(t, out, "read_write")
+	require.NotContains(t, out, "landlock_abi")
+}
+
+func TestWriteSandbox_Docker(t *testing.T) {
+	t.Parallel()
+
+	var b strings.Builder
+	writeSandbox(&b, sandbox.Status{Backend: sandbox.BackendDocker, Active: true})
+
+	out := b.String()
+	require.Contains(t, out, "backend = docker")
+	require.Contains(t, out, "active = true")
+	require.Contains(t, out, "external container")
+	require.NotContains(t, out, "filesystem")
+	require.NotContains(t, out, "child_network")
+}
+
+func TestWriteSandbox_None(t *testing.T) {
+	t.Parallel()
+
+	var b strings.Builder
+	writeSandbox(&b, sandbox.Status{Backend: sandbox.BackendNone})
+
+	out := b.String()
+	require.Contains(t, out, "backend = none")
+	require.Contains(t, out, "active = false")
+	require.Contains(t, out, "no sandbox mechanism")
 }
 
 func TestAngelaInfoTool_ReflectsSkillsReload(t *testing.T) {

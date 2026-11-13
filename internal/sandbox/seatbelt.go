@@ -48,7 +48,8 @@ func (SeatbeltSandbox) EnterSandbox(cfg Config) error {
 		return fmt.Errorf("enter sandbox: blocking outbound network for spawned commands is not supported on macOS, since an already-sandboxed process cannot apply a second, tighter profile to its own children (drop --sandbox-no-network): %w", ErrNotSupported)
 	}
 
-	profile, err := seatbeltProfile(resolve(cfg).existing())
+	rs := resolve(cfg).existing()
+	profile, err := seatbeltProfile(rs)
 	if err != nil {
 		return fmt.Errorf("enter sandbox: build profile: %w", err)
 	}
@@ -56,6 +57,7 @@ func (SeatbeltSandbox) EnterSandbox(cfg Config) error {
 		return fmt.Errorf("enter sandbox: apply seatbelt profile: %w", err)
 	}
 
+	recordApplied(rs)
 	entered.Store(true)
 	return nil
 }

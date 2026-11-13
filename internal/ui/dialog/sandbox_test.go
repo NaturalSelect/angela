@@ -3,6 +3,7 @@ package dialog
 import (
 	"image"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/key"
@@ -14,6 +15,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/workspace"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1017,4 +1019,34 @@ func TestSandbox_ClickHitsScrolledRow(t *testing.T) {
 	x, y := targetPoint(t, m, rowTarget(5, sandboxColToggle))
 	m.HandleMsg(tea.MouseClickMsg{X: x, Y: y, Button: uv.MouseLeft})
 	require.Equal(t, !before, m.rows[5].readOnly)
+}
+
+// TestSandbox_LongPathStaysOnItsRow verifies a path wider than the row
+// is clipped to its input instead of pushing the RW and remove buttons
+// out of the dialog, whether or not the row is focused.
+func TestSandbox_LongPathStaysOnItsRow(t *testing.T) {
+	t.Parallel()
+
+	const width = 60
+	m := newTestSandbox(t)
+	m.rows = []sandboxPathRow{
+		newSandboxRow(m.com.Styles, "/short", false),
+		newSandboxRow(m.com.Styles, "/home/nature/.local/share/containers/storage/overlay", false),
+	}
+
+	for _, focus := range []int{0, sandboxColCount} {
+		m.setFocus(focus)
+		scr := uv.NewScreenBuffer(width, sandboxTestH)
+		m.Draw(scr, image.Rect(0, 0, width, sandboxTestH))
+
+		var rows int
+		for line := range strings.SplitSeq(ansi.Strip(scr.Render()), "\n") {
+			if !strings.Contains(line, "│ > ") {
+				continue
+			}
+			rows++
+			require.Regexp(t, `RW\s+-\s+│\s*$`, line)
+		}
+		require.Equal(t, len(m.rows), rows)
+	}
 }

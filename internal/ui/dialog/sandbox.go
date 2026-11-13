@@ -137,7 +137,7 @@ func NewSandbox(com *common.Common) *Sandbox {
 	for _, p := range cfg.ReadOnly {
 		m.rows = append(m.rows, newSandboxRow(t, p, true))
 	}
-	m.rows[0].input.Focus()
+	m.syncFocus()
 
 	m.help = help.New()
 	m.help.Styles = t.DialogHelpStyles()
@@ -160,6 +160,23 @@ func newSandboxRow(t *styles.Styles, path string, readOnly bool) sandboxPathRow 
 	input.Prompt = "> "
 	input.SetValue(path)
 	return sandboxPathRow{input: input, readOnly: readOnly}
+}
+
+// setSandboxInputWidth resizes a row's input and re-clips its visible
+// window.
+//
+// NOTE: textinput only recomputes the window when the cursor moves or the
+// value changes, so a value set while the width was still zero would
+// render in full and overflow the row. Jumping the cursor to the end and
+// back forces the recompute and leaves the cursor where it was.
+func setSandboxInputWidth(input *textinput.Model, width int) {
+	if input.Width() == width {
+		return
+	}
+	pos := input.Position()
+	input.SetWidth(width)
+	input.CursorEnd()
+	input.SetCursor(pos)
 }
 
 // sandboxDefaultConfig builds the sandbox.Config NewSandbox pre-fills
@@ -245,13 +262,17 @@ func (m *Sandbox) setFocus(newIndex int) {
 // next Draw to scroll the focused line into view.
 func (m *Sandbox) syncFocus() {
 	m.followFocus = true
+	// NOTE: A blurred row shows the head of its path; the focused one
+	// puts the cursor at the end, so editing starts where typing lands.
 	for i := range m.rows {
 		m.rows[i].input.Blur()
+		m.rows[i].input.CursorStart()
 	}
 	n := m.stopCount()
 	m.focused = ((m.focused % n) + n) % n
 	if area, row, col := m.focusTarget(m.focused); area == sandboxFocusRow && col == sandboxColInput {
 		m.rows[row].input.Focus()
+		m.rows[row].input.CursorEnd()
 	}
 }
 
@@ -528,7 +549,7 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 	inputWidth := max(0, innerWidth-rowLeftPad-toggleWidth-removeWidth-rowGaps-cursorPad-scrollbarWidth)
 	for i := range m.rows {
-		m.rows[i].input.SetWidth(inputWidth)
+		setSandboxInputWidth(&m.rows[i].input, inputWidth)
 	}
 
 	assemble := func(rowsBlock, continueBlock string) string {

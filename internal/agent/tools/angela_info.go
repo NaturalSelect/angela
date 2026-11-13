@@ -12,6 +12,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/lsp"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/skills"
 	"github.com/NaturalSelect/angela/internal/toolnames"
 )
@@ -55,6 +56,7 @@ func buildAngelaInfo(cfg *config.ConfigStore, lspManager *lsp.Manager, allSkills
 	writeSkills(&b, allSkills, activeSkills, skillTracker, cfg)
 	writeHooks(&b, cfg)
 	writePermissions(&b, cfg)
+	writeSandbox(&b, sandbox.CurrentStatus(cfg.Overrides().NoDockerSandbox))
 	writeDisabledTools(&b, cfg)
 	writeOptions(&b, cfg)
 	writeAttribution(&b, cfg)
@@ -379,6 +381,61 @@ func writePermissions(b *strings.Builder, cfg *config.ConfigStore) {
 		fmt.Fprintf(b, "allowed_tools = %s\n", strings.Join(sorted, ", "))
 	}
 	b.WriteString("\n")
+}
+
+func writeSandbox(b *strings.Builder, st sandbox.Status) {
+	b.WriteString("[sandbox]\n")
+	fmt.Fprintf(b, "backend = %s\n", st.Backend)
+	fmt.Fprintf(b, "active = %v\n", st.Active)
+
+	switch st.Backend {
+	case sandbox.BackendDocker:
+		b.WriteString("note = confined by an external container; Angela applies no rules of its own\n\n")
+		return
+	case sandbox.BackendNone:
+		b.WriteString("note = no sandbox mechanism on this platform\n\n")
+		return
+	case sandbox.BackendLandlock:
+		if st.LandlockABI > 0 {
+			fmt.Fprintf(b, "landlock_abi = %d\n", st.LandlockABI)
+		} else {
+			b.WriteString("landlock_abi = unsupported (kernel enforces nothing)\n")
+		}
+	}
+
+	if !st.Active {
+		b.WriteString("\n")
+		return
+	}
+
+	if !st.FilesystemRestricted {
+		b.WriteString("filesystem = unrestricted\n")
+	} else {
+		b.WriteString("filesystem = restricted\n")
+		writeSandboxPaths(b, "read_write", st.WriteDirs)
+		readOnly := slices.DeleteFunc(slices.Clone(st.ReadDirs), func(p string) bool {
+			return slices.Contains(st.WriteDirs, p)
+		})
+		writeSandboxPaths(b, "read_only", readOnly)
+		writeSandboxPaths(b, "read_write_files", st.WriteFiles)
+		readOnlyFiles := slices.DeleteFunc(slices.Clone(st.ReadFiles), func(p string) bool {
+			return slices.Contains(st.WriteFiles, p)
+		})
+		writeSandboxPaths(b, "read_only_files", readOnlyFiles)
+	}
+	if st.BlocksChildNetwork {
+		b.WriteString("child_network = blocked\n")
+	} else {
+		b.WriteString("child_network = allowed\n")
+	}
+	b.WriteString("\n")
+}
+
+func writeSandboxPaths(b *strings.Builder, key string, paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "%s = %s\n", key, strings.Join(paths, ", "))
 }
 
 func writeDisabledTools(b *strings.Builder, cfg *config.ConfigStore) {

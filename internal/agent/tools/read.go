@@ -251,19 +251,22 @@ func readNotices(read fileRead, offset int) string {
 	case read.offsetPastEOF:
 		notices = append(notices, fmt.Sprintf(
 			"(Offset %d is past the end of this file, which has %d lines)",
-			offset, read.totalLines))
+			offset, read.totalLines,
+		))
 	case read.content == "":
 		notices = append(notices, "(File exists but its contents are empty)")
 	}
 	if read.truncatedLines > 0 {
 		notices = append(notices, fmt.Sprintf(
 			"(%d line(s) longer than %d characters were truncated, each marked with a trailing \"...\")",
-			read.truncatedLines, MaxLineLength))
+			read.truncatedLines, MaxLineLength,
+		))
 	}
 	if read.hasMore {
 		notices = append(notices, fmt.Sprintf(
 			"(File has more lines. Use 'offset' parameter to read beyond line %d)",
-			offset+len(strings.Split(read.content, "\n"))))
+			offset+len(strings.Split(read.content, "\n")),
+		))
 	}
 	if len(notices) == 0 {
 		return ""

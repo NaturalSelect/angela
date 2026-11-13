@@ -61,7 +61,8 @@ func PreviewOfTool(tool fantasy.AgentTool, toolName, rawInput, workingDir string
 	if id, ok := tool.(MCPIdentity); ok {
 		return permission.Preview{
 			Description: fmt.Sprintf(
-				"execute %s/%s with the following parameters:", id.MCP(), id.MCPToolName()),
+				"execute %s/%s with the following parameters:", id.MCP(), id.MCPToolName(),
+			),
 			Params: rawInput,
 		}
 	}

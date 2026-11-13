@@ -39,7 +39,8 @@ func (c *coordinator) GenerateAgent(ctx context.Context, description string) (co
 
 	// Generating an agent definition belongs to no session, so there
 	// is no host instance to inherit a model from.
-	_, model, systemPrompt, err := c.resolveInternalAgent(ctx, config.AgentGenerateAgent, config.ActiveAgent{},
+	_, model, systemPrompt, err := c.resolveInternalAgent(
+		ctx, config.AgentGenerateAgent, config.ActiveAgent{},
 		prompt.WithWorkingDir(c.cfg.WorkingDir()),
 		prompt.WithExtra(map[string]any{"ExistingIDs": strings.Join(existingIDs, ", ")}),
 	)

@@ -1066,7 +1066,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			callContext = context.WithValue(callContext, tools.SupportsImagesContextKey, runModel.CatwalkCfg.SupportsImages)
 			callContext = context.WithValue(callContext, tools.ModelNameContextKey, runModel.CatwalkCfg.Name)
 			currentAssistant = &assistantMsg
-			slog.Info("Model request starting",
+			slog.Info(
+				"Model request starting",
 				"session_id", call.SessionID,
 				"agent", call.Agent.ID,
 				"provider", runModel.ModelCfg.Provider,
@@ -1187,7 +1188,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 				Finished:         true,
 			}
 			currentAssistant.AddToolCall(toolCall)
-			slog.Info("Tool call",
+			slog.Info(
+				"Tool call",
 				"session_id", call.SessionID,
 				"tool", tc.ToolName,
 				"tool_call_id", tc.ToolCallID,
@@ -1292,7 +1294,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			updatedSession.CacheReadTokens += usage.CacheReadTokens
 			updatedSession.CacheCreationTokens += usage.CacheCreationTokens
 			updatedSession.UncachedInputTokens += usage.InputTokens
-			slog.Info("Model response received",
+			slog.Info(
+				"Model response received",
 				"session_id", call.SessionID,
 				"finish_reason", string(finishReason),
 				"input_tokens", usage.InputTokens,

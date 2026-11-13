@@ -110,7 +110,8 @@ func (c *coordinator) imageSelection(cfg *config.Config, picks map[string]config
 		// OpenAI-compatible gateways that proxy it.
 	default:
 		return config.SelectedModel{}, config.ProviderConfig{}, fmt.Errorf(
-			"provider %q has type %q, which does not support image generation", model.Provider, providerCfg.Type)
+			"provider %q has type %q, which does not support image generation", model.Provider, providerCfg.Type,
+		)
 	}
 
 	if providerCfg.APIKey == "" {

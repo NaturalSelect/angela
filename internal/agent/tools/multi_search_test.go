@@ -72,7 +72,8 @@ func TestNewMultiSearchToolRequiresSessionID(t *testing.T) {
 func TestNewMultiSearchToolMergesAndAnnotatesSources(t *testing.T) {
 	t.Parallel()
 
-	router := newMultiTestRouter(t,
+	router := newMultiTestRouter(
+		t,
 		&stubEngine{id: "bing", sources: []websearch.Source{
 			{URL: "https://only-bing.example", Title: "Only Bing"},
 			{URL: "https://shared.example", Title: "Shared", Snippet: "Agreed on by both."},
@@ -93,7 +94,8 @@ func TestNewMultiSearchToolMergesAndAnnotatesSources(t *testing.T) {
 func TestNewMultiSearchToolReportsFailedAndSkippedEngines(t *testing.T) {
 	t.Parallel()
 
-	router := newMultiTestRouter(t,
+	router := newMultiTestRouter(
+		t,
 		&stubEngine{id: "bing", sources: numberedSources(1)},
 		&stubEngine{id: "ddg", err: errors.New("rate limited")},
 		&stubEngine{id: "exa", err: fmt.Errorf("exa: %w", websearch.ErrNotConfigured)},
@@ -137,7 +139,8 @@ func TestNewMultiSearchToolRejectsAllUnknownEngines(t *testing.T) {
 func TestNewMultiSearchToolDropsUnknownEnginesWhenSomeAreValid(t *testing.T) {
 	t.Parallel()
 
-	router := newMultiTestRouter(t,
+	router := newMultiTestRouter(
+		t,
 		&stubEngine{id: "bing", sources: []websearch.Source{{URL: "https://bing.example", Title: "Bing"}}},
 		&stubEngine{id: "ddg", sources: []websearch.Source{{URL: "https://ddg.example", Title: "DDG"}}},
 	)

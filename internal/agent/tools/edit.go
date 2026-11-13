@@ -266,7 +266,8 @@ func (t *editTool) planRewrite(edit editContext, r rewrite) Plan {
 			if err := commitFileChange(applyCtx, sessionID, r.filePath, oldContent, writeContent); err != nil {
 				return Fail(err.Error())
 			}
-			return FromResponse(t.finish(ctx, r.filePath,
+			return FromResponse(t.finish(
+				ctx, r.filePath,
 				withWhitespaceNote(r.done+r.filePath, whitespaceCorrected),
 				EditResponseMetadata{
 					OldContent: oldContent,

@@ -19,6 +19,7 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `progress`                     | bool   | `true`             | Indeterminate progress updates during long operations           |
 | `notifications`                | string | `auto`             | `auto` (native locally, an OSC escape sequence over SSH), `native`, `osc`, `bell`, `disabled` |
 | `subagent_depth`               | int    | `2`                | Levels of subagent nesting via the Agent tool, counting a branch hop the same as a subagent hop. `0` disables delegation; must be non-negative. Raising it multiplies token and time cost per dispatch chain |
+| `commit_diff_runes`            | int    | `48000`            | Characters (runes) of the staged diff sent to the model when generating a commit message; a longer diff is cut and marked truncated. Must be positive. The `--max-diff-runes` flag of `angela commit` overrides it for one run |
 | `disable_metrics`              | bool   | `false`            | Stop sending metrics                                            |
 | `disable_provider_auto_update` | bool   | `false`            | Stop auto-updating the provider catalog                         |
 | `disable_default_providers`    | bool   | `false`            | Ignore all embedded providers. Every provider must then be fully specified with `base_url`, `models`, and `api_key` — no merging with defaults |

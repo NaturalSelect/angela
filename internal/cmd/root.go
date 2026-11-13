@@ -382,6 +382,7 @@ type localWorkspaceOptions struct {
 	YoloMerge        bool
 	NoVSCodeDiff     bool
 	EnableImageTools *bool
+	CommitDiffRunes  *int
 	NoDockerSandbox  bool
 	Channels         []string
 	Sandbox          sandboxResolver
@@ -413,6 +414,7 @@ func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspa
 		YoloMerge:        yoloMerge,
 		NoVSCodeDiff:     noVSCodeDiff,
 		EnableImageTools: enableImageToolsFlag(cmd),
+		CommitDiffRunes:  commitDiffRunesFlag(cmd),
 		NoDockerSandbox:  noDockerSandbox,
 		Channels:         channels,
 		Sandbox: func(workingDir, dataDir string, permissions *config.Permissions) (sandbox.Config, bool, error) {
@@ -460,6 +462,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	overrides.YoloMerge = o.YoloMerge
 	overrides.NoVSCodeDiff = o.NoVSCodeDiff
 	overrides.EnableImageTools = o.EnableImageTools
+	overrides.CommitDiffRunes = o.CommitDiffRunes
 	overrides.NonInteractive = o.NonInteractive
 	overrides.NoBranchAgents = o.NoBranchAgents
 

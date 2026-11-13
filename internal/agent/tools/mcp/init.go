@@ -698,7 +698,8 @@ func goInitClient(ctx context.Context, cfg *config.ConfigStore, name string, m c
 		}()
 		start := time.Now()
 		err := initClient(ctx, cfg, name, m, gen, cfg.Resolver())
-		slog.Debug("MCP client initialization finished",
+		slog.Debug(
+			"MCP client initialization finished",
 			"name", name,
 			"duration", time.Since(start).Truncate(time.Millisecond).String(),
 			"error", err,

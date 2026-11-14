@@ -49,10 +49,13 @@ yolo would skip.
 | `--sandbox-ro <dir>` | Additional read-only directory. Repeatable. |
 | `--sandbox-no-network` | Blocks outbound network for spawned commands. Linux only — fails at startup on macOS. |
 | `--no-docker-sandbox` | Ignore an auto-detected Docker/OCI container as "already sandboxed" and apply Landlock on top of it anyway. Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. |
+| `--no-sandbox-container-permission` | Skip the automatic grant of detected Docker/Podman/Buildah directories and sockets (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Same as `options.no_sandbox_container_permission`. |
 
-The flags are registered on `angela`, `angela run` and `angela agent create`,
-and have no environment-variable or `angela.json`
-equivalent. Using `--sandbox-rw`, `--sandbox-ro` or `--sandbox-no-network`
+The flags are registered on `angela`, `angela run`, `angela agent create` and
+`angela acp`. Only `--no-sandbox-container-permission` has an `angela.json`
+equivalent (`options.no_sandbox_container_permission`); the rest have no
+environment-variable or `angela.json` equivalent. Using `--sandbox-rw`,
+`--sandbox-ro` or `--sandbox-no-network`
 without `--sandbox` itself is an error at startup (`--sandbox-rw requires
 --sandbox`).
 
@@ -74,6 +77,30 @@ This default set is automatically widened with any directory or single file
 an unconditional filesystem allow rule under `permissions.rules` already
 covers, so an edit the permission policy already approves without a prompt
 doesn't turn into a confusing sandbox I/O error.
+
+When the `docker`, `podman` or `buildah` CLI is on `PATH`, the profile also
+opens up what those tools need, limited to paths that exist:
+
+- **Docker:** `$DOCKER_CONFIG` (else `~/.docker`) read-write, plus the sockets
+  `/var/run/docker.sock`, `/run/docker.sock`, `$XDG_RUNTIME_DIR/docker.sock`,
+  the Docker Desktop sockets under `~/.docker`, and any `unix://` path in
+  `$DOCKER_HOST`.
+- **Podman/Buildah:** `$XDG_DATA_HOME/containers` (else
+  `~/.local/share/containers`), `$XDG_RUNTIME_DIR/containers`,
+  `$XDG_RUNTIME_DIR/libpod`, `$XDG_CONFIG_HOME/containers` and `/var/tmp`
+  read-write, plus `$XDG_RUNTIME_DIR/podman/podman.sock`,
+  `/run/podman/podman.sock` and any `unix://` path in `$CONTAINER_HOST`. Only
+  when running as root, the rootful storage under `/var/lib/containers/storage`,
+  `/run/containers/storage` and `/run/libpod` is added too.
+
+On Landlock ABI 9 or newer, connecting to any pathname Unix socket
+is denied unless it is listed, so the sockets are granted individually. They
+show up as `unix_sockets` in `angela_info`. **A container daemon socket is an
+escape hatch:** whoever can use it can start a container that mounts any host
+path, bypassing the filesystem rules. Pass `--no-sandbox-container-permission`
+or set `options.no_sandbox_container_permission` to `true` to turn this off.
+Custom `graphroot` locations from `storage.conf` are not detected; add them
+with `--sandbox-rw`.
 
 ## Platform Backends
 
@@ -150,6 +177,19 @@ deny rule with `mode: "domain"`).
 **`--sandbox` fails with `unsupported operation`** — the platform has no
 implemented backend (only Linux and macOS are supported). On Linux a kernel
 without Landlock does not fail; it silently enforces nothing.
+
+**`podman run` or `podman build` fails inside the sandbox** — Landlock forbids
+`mount(2)` and `pivot_root(2)` and sets no-new-privileges, so a rootless
+Podman cannot start containers in-process however many paths are granted. Use
+`podman --remote` against a running `podman.socket`, or use Docker, whose CLI
+only talks to a daemon outside the sandbox.
+
+**`docker ps` fails with `permission denied` on the socket** — either
+`--no-sandbox-container-permission` (or
+`options.no_sandbox_container_permission`) is set, or the socket lives at a
+path that is not detected. Add a non-default socket with `DOCKER_HOST=unix://...`
+before launching, or confirm what was granted in the `unix_sockets` line of
+`angela_info`.
 
 **A tool call that should be scoped in still fails with an I/O error** — the
 path may fall outside the read-write set (everything is readable by default,

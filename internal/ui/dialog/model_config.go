@@ -106,10 +106,12 @@ func NewModelConfig(
 	m.inputs[modelCfgFieldEffort].SetValue(base.DefaultReasoningEffort)
 	m.inputs[modelCfgFieldMaxTokens].Placeholder = strconv.FormatInt(defaultModelMaxTokens, 10)
 	m.inputs[modelCfgFieldMaxTokens].SetValue(strconv.FormatInt(
-		cmp.Or(base.DefaultMaxTokens, defaultModelMaxTokens), 10))
+		cmp.Or(base.DefaultMaxTokens, defaultModelMaxTokens), 10,
+	))
 	m.inputs[modelCfgFieldContextWindow].Placeholder = strconv.FormatInt(defaultModelContextWindow, 10)
 	m.inputs[modelCfgFieldContextWindow].SetValue(strconv.FormatInt(
-		cmp.Or(base.ContextWindow, defaultModelContextWindow), 10))
+		cmp.Or(base.ContextWindow, defaultModelContextWindow), 10,
+	))
 	m.inputs[modelCfgFieldEffort].Focus()
 
 	m.help = help.New()

@@ -35,6 +35,11 @@ type Config struct {
 	// parent directory the way a ReadOnly entry for that directory
 	// would.
 	ReadOnlyFiles []string
+	// UnixSockets lists pathname unix socket files the process may
+	// connect(2) to, and read from. On Landlock ABI 9 and newer,
+	// connecting to a pathname socket is denied unless it is listed
+	// here; the other path fields never grant it.
+	UnixSockets []string
 	// AllowNetwork leaves outbound network access unrestricted for
 	// commands the shell tool spawns when true. When false, those
 	// commands have their outbound network syscalls blocked (see

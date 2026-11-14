@@ -422,6 +422,7 @@ func writeSandbox(b *strings.Builder, st sandbox.Status) {
 			return slices.Contains(st.WriteFiles, p)
 		})
 		writeSandboxPaths(b, "read_only_files", readOnlyFiles)
+		writeSandboxPaths(b, "unix_sockets", st.UnixSockets)
 	}
 	if st.BlocksChildNetwork {
 		b.WriteString("child_network = blocked\n")

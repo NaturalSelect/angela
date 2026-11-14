@@ -411,7 +411,8 @@ func (s *SubSessions) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	listView = s.frame.JoinScrollbar(listView, listHeight, listTotalHeight, listHeight, s.list.Offset())
 
 	inputView := t.Dialog.InputPrompt.Render(s.input.View())
-	view := s.frame.Render(s.metrics,
+	view := s.frame.Render(
+		s.metrics,
 		[]string{inputView, listView},
 		s.frame.RenderHelp(&s.help, s, s.metrics.ContentWidth),
 	)

@@ -246,7 +246,8 @@ func (a *Agents) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	listView := t.Dialog.List.Height(a.list.Height()).Render(a.list.Render())
 	listView = a.frame.JoinScrollbar(listView, listHeight, listTotalHeight, listHeight, a.list.Offset())
 
-	view := a.frame.Render(a.metrics,
+	view := a.frame.Render(
+		a.metrics,
 		[]string{t.Dialog.InputPrompt.Render(a.input.View()), listView},
 		a.frame.RenderHelp(&a.help, a, a.metrics.ContentWidth),
 	)

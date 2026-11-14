@@ -694,6 +694,13 @@ func (w *AppWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) err
 	return w.app.Sandbox.EnterSandbox(cfg)
 }
 
+func (w *AppWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {
+	if w.store.SandboxContainerPermissionDisabled() {
+		return sandbox.ContainerGrants{}
+	}
+	return sandbox.DetectContainerGrants()
+}
+
 // -- Lifecycle --
 
 func (w *AppWorkspace) Subscribe(program *tea.Program) {

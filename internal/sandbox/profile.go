@@ -18,8 +18,8 @@ var (
 // exactly what both LandlockSandbox and SeatbeltSandbox enforce.
 // Translating a Config into a ruleSet in this one shared place is what
 // keeps "same Config" meaning "same effective permissions" on both
-// platforms, instead of leaving each backend to interpret the four
-// path fields on its own.
+// platforms, instead of leaving each backend to interpret the path
+// fields on its own.
 type ruleSet struct {
 	// readDirs is cfg.ReadOnly union cfg.ReadWrite: a directory
 	// granted read-write is inherently also readable.
@@ -32,6 +32,8 @@ type ruleSet struct {
 	// writeFiles is cfg.ReadWriteFiles, plus safeDevWriteFiles once
 	// rs is not empty.
 	writeFiles []string
+	// unixSockets is cfg.UnixSockets.
+	unixSockets []string
 	// restrictChildNetwork mirrors !cfg.AllowNetwork.
 	restrictChildNetwork bool
 }
@@ -39,7 +41,7 @@ type ruleSet struct {
 // resolve computes the ruleSet cfg implies. It never touches the
 // filesystem; call existing() on the result immediately before
 // enforcing it to drop paths that don't exist. A Config with none of
-// its four path fields set resolves to a ruleSet with empty() true
+// its path fields set resolves to a ruleSet with empty() true
 // and no /dev grants either, so entering a sandbox with a bare
 // Config{} still restricts nothing on either platform, matching both
 // backends' long-standing behavior.
@@ -49,6 +51,7 @@ func resolve(cfg Config) ruleSet {
 		writeDirs:            DedupePaths(append([]string{}, cfg.ReadWrite...)),
 		readFiles:            DedupePaths(append(append([]string{}, cfg.ReadOnlyFiles...), cfg.ReadWriteFiles...)),
 		writeFiles:           DedupePaths(append([]string{}, cfg.ReadWriteFiles...)),
+		unixSockets:          DedupePaths(append([]string{}, cfg.UnixSockets...)),
 		restrictChildNetwork: !cfg.AllowNetwork,
 	}
 	if rs.empty() {
@@ -61,7 +64,7 @@ func resolve(cfg Config) ruleSet {
 
 // empty reports whether rs carries no path rules at all.
 func (rs ruleSet) empty() bool {
-	return len(rs.readDirs) == 0 && len(rs.writeDirs) == 0 && len(rs.readFiles) == 0 && len(rs.writeFiles) == 0
+	return len(rs.readDirs) == 0 && len(rs.writeDirs) == 0 && len(rs.readFiles) == 0 && len(rs.writeFiles) == 0 && len(rs.unixSockets) == 0
 }
 
 // existing returns a copy of rs with every path that fails os.Stat
@@ -75,6 +78,7 @@ func (rs ruleSet) existing() ruleSet {
 		writeDirs:            filterExisting(rs.writeDirs),
 		readFiles:            filterExisting(rs.readFiles),
 		writeFiles:           filterExisting(rs.writeFiles),
+		unixSockets:          filterExisting(rs.unixSockets),
 		restrictChildNetwork: rs.restrictChildNetwork,
 	}
 }

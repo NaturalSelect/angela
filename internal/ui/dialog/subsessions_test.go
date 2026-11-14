@@ -53,7 +53,8 @@ func TestSubSessionsOrdersActiveFirstThenNewestFirst(t *testing.T) {
 
 	s := newTestSubSessions(t, threeSubSessions())
 
-	require.Equal(t,
+	require.Equal(
+		t,
 		[]string{"new-run", "old-run", "failed", "new-done", "old-done"},
 		subSessionIDs(s),
 	)

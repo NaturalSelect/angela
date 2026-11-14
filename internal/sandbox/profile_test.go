@@ -56,6 +56,34 @@ func TestResolve_DevFilesOnlyAddedWithAUserPath(t *testing.T) {
 	require.Empty(t, resolve(Config{}).readFiles)
 }
 
+func TestResolve_UnixSocketsCopiedAndDeduped(t *testing.T) {
+	t.Parallel()
+
+	rs := resolve(Config{
+		ReadOnly:    []string{"/"},
+		UnixSockets: []string{"/run/a.sock", "/run/a.sock", "/run/b.sock"},
+	})
+	require.Equal(t, []string{"/run/a.sock", "/run/b.sock"}, rs.unixSockets)
+}
+
+func TestResolve_UnixSocketsAloneAreNotEmpty(t *testing.T) {
+	t.Parallel()
+
+	rs := resolve(Config{UnixSockets: []string{"/run/a.sock"}})
+	require.False(t, rs.empty())
+}
+
+func TestRuleSet_ExistingDropsMissingUnixSockets(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	present := filepath.Join(dir, "present.sock")
+	require.NoError(t, os.WriteFile(present, nil, 0o644))
+
+	rs := ruleSet{unixSockets: []string{present, filepath.Join(dir, "missing.sock")}}.existing()
+	require.Equal(t, []string{present}, rs.unixSockets)
+}
+
 func TestResolve_AllowNetworkMapsToRestrictChildNetwork(t *testing.T) {
 	t.Parallel()
 

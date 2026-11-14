@@ -96,6 +96,14 @@ func seatbeltProfile(rs ruleSet) (string, error) {
 	if err := writePathRule(&b, "file-write*", "literal", rs.writeFiles); err != nil {
 		return "", err
 	}
+	// NOTE: connect(2) on a unix socket is granted both file rights, the
+	// conservative choice since the exact Seatbelt operation is unverified.
+	if err := writePathRule(&b, "file-read*", "literal", rs.unixSockets); err != nil {
+		return "", err
+	}
+	if err := writePathRule(&b, "file-write*", "literal", rs.unixSockets); err != nil {
+		return "", err
+	}
 
 	return b.String(), nil
 }

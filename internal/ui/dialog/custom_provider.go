@@ -383,7 +383,8 @@ func (m *CustomProvider) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	if m.needsModel {
 		rows = append(rows, m.fieldView(customProviderFieldModelID))
 	}
-	rows = append(rows,
+	rows = append(
+		rows,
 		textStyle.Render("This will be written in your global configuration:"),
 		textStyle.Render(config.GlobalConfig()),
 		"",

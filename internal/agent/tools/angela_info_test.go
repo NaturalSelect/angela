@@ -682,3 +682,19 @@ func TestAngelaInfoTool_ReflectsSkillsReload(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, resp.Content, "late-skill = user, unloaded")
 }
+
+func TestWriteSandbox_ListsUnixSockets(t *testing.T) {
+	t.Parallel()
+
+	var b strings.Builder
+	writeSandbox(&b, sandbox.Status{
+		Backend:              sandbox.BackendLandlock,
+		Active:               true,
+		LandlockABI:          9,
+		FilesystemRestricted: true,
+		ReadDirs:             []string{"/"},
+		UnixSockets:          []string{"/var/run/docker.sock", "/run/podman/podman.sock"},
+	})
+
+	require.Contains(t, b.String(), "unix_sockets = /var/run/docker.sock, /run/podman/podman.sock\n")
+}

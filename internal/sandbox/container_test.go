@@ -44,7 +44,8 @@ func listenUnix(t *testing.T, path string) {
 	if len(path) > 100 {
 		t.Skipf("unix socket path too long: %s", path)
 	}
-	ln, err := net.Listen("unix", path)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 }

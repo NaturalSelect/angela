@@ -199,17 +199,24 @@ func TestResolveAgents_RetiredSketchConfigIsIgnored(t *testing.T) {
 	}
 }
 
-// deep-research is the one investigating agent that may run commands: a root
-// cause is a claim about what is already true, and settling it needs a
-// reproduction or a git history, not more reading. Writing is still off the
-// table, so the finding stays its only product.
-func TestResolveAgents_DeepResearchRunsButDoesNotWrite(t *testing.T) {
+// Every built-in branch may run commands: a root cause needs a reproduction or
+// a git history, and a plan or design is better for a quick prototype. Writing
+// is still off the table, so the branch's document stays its only product.
+func TestResolveAgents_BranchesRunButDoNotWrite(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
-	allowed := cfg.ResolveAgents()[AgentDeepResearch].AllowedTools.Tools
+	agents := cfg.ResolveAgents()
 
-	require.Contains(t, allowed, "Bash")
-	for _, tool := range []string{"Edit", "MultiEdit", "Write", "Download", "LSPRename", "LSPReplaceSymbol"} {
-		require.NotContains(t, allowed, tool)
+	for _, id := range []string{AgentPlan, AgentCoDesign, AgentDeepResearch} {
+		t.Run(id, func(t *testing.T) {
+			allowed := agents[id].AllowedTools.Tools
+
+			for _, tool := range []string{"Bash", "JobOutput", "JobKill"} {
+				require.Contains(t, allowed, tool)
+			}
+			for _, tool := range []string{"Edit", "MultiEdit", "Write", "Download", "LSPRename", "LSPReplaceSymbol"} {
+				require.NotContains(t, allowed, tool)
+			}
+		})
 	}
 }
 

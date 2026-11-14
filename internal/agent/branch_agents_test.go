@@ -88,22 +88,21 @@ func TestBranchAgentsAreDispatchableAsBranches(t *testing.T) {
 	}
 }
 
-// TestBranchExecutionBoundaryDiffers pins the one place the two branches part
-// company. A plan is a claim about what should be done and can be reasoned
-// out from reading; a root cause is a claim about what is already true, and
-// settling it needs a reproduction or a git history.
-func TestBranchExecutionBoundaryDiffers(t *testing.T) {
-	coord := newGateTestCoordinator(t, true)
+// TestBranchAgentsCanRunCommands pins that every branch can run a command and
+// collect its output. A plan or design is better for a quick prototype, and a
+// root cause is a claim about what is already true, so none of them should have
+// to settle it by reading alone.
+func TestBranchAgentsCanRunCommands(t *testing.T) {
+	for _, id := range builtinBranches {
+		t.Run(id, func(t *testing.T) {
+			coord := newGateTestCoordinator(t, true)
+			names := toolNamesFor(t, coord, id, 1)
 
-	require.NotContains(t, toolNamesFor(t, coord, config.AgentPlan, 1), toolnames.Bash,
-		"plan reasons from what it reads")
-	require.NotContains(t, toolNamesFor(t, coord, config.AgentCoDesign, 1), toolnames.Bash,
-		"co-design designs from what it reads")
-
-	deepResearch := toolNamesFor(t, coord, config.AgentDeepResearch, 1)
-	for _, tool := range []string{toolnames.Bash, toolnames.JobOutput, toolnames.JobKill} {
-		require.Contains(t, deepResearch, tool,
-			"deep-research must be able to run a command and collect its output")
+			for _, tool := range []string{toolnames.Bash, toolnames.JobOutput, toolnames.JobKill} {
+				require.Contains(t, names, tool,
+					"%s must be able to run a command and collect its output", id)
+			}
+		})
 	}
 }
 

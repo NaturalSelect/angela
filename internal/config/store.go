@@ -83,6 +83,10 @@ type RuntimeOverrides struct {
 	// --no-sandbox-container-permission flag. Nil means the flag was not
 	// passed, so options.no_sandbox_container_permission applies.
 	NoSandboxContainerPermission *bool
+	// SandboxAllowDockerSocket is set by the --sandbox-allow-docker-socket
+	// flag. It grants the detected Docker/Podman daemon sockets to the
+	// sandbox, which are otherwise left out.
+	SandboxAllowDockerSocket bool
 	// CommitDiffRunes is set by the commit command's --max-diff-runes flag.
 	// Nil means the flag was not passed, so options.commit_diff_runes
 	// applies.

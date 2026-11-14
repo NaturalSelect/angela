@@ -49,7 +49,8 @@ yolo would skip.
 | `--sandbox-ro <dir>` | Additional read-only directory. Repeatable. |
 | `--sandbox-no-network` | Blocks outbound network for spawned commands. Linux only — fails at startup on macOS. |
 | `--no-docker-sandbox` | Ignore an auto-detected Docker/OCI container as "already sandboxed" and apply Landlock on top of it anyway. Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. |
-| `--no-sandbox-container-permission` | Skip the automatic grant of detected Docker/Podman/Buildah directories and sockets (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Same as `options.no_sandbox_container_permission`. |
+| `--no-sandbox-container-permission` | Skip the automatic grant of detected Docker/Podman/Buildah directories, and never offer their sockets (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Same as `options.no_sandbox_container_permission`. |
+| `--sandbox-allow-docker-socket` | Let the sandbox connect to the detected Docker/Podman daemon sockets, which are blocked by default (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Has no `angela.json` equivalent and has no effect together with `--no-sandbox-container-permission`. |
 
 The flags are registered on `angela`, `angela run`, `angela agent create` and
 `angela acp`. Only `--no-sandbox-container-permission` has an `angela.json`
@@ -79,28 +80,36 @@ covers, so an edit the permission policy already approves without a prompt
 doesn't turn into a confusing sandbox I/O error.
 
 When the `docker`, `podman` or `buildah` CLI is on `PATH`, the profile also
-opens up what those tools need, limited to paths that exist:
+opens up the directories those tools need, limited to paths that exist:
 
-- **Docker:** `$DOCKER_CONFIG` (else `~/.docker`) read-write, plus the sockets
-  `/var/run/docker.sock`, `/run/docker.sock`, `$XDG_RUNTIME_DIR/docker.sock`,
-  the Docker Desktop sockets under `~/.docker`, and any `unix://` path in
-  `$DOCKER_HOST`.
+- **Docker:** `$DOCKER_CONFIG` (else `~/.docker`) read-write.
 - **Podman/Buildah:** `$XDG_DATA_HOME/containers` (else
   `~/.local/share/containers`), `$XDG_RUNTIME_DIR/containers`,
   `$XDG_RUNTIME_DIR/libpod`, `$XDG_CONFIG_HOME/containers` and `/var/tmp`
-  read-write, plus `$XDG_RUNTIME_DIR/podman/podman.sock`,
-  `/run/podman/podman.sock` and any `unix://` path in `$CONTAINER_HOST`. Only
-  when running as root, the rootful storage under `/var/lib/containers/storage`,
-  `/run/containers/storage` and `/run/libpod` is added too.
+  read-write. Only when running as root, the rootful storage under
+  `/var/lib/containers/storage`, `/run/containers/storage` and `/run/libpod`
+  is added too.
 
-On Landlock ABI 9 or newer, connecting to any pathname Unix socket
-is denied unless it is listed, so the sockets are granted individually. They
-show up as `unix_sockets` in `angela_info`. **A container daemon socket is an
-escape hatch:** whoever can use it can start a container that mounts any host
-path, bypassing the filesystem rules. Pass `--no-sandbox-container-permission`
-or set `options.no_sandbox_container_permission` to `true` to turn this off.
-Custom `graphroot` locations from `storage.conf` are not detected; add them
-with `--sandbox-rw`.
+The daemon sockets are **not** granted by default. Angela still detects them:
+`/var/run/docker.sock`, `/run/docker.sock`, `$XDG_RUNTIME_DIR/docker.sock`, the
+Docker Desktop sockets under `~/.docker`, any `unix://` path in `$DOCKER_HOST`,
+`$XDG_RUNTIME_DIR/podman/podman.sock`, `/run/podman/podman.sock` and any
+`unix://` path in `$CONTAINER_HOST`. **A container daemon socket is an escape
+hatch:** whoever can use it can start a container that mounts any host path,
+bypassing the filesystem rules. Two ways to grant them:
+
+- Pass `--sandbox-allow-docker-socket` to grant every detected socket at startup.
+- In the **Enter Sandbox** dialog, each detected socket is a toggle that starts
+  off (or on, when the flag was passed); the confirmation step lists the ones
+  that were turned on.
+
+On Landlock ABI 9 or newer, connecting to any pathname Unix socket is denied
+unless it is listed, so granted sockets show up individually as `unix_sockets`
+in `angela_info`. Pass `--no-sandbox-container-permission` or set
+`options.no_sandbox_container_permission` to `true` to skip the whole container
+grant, directories and sockets alike. That option wins over
+`--sandbox-allow-docker-socket`. Custom `graphroot` locations from
+`storage.conf` are not detected; add them with `--sandbox-rw`.
 
 ## Platform Backends
 
@@ -184,7 +193,9 @@ Podman cannot start containers in-process however many paths are granted. Use
 `podman --remote` against a running `podman.socket`, or use Docker, whose CLI
 only talks to a daemon outside the sandbox.
 
-**`docker ps` fails with `permission denied` on the socket** — either
+**`docker ps` fails with `permission denied` on the socket** — the daemon
+sockets are blocked by default. Launch with `--sandbox-allow-docker-socket`, or
+turn the socket on in the **Enter Sandbox** dialog. If it still fails,
 `--no-sandbox-container-permission` (or
 `options.no_sandbox_container_permission`) is set, or the socket lives at a
 path that is not detected. Add a non-default socket with `DOCKER_HOST=unix://...`

@@ -18,6 +18,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // SandboxID is the identifier for the sandbox configuration dialog.
@@ -39,6 +40,7 @@ const (
 	sandboxFocusRow sandboxFocusArea = iota
 	sandboxFocusAdd
 	sandboxFocusNetwork
+	sandboxFocusSocket
 	sandboxFocusContinue
 )
 
@@ -67,13 +69,20 @@ type sandboxPathRow struct {
 	readOnly bool
 }
 
+// sandboxSocket is one detected container daemon socket and whether the
+// sandbox will let commands connect to it.
+type sandboxSocket struct {
+	path    string
+	allowed bool
+}
+
 // sandboxHitTarget records a clickable region in absolute screen
 // coordinates, rebuilt on every Draw since the dialog is centered and
 // its position isn't known until the frame is sized.
 type sandboxHitTarget struct {
 	rect image.Rectangle
 	area sandboxFocusArea
-	row  int        // valid when area == sandboxFocusRow
+	row  int        // valid when area == sandboxFocusRow; the socket index for sandboxFocusSocket
 	col  sandboxCol // valid when area == sandboxFocusRow
 }
 
@@ -86,8 +95,8 @@ type Sandbox struct {
 	stage sandboxStage
 
 	rows         []sandboxPathRow
-	unixSockets  []string // not editable in the form; carried through to config
-	focused      int      // flat index into the focus-stop sequence; see focusTarget
+	sockets      []sandboxSocket // one focus stop each, between the network toggle and continue
+	focused      int             // flat index into the focus-stop sequence; see focusTarget
 	allowNetwork bool
 
 	// Scroll state of the rows block (the path rows plus the add
@@ -127,9 +136,9 @@ var _ Dialog = (*Sandbox)(nil)
 
 func NewSandbox(com *common.Common) *Sandbox {
 	t := com.Styles
-	cfg := sandboxDefaultConfig(com)
+	cfg, optionalSockets := sandboxDefaultConfig(com)
 
-	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork, unixSockets: cfg.UnixSockets}
+	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork, sockets: sandboxSockets(cfg.UnixSockets, optionalSockets)}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
 
 	for _, p := range cfg.ReadWrite {
@@ -191,7 +200,10 @@ func setSandboxInputWidth(input *textinput.Model, width int) {
 // no per-file concept, so showing it as a row would silently turn the
 // exact-file grant back into a directory-wide one once the user
 // confirms.
-func sandboxDefaultConfig(com *common.Common) sandbox.Config {
+//
+// The second return value lists the detected container daemon sockets
+// that are not granted yet; the form offers them as opt-in choices.
+func sandboxDefaultConfig(com *common.Common) (sandbox.Config, []string) {
 	var dataDir string
 	var permissions *config.Permissions
 	if cfg := com.Config(); cfg != nil {
@@ -202,14 +214,30 @@ func sandboxDefaultConfig(com *common.Common) sandbox.Config {
 	}
 
 	workingDir := com.Workspace.WorkingDir()
+	grants := com.Workspace.SandboxContainerGrants()
 	result := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig())).
-		WithContainerGrants(com.Workspace.SandboxContainerGrants())
+		WithContainerGrants(grants)
 	if permissions != nil {
 		readOnly, readWrite, _, _ := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
 		result.ReadOnly = sandbox.DedupePaths(append(result.ReadOnly, readOnly...))
 		result.ReadWrite = sandbox.DedupePaths(append(result.ReadWrite, readWrite...))
 	}
-	return result
+	return result, grants.OptionalSockets
+}
+
+// sandboxSockets builds the socket choices of the form: every socket
+// already granted starts allowed, every optional one starts blocked.
+func sandboxSockets(granted, optional []string) []sandboxSocket {
+	sockets := make([]sandboxSocket, 0, len(granted)+len(optional))
+	for _, p := range granted {
+		sockets = append(sockets, sandboxSocket{path: p, allowed: true})
+	}
+	for _, p := range optional {
+		if !slices.Contains(granted, p) {
+			sockets = append(sockets, sandboxSocket{path: p})
+		}
+	}
+	return sockets
 }
 
 // ID implements [Dialog].
@@ -219,11 +247,12 @@ func (m *Sandbox) ID() string {
 
 // focusTarget maps a flat focus index to the logical control it
 // refers to. Each row contributes sandboxColCount stops (input,
-// toggle, remove); the add button, the network toggle, and the
-// continue button are one stop each at the end. col is only
-// meaningful when area == sandboxFocusRow: for the other areas it is
-// always 0, which happens to equal sandboxColInput, so callers must
-// check area before comparing col.
+// toggle, remove); the add button and the network toggle are one stop
+// each, followed by one stop per detected socket and the continue
+// button. col is only meaningful when area == sandboxFocusRow, and row
+// doubles as the socket index when area == sandboxFocusSocket; for the
+// other areas both are 0 or -1, so callers must check area before
+// comparing them.
 func (m *Sandbox) focusTarget(i int) (area sandboxFocusArea, row int, col sandboxCol) {
 	n := len(m.rows) * sandboxColCount
 	switch {
@@ -233,6 +262,8 @@ func (m *Sandbox) focusTarget(i int) (area sandboxFocusArea, row int, col sandbo
 		return sandboxFocusAdd, -1, 0
 	case i == n+1:
 		return sandboxFocusNetwork, -1, 0
+	case i < n+2+len(m.sockets):
+		return sandboxFocusSocket, i - n - 2, 0
 	default:
 		return sandboxFocusContinue, -1, 0
 	}
@@ -240,16 +271,28 @@ func (m *Sandbox) focusTarget(i int) (area sandboxFocusArea, row int, col sandbo
 
 // stopCount is the number of focus stops the form currently has.
 func (m *Sandbox) stopCount() int {
-	return len(m.rows)*sandboxColCount + 3
+	return len(m.rows)*sandboxColCount + 3 + len(m.sockets)
 }
 
-// isFocused reports whether the given control currently has focus.
+// socketStop is the flat focus index of the idx-th socket choice.
+func (m *Sandbox) socketStop(idx int) int {
+	return len(m.rows)*sandboxColCount + 2 + idx
+}
+
+// isFocused reports whether the given control currently has focus. For
+// sandboxFocusSocket, row is the socket index.
 func (m *Sandbox) isFocused(area sandboxFocusArea, row int, col sandboxCol) bool {
 	curArea, curRow, curCol := m.focusTarget(m.focused)
 	if curArea != area {
 		return false
 	}
-	return area != sandboxFocusRow || (curRow == row && curCol == col)
+	switch area {
+	case sandboxFocusRow:
+		return curRow == row && curCol == col
+	case sandboxFocusSocket:
+		return curRow == row
+	}
+	return true
 }
 
 // setFocus moves focus to a flat stop index and resyncs input focus.
@@ -311,6 +354,8 @@ func (m *Sandbox) activateFocused() {
 		m.addRow()
 	case sandboxFocusNetwork:
 		m.allowNetwork = !m.allowNetwork
+	case sandboxFocusSocket:
+		m.sockets[row].allowed = !m.sockets[row].allowed
 	case sandboxFocusContinue:
 		m.submit()
 	}
@@ -401,6 +446,9 @@ func (m *Sandbox) handleFormClick(x, y int) {
 	case sandboxFocusNetwork:
 		m.allowNetwork = !m.allowNetwork
 		m.setFocus(len(m.rows)*sandboxColCount + 1)
+	case sandboxFocusSocket:
+		m.sockets[tgt.row].allowed = !m.sockets[tgt.row].allowed
+		m.setFocus(m.socketStop(tgt.row))
 	case sandboxFocusContinue:
 		m.submit()
 	}
@@ -408,7 +456,12 @@ func (m *Sandbox) handleFormClick(x, y int) {
 
 // config parses the form fields into a [sandbox.Config].
 func (m *Sandbox) config() sandbox.Config {
-	cfg := sandbox.Config{AllowNetwork: m.allowNetwork, UnixSockets: slices.Clone(m.unixSockets)}
+	cfg := sandbox.Config{AllowNetwork: m.allowNetwork}
+	for _, s := range m.sockets {
+		if s.allowed {
+			cfg.UnixSockets = append(cfg.UnixSockets, s.path)
+		}
+	}
 	for _, row := range m.rows {
 		p := strings.TrimSpace(row.input.Value())
 		if p == "" {
@@ -532,12 +585,13 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		t.Dialog.SecondaryText.Render("Limits filesystem access; blocks commands' network.")
 	sectionLabel := t.Dialog.Arguments.InputLabelBlurred.PaddingLeft(rowLeftPad).Render("FileSystem Access")
 	networkBlock, networkTarget := m.networkView(rowLeftPad)
+	socketsBlock, socketTargets := m.socketsView(rowLeftPad, innerWidth)
 	continueBlock, continueTarget := m.continueView(rowLeftPad, false)
 
 	// Everything except the rows block is fixed height; the rows block
 	// gets whatever the frame has left and scrolls past that.
 	chromeHeight := lipgloss.Height(preamble) + lipgloss.Height(sectionLabel) +
-		lipgloss.Height(networkBlock) + 1 + // +1 for the blank separator line
+		lipgloss.Height(networkBlock) + blockHeight(socketsBlock) + 1 + // +1 for the blank separator line
 		lipgloss.Height(continueBlock) + lipgloss.Height(helpView)
 	m.layoutRowsViewport(min(m.rowsLineCount(), max(1, m.metrics.ContentHeight-chromeHeight)))
 
@@ -555,7 +609,11 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 
 	assemble := func(rowsBlock, continueBlock string) string {
-		return strings.Join([]string{preamble, sectionLabel, rowsBlock, networkBlock, "", continueBlock, helpView}, "\n")
+		parts := []string{preamble, sectionLabel, rowsBlock, networkBlock}
+		if socketsBlock != "" {
+			parts = append(parts, socketsBlock)
+		}
+		return strings.Join(append(parts, "", continueBlock, helpView), "\n")
 	}
 
 	rowsBlock, rowTargets := m.rowsView(rowLeftPad, -1)
@@ -566,7 +624,8 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	originY := center.Min.Y + dialogStyle.GetBorderTopSize() + dialogStyle.GetPaddingTop() + dialogStyle.GetMarginTop()
 	linesBeforeRows := lipgloss.Height(preamble) + lipgloss.Height(sectionLabel)
 	linesBeforeNetwork := linesBeforeRows + lipgloss.Height(rowsBlock)
-	linesBeforeContinue := linesBeforeNetwork + lipgloss.Height(networkBlock) + 1 // +1 for the blank separator line
+	linesBeforeSockets := linesBeforeNetwork + lipgloss.Height(networkBlock)
+	linesBeforeContinue := linesBeforeSockets + blockHeight(socketsBlock) + 1 // +1 for the blank separator line
 
 	m.hitTargets = m.hitTargets[:0]
 	for _, tgt := range rowTargets {
@@ -575,6 +634,10 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 	networkTarget.rect = networkTarget.rect.Add(image.Pt(originX, originY+linesBeforeNetwork))
 	m.hitTargets = append(m.hitTargets, networkTarget)
+	for _, tgt := range socketTargets {
+		tgt.rect = tgt.rect.Add(image.Pt(originX, originY+linesBeforeSockets))
+		m.hitTargets = append(m.hitTargets, tgt)
+	}
 	continueTarget.rect = continueTarget.rect.Add(image.Pt(originX, originY+linesBeforeContinue))
 	m.hitTargets = append(m.hitTargets, continueTarget)
 
@@ -734,6 +797,54 @@ func (m *Sandbox) networkView(rowLeftPad int) (string, sandboxHitTarget) {
 		area: sandboxFocusNetwork,
 	}
 	return labelStyle.Render("Network") + "\n" + line, target
+}
+
+// blockHeight is lipgloss.Height except that an empty block is zero
+// lines tall instead of one.
+func blockHeight(block string) int {
+	if block == "" {
+		return 0
+	}
+	return lipgloss.Height(block)
+}
+
+// socketsView renders the detected container daemon sockets as one
+// toggle line each under a label that warns what a socket grants. It
+// returns an empty block when none were detected. The targets are
+// relative to the block's top-left corner, and their row field is the
+// socket index.
+func (m *Sandbox) socketsView(rowLeftPad, innerWidth int) (string, []sandboxHitTarget) {
+	if len(m.sockets) == 0 {
+		return "", nil
+	}
+	t := m.com.Styles
+
+	label := t.Dialog.Arguments.InputLabelBlurred.PaddingLeft(rowLeftPad).Render("Container Sockets")
+	warning := t.Dialog.SecondaryText.PaddingLeft(rowLeftPad).Render("Can start containers that mount any host path.")
+	lines := []string{label, warning}
+	targets := make([]sandboxHitTarget, 0, len(m.sockets))
+
+	pad := strings.Repeat(" ", rowLeftPad)
+	for i, s := range m.sockets {
+		check := t.Editor.QuestionCheckOff.Render()
+		if s.allowed {
+			check = t.Editor.QuestionCheckOn.Render()
+		}
+		pathStyle := t.Dialog.Arguments.InputLabelBlurred
+		if m.isFocused(sandboxFocusSocket, i, 0) {
+			pathStyle = t.Dialog.Arguments.InputLabelFocused
+		}
+		path := ansi.Truncate(s.path, max(1, innerWidth-rowLeftPad-lipgloss.Width(check)-1), "…")
+		value := check + " " + pathStyle.Render(path)
+		y := len(lines)
+		targets = append(targets, sandboxHitTarget{
+			rect: image.Rect(rowLeftPad, y, rowLeftPad+lipgloss.Width(value), y+1),
+			area: sandboxFocusSocket,
+			row:  i,
+		})
+		lines = append(lines, pad+value)
+	}
+	return strings.Join(lines, "\n"), targets
 }
 
 // continueView renders the button that submits the form and advances

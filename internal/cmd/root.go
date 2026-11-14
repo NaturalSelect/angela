@@ -399,8 +399,11 @@ type localWorkspaceOptions struct {
 	NoDockerSandbox  bool
 	// NoSandboxContainerPermission is nil when its flag was not passed.
 	NoSandboxContainerPermission *bool
-	Channels                     []string
-	Sandbox                      sandboxResolver
+	// SandboxAllowDockerSocket grants the detected container daemon
+	// sockets to the sandbox.
+	SandboxAllowDockerSocket bool
+	Channels                 []string
+	Sandbox                  sandboxResolver
 	// NonInteractive and NoBranchAgents are zero for the TUI. Only a front
 	// end that cannot ask questions or hand a conversation to a branch sets
 	// them.
@@ -420,6 +423,7 @@ func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspa
 	channels, _ := cmd.Flags().GetStringSlice("channels")
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 	noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox")
+	allowDockerSocket, _ := cmd.Flags().GetBool("sandbox-allow-docker-socket")
 
 	return localWorkspaceOptions{
 		Cwd:                          cwd,
@@ -432,6 +436,7 @@ func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspa
 		CommitDiffRunes:              commitDiffRunesFlag(cmd),
 		NoDockerSandbox:              noDockerSandbox,
 		NoSandboxContainerPermission: noSandboxContainerPermissionFlag(cmd),
+		SandboxAllowDockerSocket:     allowDockerSocket,
 		Channels:                     channels,
 		Sandbox: func(workingDir, dataDir string, permissions *config.Permissions, grants sandbox.ContainerGrants) (sandbox.Config, bool, error) {
 			return sandboxConfigFromFlags(cmd, workingDir, dataDir, permissions, grants)
@@ -479,6 +484,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	overrides.NoVSCodeDiff = o.NoVSCodeDiff
 	overrides.EnableImageTools = o.EnableImageTools
 	overrides.NoSandboxContainerPermission = o.NoSandboxContainerPermission
+	overrides.SandboxAllowDockerSocket = o.SandboxAllowDockerSocket
 	overrides.CommitDiffRunes = o.CommitDiffRunes
 	overrides.NonInteractive = o.NonInteractive
 	overrides.NoBranchAgents = o.NoBranchAgents
@@ -502,7 +508,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	if o.Sandbox != nil {
 		var grants sandbox.ContainerGrants
 		if !store.SandboxContainerPermissionDisabled() {
-			grants = sandbox.DetectContainerGrants()
+			grants = sandbox.DetectContainerGrants(o.SandboxAllowDockerSocket)
 		}
 		sandboxCfg, sandboxEnabled, err := o.Sandbox(o.Cwd, cfg.Options.DataDirectory, cfg.Permissions, grants)
 		if err != nil {

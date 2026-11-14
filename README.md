@@ -388,16 +388,21 @@ approves without a prompt doesn't instead run into a confusing sandbox I/O
 error.
 
 If the `docker`, `podman` or `buildah` command line tool is installed,
-`--sandbox` and the `/sandbox` command also open up what those tools need:
-their own config, cache and storage directories become writable, and the
-daemon sockets they talk to (for example `/var/run/docker.sock`) become
-connectable. A container daemon socket is a deliberate hole in the sandbox:
-anything that can reach it can start a container that mounts any host path.
-Pass `--no-sandbox-container-permission` (or set
-`options.no_sandbox_container_permission` to `true`) to skip this and get
-the plain default set. Rootless `podman run` and `podman build` cannot work
-inside a sandbox either way, since Landlock forbids `mount(2)`; use
-`podman --remote` against a running `podman.socket` instead.
+`--sandbox` and the `/sandbox` command also make their own config, cache and
+storage directories writable.
+
+The daemon sockets those tools talk to (for example `/var/run/docker.sock`)
+stay blocked by default. A container daemon socket is a deliberate hole in
+the sandbox: anything that can reach it can start a container that mounts any
+host path. Pass `--sandbox-allow-docker-socket` to let `--sandbox` connect to
+the detected sockets, or tick them one by one in the `/sandbox` dialog, which
+lists every detected socket and leaves it off until you turn it on. Pass
+`--no-sandbox-container-permission` (or set
+`options.no_sandbox_container_permission` to `true`) to skip the whole
+container grant, directories and sockets alike, and get the plain default set.
+Rootless `podman run` and `podman build` cannot work inside a sandbox either
+way, since Landlock forbids `mount(2)`; use `podman --remote` against a
+running `podman.socket` instead.
 
 Inside a Docker or other OCI container Angela treats the container as the
 sandbox and does not apply Landlock on top. Pass `--no-docker-sandbox` to

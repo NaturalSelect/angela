@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -670,6 +671,33 @@ func TestSetupLocalWorkspace_NoSandboxContainerPermissionFlagSetsOverride(t *tes
 	got := appWs.Store().Overrides().NoSandboxContainerPermission
 	require.NotNil(t, got)
 	require.True(t, *got)
+}
+
+// TestSetupLocalWorkspace_AllowDockerSocketFlagSetsOverride pins that
+// --sandbox-allow-docker-socket reaches the runtime override the /sandbox
+// dialog reads, and that it stays off when the flag is omitted.
+func TestSetupLocalWorkspace_AllowDockerSocketFlagSetsOverride(t *testing.T) {
+	for _, set := range []bool{false, true} {
+		t.Run(strconv.FormatBool(set), func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			cmd := newSetupWorkspaceTestCmd(t, t.TempDir())
+			if set {
+				require.NoError(t, cmd.Flags().Set("sandbox-allow-docker-socket", "true"))
+			}
+
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			cmd.SetContext(ctx)
+
+			ws, cleanup, err := setupLocalWorkspace(cmd)
+			require.NoError(t, err)
+			t.Cleanup(cleanup)
+
+			appWs, ok := ws.(*workspace.AppWorkspace)
+			require.True(t, ok)
+			require.Equal(t, set, appWs.Store().Overrides().SandboxAllowDockerSocket)
+		})
+	}
 }
 
 func TestNoSandboxContainerPermissionFlag(t *testing.T) {

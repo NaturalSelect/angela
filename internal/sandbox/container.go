@@ -15,6 +15,8 @@ type ContainerGrants struct {
 	ReadWrite []string
 	// UnixSockets lists the daemon sockets the tools connect to.
 	UnixSockets []string
+	// NOTE: Detected daemon sockets that stay ungranted until the user opts in.
+	OptionalSockets []string
 }
 
 // Empty reports whether g grants nothing.
@@ -33,16 +35,30 @@ func (c Config) WithContainerGrants(g ContainerGrants) Config {
 // DetectContainerGrants looks for the Docker, Podman and Buildah command
 // line tools on this machine and returns the directories and sockets
 // they need. A socket grant is an escape hatch: whoever can talk to a
-// container daemon can start a container that mounts any host path.
-func DetectContainerGrants() ContainerGrants {
+// container daemon can start a container that mounts any host path, so
+// the detected sockets are only granted when grantSockets is set and
+// are otherwise returned as OptionalSockets.
+func DetectContainerGrants(grantSockets bool) ContainerGrants {
 	home, _ := os.UserHomeDir()
-	return detectContainerGrants(containerProbe{
+	g := detectContainerGrants(containerProbe{
 		lookPath: exec.LookPath,
 		getenv:   os.Getenv,
 		home:     home,
 		root:     "/",
 		euid:     os.Geteuid(),
 	})
+	if !grantSockets {
+		g = g.withSocketsOptional()
+	}
+	return g
+}
+
+// withSocketsOptional returns g with its granted sockets moved to
+// OptionalSockets.
+func (g ContainerGrants) withSocketsOptional() ContainerGrants {
+	g.OptionalSockets = DedupePaths(append(append([]string{}, g.OptionalSockets...), g.UnixSockets...))
+	g.UnixSockets = nil
+	return g
 }
 
 // containerProbe is the view of the host detectContainerGrants reads,

@@ -1121,3 +1121,149 @@ func TestSandbox_ConfirmStageListsUnixSockets(t *testing.T) {
 	require.Contains(t, out, "Unix sockets (1)")
 	require.Contains(t, out, "docker.sock")
 }
+
+func socketTarget(idx int) func(sandboxHitTarget) bool {
+	return func(tgt sandboxHitTarget) bool { return tgt.area == sandboxFocusSocket && tgt.row == idx }
+}
+
+// newSandboxWithOptionalSockets builds a dialog whose workspace detected
+// two daemon sockets that were not granted.
+func newSandboxWithOptionalSockets(t *testing.T) *Sandbox {
+	t.Helper()
+	s := styles.CharmtonePantera()
+	com := &common.Common{
+		Styles: &s,
+		Workspace: &sandboxTestWorkspace{
+			dir: t.TempDir(),
+			grants: sandbox.ContainerGrants{
+				OptionalSockets: []string{"/var/run/docker.sock", "/run/podman/podman.sock"},
+			},
+		},
+	}
+	return NewSandbox(com)
+}
+
+// TestSandbox_OptionalSocketsStartBlocked verifies a detected socket
+// that was not opted into is offered in the form but left out of the
+// config until the user turns it on.
+func TestSandbox_OptionalSocketsStartBlocked(t *testing.T) {
+	t.Parallel()
+
+	m := newSandboxWithOptionalSockets(t)
+	require.Len(t, m.sockets, 2)
+	require.Empty(t, m.config().UnixSockets)
+}
+
+// TestSandbox_GrantedSocketsStartAllowed verifies a socket the workspace
+// already granted starts allowed, can be turned off, and is not offered
+// twice when it is also listed as optional.
+func TestSandbox_GrantedSocketsStartAllowed(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{
+		Styles: &s,
+		Workspace: &sandboxTestWorkspace{
+			dir: t.TempDir(),
+			grants: sandbox.ContainerGrants{
+				UnixSockets:     []string{"/var/run/docker.sock"},
+				OptionalSockets: []string{"/var/run/docker.sock"},
+			},
+		},
+	}
+	m := NewSandbox(com)
+
+	require.Len(t, m.sockets, 1)
+	require.Equal(t, []string{"/var/run/docker.sock"}, m.config().UnixSockets)
+
+	m.setFocus(m.socketStop(0))
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Empty(t, m.config().UnixSockets)
+}
+
+// TestSandbox_SocketToggleByKeyboard verifies each socket is its own
+// focus stop between the network toggle and the continue button, and
+// that enter flips only the focused one.
+func TestSandbox_SocketToggleByKeyboard(t *testing.T) {
+	t.Parallel()
+
+	m := newSandboxWithOptionalSockets(t)
+	require.Equal(t, len(m.rows)*sandboxColCount+3+2, m.stopCount())
+
+	m.setFocus(m.socketStop(1))
+	area, idx, _ := m.focusTarget(m.focused)
+	require.Equal(t, sandboxFocusSocket, area)
+	require.Equal(t, 1, idx)
+
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.False(t, m.sockets[0].allowed)
+	require.True(t, m.sockets[1].allowed)
+	require.Equal(t, []string{"/run/podman/podman.sock"}, m.config().UnixSockets)
+
+	area, _, _ = m.focusTarget(m.stopCount() - 1)
+	require.Equal(t, sandboxFocusContinue, area)
+}
+
+// TestSandbox_SocketToggleByClick verifies clicking a socket line flips
+// it and focuses it.
+func TestSandbox_SocketToggleByClick(t *testing.T) {
+	t.Parallel()
+
+	m := newSandboxWithOptionalSockets(t)
+	drawSandbox(m)
+
+	x, y := targetPoint(t, m, socketTarget(0))
+	require.Nil(t, m.HandleMsg(tea.MouseClickMsg{X: x, Y: y, Button: uv.MouseLeft}))
+	require.True(t, m.sockets[0].allowed)
+	require.False(t, m.sockets[1].allowed)
+	require.True(t, m.isFocused(sandboxFocusSocket, 0, 0))
+	require.Equal(t, []string{"/var/run/docker.sock"}, m.config().UnixSockets)
+}
+
+// TestSandbox_SocketsAreDrawnWithWarning verifies the form names every
+// detected socket and says what a daemon socket grants.
+func TestSandbox_SocketsAreDrawnWithWarning(t *testing.T) {
+	t.Parallel()
+
+	m := newSandboxWithOptionalSockets(t)
+	scr := uv.NewScreenBuffer(sandboxTestW, sandboxTestH)
+	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
+
+	out := ansi.Strip(scr.Render())
+	require.Contains(t, out, "Container Sockets")
+	require.Contains(t, out, "mount any host path")
+	require.Contains(t, out, "/var/run/docker.sock")
+	require.Contains(t, out, "/run/podman/podman.sock")
+}
+
+// TestSandbox_NoSocketsHidesSection verifies a machine without a
+// detected socket gets no socket section and no extra focus stops.
+func TestSandbox_NoSocketsHidesSection(t *testing.T) {
+	t.Parallel()
+
+	m := newTestSandbox(t)
+	require.Empty(t, m.sockets)
+	require.Equal(t, len(m.rows)*sandboxColCount+3, m.stopCount())
+
+	scr := uv.NewScreenBuffer(sandboxTestW, sandboxTestH)
+	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
+	require.NotContains(t, ansi.Strip(scr.Render()), "Container Sockets")
+}
+
+// TestSandbox_ConfirmStageListsOnlyAllowedSockets verifies the
+// confirmation screen names a socket only after it was turned on.
+func TestSandbox_ConfirmStageListsOnlyAllowedSockets(t *testing.T) {
+	t.Parallel()
+
+	m := newSandboxWithOptionalSockets(t)
+	m.sockets[1].allowed = true
+	m.submit()
+
+	scr := uv.NewScreenBuffer(sandboxTestW, sandboxTestH)
+	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
+
+	out := ansi.Strip(scr.Render())
+	require.Contains(t, out, "Unix sockets (1)")
+	require.Contains(t, out, "podman.sock")
+	require.NotContains(t, out, "docker.sock")
+}

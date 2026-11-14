@@ -197,7 +197,8 @@ func (d *Profiles) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	listView := t.Dialog.List.Height(d.list.Height()).Render(d.list.Render())
 	listView = d.frame.JoinScrollbar(listView, listHeight, listTotalHeight, listHeight, d.list.Offset())
 
-	view := d.frame.Render(d.metrics,
+	view := d.frame.Render(
+		d.metrics,
 		[]string{t.Dialog.InputPrompt.Render(d.input.View()), listView},
 		d.frame.RenderHelp(&d.help, d, d.metrics.ContentWidth),
 	)

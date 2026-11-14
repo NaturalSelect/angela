@@ -18,7 +18,8 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 		t.Parallel()
 		buf := captureWarnings(t)
 
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"restricted": {"id": "restricted", "allowed_tool": ["read"]}}}`,
 		)
 		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
@@ -32,7 +33,8 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 	t.Run("a well-formed agent is kept", func(t *testing.T) {
 		t.Parallel()
 
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"restricted": {"id": "restricted", "allowed_tools": ["read"]}}}`,
 		)
 		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)
@@ -46,7 +48,8 @@ func TestAgentsWithUnknownFieldsAreDropped(t *testing.T) {
 	t.Run("compact_agent is a recognized field and does not drop the agent", func(t *testing.T) {
 		t.Parallel()
 
-		paths := writeLayers(t,
+		paths := writeLayers(
+			t,
 			`{"agents": {"reviewer": {"id": "reviewer", "compact_agent": "my-compact"}}}`,
 		)
 		cfg, _, _, err := loadFromConfigPaths(context.Background(), paths)

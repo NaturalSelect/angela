@@ -6,19 +6,31 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"unicode/utf8"
 
 	"charm.land/fantasy"
 	"github.com/NaturalSelect/angela/internal/config"
 )
 
-// maxCommitDiffChars caps the staged diff text fed to the commit
-// message model. The model only needs enough of the change to
-// describe it, and an unbounded diff on a large staged changeset
-// would blow well past context limits.
-const maxCommitDiffChars = 12000
+// truncateRunes returns s cut to at most limit runes, with a marker line
+// appended when anything was dropped. Cutting on rune boundaries keeps a
+// multi-byte character from being split into invalid UTF-8.
+func truncateRunes(s string, limit int) string {
+	if utf8.RuneCountInString(s) <= limit {
+		return s
+	}
+	cut := 0
+	for range limit {
+		_, size := utf8.DecodeRuneInString(s[cut:])
+		cut += size
+	}
+	return s[:cut] + "\n… (diff truncated)"
+}
 
 // GenerateCommitMessage writes a commit message describing diff (the
 // output of `git diff --cached`), using a tool-free internal agent.
+// The diff is cut to the rune budget from ConfigStore.CommitDiffRunes
+// so a large staged changeset cannot blow past context limits.
 // It never reads or writes sessionID's message history — sessionID
 // only lets the internal agent inherit that session's model where
 // the two share a slot, matching generateSessionTitle. The
@@ -30,9 +42,7 @@ func (c *coordinator) GenerateCommitMessage(ctx context.Context, sessionID, diff
 	if diff == "" {
 		return "", errors.New("no staged changes to describe")
 	}
-	if len(diff) > maxCommitDiffChars {
-		diff = diff[:maxCommitDiffChars] + "\n… (diff truncated)"
-	}
+	diff = truncateRunes(diff, c.cfg.CommitDiffRunes())
 
 	host := c.instanceFor(ctx, sessionID)
 	if host.Agent.ID == "" {

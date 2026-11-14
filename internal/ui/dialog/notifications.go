@@ -204,7 +204,8 @@ func (n *Notifications) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	listView := t.Dialog.List.Height(n.list.Height()).Render(n.list.Render())
 
-	view := n.frame.Render(n.metrics,
+	view := n.frame.Render(
+		n.metrics,
 		[]string{inputView, listView},
 		n.frame.RenderHelp(&n.help, n, n.metrics.ContentWidth),
 	)

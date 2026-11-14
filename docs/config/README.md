@@ -483,6 +483,8 @@ A rule's `mode` chooses how `pattern` is compared:
     "enable_image_tools": true,         // unset = only with Kitty previews; true = any terminal; false = off
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
+    "commit_diff_runes": 48000,       // characters of the staged diff `angela commit` and /commit send to the model
+    "no_sandbox_container_permission": false, // true = don't auto-grant detected docker/podman/buildah paths and sockets to --sandbox
 
     // Attribution
     "attribution": {
@@ -698,6 +700,7 @@ Some settings can also come from the environment or the command line.
 | `--sandbox-rw`, `--sandbox-ro`        | Extra read-write or read-only directories for `--sandbox`                |
 | `--sandbox-no-network`                | Blocks outbound network access for commands under `--sandbox`            |
 | `--no-docker-sandbox`                 | Applies Landlock even inside a detected container                        |
+| `--no-sandbox-container-permission`   | Same as `options.no_sandbox_container_permission`                        |
 
 To see which config directories Angela reads, run `angela dirs`. To check a file
 after you edit it, run `angela config validate`. To refresh the provider

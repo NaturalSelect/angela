@@ -738,6 +738,20 @@
         "enable_image_tools": {
           "type": "boolean",
           "description": "Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported, images can still be saved with Export Image); false disables them"
+        },
+        "commit_diff_runes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. A longer diff is cut off and marked as truncated. Raising it costs more input tokens per commit.",
+          "default": 48000,
+          "examples": [
+            100000
+          ]
+        },
+        "no_sandbox_container_permission": {
+          "type": "boolean",
+          "description": "Do not automatically grant the directories and unix sockets used by a detected Docker/Podman/Buildah CLI to the --sandbox and /sandbox filesystem rules. A granted container daemon socket lets sandboxed commands start containers that mount any host path",
+          "default": false
         }
       },
       "additionalProperties": false,

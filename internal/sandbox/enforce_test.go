@@ -3,12 +3,15 @@
 package sandbox
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -117,7 +120,43 @@ func enforceScenarios() []enforceScenario {
 		}})
 	}
 
+	// NOTE: Connecting to a pathname unix socket is only denied by
+	// Landlock ABI 9 and newer, so the ungranted probe is skipped
+	// elsewhere, including on macOS.
+	unixSockets := enforceScenario{
+		name: "unix_sockets",
+		config: func(dir, _ string) Config {
+			return Config{
+				ReadOnly:     []string{"/"},
+				UnixSockets:  []string{filepath.Join(dir, "s")},
+				AllowNetwork: true,
+			}
+		},
+		setup: func(t *testing.T, dir, dir2 string) {
+			for _, p := range []string{filepath.Join(dir, "s"), filepath.Join(dir2, "s")} {
+				if len(p) > 100 {
+					t.Skipf("unix socket path too long: %s", p)
+				}
+				var lc net.ListenConfig
+				ln, err := lc.Listen(t.Context(), "unix", p)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = ln.Close() })
+			}
+		},
+		probes: []enforceProbe{
+			{name: "connect_granted", want: true, run: func(dir, _ string) bool {
+				return probeConnect(filepath.Join(dir, "s"))
+			}},
+		},
+	}
+	if runtime.GOOS == "linux" && landlockABI() >= 9 {
+		unixSockets.probes = append(unixSockets.probes, enforceProbe{name: "connect_ungranted", want: false, run: func(_, dir2 string) bool {
+			return probeConnect(filepath.Join(dir2, "s"))
+		}})
+	}
+
 	return []enforceScenario{
+		unixSockets,
 		{
 			name: "workspace",
 			config: func(dir, _ string) Config {
@@ -202,6 +241,20 @@ func enforceScenarios() []enforceScenario {
 		},
 		noNetwork,
 	}
+}
+
+// probeConnect reports whether a connection to the unix socket at
+// path can be opened.
+func probeConnect(path string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var d net.Dialer
+	c, err := d.DialContext(ctx, "unix", path)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
 }
 
 // probeWrite reports whether path can be opened for writing (created
@@ -321,7 +374,8 @@ func TestEnterSandbox_Conformance(t *testing.T) {
 			}
 
 			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
-			cmd.Env = append(os.Environ(),
+			cmd.Env = append(
+				os.Environ(),
 				enforceHelperEnv+"="+scenario.name,
 				enforceHelperDirEnv+"="+dir,
 				enforceHelperDir2Env+"="+dir2,

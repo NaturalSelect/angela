@@ -25,6 +25,7 @@ func addSandboxFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSlice("sandbox-ro", nil, "Additional read-only directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests; has no effect inside an auto-detected Docker/OCI container unless --no-docker-sandbox is also set, and is not supported on macOS: --sandbox then fails at startup")
 	cmd.Flags().Bool("no-docker-sandbox", false, "Do not treat an existing Docker/OCI container as sufficient sandboxing; apply Landlock restriction as well, both under --sandbox and for the /sandbox command")
+	cmd.Flags().Bool("no-sandbox-container-permission", false, "Do not automatically grant the directories and unix sockets of a detected Docker/Podman/Buildah CLI to --sandbox and the /sandbox command; a granted container daemon socket lets sandboxed commands start containers that mount any host path. Equivalent to options.no_sandbox_container_permission")
 }
 
 // sandboxConfigFromFlags builds the sandbox config from cmd's --sandbox
@@ -37,7 +38,12 @@ func addSandboxFlags(cmd *cobra.Command) {
 // permission.FilesystemAllowPaths) is folded in too, so entering the
 // sandbox never turns an already-approved edit into a confusing I/O
 // error.
-func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, permissions *config.Permissions) (sandbox.Config, bool, error) {
+//
+// grants carries the Docker/Podman/Buildah directories and sockets the
+// caller detected; it is folded in before --sandbox-rw so the sandbox
+// stays usable for container tooling. Pass the zero value to grant
+// nothing.
+func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, permissions *config.Permissions, grants sandbox.ContainerGrants) (sandbox.Config, bool, error) {
 	enabled, _ := cmd.Flags().GetBool("sandbox")
 	if !enabled {
 		for _, name := range sandboxFlagNames {
@@ -52,7 +58,7 @@ func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, perm
 	ro, _ := cmd.Flags().GetStringSlice("sandbox-ro")
 	noNetwork, _ := cmd.Flags().GetBool("sandbox-no-network")
 
-	cfg := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig()))
+	cfg := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig())).WithContainerGrants(grants)
 	cfg.ReadWrite = sandbox.DedupePaths(append(cfg.ReadWrite, rw...))
 	cfg.ReadOnly = sandbox.DedupePaths(append(cfg.ReadOnly, ro...))
 	if permissions != nil {
@@ -77,7 +83,7 @@ func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, perm
 // missing paths, so entering the sandbox would otherwise succeed
 // without actually restricting (or granting access to) them.
 func warnMissingSandboxPaths(cfg sandbox.Config) {
-	for _, p := range slices.Concat(cfg.ReadWrite, cfg.ReadOnly, cfg.ReadWriteFiles, cfg.ReadOnlyFiles) {
+	for _, p := range slices.Concat(cfg.ReadWrite, cfg.ReadOnly, cfg.ReadWriteFiles, cfg.ReadOnlyFiles, cfg.UnixSockets) {
 		if _, err := os.Stat(p); err != nil {
 			slog.Warn("Sandbox path does not exist, restriction will not apply to it", "path", p)
 		}

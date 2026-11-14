@@ -713,7 +713,8 @@ func (c *coordinator) buildTools(agent config.Agent, parent config.ActiveAgent, 
 	// narrowing their branch agent's tools would otherwise strand both
 	// sides with no way back.
 	if agent.Mode == config.AgentModeBranch {
-		filteredTools = append(filteredTools,
+		filteredTools = append(
+			filteredTools,
 			c.mergeTool(),
 			tools.NewProposalWriteTool(c.proposals),
 			tools.NewProposalEditTool(c.proposals),

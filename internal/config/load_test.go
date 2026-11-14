@@ -2068,7 +2068,8 @@ func TestConfig_resolveSelectedModels_KeepsTheSlotVariant(t *testing.T) {
 		cfg.setDefaults(t.TempDir(), "")
 		e := env.NewFromMap(map[string]string{})
 		require.NoError(t, cfg.configureProviders(
-			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders))
+			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders,
+		))
 		resolved, err := resolveSelectedModels(cfg, knownProviders)
 		require.NoError(t, err)
 		return resolved
@@ -2107,7 +2108,8 @@ func TestConfig_resolveSelectedModels_KeepsTheSlotVariant(t *testing.T) {
 		cfg.setDefaults(t.TempDir(), "")
 		e := env.NewFromMap(map[string]string{})
 		require.NoError(t, cfg.configureProviders(
-			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders))
+			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders,
+		))
 
 		// An empty built-in list makes openai a custom provider, which is
 		// the case where chore reuses the main model.
@@ -2152,7 +2154,8 @@ func TestConfig_resolveSelectedModels_RejectsAMissingModel(t *testing.T) {
 		cfg.setDefaults(t.TempDir(), "")
 		e := env.NewFromMap(map[string]string{})
 		require.NoError(t, cfg.configureProviders(
-			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders))
+			context.Background(), testStore(cfg), e, NewShellVariableResolver(e), knownProviders,
+		))
 		_, err := resolveSelectedModels(cfg, knownProviders)
 		return err
 	}
@@ -2233,7 +2236,8 @@ func TestSelectedModelVariantsSurviveResolution(t *testing.T) {
 	store := &ConfigStore{config: cfg, globalDataPath: filepath.Join(dir, "angela.json")}
 	e := env.NewFromMap(map[string]string{})
 	require.NoError(t, cfg.configureProviders(
-		context.Background(), store, e, NewShellVariableResolver(e), knownProviders))
+		context.Background(), store, e, NewShellVariableResolver(e), knownProviders,
+	))
 
 	resolved, err := resolveSelectedModels(cfg, knownProviders)
 	require.NoError(t, err)

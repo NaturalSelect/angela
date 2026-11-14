@@ -66,7 +66,8 @@ func NewGitTool(workingDir string) fantasy.AgentTool {
 			// `diff` from refreshing and writing the index; the rest
 			// close off a network prompt and a pager that would just
 			// hang waiting for a terminal that is not there.
-			cmd.Env = append(os.Environ(),
+			cmd.Env = append(
+				os.Environ(),
 				"GIT_TERMINAL_PROMPT=0",
 				"GIT_OPTIONAL_LOCKS=0",
 				"GIT_PAGER=cat",

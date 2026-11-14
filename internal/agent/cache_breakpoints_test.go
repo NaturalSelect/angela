@@ -69,7 +69,8 @@ func TestCacheBreakpointIndices_PreviousTipStaysStableAcrossRounds(t *testing.T)
 	var prevTip fantasy.Message
 
 	for round := range 4 {
-		history = append(history,
+		history = append(
+			history,
 			msg(fantasy.MessageRoleUser, fmt.Sprintf("reminder-%d", round)),
 			msg(fantasy.MessageRoleUser, fmt.Sprintf("prompt-%d", round)),
 		)

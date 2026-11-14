@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
@@ -135,8 +136,8 @@ func TestGenerateCommitMessageTruncatesLongDiffsAndStripsBackticks(t *testing.T)
 	coord := newModelPrefTestCoordinator(t, nil)
 	setMockProviderBaseURL(t, coord, server.URL)
 
-	diff := "diff --git a/x b/x\n" + strings.Repeat("+added line\n", 2000)
-	require.Greater(t, len(diff), maxCommitDiffChars, "precondition: the diff must exceed the truncation limit")
+	diff := "diff --git a/x b/x\n" + strings.Repeat("+added line\n", config.DefaultCommitDiffRunes/10)
+	require.Greater(t, utf8.RuneCountInString(diff), config.DefaultCommitDiffRunes, "precondition: the diff must exceed the truncation limit")
 
 	msg, err := coord.GenerateCommitMessage(t.Context(), "", diff)
 	require.NoError(t, err)
@@ -147,6 +148,80 @@ func TestGenerateCommitMessageTruncatesLongDiffsAndStripsBackticks(t *testing.T)
 		"an over-limit diff must be truncated before being sent to the model")
 	require.NotContains(t, string(gotBody), diff,
 		"the full untruncated diff must never reach the model")
+}
+
+// TestGenerateCommitMessageHonoursConfiguredDiffBudget pins that the
+// override and options.commit_diff_runes replace the default budget, and
+// that the budget counts runes, so cutting a CJK diff never splits a
+// character into invalid UTF-8.
+func TestGenerateCommitMessageHonoursConfiguredDiffBudget(t *testing.T) {
+	t.Parallel()
+
+	diff := "diff --git a/x b/x\n+" + strings.Repeat("改", 200)
+
+	t.Run("override", func(t *testing.T) {
+		t.Parallel()
+
+		var gotBody []byte
+		server := commitCompletionServer(t, "fix: shorten the diff", &gotBody)
+		defer server.Close()
+
+		coord := newModelPrefTestCoordinator(t, nil)
+		setMockProviderBaseURL(t, coord, server.URL)
+		coord.cfg.Overrides().CommitDiffRunes = new(60)
+
+		_, err := coord.GenerateCommitMessage(t.Context(), "", diff)
+		require.NoError(t, err)
+		require.Contains(t, string(gotBody), "(diff truncated)")
+		require.NotContains(t, string(gotBody), strings.Repeat("改", 100),
+			"the override budget must cut the diff well below its full length")
+		require.NotContains(t, string(gotBody), `\ufffd`,
+			"truncation must not split a multi-byte character")
+	})
+
+	t.Run("option", func(t *testing.T) {
+		t.Parallel()
+
+		var gotBody []byte
+		server := commitCompletionServer(t, "fix: shorten the diff", &gotBody)
+		defer server.Close()
+
+		coord := newModelPrefTestCoordinator(t, nil)
+		setMockProviderBaseURL(t, coord, server.URL)
+		coord.cfg.Config().Options.CommitDiffRunes = new(60)
+
+		_, err := coord.GenerateCommitMessage(t.Context(), "", diff)
+		require.NoError(t, err)
+		require.Contains(t, string(gotBody), "(diff truncated)")
+		require.NotContains(t, string(gotBody), strings.Repeat("改", 100))
+	})
+
+	t.Run("diff within the budget is sent whole", func(t *testing.T) {
+		t.Parallel()
+
+		var gotBody []byte
+		server := commitCompletionServer(t, "fix: keep the diff", &gotBody)
+		defer server.Close()
+
+		coord := newModelPrefTestCoordinator(t, nil)
+		setMockProviderBaseURL(t, coord, server.URL)
+		coord.cfg.Overrides().CommitDiffRunes = new(1000)
+
+		_, err := coord.GenerateCommitMessage(t.Context(), "", diff)
+		require.NoError(t, err)
+		require.NotContains(t, string(gotBody), "(diff truncated)")
+		require.Contains(t, string(gotBody), strings.Repeat("改", 200))
+	})
+}
+
+// TestTruncateRunes pins the rune-boundary cut and the no-op cases.
+func TestTruncateRunes(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "abc", truncateRunes("abc", 3), "a string exactly at the limit is untouched")
+	require.Equal(t, "abc", truncateRunes("abc", 10), "a string under the limit is untouched")
+	require.Equal(t, "改改\n… (diff truncated)", truncateRunes("改改改改", 2))
+	require.True(t, utf8.ValidString(truncateRunes(strings.Repeat("改", 50), 7)))
 }
 
 // TestGenerateCommitMessageAttributionCreditsTheHostAgent pins that

@@ -107,6 +107,16 @@ func TestParseChecksums(t *testing.T) {
 	}, got)
 }
 
+func TestParseChecksums_TildeBecomesDot(t *testing.T) {
+	t.Parallel()
+
+	got := parseChecksums("abc  angela_0.0.6~rc2_amd64.deb\ndef  angela-0.0.6~rc2-1.x86_64.rpm\n")
+	require.Equal(t, map[string]string{
+		"angela_0.0.6.rc2_amd64.deb":    "abc",
+		"angela-0.0.6.rc2-1.x86_64.rpm": "def",
+	}, got)
+}
+
 func assets(names ...string) []Asset {
 	out := make([]Asset, 0, len(names))
 	for _, n := range names {

@@ -86,7 +86,8 @@ type Sandbox struct {
 	stage sandboxStage
 
 	rows         []sandboxPathRow
-	focused      int // flat index into the focus-stop sequence; see focusTarget
+	unixSockets  []string // not editable in the form; carried through to config
+	focused      int      // flat index into the focus-stop sequence; see focusTarget
 	allowNetwork bool
 
 	// Scroll state of the rows block (the path rows plus the add
@@ -128,7 +129,7 @@ func NewSandbox(com *common.Common) *Sandbox {
 	t := com.Styles
 	cfg := sandboxDefaultConfig(com)
 
-	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork}
+	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork, unixSockets: cfg.UnixSockets}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
 
 	for _, p := range cfg.ReadWrite {
@@ -137,7 +138,7 @@ func NewSandbox(com *common.Common) *Sandbox {
 	for _, p := range cfg.ReadOnly {
 		m.rows = append(m.rows, newSandboxRow(t, p, true))
 	}
-	m.rows[0].input.Focus()
+	m.syncFocus()
 
 	m.help = help.New()
 	m.help.Styles = t.DialogHelpStyles()
@@ -162,6 +163,23 @@ func newSandboxRow(t *styles.Styles, path string, readOnly bool) sandboxPathRow 
 	return sandboxPathRow{input: input, readOnly: readOnly}
 }
 
+// setSandboxInputWidth resizes a row's input and re-clips its visible
+// window.
+//
+// NOTE: textinput only recomputes the window when the cursor moves or the
+// value changes, so a value set while the width was still zero would
+// render in full and overflow the row. Jumping the cursor to the end and
+// back forces the recompute and leaves the cursor where it was.
+func setSandboxInputWidth(input *textinput.Model, width int) {
+	if input.Width() == width {
+		return
+	}
+	pos := input.Position()
+	input.SetWidth(width)
+	input.CursorEnd()
+	input.SetCursor(pos)
+}
+
 // sandboxDefaultConfig builds the sandbox.Config NewSandbox pre-fills
 // the form with, sourced from the current workspace and config. Any
 // directory a filesystem allow rule in the config already covers (see
@@ -184,7 +202,8 @@ func sandboxDefaultConfig(com *common.Common) sandbox.Config {
 	}
 
 	workingDir := com.Workspace.WorkingDir()
-	result := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig()))
+	result := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig())).
+		WithContainerGrants(com.Workspace.SandboxContainerGrants())
 	if permissions != nil {
 		readOnly, readWrite, _, _ := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
 		result.ReadOnly = sandbox.DedupePaths(append(result.ReadOnly, readOnly...))
@@ -245,13 +264,17 @@ func (m *Sandbox) setFocus(newIndex int) {
 // next Draw to scroll the focused line into view.
 func (m *Sandbox) syncFocus() {
 	m.followFocus = true
+	// NOTE: A blurred row shows the head of its path; the focused one
+	// puts the cursor at the end, so editing starts where typing lands.
 	for i := range m.rows {
 		m.rows[i].input.Blur()
+		m.rows[i].input.CursorStart()
 	}
 	n := m.stopCount()
 	m.focused = ((m.focused % n) + n) % n
 	if area, row, col := m.focusTarget(m.focused); area == sandboxFocusRow && col == sandboxColInput {
 		m.rows[row].input.Focus()
+		m.rows[row].input.CursorEnd()
 	}
 }
 
@@ -385,7 +408,7 @@ func (m *Sandbox) handleFormClick(x, y int) {
 
 // config parses the form fields into a [sandbox.Config].
 func (m *Sandbox) config() sandbox.Config {
-	cfg := sandbox.Config{AllowNetwork: m.allowNetwork}
+	cfg := sandbox.Config{AllowNetwork: m.allowNetwork, UnixSockets: slices.Clone(m.unixSockets)}
 	for _, row := range m.rows {
 		p := strings.TrimSpace(row.input.Value())
 		if p == "" {
@@ -528,7 +551,7 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 	inputWidth := max(0, innerWidth-rowLeftPad-toggleWidth-removeWidth-rowGaps-cursorPad-scrollbarWidth)
 	for i := range m.rows {
-		m.rows[i].input.SetWidth(inputWidth)
+		setSandboxInputWidth(&m.rows[i].input, inputWidth)
 	}
 
 	assemble := func(rowsBlock, continueBlock string) string {
@@ -636,7 +659,8 @@ func (m *Sandbox) rowsView(rowLeftPad, hoverIdx int) (string, []sandboxHitTarget
 		toggleX := inputX + lipgloss.Width(inputView) + 1
 		removeX := toggleX + lipgloss.Width(toggle) + 1
 
-		targets = append(targets,
+		targets = append(
+			targets,
 			sandboxHitTarget{
 				rect: image.Rect(inputX, y, inputX+lipgloss.Width(inputView), y+1),
 				area: sandboxFocusRow, row: i, col: sandboxColInput,
@@ -761,6 +785,9 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 	if len(cfg.ReadOnly) > 0 {
 		sections = append(sections, fmt.Sprintf("Read-only (%d):\n%s", len(cfg.ReadOnly), formatUndoPaths(cfg.ReadOnly)))
+	}
+	if len(cfg.UnixSockets) > 0 {
+		sections = append(sections, fmt.Sprintf("Unix sockets (%d):\n%s", len(cfg.UnixSockets), formatUndoPaths(cfg.UnixSockets)))
 	}
 	sections = append(sections, "Network: "+network)
 	body := strings.Join(sections, "\n\n")

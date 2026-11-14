@@ -40,6 +40,7 @@ go install github.com/NaturalSelect/angela@latest
 ```bash
 angela upgrade                # latest stable release
 angela upgrade --pre-release  # also consider pre-releases (release candidates)
+angela upgrade --atom         # read releases from GitHub's Atom feed, not its API
 ```
 
 `angela upgrade` downloads the release from GitHub and verifies the cosign
@@ -48,6 +49,12 @@ workflow for that tag. It then checks the download against that file and
 replaces the running executable. Verification needs access to the Sigstore
 trust root at `tuf-repo-cdn.sigstore.dev`, and a release without a valid
 signature is refused.
+
+- **Rate limits.** GitHub limits anonymous API requests per IP address. Set
+  `GITHUB_TOKEN` or `GH_TOKEN` to authenticate them, or pass `--atom` to read
+  the release list from the Atom feed and release pages on `github.com`
+  instead. The feed only lists the most recent releases and `--atom` relies on
+  the layout of GitHub's release pages, so it is not the default.
 
 - **No downgrades.** Angela only moves to a strictly newer version. A
   pre-release build is never rolled back to an older stable release. It moves
@@ -147,6 +154,14 @@ and it exits with an error if nothing is staged.
 ```bash
 git add -p
 angela commit
+```
+
+Only the first 48,000 characters of the staged diff are sent to the model. Raise
+or lower that budget for one run with `--max-diff-runes`, or permanently with
+`options.commit_diff_runes` in `angela.json`.
+
+```bash
+angela commit --max-diff-runes 100000
 ```
 
 ### Editor integration (ACP)
@@ -371,6 +386,18 @@ filesystem allow rule under `permissions.rules` (see [Permissions](#permissions)
 above) already covers, so an edit or read the permission policy already
 approves without a prompt doesn't instead run into a confusing sandbox I/O
 error.
+
+If the `docker`, `podman` or `buildah` command line tool is installed,
+`--sandbox` and the `/sandbox` command also open up what those tools need:
+their own config, cache and storage directories become writable, and the
+daemon sockets they talk to (for example `/var/run/docker.sock`) become
+connectable. A container daemon socket is a deliberate hole in the sandbox:
+anything that can reach it can start a container that mounts any host path.
+Pass `--no-sandbox-container-permission` (or set
+`options.no_sandbox_container_permission` to `true`) to skip this and get
+the plain default set. Rootless `podman run` and `podman build` cannot work
+inside a sandbox either way, since Landlock forbids `mount(2)`; use
+`podman --remote` against a running `podman.socket` instead.
 
 Inside a Docker or other OCI container Angela treats the container as the
 sandbox and does not apply Landlock on top. Pass `--no-docker-sandbox` to

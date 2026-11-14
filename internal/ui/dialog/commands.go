@@ -529,7 +529,8 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "switch_model", "Switch Model", "ctrl+l", ActionOpenDialog{ModelsID}))
 	}
 
-	commands = append(commands,
+	commands = append(
+		commands,
 		NewCommandItem(c.com.Styles, "switch_agent", "Switch Agent", "", ActionOpenDialog{AgentsID}).WithAliases("agent"),
 		NewCommandItem(c.com.Styles, "switch_agent_model", "Switch Agent Model", "", ActionOpenDialog{AgentModelAgentsID}).WithAliases("agent-model", "override-model"),
 		NewCommandItem(c.com.Styles, "manage_mcp", "Manage MCP Servers", "", ActionOpenDialog{MCPServersID}).WithAliases("mcp", "mcps"),

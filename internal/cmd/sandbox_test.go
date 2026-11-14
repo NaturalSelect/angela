@@ -6,6 +6,7 @@ import (
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +25,7 @@ func TestSandboxConfigFromFlags_Disabled(t *testing.T) {
 
 	cmd := newSandboxTestCmd(t)
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
 	require.NoError(t, err)
 	require.False(t, enabled)
 	require.Zero(t, cfg)
@@ -36,7 +37,7 @@ func TestSandboxConfigFromFlags_DefaultsOnly(t *testing.T) {
 	cmd := newSandboxTestCmd(t)
 	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
 	require.NoError(t, err)
 	require.True(t, enabled)
 	require.Contains(t, cfg.ReadWrite, "/work")
@@ -57,7 +58,7 @@ func TestSandboxConfigFromFlags_AppendsExtraPaths(t *testing.T) {
 	require.NoError(t, cmd.Flags().Set("sandbox-rw", "/extra-rw"))
 	require.NoError(t, cmd.Flags().Set("sandbox-ro", "/extra-ro"))
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
 	require.NoError(t, err)
 	require.True(t, enabled)
 	require.Contains(t, cfg.ReadWrite, "/work")
@@ -74,7 +75,7 @@ func TestSandboxConfigFromFlags_NoNetwork(t *testing.T) {
 	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
 	require.NoError(t, cmd.Flags().Set("sandbox-no-network", "true"))
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
 	require.NoError(t, err)
 	require.True(t, enabled)
 	require.False(t, cfg.AllowNetwork)
@@ -93,7 +94,7 @@ func TestSandboxConfigFromFlags_NoDockerSandboxDoesNotRequireSandbox(t *testing.
 	cmd := newSandboxTestCmd(t)
 	require.NoError(t, cmd.Flags().Set("no-docker-sandbox", "true"))
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
 	require.NoError(t, err)
 	require.False(t, enabled)
 	require.Zero(t, cfg)
@@ -116,7 +117,7 @@ func TestSandboxConfigFromFlags_RequiresSandboxFlag(t *testing.T) {
 			}
 			require.NoError(t, cmd.Flags().Set(name, value))
 
-			cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil)
+			cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "--sandbox")
 			require.False(t, enabled)
@@ -146,7 +147,7 @@ func TestSandboxConfigFromFlags_PermissionRulesAddPaths(t *testing.T) {
 		},
 	}
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", permissions)
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", permissions, sandbox.ContainerGrants{})
 	require.NoError(t, err)
 	require.True(t, enabled)
 	require.Contains(t, cfg.ReadWrite, filepath.Join("/work", "external"))
@@ -171,10 +172,56 @@ func TestSandboxConfigFromFlags_LiteralFilePermissionRuleGrantsExactFile(t *test
 		},
 	}
 
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", permissions)
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", permissions, sandbox.ContainerGrants{})
 	require.NoError(t, err)
 	require.True(t, enabled)
 	require.Contains(t, cfg.ReadWriteFiles, filepath.Join("/work", "secrets", "key.txt"))
 	require.NotContains(t, cfg.ReadWrite, filepath.Join("/work", "secrets"),
 		"a literal file rule must not widen its whole parent directory")
+}
+
+// TestSandboxConfigFromFlags_ContainerGrantsAreAdded covers the detected
+// container tooling access: its directories and sockets land in the
+// config, and the zero value leaves the defaults untouched.
+func TestSandboxConfigFromFlags_ContainerGrantsAreAdded(t *testing.T) {
+	t.Parallel()
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
+	require.NoError(t, cmd.Flags().Set("sandbox-rw", "/extra-rw"))
+
+	grants := sandbox.ContainerGrants{
+		ReadWrite:   []string{"/home/u/.docker"},
+		UnixSockets: []string{"/var/run/docker.sock"},
+	}
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, grants)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	require.Contains(t, cfg.ReadWrite, "/home/u/.docker")
+	require.Contains(t, cfg.ReadWrite, "/extra-rw")
+	require.Equal(t, []string{"/var/run/docker.sock"}, cfg.UnixSockets)
+
+	plain := newSandboxTestCmd(t)
+	require.NoError(t, plain.Flags().Set("sandbox", "true"))
+	cfg, _, err = sandboxConfigFromFlags(plain, "/work", "/data", nil, sandbox.ContainerGrants{})
+	require.NoError(t, err)
+	require.NotContains(t, cfg.ReadWrite, "/home/u/.docker")
+	require.Empty(t, cfg.UnixSockets)
+}
+
+// TestSandboxConfigFromFlags_NoSandboxContainerPermissionDoesNotRequireSandbox
+// covers a flag that, like --no-docker-sandbox, also governs the /sandbox
+// TUI command and so must stay usable without --sandbox.
+func TestSandboxConfigFromFlags_NoSandboxContainerPermissionDoesNotRequireSandbox(t *testing.T) {
+	t.Parallel()
+
+	require.NotContains(t, sandboxFlagNames, "no-sandbox-container-permission")
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("no-sandbox-container-permission", "true"))
+
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
+	require.NoError(t, err)
+	require.False(t, enabled)
+	require.Zero(t, cfg)
 }

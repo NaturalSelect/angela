@@ -332,6 +332,10 @@ type Workspace interface {
 	// Sandbox operations
 	IsInSandbox() bool
 	EnterSandbox(ctx context.Context, cfg sandbox.Config) error
+	// SandboxContainerGrants returns the Docker/Podman/Buildah directories
+	// and sockets the sandbox should open up by default, or the zero value
+	// when options.no_sandbox_container_permission or its flag opts out.
+	SandboxContainerGrants() sandbox.ContainerGrants
 
 	// Events
 	Subscribe(program *tea.Program)

@@ -105,7 +105,11 @@ func (u *Upgrader) download(ctx context.Context, r Release, a Asset, dir string)
 		return "", err
 	}
 
-	fmt.Fprintf(u.Out, "Downloading %s (%.1f MB).\n", a.Name, float64(a.Size)/(1<<20))
+	if a.Size > 0 {
+		fmt.Fprintf(u.Out, "Downloading %s (%.1f MB).\n", a.Name, float64(a.Size)/(1<<20))
+	} else {
+		fmt.Fprintf(u.Out, "Downloading %s.\n", a.Name)
+	}
 	resp, err := u.get(ctx, a.URL)
 	if err != nil {
 		return "", err

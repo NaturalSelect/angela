@@ -209,6 +209,43 @@ func TestSandboxConfigFromFlags_ContainerGrantsAreAdded(t *testing.T) {
 	require.Empty(t, cfg.UnixSockets)
 }
 
+// TestSandboxConfigFromFlags_AllowDockerSocketDoesNotRequireSandbox covers
+// a flag that, like --no-docker-sandbox, also governs the /sandbox TUI
+// command and so must stay usable without --sandbox.
+func TestSandboxConfigFromFlags_AllowDockerSocketDoesNotRequireSandbox(t *testing.T) {
+	t.Parallel()
+
+	require.NotContains(t, sandboxFlagNames, "sandbox-allow-docker-socket")
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("sandbox-allow-docker-socket", "true"))
+
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
+	require.NoError(t, err)
+	require.False(t, enabled)
+	require.Zero(t, cfg)
+}
+
+// TestSandboxConfigFromFlags_OptionalSocketsAreNotGranted covers the
+// default: a detected daemon socket that was not opted into stays out of
+// the sandbox config.
+func TestSandboxConfigFromFlags_OptionalSocketsAreNotGranted(t *testing.T) {
+	t.Parallel()
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
+
+	grants := sandbox.ContainerGrants{
+		ReadWrite:       []string{"/home/u/.docker"},
+		OptionalSockets: []string{"/var/run/docker.sock"},
+	}
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, grants)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	require.Contains(t, cfg.ReadWrite, "/home/u/.docker")
+	require.Empty(t, cfg.UnixSockets)
+}
+
 // TestSandboxConfigFromFlags_NoSandboxContainerPermissionDoesNotRequireSandbox
 // covers a flag that, like --no-docker-sandbox, also governs the /sandbox
 // TUI command and so must stay usable without --sandbox.

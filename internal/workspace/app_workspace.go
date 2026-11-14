@@ -698,7 +698,7 @@ func (w *AppWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {
 	if w.store.SandboxContainerPermissionDisabled() {
 		return sandbox.ContainerGrants{}
 	}
-	return sandbox.DetectContainerGrants()
+	return sandbox.DetectContainerGrants(w.store.Overrides().SandboxAllowDockerSocket)
 }
 
 // -- Lifecycle --

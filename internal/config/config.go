@@ -573,7 +573,7 @@ type Options struct {
 	SubagentDepth                *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
 	EnableImageTools             *bool        `json:"enable_image_tools,omitempty" jsonschema:"description=Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported\\, images can still be saved with Export Image); false disables them"`
 	CommitDiffRunes              *int         `json:"commit_diff_runes,omitempty" jsonschema:"description=Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. A longer diff is cut off and marked as truncated. Raising it costs more input tokens per commit.,minimum=1,default=48000,example=100000"`
-	NoSandboxContainerPermission bool         `json:"no_sandbox_container_permission,omitempty" jsonschema:"description=Do not automatically grant the directories and unix sockets used by a detected Docker/Podman/Buildah CLI to the --sandbox and /sandbox filesystem rules. A granted container daemon socket lets sandboxed commands start containers that mount any host path,default=false"`
+	NoSandboxContainerPermission bool         `json:"no_sandbox_container_permission,omitempty" jsonschema:"description=Do not automatically grant the directories used by a detected Docker/Podman/Buildah CLI to the --sandbox and /sandbox filesystem rules and do not offer its daemon sockets. Sockets are blocked by default and only granted with --sandbox-allow-docker-socket or in the /sandbox dialog; a granted container daemon socket lets sandboxed commands start containers that mount any host path,default=false"`
 }
 
 // DefaultCommitDiffRunes is the staged diff budget, in runes, when neither
@@ -1442,7 +1442,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentPlan: {
 			ID:          AgentPlan,
 			Name:        "Plan",
-			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it proactively, without waiting to be asked, before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first — getting sign-off before code changes prevents wasted effort. It is read-only — it reads, searches, and asks, but never edits.",
+			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it proactively, without waiting to be asked, before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first — getting sign-off before code changes prevents wasted effort. It never edits files. It may run commands to check a claim, and each one goes through the normal permission checks.",
 			Mode:        AgentModeBranch,
 			Slot:        SlotMain,
 			// The proposal is only worth as much as the conventions it

@@ -3,6 +3,7 @@
 package sandbox
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -135,7 +137,8 @@ func enforceScenarios() []enforceScenario {
 				if len(p) > 100 {
 					t.Skipf("unix socket path too long: %s", p)
 				}
-				ln, err := net.Listen("unix", p)
+				var lc net.ListenConfig
+				ln, err := lc.Listen(t.Context(), "unix", p)
 				require.NoError(t, err)
 				t.Cleanup(func() { _ = ln.Close() })
 			}
@@ -243,7 +246,10 @@ func enforceScenarios() []enforceScenario {
 // probeConnect reports whether a connection to the unix socket at
 // path can be opened.
 func probeConnect(path string) bool {
-	c, err := net.Dial("unix", path)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var d net.Dialer
+	c, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
 		return false
 	}

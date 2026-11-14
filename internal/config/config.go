@@ -1294,11 +1294,15 @@ func exploreToolNames() []string {
 	}
 }
 
-// planToolNames lists what the plan branch gets: explore's read-only set,
-// widened with the LSP lookups a design decision leans on, plus the two
-// tools that make it a branch rather than a subagent — delegation, so it
-// can buy breadth without reading everything itself, and a way to ask the
-// user. Nothing here writes, which is why the plan is the only product.
+// NOTE: planToolNames lists what every built-in branch gets: explore's
+// read-only set, widened with the LSP lookups a design decision leans on, plus
+// the two tools that make it a branch rather than a subagent — delegation, so
+// it can buy breadth without reading everything itself, and a way to ask the
+// user. Bash and its job tools let a branch settle a claim with evidence
+// instead of reasoning alone: reproduce a failure, read the history, or run a
+// throwaway prototype that shows an approach works. Nothing here edits, so the
+// branch's document stays its only product, but every command goes through the
+// normal permission checks.
 func planToolNames() []string {
 	return []string{
 		toolnames.Agent, toolnames.Fetch, toolnames.AngelaInfo,
@@ -1306,18 +1310,8 @@ func planToolNames() []string {
 		toolnames.LSPCallHierarchy, toolnames.LSPDefinition, toolnames.LSPDiagnostics,
 		toolnames.LSPReferences, toolnames.LSPSymbols,
 		toolnames.Question, toolnames.Sourcegraph, toolnames.Read,
+		toolnames.Bash, toolnames.JobOutput, toolnames.JobKill,
 	}
-}
-
-// deepResearchToolNames lists what the deep-research branch gets: plan's
-// read-only set plus the ability to run things. The difference is what the
-// two produce. A plan is a claim about what should be done and can be
-// reasoned out; a root cause is a claim about what is already true, and
-// that needs evidence — a failing test reproduced, a git history read, a
-// suspicion bisected. Nothing here edits, so the finding stays the only
-// product, but bash means the user approves each command it runs.
-func deepResearchToolNames() []string {
-	return append(planToolNames(), toolnames.Bash, toolnames.JobOutput, toolnames.JobKill)
 }
 
 // webFetchToolNames lists the tools the web-fetch sub-agent gets: raw
@@ -1438,7 +1432,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// code was written under, so it reads the same context files
 			// the coder does.
 			ContextPaths: contextPaths,
-			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, deepResearchToolNames(), true)},
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
 			// A root cause is a finding, not a plan, so deep-research is
 			// limited to reading the code rather than being able to reach
@@ -1469,8 +1463,8 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Mode:         AgentModeBranch,
 			Slot:         SlotMain,
 			ContextPaths: contextPaths,
-			// NOTE: Co-design shares plan's read-only set; neither may run or write
-			// anything.
+			// NOTE: Co-design shares the branch set; it may run a throwaway prototype
+			// to check a mechanism works but may not write to the repository.
 			AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
 			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetScope},
 			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore, AgentWebFetch}},

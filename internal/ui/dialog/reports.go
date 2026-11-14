@@ -220,7 +220,8 @@ func (d *Reports) Draw(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	listView := t.Dialog.List.Height(d.list.Height()).Render(d.list.Render())
 
-	view := d.frame.Render(d.metrics,
+	view := d.frame.Render(
+		d.metrics,
 		[]string{inputView, listView},
 		d.frame.RenderHelp(&d.help, d, d.metrics.ContentWidth),
 	)

@@ -747,6 +747,11 @@
           "examples": [
             100000
           ]
+        },
+        "no_sandbox_container_permission": {
+          "type": "boolean",
+          "description": "Do not automatically grant the directories and unix sockets used by a detected Docker/Podman/Buildah CLI to the --sandbox and /sandbox filesystem rules. A granted container daemon socket lets sandboxed commands start containers that mount any host path",
+          "default": false
         }
       },
       "additionalProperties": false,

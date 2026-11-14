@@ -86,7 +86,8 @@ type Sandbox struct {
 	stage sandboxStage
 
 	rows         []sandboxPathRow
-	focused      int // flat index into the focus-stop sequence; see focusTarget
+	unixSockets  []string // not editable in the form; carried through to config
+	focused      int      // flat index into the focus-stop sequence; see focusTarget
 	allowNetwork bool
 
 	// Scroll state of the rows block (the path rows plus the add
@@ -128,7 +129,7 @@ func NewSandbox(com *common.Common) *Sandbox {
 	t := com.Styles
 	cfg := sandboxDefaultConfig(com)
 
-	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork}
+	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork, unixSockets: cfg.UnixSockets}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
 
 	for _, p := range cfg.ReadWrite {
@@ -201,7 +202,8 @@ func sandboxDefaultConfig(com *common.Common) sandbox.Config {
 	}
 
 	workingDir := com.Workspace.WorkingDir()
-	result := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig()))
+	result := sandbox.DefaultConfig(workingDir, dataDir, filepath.Dir(config.GlobalConfig())).
+		WithContainerGrants(com.Workspace.SandboxContainerGrants())
 	if permissions != nil {
 		readOnly, readWrite, _, _ := permission.FilesystemAllowPaths(permissions.Rules, workingDir)
 		result.ReadOnly = sandbox.DedupePaths(append(result.ReadOnly, readOnly...))
@@ -406,7 +408,7 @@ func (m *Sandbox) handleFormClick(x, y int) {
 
 // config parses the form fields into a [sandbox.Config].
 func (m *Sandbox) config() sandbox.Config {
-	cfg := sandbox.Config{AllowNetwork: m.allowNetwork}
+	cfg := sandbox.Config{AllowNetwork: m.allowNetwork, UnixSockets: slices.Clone(m.unixSockets)}
 	for _, row := range m.rows {
 		p := strings.TrimSpace(row.input.Value())
 		if p == "" {
@@ -657,7 +659,8 @@ func (m *Sandbox) rowsView(rowLeftPad, hoverIdx int) (string, []sandboxHitTarget
 		toggleX := inputX + lipgloss.Width(inputView) + 1
 		removeX := toggleX + lipgloss.Width(toggle) + 1
 
-		targets = append(targets,
+		targets = append(
+			targets,
 			sandboxHitTarget{
 				rect: image.Rect(inputX, y, inputX+lipgloss.Width(inputView), y+1),
 				area: sandboxFocusRow, row: i, col: sandboxColInput,
@@ -782,6 +785,9 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 	if len(cfg.ReadOnly) > 0 {
 		sections = append(sections, fmt.Sprintf("Read-only (%d):\n%s", len(cfg.ReadOnly), formatUndoPaths(cfg.ReadOnly)))
+	}
+	if len(cfg.UnixSockets) > 0 {
+		sections = append(sections, fmt.Sprintf("Unix sockets (%d):\n%s", len(cfg.UnixSockets), formatUndoPaths(cfg.UnixSockets)))
 	}
 	sections = append(sections, "Network: "+network)
 	body := strings.Join(sections, "\n\n")

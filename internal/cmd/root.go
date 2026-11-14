@@ -106,6 +106,18 @@ func enableImageToolsFlag(cmd *cobra.Command) *bool {
 	return &v
 }
 
+// noSandboxContainerPermissionFlag returns the tri-state value of
+// --no-sandbox-container-permission: nil when the flag was not passed
+// (defer to options.no_sandbox_container_permission), or a pointer to
+// the flag's boolean value when it was.
+func noSandboxContainerPermissionFlag(cmd *cobra.Command) *bool {
+	if !cmd.Flags().Changed("no-sandbox-container-permission") {
+		return nil
+	}
+	v, _ := cmd.Flags().GetBool("no-sandbox-container-permission")
+	return &v
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "angela",
 	Short: "A terminal-first AI assistant for software development",
@@ -369,8 +381,9 @@ func permissionModeFromFlags(cmd *cobra.Command) permission.PermissionMode {
 
 // sandboxResolver builds the sandbox config once the workspace's data
 // directory and permission rules are known. It reports false when no
-// sandbox was requested.
-type sandboxResolver func(workingDir, dataDir string, permissions *config.Permissions) (sandbox.Config, bool, error)
+// sandbox was requested. grants is the detected container tooling
+// access, already empty when the user opted out of it.
+type sandboxResolver func(workingDir, dataDir string, permissions *config.Permissions, grants sandbox.ContainerGrants) (sandbox.Config, bool, error)
 
 // localWorkspaceOptions is everything openLocalWorkspace needs, so callers
 // other than the cobra commands can build a workspace too.
@@ -384,8 +397,10 @@ type localWorkspaceOptions struct {
 	EnableImageTools *bool
 	CommitDiffRunes  *int
 	NoDockerSandbox  bool
-	Channels         []string
-	Sandbox          sandboxResolver
+	// NoSandboxContainerPermission is nil when its flag was not passed.
+	NoSandboxContainerPermission *bool
+	Channels                     []string
+	Sandbox                      sandboxResolver
 	// NonInteractive and NoBranchAgents are zero for the TUI. Only a front
 	// end that cannot ask questions or hand a conversation to a branch sets
 	// them.
@@ -407,18 +422,19 @@ func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspa
 	noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox")
 
 	return localWorkspaceOptions{
-		Cwd:              cwd,
-		DataDir:          dataDir,
-		Debug:            debug,
-		PermissionMode:   permissionModeFromFlags(cmd),
-		YoloMerge:        yoloMerge,
-		NoVSCodeDiff:     noVSCodeDiff,
-		EnableImageTools: enableImageToolsFlag(cmd),
-		CommitDiffRunes:  commitDiffRunesFlag(cmd),
-		NoDockerSandbox:  noDockerSandbox,
-		Channels:         channels,
-		Sandbox: func(workingDir, dataDir string, permissions *config.Permissions) (sandbox.Config, bool, error) {
-			return sandboxConfigFromFlags(cmd, workingDir, dataDir, permissions)
+		Cwd:                          cwd,
+		DataDir:                      dataDir,
+		Debug:                        debug,
+		PermissionMode:               permissionModeFromFlags(cmd),
+		YoloMerge:                    yoloMerge,
+		NoVSCodeDiff:                 noVSCodeDiff,
+		EnableImageTools:             enableImageToolsFlag(cmd),
+		CommitDiffRunes:              commitDiffRunesFlag(cmd),
+		NoDockerSandbox:              noDockerSandbox,
+		NoSandboxContainerPermission: noSandboxContainerPermissionFlag(cmd),
+		Channels:                     channels,
+		Sandbox: func(workingDir, dataDir string, permissions *config.Permissions, grants sandbox.ContainerGrants) (sandbox.Config, bool, error) {
+			return sandboxConfigFromFlags(cmd, workingDir, dataDir, permissions, grants)
 		},
 	}
 }
@@ -462,6 +478,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	overrides.YoloMerge = o.YoloMerge
 	overrides.NoVSCodeDiff = o.NoVSCodeDiff
 	overrides.EnableImageTools = o.EnableImageTools
+	overrides.NoSandboxContainerPermission = o.NoSandboxContainerPermission
 	overrides.CommitDiffRunes = o.CommitDiffRunes
 	overrides.NonInteractive = o.NonInteractive
 	overrides.NoBranchAgents = o.NoBranchAgents
@@ -483,7 +500,11 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	// data directory unprotected. Both backends restrict the running
 	// process in place and return normally on success.
 	if o.Sandbox != nil {
-		sandboxCfg, sandboxEnabled, err := o.Sandbox(o.Cwd, cfg.Options.DataDirectory, cfg.Permissions)
+		var grants sandbox.ContainerGrants
+		if !store.SandboxContainerPermissionDisabled() {
+			grants = sandbox.DetectContainerGrants()
+		}
+		sandboxCfg, sandboxEnabled, err := o.Sandbox(o.Cwd, cfg.Options.DataDirectory, cfg.Permissions, grants)
 		if err != nil {
 			return nil, nil, err
 		}

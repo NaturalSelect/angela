@@ -31,7 +31,7 @@ func (LandlockSandbox) EnterSandbox(cfg Config) error {
 
 	rs := resolve(cfg).existing()
 	if !rs.empty() {
-		rules := make([]landlock.Rule, 0, 4)
+		rules := make([]landlock.Rule, 0, 5)
 		if len(rs.readDirs) > 0 {
 			rules = append(rules, landlock.RODirs(rs.readDirs...).IgnoreIfMissing())
 		}
@@ -43,6 +43,9 @@ func (LandlockSandbox) EnterSandbox(cfg Config) error {
 		}
 		if len(rs.writeFiles) > 0 {
 			rules = append(rules, landlock.RWFiles(rs.writeFiles...).IgnoreIfMissing())
+		}
+		if len(rs.unixSockets) > 0 {
+			rules = append(rules, landlock.ROFiles(rs.unixSockets...).WithResolveUnix().IgnoreIfMissing())
 		}
 		if err := landlock.V10.BestEffort().RestrictPaths(rules...); err != nil {
 			return fmt.Errorf("enter sandbox: restrict paths: %w", err)

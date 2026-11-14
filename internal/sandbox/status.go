@@ -35,6 +35,8 @@ type Status struct {
 	// /dev entries every sandbox grants. ReadFiles includes WriteFiles.
 	ReadFiles  []string
 	WriteFiles []string
+	// UnixSockets are the pathname unix sockets that may be connected to.
+	UnixSockets []string
 	// BlocksChildNetwork reports whether commands the shell tool spawns
 	// lose outbound network access.
 	BlocksChildNetwork bool
@@ -84,6 +86,7 @@ func CurrentStatus(noDockerSandbox bool) Status {
 		st.WriteDirs = slices.Clone(rs.writeDirs)
 		st.ReadFiles = withoutPaths(rs.readFiles, safeDevReadFiles)
 		st.WriteFiles = withoutPaths(rs.writeFiles, safeDevWriteFiles)
+		st.UnixSockets = slices.Clone(rs.unixSockets)
 	}
 	return st
 }

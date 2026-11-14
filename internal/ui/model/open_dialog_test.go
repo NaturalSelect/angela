@@ -10,6 +10,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/csync"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/dialog"
@@ -94,6 +95,7 @@ func TestOpenDialog_RoutesEveryKnownID(t *testing.T) {
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().ListSessions(gomock.Any()).Return([]session.Session{{ID: "s1"}}, nil).AnyTimes()
 	ws.EXPECT().WorkingDir().Return("/tmp/work").AnyTimes()
+	ws.EXPECT().SandboxContainerGrants().Return(sandbox.ContainerGrants{}).AnyTimes()
 	ws.EXPECT().MCPGetStates().Return(map[string]mcp.ClientInfo{}).AnyTimes()
 	m := newDialogUI(t, ws)
 
@@ -138,6 +140,7 @@ func TestOpenSandboxDialog_OpensNewDialogWhenNotPresent(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	ws := NewMockWorkspace(ctrl)
 	ws.EXPECT().WorkingDir().Return("/tmp/work").AnyTimes()
+	ws.EXPECT().SandboxContainerGrants().Return(sandbox.ContainerGrants{}).AnyTimes()
 	m := newDialogUI(t, ws)
 
 	cmd := m.openSandboxDialog()

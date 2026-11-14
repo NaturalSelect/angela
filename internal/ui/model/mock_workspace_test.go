@@ -1249,6 +1249,20 @@ func (mr *MockWorkspaceMockRecorder) Resolver() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Resolver", reflect.TypeOf((*MockWorkspace)(nil).Resolver))
 }
 
+// SandboxContainerGrants mocks base method.
+func (m *MockWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SandboxContainerGrants")
+	ret0, _ := ret[0].(sandbox.ContainerGrants)
+	return ret0
+}
+
+// SandboxContainerGrants indicates an expected call of SandboxContainerGrants.
+func (mr *MockWorkspaceMockRecorder) SandboxContainerGrants() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SandboxContainerGrants", reflect.TypeOf((*MockWorkspace)(nil).SandboxContainerGrants))
+}
+
 // SaveSession mocks base method.
 func (m *MockWorkspace) SaveSession(ctx context.Context, sess session.Session) (session.Session, error) {
 	m.ctrl.T.Helper()

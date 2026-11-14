@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/permission"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/styles"
 	"github.com/NaturalSelect/angela/internal/workspace"
@@ -30,11 +31,14 @@ const (
 type sandboxTestWorkspace struct {
 	workspace.Workspace
 
-	dir string
+	dir    string
+	grants sandbox.ContainerGrants
 }
 
 func (w *sandboxTestWorkspace) WorkingDir() string     { return w.dir }
 func (w *sandboxTestWorkspace) Config() *config.Config { return nil }
+
+func (w *sandboxTestWorkspace) SandboxContainerGrants() sandbox.ContainerGrants { return w.grants }
 
 func newTestSandbox(t *testing.T) *Sandbox {
 	t.Helper()
@@ -291,6 +295,10 @@ func (w *sandboxDataDirWorkspace) Config() *config.Config {
 	return &config.Config{Options: &config.Options{DataDirectory: w.dataDir}}
 }
 
+func (w *sandboxDataDirWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {
+	return sandbox.ContainerGrants{}
+}
+
 // TestSandbox_DefaultConfigIncludesConfiguredDataDirectory verifies
 // that sandboxDefaultConfig adds the workspace's configured data
 // directory as a read-write path when one is set.
@@ -321,6 +329,10 @@ type sandboxPermissionsWorkspace struct {
 func (w *sandboxPermissionsWorkspace) WorkingDir() string { return w.dir }
 func (w *sandboxPermissionsWorkspace) Config() *config.Config {
 	return &config.Config{Permissions: &config.Permissions{Rules: w.rules}}
+}
+
+func (w *sandboxPermissionsWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {
+	return sandbox.ContainerGrants{}
 }
 
 // TestSandbox_DefaultConfigIncludesPermissionRulePaths verifies that
@@ -1049,4 +1061,63 @@ func TestSandbox_LongPathStaysOnItsRow(t *testing.T) {
 		}
 		require.Equal(t, len(m.rows), rows)
 	}
+}
+
+// TestSandbox_DefaultConfigIncludesContainerGrants verifies that the
+// directories and sockets the workspace reports for container tooling
+// pre-fill the form, and that the sockets, which have no row, still
+// reach the submitted config.
+func TestSandbox_DefaultConfigIncludesContainerGrants(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{
+		Styles: &s,
+		Workspace: &sandboxTestWorkspace{
+			dir: t.TempDir(),
+			grants: sandbox.ContainerGrants{
+				ReadWrite:   []string{"/home/u/.docker"},
+				UnixSockets: []string{"/var/run/docker.sock"},
+			},
+		},
+	}
+	m := NewSandbox(com)
+
+	cfg := m.config()
+	require.Contains(t, cfg.ReadWrite, "/home/u/.docker")
+	require.Equal(t, []string{"/var/run/docker.sock"}, cfg.UnixSockets)
+}
+
+// TestSandbox_NoContainerGrantsLeavesConfigUnchanged verifies the
+// opted-out path: with nothing reported, no socket reaches the config.
+func TestSandbox_NoContainerGrantsLeavesConfigUnchanged(t *testing.T) {
+	t.Parallel()
+
+	m := newTestSandbox(t)
+	require.Empty(t, m.config().UnixSockets)
+}
+
+// TestSandbox_ConfirmStageListsUnixSockets verifies the confirmation
+// screen names the sockets about to be opened, since a container
+// daemon socket is the broadest grant the dialog can add.
+func TestSandbox_ConfirmStageListsUnixSockets(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{
+		Styles: &s,
+		Workspace: &sandboxTestWorkspace{
+			dir:    t.TempDir(),
+			grants: sandbox.ContainerGrants{UnixSockets: []string{"/var/run/docker.sock"}},
+		},
+	}
+	m := NewSandbox(com)
+	m.submit()
+
+	scr := uv.NewScreenBuffer(sandboxTestW, sandboxTestH)
+	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
+
+	out := ansi.Strip(scr.Render())
+	require.Contains(t, out, "Unix sockets (1)")
+	require.Contains(t, out, "docker.sock")
 }

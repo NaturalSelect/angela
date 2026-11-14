@@ -40,6 +40,7 @@ func DetectContainerGrants() ContainerGrants {
 		lookPath: exec.LookPath,
 		getenv:   os.Getenv,
 		home:     home,
+		root:     "/",
 		euid:     os.Geteuid(),
 	})
 }
@@ -50,12 +51,20 @@ type containerProbe struct {
 	lookPath func(string) (string, error)
 	getenv   func(string) string
 	home     string
-	euid     int
+	// root is the directory the fixed system paths such as
+	// /var/run/docker.sock are resolved under. It is "/" outside tests.
+	root string
+	euid int
 }
 
 func (p containerProbe) has(tool string) bool {
 	_, err := p.lookPath(tool)
 	return err == nil
+}
+
+// sys returns the fixed system path under p.root.
+func (p containerProbe) sys(path string) string {
+	return filepath.Join(p.root, path)
 }
 
 // join returns the join of elem under the base directory, or "" when
@@ -97,8 +106,8 @@ func detectContainerGrants(p containerProbe) ContainerGrants {
 		dirs = append(dirs, dockerConfig)
 		sockets = append(
 			sockets,
-			"/var/run/docker.sock",
-			"/run/docker.sock",
+			p.sys("/var/run/docker.sock"),
+			p.sys("/run/docker.sock"),
 			join(runtimeDir, "docker.sock"),
 			join(p.home, ".docker", "run", "docker.sock"),
 			join(p.home, ".docker", "desktop", "docker.sock"),
@@ -113,20 +122,20 @@ func detectContainerGrants(p containerProbe) ContainerGrants {
 			join(runtimeDir, "containers"),
 			join(runtimeDir, "libpod"),
 			join(configHome, "containers"),
-			"/var/tmp",
+			p.sys("/var/tmp"),
 		)
 		sockets = append(
 			sockets,
 			join(runtimeDir, "podman", "podman.sock"),
-			"/run/podman/podman.sock",
+			p.sys("/run/podman/podman.sock"),
 			unixHostPath(p.getenv("CONTAINER_HOST")),
 		)
 		if p.euid == 0 {
 			dirs = append(
 				dirs,
-				"/var/lib/containers/storage",
-				"/run/containers/storage",
-				"/run/libpod",
+				p.sys("/var/lib/containers/storage"),
+				p.sys("/run/containers/storage"),
+				p.sys("/run/libpod"),
 			)
 		}
 	}

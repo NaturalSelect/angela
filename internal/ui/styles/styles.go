@@ -471,6 +471,9 @@ type Styles struct {
 		View          lipgloss.Style
 		PrimaryText   lipgloss.Style
 		SecondaryText lipgloss.Style
+		// WarningText marks something a dialog wants read as a risk. It
+		// carries no padding, so callers place it inline.
+		WarningText lipgloss.Style
 		// HelpView is the line that contains the help.
 		HelpView lipgloss.Style
 		Help     struct {

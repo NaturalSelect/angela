@@ -733,17 +733,17 @@ func TestSandbox_DrawFormHoverRerendersContinueButtonStyle(t *testing.T) {
 	require.True(t, changed, "hovering the continue button should change some cell's rendered style")
 }
 
-// TestSandbox_NetworkViewUsesFocusedLabelStyle verifies that the
-// "Network" label switches to the focused style once the network
+// TestSandbox_NetworkViewUsesFocusedButtonStyle verifies that the
+// network toggle's button switches to the focused style once the
 // toggle has focus.
-func TestSandbox_NetworkViewUsesFocusedLabelStyle(t *testing.T) {
+func TestSandbox_NetworkViewUsesFocusedButtonStyle(t *testing.T) {
 	t.Parallel()
 
 	m := newTestSandbox(t)
-	blurred, _ := m.networkView(2)
+	blurred, _ := m.networkView(2, 40, false)
 
 	m.setFocus(m.stopCount() - 2) // the network toggle is second-to-last
-	focused, _ := m.networkView(2)
+	focused, _ := m.networkView(2, 40, false)
 
 	require.NotEqual(t, blurred, focused)
 }
@@ -1220,9 +1220,59 @@ func TestSandbox_SocketToggleByClick(t *testing.T) {
 	require.Equal(t, []string{"/var/run/docker.sock"}, m.config().UnixSockets)
 }
 
-// TestSandbox_SocketsAreDrawnWithWarning verifies the form names every
-// detected socket and says what a daemon socket grants.
-func TestSandbox_SocketsAreDrawnWithWarning(t *testing.T) {
+// TestSandbox_ClickOnToggleButtonFlipsSetting verifies the hit target
+// spans the whole line, so clicking the status button at its right end
+// flips the setting just like clicking the label.
+func TestSandbox_ClickOnToggleButtonFlipsSetting(t *testing.T) {
+	t.Parallel()
+
+	m := newSandboxWithOptionalSockets(t)
+	drawSandbox(m)
+
+	endOf := func(want func(sandboxHitTarget) bool) (x, y int) {
+		for _, tgt := range m.hitTargets {
+			if want(tgt) {
+				return tgt.rect.Max.X - 2, tgt.rect.Min.Y
+			}
+		}
+		t.Fatal("target not found")
+		return 0, 0
+	}
+
+	before := m.allowNetwork
+	x, y := endOf(networkTarget())
+	m.HandleMsg(tea.MouseClickMsg{X: x, Y: y, Button: uv.MouseLeft})
+	require.Equal(t, !before, m.allowNetwork)
+
+	x, y = endOf(socketTarget(1))
+	m.HandleMsg(tea.MouseClickMsg{X: x, Y: y, Button: uv.MouseLeft})
+	require.True(t, m.sockets[1].allowed)
+	require.False(t, m.sockets[0].allowed)
+}
+
+// TestSandbox_AllowedSocketIsDrawnAsAllowed verifies a socket's state
+// reads from the button on its own line.
+func TestSandbox_AllowedSocketIsDrawnAsAllowed(t *testing.T) {
+	t.Parallel()
+
+	m := newSandboxWithOptionalSockets(t)
+	m.sockets[0].allowed = true // docker.sock; podman.sock stays blocked
+	scr := uv.NewScreenBuffer(sandboxTestW, sandboxTestH)
+	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
+
+	for line := range strings.SplitSeq(ansi.Strip(scr.Render()), "\n") {
+		switch {
+		case strings.Contains(line, "docker.sock"):
+			require.Contains(t, line, "Allowed")
+		case strings.Contains(line, "podman.sock"):
+			require.Contains(t, line, "Blocked")
+		}
+	}
+}
+
+// TestSandbox_SocketsAreDrawn verifies the form names every detected
+// socket under its own section heading.
+func TestSandbox_SocketsAreDrawn(t *testing.T) {
 	t.Parallel()
 
 	m := newSandboxWithOptionalSockets(t)
@@ -1230,8 +1280,7 @@ func TestSandbox_SocketsAreDrawnWithWarning(t *testing.T) {
 	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
 
 	out := ansi.Strip(scr.Render())
-	require.Contains(t, out, "Container Sockets")
-	require.Contains(t, out, "mount any host path")
+	require.Contains(t, out, "Container sockets")
 	require.Contains(t, out, "/var/run/docker.sock")
 	require.Contains(t, out, "/run/podman/podman.sock")
 }
@@ -1247,7 +1296,7 @@ func TestSandbox_NoSocketsHidesSection(t *testing.T) {
 
 	scr := uv.NewScreenBuffer(sandboxTestW, sandboxTestH)
 	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
-	require.NotContains(t, ansi.Strip(scr.Render()), "Container Sockets")
+	require.NotContains(t, ansi.Strip(scr.Render()), "Container sockets")
 }
 
 // TestSandbox_ConfirmStageListsOnlyAllowedSockets verifies the

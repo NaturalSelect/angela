@@ -1013,6 +1013,7 @@ func quickStyle(o quickStyleOpts) Styles {
 	s.Dialog.View = base.Border(lipgloss.RoundedBorder()).BorderForeground(o.fgMostSubtle)
 	s.Dialog.PrimaryText = base.Padding(0, 1).Foreground(o.fgBase).Bold(true)
 	s.Dialog.SecondaryText = base.Padding(0, 1).Foreground(o.fgMostSubtle)
+	s.Dialog.WarningText = base.Foreground(o.warning)
 	s.Dialog.HelpView = base.Padding(0, 1).AlignHorizontal(lipgloss.Left)
 	s.Dialog.Help.ShortKey = base.Foreground(o.fgSubtle).Bold(true)
 	s.Dialog.Help.ShortDesc = base.Foreground(o.fgMostSubtle)

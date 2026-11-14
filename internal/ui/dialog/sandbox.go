@@ -581,17 +581,40 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	dialogStyle := t.Dialog.View.Width(m.metrics.Width)
 	helpView := m.frame.RenderHelp(&m.help, m, m.metrics.ContentWidth)
 
-	preamble := m.headerView() + "\n" +
-		t.Dialog.SecondaryText.Render("Limits filesystem access; blocks commands' network.")
-	sectionLabel := t.Dialog.Arguments.InputLabelBlurred.PaddingLeft(rowLeftPad).Render("FileSystem Access")
-	networkBlock, networkTarget := m.networkView(rowLeftPad)
-	socketsBlock, socketTargets := m.socketsView(rowLeftPad, innerWidth)
+	sectionWidth := innerWidth
+	section := func(title string) string {
+		return strings.Repeat(" ", rowLeftPad) + common.Section(t, title, sectionWidth)
+	}
+
+	// NOTE: The tail is everything between the rows block and the
+	// continue button. Its targets are relative to its first line, and
+	// hover is an index into them: 0 is the network toggle, the rest are
+	// the sockets. Each toggle sits on its section's heading line, since
+	// the path rows get whatever height is left and a short terminal
+	// cannot afford a heading plus a line per setting.
+	buildTail := func(hover int) (string, []sandboxHitTarget) {
+		networkLine, networkTarget := m.networkView(rowLeftPad, sectionWidth, hover == 0)
+		lines := []string{networkLine}
+		targets := []sandboxHitTarget{networkTarget}
+		if len(m.sockets) > 0 {
+			lines = append(lines, section("Container sockets"))
+			socketLines, socketTargets := m.socketsView(rowLeftPad, sectionWidth, hover-1)
+			for _, tgt := range socketTargets {
+				tgt.rect = tgt.rect.Add(image.Pt(0, len(lines)))
+				targets = append(targets, tgt)
+			}
+			lines = append(lines, socketLines)
+		}
+		return strings.Join(lines, "\n"), targets
+	}
+	tail, tailTargets := buildTail(-1)
 	continueBlock, continueTarget := m.continueView(rowLeftPad, false)
+
+	head := m.headerView() + "\n" + section("Filesystem")
 
 	// Everything except the rows block is fixed height; the rows block
 	// gets whatever the frame has left and scrolls past that.
-	chromeHeight := lipgloss.Height(preamble) + lipgloss.Height(sectionLabel) +
-		lipgloss.Height(networkBlock) + blockHeight(socketsBlock) + 1 + // +1 for the blank separator line
+	chromeHeight := lipgloss.Height(head) + lipgloss.Height(tail) + 1 + // +1 for the blank line above continue
 		lipgloss.Height(continueBlock) + lipgloss.Height(helpView)
 	m.layoutRowsViewport(min(m.rowsLineCount(), max(1, m.metrics.ContentHeight-chromeHeight)))
 
@@ -608,51 +631,45 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		setSandboxInputWidth(&m.rows[i].input, inputWidth)
 	}
 
-	assemble := func(rowsBlock, continueBlock string) string {
-		parts := []string{preamble, sectionLabel, rowsBlock, networkBlock}
-		if socketsBlock != "" {
-			parts = append(parts, socketsBlock)
-		}
-		return strings.Join(append(parts, "", continueBlock, helpView), "\n")
+	assemble := func(rowsBlock, tail, continueBlock string) string {
+		return strings.Join([]string{head, rowsBlock, tail, "", continueBlock, helpView}, "\n")
 	}
 
 	rowsBlock, rowTargets := m.rowsView(rowLeftPad, -1)
-	view := dialogStyle.Render(assemble(rowsBlock, continueBlock))
+	view := dialogStyle.Render(assemble(rowsBlock, tail, continueBlock))
 	vw, vh := lipgloss.Size(view)
 	center := common.CenterRect(area, min(vw, area.Dx()), min(vh, area.Dy()))
 	originX := center.Min.X + dialogStyle.GetBorderLeftSize() + dialogStyle.GetPaddingLeft() + dialogStyle.GetMarginLeft()
 	originY := center.Min.Y + dialogStyle.GetBorderTopSize() + dialogStyle.GetPaddingTop() + dialogStyle.GetMarginTop()
-	linesBeforeRows := lipgloss.Height(preamble) + lipgloss.Height(sectionLabel)
-	linesBeforeNetwork := linesBeforeRows + lipgloss.Height(rowsBlock)
-	linesBeforeSockets := linesBeforeNetwork + lipgloss.Height(networkBlock)
-	linesBeforeContinue := linesBeforeSockets + blockHeight(socketsBlock) + 1 // +1 for the blank separator line
+	linesBeforeRows := lipgloss.Height(head)
+	linesBeforeTail := linesBeforeRows + lipgloss.Height(rowsBlock)
+	linesBeforeContinue := linesBeforeTail + lipgloss.Height(tail) + 1 // +1 for the blank line above continue
 
 	m.hitTargets = m.hitTargets[:0]
 	for _, tgt := range rowTargets {
 		tgt.rect = tgt.rect.Add(image.Pt(originX, originY+linesBeforeRows))
 		m.hitTargets = append(m.hitTargets, tgt)
 	}
-	networkTarget.rect = networkTarget.rect.Add(image.Pt(originX, originY+linesBeforeNetwork))
-	m.hitTargets = append(m.hitTargets, networkTarget)
-	for _, tgt := range socketTargets {
-		tgt.rect = tgt.rect.Add(image.Pt(originX, originY+linesBeforeSockets))
+	for _, tgt := range tailTargets {
+		tgt.rect = tgt.rect.Add(image.Pt(originX, originY+linesBeforeTail))
 		m.hitTargets = append(m.hitTargets, tgt)
 	}
 	continueTarget.rect = continueTarget.rect.Add(image.Pt(originX, originY+linesBeforeContinue))
 	m.hitTargets = append(m.hitTargets, continueTarget)
 
-	// Re-render with hover styling if the mouse sits over a row, the
-	// add button, or the continue button. Hover never changes a
-	// target's size, so the geometry above still holds after this
-	// second pass. The network toggle has no hover style (see
-	// networkView), so hovering it needs no redraw.
+	// Re-render with hover styling if the mouse sits over a row, a
+	// toggle, or the continue button. Hover never changes a target's
+	// size, so the geometry above still holds after this second pass.
 	switch hovered := m.hitTest(m.hoverX, m.hoverY); {
 	case hovered >= 0 && hovered < len(rowTargets):
 		hoveredRows, _ := m.rowsView(rowLeftPad, hovered)
-		view = dialogStyle.Render(assemble(hoveredRows, continueBlock))
+		view = dialogStyle.Render(assemble(hoveredRows, tail, continueBlock))
+	case hovered >= len(rowTargets) && hovered < len(rowTargets)+len(tailTargets):
+		hoveredTail, _ := buildTail(hovered - len(rowTargets))
+		view = dialogStyle.Render(assemble(rowsBlock, hoveredTail, continueBlock))
 	case hovered == len(m.hitTargets)-1:
 		hoveredContinue, _ := m.continueView(rowLeftPad, true)
-		view = dialogStyle.Render(assemble(rowsBlock, hoveredContinue))
+		view = dialogStyle.Render(assemble(rowsBlock, tail, hoveredContinue))
 	}
 
 	var cur *tea.Cursor
@@ -770,79 +787,84 @@ func (m *Sandbox) rowsView(rowLeftPad, hoverIdx int) (string, []sandboxHitTarget
 	return block, targets
 }
 
-// networkView renders the network-access toggle as a single clickable
-// line. Unlike the row buttons, its value is a pre-styled check glyph
-// plus status text, so it isn't wrapped in a Button: doing so would
-// nest one style's ANSI codes inside another's.
-func (m *Sandbox) networkView(rowLeftPad int) (string, sandboxHitTarget) {
+// headingRow renders a section heading, a rule, and a control or note
+// flush right. width is the space after the left inset. When the right
+// side would crowd the rule below a few cells it is truncated instead.
+func (m *Sandbox) headingRow(rowLeftPad, width int, title, right string) string {
+	const minRule = 3
 	t := m.com.Styles
-
-	labelStyle := t.Dialog.Arguments.InputLabelBlurred
-	if m.isFocused(sandboxFocusNetwork, -1, 0) {
-		labelStyle = t.Dialog.Arguments.InputLabelFocused
+	titleWidth := lipgloss.Width(title)
+	ruleWidth := width - titleWidth - 2 - lipgloss.Width(right) // two spaces around the rule
+	if ruleWidth < minRule {
+		right = ansi.Truncate(right, max(0, lipgloss.Width(right)-(minRule-ruleWidth)), "…")
+		ruleWidth = max(minRule, width-titleWidth-2-lipgloss.Width(right))
 	}
-	labelStyle = labelStyle.PaddingLeft(rowLeftPad)
+	return strings.Repeat(" ", rowLeftPad) + t.Section.Title.Render(title) + " " +
+		t.Section.Line.Render(strings.Repeat(styles.SectionSeparator, ruleWidth)) + " " + right
+}
 
-	check := t.Editor.QuestionCheckOff.Render()
+// toggleRow renders one setting as a label on the left and a toggle
+// button flush right, the same shape as a path row's RW and remove
+// buttons. width is the space after the left inset. The returned target
+// spans the whole line and is relative to it, so a click anywhere on the
+// line flips the setting.
+func (m *Sandbox) toggleRow(rowLeftPad, width int, label string, labelStyle lipgloss.Style, btn common.ButtonOpts) (string, sandboxHitTarget) {
+	btn.UnderlineIndex = -1
+	btn.Padding = 1
+	button := common.Button(m.com.Styles, btn)
+	labelWidth := max(1, width-lipgloss.Width(button)-1)
+	label = ansi.Truncate(label, labelWidth, "…")
+	gap := strings.Repeat(" ", max(0, labelWidth-lipgloss.Width(label))+1)
+	line := strings.Repeat(" ", rowLeftPad) + labelStyle.Render(label) + gap + button
+	return line, sandboxHitTarget{rect: image.Rect(rowLeftPad, 0, lipgloss.Width(line), 1)}
+}
+
+// networkView renders the network toggle on its own section heading, as
+// one clickable line.
+func (m *Sandbox) networkView(rowLeftPad, width int, hovered bool) (string, sandboxHitTarget) {
 	status := "Blocked"
 	if m.allowNetwork {
-		check = t.Editor.QuestionCheckOn.Render()
 		status = "Allowed"
 	}
-	value := check + " " + status
-	line := strings.Repeat(" ", rowLeftPad) + value
-
-	target := sandboxHitTarget{
-		rect: image.Rect(rowLeftPad, 1, rowLeftPad+lipgloss.Width(value), 2),
+	button := common.Button(m.com.Styles, common.ButtonOpts{
+		Text:           status,
+		Padding:        1,
+		UnderlineIndex: -1,
+		Selected:       m.isFocused(sandboxFocusNetwork, -1, 0),
+		Hovered:        hovered,
+	})
+	line := m.headingRow(rowLeftPad, width, "Network", button)
+	return line, sandboxHitTarget{
+		rect: image.Rect(rowLeftPad, 0, lipgloss.Width(line), 1),
 		area: sandboxFocusNetwork,
 	}
-	return labelStyle.Render("Network") + "\n" + line, target
 }
 
-// blockHeight is lipgloss.Height except that an empty block is zero
-// lines tall instead of one.
-func blockHeight(block string) int {
-	if block == "" {
-		return 0
-	}
-	return lipgloss.Height(block)
-}
-
-// socketsView renders the detected container daemon sockets as one
-// toggle line each under a label that warns what a socket grants. It
-// returns an empty block when none were detected. The targets are
-// relative to the block's top-left corner, and their row field is the
-// socket index.
-func (m *Sandbox) socketsView(rowLeftPad, innerWidth int) (string, []sandboxHitTarget) {
-	if len(m.sockets) == 0 {
-		return "", nil
-	}
+// socketsView renders one toggle line per detected container daemon
+// socket. A socket that is let through is drawn in the warning color so
+// it stands out from the blocked ones. The targets are relative to the
+// block's first line, and their row field is the socket index. hoverIdx
+// is the socket drawn hovered, or -1.
+func (m *Sandbox) socketsView(rowLeftPad, width, hoverIdx int) (string, []sandboxHitTarget) {
 	t := m.com.Styles
-
-	label := t.Dialog.Arguments.InputLabelBlurred.PaddingLeft(rowLeftPad).Render("Container Sockets")
-	warning := t.Dialog.SecondaryText.PaddingLeft(rowLeftPad).Render("Can start containers that mount any host path.")
-	lines := []string{label, warning}
+	lines := make([]string, 0, len(m.sockets))
 	targets := make([]sandboxHitTarget, 0, len(m.sockets))
 
-	pad := strings.Repeat(" ", rowLeftPad)
 	for i, s := range m.sockets {
-		check := t.Editor.QuestionCheckOff.Render()
+		labelStyle, status := t.Dialog.SecondaryText.UnsetPadding(), "Blocked"
 		if s.allowed {
-			check = t.Editor.QuestionCheckOn.Render()
+			labelStyle, status = t.Dialog.WarningText, "Allowed"
 		}
-		pathStyle := t.Dialog.Arguments.InputLabelBlurred
-		if m.isFocused(sandboxFocusSocket, i, 0) {
-			pathStyle = t.Dialog.Arguments.InputLabelFocused
-		}
-		path := ansi.Truncate(s.path, max(1, innerWidth-rowLeftPad-lipgloss.Width(check)-1), "…")
-		value := check + " " + pathStyle.Render(path)
-		y := len(lines)
-		targets = append(targets, sandboxHitTarget{
-			rect: image.Rect(rowLeftPad, y, rowLeftPad+lipgloss.Width(value), y+1),
-			area: sandboxFocusSocket,
-			row:  i,
+		line, target := m.toggleRow(rowLeftPad, width, s.path, labelStyle, common.ButtonOpts{
+			Text:     status,
+			Selected: m.isFocused(sandboxFocusSocket, i, 0),
+			Hovered:  hoverIdx == i,
 		})
-		lines = append(lines, pad+value)
+		target.area = sandboxFocusSocket
+		target.row = i
+		target.rect = target.rect.Add(image.Pt(0, i))
+		targets = append(targets, target)
+		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), targets
 }

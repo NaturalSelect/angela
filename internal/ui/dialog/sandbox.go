@@ -69,11 +69,13 @@ type sandboxPathRow struct {
 	readOnly bool
 }
 
-// sandboxSocket is one detected container daemon socket and whether the
-// sandbox will let commands connect to it.
+// sandboxSocket is one detected container grant that is offered as an
+// opt-in choice and whether the sandbox will let commands use it. It is
+// a daemon socket, or an image storage directory when storage is set.
 type sandboxSocket struct {
 	path    string
 	allowed bool
+	storage bool
 }
 
 // sandboxHitTarget records a clickable region in absolute screen
@@ -136,9 +138,16 @@ var _ Dialog = (*Sandbox)(nil)
 
 func NewSandbox(com *common.Common) *Sandbox {
 	t := com.Styles
-	cfg, optionalSockets := sandboxDefaultConfig(com)
+	cfg, grants := sandboxDefaultConfig(com)
 
-	m := &Sandbox{com: com, allowNetwork: cfg.AllowNetwork, sockets: sandboxSockets(cfg.UnixSockets, optionalSockets)}
+	m := &Sandbox{
+		com:          com,
+		allowNetwork: cfg.AllowNetwork,
+		sockets: append(
+			sandboxStorage(cfg.ReadWrite, grants.OptionalStorage),
+			sandboxSockets(cfg.UnixSockets, grants.OptionalSockets)...,
+		),
+	}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
 
 	for _, p := range cfg.ReadWrite {
@@ -201,9 +210,10 @@ func setSandboxInputWidth(input *textinput.Model, width int) {
 // exact-file grant back into a directory-wide one once the user
 // confirms.
 //
-// The second return value lists the detected container daemon sockets
-// that are not granted yet; the form offers them as opt-in choices.
-func sandboxDefaultConfig(com *common.Common) (sandbox.Config, []string) {
+// The second return value carries the detected container sockets and
+// storage directories that are not granted yet; the form offers them as
+// opt-in choices.
+func sandboxDefaultConfig(com *common.Common) (sandbox.Config, sandbox.ContainerGrants) {
 	var dataDir string
 	var permissions *config.Permissions
 	if cfg := com.Config(); cfg != nil {
@@ -222,7 +232,19 @@ func sandboxDefaultConfig(com *common.Common) (sandbox.Config, []string) {
 		result.ReadOnly = sandbox.DedupePaths(append(result.ReadOnly, readOnly...))
 		result.ReadWrite = sandbox.DedupePaths(append(result.ReadWrite, readWrite...))
 	}
-	return result, grants.OptionalSockets
+	return result, grants
+}
+
+// sandboxStorage builds the storage choices of the form: every detected
+// directory that is not already a read-write row starts blocked.
+func sandboxStorage(readWrite, optional []string) []sandboxSocket {
+	var choices []sandboxSocket
+	for _, p := range optional {
+		if !slices.Contains(readWrite, p) {
+			choices = append(choices, sandboxSocket{path: p, storage: true})
+		}
+	}
+	return choices
 }
 
 // sandboxSockets builds the socket choices of the form: every socket
@@ -458,7 +480,12 @@ func (m *Sandbox) handleFormClick(x, y int) {
 func (m *Sandbox) config() sandbox.Config {
 	cfg := sandbox.Config{AllowNetwork: m.allowNetwork}
 	for _, s := range m.sockets {
-		if s.allowed {
+		if !s.allowed {
+			continue
+		}
+		if s.storage {
+			cfg.ReadWrite = append(cfg.ReadWrite, s.path)
+		} else {
 			cfg.UnixSockets = append(cfg.UnixSockets, s.path)
 		}
 	}
@@ -597,7 +624,7 @@ func (m *Sandbox) drawForm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		lines := []string{networkLine}
 		targets := []sandboxHitTarget{networkTarget}
 		if len(m.sockets) > 0 {
-			lines = append(lines, section("Container sockets"))
+			lines = append(lines, section("Container access"))
 			socketLines, socketTargets := m.socketsView(rowLeftPad, sectionWidth, hover-1)
 			for _, tgt := range socketTargets {
 				tgt.rect = tgt.rect.Add(image.Pt(0, len(lines)))

@@ -17,6 +17,9 @@ type ContainerGrants struct {
 	ReadWrite []string
 	// UnixSockets lists the daemon sockets the tools connect to.
 	UnixSockets []string
+	// NOTE: Detected storage directories that stay ungranted until the user
+	// opts in.
+	OptionalStorage []string
 	// NOTE: Detected daemon sockets that stay ungranted until the user opts in.
 	OptionalSockets []string
 }
@@ -39,8 +42,11 @@ func (c Config) WithContainerGrants(g ContainerGrants) Config {
 // they need. A socket grant is an escape hatch: whoever can talk to a
 // container daemon can start a container that mounts any host path, so
 // the detected sockets are only granted when grantSockets is set and
-// are otherwise returned as OptionalSockets.
-func DetectContainerGrants(grantSockets bool) ContainerGrants {
+// are otherwise returned as OptionalSockets. Image storage holds layer
+// content that later runs outside the sandbox, so it follows the same
+// rule: it is granted only when grantStorage is set and is otherwise
+// returned as OptionalStorage.
+func DetectContainerGrants(grantSockets, grantStorage bool) ContainerGrants {
 	home, _ := os.UserHomeDir()
 	g := detectContainerGrants(containerProbe{
 		lookPath: exec.LookPath,
@@ -52,6 +58,17 @@ func DetectContainerGrants(grantSockets bool) ContainerGrants {
 	if !grantSockets {
 		g = g.withSocketsOptional()
 	}
+	if !grantStorage {
+		g = g.withStorageOptional()
+	}
+	return g
+}
+
+// withStorageOptional returns g with its granted storage directories moved
+// to OptionalStorage.
+func (g ContainerGrants) withStorageOptional() ContainerGrants {
+	g.OptionalStorage = DedupePaths(append(append([]string{}, g.OptionalStorage...), g.ReadWrite...))
+	g.ReadWrite = nil
 	return g
 }
 

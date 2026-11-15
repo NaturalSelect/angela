@@ -21,13 +21,20 @@ is needed.
 | `coder` | primary | Main agent; has access to all tools except `Git` (kept for `explore`). Cannot be disabled. |
 | `explore` | subagent | Fast codebase explorer. Read-only: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git, LSPDefinition, LSPSymbols, LSPCallHierarchy. |
 | `general` | subagent | General-purpose; inherits coder's tools minus `Todos`. |
-| `plan` | branch | Turns a request into an agreed implementation plan. Read-only (reads, searches, asks the user). |
-| `co-design` | branch | Designs a whole solution with the user, mechanism by mechanism, and hands back a design document to export and build through plans. Read-only; only forked when the user asks. |
-| `deep-research` | branch | Investigates a hard question; plan's read-only set plus `Bash`, `JobOutput`, `JobKill`, but no edit/write. |
+| `plan` | branch | Turns a request into an agreed implementation plan. No edit/write tools; has `Bash`, `JobOutput`, `JobKill` to check a claim (reads, searches, asks the user). |
+| `co-design` | branch | Designs a whole solution with the user, mechanism by mechanism, and hands back a design document to export and build through plans. No edit/write tools, but has `Bash`; only forked when the user asks. |
+| `deep-research` | branch | Investigates a hard question; same tools as `plan`, so `Bash`, `JobOutput`, `JobKill` but no edit/write. |
 | `web-fetch` | subagent | Fetches and analyzes web pages or searches the web. |
 
 `plan`, `co-design` and `deep-research` can dispatch only `explore` and
 `web-fetch` (their `allowed_agents`).
+
+Those three hold `Bash` but no edit tools. That is a rule in their prompts, not
+a structural limit: a command can still change the working tree. Their
+commands go through the normal permission checks, but yolo mode (and a sandbox,
+which switches to yolo) removes the per-command prompt, so only a deny rule
+stops one. To make `plan` structurally unable to write, override its
+`allowed_tools` without `Bash`.
 
 Hidden internal agents (`title`, `compact`, `generate-agent`, `initialize`,
 `commit`, `image`) can be overridden but are not dispatched via the `Agent`

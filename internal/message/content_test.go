@@ -493,13 +493,14 @@ func TestMessage_AppendReasoningSignature(t *testing.T) {
 func TestMessage_SetReasoningResponsesData(t *testing.T) {
 	t.Parallel()
 
-	data := &openai.ResponsesReasoningMetadata{ItemID: "item-1"}
+	data := &openai.ResponsesReasoningMetadata{ItemID: "item-1", Summary: []string{"s"}}
+	want := ResponsesReasoningItem{ItemID: "item-1", Summary: []string{"s"}}
 
 	t.Run("no-op when there is no reasoning part yet", func(t *testing.T) {
 		t.Parallel()
 		m := &Message{}
 		m.SetReasoningResponsesData(data)
-		require.Nil(t, m.ReasoningContent().ResponsesData)
+		require.Empty(t, m.ReasoningContent().ResponsesItems)
 	})
 
 	t.Run("attaches to the existing reasoning part", func(t *testing.T) {
@@ -508,8 +509,71 @@ func TestMessage_SetReasoningResponsesData(t *testing.T) {
 		m.SetReasoningResponsesData(data)
 		rc := m.ReasoningContent()
 		require.Equal(t, "hmm", rc.Thinking)
-		require.Same(t, data, rc.ResponsesData)
+		require.Equal(t, []ResponsesReasoningItem{want}, rc.ResponsesItems)
 	})
+
+	t.Run("keeps one entry per item in arrival order", func(t *testing.T) {
+		t.Parallel()
+		m := &Message{Parts: []ContentPart{ReasoningContent{Thinking: "hmm"}}}
+		m.SetReasoningResponsesData(data)
+		m.SetReasoningResponsesData(&openai.ResponsesReasoningMetadata{ItemID: "item-2"})
+		require.Equal(t, []ResponsesReasoningItem{want, {ItemID: "item-2"}}, m.ReasoningContent().ResponsesItems)
+	})
+
+	t.Run("replaces the entry of an item that ends again", func(t *testing.T) {
+		t.Parallel()
+		m := &Message{Parts: []ContentPart{ReasoningContent{Thinking: "hmm"}}}
+		m.SetReasoningResponsesData(&openai.ResponsesReasoningMetadata{ItemID: "item-1"})
+		blob := "blob"
+		m.SetReasoningResponsesData(&openai.ResponsesReasoningMetadata{ItemID: "item-1", EncryptedContent: &blob})
+		require.Equal(t, []ResponsesReasoningItem{{ItemID: "item-1", EncryptedContent: &blob}}, m.ReasoningContent().ResponsesItems)
+	})
+}
+
+func TestMessage_FinishThinkingKeepsProviderData(t *testing.T) {
+	t.Parallel()
+
+	items := []ResponsesReasoningItem{{ItemID: "item-1"}}
+	m := &Message{Parts: []ContentPart{ReasoningContent{
+		Thinking:         "hmm",
+		Signature:        "anthropic-sig",
+		ThoughtSignature: "google-sig",
+		ToolID:           "tool-7",
+		ResponsesItems:   items,
+		StartedAt:        10,
+	}}}
+
+	m.FinishThinking()
+
+	rc := m.ReasoningContent()
+	require.NotZero(t, rc.FinishedAt)
+	require.Equal(t, "hmm", rc.Thinking)
+	require.Equal(t, "anthropic-sig", rc.Signature)
+	require.Equal(t, "google-sig", rc.ThoughtSignature)
+	require.Equal(t, "tool-7", rc.ToolID)
+	require.Equal(t, int64(10), rc.StartedAt)
+	require.Equal(t, items, rc.ResponsesItems)
+}
+
+func TestMessage_ReasoningUpdatesKeepProviderData(t *testing.T) {
+	t.Parallel()
+
+	items := []ResponsesReasoningItem{{ItemID: "item-1"}}
+	m := &Message{Parts: []ContentPart{ReasoningContent{
+		ThoughtSignature: "g",
+		ToolID:           "tool-1",
+		ResponsesItems:   items,
+	}}}
+
+	m.AppendReasoningContent("more")
+	m.AppendReasoningSignature("sig")
+
+	rc := m.ReasoningContent()
+	require.Equal(t, "more", rc.Thinking)
+	require.Equal(t, "sig", rc.Signature)
+	require.Equal(t, "g", rc.ThoughtSignature)
+	require.Equal(t, "tool-1", rc.ToolID)
+	require.Equal(t, items, rc.ResponsesItems)
 }
 
 func TestMessage_ThinkingDuration(t *testing.T) {
@@ -903,7 +967,7 @@ func TestToAIMessage_AssistantRoleReasoningWithAllProviderSignatures(t *testing.
 				Signature:        "anthropic-sig",
 				ThoughtSignature: "google-sig",
 				ToolID:           "tool-7",
-				ResponsesData:    &openai.ResponsesReasoningMetadata{ItemID: "item-9"},
+				ResponsesItems:   []ResponsesReasoningItem{{ItemID: "item-9"}},
 			},
 			ToolCall{ID: "tc1", Name: "bash", Input: `{"cmd":"ls"}`, ProviderExecuted: true},
 		},
@@ -913,12 +977,12 @@ func TestToAIMessage_AssistantRoleReasoningWithAllProviderSignatures(t *testing.
 	require.Len(t, msgs, 1)
 	require.Len(t, msgs[0].Content, 3)
 
-	_, ok := msgs[0].Content[0].(fantasy.TextPart)
-	require.True(t, ok)
-
-	reasoningPart, ok := msgs[0].Content[1].(fantasy.ReasoningPart)
-	require.True(t, ok)
+	reasoningPart, ok := msgs[0].Content[0].(fantasy.ReasoningPart)
+	require.True(t, ok, "reasoning comes before the answer text")
 	require.Equal(t, "let me think", reasoningPart.Text)
+
+	_, ok = msgs[0].Content[1].(fantasy.TextPart)
+	require.True(t, ok)
 
 	anthropicOpt, ok := reasoningPart.ProviderOptions[anthropic.Name].(*anthropic.ReasoningOptionMetadata)
 	require.True(t, ok)
@@ -957,6 +1021,101 @@ func TestToAIMessage_AssistantRoleReasoningWithoutSignatures(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "plain thought", reasoningPart.Text)
 	require.Empty(t, reasoningPart.ProviderOptions, "no signature fields set means no provider options attached")
+}
+
+func TestToAIMessage_AssistantRoleReasoningResponsesItems(t *testing.T) {
+	t.Parallel()
+
+	enc := func(s string) *string { return &s }
+
+	t.Run("one reasoning part per item, each with its own metadata", func(t *testing.T) {
+		t.Parallel()
+
+		first := ResponsesReasoningItem{ItemID: "rs_1", EncryptedContent: enc("blob-1"), Summary: []string{"a"}}
+		second := ResponsesReasoningItem{ItemID: "rs_2", EncryptedContent: enc("blob-2")}
+		m := &Message{
+			Role: Assistant,
+			Parts: []ContentPart{
+				ReasoningContent{Thinking: "a", ResponsesItems: []ResponsesReasoningItem{first, second}},
+				ToolCall{ID: "tc1", Name: "bash", Input: `{}`},
+			},
+		}
+
+		msgs := m.ToAIMessage()
+		require.Len(t, msgs, 1)
+		require.Len(t, msgs[0].Content, 3)
+
+		var got []*openai.ResponsesReasoningMetadata
+		for _, part := range msgs[0].Content[:2] {
+			rp, ok := part.(fantasy.ReasoningPart)
+			require.True(t, ok)
+			meta, ok := rp.ProviderOptions[openai.Name].(*openai.ResponsesReasoningMetadata)
+			require.True(t, ok)
+			got = append(got, meta)
+		}
+		require.Equal(t, []*openai.ResponsesReasoningMetadata{
+			{ItemID: "rs_1", EncryptedContent: enc("blob-1"), Summary: []string{"a"}},
+			{ItemID: "rs_2", EncryptedContent: enc("blob-2")},
+		}, got)
+
+		require.Equal(t, "a", msgs[0].Content[0].(fantasy.ReasoningPart).Text)
+		require.Empty(t, msgs[0].Content[1].(fantasy.ReasoningPart).Text)
+		_, ok := msgs[0].Content[2].(fantasy.ToolCallPart)
+		require.True(t, ok, "tool calls follow the reasoning")
+	})
+
+	t.Run("a reasoning with only encrypted content is kept", func(t *testing.T) {
+		t.Parallel()
+
+		item := ResponsesReasoningItem{ItemID: "rs_1", EncryptedContent: enc("blob")}
+		m := &Message{
+			Role: Assistant,
+			Parts: []ContentPart{
+				ReasoningContent{ResponsesItems: []ResponsesReasoningItem{item}},
+				ToolCall{ID: "tc1", Name: "bash", Input: `{}`},
+			},
+		}
+
+		msgs := m.ToAIMessage()
+		require.Len(t, msgs[0].Content, 2)
+		rp, ok := msgs[0].Content[0].(fantasy.ReasoningPart)
+		require.True(t, ok)
+		require.Empty(t, rp.Text)
+		require.Equal(t, item.metadata(), rp.ProviderOptions[openai.Name])
+	})
+
+	t.Run("an empty reasoning produces no part", func(t *testing.T) {
+		t.Parallel()
+
+		m := &Message{Role: Assistant, Parts: []ContentPart{ReasoningContent{}, TextContent{Text: "hi"}}}
+
+		msgs := m.ToAIMessage()
+		require.Len(t, msgs[0].Content, 1)
+		_, ok := msgs[0].Content[0].(fantasy.TextPart)
+		require.True(t, ok)
+	})
+}
+
+func TestReasoningContent_UnmarshalsAndRoundTripsItems(t *testing.T) {
+	t.Parallel()
+
+	enc := "blob"
+	in := ReasoningContent{
+		Thinking: "hmm",
+		ResponsesItems: []ResponsesReasoningItem{
+			{ItemID: "rs_1", EncryptedContent: &enc, Summary: []string{}},
+			{ItemID: "rs_2", EncryptedContent: &enc},
+		},
+	}
+
+	data, err := marshalParts([]ContentPart{in})
+	require.NoError(t, err)
+	parts, err := unmarshalParts(data)
+	require.NoError(t, err)
+	require.Len(t, parts, 1)
+	got, ok := parts[0].(ReasoningContent)
+	require.True(t, ok)
+	require.Equal(t, in, got)
 }
 
 func TestToAIMessage_ToolRoleIsError(t *testing.T) {

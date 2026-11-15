@@ -29,11 +29,12 @@ Key capabilities:
 ## Installation
 
 From [GitHub Releases](https://github.com/NaturalSelect/angela/releases)
-(pre-built binaries for all platforms), or with Go:
+(pre-built binaries for all platforms).
 
-```bash
-go install github.com/NaturalSelect/angela@latest
-```
+To build from source, clone the repository and run `go build .` in it.
+`go install github.com/NaturalSelect/angela@latest` is not supported, because
+the module pins a patched fork of a dependency with a `replace` directive,
+which `go install` with a version suffix rejects.
 
 ### Upgrading
 
@@ -63,9 +64,9 @@ signature is refused.
 - **Package managers.** If `dpkg`, `rpm`, `apk` or `pacman` owns the
   executable, the release's package file is installed with that tool, through
   `sudo` when you are not root, so the package database stays correct.
-- **Go installs and local builds.** A build without a release version, such
-  as one from `go install` or `go build`, cannot be compared with releases and
-  is not upgraded. Install a release instead, or run `go install` again.
+- **Local builds.** A build without a release version, such as one from
+  `go build`, cannot be compared with releases and is not upgraded. Install a
+  release instead, or rebuild from source.
 
 ## Getting Started
 

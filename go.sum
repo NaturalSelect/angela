@@ -8,8 +8,6 @@ charm.land/catwalk v0.51.23 h1:KZvcZJnRp8N+Da/KMg7oK8VOGj2XBSo7HmsP99NYk8I=
 charm.land/catwalk v0.51.23/go.mod h1:4X4CakMTeTQj/dXRidYAcidDvmhbeBM8TnguUBrmiSU=
 charm.land/fang/v2 v2.0.1 h1:zQCM8JQJ1JnQX/66B5jlCYBUxL2as5JXQZ2KJ6EL0mY=
 charm.land/fang/v2 v2.0.1/go.mod h1:S1GmkpcvK+OB5w9caywUnJcsMew45Ot8FXqoz8ALrII=
-charm.land/fantasy v0.48.1 h1:LiJo83yFZ7bdeA5LNSWNV5jT++BIHme7ZfPZYFPzx9w=
-charm.land/fantasy v0.48.1/go.mod h1:pJqEcShqOtcOGeCKBSEfZOV0jOAP19cRtvgl64QeuEA=
 charm.land/glamour/v2 v2.0.1 h1:xl+r00A4aJWU0z8fgwKd9fQQ4rsphqGUzuEiXZP5n+c=
 charm.land/glamour/v2 v2.0.1/go.mod h1:jo9z8XqVKPeEFMVdvCRLGk++RyJ3CdUwgNr7EvXLw3k=
 charm.land/lipgloss/v2 v2.0.5 h1:kbNxgeeUOYv5J0YdpxFjfvf3dFvqH8Aci4zB6xqFtrY=
@@ -58,6 +56,8 @@ github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
+github.com/NaturalSelect/fantasy v0.0.0-20261115100305-5a75d1e295bc h1:K2wfK3vWMGqOqL2PTsiHwBzSg2T2L56trVJ0OfwNWsI=
+github.com/NaturalSelect/fantasy v0.0.0-20261115100305-5a75d1e295bc/go.mod h1:pJqEcShqOtcOGeCKBSEfZOV0jOAP19cRtvgl64QeuEA=
 github.com/ProtonMail/go-crypto v1.4.1 h1:9RfcZHqEQUvP8RzecWEUafnZVtEvrBVL9BiF67IQOfM=
 github.com/ProtonMail/go-crypto v1.4.1/go.mod h1:e1OaTyu5SYVrO9gKOEhTc+5UcXtTUa+P3uLudwcgPqo=
 github.com/PuerkitoBio/goquery v1.9.2/go.mod h1:GHPCaP0ODyyxqcNoFGYlAprUFH81NuRPd0GX3Zu2Mvk=

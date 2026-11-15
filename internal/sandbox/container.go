@@ -11,7 +11,9 @@ import (
 // command line tools need once a sandbox is entered. Both slices only
 // hold paths that existed when they were detected.
 type ContainerGrants struct {
-	// ReadWrite lists directories the tools write their own state to.
+	// ReadWrite lists the image and layer storage directories, which
+	// hold the overlay filesystem. Config and credential locations are
+	// never included.
 	ReadWrite []string
 	// UnixSockets lists the daemon sockets the tools connect to.
 	UnixSockets []string
@@ -107,19 +109,10 @@ func detectContainerGrants(p containerProbe) ContainerGrants {
 	if dataHome == "" {
 		dataHome = join(p.home, ".local", "share")
 	}
-	configHome := p.getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		configHome = join(p.home, ".config")
-	}
 
 	var dirs, sockets []string
 
 	if p.has("docker") {
-		dockerConfig := p.getenv("DOCKER_CONFIG")
-		if dockerConfig == "" {
-			dockerConfig = join(p.home, ".docker")
-		}
-		dirs = append(dirs, dockerConfig)
 		sockets = append(
 			sockets,
 			p.sys("/var/run/docker.sock"),
@@ -132,14 +125,7 @@ func detectContainerGrants(p containerProbe) ContainerGrants {
 	}
 
 	if p.has("podman") || p.has("buildah") {
-		dirs = append(
-			dirs,
-			join(dataHome, "containers"),
-			join(runtimeDir, "containers"),
-			join(runtimeDir, "libpod"),
-			join(configHome, "containers"),
-			p.sys("/var/tmp"),
-		)
+		dirs = append(dirs, join(dataHome, "containers", "storage"))
 		sockets = append(
 			sockets,
 			join(runtimeDir, "podman", "podman.sock"),
@@ -147,12 +133,7 @@ func detectContainerGrants(p containerProbe) ContainerGrants {
 			unixHostPath(p.getenv("CONTAINER_HOST")),
 		)
 		if p.euid == 0 {
-			dirs = append(
-				dirs,
-				p.sys("/var/lib/containers/storage"),
-				p.sys("/run/containers/storage"),
-				p.sys("/run/libpod"),
-			)
+			dirs = append(dirs, p.sys("/var/lib/containers/storage"))
 		}
 	}
 

@@ -387,9 +387,15 @@ above) already covers, so an edit or read the permission policy already
 approves without a prompt doesn't instead run into a confusing sandbox I/O
 error.
 
-If the `docker`, `podman` or `buildah` command line tool is installed,
-`--sandbox` and the `/sandbox` command also make their own config, cache and
-storage directories writable.
+If the `podman` or `buildah` command line tool is installed, `--sandbox` and
+the `/sandbox` command also make its image storage writable. That is the
+directory holding the overlay filesystem with the image layers,
+`~/.local/share/containers/storage` (or under `$XDG_DATA_HOME`), plus
+`/var/lib/containers/storage` when running as root. Nothing else is opened.
+Configuration and credential files such as `~/.docker/config.json` and
+`$XDG_RUNTIME_DIR/containers/auth.json` stay read-only like the rest of the
+filesystem. The Docker CLI alone grants no directory, because its overlay
+storage belongs to the daemon, which runs outside the sandbox.
 
 The daemon sockets those tools talk to (for example `/var/run/docker.sock`)
 stay blocked by default. A container daemon socket is a deliberate hole in
@@ -399,7 +405,7 @@ the detected sockets, or tick them one by one in the `/sandbox` dialog, which
 lists every detected socket and leaves it off until you turn it on. Pass
 `--no-sandbox-container-permission` (or set
 `options.no_sandbox_container_permission` to `true`) to skip the whole
-container grant, directories and sockets alike, and get the plain default set.
+container grant, storage and sockets alike, and get the plain default set.
 Rootless `podman run` and `podman build` cannot work inside a sandbox either
 way, since Landlock forbids `mount(2)`; use `podman --remote` against a
 running `podman.socket` instead.

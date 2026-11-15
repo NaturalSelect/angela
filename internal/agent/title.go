@@ -211,7 +211,7 @@ func openingPrompt(msgs []message.Message) string {
 		if msg.Role != message.User || msg.IsReminder() {
 			continue
 		}
-		if text := strings.TrimSpace(msg.Content().Text); text != "" {
+		if text := messageTitleText(msg); text != "" {
 			return text
 		}
 		if firstShellCommand == "" {
@@ -221,6 +221,53 @@ func openingPrompt(msgs []message.Message) string {
 		}
 	}
 	return firstShellCommand
+}
+
+// maxTitleAttachmentBytes caps how much of a text attachment a title is
+// derived from.
+//
+// NOTE: A pasted file can run to megabytes, and the title agent only needs
+// its opening to name it.
+const maxTitleAttachmentBytes = 4096
+
+// attachmentTitleText returns the opening of data when mimeType marks it
+// as text, and "" otherwise.
+func attachmentTitleText(mimeType string, data []byte) string {
+	if !strings.HasPrefix(mimeType, "text/") {
+		return ""
+	}
+	data = data[:min(len(data), maxTitleAttachmentBytes)]
+	// NOTE: The cap can split a multi-byte rune at its end.
+	return strings.TrimSpace(strings.ToValidUTF8(string(data), ""))
+}
+
+// callTitlePrompt returns the text a turn's title is derived from: the
+// typed prompt, or the opening of the first text attachment when the user
+// sent attachments alone, as a large paste does.
+func callTitlePrompt(call SessionAgentCall) string {
+	if call.Prompt != "" {
+		return call.Prompt
+	}
+	for _, attachment := range call.Attachments {
+		if text := attachmentTitleText(attachment.MimeType, attachment.Content); text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+// messageTitleText returns what a user message offers a title: its typed
+// text, or the opening of its first text attachment.
+func messageTitleText(msg message.Message) string {
+	if text := strings.TrimSpace(msg.Content().Text); text != "" {
+		return text
+	}
+	for _, binary := range msg.BinaryContent() {
+		if text := attachmentTitleText(binary.MIMEType, binary.Data); text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 // requestSessionTitle asks the title agent to name a conversation that

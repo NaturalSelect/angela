@@ -300,19 +300,17 @@ func (a *sessionAgent) getSessionMessages(ctx context.Context, session session.S
 	return msgs, nil
 }
 
-// hasUserTextMessage reports whether any user message in msgs contains
-// text content (as opposed to only shell commands or other non-text
-// parts). Persisted reminders are excluded: they carry text too, but
-// are not the real user prompt title generation is waiting for.
+// hasUserTextMessage reports whether any user message in msgs offers a
+// title text: typed text or a text attachment, as opposed to only shell
+// commands or images. Persisted reminders are excluded: they carry text
+// too, but are not the real user prompt title generation is waiting for.
 func hasUserTextMessage(msgs []message.Message) bool {
 	for _, msg := range msgs {
 		if msg.Role != message.User || msg.IsReminder() {
 			continue
 		}
-		for _, part := range msg.Parts {
-			if tc, ok := part.(message.TextContent); ok && tc.Text != "" {
-				return true
-			}
+		if messageTitleText(msg) != "" {
+			return true
 		}
 	}
 	return false

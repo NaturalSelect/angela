@@ -789,7 +789,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// goroutine survives Run's cancel.
 	if !hasUserTextMessage(msgs) && a.generateTitle != nil {
 		titleCtx := context.WithoutCancel(ctx)
-		go a.generateTitle(titleCtx, call.SessionID, call.Prompt)
+		go a.generateTitle(titleCtx, call.SessionID, callTitlePrompt(call))
 	}
 
 	// Add the session to the context. The run context (genCtx) and its

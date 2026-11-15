@@ -199,21 +199,31 @@ func TestResolveAgents_RetiredSketchConfigIsIgnored(t *testing.T) {
 	}
 }
 
-// Every built-in branch may run commands: a root cause needs a reproduction or
-// a git history, and a plan or design is better for a quick prototype. Writing
-// is still off the table, so the branch's document stays its only product.
-func TestResolveAgents_BranchesRunButDoNotWrite(t *testing.T) {
+// Only deep-research runs commands, because a root cause needs a reproduction.
+// Plan and co-design read git history through the read-only Git tool and hold no
+// shell. Writing is off the table for all three, so the branch's document stays
+// its only product.
+func TestResolveAgents_BranchesDoNotWrite(t *testing.T) {
 	cfg := &Config{Options: &Options{}}
 	agents := cfg.ResolveAgents()
+	shell := []string{"Bash", "JobOutput", "JobKill"}
 
 	for _, id := range []string{AgentPlan, AgentCoDesign, AgentDeepResearch} {
 		t.Run(id, func(t *testing.T) {
 			allowed := agents[id].AllowedTools.Tools
 
-			for _, tool := range []string{"Bash", "JobOutput", "JobKill"} {
-				require.Contains(t, allowed, tool)
-			}
 			for _, tool := range []string{"Edit", "MultiEdit", "Write", "Download", "LSPRename", "LSPReplaceSymbol"} {
+				require.NotContains(t, allowed, tool)
+			}
+			if id == AgentDeepResearch {
+				for _, tool := range shell {
+					require.Contains(t, allowed, tool)
+				}
+				require.NotContains(t, allowed, "Git")
+				return
+			}
+			require.Contains(t, allowed, "Git")
+			for _, tool := range shell {
 				require.NotContains(t, allowed, tool)
 			}
 		})

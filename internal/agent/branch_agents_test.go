@@ -88,21 +88,32 @@ func TestBranchAgentsAreDispatchableAsBranches(t *testing.T) {
 	}
 }
 
-// TestBranchAgentsCanRunCommands pins that every branch can run a command and
-// collect its output. A plan or design is better for a quick prototype, and a
-// root cause is a claim about what is already true, so none of them should have
-// to settle it by reading alone.
-func TestBranchAgentsCanRunCommands(t *testing.T) {
-	for _, id := range builtinBranches {
+// TestPlanAndCoDesignReadHistoryWithoutAShell pins that plan and co-design hold
+// the read-only git tool and no shell, so they can read history but cannot
+// write by construction rather than by a rule in their prompts.
+func TestPlanAndCoDesignReadHistoryWithoutAShell(t *testing.T) {
+	for _, id := range []string{config.AgentPlan, config.AgentCoDesign} {
 		t.Run(id, func(t *testing.T) {
 			coord := newGateTestCoordinator(t, true)
 			names := toolNamesFor(t, coord, id, 1)
 
+			require.Contains(t, names, toolnames.Git, "%s must be able to read git history", id)
 			for _, tool := range []string{toolnames.Bash, toolnames.JobOutput, toolnames.JobKill} {
-				require.Contains(t, names, tool,
-					"%s must be able to run a command and collect its output", id)
+				require.NotContains(t, names, tool, "%s must not hold a shell", id)
 			}
 		})
+	}
+}
+
+// TestDeepResearchCanRunCommands pins that deep-research can run a command and
+// collect its output. A root cause is a claim about what is already true, so it
+// should not have to settle it by reading alone.
+func TestDeepResearchCanRunCommands(t *testing.T) {
+	coord := newGateTestCoordinator(t, true)
+	names := toolNamesFor(t, coord, config.AgentDeepResearch, 1)
+
+	for _, tool := range []string{toolnames.Bash, toolnames.JobOutput, toolnames.JobKill} {
+		require.Contains(t, names, tool, "deep-research must be able to run a command and collect its output")
 	}
 }
 

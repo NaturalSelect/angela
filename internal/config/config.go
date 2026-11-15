@@ -1294,24 +1294,34 @@ func exploreToolNames() []string {
 	}
 }
 
-// NOTE: planToolNames lists what every built-in branch gets: explore's
+// NOTE: branchToolNames lists what every built-in branch gets: explore's
 // read-only set, widened with the LSP lookups a design decision leans on, plus
 // the two tools that make it a branch rather than a subagent — delegation, so
 // it can buy breadth without reading everything itself, and a way to ask the
-// user. Bash and its job tools let a branch settle a claim with evidence
-// instead of reasoning alone: reproduce a failure, read the history, or run a
-// throwaway prototype that shows an approach works. Nothing here edits, so the
-// branch's document stays its only product, but every command goes through the
-// normal permission checks.
-func planToolNames() []string {
+// user.
+func branchToolNames() []string {
 	return []string{
 		toolnames.Agent, toolnames.Fetch, toolnames.AngelaInfo,
 		toolnames.Glob, toolnames.Grep, toolnames.LS,
 		toolnames.LSPCallHierarchy, toolnames.LSPDefinition, toolnames.LSPDiagnostics,
 		toolnames.LSPReferences, toolnames.LSPSymbols,
 		toolnames.Question, toolnames.Sourcegraph, toolnames.Read,
-		toolnames.Bash, toolnames.JobOutput, toolnames.JobKill,
 	}
+}
+
+// NOTE: planToolNames is the set plan and co-design get: the branch set plus the
+// read-only Git tool, so they can read history without holding a shell. With no
+// Bash they cannot write by construction, not only by a rule in their prompts.
+func planToolNames() []string {
+	return append(branchToolNames(), toolnames.Git)
+}
+
+// NOTE: deepResearchToolNames adds Bash and its job tools to the branch set. A
+// root cause is a claim about what is already true, and reproducing a failure
+// or running the one test that separates two hypotheses needs a shell. Nothing
+// here edits, but every command goes through the normal permission checks.
+func deepResearchToolNames() []string {
+	return append(branchToolNames(), toolnames.Bash, toolnames.JobOutput, toolnames.JobKill)
 }
 
 // webFetchToolNames lists the tools the web-fetch sub-agent gets: raw
@@ -1432,7 +1442,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			// code was written under, so it reads the same context files
 			// the coder does.
 			ContextPaths: contextPaths,
-			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
+			AllowedTools: &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, deepResearchToolNames(), true)},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},
 			// A root cause is a finding, not a plan, so deep-research is
 			// limited to reading the code rather than being able to reach
@@ -1442,7 +1452,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 		AgentPlan: {
 			ID:          AgentPlan,
 			Name:        "Plan",
-			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it proactively, without waiting to be asked, before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first — getting sign-off before code changes prevents wasted effort. It never edits files. It may run commands to check a claim, and each one goes through the normal permission checks.",
+			Description: "Forks this conversation into a branch where the user settles an implementation approach with you, then hands back a step-by-step plan to execute. Use it proactively, without waiting to be asked, before non-trivial work: a new feature, a refactor, a change with several viable designs, or a request whose scope has to be pinned down first — getting sign-off before code changes prevents wasted effort. It never edits files and has no shell; it can read git history through a read-only git tool.",
 			Mode:        AgentModeBranch,
 			Slot:        SlotMain,
 			// The proposal is only worth as much as the conventions it
@@ -1463,8 +1473,7 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Mode:         AgentModeBranch,
 			Slot:         SlotMain,
 			ContextPaths: contextPaths,
-			// NOTE: Co-design shares the branch set; it may run a throwaway prototype
-			// to check a mechanism works but may not write to the repository.
+			// NOTE: Co-design shares plan's set: read-only, with the Git tool and no shell.
 			AllowedTools:  &AllowedToolSet{Kind: ToolSetScope, Tools: filterSlice(base, planToolNames(), true)},
 			AllowedMCP:    &AllowedMCPSet{Kind: ToolSetScope},
 			AllowedAgents: &AllowedAgentSet{Kind: ToolSetScope, Agents: []string{AgentExplore, AgentWebFetch}},

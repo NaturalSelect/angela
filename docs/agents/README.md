@@ -8,11 +8,11 @@ tasks to specialized sub-agents via the `agent` tool.
 | ID        | Mode      | Description                                                            |
 |-----------|-----------|------------------------------------------------------------------------|
 | `coder`   | primary   | Main agent for executing coding tasks. Has access to every tool except the dedicated `Git` tool. |
-| `co-design` | branch | Designs a whole solution with you, mechanism by mechanism, and hands back a design document to export and build through plans. No edit or write tools, but it has `Bash`. Only forked when you ask. |
+| `co-design` | branch | Designs a whole solution with you, mechanism by mechanism, and hands back a design document to export and build through plans. No edit, write or shell tools; it reads git history through the read-only `Git` tool. Only forked when you ask. |
 | `deep-research` | branch | Settles a question ordinary investigation could not: a stubborn root cause, or a hard-to-reverse design choice. No edit or write tools, plus `Bash`. |
 | `explore` | subagent  | Fast codebase explorer. Tools: Glob, Grep, LS, Read, Fetch, Sourcegraph, AngelaInfo, Git (read-only), LSPCallHierarchy, LSPDefinition, LSPSymbols. |
 | `general` | subagent  | General-purpose agent for multi-step tasks. Inherits the coder's tools, minus `Todos`. |
-| `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. No edit or write tools, but it has `Bash`. |
+| `plan`    | branch    | Turns a request into an ordered implementation plan, agreed with you first. No edit, write or shell tools; it reads git history through the read-only `Git` tool. |
 | `web-fetch` | subagent | Fetches and analyzes web pages, or searches the web. Tools: Fetch, WebFetch, WebSearch, MultiSearch, Glob, Grep, Read, Sourcegraph. |
 
 Every sub-agent additionally loses the interactive `Question` tool at run
@@ -131,14 +131,18 @@ that has to happen before the task is even well-defined.
 Angela ships three branch agents, `plan`, `co-design` and `deep-research`,
 and you can configure your own with your own system prompt.
 
-All three hold `Bash`, `JobOutput` and `JobKill`, and none holds `Edit` or
-`Write`. Their document stays the only thing they are meant to produce, but
-that is a rule in their prompts, not a structural limit: a command can still
-change your working tree. Their commands go through the normal permission
-checks, so anything your rules do not already allow asks first. Yolo mode
-removes that prompt, and so does entering a sandbox, which switches to yolo.
-Under yolo a branch runs every command without asking, and only a deny rule
-stops one.
+`plan` and `co-design` hold no `Bash`, `JobOutput` or `JobKill`, and none of
+the three holds `Edit` or `Write`. Instead they get the read-only `Git` tool
+that `explore` uses, so they can run `git log` or `git blame` but nothing
+else. Neither can write to your working tree, because no tool in their set
+does. `deep-research` also holds `Bash`, `JobOutput` and `JobKill`, because a
+root cause usually needs a reproduction. Its document stays the only thing it
+is meant to produce, but that is a rule in its prompt, not a structural limit:
+a command can still change your working tree. Its commands go through the
+normal permission checks, so anything your rules do not already allow asks
+first. Yolo mode removes that prompt, and so does entering a sandbox, which
+switches to yolo. Under yolo `deep-research` runs every command without
+asking, and only a deny rule stops one.
 
 ### `plan`
 
@@ -147,31 +151,27 @@ change with several viable designs, or a request whose scope has to be pinned
 down first. You settle the approach together, and `plan` hands back an ordered,
 step-by-step plan for the coder to execute.
 
-`plan` has no `Edit` and no `Write`. It reads, searches, asks you questions,
-and may run commands to check a claim, but the plan is the only thing it is
-meant to produce. Merging it only brings the finished plan back into the
-conversation. It does not show that your working tree is unchanged, because a
-command it ran could have changed it.
+`plan` has no `Edit`, no `Write` and no `Bash`. It reads, searches, reads git
+history, and asks you questions, and the plan is the only thing it can
+produce. Merging it only brings the finished plan back into the conversation.
 
-If you want it stricter, override it like any other agent. `allowed_tools`
-replaces the built-in list instead of adding to it, so write out the whole
-list, or `plan` loses `Agent`, `Question` and the LSP tools. The list below
-drops `Bash` and its job tools and adds the read-only `Git` tool `explore`
-uses, so `plan` can still run `git log`/`git blame` but nothing else:
+If you want it to run commands too, override it like any other agent.
+`allowed_tools` replaces the built-in list instead of adding to it, so write out
+the whole list, or `plan` loses `Agent`, `Question` and the LSP tools:
 
 ```json
 {
   "agents": {
     "plan": {
-      "allowed_tools": ["Agent", "Question", "Glob", "Grep", "LS", "Read", "Fetch", "Sourcegraph", "AngelaInfo", "LSPCallHierarchy", "LSPDefinition", "LSPDiagnostics", "LSPReferences", "LSPSymbols", "Git"]
+      "allowed_tools": ["Agent", "Question", "Glob", "Grep", "LS", "Read", "Fetch", "Sourcegraph", "AngelaInfo", "LSPCallHierarchy", "LSPDefinition", "LSPDiagnostics", "LSPReferences", "LSPSymbols", "Git", "Bash", "JobOutput", "JobKill"]
     }
   }
 }
 ```
 
-That list restores the structural guarantee that `plan` cannot write. With
-`Bash` kept, the guarantee is only the prompt, and yolo mode approves
-whatever `Bash` runs, git included, without distinction.
+With `Bash` added back, the guarantee that `plan` cannot write is only the
+prompt, and yolo mode approves whatever `Bash` runs, git included, without
+distinction.
 
 ### `co-design`
 
@@ -230,7 +230,7 @@ slower, and it is the point: signing a design does not repay the
 understanding you skip. The coder never forks `co-design` on its own. Ask for
 it when you want to shape the design yourself.
 
-Like `plan`, `co-design` has `Bash` but no `Edit` or `Write`, and can only
+Like `plan`, `co-design` has `Git` but no `Bash`, `Edit` or `Write`, and can only
 delegate to `explore` and `web-fetch`.
 
 ### `deep-research`
@@ -246,7 +246,7 @@ be built; `deep-research` establishes what is already true. Ask for a plan when
 you know the problem and need a route through it, and for research when you do
 not yet trust your account of the problem.
 
-Like `plan` and `co-design`, `deep-research` has `Bash`, and it leans on it
+Unlike `plan` and `co-design`, `deep-research` has `Bash`, and it leans on it
 most — a root cause usually cannot be reached by reading alone, and it needs
 to reproduce the failure, read the history, or run the one test that separates
 two hypotheses. Its commands go through the normal permission checks, so

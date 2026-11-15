@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -124,6 +125,14 @@ func TestOpeningPrompt(t *testing.T) {
 	prompt := userMessage(message.TextContent{Text: "  help me fix a bug  "})
 	reminder := userMessage(message.TextContent{Text: "<system-reminder>\nTodo list\n</system-reminder>"})
 	assistant := message.Message{Role: message.Assistant, Parts: []message.ContentPart{message.TextContent{Text: "sure"}}}
+	pasted := userMessage(
+		message.TextContent{},
+		message.BinaryContent{Path: "paste_1.txt", MIMEType: "text/plain; charset=utf-8", Data: []byte("stack trace: nil pointer\n")},
+	)
+	image := userMessage(
+		message.TextContent{},
+		message.BinaryContent{Path: "paste_1.png", MIMEType: "image/png", Data: []byte("fake-png-bytes")},
+	)
 
 	tests := []struct {
 		name string
@@ -137,6 +146,9 @@ func TestOpeningPrompt(t *testing.T) {
 		{name: "skips reminders", msgs: []message.Message{reminder, prompt}, want: "help me fix a bug"},
 		{name: "ignores assistant text", msgs: []message.Message{assistant}, want: ""},
 		{name: "blank prompt is not a prompt", msgs: []message.Message{userMessage(message.TextContent{Text: "   "})}, want: ""},
+		{name: "text attachment stands in for a missing prompt", msgs: []message.Message{pasted}, want: "stack trace: nil pointer"},
+		{name: "image attachment is not a prompt", msgs: []message.Message{image}, want: ""},
+		{name: "earliest message wins over a later prompt", msgs: []message.Message{pasted, prompt}, want: "stack trace: nil pointer"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -144,6 +156,49 @@ func TestOpeningPrompt(t *testing.T) {
 			require.Equal(t, tt.want, openingPrompt(tt.msgs))
 		})
 	}
+}
+
+// TestCallTitlePrompt pins what the first turn of a session is titled
+// from: the typed prompt when there is one, otherwise the opening of a
+// text attachment. A large paste arrives as an attachment with no typed
+// prompt, and used to leave the session on its placeholder title.
+func TestCallTitlePrompt(t *testing.T) {
+	t.Parallel()
+
+	text := message.Attachment{FileName: "paste_1.txt", MimeType: "text/plain; charset=utf-8", Content: []byte("  stack trace: nil pointer\n")}
+	image := message.Attachment{FileName: "paste_1.png", MimeType: "image/png", Content: []byte("fake-png-bytes")}
+	long := message.Attachment{FileName: "paste_2.txt", MimeType: "text/plain", Content: []byte(strings.Repeat("a", 3*maxTitleAttachmentBytes))}
+	split := message.Attachment{FileName: "paste_3.txt", MimeType: "text/plain", Content: []byte(strings.Repeat("a", maxTitleAttachmentBytes-1) + "é")}
+
+	require.Equal(t, "fix it", callTitlePrompt(SessionAgentCall{Prompt: "fix it", Attachments: []message.Attachment{text}}))
+	require.Equal(t, "stack trace: nil pointer", callTitlePrompt(SessionAgentCall{Attachments: []message.Attachment{text}}))
+	require.Equal(t, "stack trace: nil pointer", callTitlePrompt(SessionAgentCall{Attachments: []message.Attachment{image, text}}))
+	require.Empty(t, callTitlePrompt(SessionAgentCall{Attachments: []message.Attachment{image}}))
+	require.Empty(t, callTitlePrompt(SessionAgentCall{}))
+	require.Len(t, callTitlePrompt(SessionAgentCall{Attachments: []message.Attachment{long}}), maxTitleAttachmentBytes)
+	require.Equal(t, strings.Repeat("a", maxTitleAttachmentBytes-1), callTitlePrompt(SessionAgentCall{Attachments: []message.Attachment{split}}),
+		"a rune cut by the cap must be dropped, not sent as invalid UTF-8")
+}
+
+// TestHasUserTextMessageCountsTextAttachments pins that a session whose
+// only user content is a pasted text file still counts as having a prompt
+// to title, while an image-only or shell-only session does not.
+func TestHasUserTextMessageCountsTextAttachments(t *testing.T) {
+	t.Parallel()
+
+	pasted := userMessage(
+		message.TextContent{},
+		message.BinaryContent{Path: "paste_1.txt", MIMEType: "text/plain", Data: []byte("stack trace")},
+	)
+	image := userMessage(
+		message.TextContent{},
+		message.BinaryContent{Path: "paste_1.png", MIMEType: "image/png", Data: []byte("fake-png-bytes")},
+	)
+	shell := userMessage(message.ShellCommand{Command: "ls -la"})
+
+	require.True(t, hasUserTextMessage([]message.Message{pasted}))
+	require.False(t, hasUserTextMessage([]message.Message{image}))
+	require.False(t, hasUserTextMessage([]message.Message{shell}))
 }
 
 func createUserPrompt(t *testing.T, coord *coordinator, sessionID, text string) {

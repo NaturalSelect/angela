@@ -493,8 +493,8 @@ func TestMessage_AppendReasoningSignature(t *testing.T) {
 func TestMessage_SetReasoningResponsesData(t *testing.T) {
 	t.Parallel()
 
-	data := &openai.ResponsesReasoningMetadata{ItemID: "item-1", Summary: []string{"s"}}
-	want := ResponsesReasoningItem{ItemID: "item-1", Summary: []string{"s"}}
+	data := &openai.ResponsesReasoningMetadata{ItemID: "item-1", Summary: []string{"s"}, Finalized: true}
+	want := ResponsesReasoningItem{ItemID: "item-1", Summary: []string{"s"}, Finalized: true}
 
 	t.Run("no-op when there is no reasoning part yet", func(t *testing.T) {
 		t.Parallel()
@@ -525,8 +525,8 @@ func TestMessage_SetReasoningResponsesData(t *testing.T) {
 		m := &Message{Parts: []ContentPart{ReasoningContent{Thinking: "hmm"}}}
 		m.SetReasoningResponsesData(&openai.ResponsesReasoningMetadata{ItemID: "item-1"})
 		blob := "blob"
-		m.SetReasoningResponsesData(&openai.ResponsesReasoningMetadata{ItemID: "item-1", EncryptedContent: &blob})
-		require.Equal(t, []ResponsesReasoningItem{{ItemID: "item-1", EncryptedContent: &blob}}, m.ReasoningContent().ResponsesItems)
+		m.SetReasoningResponsesData(&openai.ResponsesReasoningMetadata{ItemID: "item-1", EncryptedContent: &blob, Finalized: true})
+		require.Equal(t, []ResponsesReasoningItem{{ItemID: "item-1", EncryptedContent: &blob, Finalized: true}}, m.ReasoningContent().ResponsesItems)
 	})
 }
 
@@ -1031,8 +1031,8 @@ func TestToAIMessage_AssistantRoleReasoningResponsesItems(t *testing.T) {
 	t.Run("one reasoning part per item, each with its own metadata", func(t *testing.T) {
 		t.Parallel()
 
-		first := ResponsesReasoningItem{ItemID: "rs_1", EncryptedContent: enc("blob-1"), Summary: []string{"a"}}
-		second := ResponsesReasoningItem{ItemID: "rs_2", EncryptedContent: enc("blob-2")}
+		first := ResponsesReasoningItem{ItemID: "rs_1", EncryptedContent: enc("blob-1"), Summary: []string{"a"}, Finalized: true}
+		second := ResponsesReasoningItem{ItemID: "rs_2", EncryptedContent: enc("blob-2"), Finalized: true}
 		m := &Message{
 			Role: Assistant,
 			Parts: []ContentPart{
@@ -1054,8 +1054,8 @@ func TestToAIMessage_AssistantRoleReasoningResponsesItems(t *testing.T) {
 			got = append(got, meta)
 		}
 		require.Equal(t, []*openai.ResponsesReasoningMetadata{
-			{ItemID: "rs_1", EncryptedContent: enc("blob-1"), Summary: []string{"a"}},
-			{ItemID: "rs_2", EncryptedContent: enc("blob-2")},
+			{ItemID: "rs_1", EncryptedContent: enc("blob-1"), Summary: []string{"a"}, Finalized: true},
+			{ItemID: "rs_2", EncryptedContent: enc("blob-2"), Finalized: true},
 		}, got)
 
 		require.Equal(t, "a", msgs[0].Content[0].(fantasy.ReasoningPart).Text)
@@ -1067,7 +1067,7 @@ func TestToAIMessage_AssistantRoleReasoningResponsesItems(t *testing.T) {
 	t.Run("a reasoning with only encrypted content is kept", func(t *testing.T) {
 		t.Parallel()
 
-		item := ResponsesReasoningItem{ItemID: "rs_1", EncryptedContent: enc("blob")}
+		item := ResponsesReasoningItem{ItemID: "rs_1", EncryptedContent: enc("blob"), Finalized: true}
 		m := &Message{
 			Role: Assistant,
 			Parts: []ContentPart{
@@ -1103,7 +1103,7 @@ func TestReasoningContent_UnmarshalsAndRoundTripsItems(t *testing.T) {
 	in := ReasoningContent{
 		Thinking: "hmm",
 		ResponsesItems: []ResponsesReasoningItem{
-			{ItemID: "rs_1", EncryptedContent: &enc, Summary: []string{}},
+			{ItemID: "rs_1", EncryptedContent: &enc, Summary: []string{}, Finalized: true},
 			{ItemID: "rs_2", EncryptedContent: &enc},
 		},
 	}

@@ -80,6 +80,9 @@ type ResponsesReasoningItem struct {
 	ItemID           string   `json:"item_id"`
 	EncryptedContent *string  `json:"encrypted_content,omitempty"`
 	Summary          []string `json:"summary"`
+	// Finalized is set when the item was copied from the completed output
+	// item. Only finalized encrypted content is replayed to the API.
+	Finalized bool `json:"finalized,omitempty"`
 }
 
 func (i ResponsesReasoningItem) metadata() *openai.ResponsesReasoningMetadata {
@@ -87,6 +90,7 @@ func (i ResponsesReasoningItem) metadata() *openai.ResponsesReasoningMetadata {
 		ItemID:           i.ItemID,
 		EncryptedContent: i.EncryptedContent,
 		Summary:          i.Summary,
+		Finalized:        i.Finalized,
 	}
 }
 
@@ -478,6 +482,7 @@ func (m *Message) SetReasoningResponsesData(data *openai.ResponsesReasoningMetad
 		ItemID:           data.ItemID,
 		EncryptedContent: data.EncryptedContent,
 		Summary:          slices.Clone(data.Summary),
+		Finalized:        data.Finalized,
 	}
 	m.updateReasoning(func(c *ReasoningContent) {
 		items := slices.Clone(c.ResponsesItems)

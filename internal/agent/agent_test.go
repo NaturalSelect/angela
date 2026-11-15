@@ -920,6 +920,162 @@ func TestPreparePrompt_OrphanedToolUseMixed(t *testing.T) {
 	require.Equal(t, 1, syntheticCount, "expected exactly one synthetic result for the orphaned call")
 }
 
+// historyShape renders a prepared history as one string per message, listing
+// the tool calls or tool results it carries, so tests can assert ordering.
+func historyShape(history []fantasy.Message) []string {
+	shape := make([]string, 0, len(history))
+	for _, msg := range history {
+		var items []string
+		for _, part := range msg.Content {
+			if tc, ok := fantasy.AsMessagePart[fantasy.ToolCallPart](part); ok {
+				items = append(items, tc.ToolCallID)
+			}
+			if tr, ok := fantasy.AsMessagePart[fantasy.ToolResultPart](part); ok {
+				text := ""
+				switch out := tr.Output.(type) {
+				case fantasy.ToolResultOutputContentText:
+					text = out.Text
+				case fantasy.ToolResultOutputContentError:
+					text = "error"
+				}
+				items = append(items, tr.ToolCallID+"="+text)
+			}
+		}
+		shape = append(shape, string(msg.Role)+"["+strings.Join(items, ",")+"]")
+	}
+	return shape
+}
+
+func TestPreparePrompt_ToolResultsFollowTheirCalls(t *testing.T) {
+	t.Parallel()
+
+	toolCall := func(id string) message.ToolCall {
+		return message.ToolCall{ID: id, Name: toolnames.Bash, Input: `{}`, Finished: true}
+	}
+	toolResult := func(id, content string) message.ToolResult {
+		return message.ToolResult{ToolCallID: id, Name: toolnames.Bash, Content: content}
+	}
+	shellCommand := message.ShellCommand{Command: "ls", Output: "x"}
+
+	type stored struct {
+		role  message.MessageRole
+		parts []message.ContentPart
+	}
+	tests := []struct {
+		name  string
+		parts []stored
+		want  []string
+	}{
+		{
+			name: "a user message stored between two results moves behind both",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_A"), toolCall("call_B")}},
+				{message.Tool, []message.ContentPart{toolResult("call_A", "a")}},
+				{message.User, []message.ContentPart{shellCommand}},
+				{message.Tool, []message.ContentPart{toolResult("call_B", "b")}},
+			},
+			want: []string{"assistant[call_A,call_B]", "tool[call_A=a,call_B=b]", "user[]"},
+		},
+		{
+			name: "a user message stored before the only result moves behind it",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_A")}},
+				{message.User, []message.ContentPart{shellCommand}},
+				{message.Tool, []message.ContentPart{toolResult("call_A", "a")}},
+			},
+			want: []string{"assistant[call_A]", "tool[call_A=a]", "user[]"},
+		},
+		{
+			name: "results stored out of call order are emitted in call order",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_A"), toolCall("call_B")}},
+				{message.Tool, []message.ContentPart{toolResult("call_B", "b")}},
+				{message.Tool, []message.ContentPart{toolResult("call_A", "a")}},
+			},
+			want: []string{"assistant[call_A,call_B]", "tool[call_A=a,call_B=b]"},
+		},
+		{
+			name: "a missing result is filled in without disturbing the others",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_A"), toolCall("call_B")}},
+				{message.User, []message.ContentPart{shellCommand}},
+				{message.Tool, []message.ContentPart{toolResult("call_B", "b")}},
+			},
+			want: []string{"assistant[call_A,call_B]", "tool[call_A=error,call_B=b]", "user[]"},
+		},
+		{
+			name: "a result with no call is dropped",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_A")}},
+				{message.Tool, []message.ContentPart{toolResult("call_A", "a")}},
+				{message.Tool, []message.ContentPart{toolResult("call_Z", "z")}},
+			},
+			want: []string{"assistant[call_A]", "tool[call_A=a]"},
+		},
+		{
+			name: "a premature error followed by the real output keeps the output",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_A")}},
+				{message.Tool, []message.ContentPart{message.ToolResult{ToolCallID: "call_A", Name: toolnames.Bash, Content: "interrupted", IsError: true}}},
+				{message.User, []message.ContentPart{shellCommand}},
+				{message.Tool, []message.ContentPart{toolResult("call_A", "real")}},
+			},
+			want: []string{"assistant[call_A]", "tool[call_A=real]", "user[]"},
+		},
+		{
+			name: "a real output followed by a late error keeps the output",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_A")}},
+				{message.Tool, []message.ContentPart{toolResult("call_A", "real")}},
+				{message.Tool, []message.ContentPart{message.ToolResult{ToolCallID: "call_A", Name: toolnames.Bash, Content: "late", IsError: true}}},
+			},
+			want: []string{"assistant[call_A]", "tool[call_A=real]"},
+		},
+		{
+			name: "two real outputs for one call keep the first",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_A")}},
+				{message.Tool, []message.ContentPart{toolResult("call_A", "first")}},
+				{message.Tool, []message.ContentPart{toolResult("call_A", "second")}},
+			},
+			want: []string{"assistant[call_A]", "tool[call_A=first]"},
+		},
+		{
+			name: "a provider that reuses an ID keeps each result with its own call",
+			parts: []stored{
+				{message.Assistant, []message.ContentPart{toolCall("call_0")}},
+				{message.Tool, []message.ContentPart{toolResult("call_0", "first")}},
+				{message.User, []message.ContentPart{shellCommand}},
+				{message.Assistant, []message.ContentPart{toolCall("call_0")}},
+				{message.Tool, []message.ContentPart{toolResult("call_0", "second")}},
+			},
+			want: []string{"assistant[call_0]", "tool[call_0=first]", "user[]", "assistant[call_0]", "tool[call_0=second]"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			env := testEnv(t)
+			sa, _ := testSessionAgent(env, nil, nil, "test prompt")
+			agent := sa.(*sessionAgent)
+
+			ctx := t.Context()
+			sess, err := env.sessions.Create(ctx, "test")
+			require.NoError(t, err)
+			for _, m := range tt.parts {
+				_, err := env.messages.Create(ctx, sess.ID, message.CreateMessageParams{Role: m.role, Parts: m.parts})
+				require.NoError(t, err)
+			}
+			msgs, err := env.messages.List(ctx, sess.ID)
+			require.NoError(t, err)
+
+			history, _ := agent.preparePrompt(msgs, true)
+			require.Equal(t, tt.want, historyShape(history))
+		})
+	}
+}
+
 func TestWorkaroundProviderMediaLimitations_TextOnlyModel(t *testing.T) {
 	env := testEnv(t)
 	sa, _ := testSessionAgent(env, nil, nil, "test prompt")

@@ -1280,9 +1280,62 @@ func TestSandbox_SocketsAreDrawn(t *testing.T) {
 	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
 
 	out := ansi.Strip(scr.Render())
-	require.Contains(t, out, "Container sockets")
+	require.Contains(t, out, "Container access")
 	require.Contains(t, out, "/var/run/docker.sock")
 	require.Contains(t, out, "/run/podman/podman.sock")
+}
+
+// TestSandbox_OptionalStorageStartsBlockedAndIsOfferedAsToggle verifies a
+// detected image storage directory that was not opted into is offered in
+// the form, stays out of the config until the user turns it on, and then
+// lands in the read-write set rather than the socket set.
+func TestSandbox_OptionalStorageStartsBlockedAndIsOfferedAsToggle(t *testing.T) {
+	t.Parallel()
+
+	const storage = "/home/u/.local/share/containers/storage"
+	s := styles.CharmtonePantera()
+	com := &common.Common{
+		Styles: &s,
+		Workspace: &sandboxTestWorkspace{
+			dir:    t.TempDir(),
+			grants: sandbox.ContainerGrants{OptionalStorage: []string{storage}},
+		},
+	}
+	m := NewSandbox(com)
+
+	require.Len(t, m.sockets, 1)
+	require.True(t, m.sockets[0].storage)
+	require.NotContains(t, m.config().ReadWrite, storage)
+	require.Empty(t, m.config().UnixSockets)
+
+	m.setFocus(m.socketStop(0))
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Contains(t, m.config().ReadWrite, storage)
+	require.Empty(t, m.config().UnixSockets, "storage is a directory grant, not a socket")
+}
+
+// TestSandbox_GrantedStorageIsNotOfferedTwice verifies a storage directory
+// the workspace already granted shows up once, as a read-write row, and
+// not also as a toggle.
+func TestSandbox_GrantedStorageIsNotOfferedTwice(t *testing.T) {
+	t.Parallel()
+
+	const storage = "/home/u/.local/share/containers/storage"
+	s := styles.CharmtonePantera()
+	com := &common.Common{
+		Styles: &s,
+		Workspace: &sandboxTestWorkspace{
+			dir: t.TempDir(),
+			grants: sandbox.ContainerGrants{
+				ReadWrite:       []string{storage},
+				OptionalStorage: []string{storage},
+			},
+		},
+	}
+	m := NewSandbox(com)
+
+	require.Empty(t, m.sockets)
+	require.Contains(t, m.config().ReadWrite, storage)
 }
 
 // TestSandbox_NoSocketsHidesSection verifies a machine without a
@@ -1296,7 +1349,7 @@ func TestSandbox_NoSocketsHidesSection(t *testing.T) {
 
 	scr := uv.NewScreenBuffer(sandboxTestW, sandboxTestH)
 	m.Draw(scr, image.Rect(0, 0, sandboxTestW, sandboxTestH))
-	require.NotContains(t, ansi.Strip(scr.Render()), "Container sockets")
+	require.NotContains(t, ansi.Strip(scr.Render()), "Container access")
 }
 
 // TestSandbox_ConfirmStageListsOnlyAllowedSockets verifies the

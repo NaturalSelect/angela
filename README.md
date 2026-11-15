@@ -389,10 +389,15 @@ approves without a prompt doesn't instead run into a confusing sandbox I/O
 error.
 
 If the `podman` or `buildah` command line tool is installed, `--sandbox` and
-the `/sandbox` command also make its image storage writable. That is the
-directory holding the overlay filesystem with the image layers,
+the `/sandbox` command detect its image storage but leave it read-only. That is
+the directory holding the overlay filesystem with the image layers,
 `~/.local/share/containers/storage` (or under `$XDG_DATA_HOME`), plus
-`/var/lib/containers/storage` when running as root. Nothing else is opened.
+`/var/lib/containers/storage` when running as root. Write access is off by
+default because a sandboxed command that can edit image layers changes what a
+later `podman run` outside the sandbox executes. Pass
+`--sandbox-allow-docker-storage` to make it writable, or tick it in the
+`/sandbox` dialog, which lists every detected directory and leaves it off until
+you turn it on. Nothing else is opened.
 Configuration and credential files such as `~/.docker/config.json` and
 `$XDG_RUNTIME_DIR/containers/auth.json` stay read-only like the rest of the
 filesystem. The Docker CLI alone grants no directory, because its overlay

@@ -246,6 +246,39 @@ func TestSandboxConfigFromFlags_OptionalSocketsAreNotGranted(t *testing.T) {
 	require.Empty(t, cfg.UnixSockets)
 }
 
+// TestSandboxConfigFromFlags_AllowDockerStorageDoesNotRequireSandbox
+// covers a flag that, like --sandbox-allow-docker-socket, also governs the
+// /sandbox TUI command and so must stay usable without --sandbox.
+func TestSandboxConfigFromFlags_AllowDockerStorageDoesNotRequireSandbox(t *testing.T) {
+	t.Parallel()
+
+	require.NotContains(t, sandboxFlagNames, "sandbox-allow-docker-storage")
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("sandbox-allow-docker-storage", "true"))
+
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
+	require.NoError(t, err)
+	require.False(t, enabled)
+	require.Zero(t, cfg)
+}
+
+// TestSandboxConfigFromFlags_OptionalStorageIsNotGranted covers the
+// default: a detected image storage directory that was not opted into
+// stays out of the sandbox config.
+func TestSandboxConfigFromFlags_OptionalStorageIsNotGranted(t *testing.T) {
+	t.Parallel()
+
+	cmd := newSandboxTestCmd(t)
+	require.NoError(t, cmd.Flags().Set("sandbox", "true"))
+
+	grants := sandbox.ContainerGrants{OptionalStorage: []string{"/home/u/.local/share/containers/storage"}}
+	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, grants)
+	require.NoError(t, err)
+	require.True(t, enabled)
+	require.NotContains(t, cfg.ReadWrite, "/home/u/.local/share/containers/storage")
+}
+
 // TestSandboxConfigFromFlags_NoSandboxContainerPermissionDoesNotRequireSandbox
 // covers a flag that, like --no-docker-sandbox, also governs the /sandbox
 // TUI command and so must stay usable without --sandbox.

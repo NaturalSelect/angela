@@ -973,9 +973,6 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	if len(cfg.UnixSockets) > 0 {
 		lists = append(lists, sandboxConfirmPaths("Unix sockets", cfg.UnixSockets))
 	}
-	question := "Enter the sandbox with these restrictions?"
-	networkLine := "Network: " + network
-	hint := hintStyle.Render("Permissions switch to yolo mode once inside. This cannot be undone for this process.")
 
 	buttonOpts := []common.ButtonOpts{
 		{Text: "Enter Sandbox", Selected: !m.selectedNo, Padding: 3},
@@ -986,7 +983,21 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 	buttons := common.ButtonGroup(t, buttonOpts, " ")
 
+	// NOTE: The width is capped at the form stage's, so a long hint or
+	// path wraps or clips instead of stretching the dialog.
 	frameStyle := t.Dialog.Quit.Frame
+	outerWidth := m.frame.Measure(area).Width
+	bodyWidth := outerWidth - frameStyle.GetHorizontalFrameSize() - baseStyle.GetHorizontalFrameSize()
+	if bodyWidth < lipgloss.Width(buttons) {
+		frameStyle = frameStyle.Padding(1, 0)
+		bodyWidth = outerWidth - frameStyle.GetHorizontalFrameSize() - baseStyle.GetHorizontalFrameSize()
+	}
+	bodyWidth = max(1, bodyWidth)
+
+	wrap := lipgloss.NewStyle().Width(bodyWidth)
+	question := wrap.Render("Enter the sandbox with these restrictions?")
+	networkLine := wrap.Render("Network: " + network)
+	hint := hintStyle.Width(bodyWidth).Render("Permissions switch to yolo mode once inside. This cannot be undone for this process.")
 
 	// NOTE: Only the path lists scroll; the rest is fixed height.
 	var pathLines []string
@@ -1004,16 +1015,15 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	if len(pathLines) > pathsHeight {
 		scrollbarWidth = 1
 	}
-	textWidth := max(lipgloss.Width(question), lipgloss.Width(networkLine))
-	for _, line := range pathLines {
-		textWidth = max(textWidth, lipgloss.Width(line))
+	pathWidth := max(1, bodyWidth-scrollbarWidth)
+	for i, line := range pathLines {
+		pathLines[i] = ansi.Truncate(line, pathWidth, "…")
 	}
-	bodyWidth := textWidth + scrollbarWidth
 
 	parts := []string{question, ""}
 	if len(pathLines) > 0 {
 		visible := strings.Join(pathLines[m.confirmOffset:m.confirmOffset+pathsHeight], "\n")
-		pathsView := lipgloss.NewStyle().Width(textWidth).Render(visible)
+		pathsView := lipgloss.NewStyle().Width(pathWidth).Render(visible)
 		pathsView = joinScrollbar(t, pathsView, pathsHeight, len(pathLines), pathsHeight, m.confirmOffset)
 		parts = append(parts, pathsView, "")
 	}
@@ -1023,10 +1033,6 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	content := baseStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
 
-	maxWidth := area.Dx() - frameStyle.GetHorizontalBorderSize()
-	if maxWidth < lipgloss.Width(content) {
-		frameStyle = frameStyle.Padding(1, 0)
-	}
 	view := frameStyle.Render(content)
 
 	// Locate the buttons' absolute screen position for mouse
@@ -1045,12 +1051,12 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	return nil
 }
 
-// NOTE: Lists every path because the stage scrolls; only one over-long path is clipped.
+// NOTE: Lists every path because the stage scrolls; drawConfirm clips lines to the dialog width.
 func sandboxConfirmPaths(title string, paths []string) string {
 	lines := make([]string, 0, len(paths)+1)
 	lines = append(lines, fmt.Sprintf("%s (%d):", title, len(paths)))
 	for _, p := range paths {
-		lines = append(lines, "  "+ansi.Truncate(p, maxUndoPathWidth, "…"))
+		lines = append(lines, "  "+p)
 	}
 	return strings.Join(lines, "\n")
 }

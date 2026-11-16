@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"fmt"
 	"image"
 	"path/filepath"
 	"strings"
@@ -1368,4 +1369,138 @@ func TestSandbox_ConfirmStageListsOnlyAllowedSockets(t *testing.T) {
 	require.Contains(t, out, "Unix sockets (1)")
 	require.Contains(t, out, "podman.sock")
 	require.NotContains(t, out, "docker.sock")
+}
+
+// newConfirmSandbox returns a sandbox on its confirm stage whose only
+// paths are n read-write ones named /data/path-00, /data/path-01, ...
+func newConfirmSandbox(t *testing.T, n int) *Sandbox {
+	t.Helper()
+
+	m := newTestSandbox(t)
+	m.rows = nil
+	for i := range n {
+		m.addRow()
+		m.rows[len(m.rows)-1].input.SetValue(fmt.Sprintf("/data/path-%02d", i))
+	}
+	m.submit()
+	return m
+}
+
+func drawSandboxConfirm(m *Sandbox, height int) string {
+	scr := uv.NewScreenBuffer(sandboxTestW, height)
+	m.Draw(scr, image.Rect(0, 0, sandboxTestW, height))
+	return ansi.Strip(scr.Render())
+}
+
+func TestSandbox_ConfirmManyPathsKeepsButtonsOnScreen(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 25)
+	out := drawSandboxConfirm(m, sandboxShortH)
+
+	require.Positive(t, m.confirmHeight)
+	require.Contains(t, out, "Read-write (")
+	require.Contains(t, out, "path-00")
+	require.NotContains(t, out, "path-24", "the last path starts below the fold")
+	require.Contains(t, out, "Network:")
+	require.Contains(t, out, "Enter Sandbox")
+	require.Contains(t, out, "Cancel")
+	require.Contains(t, out, "cannot be undone")
+
+	lines := strings.Split(out, "\n")
+	for idx, text := range []string{"Enter Sandbox", "Cancel"} {
+		_, y := compositorButtonPos(t, m.buttonHit, idx, sandboxTestW, sandboxShortH)
+		require.Contains(t, lines[y], text, "button %d hit area must sit on its own row", idx)
+	}
+}
+
+func TestSandbox_ConfirmButtonClickWorksWhileScrolled(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 25)
+	drawSandboxConfirm(m, sandboxShortH)
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 4})
+	drawSandboxConfirm(m, sandboxShortH)
+
+	x, y := compositorButtonPos(t, m.buttonHit, 0, sandboxTestW, sandboxShortH)
+	action := m.HandleMsg(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: y})
+	_, ok := action.(ActionEnterSandbox)
+	require.True(t, ok, "clicking Enter Sandbox should confirm, got %T", action)
+}
+
+func TestSandbox_ConfirmWheelScrollsAndClamps(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 25)
+	drawSandboxConfirm(m, sandboxShortH)
+	require.Zero(t, m.confirmOffset)
+
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 3})
+	out := drawSandboxConfirm(m, sandboxShortH)
+	require.Equal(t, 3, m.confirmOffset)
+	require.Contains(t, out, "Enter Sandbox")
+
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 1000})
+	out = drawSandboxConfirm(m, sandboxShortH)
+	require.Positive(t, m.confirmOffset)
+	require.Contains(t, out, "path-24", "scrolled to the bottom, the last path is visible")
+	require.NotContains(t, out, "path-00")
+	require.Contains(t, out, "Enter Sandbox")
+
+	atBottom := m.confirmOffset
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 1})
+	drawSandboxConfirm(m, sandboxShortH)
+	require.Equal(t, atBottom, m.confirmOffset, "offset must not run past the end")
+
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: -1000})
+	out = drawSandboxConfirm(m, sandboxShortH)
+	require.Zero(t, m.confirmOffset)
+	require.Contains(t, out, "path-00")
+}
+
+func TestSandbox_ConfirmKeysScroll(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 25)
+	drawSandboxConfirm(m, sandboxShortH)
+	page := m.confirmHeight
+
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyDown})
+	require.Equal(t, 1, m.confirmOffset)
+
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyUp})
+	require.Zero(t, m.confirmOffset)
+
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyPgDown})
+	require.Equal(t, page, m.confirmOffset)
+
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	require.Zero(t, m.confirmOffset)
+
+	// Scrolling must not disturb which button is selected.
+	require.False(t, m.selectedNo)
+}
+
+func TestSandbox_ConfirmFewPathsDoNotScroll(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 3)
+	out := drawSandboxConfirm(m, sandboxTestH)
+	require.Contains(t, out, "path-02")
+	require.Contains(t, out, "Network:")
+
+	m.HandleMsg(common.CoalescedWheelMsg{DeltaY: 5})
+	drawSandboxConfirm(m, sandboxTestH)
+	require.Zero(t, m.confirmOffset)
+}
+
+func TestSandbox_ConfirmListsEveryPath(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 12)
+	out := drawSandboxConfirm(m, 60)
+
+	require.Contains(t, out, "path-11")
+	require.NotContains(t, out, "more")
+	require.Zero(t, m.confirmOffset)
 }

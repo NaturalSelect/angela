@@ -112,6 +112,11 @@ type Sandbox struct {
 
 	selectedNo bool // confirm stage: true selects "Cancel"
 
+	// Scroll state of the confirm stage's path lists. confirmHeight is
+	// the viewport height the last Draw resolved.
+	confirmOffset int
+	confirmHeight int
+
 	// Mouse state for button hover/click. Both hitTargets (form stage)
 	// and buttonHit (confirm stage) are rebuilt on every Draw at their
 	// actual screen position, since the dialog is centered and that
@@ -131,6 +136,10 @@ type Sandbox struct {
 		LeftRight  key.Binding
 		EnterSpace key.Binding
 		Close      key.Binding
+		ScrollUp   key.Binding
+		ScrollDown key.Binding
+		PageUp     key.Binding
+		PageDown   key.Binding
 	}
 }
 
@@ -167,6 +176,10 @@ func NewSandbox(com *common.Common) *Sandbox {
 	m.keyMap.LeftRight = key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←/→", "switch options"))
 	m.keyMap.EnterSpace = key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("enter/space", "confirm"))
 	m.keyMap.Close = CloseKey
+	m.keyMap.ScrollUp = key.NewBinding(key.WithKeys("up"))
+	m.keyMap.ScrollDown = key.NewBinding(key.WithKeys("down"))
+	m.keyMap.PageUp = key.NewBinding(key.WithKeys("pgup"))
+	m.keyMap.PageDown = key.NewBinding(key.WithKeys("pgdown"))
 
 	return m
 }
@@ -388,6 +401,7 @@ func (m *Sandbox) activateFocused() {
 func (m *Sandbox) submit() {
 	m.stage = sandboxStageConfirm
 	m.selectedNo = false
+	m.confirmOffset = 0
 }
 
 // rowsLineCount is the number of lines in the scrollable rows block:
@@ -572,6 +586,14 @@ func (m *Sandbox) handleConfirmMsg(msg tea.Msg) Action {
 				return ActionEnterSandbox{Config: m.config()}
 			}
 			return ActionClose{}
+		case key.Matches(msg, m.keyMap.ScrollUp):
+			m.confirmOffset--
+		case key.Matches(msg, m.keyMap.ScrollDown):
+			m.confirmOffset++
+		case key.Matches(msg, m.keyMap.PageUp):
+			m.confirmOffset -= max(1, m.confirmHeight)
+		case key.Matches(msg, m.keyMap.PageDown):
+			m.confirmOffset += max(1, m.confirmHeight)
 		}
 	case tea.MouseClickMsg:
 		if msg.Button == uv.MouseLeft {
@@ -585,6 +607,8 @@ func (m *Sandbox) handleConfirmMsg(msg tea.Msg) Action {
 		}
 	case tea.MouseMotionMsg:
 		m.hoverX, m.hoverY = msg.X, msg.Y
+	case common.CoalescedWheelMsg:
+		m.confirmOffset += int(msg.DeltaY)
 	}
 	return nil
 }
@@ -939,18 +963,19 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 		network = "Allowed"
 	}
 
-	sections := []string{"Enter the sandbox with these restrictions?"}
+	var lists []string
 	if len(cfg.ReadWrite) > 0 {
-		sections = append(sections, fmt.Sprintf("Read-write (%d):\n%s", len(cfg.ReadWrite), formatUndoPaths(cfg.ReadWrite)))
+		lists = append(lists, sandboxConfirmPaths("Read-write", cfg.ReadWrite))
 	}
 	if len(cfg.ReadOnly) > 0 {
-		sections = append(sections, fmt.Sprintf("Read-only (%d):\n%s", len(cfg.ReadOnly), formatUndoPaths(cfg.ReadOnly)))
+		lists = append(lists, sandboxConfirmPaths("Read-only", cfg.ReadOnly))
 	}
 	if len(cfg.UnixSockets) > 0 {
-		sections = append(sections, fmt.Sprintf("Unix sockets (%d):\n%s", len(cfg.UnixSockets), formatUndoPaths(cfg.UnixSockets)))
+		lists = append(lists, sandboxConfirmPaths("Unix sockets", cfg.UnixSockets))
 	}
-	sections = append(sections, "Network: "+network)
-	body := strings.Join(sections, "\n\n")
+	question := "Enter the sandbox with these restrictions?"
+	networkLine := "Network: " + network
+	hint := hintStyle.Render("Permissions switch to yolo mode once inside. This cannot be undone for this process.")
 
 	buttonOpts := []common.ButtonOpts{
 		{Text: "Enter Sandbox", Selected: !m.selectedNo, Padding: 3},
@@ -961,17 +986,43 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	}
 	buttons := common.ButtonGroup(t, buttonOpts, " ")
 
-	content := baseStyle.Render(
-		lipgloss.JoinVertical(
-			lipgloss.Left,
-			body, "",
-			lipgloss.PlaceHorizontal(lipgloss.Width(body), lipgloss.Center, buttons),
-			"",
-			hintStyle.Render("Permissions switch to yolo mode once inside. This cannot be undone for this process."),
-		),
-	)
-
 	frameStyle := t.Dialog.Quit.Frame
+
+	// NOTE: Only the path lists scroll; the rest is fixed height.
+	var pathLines []string
+	if len(lists) > 0 {
+		pathLines = strings.Split(strings.Join(lists, "\n\n"), "\n")
+	}
+	const blankLines = 4
+	fixedHeight := frameStyle.GetVerticalFrameSize() + lipgloss.Height(question) +
+		lipgloss.Height(networkLine) + lipgloss.Height(buttons) + lipgloss.Height(hint) + blankLines
+	pathsHeight := min(len(pathLines), max(1, m.frame.Measure(area).Height-fixedHeight))
+	m.confirmHeight = pathsHeight
+	m.confirmOffset = min(max(0, m.confirmOffset), max(0, len(pathLines)-pathsHeight))
+
+	scrollbarWidth := 0
+	if len(pathLines) > pathsHeight {
+		scrollbarWidth = 1
+	}
+	textWidth := max(lipgloss.Width(question), lipgloss.Width(networkLine))
+	for _, line := range pathLines {
+		textWidth = max(textWidth, lipgloss.Width(line))
+	}
+	bodyWidth := textWidth + scrollbarWidth
+
+	parts := []string{question, ""}
+	if len(pathLines) > 0 {
+		visible := strings.Join(pathLines[m.confirmOffset:m.confirmOffset+pathsHeight], "\n")
+		pathsView := lipgloss.NewStyle().Width(textWidth).Render(visible)
+		pathsView = joinScrollbar(t, pathsView, pathsHeight, len(pathLines), pathsHeight, m.confirmOffset)
+		parts = append(parts, pathsView, "")
+	}
+	parts = append(parts, networkLine, "")
+	buttonsRow := lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, parts...))
+	parts = append(parts, lipgloss.PlaceHorizontal(bodyWidth, lipgloss.Center, buttons), "", hint)
+
+	content := baseStyle.Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+
 	maxWidth := area.Dx() - frameStyle.GetHorizontalBorderSize()
 	if maxWidth < lipgloss.Width(content) {
 		frameStyle = frameStyle.Padding(1, 0)
@@ -983,8 +1034,7 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	// centered, so its origin isn't known until the view is sized.
 	vw, vh := lipgloss.Size(view)
 	center := common.CenterRect(area, min(vw, area.Dx()), min(vh, area.Dy()))
-	buttonsRow := lipgloss.Height(body) + 1 // blank line separating body from buttons
-	buttonsOffsetX := max(0, (lipgloss.Width(body)-lipgloss.Width(buttons))/2)
+	buttonsOffsetX := max(0, (bodyWidth-lipgloss.Width(buttons))/2)
 	originX := center.Min.X + frameStyle.GetBorderLeftSize() + frameStyle.GetPaddingLeft() +
 		baseStyle.GetBorderLeftSize() + baseStyle.GetPaddingLeft() + buttonsOffsetX
 	originY := center.Min.Y + frameStyle.GetBorderTopSize() + frameStyle.GetPaddingTop() +
@@ -993,6 +1043,16 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 
 	DrawCenter(scr, area, view)
 	return nil
+}
+
+// NOTE: Lists every path because the stage scrolls; only one over-long path is clipped.
+func sandboxConfirmPaths(title string, paths []string) string {
+	lines := make([]string, 0, len(paths)+1)
+	lines = append(lines, fmt.Sprintf("%s (%d):", title, len(paths)))
+	for _, p := range paths {
+		lines = append(lines, "  "+ansi.Truncate(p, maxUndoPathWidth, "…"))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ShortHelp implements [help.KeyMap].

@@ -1405,7 +1405,7 @@ func TestSandbox_ConfirmManyPathsKeepsButtonsOnScreen(t *testing.T) {
 	require.Contains(t, out, "Network:")
 	require.Contains(t, out, "Enter Sandbox")
 	require.Contains(t, out, "Cancel")
-	require.Contains(t, out, "cannot be undone")
+	require.Contains(t, out, "undone")
 
 	lines := strings.Split(out, "\n")
 	for idx, text := range []string{"Enter Sandbox", "Cancel"} {
@@ -1503,4 +1503,59 @@ func TestSandbox_ConfirmListsEveryPath(t *testing.T) {
 	require.Contains(t, out, "path-11")
 	require.NotContains(t, out, "more")
 	require.Zero(t, m.confirmOffset)
+}
+
+// confirmFrameWidth is the display width of the dialog border on a
+// wide screen, found from its top edge.
+func confirmFrameWidth(t *testing.T, out string) int {
+	t.Helper()
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.Contains(line, "╭") {
+			return lipgloss.Width(strings.TrimSpace(line))
+		}
+	}
+	t.Fatal("dialog border not found")
+	return 0
+}
+
+// TestSandbox_ConfirmWidthIsCapped verifies a long hint and long
+// paths neither stretch the dialog past the form's width nor wrap
+// the hint away.
+func TestSandbox_ConfirmWidthIsCapped(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 3)
+	m.rows[0].input.SetValue("/data/" + strings.Repeat("deeply-nested/", 20) + "file")
+	scr := uv.NewScreenBuffer(200, sandboxTestH)
+	m.Draw(scr, image.Rect(0, 0, 200, sandboxTestH))
+	out := ansi.Strip(scr.Render())
+
+	require.LessOrEqual(t, confirmFrameWidth(t, out), m.frame.Measure(image.Rect(0, 0, 200, sandboxTestH)).Width)
+	require.Contains(t, out, "…", "an over-long path is clipped")
+	require.Contains(t, out, "undone")
+	require.Contains(t, out, "process.")
+}
+
+// TestSandbox_ConfirmScrollbarSitsAtTheRightEdge verifies the
+// scrollbar hugs the dialog's right edge instead of trailing the
+// longest hidden path.
+func TestSandbox_ConfirmScrollbarSitsAtTheRightEdge(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 25)
+	out := drawSandboxConfirm(m, sandboxShortH)
+
+	var barLine string
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.ContainsAny(line, styles.ScrollbarThumb+styles.ScrollbarTrack) {
+			barLine = line
+			break
+		}
+	}
+	require.NotEmpty(t, barLine, "a scrollbar must be drawn")
+
+	// Past the bar only the frame's right padding and border remain.
+	frame := m.com.Styles.Dialog.Quit.Frame
+	rest := strings.TrimSpace(barLine[strings.IndexAny(barLine, styles.ScrollbarThumb+styles.ScrollbarTrack):])
+	require.Equal(t, 1+frame.GetPaddingRight()+frame.GetBorderRightSize(), lipgloss.Width(rest))
 }

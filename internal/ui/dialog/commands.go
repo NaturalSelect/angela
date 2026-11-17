@@ -685,6 +685,10 @@ func (c *Commands) defaultCommands() []*CommandItem {
 		commands = append(commands, NewCommandItem(c.com.Styles, "sandbox", "Enter Sandbox", "", ActionOpenDialog{DialogID: SandboxID}))
 	}
 
+	// Environment variables set here reach the commands started after
+	// that and nothing else, so the command is always on offer.
+	commands = append(commands, NewCommandItem(c.com.Styles, "set_env", "Set Environment Variable", "", ActionOpenDialog{DialogID: SetEnvID}))
+
 	// Add a command for selecting notification style via picker dialog.
 	notificationLabel := "Notification Style"
 	commands = append(commands, NewCommandItem(c.com.Styles, "select_notifications", notificationLabel, "", ActionOpenDialog{DialogID: NotificationsID}))

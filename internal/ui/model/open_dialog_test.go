@@ -110,6 +110,7 @@ func TestOpenDialog_RoutesEveryKnownID(t *testing.T) {
 		dialog.SessionsID,
 		dialog.FilePickerID,
 		dialog.SandboxID,
+		dialog.SetEnvID,
 		dialog.MCPServersID,
 	} {
 		cmd := m.openDialog(id)
@@ -148,6 +149,18 @@ func TestOpenSandboxDialog_OpensNewDialogWhenNotPresent(t *testing.T) {
 	require.True(t, m.dialog.ContainsDialog(dialog.SandboxID))
 	require.IsType(t, &dialog.Sandbox{}, m.dialog.DialogLast(),
 		"a fresh open must construct the real Sandbox dialog")
+}
+
+func TestOpenSetEnvDialog_BringsExistingToFront(t *testing.T) {
+	t.Parallel()
+
+	m := newTestUI()
+	m.dialog = dialog.NewOverlay(idOnlyDialog{id: dialog.SetEnvID}, idOnlyDialog{id: dialog.QuitID})
+
+	cmd := m.openSetEnvDialog()
+	require.Nil(t, cmd)
+	require.Equal(t, dialog.SetEnvID, m.dialog.DialogLast().ID(),
+		"reopening an already-open set env dialog must bring it to front, not stack a duplicate")
 }
 
 func TestOpenPermissionsDialog(t *testing.T) {

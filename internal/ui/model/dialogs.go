@@ -63,6 +63,10 @@ func (m *UI) openDialog(id string) tea.Cmd {
 		if cmd := m.openSandboxDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case dialog.SetEnvID:
+		if cmd := m.openSetEnvDialog(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 	case dialog.MCPServersID:
 		if cmd := m.openMCPServersDialog(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -96,6 +100,19 @@ func (m *UI) openSandboxDialog() tea.Cmd {
 	}
 
 	m.dialog.OpenDialog(dialog.NewSandbox(m.com))
+	return nil
+}
+
+// openSetEnvDialog opens the dialog for setting environment variables on
+// the running process.
+func (m *UI) openSetEnvDialog() tea.Cmd {
+	if m.dialog.ContainsDialog(dialog.SetEnvID) {
+		// Bring to front
+		m.dialog.BringToFront(dialog.SetEnvID)
+		return nil
+	}
+
+	m.dialog.OpenDialog(dialog.NewSetEnv(m.com))
 	return nil
 }
 

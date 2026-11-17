@@ -339,6 +339,17 @@ type Workspace interface {
 	// passed; otherwise they are listed as optional for the user to pick.
 	SandboxContainerGrants() sandbox.ContainerGrants
 
+	// Environment operations. Variables set here live in the process
+	// environment, so the commands the process starts afterwards inherit
+	// them. Nothing is persisted, and processes that are already running
+	// keep the environment they started with.
+	SetEnv(name, value string) error
+	// UnsetEnv puts a variable set with SetEnv back to what it held
+	// before, or removes it if it did not exist.
+	UnsetEnv(name string) error
+	// SessionEnvNames returns the names set with SetEnv, sorted.
+	SessionEnvNames() []string
+
 	// Events
 	Subscribe(program *tea.Program)
 	Shutdown()

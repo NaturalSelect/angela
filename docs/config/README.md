@@ -588,6 +588,13 @@ fails to resolve is skipped with a warning.
 }
 ```
 
+To set a variable for the current run only, open the command palette and
+choose **Set Environment Variable**. The value is typed masked, applies to
+Angela and the commands it starts from then on, and is never written to
+disk. Programs that are already running, such as MCP and LSP servers, keep the
+environment they started with. Pressing `ctrl+r` with the name filled in puts a
+variable set this way back to what it held before.
+
 `agents` configures or overrides agents. An agent with an unrecognized key is
 dropped with a warning, so a misspelled `allowed_tool` cannot silently remove
 its restrictions. See [Agents](../agents/) for every field.

@@ -15,6 +15,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/env"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/lsp"
@@ -36,6 +37,8 @@ type AppWorkspace struct {
 	app      *app.App
 	store    *config.ConfigStore
 	inDocker bool
+
+	envOverrides env.Overrides
 
 	attachMCPMu sync.Mutex
 }
@@ -702,6 +705,20 @@ func (w *AppWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {
 		w.store.Overrides().SandboxAllowDockerSocket,
 		w.store.Overrides().SandboxAllowDockerStorage,
 	)
+}
+
+// -- Environment --
+
+func (w *AppWorkspace) SetEnv(name, value string) error {
+	return w.envOverrides.Set(name, value)
+}
+
+func (w *AppWorkspace) UnsetEnv(name string) error {
+	return w.envOverrides.Unset(name)
+}
+
+func (w *AppWorkspace) SessionEnvNames() []string {
+	return w.envOverrides.Names()
 }
 
 // -- Lifecycle --

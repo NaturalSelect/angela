@@ -1278,6 +1278,20 @@ func (mr *MockWorkspaceMockRecorder) SaveSession(ctx, sess any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveSession", reflect.TypeOf((*MockWorkspace)(nil).SaveSession), ctx, sess)
 }
 
+// SessionEnvNames mocks base method.
+func (m *MockWorkspace) SessionEnvNames() []string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SessionEnvNames")
+	ret0, _ := ret[0].([]string)
+	return ret0
+}
+
+// SessionEnvNames indicates an expected call of SessionEnvNames.
+func (mr *MockWorkspaceMockRecorder) SessionEnvNames() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SessionEnvNames", reflect.TypeOf((*MockWorkspace)(nil).SessionEnvNames))
+}
+
 // SetClientImageSupport mocks base method.
 func (m *MockWorkspace) SetClientImageSupport(ctx context.Context, supported bool) error {
 	m.ctrl.T.Helper()
@@ -1334,6 +1348,20 @@ func (mr *MockWorkspaceMockRecorder) SetCurrentSession(ctx, sessionID any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetCurrentSession", reflect.TypeOf((*MockWorkspace)(nil).SetCurrentSession), ctx, sessionID)
 }
 
+// SetEnv mocks base method.
+func (m *MockWorkspace) SetEnv(name, value string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetEnv", name, value)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetEnv indicates an expected call of SetEnv.
+func (mr *MockWorkspaceMockRecorder) SetEnv(name, value any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetEnv", reflect.TypeOf((*MockWorkspace)(nil).SetEnv), name, value)
+}
+
 // SetProviderAPIKey mocks base method.
 func (m *MockWorkspace) SetProviderAPIKey(scope config.Scope, providerID string, apiKey any) error {
 	m.ctrl.T.Helper()
@@ -1385,6 +1413,20 @@ func (m *MockWorkspace) Undo(ctx context.Context, sessionID, cutMessageID string
 func (mr *MockWorkspaceMockRecorder) Undo(ctx, sessionID, cutMessageID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Undo", reflect.TypeOf((*MockWorkspace)(nil).Undo), ctx, sessionID, cutMessageID)
+}
+
+// UnsetEnv mocks base method.
+func (m *MockWorkspace) UnsetEnv(name string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UnsetEnv", name)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UnsetEnv indicates an expected call of UnsetEnv.
+func (mr *MockWorkspaceMockRecorder) UnsetEnv(name any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnsetEnv", reflect.TypeOf((*MockWorkspace)(nil).UnsetEnv), name)
 }
 
 // UpdateAgentModel mocks base method.

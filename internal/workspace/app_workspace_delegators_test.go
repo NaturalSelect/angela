@@ -394,6 +394,29 @@ func TestAppWorkspace_EnterSandbox(t *testing.T) {
 	require.Equal(t, cfg, fake.enterCfg)
 }
 
+func TestAppWorkspace_SessionEnv(t *testing.T) {
+	// Not parallel: it changes the real process environment.
+	const name = "ANGELA_TEST_WORKSPACE_ENV"
+	t.Cleanup(func() { _ = os.Unsetenv(name) })
+	fx := newAWFixture(t)
+
+	require.NoError(t, fx.ws.SetEnv(name, "s3cret"))
+	require.Equal(t, "s3cret", os.Getenv(name))
+	require.Equal(t, []string{name}, fx.ws.SessionEnvNames())
+
+	require.NoError(t, fx.ws.UnsetEnv(name))
+	_, ok := os.LookupEnv(name)
+	require.False(t, ok)
+	require.Empty(t, fx.ws.SessionEnvNames())
+}
+
+func TestAppWorkspace_SetEnv_RejectsInvalidName(t *testing.T) {
+	fx := newAWFixture(t)
+
+	require.Error(t, fx.ws.SetEnv("not a name", "x"))
+	require.Empty(t, fx.ws.SessionEnvNames())
+}
+
 func TestAppWorkspace_RecordRecentModel(t *testing.T) {
 	// Not parallel: newAWFixtureWithStore calls t.Setenv.
 	fx, store := newAWFixtureWithStore(t)

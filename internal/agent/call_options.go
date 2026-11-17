@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"maps"
 	"strings"
 
 	"charm.land/catwalk/pkg/catwalk"
@@ -245,8 +246,17 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 		// configured through it silently disappears from the request.
 		// Fields with no Responses equivalent are dropped by
 		// ParseResponsesOptions like any other unrecognized JSON key.
+		// The top-level reasoning_effort is carried over as well, since
+		// it lives outside extra_body, together with the summary and
+		// encrypted content the openai branch asks for alongside it.
 		if openaiCompatUsesResponses(providerCfg, model.CatwalkCfg, model.CatwalkCfg.ID) {
-			if respParsed, err := openai.ParseResponsesOptions(extraBody); err == nil {
+			responsesOpts := maps.Clone(extraBody)
+			if effort, ok := mergedOptions["reasoning_effort"]; ok {
+				setDefaultOption(responsesOpts, "reasoning_effort", effort)
+				setDefaultOption(responsesOpts, "reasoning_summary", "auto")
+				setDefaultOption(responsesOpts, "include", []openai.IncludeType{openai.IncludeReasoningEncryptedContent})
+			}
+			if respParsed, err := openai.ParseResponsesOptions(responsesOpts); err == nil {
 				options[openai.Name] = respParsed
 			}
 		}
@@ -265,6 +275,12 @@ func getProviderOptions(model Model, providerCfg config.ProviderConfig, promptCa
 	}
 
 	return options
+}
+
+func setDefaultOption(opts map[string]any, key string, value any) {
+	if _, ok := opts[key]; !ok {
+		opts[key] = value
+	}
 }
 
 // withPromptCacheKey sets extraBody["prompt_cache_key"] to promptCacheKey,

@@ -5,6 +5,7 @@ import (
 
 	"charm.land/catwalk/pkg/catwalk"
 	"charm.land/fantasy/providers/openai"
+	"charm.land/fantasy/providers/openaicompat"
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/stretchr/testify/require"
 )
@@ -141,6 +142,85 @@ func TestModelUseResponsesOverridesProvider(t *testing.T) {
 			require.Equal(t, tc.wantResponses, isResponses)
 		})
 	}
+}
+
+// TestCompatResponsesModelsGetTheEffort pins that an openai-compat
+// provider dispatching a model to the Responses API sends the effort on
+// that path too, not only on the chat completions options it never reads.
+func TestCompatResponsesModelsGetTheEffort(t *testing.T) {
+	t.Parallel()
+
+	reasoning := catwalk.Model{
+		ID:                     "gpt-5.2",
+		CanReason:              true,
+		ReasoningLevels:        []string{"low", "high"},
+		DefaultReasoningEffort: "high",
+	}
+
+	for name, providerCfg := range map[string]config.ProviderConfig{
+		"copilot table": {ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name},
+		"use_responses": {ID: "gateway", Type: openaicompat.Name, UseResponses: boolPtr(true)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			model := Model{
+				CatwalkCfg: config.ProviderModel{Model: reasoning},
+				ModelCfg:   config.SelectedModel{Provider: providerCfg.ID},
+			}
+
+			raw, ok := getProviderOptions(model, providerCfg, "")[openai.Name]
+			require.True(t, ok)
+			parsed, ok := raw.(*openai.ResponsesProviderOptions)
+			require.True(t, ok)
+			require.NotNil(t, parsed.ReasoningEffort)
+			require.Equal(t, "high", string(*parsed.ReasoningEffort))
+			require.NotNil(t, parsed.ReasoningSummary)
+			require.Equal(t, "auto", *parsed.ReasoningSummary)
+			require.Equal(t, []openai.IncludeType{openai.IncludeReasoningEncryptedContent}, parsed.Include)
+		})
+	}
+
+	t.Run("no effort stays absent", func(t *testing.T) {
+		t.Parallel()
+
+		model := Model{
+			CatwalkCfg: config.ProviderModel{Model: catwalk.Model{ID: "gpt-5.2"}},
+			ModelCfg:   config.SelectedModel{Provider: string(catwalk.InferenceProviderCopilot)},
+		}
+		providerCfg := config.ProviderConfig{ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name}
+
+		raw, ok := getProviderOptions(model, providerCfg, "")[openai.Name]
+		require.True(t, ok)
+		parsed, ok := raw.(*openai.ResponsesProviderOptions)
+		require.True(t, ok)
+		require.Nil(t, parsed.ReasoningEffort)
+		require.Nil(t, parsed.ReasoningSummary)
+		require.Empty(t, parsed.Include)
+	})
+
+	t.Run("a configured extra_body effort wins", func(t *testing.T) {
+		t.Parallel()
+
+		withExtra := reasoning
+		withExtra.Options = catwalk.ModelOptions{
+			ProviderOptions: map[string]any{
+				"extra_body": map[string]any{"reasoning_effort": "low"},
+			},
+		}
+		model := Model{
+			CatwalkCfg: config.ProviderModel{Model: withExtra},
+			ModelCfg:   config.SelectedModel{Provider: string(catwalk.InferenceProviderCopilot)},
+		}
+		providerCfg := config.ProviderConfig{ID: string(catwalk.InferenceProviderCopilot), Type: openaicompat.Name}
+
+		raw, ok := getProviderOptions(model, providerCfg, "")[openai.Name]
+		require.True(t, ok)
+		parsed, ok := raw.(*openai.ResponsesProviderOptions)
+		require.True(t, ok)
+		require.NotNil(t, parsed.ReasoningEffort)
+		require.Equal(t, "low", string(*parsed.ReasoningEffort))
+	})
 }
 
 // TestAnAbsentEffortStaysAbsent keeps the fix from turning reasoning on

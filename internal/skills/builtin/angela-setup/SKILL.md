@@ -77,7 +77,9 @@ any number of providers simultaneously.
 Angela has two model slots you normally configure:
 
 - **`main`** — the primary model for coding, planning, and tool use.
-- **`chore`** — a cheaper/faster model for titles, summaries, and compaction.
+- **`chore`** — a cheaper/faster model for session titles, commit messages, and
+  web fetches. Compaction does not use it by default: it follows the model of
+  the agent it summarizes.
 
 (A third slot, `image`, is used by the built-in image generation and editing
 tools.)
@@ -285,9 +287,13 @@ Ask if the user wants to customize built-in agents. Common adjustments:
 
 `title`, `web-fetch`, and `commit` (the hidden agent behind `angela commit`
 and `/commit`) already default to `chore`, so they need no
-override. Leave `compact` on `main` even though it's an auxiliary call —
-summarizing a conversation on the cheap model degrades the only context a
-resumed session keeps.
+override. `compact` is different: it defaults to `inherited`, so it summarizes
+a session on the model of the agent that session belongs to. That keeps the
+summary request on the conversation's prompt cache. It also means a session
+of an agent moved to `chore`, such as `explore` or `general` above, is
+summarized on `chore`. To always summarize on the main model instead, set
+`"compact": { "slot": "main" }` under `agents`. Sessions that run on another
+slot then give up the cache reuse.
 
 - Disable unused agents:
 

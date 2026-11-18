@@ -427,7 +427,7 @@ func (c *coordinator) run(ctx context.Context, accept *AcceptedRun, sessionID st
 	}
 
 	mergedOptions, temp, topP, topK, freqPenalty, presPenalty := mergeCallOptions(model, providerCfg, buildPromptCacheKey(sessionID, resolved.ID))
-	compact := c.compactFor(ctx, sessionID, resolved.Host)
+	compact := c.compactFor(ctx, sessionID, resolved)
 
 	if err := c.refreshTokenIfExpired(ctx, providerCfg); err != nil {
 		// NOTE(@andreynering): We don't return here because the event handling to ask the user to reauthenticate
@@ -519,24 +519,31 @@ type compactCall struct {
 }
 
 // compactFor resolves the compact agent for a session and derives the
-// provider settings that belong to it.
-func (c *coordinator) compactFor(ctx context.Context, sessionID string, host config.ActiveAgent) compactCall {
-	call := compactCall{agent: c.buildCompactAgent(ctx, host)}
+// provider settings that belong to it. host is the agent the session is
+// running on: compaction resolves through it, and when both end up on the
+// same model the summary request borrows its tools and system prompt so
+// it can read the cache the host's turns wrote.
+func (c *coordinator) compactFor(ctx context.Context, sessionID string, host resolvedAgent) compactCall {
+	call := compactCall{agent: c.buildCompactAgent(ctx, host.Host)}
 	if !call.agent.Available() {
 		return call
+	}
+	cacheKey := buildPromptCacheKey(sessionID, call.agent.ID)
+	if host.Model.Model != nil && sameRequestModel(call.agent.Model, host.Model) {
+		call.agent = shareHostPrefix(call.agent, host)
+		cacheKey = buildPromptCacheKey(sessionID, host.ID)
 	}
 	providerCfg, ok := c.cfg.Config().Providers.Get(call.agent.Model.ModelCfg.Provider)
 	if !ok {
 		return call
 	}
 	call.provider = providerCfg
-	// The prompt cache key uses the resolved compact agent's own ID
-	// rather than the running agent's name: summarize sends a
-	// different system prompt than a normal turn, and two different
-	// compact agents (a custom one and the built-in one) send
-	// different prompts from each other too, so neither may share a
-	// cache route with the other.
-	call.options = getProviderOptions(call.agent.Model, providerCfg, buildPromptCacheKey(sessionID, call.agent.ID))
+	// NOTE: A compact agent on its own model sends a different system
+	// prompt than a normal turn, and two different compact agents send
+	// different prompts from each other, so each keys its cache route by
+	// its own ID. One that shares the host's prefix sends the host's
+	// request, so it must use the host's key to land on the same route.
+	call.options = getProviderOptions(call.agent.Model, providerCfg, cacheKey)
 	call.onAuthRefresh = c.makeAuthRefreshCallback(providerCfg)
 	call.ready = true
 	return call
@@ -1057,11 +1064,11 @@ func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 	// provider this call talks to. Taking the provider from the
 	// primary model instead would refresh credentials for one provider
 	// and then send the request to another.
-	active, err := c.runningInstance(ctx, sessionID)
+	host, err := c.summarizeHost(ctx, sessionID)
 	if err != nil {
 		return err
 	}
-	compact := c.compactFor(ctx, sessionID, active)
+	compact := c.compactFor(ctx, sessionID, host)
 	if !compact.agent.Available() {
 		return fmt.Errorf("resolve the compact agent: %w", compact.agent.Err)
 	}
@@ -1076,6 +1083,24 @@ func (c *coordinator) Summarize(ctx context.Context, sessionID string) error {
 	// Auth failures during summarize flow through fantasy's OnAuthRefresh,
 	// the same path used by regular turns.
 	return executor.Summarize(ctx, sessionID, compact.agent, compact.options, compact.onAuthRefresh)
+}
+
+// summarizeHost resolves the agent a session's next turn runs as, which
+// compaction resolves through and may borrow its tools and system
+// prompt from. When that agent cannot be built, compaction still goes
+// ahead on the bare instance, only without a shared cache prefix.
+func (c *coordinator) summarizeHost(ctx context.Context, sessionID string) (resolvedAgent, error) {
+	target, err := c.turnExecutorFor(ctx, sessionID)
+	if err == nil {
+		return target.resolved, nil
+	}
+	slog.Warn("Failed to resolve the session's agent for compaction; compacting without a shared cache prefix", "session_id", sessionID, "error", err)
+
+	active, err := c.runningInstance(ctx, sessionID)
+	if err != nil {
+		return resolvedAgent{}, err
+	}
+	return resolvedAgent{Host: active}, nil
 }
 
 // GenerateTitle names a session from a user prompt, using the title

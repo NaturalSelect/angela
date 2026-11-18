@@ -97,12 +97,51 @@ const (
 	// agent ID (built-in or custom), whose own prompt knows nothing
 	// about summaryTagOpen/summaryTagClose. Appending it here keeps
 	// the sentinel enforced no matter which agent ends up resolved
-	// for the compact role.
+	// for the compact role. A compact agent that shares its host's
+	// system prompt carries it at the end of the last user message
+	// instead, so the system prompt stays identical to the host's.
 	compactSummaryFormatInstruction = "\n\nStrict output format requirement, independent of anything else above: wrap your entire response in " +
 		summaryTagOpen + " and " + summaryTagClose + " tags, with nothing before the opening tag or after the closing tag."
 )
 
 var userAgent = fmt.Sprintf("Angela/%s (https://github.com/NaturalSelect/angela)", version.Version)
+
+// withMCPInstructions appends the instructions every connected MCP
+// server advertises to a system prompt.
+func withMCPInstructions(systemPrompt string) string {
+	var instructions strings.Builder
+	for _, server := range mcp.GetStates() {
+		if server.State != mcp.StateConnected {
+			continue
+		}
+		if s := server.Client.InitializeResult().Instructions; s != "" {
+			instructions.WriteString(s)
+			instructions.WriteString("\n\n")
+		}
+	}
+	if s := instructions.String(); s != "" {
+		systemPrompt += "\n\n<mcp-instructions>\n" + s + "\n</mcp-instructions>"
+	}
+	return systemPrompt
+}
+
+// finalizeStepMessages turns the messages of one step into what goes
+// on the wire: media workarounds, cache breakpoints and the provider's
+// system prompt prefix. Summarization goes through it too, so a summary
+// request lays its cache breakpoints out exactly like the turn it
+// summarizes.
+func (a *sessionAgent) finalizeStepMessages(msgs []fantasy.Message, model Model, promptPrefix string) []fantasy.Message {
+	msgs = a.workaroundProviderMediaLimitations(msgs, model)
+
+	for _, idx := range cacheBreakpointIndices(msgs) {
+		msgs[idx].ProviderOptions = a.getCacheControlOptions()
+	}
+
+	if promptPrefix != "" {
+		msgs = append([]fantasy.Message{fantasy.NewSystemMessage(promptPrefix)}, msgs...)
+	}
+	return msgs
+}
 
 // Used to remove <think> tags from generated titles.
 var (
@@ -742,23 +781,8 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 	agentTools := call.Agent.Tools
 	runModel := call.Agent.Model
-	systemPrompt := call.Agent.SystemPrompt
+	systemPrompt := withMCPInstructions(call.Agent.SystemPrompt)
 	promptPrefix := call.Agent.SystemPromptPrefix
-	var instructions strings.Builder
-
-	for _, server := range mcp.GetStates() {
-		if server.State != mcp.StateConnected {
-			continue
-		}
-		if s := server.Client.InitializeResult().Instructions; s != "" {
-			instructions.WriteString(s)
-			instructions.WriteString("\n\n")
-		}
-	}
-
-	if s := instructions.String(); s != "" {
-		systemPrompt += "\n\n<mcp-instructions>\n" + s + "\n</mcp-instructions>"
-	}
 
 	if len(agentTools) > 0 {
 		// Add Anthropic caching to the last tool.
@@ -1037,16 +1061,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 
 			carried, carriedBase = slices.Clone(prepared.Messages), len(options.Messages)
 
-			prepared.Messages = a.workaroundProviderMediaLimitations(prepared.Messages, runModel)
-
-			for _, idx := range cacheBreakpointIndices(prepared.Messages) {
-				prepared.Messages[idx].ProviderOptions = a.getCacheControlOptions()
-			}
-
-			if promptPrefix != "" {
-				prepared.Messages = append([]fantasy.Message{fantasy.NewSystemMessage(promptPrefix)}, prepared.Messages...)
-			}
-
+			prepared.Messages = a.finalizeStepMessages(prepared.Messages, runModel, promptPrefix)
 			sessionLock.Lock()
 			stepMessages = cloneFantasyMessages(prepared.Messages)
 			sessionLock.Unlock()

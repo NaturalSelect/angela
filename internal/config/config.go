@@ -1509,10 +1509,9 @@ func builtinAgents(base []string, contextPaths []string) map[string]Agent {
 			Description: "Summarizes a conversation so work can continue in a fresh context.",
 			Mode:        AgentModeCompact,
 			Hidden:      new(true),
-			// Compaction borrows the workhorse model on purpose:
-			// summarizing on the cheap model silently degrades the only
-			// context a resumed session gets.
-			Slot:         SlotMain,
+			// Compaction follows the host's model so the summary request
+			// can reuse the prompt cache the conversation already wrote.
+			Slot:         SlotInherited,
 			ContextPaths: contextPaths,
 			AllowedTools: &AllowedToolSet{Kind: ToolSetScope},
 			AllowedMCP:   &AllowedMCPSet{Kind: ToolSetScope},

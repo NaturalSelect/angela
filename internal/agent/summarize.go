@@ -15,6 +15,10 @@ import (
 	"github.com/NaturalSelect/angela/internal/session"
 )
 
+// summaryToolsDisabledNote tells a model that sees the host's tool
+// definitions that this request is not a chance to use them.
+const summaryToolsDisabledNote = "This turn is a summarization request only. Do not call any tools; tools are disabled for this request."
+
 func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact resolvedAgent, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
 	_, err := a.summarizeAndResume(ctx, sessionID, compact, opts, onAuthRefresh)
 	return err
@@ -83,9 +87,22 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 		}
 	}()
 
+	systemPrompt := compact.SystemPrompt + compactSummaryFormatInstruction
+	if compact.SharesHostPrefix {
+		systemPrompt = withMCPInstructions(compact.SystemPrompt)
+	}
 	agentOpts := []fantasy.AgentOption{
-		fantasy.WithSystemPrompt(compact.SystemPrompt + compactSummaryFormatInstruction),
+		fantasy.WithSystemPrompt(systemPrompt),
 		fantasy.WithUserAgent(userAgent),
+	}
+	if compact.SharesHostPrefix {
+		// NOTE: Tools are sent so the tools block matches the host's and
+		// stays cached, but inertTool refuses to run any of them.
+		summaryTools := inertTools(compact.Tools)
+		if len(summaryTools) > 0 {
+			summaryTools[len(summaryTools)-1].SetProviderOptions(a.getCacheControlOptions())
+		}
+		agentOpts = append(agentOpts, fantasy.WithTools(summaryTools...))
 	}
 	if compact.MaxTokens > 0 {
 		agentOpts = append(agentOpts, fantasy.WithMaxOutputTokens(compact.MaxTokens))
@@ -106,6 +123,14 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 	if a.runningBackgroundAgents != nil {
 		summaryPromptText += buildRunningBackgroundAgentsNote(a.runningBackgroundAgents(sessionID))
 	}
+	if compact.SharesHostPrefix {
+		summaryPromptText = strings.Join([]string{
+			compact.SummaryInstructions,
+			summaryToolsDisabledNote,
+			summaryPromptText,
+			strings.TrimLeft(compactSummaryFormatInstruction, "\n"),
+		}, "\n\n")
+	}
 
 	retryModel := &atomic.Pointer[fantasy.LanguageModel]{}
 	retryModel.Store(&compact.Model.Model)
@@ -121,9 +146,10 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 		},
 		PrepareStep: func(callContext context.Context, options fantasy.PrepareStepFunctionOptions) (_ context.Context, prepared fantasy.PrepareStepResult, err error) {
 			prepared.Messages = options.Messages
-			if systemPromptPrefix != "" {
-				prepared.Messages = append([]fantasy.Message{fantasy.NewSystemMessage(systemPromptPrefix)}, prepared.Messages...)
+			for i := range prepared.Messages {
+				prepared.Messages[i].ProviderOptions = nil
 			}
+			prepared.Messages = a.finalizeStepMessages(prepared.Messages, compact.Model, systemPromptPrefix)
 			return callContext, prepared, nil
 		},
 		OnReasoningDelta: func(id string, text string) error {
@@ -144,6 +170,9 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 			summaryMessage.AppendContent(text)
 			return a.messages.Update(genCtx, summaryMessage)
 		},
+	}
+	if compact.SharesHostPrefix {
+		streamCall.StopWhen = []fantasy.StopCondition{fantasy.StepCountIs(1)}
 	}
 
 	var (
@@ -188,6 +217,15 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 
 		spentUsage = addUsage(spentUsage, resp.TotalUsage)
 		spentCost = addOpenrouterCosts(spentCost, resp.Steps)
+		slog.Info(
+			"Summary response received",
+			"session_id", sessionID,
+			"attempt", attempt,
+			"shares_host_prefix", compact.SharesHostPrefix,
+			"input_tokens", resp.TotalUsage.InputTokens,
+			"cache_read_tokens", resp.TotalUsage.CacheReadTokens,
+			"cache_creation_tokens", resp.TotalUsage.CacheCreationTokens,
+		)
 
 		if resp.Response.FinishReason == fantasy.FinishReasonLength {
 			// Accepting this as SummaryMessageID would make the truncated

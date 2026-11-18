@@ -120,7 +120,7 @@ func (c *coordinator) executeSubAgent(ctx context.Context, sess session.Session,
 	}
 
 	// Run the agent
-	compact := c.compactFor(ctx, params.SessionID, params.Resolved.Host)
+	compact := c.compactFor(ctx, params.SessionID, params.Resolved)
 	run := func() (*fantasy.AgentResult, error) {
 		return params.Agent.Run(ctx, SessionAgentCall{
 			SessionID:                sess.ID,

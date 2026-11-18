@@ -511,6 +511,24 @@ An unset, unknown, or non-`compact`-mode `compact_agent` all fall back to
 the built-in `compact` agent; an unknown or invalid reference also logs a
 warning at startup so the typo doesn't go unnoticed.
 
+#### Prompt cache reuse
+
+The built-in `compact` agent runs on whatever model the summarized agent is
+using. When the compact agent ends up on that same model, the summary request
+is sent as a continuation of the conversation, so the provider can serve most
+of it from the prompt cache the conversation already wrote:
+
+- The request carries the session agent's system prompt, tool definitions and
+  cache key unchanged. The tools are only advertised and are never run while
+  summarizing.
+- The compact agent's own prompt is sent as the last user message instead of
+  as the system prompt.
+
+Pointing a compact agent at a different slot or model, as `reviewer-compact`
+does above, keeps its own system prompt and no tools, and gives up the cache
+reuse. A model pick on the compact agent still takes priority over following
+the session agent.
+
 ### Internal Agents
 
 Six more agents back Angela's own model calls. They are hidden, so they never
@@ -521,7 +539,7 @@ it a different slot or prompt, or set `"hidden": false` to show it.
 | ID               | Slot    | What it does                                                   |
 |------------------|---------|----------------------------------------------------------------|
 | `title`          | `chore` | Names a session from its first prompt. Output is capped at 40 tokens. |
-| `compact`        | `main`  | Summarizes a conversation. Mode `compact`; see above.          |
+| `compact`        | `inherited` | Summarizes a conversation on the model of the agent it summarizes. Mode `compact`; see above. |
 | `generate-agent` | `main`  | Writes the definition for `angela agent create`.               |
 | `initialize`     | none    | Makes no model call of its own. Its prompt is injected into an ordinary session when you run `/init`. |
 | `commit`         | `chore` | Writes the commit message for `angela commit` and `/commit`. Output is capped at 150 tokens. |

@@ -88,7 +88,7 @@ func TestCompactSettingsComeFromTheCompactProvider(t *testing.T) {
 	host := instantiate(t, coord, config.AgentCoder)
 	require.Equal(t, "mock", host.Model.Provider, "precondition: the turn runs on mock")
 
-	compact := coord.compactFor(t.Context(), "session", host)
+	compact := coord.compactFor(t.Context(), "session", resolvedAgent{Host: host})
 	require.True(t, compact.ready, "the compact agent must resolve against its own provider")
 	require.Equal(t, "other", compact.agent.Model.ModelCfg.Provider,
 		"precondition: compaction runs on the other provider")
@@ -113,7 +113,7 @@ func TestCompactSettingsAreAbsentWhenCompactionCannotResolve(t *testing.T) {
 	coord := newSplitProviderCoordinator(t)
 	delete(coord.cfg.Config().Agents, config.AgentCompact)
 
-	compact := coord.compactFor(t.Context(), "session", instantiate(t, coord, config.AgentCoder))
+	compact := coord.compactFor(t.Context(), "session", resolvedAgent{Host: instantiate(t, coord, config.AgentCoder)})
 	require.False(t, compact.ready)
 	require.False(t, compact.agent.Available())
 	require.Nil(t, compact.onAuthRefresh,
@@ -141,7 +141,7 @@ func TestCompactForUsesHostsCustomCompactAgent(t *testing.T) {
 	coord.cfg.Config().Agents[config.AgentCoder] = coderCfg
 
 	host := instantiate(t, coord, config.AgentCoder)
-	compact := coord.compactFor(t.Context(), "session", host)
+	compact := coord.compactFor(t.Context(), "session", resolvedAgent{Host: host})
 
 	require.True(t, compact.ready)
 	require.Equal(t, "my-compact", compact.agent.ID)
@@ -162,7 +162,7 @@ func TestCompactForFallsBackWhenHostsCompactAgentIsInvalid(t *testing.T) {
 	coord.cfg.Config().Agents[config.AgentCoder] = coderCfg
 
 	host := instantiate(t, coord, config.AgentCoder)
-	compact := coord.compactFor(t.Context(), "session", host)
+	compact := coord.compactFor(t.Context(), "session", resolvedAgent{Host: host})
 
 	require.True(t, compact.ready)
 	require.Equal(t, config.AgentCompact, compact.agent.ID)
@@ -178,10 +178,63 @@ func TestBuildCompactAgentRebuildModelResolvesAgain(t *testing.T) {
 	coord := newSplitProviderCoordinator(t)
 	host := instantiate(t, coord, config.AgentCoder)
 
-	compact := coord.compactFor(t.Context(), "session", host)
+	compact := coord.compactFor(t.Context(), "session", resolvedAgent{Host: host})
 	require.True(t, compact.ready)
 
 	model, err := compact.agent.RebuildModel(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, model)
+}
+
+// TestCompactForSharesHostPrefixOnTheSameModel pins the cache-sharing
+// shape: when compaction lands on the host's own model, the summary
+// request carries the host's tools and system prompt and the host's
+// cache key, and the compact prompt moves to the instructions.
+func TestCompactForSharesHostPrefixOnTheSameModel(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+	host := resolveCoder(t, coord)
+	require.NotEmpty(t, host.Tools, "precondition: the host has tools to share")
+
+	compact := coord.compactFor(t.Context(), "session", host)
+	require.True(t, compact.ready)
+	require.True(t, compact.agent.SharesHostPrefix)
+	require.Equal(t, config.AgentCompact, compact.agent.ID,
+		"the summary is still attributed to the compact agent")
+	require.Equal(t, host.Model.ModelCfg, compact.agent.Model.ModelCfg)
+	require.Len(t, compact.agent.Tools, len(host.Tools))
+	require.Equal(t, host.SystemPrompt, compact.agent.SystemPrompt)
+	require.Contains(t, compact.agent.SummaryInstructions, "You are summarizing a conversation")
+
+	providerCfg, ok := coord.cfg.Config().Providers.Get("mock")
+	require.True(t, ok)
+	require.Equal(t, getProviderOptions(host.Model, providerCfg, buildPromptCacheKey("session", host.ID)), compact.options,
+		"the request must use the host's cache key to land on the host's cache route")
+	require.NotEqual(t, getProviderOptions(host.Model, providerCfg, buildPromptCacheKey("session", config.AgentCompact)), compact.options)
+}
+
+// TestCompactForKeepsItsOwnPromptOnAnotherModel pins that a compact
+// agent on a different model than its host sends its own prompt: its
+// cache is not the host's, so there is nothing to share.
+func TestCompactForKeepsItsOwnPromptOnAnotherModel(t *testing.T) {
+	coord := newSplitProviderCoordinator(t)
+	host := resolveCoder(t, coord)
+
+	compact := coord.compactFor(t.Context(), "session", host)
+	require.True(t, compact.ready)
+	require.False(t, compact.agent.SharesHostPrefix)
+	require.Empty(t, compact.agent.SummaryInstructions)
+	require.Contains(t, compact.agent.SystemPrompt, "You are summarizing a conversation")
+	require.Empty(t, compact.agent.Tools)
+}
+
+// TestCompactForDoesNotShareWithoutAResolvedHost pins that a host that
+// only carries its instance, which is what a session that cannot
+// resolve its agent gets, falls back to the compact agent's own prompt.
+func TestCompactForDoesNotShareWithoutAResolvedHost(t *testing.T) {
+	coord := newModelPrefTestCoordinator(t, nil)
+
+	compact := coord.compactFor(t.Context(), "session", resolvedAgent{Host: instantiate(t, coord, config.AgentCoder)})
+	require.True(t, compact.ready)
+	require.False(t, compact.agent.SharesHostPrefix)
+	require.Contains(t, compact.agent.SystemPrompt, "You are summarizing a conversation")
 }

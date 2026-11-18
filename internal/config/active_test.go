@@ -670,6 +670,25 @@ func TestInternalAgentInheritedSlotFollowsHostRegardlessOfRole(t *testing.T) {
 	require.Equal(t, host.Slot, compact.Slot)
 }
 
+// TestBuiltinCompactFollowsHostModel pins that the shipped compact
+// definition follows whichever model its host runs on, so the summary
+// request can reuse the host's prompt cache.
+func TestBuiltinCompactFollowsHostModel(t *testing.T) {
+	t.Parallel()
+
+	cfg := activeTestConfig()
+	cfg.Agents["reviewer"] = Agent{ID: "reviewer", Slot: "fast"}
+	cfg.Agents[AgentCompact] = builtinAgents(nil, nil)[AgentCompact]
+
+	host, ok := cfg.InstantiateAgent("reviewer")
+	require.True(t, ok)
+
+	compact, ok := cfg.InstantiateFor(AgentCompact, host)
+	require.True(t, ok)
+	require.Equal(t, "groq", compact.Model.Provider)
+	require.Equal(t, "llama", compact.Model.Model)
+}
+
 // TestSessionModelOutranksTheTreePickOutranksTheConfig pins the order of
 // the stack, nearest layer winning.
 func TestSessionModelOutranksTheTreePickOutranksTheConfig(t *testing.T) {

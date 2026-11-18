@@ -76,3 +76,30 @@ func (c *coordinator) buildCompactAgent(ctx context.Context, host config.ActiveA
 		},
 	}
 }
+
+// sameRequestModel reports whether two resolved models send the same
+// model request settings: same provider, model, preset and thinking
+// state.
+func sameRequestModel(a, b Model) bool {
+	return a.ModelCfg.Provider == b.ModelCfg.Provider &&
+		a.ModelCfg.Model == b.ModelCfg.Model &&
+		a.Variant == b.Variant &&
+		a.Think == b.Think
+}
+
+// shareHostPrefix turns a resolved compact agent into one that sends
+// its host's model, tools and system prompt, so the summary request
+// reads the prompt cache the host's turns wrote. The compact prompt it
+// replaces moves to SummaryInstructions. Identity, output cap and the
+// host it was resolved from stay the compact agent's own, so the
+// summary message is still attributed to it.
+func shareHostPrefix(compact, host resolvedAgent) resolvedAgent {
+	compact.Model = host.Model
+	compact.RebuildModel = host.RebuildModel
+	compact.Tools = host.Tools
+	compact.SummaryInstructions = compact.SystemPrompt
+	compact.SystemPrompt = host.SystemPrompt
+	compact.SystemPromptPrefix = host.SystemPromptPrefix
+	compact.SharesHostPrefix = true
+	return compact
+}

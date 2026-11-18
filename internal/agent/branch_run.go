@@ -228,7 +228,7 @@ func (c *coordinator) startBranchTurn(ctx context.Context, sessionID, prompt str
 		return errModelProviderNotConfigured
 	}
 
-	compact := c.compactFor(ctx, params.SessionID, params.Resolved.Host)
+	compact := c.compactFor(ctx, sessionID, params.Resolved)
 	run := func() (*fantasy.AgentResult, error) {
 		return params.Agent.Run(ctx, SessionAgentCall{
 			SessionID:                sessionID,

@@ -41,6 +41,14 @@ type resolvedAgent struct {
 	// instead of aborting the turn. Callers must check Available
 	// before assuming Model is usable.
 	Err error
+
+	// SharesHostPrefix marks a compact agent that reuses its host's
+	// model, tools and system prompt so the summary request hits the
+	// prompt cache the conversation already wrote. Only compactFor
+	// sets it. The compact prompt moves to SummaryInstructions and is
+	// sent as the last user message instead.
+	SharesHostPrefix    bool
+	SummaryInstructions string
 }
 
 // Available reports whether this agent resolved cleanly and can

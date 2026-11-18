@@ -15,9 +15,16 @@ import (
 	"github.com/NaturalSelect/angela/internal/session"
 )
 
-// summaryToolsDisabledNote tells a model that sees the host's tool
-// definitions that this request is not a chance to use them.
-const summaryToolsDisabledNote = "This turn is a summarization request only. Do not call any tools; tools are disabled for this request."
+// summaryToolsDisabledNote is the last thing a shared-prefix summary
+// request says. The request also sets tool_choice to none, so this only
+// backs up the provider for a model that sees the host's tool definitions
+// and might read the request as a chance to use them.
+const summaryToolsDisabledNote = "Output only the summary: do not call any tool or take any other action. Tools are disabled for this request."
+
+// summaryMaxSteps bounds one shared-prefix summary request. A model that
+// calls a tool anyway is told the tools are disabled and gets another step
+// to write the summary.
+const summaryMaxSteps = 3
 
 func (a *sessionAgent) Summarize(ctx context.Context, sessionID string, compact resolvedAgent, opts fantasy.ProviderOptions, onAuthRefresh func(context.Context, *fantasy.ProviderError) error) error {
 	_, err := a.summarizeAndResume(ctx, sessionID, compact, opts, onAuthRefresh)
@@ -126,9 +133,9 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 	if compact.SharesHostPrefix {
 		summaryPromptText = strings.Join([]string{
 			compact.SummaryInstructions,
-			summaryToolsDisabledNote,
 			summaryPromptText,
 			strings.TrimLeft(compactSummaryFormatInstruction, "\n"),
+			summaryToolsDisabledNote,
 		}, "\n\n")
 	}
 
@@ -172,7 +179,12 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 		},
 	}
 	if compact.SharesHostPrefix {
-		streamCall.StopWhen = []fantasy.StopCondition{fantasy.StepCountIs(1)}
+		streamCall.StopWhen = []fantasy.StopCondition{fantasy.StepCountIs(summaryMaxSteps)}
+		// NOTE: Providers reject tool_choice when the request has no tools.
+		if len(compact.Tools) > 0 {
+			toolChoice := fantasy.ToolChoiceNone
+			streamCall.ToolChoice = &toolChoice
+		}
 	}
 
 	var (

@@ -6,13 +6,14 @@ import (
 	"charm.land/fantasy"
 )
 
-const inertToolMessage = "Tools are disabled while the conversation is being summarized."
+const inertToolMessage = "Tools are disabled while the conversation is being summarized. Do not call any tool; write the summary now."
 
 // inertTool advertises the inner tool's definition and refuses to run
 // it. A summary request sends the host's tool definitions so the
 // provider sees the same prompt prefix as the turn it summarizes, and
 // can serve it from cache. The summary itself must not act, so every
 // call is answered with an error instead of reaching the inner tool.
+// The turn is not stopped: the model reads the refusal and carries on.
 type inertTool struct {
 	inner fantasy.AgentTool
 }
@@ -39,7 +40,5 @@ func (t *inertTool) SetProviderOptions(opts fantasy.ProviderOptions) {
 }
 
 func (t *inertTool) Run(context.Context, fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	resp := fantasy.NewTextErrorResponse(inertToolMessage)
-	resp.StopTurn = true
-	return resp, nil
+	return fantasy.NewTextErrorResponse(inertToolMessage), nil
 }

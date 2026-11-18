@@ -58,7 +58,7 @@ warning; move its settings to `co-design`.
 | `name` | string | Display name. |
 | `description` | string | Shown to the dispatching model. |
 | `mode` | string | `primary`, `subagent`, `branch`, or `compact`. |
-| `slot` | string | Model slot to use, or `"inherited"` to run on whatever model dispatched this agent. Default `main`; `web-fetch`, `title` and `commit` default to `chore`, `image` to `image`. |
+| `slot` | string | Model slot to use, or `"inherited"` to run on whatever model dispatched this agent. Default `main`; `web-fetch`, `title` and `commit` default to `chore`, `image` to `image`, and `compact` to `inherited` (it summarizes on the model of the agent it summarizes; set `agents.compact.slot` to `main` to always use the main model, which gives up prompt-cache reuse for sessions on another slot). |
 | `variant` | string | Named variant on the slot's model; wins over the slot's own `variant`. |
 | `max_tokens` | int | Output-token cap; omit for model default. |
 | `prompt` | string | Replaces the built-in system prompt (Go template). |

@@ -18,7 +18,7 @@ is `compact`. An agent you define from scratch defaults to `mode: subagent`,
 | `name`           | string | Display name                                                        |
 | `description`    | string | What the agent does; shown to the dispatching model                 |
 | `mode`           | string | `primary` (drives a session), `subagent` (dispatched via the Agent tool), `branch` (dispatched like a subagent, but forks the caller's transcript and talks to the user), `compact` (only ever summarizes another agent's session; always hidden and toolless whatever else is configured) |
-| `slot`           | string | A slot name from `slots`, or `"inherited"` to run on whatever model dispatched this agent. Default `main` for most agents — `title`, `commit` and `web-fetch` default to `chore` instead (which is how a subagent is pointed at a cheaper model), and `image` defaults to `image` |
+| `slot`           | string | A slot name from `slots`, or `"inherited"` to run on whatever model dispatched this agent. Default `main` for most agents — `title`, `commit` and `web-fetch` default to `chore` instead (which is how a subagent is pointed at a cheaper model), `image` defaults to `image`, and `compact` defaults to `inherited`, so it summarizes on the model of the agent it summarizes. Set `agents.compact.slot` to `main` to always summarize on the main model, at the cost of the prompt-cache reuse for sessions on another slot |
 | `variant`        | string | A variant name on that model slot; takes priority over the slot's own `variant` |
 | `max_tokens`     | int    | Output-token cap; omit for the model default                        |
 | `prompt`         | string | Replaces the built-in system prompt. Parsed as a Go template        |

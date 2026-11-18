@@ -30,7 +30,7 @@ func TestInertToolNeverRunsTheInnerTool(t *testing.T) {
 	resp, err := wrapped[0].Run(t.Context(), fantasy.ToolCall{ID: "call-1", Name: "counter", Input: "{}"})
 	require.NoError(t, err)
 	require.True(t, resp.IsError)
-	require.True(t, resp.StopTurn)
+	require.False(t, resp.StopTurn, "the model must get to read the refusal and answer")
 	require.Equal(t, inertToolMessage, resp.Content)
 	require.Zero(t, runs.Load(), "a summary request must not act through the host's tools")
 }

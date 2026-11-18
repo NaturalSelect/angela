@@ -1094,8 +1094,7 @@ func (c *coordinator) summarizeHost(ctx context.Context, sessionID string) (reso
 	if err == nil {
 		return target.resolved, nil
 	}
-	slog.Warn("Failed to resolve the session's agent for compaction; compacting without a shared cache prefix", "session_id", sessionID, "error", err)
-
+	slog.Warn("Failed to resolve the session's agent for compaction; compacting without a shared cache prefix", "session_id", sessionID, "reason", "agent resolution failed (details redacted)")
 	active, err := c.runningInstance(ctx, sessionID)
 	if err != nil {
 		return resolvedAgent{}, err

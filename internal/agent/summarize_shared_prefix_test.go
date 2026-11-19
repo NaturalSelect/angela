@@ -92,8 +92,8 @@ func TestSummarizeSharedPrefixSendsTheHostsRequestShape(t *testing.T) {
 	require.Contains(t, tool.ProviderOptions, anthropic.Name,
 		"the last tool carries the cache breakpoint, as it does on a normal turn")
 	require.NotNil(t, got.ToolChoice)
-	require.Equal(t, fantasy.ToolChoiceNone, *got.ToolChoice,
-		"the request itself must forbid tool calls, not only ask the model not to make them")
+	require.Equal(t, fantasy.ToolChoiceAuto, *got.ToolChoice,
+		"tool_choice must match the host's turns, or Anthropic drops the message cache")
 
 	last := got.Prompt[len(got.Prompt)-1]
 	require.Equal(t, fantasy.MessageRoleUser, last.Role)
@@ -114,30 +114,6 @@ func TestSummarizeSharedPrefixSendsTheHostsRequestShape(t *testing.T) {
 	summaryMsg, err := env.messages.Get(t.Context(), updated.SummaryMessageID)
 	require.NoError(t, err)
 	require.Equal(t, "the summary", summaryMsg.Content().Text)
-}
-
-// TestSummarizeSharedPrefixWithoutToolsLeavesToolChoiceAlone pins that
-// tool_choice none is only sent along with tool definitions: providers
-// reject it on a request that carries no tools.
-func TestSummarizeSharedPrefixWithoutToolsLeavesToolChoiceAlone(t *testing.T) {
-	t.Parallel()
-
-	sa, env := summarizeGomockEnv(t)
-	sessID := seedSession(t, sa, env)
-
-	var got fantasy.Call
-	compactModel := newMockLanguageModel(t)
-	compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
-			got = call
-			return streamOf([]string{summaryTagOpen, "the summary", summaryTagClose}, fantasy.FinishReasonStop), nil
-		})
-
-	require.NoError(t, sa.Summarize(t.Context(), sessID, sharedPrefixCompact(compactModel), nil, nil))
-
-	require.Empty(t, got.Tools)
-	require.NotNil(t, got.ToolChoice)
-	require.NotEqual(t, fantasy.ToolChoiceNone, *got.ToolChoice)
 }
 
 // TestSummarizeSharedPrefixToolCallIsRefusedAndSummaryContinues pins that
@@ -171,8 +147,8 @@ func TestSummarizeSharedPrefixToolCallIsRefusedAndSummaryContinues(t *testing.T)
 	require.Len(t, calls, 2)
 	for _, call := range calls {
 		require.NotNil(t, call.ToolChoice)
-		require.Equal(t, fantasy.ToolChoiceNone, *call.ToolChoice,
-			"the follow-up step keeps tool calls forbidden")
+		require.Equal(t, fantasy.ToolChoiceAuto, *call.ToolChoice,
+			"the follow-up step keeps the host's tool_choice")
 	}
 
 	var refusal string

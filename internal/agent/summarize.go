@@ -16,9 +16,9 @@ import (
 )
 
 // summaryToolsDisabledNote is the last thing a shared-prefix summary
-// request says. The request also sets tool_choice to none, so this only
-// backs up the provider for a model that sees the host's tool definitions
-// and might read the request as a chance to use them.
+// request says. The request cannot forbid tool calls at the provider, so
+// this and the refusal in inertTool are what keep a model that sees the
+// host's tool definitions from reading the request as a chance to use them.
 const summaryToolsDisabledNote = "Output only the summary: do not call any tool or take any other action. Tools are disabled for this request."
 
 // summaryMaxSteps bounds one shared-prefix summary request. A model that
@@ -179,12 +179,8 @@ func (a *sessionAgent) summarizeAndResume(ctx context.Context, sessionID string,
 		},
 	}
 	if compact.SharesHostPrefix {
+		// NOTE: tool_choice stays at the host's default of auto. Changing it invalidates the message cache on Anthropic.
 		streamCall.StopWhen = []fantasy.StopCondition{fantasy.StepCountIs(summaryMaxSteps)}
-		// NOTE: Providers reject tool_choice when the request has no tools.
-		if len(compact.Tools) > 0 {
-			toolChoice := fantasy.ToolChoiceNone
-			streamCall.ToolChoice = &toolChoice
-		}
 	}
 
 	var (

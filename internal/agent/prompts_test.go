@@ -273,19 +273,49 @@ func TestCoDesignPrompt_ForcedChangesAreConsequencesNotChoices(t *testing.T) {
 
 	for name, clause := range map[string]string{
 		"rule shows forced change as a consequence": "it is a consequence, not a choice: present it in one sentence naming the decision and why each alternative fails.",
-		"rule demands why each alternative fails":   "If you cannot say why each fails, it is a real choice: ask.",
+		"rule demands why each alternative fails":   "If you cannot say why each fails, it is a real choice: settle it by the rule above.",
 		"objection reopens the forcing decision":    "An objection to a consequence reopens the decision that forced it.",
-		"unseen rule admits consequences":           "saw it as a consequence and did not object",
+		"unseen rule admits consequences":           "Your choice or a consequence settles once the user saw it and did not object",
 		"step 3 traces before asking":               "Trace what the section touches elsewhere in the design",
-		"to confirm needs a real choice":            "Ask only where more than one answer still holds",
+		"open answers follow the rules":             "Where more than one answer still holds, settle it by the rules above.",
 		"consequences do not block merge":           "Each piece was shown here",
 		"contract binds the accepted design":        "The design above is what the user accepted: a plan or implementation that has to deviate from it must stop and tell the user first.",
-		"accepted pieces read as plain design":      "accepted suggestions and consequences read as plain design",
+		"accepted pieces read as plain design":      "your choices and consequences read as plain design",
 	} {
 		require.Contains(t, tpl, clause, name)
 	}
 	for _, marker := range []string{"// suggested:", "// follows:", "to confirm"} {
 		require.NotContains(t, tpl, marker)
+	}
+}
+
+// NOTE: Asking by default turns every co-design turn into a confirmation round.
+func TestCoDesignPrompt_ChoosesInsteadOfAsking(t *testing.T) {
+	t.Parallel()
+
+	tpl := normalizedCoDesignTemplate()
+
+	for name, clause := range map[string]string{
+		"routine choices are its own":      "Make the routine design choices yourself and show them; ask the user only what you cannot settle alone.",
+		"no acceptance question":           "never ask whether they accept it.",
+		"ask only outside the code":        "Ask instead only when the answer lies outside the code",
+		"few questions per turn":           "End the turn with at most two questions, asked through the Question tool",
+		"no pending list":                  "Never end with a list of what awaits acceptance",
+		"drafts without being asked":       "Draft each whole section yourself",
+		"structural misfits are choices":   "is a choice: settle it by the rules above, showing the misfit beside your fix.",
+		"passing traces stay short":        "A trace that passes a routine check takes one line",
+		"alignment asks only what is open": "ask at most three short questions in one Question call",
+	} {
+		require.Contains(t, tpl, clause, name)
+	}
+	for _, removed := range []string{
+		"Make no decision the user has not handed to you.",
+		"silence or a reply about something else leaves it open",
+		"accepted, changed, or rejected by number",
+		"After each section settles, show the outline",
+		"drafts when asked",
+	} {
+		require.NotContains(t, tpl, removed)
 	}
 }
 
@@ -368,7 +398,7 @@ func TestCoDesignPrompt_HandsBackASolutionNotAPlan(t *testing.T) {
 		"5. **Follow-up work**",
 		"This solution is built through plans, one part at a time.",
 		"Derive the outline",
-		"A suggestion or open question is settled only by an answer that names it",
+		"A question you asked stays open until the user answers it.",
 	} {
 		require.Contains(t, tpl, clause)
 	}

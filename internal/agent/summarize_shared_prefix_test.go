@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -174,6 +175,44 @@ func TestSummarizeSharedPrefixToolCallIsRefusedAndSummaryContinues(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, "the summary", summaryMsg.Content().Text)
 	require.Empty(t, summaryMsg.ToolCalls())
+}
+
+// TestSummarizeSendsToolsOnlyWhenSharingTheHostPrefix pins that tool
+// definitions go out only on a request that shares the host's cache. A
+// compact agent on its own prompt sends none, even if tools were left on
+// the value, because without a shared prefix they buy no cache hit and only
+// invite a tool call.
+func TestSummarizeSendsToolsOnlyWhenSharingTheHostPrefix(t *testing.T) {
+	t.Parallel()
+
+	var runs atomic.Int32
+	for _, shares := range []bool{true, false} {
+		t.Run(fmt.Sprintf("shares=%t", shares), func(t *testing.T) {
+			t.Parallel()
+
+			sa, env := summarizeGomockEnv(t)
+			sessID := seedSession(t, sa, env)
+
+			var got fantasy.Call
+			compactModel := newMockLanguageModel(t)
+			compactModel.EXPECT().Stream(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+					got = call
+					return streamOf([]string{summaryTagOpen, "the summary", summaryTagClose}, fantasy.FinishReasonStop), nil
+				})
+
+			compact := sharedPrefixCompact(compactModel, newCountingTool("counter", &runs))
+			compact.SharesHostPrefix = shares
+			require.NoError(t, sa.Summarize(t.Context(), sessID, compact, nil, nil))
+
+			if shares {
+				require.Len(t, got.Tools, 1)
+			} else {
+				require.Empty(t, got.Tools)
+			}
+			require.Zero(t, runs.Load())
+		})
+	}
 }
 
 // TestSummarizeSharedPrefixNeverRunsTools pins that a model which keeps

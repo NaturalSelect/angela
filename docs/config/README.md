@@ -484,7 +484,6 @@ A rule's `mode` chooses how `pattern` is compared:
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
     "commit_diff_runes": 48000,       // characters of the staged diff `angela commit` and /commit send to the model
-    "no_sandbox_container_permission": false, // true = skip every container grant: never offer docker/podman sockets
 
     // Attribution
     "attribution": {
@@ -707,7 +706,6 @@ Some settings can also come from the environment or the command line.
 | `--sandbox-rw`, `--sandbox-ro`        | Extra read-write or read-only directories for `--sandbox`                |
 | `--sandbox-no-network`                | Blocks outbound network access for commands under `--sandbox`            |
 | `--no-docker-sandbox`                 | Applies Landlock even inside a detected container                        |
-| `--no-sandbox-container-permission`   | Same as `options.no_sandbox_container_permission`                        |
 | `--sandbox-allow-docker-socket`       | Lets the sandbox connect to detected Docker/Podman daemon sockets, which are blocked by default |
 
 To see which config directories Angela reads, run `angela dirs`. To check a file

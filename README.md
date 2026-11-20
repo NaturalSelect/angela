@@ -402,10 +402,7 @@ A container daemon socket is a deliberate hole in the sandbox: anything that
 can reach it can start a container that mounts any host path. Pass
 `--sandbox-allow-docker-socket` to let `--sandbox` connect to the detected
 sockets, or tick them one by one in the `/sandbox` dialog, which lists every
-detected socket and leaves it off until you turn it on. Pass
-`--no-sandbox-container-permission` (or set
-`options.no_sandbox_container_permission` to `true`) to skip the container
-grant and get the plain default set.
+detected socket and leaves it off until you turn it on.
 Rootless `podman run` and `podman build` cannot work inside a sandbox either
 way, since Landlock forbids `mount(2)`; use `podman --remote` against a
 running `podman.socket` instead.

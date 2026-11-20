@@ -20,15 +20,3 @@ func TestAppWorkspace_SandboxContainerGrants_SocketsFollowOverride(t *testing.T)
 	got = ws.SandboxContainerGrants()
 	require.Empty(t, got.OptionalSockets, "an opted-in socket is granted, not merely offered")
 }
-
-// NOTE: Not parallel, because newTestConfigStore calls t.Setenv.
-func TestAppWorkspace_SandboxContainerGrants_OptOutBeatsAllowDockerSocket(t *testing.T) {
-	store := newTestConfigStore(t)
-	disabled := true
-	store.Overrides().NoSandboxContainerPermission = &disabled
-	store.Overrides().SandboxAllowDockerSocket = true
-
-	got := NewAppWorkspace(nil, store).SandboxContainerGrants()
-	require.Empty(t, got.UnixSockets)
-	require.Empty(t, got.OptionalSockets)
-}

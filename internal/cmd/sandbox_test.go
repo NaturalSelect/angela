@@ -236,20 +236,3 @@ func TestSandboxConfigFromFlags_OptionalSocketsAreNotGranted(t *testing.T) {
 	require.True(t, enabled)
 	require.Empty(t, cfg.UnixSockets)
 }
-
-// TestSandboxConfigFromFlags_NoSandboxContainerPermissionDoesNotRequireSandbox
-// covers a flag that, like --no-docker-sandbox, also governs the /sandbox
-// TUI command and so must stay usable without --sandbox.
-func TestSandboxConfigFromFlags_NoSandboxContainerPermissionDoesNotRequireSandbox(t *testing.T) {
-	t.Parallel()
-
-	require.NotContains(t, sandboxFlagNames, "no-sandbox-container-permission")
-
-	cmd := newSandboxTestCmd(t)
-	require.NoError(t, cmd.Flags().Set("no-sandbox-container-permission", "true"))
-
-	cfg, enabled, err := sandboxConfigFromFlags(cmd, "/work", "/data", nil, sandbox.ContainerGrants{})
-	require.NoError(t, err)
-	require.False(t, enabled)
-	require.Zero(t, cfg)
-}

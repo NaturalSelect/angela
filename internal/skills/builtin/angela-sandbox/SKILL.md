@@ -49,13 +49,11 @@ yolo would skip.
 | `--sandbox-ro <dir>` | Additional read-only directory. Repeatable. |
 | `--sandbox-no-network` | Blocks outbound network for spawned commands. Linux only — fails at startup on macOS. |
 | `--no-docker-sandbox` | Ignore an auto-detected Docker/OCI container as "already sandboxed" and apply Landlock on top of it anyway. Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. |
-| `--no-sandbox-container-permission` | Skip every container grant: do not offer the Docker/Podman sockets (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Same as `options.no_sandbox_container_permission`. |
-| `--sandbox-allow-docker-socket` | Let the sandbox connect to the detected Docker/Podman daemon sockets, which are blocked by default (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Has no `angela.json` equivalent and has no effect together with `--no-sandbox-container-permission`. |
+| `--sandbox-allow-docker-socket` | Let the sandbox connect to the detected Docker/Podman daemon sockets, which are blocked by default (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. |
 
 The flags are registered on `angela`, `angela run`, `angela agent create` and
-`angela acp`. Only `--no-sandbox-container-permission` has an `angela.json`
-equivalent (`options.no_sandbox_container_permission`); the rest have no
-environment-variable or `angela.json` equivalent. Using `--sandbox-rw`,
+`angela acp`. None has an environment-variable or `angela.json` equivalent.
+Using `--sandbox-rw`,
 `--sandbox-ro` or `--sandbox-no-network`
 without `--sandbox` itself is an error at startup (`--sandbox-rw requires
 --sandbox`).
@@ -107,9 +105,7 @@ rules. Two ways to grant them:
 
 On Landlock ABI 9 or newer, connecting to any pathname Unix socket is denied
 unless it is listed, so granted sockets show up individually as `unix_sockets`
-in `angela_info`. Pass `--no-sandbox-container-permission` or set
-`options.no_sandbox_container_permission` to `true` to skip the container
-grant. That option wins over `--sandbox-allow-docker-socket`.
+in `angela_info`.
 
 ## Platform Backends
 
@@ -195,9 +191,8 @@ only talks to a daemon outside the sandbox.
 
 **`docker ps` fails with `permission denied` on the socket** — the daemon
 sockets are blocked by default. Launch with `--sandbox-allow-docker-socket`, or
-turn the socket on in the **Enter Sandbox** dialog. If it still fails,
-`--no-sandbox-container-permission` (or
-`options.no_sandbox_container_permission`) is set, or the socket lives at a
+turn the socket on in the **Enter Sandbox** dialog. If it still fails, the
+socket lives at a
 path that is not detected. Add a non-default socket with `DOCKER_HOST=unix://...`
 before launching, or confirm what was granted in the `unix_sockets` line of
 `angela_info`.

@@ -649,30 +649,6 @@ func TestKittyPlaceholdersFlag(t *testing.T) {
 	}
 }
 
-// TestSetupLocalWorkspace_NoSandboxContainerPermissionFlagSetsOverride
-// pins that --no-sandbox-container-permission reaches the runtime
-// override, and that leaving it off keeps the override nil so
-// options.no_sandbox_container_permission still applies.
-func TestSetupLocalWorkspace_NoSandboxContainerPermissionFlagSetsOverride(t *testing.T) {
-	t.Chdir(t.TempDir())
-	cmd := newSetupWorkspaceTestCmd(t, t.TempDir())
-	require.NoError(t, cmd.Flags().Set("no-sandbox-container-permission", "true"))
-
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
-	defer cancel()
-	cmd.SetContext(ctx)
-
-	ws, cleanup, err := setupLocalWorkspace(cmd)
-	require.NoError(t, err)
-	t.Cleanup(cleanup)
-
-	appWs, ok := ws.(*workspace.AppWorkspace)
-	require.True(t, ok, "setupLocalWorkspace must return an *workspace.AppWorkspace in local mode")
-	got := appWs.Store().Overrides().NoSandboxContainerPermission
-	require.NotNil(t, got)
-	require.True(t, *got)
-}
-
 // TestSetupLocalWorkspace_AllowDockerSocketFlagSetsOverride pins that
 // --sandbox-allow-docker-socket reaches the runtime override the /sandbox
 // dialog reads, and that it stays off when the flag is omitted.
@@ -698,16 +674,4 @@ func TestSetupLocalWorkspace_AllowDockerSocketFlagSetsOverride(t *testing.T) {
 			require.Equal(t, set, appWs.Store().Overrides().SandboxAllowDockerSocket)
 		})
 	}
-}
-
-func TestNoSandboxContainerPermissionFlag(t *testing.T) {
-	t.Parallel()
-
-	cmd := newSandboxTestCmd(t)
-	require.Nil(t, noSandboxContainerPermissionFlag(cmd))
-
-	require.NoError(t, cmd.Flags().Set("no-sandbox-container-permission", "true"))
-	got := noSandboxContainerPermissionFlag(cmd)
-	require.NotNil(t, got)
-	require.True(t, *got)
 }

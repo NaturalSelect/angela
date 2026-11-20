@@ -698,9 +698,6 @@ func (w *AppWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) err
 }
 
 func (w *AppWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {
-	if w.store.SandboxContainerPermissionDisabled() {
-		return sandbox.ContainerGrants{}
-	}
 	return sandbox.DetectContainerGrants(w.store.Overrides().SandboxAllowDockerSocket)
 }
 

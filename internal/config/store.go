@@ -87,11 +87,6 @@ type RuntimeOverrides struct {
 	// flag. It grants the detected Docker/Podman daemon sockets to the
 	// sandbox, which are otherwise left out.
 	SandboxAllowDockerSocket bool
-	// SandboxAllowDockerStorage is set by the
-	// --sandbox-allow-docker-storage flag. It grants the detected
-	// Podman/Buildah image storage directories to the sandbox, which are
-	// otherwise left out.
-	SandboxAllowDockerStorage bool
 	// CommitDiffRunes is set by the commit command's --max-diff-runes flag.
 	// Nil means the flag was not passed, so options.commit_diff_runes
 	// applies.

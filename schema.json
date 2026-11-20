@@ -750,7 +750,7 @@
         },
         "no_sandbox_container_permission": {
           "type": "boolean",
-          "description": "Skip every container grant for --sandbox and /sandbox: do not offer the image storage (overlay) directories of a detected Podman/Buildah CLI or the Docker/Podman daemon sockets. Both are blocked by default and only granted with --sandbox-allow-docker-storage and --sandbox-allow-docker-socket or in the /sandbox dialog; a granted daemon socket lets sandboxed commands start containers that mount any host path, and writable image storage lets them edit layers that a later podman run executes outside the sandbox",
+          "description": "Skip every container grant for --sandbox and /sandbox: do not offer the Docker/Podman daemon sockets of a detected CLI. They are blocked by default and only granted with --sandbox-allow-docker-socket or in the /sandbox dialog; a granted daemon socket lets sandboxed commands start containers that mount any host path",
           "default": false
         }
       },

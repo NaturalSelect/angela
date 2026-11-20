@@ -75,13 +75,11 @@ type sandboxPathRow struct {
 	readOnly bool
 }
 
-// sandboxSocket is one detected container grant that is offered as an
-// opt-in choice and whether the sandbox will let commands use it. It is
-// a daemon socket, or an image storage directory when storage is set.
+// sandboxSocket is one detected daemon socket that is offered as an
+// opt-in choice and whether the sandbox will let commands use it.
 type sandboxSocket struct {
 	path    string
 	allowed bool
-	storage bool
 }
 
 // sandboxHitTarget records a clickable region in absolute screen
@@ -159,10 +157,7 @@ func NewSandbox(com *common.Common) *Sandbox {
 	m := &Sandbox{
 		com:          com,
 		allowNetwork: cfg.AllowNetwork,
-		sockets: append(
-			sandboxStorage(cfg.ReadWrite, grants.OptionalStorage),
-			sandboxSockets(cfg.UnixSockets, grants.OptionalSockets)...,
-		),
+		sockets:      sandboxSockets(cfg.UnixSockets, grants.OptionalSockets),
 	}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
 	m.confirmFrame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxConfirmHeightRatio})
@@ -231,9 +226,8 @@ func setSandboxInputWidth(input *textinput.Model, width int) {
 // exact-file grant back into a directory-wide one once the user
 // confirms.
 //
-// The second return value carries the detected container sockets and
-// storage directories that are not granted yet; the form offers them as
-// opt-in choices.
+// The second return value carries the detected container sockets that are
+// not granted yet; the form offers them as opt-in choices.
 func sandboxDefaultConfig(com *common.Common) (sandbox.Config, sandbox.ContainerGrants) {
 	var dataDir string
 	var permissions *config.Permissions
@@ -254,18 +248,6 @@ func sandboxDefaultConfig(com *common.Common) (sandbox.Config, sandbox.Container
 		result.ReadWrite = sandbox.DedupePaths(append(result.ReadWrite, readWrite...))
 	}
 	return result, grants
-}
-
-// sandboxStorage builds the storage choices of the form: every detected
-// directory that is not already a read-write row starts blocked.
-func sandboxStorage(readWrite, optional []string) []sandboxSocket {
-	var choices []sandboxSocket
-	for _, p := range optional {
-		if !slices.Contains(readWrite, p) {
-			choices = append(choices, sandboxSocket{path: p, storage: true})
-		}
-	}
-	return choices
 }
 
 // sandboxSockets builds the socket choices of the form: every socket
@@ -502,12 +484,7 @@ func (m *Sandbox) handleFormClick(x, y int) {
 func (m *Sandbox) config() sandbox.Config {
 	cfg := sandbox.Config{AllowNetwork: m.allowNetwork}
 	for _, s := range m.sockets {
-		if !s.allowed {
-			continue
-		}
-		if s.storage {
-			cfg.ReadWrite = append(cfg.ReadWrite, s.path)
-		} else {
+		if s.allowed {
 			cfg.UnixSockets = append(cfg.UnixSockets, s.path)
 		}
 	}

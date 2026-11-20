@@ -388,30 +388,24 @@ above) already covers, so an edit or read the permission policy already
 approves without a prompt doesn't instead run into a confusing sandbox I/O
 error.
 
-If the `podman` or `buildah` command line tool is installed, `--sandbox` and
-the `/sandbox` command detect its image storage but leave it read-only. That is
-the directory holding the overlay filesystem with the image layers,
-`~/.local/share/containers/storage` (or under `$XDG_DATA_HOME`), plus
-`/var/lib/containers/storage` when running as root. Write access is off by
-default because a sandboxed command that can edit image layers changes what a
-later `podman run` outside the sandbox executes. Pass
-`--sandbox-allow-docker-storage` to make it writable, or tick it in the
-`/sandbox` dialog, which lists every detected directory and leaves it off until
-you turn it on. Nothing else is opened.
-Configuration and credential files such as `~/.docker/config.json` and
-`$XDG_RUNTIME_DIR/containers/auth.json` stay read-only like the rest of the
-filesystem. The Docker CLI alone grants no directory, because its overlay
-storage belongs to the daemon, which runs outside the sandbox.
+If the `docker` or `podman` command line tool is installed, `--sandbox` and the
+`/sandbox` command detect the daemon sockets it talks to (for example
+`/var/run/docker.sock`), but they stay blocked by default. No image storage
+directory is ever opened: the storage that backs the overlay filesystem
+belongs to the daemon, which runs outside the sandbox, and a sandboxed
+command that could edit image layers would change what a later `podman run`
+outside the sandbox executes. Configuration and credential files such as
+`~/.docker/config.json` and `$XDG_RUNTIME_DIR/containers/auth.json` stay
+read-only like the rest of the filesystem.
 
-The daemon sockets those tools talk to (for example `/var/run/docker.sock`)
-stay blocked by default. A container daemon socket is a deliberate hole in
-the sandbox: anything that can reach it can start a container that mounts any
-host path. Pass `--sandbox-allow-docker-socket` to let `--sandbox` connect to
-the detected sockets, or tick them one by one in the `/sandbox` dialog, which
-lists every detected socket and leaves it off until you turn it on. Pass
+A container daemon socket is a deliberate hole in the sandbox: anything that
+can reach it can start a container that mounts any host path. Pass
+`--sandbox-allow-docker-socket` to let `--sandbox` connect to the detected
+sockets, or tick them one by one in the `/sandbox` dialog, which lists every
+detected socket and leaves it off until you turn it on. Pass
 `--no-sandbox-container-permission` (or set
-`options.no_sandbox_container_permission` to `true`) to skip the whole
-container grant, storage and sockets alike, and get the plain default set.
+`options.no_sandbox_container_permission` to `true`) to skip the container
+grant and get the plain default set.
 Rootless `podman run` and `podman build` cannot work inside a sandbox either
 way, since Landlock forbids `mount(2)`; use `podman --remote` against a
 running `podman.socket` instead.

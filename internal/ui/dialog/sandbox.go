@@ -62,6 +62,12 @@ const sandboxColCount = 3
 // take before the path rows start to scroll.
 const sandboxHeightRatio = 0.8
 
+// sandboxConfirmHeightRatio is the share of the screen height the
+// confirm stage may take before its path list starts to scroll. The
+// stage's fixed lines leave little room for the list on a short
+// terminal, so it may use the whole screen.
+const sandboxConfirmHeightRatio = 1.0
+
 // sandboxPathRow is one filesystem-access entry: an editable path and
 // whether it is read-only (false means read-write).
 type sandboxPathRow struct {
@@ -125,9 +131,10 @@ type Sandbox struct {
 	hitTargets     []sandboxHitTarget
 	buttonHit      *lipgloss.Compositor
 
-	frame   *Frame
-	metrics FrameMetrics
-	help    help.Model
+	frame        *Frame
+	confirmFrame *Frame
+	metrics      FrameMetrics
+	help         help.Model
 
 	keyMap struct {
 		Next       key.Binding
@@ -158,6 +165,7 @@ func NewSandbox(com *common.Common) *Sandbox {
 		),
 	}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
+	m.confirmFrame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxConfirmHeightRatio})
 
 	for _, p := range cfg.ReadWrite {
 		m.rows = append(m.rows, newSandboxRow(t, p, false))
@@ -1007,7 +1015,7 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	const blankLines = 4
 	fixedHeight := frameStyle.GetVerticalFrameSize() + lipgloss.Height(question) +
 		lipgloss.Height(networkLine) + lipgloss.Height(buttons) + lipgloss.Height(hint) + blankLines
-	pathsHeight := min(len(pathLines), max(1, m.frame.Measure(area).Height-fixedHeight))
+	pathsHeight := min(len(pathLines), max(1, m.confirmFrame.Measure(area).Height-fixedHeight))
 	m.confirmHeight = pathsHeight
 	m.confirmOffset = min(max(0, m.confirmOffset), max(0, len(pathLines)-pathsHeight))
 

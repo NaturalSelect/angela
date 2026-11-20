@@ -1481,6 +1481,25 @@ func TestSandbox_ConfirmKeysScroll(t *testing.T) {
 	require.False(t, m.selectedNo)
 }
 
+// TestSandbox_ConfirmListUsesMoreThanFormHeightBudget verifies the
+// confirm stage may grow past the form's share of the screen, so its
+// path list keeps room on a short terminal.
+func TestSandbox_ConfirmListUsesMoreThanFormHeightBudget(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 25)
+	out := drawSandboxConfirm(m, sandboxShortH)
+
+	rows := 0
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.TrimSpace(line) != "" {
+			rows++
+		}
+	}
+	require.Greater(t, rows, int(sandboxHeightRatio*sandboxShortH))
+	require.LessOrEqual(t, rows, sandboxShortH)
+}
+
 func TestSandbox_ConfirmFewPathsDoNotScroll(t *testing.T) {
 	t.Parallel()
 

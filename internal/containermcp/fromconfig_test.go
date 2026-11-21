@@ -86,7 +86,7 @@ func TestFromConfig_VolumeErrors(t *testing.T) {
 		wantErr string
 	}{
 		{"missing target", "./data", workDir, "must be source:target"},
-		{"too many parts", "a:/b:ro:x", workDir, "must be source:target"},
+		{"too many parts", "cache:/b:ro:x", workDir, "must be source:target"},
 		{"empty source", ":/data", workDir, "empty source"},
 		{"unknown option", "cache:/data:fast", workDir, "unknown option"},
 		{"both relabels", "cache:/data:z,Z", workDir, "both z and Z"},

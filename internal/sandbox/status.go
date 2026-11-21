@@ -63,7 +63,7 @@ func AllowsUnixSocket(path string) bool {
 		return true
 	}
 	path = filepath.Clean(path)
-	target, err := os.Stat(path)
+	target, err := statSocketTarget(path)
 	for _, granted := range rs.unixSockets {
 		if granted == path {
 			return true
@@ -71,11 +71,19 @@ func AllowsUnixSocket(path string) bool {
 		if err != nil {
 			continue
 		}
-		if fi, serr := os.Stat(granted); serr == nil && os.SameFile(target, fi) {
+		if fi, serr := statSocketTarget(granted); serr == nil && os.SameFile(target, fi) {
 			return true
 		}
 	}
 	return false
+}
+
+// NOTE: Resolves symlinks first because Windows os.Stat fails when a symlink points to an AF_UNIX socket.
+func statSocketTarget(path string) (os.FileInfo, error) {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	return os.Stat(path)
 }
 
 var landlockABI = sync.OnceValue(func() int {

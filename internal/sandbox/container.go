@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -42,7 +43,7 @@ func DetectContainerGrants(grantSockets bool) ContainerGrants {
 		lookPath: exec.LookPath,
 		getenv:   os.Getenv,
 		home:     home,
-		root:     "/",
+		root:     systemRoot(),
 	})
 	if !grantSockets {
 		g = g.withSocketsOptional()
@@ -87,8 +88,19 @@ func (p containerProbe) has(tool string) bool {
 	return err == nil
 }
 
-// sys returns the fixed system path under p.root.
+// NOTE: Fixed Unix paths like /var/run/docker.sock are drive-relative on Windows and do not exist there.
+func systemRoot() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return "/"
+}
+
+// sys returns the fixed system path under p.root, or "" when no root applies.
 func (p containerProbe) sys(path string) string {
+	if p.root == "" {
+		return ""
+	}
 	return filepath.Join(p.root, path)
 }
 
@@ -151,7 +163,7 @@ func ContainerSocketCandidates() []string {
 		lookPath: exec.LookPath,
 		getenv:   os.Getenv,
 		home:     home,
-		root:     "/",
+		root:     systemRoot(),
 	}
 	all := append(p.dockerSockets(), p.podmanSockets()...)
 	cleaned := make([]string, 0, len(all))

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/NaturalSelect/angela/internal/sandbox"
 )
@@ -36,17 +37,20 @@ func resolveEndpoint(explicit string, getenv func(string) string, discover func(
 }
 
 func parseEndpoint(host string) (Endpoint, error) {
-	u, err := url.Parse(host)
-	if err != nil {
-		return Endpoint{}, fmt.Errorf("invalid container engine address %q: %w", host, err)
+	scheme, rest, ok := strings.Cut(host, "://")
+	if !ok {
+		return Endpoint{}, fmt.Errorf("container engine address %q must start with unix://, tcp:// or npipe://", host)
 	}
-	switch u.Scheme {
+	switch scheme {
 	case "unix":
-		if !filepath.IsAbs(u.Path) {
+		if !filepath.IsAbs(rest) {
 			return Endpoint{}, fmt.Errorf("container engine address %q needs an absolute socket path", host)
 		}
-		return Endpoint{Host: host, Socket: filepath.Clean(u.Path)}, nil
+		return Endpoint{Host: host, Socket: filepath.Clean(rest)}, nil
 	case "tcp":
+		if _, err := url.Parse(host); err != nil {
+			return Endpoint{}, fmt.Errorf("invalid container engine address %q: %w", host, err)
+		}
 		return Endpoint{Host: host}, nil
 	case "npipe":
 		if runtime.GOOS != "windows" {

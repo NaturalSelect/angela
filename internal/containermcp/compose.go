@@ -24,11 +24,16 @@ var composeSupported = map[string]bool{
 	"volumes": true, "working_dir": true, "user": true, "depends_on": true, "healthcheck": true,
 	"labels": true, "networks": true, "network_mode": true, "pull_policy": true, "tty": true,
 	"profiles": true, "init": true, "shm_size": true, "extra_hosts": true,
+	"cap_drop": true, "read_only": true, "tmpfs": true, "security_opt": true,
+	"mem_limit": true, "mem_reservation": true, "memswap_limit": true, "pids_limit": true,
+	"cpus": true, "cpu_shares": true, "cpu_period": true, "cpu_quota": true, "cpuset": true,
+	"hostname": true, "domainname": true, "dns": true, "dns_search": true, "dns_opt": true,
+	"stop_signal": true, "mem_swappiness": true, "deploy": true,
 }
 
 // NOTE: These fields do not apply to a container started for an MCP server, so they only log a warning.
 var composeIgnored = map[string]bool{
-	"restart": true, "deploy": true, "logging": true, "log_driver": true, "log_opt": true,
+	"restart": true, "logging": true, "log_driver": true, "log_opt": true,
 	"ports": true, "expose": true, "container_name": true, "stdin_open": true, "attach": true,
 	"develop": true, "scale": true, "build": true,
 }
@@ -39,7 +44,6 @@ var composeRejected = map[string]string{
 	"cap_add":             "it adds capabilities to the container",
 	"devices":             "it exposes host devices",
 	"device_cgroup_rules": "it exposes host devices",
-	"security_opt":        "it changes the container's security profile",
 	"pid":                 "it can share the host's process namespace",
 	"ipc":                 "it can share the host's IPC namespace",
 	"uts":                 "it can share the host's hostname namespace",
@@ -70,16 +74,7 @@ func FromCompose(ctx context.Context, server, file, service, workDir string) (Gr
 		return Group{}, fmt.Errorf("compose file %q is a directory", path)
 	}
 
-	opts, err := cli.NewProjectOptions(
-		[]string{path},
-		cli.WithWorkingDirectory(filepath.Dir(path)),
-		cli.WithOsEnv,
-		cli.WithEnvFiles(),
-		cli.WithDotEnv,
-		cli.WithInterpolation(true),
-		cli.WithResolvedPaths(true),
-		cli.WithName(composeProjectName(server)),
-	)
+	opts, err := composeOptions(path, server)
 	if err != nil {
 		return Group{}, fmt.Errorf("compose file %q: %w", path, err)
 	}
@@ -131,6 +126,15 @@ func FromCompose(ctx context.Context, server, file, service, workDir string) (Gr
 	if last < 0 || ordered[last].Name != service {
 		return Group{}, fmt.Errorf("compose service %q was not resolved", service)
 	}
+	zeroSwappiness, err := explicitSwappinessZero(ctx, path, server)
+	if err != nil {
+		return Group{}, fmt.Errorf("compose file %q: %w", path, err)
+	}
+	for i := range ordered {
+		if zeroSwappiness[ordered[i].Name] && ordered[i].Limits.MemorySwappiness == nil {
+			ordered[i].Limits.MemorySwappiness = new(int64)
+		}
+	}
 	g := Group{Server: server, Main: ordered[last], Deps: ordered[:last]}
 	if err := g.Validate(); err != nil {
 		return Group{}, err
@@ -179,6 +183,19 @@ type composeLogWriter struct{}
 func (composeLogWriter) Write(p []byte) (int, error) {
 	slog.Debug("Compose loader", "message", strings.TrimSpace(string(p)))
 	return len(p), nil
+}
+
+func composeOptions(path, server string) (*cli.ProjectOptions, error) {
+	return cli.NewProjectOptions(
+		[]string{path},
+		cli.WithWorkingDirectory(filepath.Dir(path)),
+		cli.WithOsEnv,
+		cli.WithEnvFiles(),
+		cli.WithDotEnv,
+		cli.WithInterpolation(true),
+		cli.WithResolvedPaths(true),
+		cli.WithName(composeProjectName(server)),
+	)
 }
 
 func composeProjectName(server string) string {
@@ -247,6 +264,9 @@ func translateService(project *types.Project, name string, svc types.ServiceConf
 			return Service{}, err
 		}
 		out.Mounts = append(out.Mounts, m)
+	}
+	if err := translateOptions(name, svc, &out); err != nil {
+		return Service{}, err
 	}
 
 	if len(svc.DependsOn) > 0 {
@@ -407,9 +427,7 @@ func composeMount(project *types.Project, service string, v types.ServiceVolumeC
 	case types.VolumeTypeTmpfs:
 		m.Type = MountTmpfs
 		m.Source = ""
-		if t := v.Tmpfs; t != nil && (t.Size != 0 || t.Mode != 0) {
-			return fail("tmpfs size and mode are not supported")
-		}
+		m.Options = composeTmpfsOptions(v.Tmpfs, v.ReadOnly)
 	default:
 		return fail("type %q is not supported", v.Type)
 	}

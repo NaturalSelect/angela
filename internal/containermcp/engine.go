@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"net"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ import (
 )
 
 type engine interface {
+	// NOTE: Empty when the engine does not say.
+	CgroupVersion(ctx context.Context) (string, error)
 	ImageExists(ctx context.Context, ref string) (bool, error)
 	ImagePull(ctx context.Context, ref string) error
 	Create(ctx context.Context, spec containerSpec) (string, error)
@@ -92,6 +95,14 @@ func newMobyEngine(ep Endpoint) (*mobyEngine, error) {
 	return &mobyEngine{cli: cli}, nil
 }
 
+func (e *mobyEngine) CgroupVersion(ctx context.Context) (string, error) {
+	res, err := e.cli.Info(ctx, client.InfoOptions{})
+	if err != nil {
+		return "", err
+	}
+	return res.Info.CgroupVersion, nil
+}
+
 func (e *mobyEngine) ImageExists(ctx context.Context, ref string) (bool, error) {
 	_, err := e.cli.ImageInspect(ctx, ref)
 	if err == nil {
@@ -151,6 +162,9 @@ func (e *mobyEngine) Create(ctx context.Context, spec containerSpec) (string, er
 	if svc.Init {
 		host.Init = new(true)
 	}
+	if err := applyOptions(cfg, host, svc); err != nil {
+		return "", err
+	}
 	var networking *network.NetworkingConfig
 	if spec.Network != "" {
 		host.NetworkMode = container.NetworkMode(spec.Network)
@@ -163,7 +177,7 @@ func (e *mobyEngine) Create(ctx context.Context, spec containerSpec) (string, er
 			if host.Tmpfs == nil {
 				host.Tmpfs = map[string]string{}
 			}
-			host.Tmpfs[m.Target] = ""
+			host.Tmpfs[m.Target] = m.Options
 			continue
 		}
 		host.Binds = append(host.Binds, bindString(m))
@@ -179,6 +193,33 @@ func (e *mobyEngine) Create(ctx context.Context, spec containerSpec) (string, er
 		return "", err
 	}
 	return res.ID, nil
+}
+
+func applyOptions(cfg *container.Config, host *container.HostConfig, svc Service) error {
+	cfg.Hostname, cfg.Domainname, cfg.StopSignal = svc.Hostname, svc.Domainname, svc.StopSignal
+	host.CapDrop = svc.CapDrop
+	host.ReadonlyRootfs = svc.ReadOnly
+	if svc.NoNewPrivileges {
+		host.SecurityOpt = []string{"no-new-privileges"}
+	}
+	for _, s := range svc.DNS {
+		addr, err := netip.ParseAddr(s)
+		if err != nil {
+			return fmt.Errorf("dns entry %q: %w", s, err)
+		}
+		host.DNS = append(host.DNS, addr)
+	}
+	host.DNSSearch, host.DNSOptions = svc.DNSSearch, svc.DNSOptions
+
+	l := svc.Limits
+	host.Memory, host.MemoryReservation, host.MemorySwap = l.Memory, l.MemoryReservation, l.MemorySwap
+	host.NanoCPUs, host.CPUShares, host.CPUPeriod, host.CPUQuota = l.NanoCPUs, l.CPUShares, l.CPUPeriod, l.CPUQuota
+	host.CpusetCpus = l.CPUSet
+	host.MemorySwappiness = l.MemorySwappiness
+	if l.PidsLimit > 0 {
+		host.PidsLimit = &l.PidsLimit
+	}
+	return nil
 }
 
 func (e *mobyEngine) Attach(ctx context.Context, id string) (attachment, error) {

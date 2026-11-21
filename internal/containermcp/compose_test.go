@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
@@ -247,13 +248,174 @@ services:
     logging:
       driver: json-file
     deploy:
-      resources:
-        limits:
-          cpus: "1"
+      restart_policy:
+        condition: any
+      update_config:
+        parallelism: 2
     build: .
 `, "app")
 	require.NoError(t, err)
 	require.Equal(t, "example/app", g.Main.Image)
+	require.Equal(t, Limits{}, g.Main.Limits, "swarm scheduling settings in deploy change nothing")
+}
+
+func TestFromCompose_DeployResources(t *testing.T) {
+	g, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+          pids: 100
+        reservations:
+          memory: 128m
+`, "app")
+	require.NoError(t, err)
+	require.Equal(t, Limits{
+		Memory: 256 << 20, MemoryReservation: 128 << 20,
+		NanoCPUs: 500_000_000, PidsLimit: 100,
+	}, g.Main.Limits)
+}
+
+func TestFromCompose_DeployResourcesAgreeingWithTopLevelFields(t *testing.T) {
+	g, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    mem_limit: 256m
+    pids_limit: 100
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "1"
+          pids: 100
+`, "app")
+	require.NoError(t, err)
+	require.Equal(t, Limits{Memory: 256 << 20, NanoCPUs: 1_000_000_000, PidsLimit: 100}, g.Main.Limits)
+}
+
+func TestFromCompose_DeployResourcesCannotContradictTopLevelFields(t *testing.T) {
+	_, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    mem_limit: 256m
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+`, "app")
+	require.ErrorContains(t, err, "can't set distinct values on 'mem_limit' and 'deploy.resources.limits.memory'")
+}
+
+func TestFromCompose_DeployResourcesAreRefusedWhenTheyWouldWidenOrDoNothing(t *testing.T) {
+	tests := []struct {
+		name      string
+		resources string
+		want      []string
+	}{
+		{"gpu device", `
+        reservations:
+          devices:
+            - capabilities: [gpu]
+`, []string{"deploy.resources.reservations.devices", "exposes host devices"}},
+		{"cpu reservation", `
+        reservations:
+          cpus: "0.5"
+`, []string{"deploy.resources.reservations.cpus", "not supported"}},
+		{"generic resource", `
+        reservations:
+          generic_resources:
+            - discrete_resource_spec:
+                kind: ssd
+                value: 1
+`, []string{"deploy.resources.reservations.generic_resources", "not supported"}},
+		{"negative pids", `
+        limits:
+          pids: -1
+`, []string{"pids limit must not be negative"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    deploy:\n      resources:"+tc.resources, "app")
+			require.Error(t, err)
+			for _, want := range tc.want {
+				require.ErrorContains(t, err, want)
+			}
+			require.ErrorContains(t, err, `"app"`, "the message names the service")
+		})
+	}
+}
+
+func TestFromCompose_MemSwappiness(t *testing.T) {
+	tests := []struct {
+		name  string
+		line  string
+		want  *int64
+		fails string
+	}{
+		{name: "a percentage", line: "mem_swappiness: 60", want: new(int64(60))},
+		{name: "the upper bound", line: "mem_swappiness: 100", want: new(int64(100))},
+		{name: "an explicit zero", line: "mem_swappiness: 0", want: new(int64(0))},
+		{name: "zero as a string", line: `mem_swappiness: "0"`, want: new(int64(0))},
+		{name: "the engine default", line: "mem_swappiness: -1"},
+		{name: "not set", line: "mem_limit: 64m"},
+		{name: "above a hundred", line: "mem_swappiness: 101", fails: "mem_swappiness must be a percentage"},
+		{name: "below the default marker", line: "mem_swappiness: -2", fails: "mem_swappiness must be a percentage"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    "+tc.line+"\n", "app")
+			if tc.fails != "" {
+				require.ErrorContains(t, err, tc.fails)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, g.Main.Limits.MemorySwappiness)
+		})
+	}
+}
+
+func TestSwarmSettings(t *testing.T) {
+	t.Parallel()
+
+	var d types.DeployConfig
+	require.Empty(t, swarmSettings(d), "an empty deploy sets nothing")
+
+	d.Resources.Limits = &types.Resource{MemoryBytes: 1 << 20}
+	require.Empty(t, swarmSettings(d), "resources are applied, not ignored")
+
+	d.Placement.Constraints = []string{"node.role==manager"}
+	d.RestartPolicy = &types.RestartPolicy{Condition: "any"}
+	require.Equal(t, []string{"placement", "restart_policy"}, swarmSettings(d))
+}
+
+func TestFromCompose_ExplicitZeroSwappinessSurvivesInclude(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "base", "db.yaml"), `
+services:
+  db:
+    image: example/db
+    mem_swappiness: 0
+`)
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+include:
+  - base/db.yaml
+services:
+  app:
+    image: example/app
+    depends_on: [db]
+`)
+
+	g, err := FromCompose(t.Context(), "srv", "compose.yaml", "app", dir)
+	require.NoError(t, err)
+	require.Len(t, g.Deps, 1)
+	require.Equal(t, new(int64(0)), g.Deps[0].Limits.MemorySwappiness, "an included service keeps an explicit zero")
+	require.Nil(t, g.Main.Limits.MemorySwappiness)
 }
 
 func TestFromCompose_RejectedFields(t *testing.T) {
@@ -265,12 +427,20 @@ func TestFromCompose_RejectedFields(t *testing.T) {
 		{"privileged", "privileged: true", []string{`"privileged"`, "full access"}},
 		{"cap_add", "cap_add: [SYS_ADMIN]", []string{`"cap_add"`}},
 		{"devices", "devices: [\"/dev/fuse:/dev/fuse\"]", []string{`"devices"`}},
-		{"security_opt", "security_opt: [\"seccomp:unconfined\"]", []string{`"security_opt"`}},
+		{"security_opt", "security_opt: [\"seccomp:unconfined\"]", []string{`"security_opt"`, "only no-new-privileges"}},
+		{"security_opt with equals", "security_opt: [\"apparmor=unconfined\"]", []string{`"security_opt"`, "only no-new-privileges"}},
+		{"security_opt label", "security_opt: [\"label=disable\"]", []string{`"security_opt"`}},
+		{"security_opt value", "security_opt: [\"no-new-privileges:maybe\"]", []string{`"security_opt"`, "true or false"}},
 		{"pid host", "pid: host", []string{`"pid"`}},
 		{"ipc host", "ipc: host", []string{`"ipc"`}},
 		{"sysctls", "sysctls: {net.core.somaxconn: 1024}", []string{`"sysctls"`}},
 		{"volumes_from", "volumes_from: [other]", []string{`"volumes_from"`}},
-		{"unknown field", "read_only: true", []string{`"read_only"`, "not supported"}},
+		{"unknown field", "ulimits: {nofile: 1024}", []string{`"ulimits"`, "not supported"}},
+		{"group_add", "group_add: [audio]", []string{`"group_add"`, "not supported"}},
+		{"negative pids limit", "pids_limit: -1", []string{"pids limit must not be negative"}},
+		{"tmpfs suid", "tmpfs: [\"/run:suid\"]", []string{"widens"}},
+		{"bad dns", "dns: [resolver.local]", []string{"not an IP address"}},
+		{"bad cap_drop", "cap_drop: [\"NET RAW\"]", []string{"cap_drop"}},
 		{"network_mode service", "network_mode: service:other", []string{"network_mode"}},
 		{"main tty", "tty: true", []string{"tty"}},
 		{"anonymous volume", "volumes: [\"/data\"]", []string{"anonymous"}},
@@ -312,6 +482,117 @@ services:
 `, "app")
 	require.ErrorContains(t, err, `compose service "db"`)
 	require.ErrorContains(t, err, `"privileged"`)
+}
+
+func TestFromCompose_HardeningLimitsAndIdentity(t *testing.T) {
+	g, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    cap_drop: [ALL, NET_RAW]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run
+      - /scratch:size=64m,noexec
+    volumes:
+      - type: tmpfs
+        target: /cache
+        tmpfs:
+          size: 1048576
+          mode: 0o1777
+    mem_limit: 256m
+    mem_reservation: 128m
+    memswap_limit: 512m
+    cpus: 0.5
+    cpu_shares: 512
+    cpu_period: 100000
+    cpu_quota: 50000
+    cpuset: "0-1"
+    pids_limit: 100
+    hostname: mcp-app
+    domainname: corp.test
+    dns: [1.1.1.1, "2606:4700:4700::1111"]
+    dns_search: [corp.test]
+    dns_opt: ["ndots:2"]
+    stop_signal: SIGINT
+`, "app")
+	require.NoError(t, err)
+
+	app := g.Main
+	require.Equal(t, []string{"ALL", "NET_RAW"}, app.CapDrop)
+	require.True(t, app.ReadOnly)
+	require.True(t, app.NoNewPrivileges)
+	require.Equal(t, []Mount{
+		{Type: MountTmpfs, Target: "/cache", Options: "size=1048576,mode=1777"},
+		{Type: MountTmpfs, Target: "/run"},
+		{Type: MountTmpfs, Target: "/scratch", Options: "size=64m,noexec"},
+	}, app.Mounts)
+	require.Equal(t, Limits{
+		Memory: 256 << 20, MemoryReservation: 128 << 20, MemorySwap: 512 << 20,
+		NanoCPUs: 500_000_000, CPUShares: 512, CPUPeriod: 100000, CPUQuota: 50000,
+		CPUSet: "0-1", PidsLimit: 100,
+	}, app.Limits)
+	require.Equal(t, "mcp-app", app.Hostname)
+	require.Equal(t, "corp.test", app.Domainname)
+	require.Equal(t, []string{"1.1.1.1", "2606:4700:4700::1111"}, app.DNS)
+	require.Equal(t, []string{"corp.test"}, app.DNSSearch)
+	require.Equal(t, []string{"ndots:2"}, app.DNSOptions)
+	require.Equal(t, "SIGINT", app.StopSignal)
+}
+
+func TestFromCompose_ReadOnlyTmpfsVolume(t *testing.T) {
+	g, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    volumes:
+      - type: tmpfs
+        target: /ro
+        read_only: true
+`, "app")
+	require.NoError(t, err)
+	require.Equal(t, []Mount{{Type: MountTmpfs, Target: "/ro", ReadOnly: true, Options: "ro"}}, g.Main.Mounts)
+}
+
+func TestFromCompose_SecurityOptForms(t *testing.T) {
+	tests := []struct {
+		name string
+		opts string
+		want bool
+	}{
+		{"colon form", `["no-new-privileges:true"]`, true},
+		{"equals form", `["no-new-privileges=true"]`, true},
+		{"bare", `["no-new-privileges"]`, true},
+		{"explicit false", `["no-new-privileges:false"]`, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    security_opt: "+tc.opts+"\n", "app")
+			require.NoError(t, err)
+			require.Equal(t, tc.want, g.Main.NoNewPrivileges)
+		})
+	}
+}
+
+func TestFromCompose_NegativeMemoryLimitIsRefusedByTheLoader(t *testing.T) {
+	_, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    mem_limit: -1\n", "app")
+	require.ErrorContains(t, err, "services.app.mem_limit")
+	require.ErrorContains(t, err, "must not be negative")
+}
+
+func TestFromCompose_OptionsDefaultToOff(t *testing.T) {
+	g, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n", "app")
+	require.NoError(t, err)
+
+	app := g.Main
+	require.Empty(t, app.CapDrop)
+	require.False(t, app.ReadOnly)
+	require.False(t, app.NoNewPrivileges)
+	require.Equal(t, Limits{}, app.Limits)
+	require.Empty(t, app.Mounts)
+	require.Empty(t, app.DNS)
 }
 
 func TestFromCompose_BuildNeedsAnImage(t *testing.T) {

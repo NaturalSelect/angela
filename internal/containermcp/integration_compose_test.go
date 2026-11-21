@@ -79,6 +79,161 @@ services:
 	require.Equal(t, "done", got["seed"], "the completed dependency ran first and shared its volume")
 }
 
+func TestIntegration_ComposeHardeningLimitsAndIdentity(t *testing.T) {
+	ep, image := integrationEndpoint(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  main:
+    image: `+image+`
+    pull_policy: missing
+    cap_drop: [ALL]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /scratch:size=1m,noexec
+    hostname: mcp-host
+    dns: [10.9.8.7]
+    dns_search: [corp.test]
+    mem_limit: 64m
+    cpus: 0.5
+    cpu_shares: 512
+    pids_limit: 100
+    stop_signal: SIGINT
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo caps=$$(grep CapEff /proc/self/status | awk '{print $$2}')
+        echo nnp=$$(grep NoNewPrivs /proc/self/status | awk '{print $$2}')
+        echo host=$$(hostname)
+        echo dns=$$(grep -c 'nameserver 10.9.8.7' /etc/resolv.conf)
+        echo root=$$(touch /probe 2>/dev/null && echo writable || echo readonly)
+        echo scratch=$$(touch /scratch/f 2>/dev/null && echo writable || echo readonly)
+        echo noexec=$$(grep ' /scratch ' /proc/mounts | grep -c noexec)
+        exec cat
+`)
+	g, err := FromCompose(ctx, "integration-hardening", "compose.yaml", "main", dir)
+	require.NoError(t, err)
+
+	s, err := Open(ctx, ep, g)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	tr := s.Transport().(*mcp.IOTransport)
+	r := bufio.NewReader(tr.Reader)
+	got := map[string]string{}
+	for range 7 {
+		line, err := r.ReadString('\n')
+		require.NoError(t, err)
+		k, v, _ := strings.Cut(strings.TrimSpace(line), "=")
+		got[k] = v
+	}
+	require.Equal(t, "0000000000000000", got["caps"], "cap_drop ALL leaves no effective capability")
+	require.Equal(t, "1", got["nnp"], "no-new-privileges is set")
+	require.Equal(t, "mcp-host", got["host"])
+	require.Equal(t, "1", got["dns"], "the dns server is in resolv.conf")
+	require.Equal(t, "readonly", got["root"], "read_only makes the root filesystem read-only")
+	require.Equal(t, "writable", got["scratch"], "a tmpfs stays writable under read_only")
+	require.Equal(t, "1", got["noexec"], "tmpfs options are applied")
+
+	cli, err := client.New(client.WithHost(ep.Host))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cli.Close() })
+	res, err := cli.ContainerInspect(ctx, s.id, client.ContainerInspectOptions{})
+	require.NoError(t, err)
+	host := res.Container.HostConfig
+	require.Equal(t, int64(64<<20), host.Memory)
+	require.Equal(t, int64(500_000_000), host.NanoCPUs)
+	require.Equal(t, int64(512), host.CPUShares)
+	require.NotNil(t, host.PidsLimit)
+	require.Equal(t, int64(100), *host.PidsLimit)
+	require.Contains(t, []string{"SIGINT", "2"}, res.Container.Config.StopSignal, "Podman reports the signal number")
+}
+
+func TestIntegration_ComposeDeployLimits(t *testing.T) {
+	ep, image := integrationEndpoint(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  main:
+    image: `+image+`
+    pull_policy: missing
+    entrypoint: ["cat"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 64m
+          pids: 100
+        reservations:
+          memory: 32m
+`)
+	g, err := FromCompose(ctx, "integration-deploy", "compose.yaml", "main", dir)
+	require.NoError(t, err)
+
+	s, err := Open(ctx, ep, g)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	cli, err := client.New(client.WithHost(ep.Host))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cli.Close() })
+	res, err := cli.ContainerInspect(ctx, s.id, client.ContainerInspectOptions{})
+	require.NoError(t, err)
+	host := res.Container.HostConfig
+	require.Equal(t, int64(64<<20), host.Memory)
+	require.Equal(t, int64(32<<20), host.MemoryReservation)
+	require.Equal(t, int64(500_000_000), host.NanoCPUs)
+	require.NotNil(t, host.PidsLimit)
+	require.Equal(t, int64(100), *host.PidsLimit)
+}
+
+func TestIntegration_ComposeSwappinessFollowsTheEngine(t *testing.T) {
+	ep, image := integrationEndpoint(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+services:
+  main:
+    image: `+image+`
+    pull_policy: missing
+    entrypoint: ["cat"]
+    mem_swappiness: 0
+`)
+	g, err := FromCompose(ctx, "integration-swap", "compose.yaml", "main", dir)
+	require.NoError(t, err)
+
+	cli, err := client.New(client.WithHost(ep.Host))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cli.Close() })
+	info, err := cli.Info(ctx, client.InfoOptions{})
+	require.NoError(t, err)
+
+	s, err := Open(ctx, ep, g)
+	if info.Info.CgroupVersion == "2" {
+		require.ErrorContains(t, err, "cgroup v2", "the engine cannot apply swappiness, which is reported before anything starts")
+		left, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: make(client.Filters).Add("label", LabelServer+"=integration-swap")})
+		require.NoError(t, err)
+		require.Empty(t, left.Items, "nothing is created when the setting is refused")
+		return
+	}
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	res, err := cli.ContainerInspect(ctx, s.id, client.ContainerInspectOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, res.Container.HostConfig.MemorySwappiness)
+	require.Equal(t, int64(0), *res.Container.HostConfig.MemorySwappiness)
+}
+
 func TestIntegration_OrphanedDependenciesAreSweptOnTheNextStart(t *testing.T) {
 	ep, image := integrationEndpoint(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)

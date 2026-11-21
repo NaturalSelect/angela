@@ -171,10 +171,21 @@ Things to tell the user:
   and `service_healthy` and `service_completed_successfully` are honoured.
   Naming a service enables its own `profiles`; a required dependency in another
   profile is an error. `init`, `shm_size` and `extra_hosts` (including
-  `host-gateway`) are applied. Fields that widen access to the host
-  (`privileged`, `cap_add`, `devices`, `security_opt`, `volumes_from`, host
-  namespaces) and any field Angela does not know are errors that name the
-  service and the field; `restart`, `deploy`, `logging`, `ports` and
+  `host-gateway`) are applied. So are the fields that only narrow the
+  container or set its own identity: `cap_drop`, `read_only`, `tmpfs`,
+  `security_opt` with `no-new-privileges`, `mem_limit`, `mem_reservation`,
+  `memswap_limit`, `cpus`, `cpu_shares`, `cpu_period`, `cpu_quota`, `cpuset`,
+  `pids_limit`, `hostname`, `domainname`, `dns`, `dns_search`, `dns_opt` and
+  `stop_signal`. `deploy.resources.limits` (`cpus`, `memory`, `pids`) and
+  `deploy.resources.reservations.memory` count as their top-level twins.
+  `mem_swappiness` fails before anything is created when the engine uses
+  cgroup v2, which cannot apply it. A negative limit is an error, and so is a
+  tmpfs option that widens it (`suid`, `dev`). Fields that widen access to the
+  host (`privileged`, `cap_add`, `devices`, any other `security_opt`,
+  `volumes_from`, GPU `deploy.resources.reservations.devices`, host
+  namespaces) and any field Angela does not know, such as `ulimits` or
+  `group_add`, are errors that name the service and the field. `restart`, the
+  swarm part of `deploy` (`replicas`, `placement`), `logging`, `ports` and
   `container_name` are ignored with a warning. Angela never builds images, so
   every service needs an `image`.
 - **Changes.** Editing a compose file does not restart a running server.

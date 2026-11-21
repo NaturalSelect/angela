@@ -96,6 +96,9 @@ type fakeEngine struct {
 	attachErr error
 	startErr  error
 
+	cgroup    string
+	cgroupErr error
+
 	att  *fakeAttachment
 	exit chan exitResult
 }
@@ -121,6 +124,11 @@ func (f *fakeEngine) callList() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.calls)
+}
+
+func (f *fakeEngine) CgroupVersion(context.Context) (string, error) {
+	f.record("cgroup-version")
+	return f.cgroup, f.cgroupErr
 }
 
 func (f *fakeEngine) ImageExists(context.Context, string) (bool, error) {
@@ -333,6 +341,65 @@ func TestStart_RejectsInvalidGroup(t *testing.T) {
 	_, err := start(t.Context(), eng, g)
 	require.Error(t, err)
 	require.Equal(t, []string{"close"}, eng.callList())
+}
+
+func TestStart_SwappinessIsRefusedOnCgroupV2BeforeAnythingIsCreated(t *testing.T) {
+	t.Parallel()
+
+	eng := newFakeEngine()
+	eng.cgroup = "2"
+	g := validGroup()
+	g.Main.Limits.MemorySwappiness = new(int64(60))
+
+	_, err := start(t.Context(), eng, g)
+	require.ErrorContains(t, err, `service "srv" sets mem_swappiness`)
+	require.ErrorContains(t, err, "cgroup v2")
+	require.Equal(t, []string{"cgroup-version", "close"}, eng.callList(), "nothing is pulled or created")
+}
+
+func TestStart_SwappinessWorksWhereTheEngineCanApplyIt(t *testing.T) {
+	t.Parallel()
+
+	for _, version := range []string{"1", ""} {
+		t.Run("cgroup "+version, func(t *testing.T) {
+			t.Parallel()
+
+			eng := newFakeEngine()
+			eng.cgroup = version
+			g := validGroup()
+			g.Main.Limits.MemorySwappiness = new(int64(0))
+
+			s, err := start(t.Context(), eng, g)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = s.Close() })
+			asked := slices.DeleteFunc(eng.callList(), func(c string) bool { return c != "cgroup-version" })
+			require.Len(t, asked, 1, "the engine is asked once")
+			require.Equal(t, new(int64(0)), eng.created[0].Service.Limits.MemorySwappiness)
+		})
+	}
+}
+
+func TestStart_SwappinessStopsWhenTheEngineCannotBeAsked(t *testing.T) {
+	t.Parallel()
+
+	eng := newFakeEngine()
+	eng.cgroupErr = errors.New("no info")
+	g := validGroup()
+	g.Main.Limits.MemorySwappiness = new(int64(60))
+
+	_, err := start(t.Context(), eng, g)
+	require.ErrorContains(t, err, "inspect container engine: no info")
+}
+
+func TestStart_NoSwappinessMeansTheEngineIsNotAsked(t *testing.T) {
+	t.Parallel()
+
+	eng := newFakeEngine()
+	eng.cgroup = "2"
+	s, err := start(t.Context(), eng, validGroup())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	require.NotContains(t, eng.callList(), "cgroup-version")
 }
 
 func TestSession_TransportCarriesStdoutAndStdin(t *testing.T) {

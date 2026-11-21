@@ -57,6 +57,11 @@ type Service struct {
 	Tty         bool
 	DependsOn   map[string]Condition
 	Healthcheck *Healthcheck
+	// NOTE: ShmSize is in bytes; 0 keeps the engine's default. Init runs a minimal init as PID 1.
+	ShmSize int64
+	Init    bool
+	// NOTE: Entries are host:ip, where ip may be the engine's host-gateway keyword.
+	ExtraHosts []string
 }
 
 type Condition string
@@ -147,6 +152,15 @@ func (s Service) validate() error {
 		case "CMD", "CMD-SHELL", "NONE":
 		default:
 			return fmt.Errorf("service %q: healthcheck test must start with CMD, CMD-SHELL or NONE", s.Name)
+		}
+	}
+	if s.ShmSize < 0 {
+		return fmt.Errorf("service %q: shm size must not be negative", s.Name)
+	}
+	for _, h := range s.ExtraHosts {
+		host, ip, ok := strings.Cut(h, ":")
+		if !ok || host == "" || ip == "" {
+			return fmt.Errorf("service %q: extra host %q must be host:ip", s.Name, h)
 		}
 	}
 	for _, m := range s.Mounts {

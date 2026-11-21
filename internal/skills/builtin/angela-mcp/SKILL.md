@@ -168,8 +168,10 @@ Things to tell the user:
 - **Compose.** Use `compose` plus `service`, and leave `image`, `args`, `env`,
   `volumes`, `network` and `workdir` out; they belong in the compose file. The
   service and its `depends_on` services start together on one private network,
-  and `service_healthy` and `service_completed_successfully` are honoured. Only
-  the default profile is used. Fields that widen access to the host
+  and `service_healthy` and `service_completed_successfully` are honoured.
+  Naming a service enables its own `profiles`; a required dependency in another
+  profile is an error. `init`, `shm_size` and `extra_hosts` (including
+  `host-gateway`) are applied. Fields that widen access to the host
   (`privileged`, `cap_add`, `devices`, `security_opt`, `volumes_from`, host
   namespaces) and any field Angela does not know are errors that name the
   service and the field; `restart`, `deploy`, `logging`, `ports` and

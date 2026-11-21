@@ -23,6 +23,7 @@ type groupEngine struct {
 	exits     map[string]chan exitResult
 	health    map[string][]string
 	autoExit  map[string]exitResult
+	lostExit  map[string]exitResult
 	createErr map[string]error
 
 	networkLabels map[string]string
@@ -40,6 +41,7 @@ func newGroupEngine() *groupEngine {
 		exits:      map[string]chan exitResult{},
 		health:     map[string][]string{},
 		autoExit:   map[string]exitResult{},
+		lostExit:   map[string]exitResult{},
 		createErr:  map[string]error{},
 	}
 }
@@ -124,6 +126,9 @@ func (g *groupEngine) Inspect(_ context.Context, id string) (containerState, err
 		}
 	}
 	if res, ok := g.autoExit[name]; ok {
+		return containerState{Status: "exited", ExitCode: int(res.Code)}, nil
+	}
+	if res, ok := g.lostExit[name]; ok {
 		return containerState{Status: "exited", ExitCode: int(res.Code)}, nil
 	}
 	return containerState{Status: "running", Health: status}, nil
@@ -295,6 +300,25 @@ func TestStart_GroupWaitsForCompletedDependency(t *testing.T) {
 		eng.autoExit["migrate"] = exitResult{Code: 3}
 		_, err := start(t.Context(), eng, g)
 		require.ErrorContains(t, err, "it exited with code 3")
+		require.NotContains(t, eng.eventList(), "start:app")
+	})
+	t.Run("an exit the engine never reports is found by polling", func(t *testing.T) {
+		eng := newGroupEngine()
+		eng.lostExit["migrate"] = exitResult{Code: 0}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+		s, err := start(ctx, eng, g)
+		require.NoError(t, err)
+		require.Contains(t, eng.eventList(), "start:app")
+		require.NoError(t, s.Close())
+	})
+	t.Run("a lost non zero exit still stops the startup", func(t *testing.T) {
+		eng := newGroupEngine()
+		eng.lostExit["migrate"] = exitResult{Code: 4}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+		_, err := start(ctx, eng, g)
+		require.ErrorContains(t, err, "it exited with code 4")
 		require.NotContains(t, eng.eventList(), "start:app")
 	})
 }

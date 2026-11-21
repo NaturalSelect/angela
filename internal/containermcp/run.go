@@ -274,19 +274,36 @@ func (l *launch) waitHealthy(ctx context.Context, dep startedDep) error {
 	}
 }
 
+// NOTE: The state is polled too because Podman 4 can miss the exit of a container that finishes within its own poll interval.
 func (l *launch) waitCompleted(ctx context.Context, dep startedDep) error {
-	select {
-	case res := <-dep.exit:
-		if res.Err != nil {
-			return fmt.Errorf("it stopped: %w", res.Err)
+	ticker := time.NewTicker(healthPoll)
+	defer ticker.Stop()
+	for {
+		select {
+		case res := <-dep.exit:
+			if res.Err != nil {
+				return fmt.Errorf("it stopped: %w", res.Err)
+			}
+			return completedError(res.Code)
+		case <-ticker.C:
+			st, err := l.eng.Inspect(ctx, dep.id)
+			if err != nil {
+				return fmt.Errorf("inspect: %w", err)
+			}
+			if st.Status == "exited" || st.Status == "dead" {
+				return completedError(int64(st.ExitCode))
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("it did not finish: %w", ctx.Err())
 		}
-		if res.Code != 0 {
-			return fmt.Errorf("it exited with code %d", res.Code)
-		}
-		return nil
-	case <-ctx.Done():
-		return fmt.Errorf("it did not finish: %w", ctx.Err())
 	}
+}
+
+func completedError(code int64) error {
+	if code != 0 {
+		return fmt.Errorf("it exited with code %d", code)
+	}
+	return nil
 }
 
 // NOTE: Forced removal is enough on a failed startup; nothing needs a graceful stop yet.

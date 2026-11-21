@@ -195,6 +195,20 @@ services:
 	require.Equal(t, "db", g.Deps[0].Name)
 }
 
+func TestFromCompose_RemoteIncludeIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `
+include:
+  - path: https://127.0.0.1:1/compose.yaml
+services:
+  app:
+    image: example/app
+`)
+
+	_, err := FromCompose(t.Context(), "srv", "compose.yaml", "app", dir)
+	require.ErrorIs(t, err, os.ErrNotExist, "the URL is read as a local path and never fetched")
+}
+
 func TestFromCompose_Extends(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "base.yaml"), `
@@ -366,14 +380,95 @@ func TestFromCompose_ServiceErrors(t *testing.T) {
 		require.ErrorContains(t, err, `no service "web"`)
 		require.ErrorContains(t, err, "app")
 	})
-	t.Run("a profile service is refused", func(t *testing.T) {
-		_, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    profiles: [debug]\n", "app")
-		require.ErrorContains(t, err, "profile")
-	})
 	t.Run("a dependency cycle is an error", func(t *testing.T) {
 		_, _, err := loadCompose(t, "services:\n  a:\n    image: x\n    depends_on: [b]\n  b:\n    image: x\n    depends_on: [a]\n", "a")
 		require.Error(t, err)
 	})
+}
+
+func TestFromCompose_NamingAServiceEnablesItsProfiles(t *testing.T) {
+	g, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    profiles: [stdio]
+    depends_on:
+      db:
+        condition: service_started
+  db:
+    image: example/db
+  other:
+    image: example/other
+    profiles: [debug]
+`, "app")
+	require.NoError(t, err)
+	require.Equal(t, "app", g.Main.Name)
+	require.Len(t, g.Deps, 1)
+	require.Equal(t, "db", g.Deps[0].Name)
+}
+
+func TestFromCompose_DependencyOnAnotherProfileIsAnError(t *testing.T) {
+	_, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    profiles: [stdio]
+    depends_on: [tool]
+  tool:
+    image: example/tool
+    profiles: [debug]
+`, "app")
+	require.Error(t, err)
+	require.ErrorContains(t, err, `"app" depends on "tool"`)
+	require.ErrorContains(t, err, "profile")
+}
+
+func TestFromCompose_OptionalDependencyInAnotherProfileIsDropped(t *testing.T) {
+	g, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    depends_on:
+      tool:
+        condition: service_started
+        required: false
+  tool:
+    image: example/tool
+    profiles: [debug]
+`, "app")
+	require.NoError(t, err)
+	require.Empty(t, g.Deps)
+	require.Empty(t, g.Main.DependsOn)
+}
+
+func TestFromCompose_InitShmSizeAndExtraHosts(t *testing.T) {
+	g, _, err := loadCompose(t, `
+services:
+  app:
+    image: example/app
+    init: true
+    shm_size: 1gb
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "db.local=10.0.0.5"
+      - "db.local:10.0.0.4"
+`, "app")
+	require.NoError(t, err)
+	require.True(t, g.Main.Init)
+	require.EqualValues(t, 1<<30, g.Main.ShmSize)
+	require.Equal(t, []string{
+		"db.local:10.0.0.4",
+		"db.local:10.0.0.5",
+		"host.docker.internal:host-gateway",
+	}, g.Main.ExtraHosts)
+}
+
+func TestFromCompose_InitDefaultsToOff(t *testing.T) {
+	g, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    init: false\n", "app")
+	require.NoError(t, err)
+	require.False(t, g.Main.Init)
+	require.Zero(t, g.Main.ShmSize)
+	require.Empty(t, g.Main.ExtraHosts)
 }
 
 func TestFromCompose_FileErrors(t *testing.T) {

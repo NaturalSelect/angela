@@ -63,6 +63,16 @@ func TestGroupValidate(t *testing.T) {
 		{"dependency without image", func(g *Group) {
 			g.Deps = []Service{{Name: "db"}}
 		}, `service "db" has no image`},
+		{"shm size and init", func(g *Group) {
+			g.Main.ShmSize, g.Main.Init = 1<<30, true
+		}, ""},
+		{"negative shm size", func(g *Group) { g.Main.ShmSize = -1 }, "shm size"},
+		{"host gateway", func(g *Group) {
+			g.Main.ExtraHosts = []string{"host.docker.internal:host-gateway", "v6.local:::1"}
+		}, ""},
+		{"extra host without ip", func(g *Group) { g.Main.ExtraHosts = []string{"db.local"} }, "must be host:ip"},
+		{"extra host with empty ip", func(g *Group) { g.Main.ExtraHosts = []string{"db.local:"} }, "must be host:ip"},
+		{"extra host with empty name", func(g *Group) { g.Main.ExtraHosts = []string{":10.0.0.1"} }, "must be host:ip"},
 	}
 
 	for _, tc := range tests {

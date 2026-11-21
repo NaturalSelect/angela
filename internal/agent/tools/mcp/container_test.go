@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -76,6 +77,7 @@ func TestCreateTransport_Container(t *testing.T) {
 		return fake, nil
 	})
 
+	sock := filepath.Join(t.TempDir(), "test-engine.sock")
 	r := shellResolverWithPath(t, map[string]string{"TAG": "1.2"})
 	m := config.MCPConfig{
 		Type:          config.MCPContainer,
@@ -83,7 +85,7 @@ func TestCreateTransport_Container(t *testing.T) {
 		Args:          []string{"--host", "$(echo example.com)"},
 		Env:           map[string]string{"MODE": "test"},
 		Network:       "none",
-		ContainerHost: "unix:///tmp/test-engine.sock",
+		ContainerHost: "unix://" + sock,
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -96,7 +98,7 @@ func TestCreateTransport_Container(t *testing.T) {
 	require.True(t, ok, "expected containerTransport, got %T", tr)
 	require.NotNil(t, ct.Transport)
 
-	require.Equal(t, containermcp.Endpoint{Host: "unix:///tmp/test-engine.sock", Socket: "/tmp/test-engine.sock"}, gotEP)
+	require.Equal(t, containermcp.Endpoint{Host: "unix://" + sock, Socket: sock}, gotEP)
 	require.Equal(t, "box", gotGroup.Server)
 	require.Equal(t, "img:1.2", gotGroup.Main.Image)
 	require.Equal(t, []string{"--host", "example.com"}, gotGroup.Main.Cmd)
@@ -137,7 +139,8 @@ func TestCreateTransport_ContainerErrors(t *testing.T) {
 	require.False(t, opened, "no container starts when the config is rejected")
 
 	t.Run("engine failure", func(t *testing.T) {
-		m := config.MCPConfig{Type: config.MCPContainer, Image: "img", ContainerHost: "unix:///tmp/test-engine.sock"}
+		sock := filepath.Join(t.TempDir(), "test-engine.sock")
+		m := config.MCPConfig{Type: config.MCPContainer, Image: "img", ContainerHost: "unix://" + sock}
 		tr, _, err := createTransport(t.Context(), nil, "box", m, r)
 		require.ErrorContains(t, err, `start container mcp "box": boom`)
 		require.Nil(t, tr)
@@ -161,7 +164,8 @@ func TestCreateSession_ContainerEndToEnd(t *testing.T) {
 	states.Del(name)
 	t.Cleanup(func() { states.Del(name) })
 
-	m := config.MCPConfig{Type: config.MCPContainer, Image: "img", ContainerHost: "unix:///tmp/test-engine.sock"}
+	sock := filepath.Join(t.TempDir(), "test-engine.sock")
+	m := config.MCPConfig{Type: config.MCPContainer, Image: "img", ContainerHost: "unix://" + sock}
 	sess, err := createSession(t.Context(), nil, name, m, currentGen(name), shellResolverWithPath(t, nil), false)
 	require.NoError(t, err)
 	require.Equal(t, "in-container", sess.InitializeResult().ServerInfo.Name)
@@ -184,7 +188,8 @@ func TestCreateSession_ContainerThatExitsEarlyReportsWhy(t *testing.T) {
 	states.Del(name)
 	t.Cleanup(func() { states.Del(name) })
 
-	m := config.MCPConfig{Type: config.MCPContainer, Image: "img", ContainerHost: "unix:///tmp/test-engine.sock"}
+	sock := filepath.Join(t.TempDir(), "test-engine.sock")
+	m := config.MCPConfig{Type: config.MCPContainer, Image: "img", ContainerHost: "unix://" + sock}
 	sess, err := createSession(t.Context(), nil, name, m, currentGen(name), shellResolverWithPath(t, nil), false)
 	require.Error(t, err)
 	require.Nil(t, sess)

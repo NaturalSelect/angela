@@ -6,9 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"testing"
@@ -62,6 +64,8 @@ const (
 	udpFilterHelperEnv     = "ANGELA_TEST_INSTALL_NETWORK_FILTER_UDP"
 	launcherDriverEnv      = "ANGELA_TEST_RUN_CHILD_EXEC_LAUNCHER"
 	dialCheckEnv           = "ANGELA_TEST_DIAL_CHECK"
+
+	establishedSocketEnv = "ANGELA_TEST_ESTABLISHED_SOCKET"
 )
 
 // runPlatformHelperIfRequested reports whether this process's
@@ -86,6 +90,8 @@ func runPlatformHelperIfRequested() (int, bool) {
 		return 0, true
 	case os.Getenv(dialCheckEnv) == "1":
 		return runDialCheckProcess(), true
+	case os.Getenv(establishedSocketEnv) != "":
+		return runEstablishedSocketHelperProcess(os.Getenv(establishedSocketEnv)), true
 	default:
 		return 0, false
 	}
@@ -214,4 +220,74 @@ func TestRunChildExecLauncher_BlocksTargetNetwork(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "driver subprocess output: %s", output)
 	require.Contains(t, string(output), "BLOCKED")
+}
+
+// NOTE: Landlock checks the path at connect time, so a connection opened before entering stays usable.
+func runEstablishedSocketHelperProcess(path string) int {
+	var d net.Dialer
+	conn, err := d.DialContext(context.Background(), "unix", path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "dial before sandbox:", err)
+		return 10
+	}
+	defer conn.Close()
+
+	if err := New(true).EnterSandbox(Config{ReadOnly: []string{"/"}, AllowNetwork: true}); err != nil {
+		fmt.Fprintln(os.Stderr, "enter sandbox:", err)
+		return 11
+	}
+
+	if probeConnect(path) {
+		fmt.Println("NEW_CONNECT_ALLOWED")
+	} else {
+		fmt.Println("NEW_CONNECT_DENIED")
+	}
+
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		fmt.Println("ESTABLISHED_WRITE_FAILED:", err)
+		return 0
+	}
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "ping" {
+		fmt.Println("ESTABLISHED_READ_FAILED:", err)
+		return 0
+	}
+	fmt.Println("ESTABLISHED_OK")
+	return 0
+}
+
+func TestEnterSandbox_KeepsEstablishedUnixSocketConnection(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "s")
+	if len(path) > 100 {
+		t.Skipf("unix socket path too long: %s", path)
+	}
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				_, _ = io.Copy(c, c)
+			}()
+		}
+	}()
+
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
+	cmd.Env = append(os.Environ(), establishedSocketEnv+"="+path)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "helper subprocess output: %s", output)
+	require.Contains(t, string(output), "ESTABLISHED_OK")
+	// NOTE: Only Landlock ABI 9 and newer can deny a new unix socket connect.
+	if landlockABI() >= 9 {
+		require.Contains(t, string(output), "NEW_CONNECT_DENIED")
+	}
 }

@@ -1075,6 +1075,7 @@ func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m 
 	// capability AND was opted in via --channels; otherwise it is closed
 	// (buffer discarded). This prevents early notifications from being lost.
 	channelGate := newChannelGate()
+	started := transport
 	transport = &channelTransport{inner: transport, name: name, gate: channelGate}
 
 	client := mcp.NewClient(
@@ -1114,6 +1115,7 @@ func createSession(ctx context.Context, cfg *config.ConfigStore, name string, m 
 	session, err := client.Connect(mcpCtx, transport, nil)
 	if err != nil {
 		err = maybeStdioErr(err, transport, stdioCheckDefaultTimeout)
+		err = maybeContainerErr(err, started)
 		failIfCurrent(name, gen, maybeTimeoutErr(err, timeout))
 		slog.Error("MCP client failed to initialize", "error", err, "name", name)
 		cancel()
@@ -1221,6 +1223,9 @@ func createTransport(ctx context.Context, cfg *config.ConfigStore, name string, 
 		return &mcp.CommandTransport{
 			Command: cmd,
 		}, nil, nil
+	case config.MCPContainer:
+		transport, err := createContainerTransport(ctx, cfg, name, m, resolver)
+		return transport, nil, err
 	case config.MCPHttp:
 		url, err := m.ResolvedURL(mcpFieldResolver(cfg, resolver, name, "url"))
 		if err != nil {
@@ -1423,6 +1428,10 @@ func mcpTimeout(ctx context.Context, m config.MCPConfig) time.Duration {
 	}
 	if m.OAuth {
 		return 30 * time.Second
+	}
+	// NOTE: The first start may pull an image, which takes far longer than launching a local command.
+	if m.Type == config.MCPContainer {
+		return 5 * time.Minute
 	}
 	return 10 * time.Second
 }

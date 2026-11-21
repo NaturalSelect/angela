@@ -50,6 +50,19 @@ func DetectContainerGrants(grantSockets bool) ContainerGrants {
 	return g
 }
 
+// NOTE: Adds sockets found by other means; they are granted or only offered by the same opt-in as detected ones.
+func (g ContainerGrants) WithSockets(paths []string, grant bool) ContainerGrants {
+	if len(paths) == 0 {
+		return g
+	}
+	if grant {
+		g.UnixSockets = DedupePaths(append(append([]string{}, g.UnixSockets...), paths...))
+		return g
+	}
+	g.OptionalSockets = DedupePaths(append(append([]string{}, g.OptionalSockets...), paths...))
+	return g
+}
+
 // withSocketsOptional returns g with its granted sockets moved to
 // OptionalSockets.
 func (g ContainerGrants) withSocketsOptional() ContainerGrants {
@@ -97,33 +110,57 @@ func unixHostPath(host string) string {
 	return path
 }
 
-func detectContainerGrants(p containerProbe) ContainerGrants {
+func (p containerProbe) dockerSockets() []string {
 	runtimeDir := p.getenv("XDG_RUNTIME_DIR")
+	return []string{
+		p.sys("/var/run/docker.sock"),
+		p.sys("/run/docker.sock"),
+		join(runtimeDir, "docker.sock"),
+		join(p.home, ".docker", "run", "docker.sock"),
+		join(p.home, ".docker", "desktop", "docker.sock"),
+		unixHostPath(p.getenv("DOCKER_HOST")),
+	}
+}
 
+func (p containerProbe) podmanSockets() []string {
+	return []string{
+		join(p.getenv("XDG_RUNTIME_DIR"), "podman", "podman.sock"),
+		p.sys("/run/podman/podman.sock"),
+		unixHostPath(p.getenv("CONTAINER_HOST")),
+	}
+}
+
+func detectContainerGrants(p containerProbe) ContainerGrants {
 	var sockets []string
 
 	if p.has("docker") {
-		sockets = append(
-			sockets,
-			p.sys("/var/run/docker.sock"),
-			p.sys("/run/docker.sock"),
-			join(runtimeDir, "docker.sock"),
-			join(p.home, ".docker", "run", "docker.sock"),
-			join(p.home, ".docker", "desktop", "docker.sock"),
-			unixHostPath(p.getenv("DOCKER_HOST")),
-		)
+		sockets = append(sockets, p.dockerSockets()...)
 	}
 
 	if p.has("podman") {
-		sockets = append(
-			sockets,
-			join(runtimeDir, "podman", "podman.sock"),
-			p.sys("/run/podman/podman.sock"),
-			unixHostPath(p.getenv("CONTAINER_HOST")),
-		)
+		sockets = append(sockets, p.podmanSockets()...)
 	}
 
 	return ContainerGrants{UnixSockets: existingSockets(sockets)}
+}
+
+// NOTE: Lists every common daemon socket path, installed or not, so bind mounts can avoid them.
+func ContainerSocketCandidates() []string {
+	home, _ := os.UserHomeDir()
+	p := containerProbe{
+		lookPath: exec.LookPath,
+		getenv:   os.Getenv,
+		home:     home,
+		root:     "/",
+	}
+	all := append(p.dockerSockets(), p.podmanSockets()...)
+	cleaned := make([]string, 0, len(all))
+	for _, s := range all {
+		if s != "" {
+			cleaned = append(cleaned, filepath.Clean(s))
+		}
+	}
+	return DedupePaths(cleaned)
 }
 
 // existingSockets returns the cleaned, deduplicated entries of paths that

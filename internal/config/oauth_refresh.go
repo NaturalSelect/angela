@@ -267,9 +267,10 @@ func (s *ConfigStore) loadTokenFromDisk(scope Scope, providerID string) (*oauth.
 // NewTestStore creates a ConfigStore for testing purposes.
 func NewTestStore(cfg *Config, loadedPaths ...string) *ConfigStore {
 	return &ConfigStore{
-		config:      cfg,
-		loadedPaths: loadedPaths,
-		resolver:    NewShellVariableResolver(env.New()),
+		config:          cfg,
+		loadedPaths:     loadedPaths,
+		resolver:        NewShellVariableResolver(env.New()),
+		envOnlyResolver: NewEnvOnlyVariableResolver(env.New()),
 	}
 }
 

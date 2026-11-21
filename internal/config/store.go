@@ -239,6 +239,16 @@ func (s *ConfigStore) MCPFieldResolver(name, field string) VariableResolver {
 	return s.resolver
 }
 
+// NOTE: Project config loads from untrusted repos, so these fields never run command substitution.
+func (s *ConfigStore) ContainerFieldResolver(name string) VariableResolver {
+	s.writeMu.RLock()
+	defer s.writeMu.RUnlock()
+	if _, ok := s.overrides.MCP[name]; ok {
+		return IdentityResolver()
+	}
+	return s.envOnlyResolver
+}
+
 // KnownProviders returns the list of known providers.
 func (s *ConfigStore) KnownProviders() []catwalk.Provider {
 	s.writeMu.RLock()

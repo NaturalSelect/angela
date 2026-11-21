@@ -41,6 +41,23 @@ func TestDetectContainerGrants_SocketsAreOptionalByDefault(t *testing.T) {
 	require.Empty(t, DetectContainerGrants(true).OptionalSockets)
 }
 
+func TestContainerGrants_WithSockets(t *testing.T) {
+	t.Parallel()
+
+	base := ContainerGrants{UnixSockets: []string{"/run/docker.sock"}, OptionalSockets: []string{"/run/podman/podman.sock"}}
+
+	granted := base.WithSockets([]string{"/run/docker.sock", "/tmp/engine.sock"}, true)
+	require.Equal(t, []string{"/run/docker.sock", "/tmp/engine.sock"}, sortedCopy(granted.UnixSockets))
+	require.Equal(t, base.OptionalSockets, granted.OptionalSockets)
+
+	offered := base.WithSockets([]string{"/tmp/engine.sock"}, false)
+	require.Equal(t, base.UnixSockets, offered.UnixSockets, "without the opt-in nothing new is granted")
+	require.Equal(t, []string{"/run/podman/podman.sock", "/tmp/engine.sock"}, sortedCopy(offered.OptionalSockets))
+
+	require.Equal(t, base, base.WithSockets(nil, true))
+	require.Equal(t, []string{"/run/docker.sock"}, base.UnixSockets, "receiver must not be modified")
+}
+
 func sortedCopy(in []string) []string {
 	out := slices.Clone(in)
 	slices.Sort(out)

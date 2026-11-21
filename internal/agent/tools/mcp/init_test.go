@@ -719,6 +719,10 @@ func TestMCPConfigEqual(t *testing.T) {
 		},
 		{"disabled vs enabled", base, func() config.MCPConfig { m := base; m.Disabled = true; return m }(), false},
 		{"oauth flag", base, func() config.MCPConfig { m := base; m.OAuth = true; return m }(), false},
+		{"container image", base, func() config.MCPConfig { m := base; m.Image = "mcp/time"; return m }(), false},
+		{"container volumes", base, func() config.MCPConfig { m := base; m.Volumes = []string{"./data:/data:ro"}; return m }(), false},
+		{"container compose file", base, func() config.MCPConfig { m := base; m.Compose = "./compose.yaml"; return m }(), false},
+		{"container compose service", base, func() config.MCPConfig { m := base; m.Service = "mcp"; return m }(), false},
 	}
 
 	for _, tc := range tests {

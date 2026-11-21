@@ -4,71 +4,63 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
-// ContainerGrants lists the extra paths the Docker, Podman and Buildah
-// command line tools need once a sandbox is entered. Both slices only
-// hold paths that existed when they were detected.
+// ContainerGrants lists the daemon sockets the Docker and Podman command
+// line tools connect to once a sandbox is entered. Both slices only hold
+// paths that existed when they were detected. No directory is ever
+// granted: image storage belongs to the daemon, which runs outside the
+// sandbox.
 type ContainerGrants struct {
-	// ReadWrite lists the image and layer storage directories, which
-	// hold the overlay filesystem. Config and credential locations are
-	// never included.
-	ReadWrite []string
 	// UnixSockets lists the daemon sockets the tools connect to.
 	UnixSockets []string
-	// NOTE: Detected storage directories that stay ungranted until the user
-	// opts in.
-	OptionalStorage []string
 	// NOTE: Detected daemon sockets that stay ungranted until the user opts in.
 	OptionalSockets []string
 }
 
 // Empty reports whether g grants nothing.
 func (g ContainerGrants) Empty() bool {
-	return len(g.ReadWrite) == 0 && len(g.UnixSockets) == 0
+	return len(g.UnixSockets) == 0
 }
 
-// WithContainerGrants returns cfg with g's paths appended to ReadWrite
-// and UnixSockets.
+// WithContainerGrants returns cfg with g's sockets appended to UnixSockets.
 func (c Config) WithContainerGrants(g ContainerGrants) Config {
-	c.ReadWrite = DedupePaths(append(append([]string{}, c.ReadWrite...), g.ReadWrite...))
 	c.UnixSockets = DedupePaths(append(append([]string{}, c.UnixSockets...), g.UnixSockets...))
 	return c
 }
 
-// DetectContainerGrants looks for the Docker, Podman and Buildah command
-// line tools on this machine and returns the directories and sockets
-// they need. A socket grant is an escape hatch: whoever can talk to a
-// container daemon can start a container that mounts any host path, so
-// the detected sockets are only granted when grantSockets is set and
-// are otherwise returned as OptionalSockets. Image storage holds layer
-// content that later runs outside the sandbox, so it follows the same
-// rule: it is granted only when grantStorage is set and is otherwise
-// returned as OptionalStorage.
-func DetectContainerGrants(grantSockets, grantStorage bool) ContainerGrants {
+// DetectContainerGrants looks for the Docker and Podman command line tools
+// on this machine and returns the daemon sockets they connect to. A socket
+// grant is an escape hatch: whoever can talk to a container daemon can
+// start a container that mounts any host path, so the detected sockets are
+// only granted when grantSockets is set and are otherwise returned as
+// OptionalSockets.
+func DetectContainerGrants(grantSockets bool) ContainerGrants {
 	home, _ := os.UserHomeDir()
 	g := detectContainerGrants(containerProbe{
 		lookPath: exec.LookPath,
 		getenv:   os.Getenv,
 		home:     home,
-		root:     "/",
-		euid:     os.Geteuid(),
+		root:     systemRoot(),
 	})
 	if !grantSockets {
 		g = g.withSocketsOptional()
 	}
-	if !grantStorage {
-		g = g.withStorageOptional()
-	}
 	return g
 }
 
-// withStorageOptional returns g with its granted storage directories moved
-// to OptionalStorage.
-func (g ContainerGrants) withStorageOptional() ContainerGrants {
-	g.OptionalStorage = DedupePaths(append(append([]string{}, g.OptionalStorage...), g.ReadWrite...))
-	g.ReadWrite = nil
+// NOTE: Adds sockets found by other means; they are granted or only offered by the same opt-in as detected ones.
+func (g ContainerGrants) WithSockets(paths []string, grant bool) ContainerGrants {
+	if len(paths) == 0 {
+		return g
+	}
+	if grant {
+		g.UnixSockets = DedupePaths(append(append([]string{}, g.UnixSockets...), paths...))
+		return g
+	}
+	g.OptionalSockets = DedupePaths(append(append([]string{}, g.OptionalSockets...), paths...))
 	return g
 }
 
@@ -89,7 +81,6 @@ type containerProbe struct {
 	// root is the directory the fixed system paths such as
 	// /var/run/docker.sock are resolved under. It is "/" outside tests.
 	root string
-	euid int
 }
 
 func (p containerProbe) has(tool string) bool {
@@ -97,8 +88,19 @@ func (p containerProbe) has(tool string) bool {
 	return err == nil
 }
 
-// sys returns the fixed system path under p.root.
+// NOTE: Fixed Unix paths like /var/run/docker.sock are drive-relative on Windows and do not exist there.
+func systemRoot() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return "/"
+}
+
+// sys returns the fixed system path under p.root, or "" when no root applies.
 func (p containerProbe) sys(path string) string {
+	if p.root == "" {
+		return ""
+	}
 	return filepath.Join(p.root, path)
 }
 
@@ -120,56 +122,69 @@ func unixHostPath(host string) string {
 	return path
 }
 
-func detectContainerGrants(p containerProbe) ContainerGrants {
+func (p containerProbe) dockerSockets() []string {
 	runtimeDir := p.getenv("XDG_RUNTIME_DIR")
-	dataHome := p.getenv("XDG_DATA_HOME")
-	if dataHome == "" {
-		dataHome = join(p.home, ".local", "share")
-	}
-
-	var dirs, sockets []string
-
-	if p.has("docker") {
-		sockets = append(
-			sockets,
-			p.sys("/var/run/docker.sock"),
-			p.sys("/run/docker.sock"),
-			join(runtimeDir, "docker.sock"),
-			join(p.home, ".docker", "run", "docker.sock"),
-			join(p.home, ".docker", "desktop", "docker.sock"),
-			unixHostPath(p.getenv("DOCKER_HOST")),
-		)
-	}
-
-	if p.has("podman") || p.has("buildah") {
-		dirs = append(dirs, join(dataHome, "containers", "storage"))
-		sockets = append(
-			sockets,
-			join(runtimeDir, "podman", "podman.sock"),
-			p.sys("/run/podman/podman.sock"),
-			unixHostPath(p.getenv("CONTAINER_HOST")),
-		)
-		if p.euid == 0 {
-			dirs = append(dirs, p.sys("/var/lib/containers/storage"))
-		}
-	}
-
-	return ContainerGrants{
-		ReadWrite:   existingPaths(dirs, func(fi os.FileInfo) bool { return fi.IsDir() }),
-		UnixSockets: existingPaths(sockets, func(fi os.FileInfo) bool { return fi.Mode()&os.ModeSocket != 0 }),
+	return []string{
+		p.sys("/var/run/docker.sock"),
+		p.sys("/run/docker.sock"),
+		join(runtimeDir, "docker.sock"),
+		join(p.home, ".docker", "run", "docker.sock"),
+		join(p.home, ".docker", "desktop", "docker.sock"),
+		unixHostPath(p.getenv("DOCKER_HOST")),
 	}
 }
 
-// existingPaths returns the cleaned, deduplicated entries of paths whose
-// os.Stat result satisfies keep. Empty entries are skipped.
-func existingPaths(paths []string, keep func(os.FileInfo) bool) []string {
+func (p containerProbe) podmanSockets() []string {
+	return []string{
+		join(p.getenv("XDG_RUNTIME_DIR"), "podman", "podman.sock"),
+		p.sys("/run/podman/podman.sock"),
+		unixHostPath(p.getenv("CONTAINER_HOST")),
+	}
+}
+
+func detectContainerGrants(p containerProbe) ContainerGrants {
+	var sockets []string
+
+	if p.has("docker") {
+		sockets = append(sockets, p.dockerSockets()...)
+	}
+
+	if p.has("podman") {
+		sockets = append(sockets, p.podmanSockets()...)
+	}
+
+	return ContainerGrants{UnixSockets: existingSockets(sockets)}
+}
+
+// NOTE: Lists every common daemon socket path, installed or not, so bind mounts can avoid them.
+func ContainerSocketCandidates() []string {
+	home, _ := os.UserHomeDir()
+	p := containerProbe{
+		lookPath: exec.LookPath,
+		getenv:   os.Getenv,
+		home:     home,
+		root:     systemRoot(),
+	}
+	all := append(p.dockerSockets(), p.podmanSockets()...)
+	cleaned := make([]string, 0, len(all))
+	for _, s := range all {
+		if s != "" {
+			cleaned = append(cleaned, filepath.Clean(s))
+		}
+	}
+	return DedupePaths(cleaned)
+}
+
+// existingSockets returns the cleaned, deduplicated entries of paths that
+// are Unix sockets right now. Empty entries are skipped.
+func existingSockets(paths []string) []string {
 	cleaned := make([]string, 0, len(paths))
 	for _, p := range paths {
 		if p == "" {
 			continue
 		}
 		p = filepath.Clean(p)
-		if fi, err := os.Stat(p); err == nil && keep(fi) {
+		if fi, err := os.Stat(p); err == nil && fi.Mode()&os.ModeSocket != 0 {
 			cleaned = append(cleaned, p)
 		}
 	}

@@ -1,6 +1,8 @@
 package sandbox
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -47,6 +49,42 @@ type Status struct {
 var appliedRules atomic.Pointer[ruleSet]
 
 func recordApplied(rs ruleSet) { appliedRules.Store(&rs) }
+
+// NOTE: False outside a sandbox, inside an external container, and after an empty Config.
+func Enforced() bool {
+	rs := appliedRules.Load()
+	return rs != nil && !rs.empty()
+}
+
+// NOTE: Answers from the rules Angela applied, so a kernel without socket rules is still refused.
+func AllowsUnixSocket(path string) bool {
+	rs := appliedRules.Load()
+	if rs == nil || rs.empty() {
+		return true
+	}
+	path = filepath.Clean(path)
+	target, err := statSocketTarget(path)
+	for _, granted := range rs.unixSockets {
+		if granted == path {
+			return true
+		}
+		if err != nil {
+			continue
+		}
+		if fi, serr := statSocketTarget(granted); serr == nil && os.SameFile(target, fi) {
+			return true
+		}
+	}
+	return false
+}
+
+// NOTE: Resolves symlinks first because Windows os.Stat fails when a symlink points to an AF_UNIX socket.
+func statSocketTarget(path string) (os.FileInfo, error) {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	return os.Stat(path)
+}
 
 var landlockABI = sync.OnceValue(func() int {
 	v, err := llsyscall.LandlockGetABIVersion()

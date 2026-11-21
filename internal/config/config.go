@@ -325,16 +325,17 @@ func (c *ProviderConfig) SetupGitHubCopilot() {
 type MCPType string
 
 const (
-	MCPStdio MCPType = "stdio"
-	MCPSSE   MCPType = "sse"
-	MCPHttp  MCPType = "http"
+	MCPStdio     MCPType = "stdio"
+	MCPSSE       MCPType = "sse"
+	MCPHttp      MCPType = "http"
+	MCPContainer MCPType = "container"
 )
 
 type MCPConfig struct {
 	Command       string            `json:"command,omitempty" jsonschema:"description=Command to execute for stdio MCP servers,example=npx"`
 	Env           map[string]string `json:"env,omitempty" jsonschema:"description=Environment variables to set for the MCP server"`
 	Args          []string          `json:"args,omitempty" jsonschema:"description=Arguments to pass to the MCP server command"`
-	Type          MCPType           `json:"type" jsonschema:"required,description=Type of MCP connection,enum=stdio,enum=sse,enum=http,default=stdio"`
+	Type          MCPType           `json:"type" jsonschema:"required,description=Type of MCP connection,enum=stdio,enum=sse,enum=http,enum=container,default=stdio"`
 	URL           string            `json:"url,omitempty" jsonschema:"description=URL for HTTP or SSE MCP servers,format=uri,example=http://localhost:3000/mcp"`
 	Disabled      bool              `json:"disabled,omitempty" jsonschema:"description=Whether this MCP server is disabled,default=false"`
 	DisabledTools []string          `json:"disabled_tools,omitempty" jsonschema:"description=List of tools from this MCP server to disable,example=get-library-doc"`
@@ -348,6 +349,15 @@ type MCPConfig struct {
 	// omitted from the outgoing request rather than sent as
 	// "Header:".
 	Headers map[string]string `json:"headers,omitempty" jsonschema:"description=HTTP headers for HTTP/SSE MCP servers"`
+
+	Image         string   `json:"image,omitempty" jsonschema:"description=Container image for container MCP servers. Set either image or compose,example=mcp/time"`
+	Compose       string   `json:"compose,omitempty" jsonschema:"description=Path of a compose file for container MCP servers. Needs service. A relative path is resolved against the project directory,example=./compose.yaml"`
+	Service       string   `json:"service,omitempty" jsonschema:"description=Service of the compose file that speaks MCP over stdio. Its depends_on services start with it,example=mcp"`
+	Volumes       []string `json:"volumes,omitempty" jsonschema:"description=Mounts for container MCP servers as source:target[:options]. A relative source is resolved against the project directory,example=./data:/data:ro"`
+	Network       string   `json:"network,omitempty" jsonschema:"description=Network mode for container MCP servers,enum=bridge,enum=none,enum=host,default=bridge"`
+	Pull          string   `json:"pull,omitempty" jsonschema:"description=When to pull the image for container MCP servers,enum=missing,enum=always,enum=never,default=missing"`
+	Workdir       string   `json:"workdir,omitempty" jsonschema:"description=Working directory inside the container for container MCP servers"`
+	ContainerHost string   `json:"container_host,omitempty" jsonschema:"description=Container engine endpoint for container MCP servers,example=unix:///run/user/1000/podman/podman.sock"`
 
 	// OAuth enables the MCP OAuth 2.1 authorization flow for HTTP
 	// transport servers. When true, the client uses dynamic client
@@ -558,22 +568,21 @@ type Options struct {
 	// the SQLite database and workspace overrides. Relative paths are
 	// resolved against the working directory; absolute paths are used
 	// verbatim. After defaulting the stored value is always absolute.
-	DataDirectory                string       `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data. Relative paths are resolved against the working directory; absolute paths are used as-is.,default=.angela,example=.angela"`
-	DisabledTools                []string     `json:"disabled_tools,omitempty" jsonschema:"description=List of built-in tools to disable and hide from the agent,example=bash,example=sourcegraph"`
-	DisableProviderAutoUpdate    bool         `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
-	DisableDefaultProviders      bool         `json:"disable_default_providers,omitempty" jsonschema:"description=Ignore all default/embedded providers. When enabled\\, providers must be fully specified in the config file with base_url\\, models\\, and api_key - no merging with defaults occurs,default=false"`
-	Attribution                  *Attribution `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
-	DisableMetrics               bool         `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
-	InitializeAs                 string       `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=ANGELA.md,example=CLAUDE.md,example=docs/LLMs.md"`
-	AutoLSP                      *bool        `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
-	Progress                     *bool        `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
-	Notifications                string       `json:"notifications,omitempty" jsonschema:"description=Notification style to use. Options: auto (default)\\, native\\, osc\\, bell\\, disabled. Auto selects based on environment: native for local sessions\\, osc for SSH (with automatic OSC 99/777 detection).,enum=auto,enum=native,enum=osc,enum=bell,enum=disabled,default=auto"`
-	DisabledSkills               []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=angela-config"`
-	AgentPaths                   []string     `json:"agent_paths,omitempty" jsonschema:"description=Paths to directories containing agent markdown files,example=~/.config/angela/agents,example=./agents"`
-	SubagentDepth                *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
-	EnableImageTools             *bool        `json:"enable_image_tools,omitempty" jsonschema:"description=Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported\\, images can still be saved with Export Image); false disables them"`
-	CommitDiffRunes              *int         `json:"commit_diff_runes,omitempty" jsonschema:"description=Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. A longer diff is cut off and marked as truncated. Raising it costs more input tokens per commit.,minimum=1,default=48000,example=100000"`
-	NoSandboxContainerPermission bool         `json:"no_sandbox_container_permission,omitempty" jsonschema:"description=Skip every container grant for --sandbox and /sandbox: do not offer the image storage (overlay) directories of a detected Podman/Buildah CLI or the Docker/Podman daemon sockets. Both are blocked by default and only granted with --sandbox-allow-docker-storage and --sandbox-allow-docker-socket or in the /sandbox dialog; a granted daemon socket lets sandboxed commands start containers that mount any host path\\, and writable image storage lets them edit layers that a later podman run executes outside the sandbox,default=false"`
+	DataDirectory             string       `json:"data_directory,omitempty" jsonschema:"description=Directory for storing application data. Relative paths are resolved against the working directory; absolute paths are used as-is.,default=.angela,example=.angela"`
+	DisabledTools             []string     `json:"disabled_tools,omitempty" jsonschema:"description=List of built-in tools to disable and hide from the agent,example=bash,example=sourcegraph"`
+	DisableProviderAutoUpdate bool         `json:"disable_provider_auto_update,omitempty" jsonschema:"description=Disable providers auto-update,default=false"`
+	DisableDefaultProviders   bool         `json:"disable_default_providers,omitempty" jsonschema:"description=Ignore all default/embedded providers. When enabled\\, providers must be fully specified in the config file with base_url\\, models\\, and api_key - no merging with defaults occurs,default=false"`
+	Attribution               *Attribution `json:"attribution,omitempty" jsonschema:"description=Attribution settings for generated content"`
+	DisableMetrics            bool         `json:"disable_metrics,omitempty" jsonschema:"description=Disable sending metrics,default=false"`
+	InitializeAs              string       `json:"initialize_as,omitempty" jsonschema:"description=Name of the context file to create/update during project initialization,default=AGENTS.md,example=AGENTS.md,example=ANGELA.md,example=CLAUDE.md,example=docs/LLMs.md"`
+	AutoLSP                   *bool        `json:"auto_lsp,omitempty" jsonschema:"description=Automatically setup LSPs based on root markers,default=true"`
+	Progress                  *bool        `json:"progress,omitempty" jsonschema:"description=Show indeterminate progress updates during long operations,default=true"`
+	Notifications             string       `json:"notifications,omitempty" jsonschema:"description=Notification style to use. Options: auto (default)\\, native\\, osc\\, bell\\, disabled. Auto selects based on environment: native for local sessions\\, osc for SSH (with automatic OSC 99/777 detection).,enum=auto,enum=native,enum=osc,enum=bell,enum=disabled,default=auto"`
+	DisabledSkills            []string     `json:"disabled_skills,omitempty" jsonschema:"description=List of skill names to disable and hide from the agent,example=angela-config"`
+	AgentPaths                []string     `json:"agent_paths,omitempty" jsonschema:"description=Paths to directories containing agent markdown files,example=~/.config/angela/agents,example=./agents"`
+	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
+	EnableImageTools          *bool        `json:"enable_image_tools,omitempty" jsonschema:"description=Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported\\, images can still be saved with Export Image); false disables them"`
+	CommitDiffRunes           *int         `json:"commit_diff_runes,omitempty" jsonschema:"description=Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. A longer diff is cut off and marked as truncated. Raising it costs more input tokens per commit.,minimum=1,default=48000,example=100000"`
 }
 
 // DefaultCommitDiffRunes is the staged diff budget, in runes, when neither

@@ -62,6 +62,12 @@ const sandboxColCount = 3
 // take before the path rows start to scroll.
 const sandboxHeightRatio = 0.8
 
+// sandboxConfirmHeightRatio is the share of the screen height the
+// confirm stage may take before its path list starts to scroll. The
+// stage's fixed lines leave little room for the list on a short
+// terminal, so it may use the whole screen.
+const sandboxConfirmHeightRatio = 1.0
+
 // sandboxPathRow is one filesystem-access entry: an editable path and
 // whether it is read-only (false means read-write).
 type sandboxPathRow struct {
@@ -69,13 +75,11 @@ type sandboxPathRow struct {
 	readOnly bool
 }
 
-// sandboxSocket is one detected container grant that is offered as an
-// opt-in choice and whether the sandbox will let commands use it. It is
-// a daemon socket, or an image storage directory when storage is set.
+// sandboxSocket is one detected daemon socket that is offered as an
+// opt-in choice and whether the sandbox will let commands use it.
 type sandboxSocket struct {
 	path    string
 	allowed bool
-	storage bool
 }
 
 // sandboxHitTarget records a clickable region in absolute screen
@@ -125,9 +129,10 @@ type Sandbox struct {
 	hitTargets     []sandboxHitTarget
 	buttonHit      *lipgloss.Compositor
 
-	frame   *Frame
-	metrics FrameMetrics
-	help    help.Model
+	frame        *Frame
+	confirmFrame *Frame
+	metrics      FrameMetrics
+	help         help.Model
 
 	keyMap struct {
 		Next       key.Binding
@@ -152,12 +157,10 @@ func NewSandbox(com *common.Common) *Sandbox {
 	m := &Sandbox{
 		com:          com,
 		allowNetwork: cfg.AllowNetwork,
-		sockets: append(
-			sandboxStorage(cfg.ReadWrite, grants.OptionalStorage),
-			sandboxSockets(cfg.UnixSockets, grants.OptionalSockets)...,
-		),
+		sockets:      sandboxSockets(cfg.UnixSockets, grants.OptionalSockets),
 	}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
+	m.confirmFrame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxConfirmHeightRatio})
 
 	for _, p := range cfg.ReadWrite {
 		m.rows = append(m.rows, newSandboxRow(t, p, false))
@@ -223,9 +226,8 @@ func setSandboxInputWidth(input *textinput.Model, width int) {
 // exact-file grant back into a directory-wide one once the user
 // confirms.
 //
-// The second return value carries the detected container sockets and
-// storage directories that are not granted yet; the form offers them as
-// opt-in choices.
+// The second return value carries the detected container sockets that are
+// not granted yet; the form offers them as opt-in choices.
 func sandboxDefaultConfig(com *common.Common) (sandbox.Config, sandbox.ContainerGrants) {
 	var dataDir string
 	var permissions *config.Permissions
@@ -246,18 +248,6 @@ func sandboxDefaultConfig(com *common.Common) (sandbox.Config, sandbox.Container
 		result.ReadWrite = sandbox.DedupePaths(append(result.ReadWrite, readWrite...))
 	}
 	return result, grants
-}
-
-// sandboxStorage builds the storage choices of the form: every detected
-// directory that is not already a read-write row starts blocked.
-func sandboxStorage(readWrite, optional []string) []sandboxSocket {
-	var choices []sandboxSocket
-	for _, p := range optional {
-		if !slices.Contains(readWrite, p) {
-			choices = append(choices, sandboxSocket{path: p, storage: true})
-		}
-	}
-	return choices
 }
 
 // sandboxSockets builds the socket choices of the form: every socket
@@ -494,12 +484,7 @@ func (m *Sandbox) handleFormClick(x, y int) {
 func (m *Sandbox) config() sandbox.Config {
 	cfg := sandbox.Config{AllowNetwork: m.allowNetwork}
 	for _, s := range m.sockets {
-		if !s.allowed {
-			continue
-		}
-		if s.storage {
-			cfg.ReadWrite = append(cfg.ReadWrite, s.path)
-		} else {
+		if s.allowed {
 			cfg.UnixSockets = append(cfg.UnixSockets, s.path)
 		}
 	}
@@ -1007,7 +992,7 @@ func (m *Sandbox) drawConfirm(scr uv.Screen, area uv.Rectangle) *tea.Cursor {
 	const blankLines = 4
 	fixedHeight := frameStyle.GetVerticalFrameSize() + lipgloss.Height(question) +
 		lipgloss.Height(networkLine) + lipgloss.Height(buttons) + lipgloss.Height(hint) + blankLines
-	pathsHeight := min(len(pathLines), max(1, m.frame.Measure(area).Height-fixedHeight))
+	pathsHeight := min(len(pathLines), max(1, m.confirmFrame.Measure(area).Height-fixedHeight))
 	m.confirmHeight = pathsHeight
 	m.confirmOffset = min(max(0, m.confirmOffset), max(0, len(pathLines)-pathsHeight))
 

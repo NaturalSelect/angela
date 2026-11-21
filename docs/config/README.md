@@ -368,6 +368,97 @@ tools off. See
 > the `mcp` section above. Use `stdio` when the server runs on the same
 > machine as Angela, or `http`/`sse` when it runs on a remote machine.
 
+#### Container servers
+
+A `container` server runs the MCP server in a container that Angela starts
+through the Docker or Podman API socket, and speaks MCP over the container's
+stdin and stdout. No `docker` or `podman` command is needed, and it keeps
+working inside `--sandbox` once the socket is allowed (see below).
+
+```jsonc
+{
+  "mcp": {
+    "time": {
+      "type": "container",
+      "image": "mcp/time",
+      "args": ["--local-timezone=UTC"],       // arguments for the image
+      "env": { "TOKEN": "$TOKEN" },           // never inherited from the host
+      "volumes": ["./data:/data:ro"],         // source:target[:ro,rw,z,Z]
+      "network": "none",                      // bridge (default), none or host
+      "pull": "missing",                      // missing (default), always or never
+      "workdir": "/data",
+      "container_host": "unix:///run/user/1000/podman/podman.sock"
+    },
+    "stack": {
+      "type": "container",
+      "compose": "./docker-compose.yaml",     // relative to the project directory
+      "service": "mcp"                        // its depends_on services start first
+    }
+  }
+}
+```
+
+- **Engine.** `container_host` wins, then `DOCKER_HOST`, then `CONTAINER_HOST`,
+  then the first Docker or Podman socket found on the machine. Rootless Podman
+  needs its socket running: `systemctl --user start podman.socket`.
+- **Sandbox.** A container server connects to the engine socket from the Angela
+  process, so under `--sandbox` it fails to start unless the socket is allowed
+  with `--sandbox-allow-docker-socket` or the `/sandbox` dialog. The socket is a
+  deliberate hole: whatever can reach it can start a container that mounts any
+  host path. Angela refuses bind mounts of a socket or of a directory that
+  holds an engine socket, but that is a safety net and not a boundary.
+- **Expansion.** `args` and `env` expand `$VAR` and `$(cmd)` like a `stdio`
+  server. Every other field expands only `$VAR`, in every config layer.
+- **Images.** Angela pulls a missing image itself and does not read registry
+  credentials. For a private image, pull it first and set `pull` to `never`.
+  The default startup timeout is 5 minutes so that a pull can finish.
+- **Cleanup.** The container is removed when the server stops. After a crash,
+  the next start removes the leftover dependency containers and networks of the
+  same server.
+- **Rootful Docker.** The container runs as root by default, so it writes root
+  owned files into writable mounts. Set `user` in a compose file, or mount
+  read-only.
+
+With `compose`, set `service` and nothing about the image itself: `args`,
+`env`, `volumes`, `network` and `workdir` belong in the compose file, and
+`pull`, `container_host` and `timeout` still apply. The file is read the way
+`docker compose` reads it, including `.env`, host environment interpolation,
+`include` and `extends`. Angela starts the
+service and the services it needs with `depends_on`, waits for `service_healthy`
+and `service_completed_successfully`, and puts them on one private network where
+each service answers to its name. Naming a service enables its own `profiles`,
+as `docker compose run` does. A required dependency that belongs to another
+profile is an error. Editing the compose file does not restart a
+running server; disable and enable the server, or restart Angela.
+
+These compose fields are used: `image`, `command`, `entrypoint`,
+`environment`, `env_file`, `volumes` (bind, named volume and tmpfs),
+`working_dir`, `user`, `depends_on`, `healthcheck`, `labels`, `networks`
+(aliases only), `network_mode` (`none`, `host`, `bridge`), `pull_policy`,
+`profiles`, `init`, `shm_size`, `extra_hosts` and `tty` (dependencies only).
+These only narrow the container or set its own identity, so they are used
+too: `cap_drop`, `read_only`, `tmpfs`, `security_opt` (only
+`no-new-privileges`), `mem_limit`, `mem_reservation`, `memswap_limit`, `cpus`,
+`cpu_shares`, `cpu_period`, `cpu_quota`, `cpuset`, `pids_limit`, `hostname`,
+`domainname`, `dns`, `dns_search`, `dns_opt` and `stop_signal`. A negative
+limit is an error because it would lift the limit. `deploy.resources.limits`
+(`cpus`, `memory`, `pids`) and `deploy.resources.reservations.memory` mean the
+same as `cpus`, `mem_limit`, `pids_limit` and `mem_reservation`, and must agree
+with them when both are set. `mem_swappiness` is used too, but an engine on
+cgroup v2 cannot apply it (Podman cannot start the container and Docker would
+drop it), so Angela stops with an error before it creates anything; this is the
+case on most current hosts. A tmpfs takes `size`,
+`mode`, `uid`, `gid`, `nr_inodes`, `rw`, `ro`, `exec`, `noexec`, `nosuid` and
+`nodev`; `suid` and `dev` are errors. These are ignored with a warning:
+`restart`, the rest of `deploy` (swarm scheduling such as `replicas`,
+`restart_policy` and `placement`), `logging`, `ports`, `expose`,
+`container_name`, `stdin_open`, `attach`, `develop`, `scale` and `build` next
+to an `image`. Everything else is an error that names the service and the
+field, including `privileged`, `cap_add`, `devices`, any `security_opt` other
+than `no-new-privileges`, `volumes_from`, `sysctls`, `ulimits`, `group_add`,
+`deploy.resources.reservations.devices` (GPUs), `deploy.resources.reservations.cpus`,
+host namespaces and a service without an `image`. Angela never builds images.
+
 ### LSP Servers
 
 ```jsonc
@@ -484,7 +575,6 @@ A rule's `mode` chooses how `pattern` is compared:
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
     "commit_diff_runes": 48000,       // characters of the staged diff `angela commit` and /commit send to the model
-    "no_sandbox_container_permission": false, // true = skip every container grant: never offer podman/buildah image storage or docker/podman sockets
 
     // Attribution
     "attribution": {
@@ -707,9 +797,7 @@ Some settings can also come from the environment or the command line.
 | `--sandbox-rw`, `--sandbox-ro`        | Extra read-write or read-only directories for `--sandbox`                |
 | `--sandbox-no-network`                | Blocks outbound network access for commands under `--sandbox`            |
 | `--no-docker-sandbox`                 | Applies Landlock even inside a detected container                        |
-| `--no-sandbox-container-permission`   | Same as `options.no_sandbox_container_permission`                        |
 | `--sandbox-allow-docker-socket`       | Lets the sandbox connect to detected Docker/Podman daemon sockets, which are blocked by default |
-| `--sandbox-allow-docker-storage`      | Lets the sandbox write to detected Podman/Buildah image storage, which is blocked by default |
 
 To see which config directories Angela reads, run `angela dirs`. To check a file
 after you edit it, run `angela config validate`. To refresh the provider

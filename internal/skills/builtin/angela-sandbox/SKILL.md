@@ -49,14 +49,11 @@ yolo would skip.
 | `--sandbox-ro <dir>` | Additional read-only directory. Repeatable. |
 | `--sandbox-no-network` | Blocks outbound network for spawned commands. Linux only — fails at startup on macOS. |
 | `--no-docker-sandbox` | Ignore an auto-detected Docker/OCI container as "already sandboxed" and apply Landlock on top of it anyway. Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. |
-| `--no-sandbox-container-permission` | Skip every container grant: do not offer the Podman/Buildah image storage or the Docker/Podman sockets (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Same as `options.no_sandbox_container_permission`. |
-| `--sandbox-allow-docker-socket` | Let the sandbox connect to the detected Docker/Podman daemon sockets, which are blocked by default (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Has no `angela.json` equivalent and has no effect together with `--no-sandbox-container-permission`. |
-| `--sandbox-allow-docker-storage` | Let the sandbox write to the detected Podman/Buildah image storage, which is blocked by default (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. Has no `angela.json` equivalent and has no effect together with `--no-sandbox-container-permission`. |
+| `--sandbox-allow-docker-socket` | Let the sandbox connect to the detected Docker/Podman daemon sockets, which are blocked by default (see Default Profile). Also governs the **Enter Sandbox** dialog, so it is legal without `--sandbox`. |
 
 The flags are registered on `angela`, `angela run`, `angela agent create` and
-`angela acp`. Only `--no-sandbox-container-permission` has an `angela.json`
-equivalent (`options.no_sandbox_container_permission`); the rest have no
-environment-variable or `angela.json` equivalent. Using `--sandbox-rw`,
+`angela acp`. None has an environment-variable or `angela.json` equivalent.
+Using `--sandbox-rw`,
 `--sandbox-ro` or `--sandbox-no-network`
 without `--sandbox` itself is an error at startup (`--sandbox-rw requires
 --sandbox`).
@@ -80,29 +77,26 @@ an unconditional filesystem allow rule under `permissions.rules` already
 covers, so an edit the permission policy already approves without a prompt
 doesn't turn into a confusing sandbox I/O error.
 
-When the `podman` or `buildah` CLI is on `PATH`, Angela detects its image
-storage, limited to paths that exist. That is the directory holding the
-overlay filesystem with the image layers:
-`$XDG_DATA_HOME/containers/storage` (else `~/.local/share/containers/storage`),
-and, only when running as root, `/var/lib/containers/storage`. It is **not**
-granted by default: a sandboxed command that can write there can edit image
-layers, and a later `podman run` outside the sandbox then executes the edited
-content. Pass `--sandbox-allow-docker-storage` to make it writable at
-startup, or turn it on in the **Enter Sandbox** dialog, where each detected
-directory is a toggle that starts off (or on, when the flag was passed). Nothing
-else is opened: configuration and credential locations such as `~/.docker`,
-`$DOCKER_CONFIG`, `$XDG_CONFIG_HOME/containers` and
-`$XDG_RUNTIME_DIR/containers` stay as read-only as the rest of `/`. The Docker
-CLI alone grants no directory, because its overlay storage belongs to the
-daemon, which runs outside the sandbox.
+No container directory is ever granted. Podman and Buildah keep their image
+storage, the overlay filesystem with the image layers, under
+`~/.local/share/containers/storage` and, as root, `/var/lib/containers/storage`.
+It stays as read-only as the rest of `/`: a sandboxed command that could write
+there could edit image layers, and a later `podman run` outside the sandbox
+would then execute the edited content. Configuration and credential locations
+such as `~/.docker`, `$DOCKER_CONFIG`, `$XDG_CONFIG_HOME/containers` and
+`$XDG_RUNTIME_DIR/containers` are read-only too. Container tooling reaches the
+images through a daemon socket instead, and the daemon, which runs outside the
+sandbox, owns the storage.
 
-The daemon sockets are **not** granted by default. Angela still detects them:
+The daemon sockets are **not** granted by default. When the `docker` or
+`podman` CLI is on `PATH`, Angela detects the ones that exist:
 `/var/run/docker.sock`, `/run/docker.sock`, `$XDG_RUNTIME_DIR/docker.sock`, the
 Docker Desktop sockets under `~/.docker`, any `unix://` path in `$DOCKER_HOST`,
 `$XDG_RUNTIME_DIR/podman/podman.sock`, `/run/podman/podman.sock` and any
-`unix://` path in `$CONTAINER_HOST`. **A container daemon socket is an escape
-hatch:** whoever can use it can start a container that mounts any host path,
-bypassing the filesystem rules. Two ways to grant them:
+`unix://` path in `$CONTAINER_HOST`. Buildah alone grants nothing, since it has
+no daemon. **A container daemon socket is an escape hatch:** whoever can use it
+can start a container that mounts any host path, bypassing the filesystem
+rules. Two ways to grant them:
 
 - Pass `--sandbox-allow-docker-socket` to grant every detected socket at startup.
 - In the **Enter Sandbox** dialog, each detected socket is a toggle that starts
@@ -111,12 +105,17 @@ bypassing the filesystem rules. Two ways to grant them:
 
 On Landlock ABI 9 or newer, connecting to any pathname Unix socket is denied
 unless it is listed, so granted sockets show up individually as `unix_sockets`
-in `angela_info`. Pass `--no-sandbox-container-permission` or set
-`options.no_sandbox_container_permission` to `true` to skip the whole container
-grant, storage and sockets alike. That option wins over
-`--sandbox-allow-docker-socket` and `--sandbox-allow-docker-storage`. Custom
-`graphroot` locations from `storage.conf` are not detected; add them with
-`--sandbox-rw`.
+in `angela_info`.
+
+MCP servers with `"type": "container"` connect to the engine socket from the
+Angela process itself, so they need the socket granted too. The grant also
+covers the socket such a server will use (its `container_host`, `DOCKER_HOST`,
+`CONTAINER_HOST` or a socket found on the machine) when no `docker` or `podman`
+CLI is installed. Without the grant the server shows an error that names the
+socket and `--sandbox-allow-docker-socket`. A container server that is already
+running when the sandbox is entered from the dialog keeps working, because the
+sandbox only checks new connections. A restart or reload after that fails
+without the grant. See the `angela-mcp` skill for the config.
 
 ## Platform Backends
 
@@ -202,12 +201,17 @@ only talks to a daemon outside the sandbox.
 
 **`docker ps` fails with `permission denied` on the socket** — the daemon
 sockets are blocked by default. Launch with `--sandbox-allow-docker-socket`, or
-turn the socket on in the **Enter Sandbox** dialog. If it still fails,
-`--no-sandbox-container-permission` (or
-`options.no_sandbox_container_permission`) is set, or the socket lives at a
+turn the socket on in the **Enter Sandbox** dialog. If it still fails, the
+socket lives at a
 path that is not detected. Add a non-default socket with `DOCKER_HOST=unix://...`
 before launching, or confirm what was granted in the `unix_sockets` line of
 `angela_info`.
+
+**A container MCP server fails with `needs the container engine socket ...,
+which this sandbox does not allow`** — grant the socket the same way as above:
+launch with `--sandbox-allow-docker-socket`, or turn it on in the **Enter
+Sandbox** dialog. Set `container_host` on the server if it should use a
+different socket than the one Angela picks.
 
 **A tool call that should be scoped in still fails with an I/O error** — the
 path may fall outside the read-write set (everything is readable by default,

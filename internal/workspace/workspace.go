@@ -332,11 +332,10 @@ type Workspace interface {
 	// Sandbox operations
 	IsInSandbox() bool
 	EnterSandbox(ctx context.Context, cfg sandbox.Config) error
-	// SandboxContainerGrants returns the Docker/Podman/Buildah directories
-	// the sandbox should open up by default, or the zero value when
-	// options.no_sandbox_container_permission or its flag opts out. Daemon
-	// sockets are only granted when --sandbox-allow-docker-socket is
-	// passed; otherwise they are listed as optional for the user to pick.
+	// SandboxContainerGrants returns the Docker/Podman daemon sockets the
+	// sandbox could open up. Sockets are only granted when
+	// --sandbox-allow-docker-socket is passed; otherwise they are listed as
+	// optional for the user to pick.
 	SandboxContainerGrants() sandbox.ContainerGrants
 
 	// Environment operations. Variables set here live in the process

@@ -441,7 +441,8 @@
           "enum": [
             "stdio",
             "sse",
-            "http"
+            "http",
+            "container"
           ],
           "description": "Type of MCP connection",
           "default": "stdio"
@@ -495,6 +496,68 @@
           },
           "type": "object",
           "description": "HTTP headers for HTTP/SSE MCP servers"
+        },
+        "image": {
+          "type": "string",
+          "description": "Container image for container MCP servers. Set either image or compose",
+          "examples": [
+            "mcp/time"
+          ]
+        },
+        "compose": {
+          "type": "string",
+          "description": "Path of a compose file for container MCP servers. Needs service. A relative path is resolved against the project directory",
+          "examples": [
+            "./compose.yaml"
+          ]
+        },
+        "service": {
+          "type": "string",
+          "description": "Service of the compose file that speaks MCP over stdio. Its depends_on services start with it",
+          "examples": [
+            "mcp"
+          ]
+        },
+        "volumes": {
+          "items": {
+            "type": "string",
+            "examples": [
+              "./data:/data:ro"
+            ]
+          },
+          "type": "array",
+          "description": "Mounts for container MCP servers as source:target[:options]. A relative source is resolved against the project directory"
+        },
+        "network": {
+          "type": "string",
+          "enum": [
+            "bridge",
+            "none",
+            "host"
+          ],
+          "description": "Network mode for container MCP servers",
+          "default": "bridge"
+        },
+        "pull": {
+          "type": "string",
+          "enum": [
+            "missing",
+            "always",
+            "never"
+          ],
+          "description": "When to pull the image for container MCP servers",
+          "default": "missing"
+        },
+        "workdir": {
+          "type": "string",
+          "description": "Working directory inside the container for container MCP servers"
+        },
+        "container_host": {
+          "type": "string",
+          "description": "Container engine endpoint for container MCP servers",
+          "examples": [
+            "unix:///run/user/1000/podman/podman.sock"
+          ]
         },
         "oauth": {
           "type": "boolean",
@@ -747,11 +810,6 @@
           "examples": [
             100000
           ]
-        },
-        "no_sandbox_container_permission": {
-          "type": "boolean",
-          "description": "Skip every container grant for --sandbox and /sandbox: do not offer the image storage (overlay) directories of a detected Podman/Buildah CLI or the Docker/Podman daemon sockets. Both are blocked by default and only granted with --sandbox-allow-docker-storage and --sandbox-allow-docker-socket or in the /sandbox dialog; a granted daemon socket lets sandboxed commands start containers that mount any host path, and writable image storage lets them edit layers that a later podman run executes outside the sandbox",
-          "default": false
         }
       },
       "additionalProperties": false,

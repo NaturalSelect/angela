@@ -19,6 +19,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/containermcp"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/event"
 	angelalog "github.com/NaturalSelect/angela/internal/log"
@@ -103,18 +104,6 @@ func enableImageToolsFlag(cmd *cobra.Command) *bool {
 		return nil
 	}
 	v, _ := cmd.Flags().GetBool("enable-image-tools")
-	return &v
-}
-
-// noSandboxContainerPermissionFlag returns the tri-state value of
-// --no-sandbox-container-permission: nil when the flag was not passed
-// (defer to options.no_sandbox_container_permission), or a pointer to
-// the flag's boolean value when it was.
-func noSandboxContainerPermissionFlag(cmd *cobra.Command) *bool {
-	if !cmd.Flags().Changed("no-sandbox-container-permission") {
-		return nil
-	}
-	v, _ := cmd.Flags().GetBool("no-sandbox-container-permission")
 	return &v
 }
 
@@ -382,7 +371,7 @@ func permissionModeFromFlags(cmd *cobra.Command) permission.PermissionMode {
 // sandboxResolver builds the sandbox config once the workspace's data
 // directory and permission rules are known. It reports false when no
 // sandbox was requested. grants is the detected container tooling
-// access, already empty when the user opted out of it.
+// access.
 type sandboxResolver func(workingDir, dataDir string, permissions *config.Permissions, grants sandbox.ContainerGrants) (sandbox.Config, bool, error)
 
 // localWorkspaceOptions is everything openLocalWorkspace needs, so callers
@@ -397,16 +386,11 @@ type localWorkspaceOptions struct {
 	EnableImageTools *bool
 	CommitDiffRunes  *int
 	NoDockerSandbox  bool
-	// NoSandboxContainerPermission is nil when its flag was not passed.
-	NoSandboxContainerPermission *bool
 	// SandboxAllowDockerSocket grants the detected container daemon
 	// sockets to the sandbox.
 	SandboxAllowDockerSocket bool
-	// SandboxAllowDockerStorage grants the detected Podman/Buildah
-	// image storage directories to the sandbox.
-	SandboxAllowDockerStorage bool
-	Channels                  []string
-	Sandbox                   sandboxResolver
+	Channels                 []string
+	Sandbox                  sandboxResolver
 	// NonInteractive and NoBranchAgents are zero for the TUI. Only a front
 	// end that cannot ask questions or hand a conversation to a branch sets
 	// them.
@@ -427,22 +411,19 @@ func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspa
 	dataDir, _ := cmd.Flags().GetString("data-dir")
 	noDockerSandbox, _ := cmd.Flags().GetBool("no-docker-sandbox")
 	allowDockerSocket, _ := cmd.Flags().GetBool("sandbox-allow-docker-socket")
-	allowDockerStorage, _ := cmd.Flags().GetBool("sandbox-allow-docker-storage")
 
 	return localWorkspaceOptions{
-		Cwd:                          cwd,
-		DataDir:                      dataDir,
-		Debug:                        debug,
-		PermissionMode:               permissionModeFromFlags(cmd),
-		YoloMerge:                    yoloMerge,
-		NoVSCodeDiff:                 noVSCodeDiff,
-		EnableImageTools:             enableImageToolsFlag(cmd),
-		CommitDiffRunes:              commitDiffRunesFlag(cmd),
-		NoDockerSandbox:              noDockerSandbox,
-		NoSandboxContainerPermission: noSandboxContainerPermissionFlag(cmd),
-		SandboxAllowDockerSocket:     allowDockerSocket,
-		SandboxAllowDockerStorage:    allowDockerStorage,
-		Channels:                     channels,
+		Cwd:                      cwd,
+		DataDir:                  dataDir,
+		Debug:                    debug,
+		PermissionMode:           permissionModeFromFlags(cmd),
+		YoloMerge:                yoloMerge,
+		NoVSCodeDiff:             noVSCodeDiff,
+		EnableImageTools:         enableImageToolsFlag(cmd),
+		CommitDiffRunes:          commitDiffRunesFlag(cmd),
+		NoDockerSandbox:          noDockerSandbox,
+		SandboxAllowDockerSocket: allowDockerSocket,
+		Channels:                 channels,
 		Sandbox: func(workingDir, dataDir string, permissions *config.Permissions, grants sandbox.ContainerGrants) (sandbox.Config, bool, error) {
 			return sandboxConfigFromFlags(cmd, workingDir, dataDir, permissions, grants)
 		},
@@ -488,9 +469,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	overrides.YoloMerge = o.YoloMerge
 	overrides.NoVSCodeDiff = o.NoVSCodeDiff
 	overrides.EnableImageTools = o.EnableImageTools
-	overrides.NoSandboxContainerPermission = o.NoSandboxContainerPermission
 	overrides.SandboxAllowDockerSocket = o.SandboxAllowDockerSocket
-	overrides.SandboxAllowDockerStorage = o.SandboxAllowDockerStorage
 	overrides.CommitDiffRunes = o.CommitDiffRunes
 	overrides.NonInteractive = o.NonInteractive
 	overrides.NoBranchAgents = o.NoBranchAgents
@@ -512,10 +491,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	// data directory unprotected. Both backends restrict the running
 	// process in place and return normally on success.
 	if o.Sandbox != nil {
-		var grants sandbox.ContainerGrants
-		if !store.SandboxContainerPermissionDisabled() {
-			grants = sandbox.DetectContainerGrants(o.SandboxAllowDockerSocket, o.SandboxAllowDockerStorage)
-		}
+		grants := containermcp.SandboxGrants(store, o.SandboxAllowDockerSocket)
 		sandboxCfg, sandboxEnabled, err := o.Sandbox(o.Cwd, cfg.Options.DataDirectory, cfg.Permissions, grants)
 		if err != nil {
 			return nil, nil, err

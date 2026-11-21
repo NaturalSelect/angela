@@ -285,6 +285,43 @@ func TestMCPFieldResolver_TrustedURLAllowsCommandSubstitution(t *testing.T) {
 	require.Equal(t, "trusted", got)
 }
 
+func TestContainerFieldResolver_NeverRunsCommandSubstitution(t *testing.T) {
+	t.Parallel()
+
+	e := env.NewFromMap(map[string]string{"TAG": "1.2"})
+	for _, trusted := range []bool{false, true} {
+		store := &ConfigStore{
+			resolver:        NewShellVariableResolver(e),
+			envOnlyResolver: NewEnvOnlyVariableResolver(e),
+			dataTrust: computeDataFieldTrust(
+				[]string{"/some/angela.json"},
+				[][]byte{[]byte(`{"mcp":{"svc":{"image":"placeholder"}}}`)},
+				func(string) bool { return trusted },
+			),
+		}
+
+		got, err := store.ContainerFieldResolver("svc").ResolveValue("img:$TAG-$(echo pwned)")
+		require.NoError(t, err)
+		require.Equal(t, "img:1.2-$(echo pwned)", got)
+	}
+}
+
+func TestContainerFieldResolver_RuntimeServerIsLiteral(t *testing.T) {
+	t.Parallel()
+
+	e := env.NewFromMap(map[string]string{"TAG": "1.2"})
+	store := &ConfigStore{
+		resolver:        NewShellVariableResolver(e),
+		envOnlyResolver: NewEnvOnlyVariableResolver(e),
+		dataTrust:       computeDataFieldTrust(nil, nil, func(string) bool { return true }),
+		overrides:       RuntimeOverrides{MCP: map[string]MCPConfig{"ctx": {Type: MCPContainer}}},
+	}
+
+	got, err := store.ContainerFieldResolver("ctx").ResolveValue("img:$TAG")
+	require.NoError(t, err)
+	require.Equal(t, "img:$TAG", got)
+}
+
 // TestDiscoveryFieldResolver_AnyUntrustedFieldFallsBackToEnvOnly pins
 // that model discovery -- which resolves base_url/api_key/extra_headers
 // through one shared resolver for a single HTTP request -- falls back

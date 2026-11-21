@@ -120,4 +120,8 @@ jobs:
           # README.md and CONTRIBUTING.md are CC-BY-SA-4.0, and neither is
           # compiled into the binary. The scan reports the package as
           # Apache-2.0 AND CC-BY-SA-4.0.
-          allow-dependencies-licenses: "pkg:golang/kernel.org/pub/linux/libs/security/libcap/psx@v1.2.77, pkg:golang/github.com/opencontainers/go-digest@v1.0.0"
+          # github.com/opencontainers/image-spec code and LICENSE are
+          # Apache-2.0. The scan reports Apache-2.0 AND MIT AND a DCO 1.1
+          # reference, the latter being the contribution rule quoted in its
+          # README.md. It is only reached through the moby API types.
+          allow-dependencies-licenses: "pkg:golang/kernel.org/pub/linux/libs/security/libcap/psx@v1.2.77, pkg:golang/github.com/opencontainers/go-digest@v1.0.0, pkg:golang/github.com/opencontainers/image-spec@v1.1.1"

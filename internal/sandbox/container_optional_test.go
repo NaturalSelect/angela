@@ -11,14 +11,12 @@ func TestContainerGrants_WithSocketsOptional(t *testing.T) {
 	t.Parallel()
 
 	g := ContainerGrants{
-		ReadWrite:       []string{"/home/u/.docker"},
 		UnixSockets:     []string{"/var/run/docker.sock", "/run/docker.sock"},
 		OptionalSockets: []string{"/run/docker.sock", "/run/podman/podman.sock"},
 	}
 	got := g.withSocketsOptional()
 
 	require.Empty(t, got.UnixSockets)
-	require.Equal(t, []string{"/home/u/.docker"}, got.ReadWrite)
 	require.Equal(t, []string{"/run/docker.sock", "/run/podman/podman.sock", "/var/run/docker.sock"}, sortedCopy(got.OptionalSockets))
 	require.Equal(t, []string{"/var/run/docker.sock", "/run/docker.sock"}, g.UnixSockets, "receiver must not be modified")
 }
@@ -39,44 +37,25 @@ func TestConfig_WithContainerGrantsLeavesOptionalSocketsOut(t *testing.T) {
 func TestDetectContainerGrants_SocketsAreOptionalByDefault(t *testing.T) {
 	t.Parallel()
 
-	require.Empty(t, DetectContainerGrants(false, true).UnixSockets)
-	require.Empty(t, DetectContainerGrants(true, true).OptionalSockets)
+	require.Empty(t, DetectContainerGrants(false).UnixSockets)
+	require.Empty(t, DetectContainerGrants(true).OptionalSockets)
 }
 
-func TestContainerGrants_WithStorageOptional(t *testing.T) {
+func TestContainerGrants_WithSockets(t *testing.T) {
 	t.Parallel()
 
-	g := ContainerGrants{
-		ReadWrite:       []string{"/home/u/.local/share/containers/storage"},
-		UnixSockets:     []string{"/run/podman/podman.sock"},
-		OptionalStorage: []string{"/var/lib/containers/storage"},
-	}
-	got := g.withStorageOptional()
+	base := ContainerGrants{UnixSockets: []string{"/run/docker.sock"}, OptionalSockets: []string{"/run/podman/podman.sock"}}
 
-	require.Empty(t, got.ReadWrite)
-	require.Equal(t, []string{"/run/podman/podman.sock"}, got.UnixSockets)
-	require.Equal(t, []string{"/var/lib/containers/storage", "/home/u/.local/share/containers/storage"}, got.OptionalStorage)
-	require.Equal(t, []string{"/home/u/.local/share/containers/storage"}, g.ReadWrite, "receiver must not be modified")
-}
+	granted := base.WithSockets([]string{"/run/docker.sock", "/tmp/engine.sock"}, true)
+	require.Equal(t, []string{"/run/docker.sock", "/tmp/engine.sock"}, sortedCopy(granted.UnixSockets))
+	require.Equal(t, base.OptionalSockets, granted.OptionalSockets)
 
-func TestContainerGrants_EmptyIgnoresOptionalStorage(t *testing.T) {
-	t.Parallel()
+	offered := base.WithSockets([]string{"/tmp/engine.sock"}, false)
+	require.Equal(t, base.UnixSockets, offered.UnixSockets, "without the opt-in nothing new is granted")
+	require.Equal(t, []string{"/run/podman/podman.sock", "/tmp/engine.sock"}, sortedCopy(offered.OptionalSockets))
 
-	require.True(t, ContainerGrants{OptionalStorage: []string{"/x"}}.Empty())
-}
-
-func TestConfig_WithContainerGrantsLeavesOptionalStorageOut(t *testing.T) {
-	t.Parallel()
-
-	got := Config{}.WithContainerGrants(ContainerGrants{OptionalStorage: []string{"/x"}})
-	require.Empty(t, got.ReadWrite)
-}
-
-func TestDetectContainerGrants_StorageIsOptionalByDefault(t *testing.T) {
-	t.Parallel()
-
-	require.Empty(t, DetectContainerGrants(true, false).ReadWrite)
-	require.Empty(t, DetectContainerGrants(true, true).OptionalStorage)
+	require.Equal(t, base, base.WithSockets(nil, true))
+	require.Equal(t, []string{"/run/docker.sock"}, base.UnixSockets, "receiver must not be modified")
 }
 
 func sortedCopy(in []string) []string {

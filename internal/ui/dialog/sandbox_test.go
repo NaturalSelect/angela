@@ -1065,9 +1065,7 @@ func TestSandbox_LongPathStaysOnItsRow(t *testing.T) {
 }
 
 // TestSandbox_DefaultConfigIncludesContainerGrants verifies that the
-// directories and sockets the workspace reports for container tooling
-// pre-fill the form, and that the sockets, which have no row, still
-// reach the submitted config.
+// sockets, which have no row, still reach the submitted config.
 func TestSandbox_DefaultConfigIncludesContainerGrants(t *testing.T) {
 	t.Parallel()
 
@@ -1075,18 +1073,13 @@ func TestSandbox_DefaultConfigIncludesContainerGrants(t *testing.T) {
 	com := &common.Common{
 		Styles: &s,
 		Workspace: &sandboxTestWorkspace{
-			dir: t.TempDir(),
-			grants: sandbox.ContainerGrants{
-				ReadWrite:   []string{"/home/u/.docker"},
-				UnixSockets: []string{"/var/run/docker.sock"},
-			},
+			dir:    t.TempDir(),
+			grants: sandbox.ContainerGrants{UnixSockets: []string{"/var/run/docker.sock"}},
 		},
 	}
 	m := NewSandbox(com)
 
-	cfg := m.config()
-	require.Contains(t, cfg.ReadWrite, "/home/u/.docker")
-	require.Equal(t, []string{"/var/run/docker.sock"}, cfg.UnixSockets)
+	require.Equal(t, []string{"/var/run/docker.sock"}, m.config().UnixSockets)
 }
 
 // TestSandbox_NoContainerGrantsLeavesConfigUnchanged verifies the
@@ -1286,59 +1279,6 @@ func TestSandbox_SocketsAreDrawn(t *testing.T) {
 	require.Contains(t, out, "/run/podman/podman.sock")
 }
 
-// TestSandbox_OptionalStorageStartsBlockedAndIsOfferedAsToggle verifies a
-// detected image storage directory that was not opted into is offered in
-// the form, stays out of the config until the user turns it on, and then
-// lands in the read-write set rather than the socket set.
-func TestSandbox_OptionalStorageStartsBlockedAndIsOfferedAsToggle(t *testing.T) {
-	t.Parallel()
-
-	const storage = "/home/u/.local/share/containers/storage"
-	s := styles.CharmtonePantera()
-	com := &common.Common{
-		Styles: &s,
-		Workspace: &sandboxTestWorkspace{
-			dir:    t.TempDir(),
-			grants: sandbox.ContainerGrants{OptionalStorage: []string{storage}},
-		},
-	}
-	m := NewSandbox(com)
-
-	require.Len(t, m.sockets, 1)
-	require.True(t, m.sockets[0].storage)
-	require.NotContains(t, m.config().ReadWrite, storage)
-	require.Empty(t, m.config().UnixSockets)
-
-	m.setFocus(m.socketStop(0))
-	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
-	require.Contains(t, m.config().ReadWrite, storage)
-	require.Empty(t, m.config().UnixSockets, "storage is a directory grant, not a socket")
-}
-
-// TestSandbox_GrantedStorageIsNotOfferedTwice verifies a storage directory
-// the workspace already granted shows up once, as a read-write row, and
-// not also as a toggle.
-func TestSandbox_GrantedStorageIsNotOfferedTwice(t *testing.T) {
-	t.Parallel()
-
-	const storage = "/home/u/.local/share/containers/storage"
-	s := styles.CharmtonePantera()
-	com := &common.Common{
-		Styles: &s,
-		Workspace: &sandboxTestWorkspace{
-			dir: t.TempDir(),
-			grants: sandbox.ContainerGrants{
-				ReadWrite:       []string{storage},
-				OptionalStorage: []string{storage},
-			},
-		},
-	}
-	m := NewSandbox(com)
-
-	require.Empty(t, m.sockets)
-	require.Contains(t, m.config().ReadWrite, storage)
-}
-
 // TestSandbox_NoSocketsHidesSection verifies a machine without a
 // detected socket gets no socket section and no extra focus stops.
 func TestSandbox_NoSocketsHidesSection(t *testing.T) {
@@ -1479,6 +1419,25 @@ func TestSandbox_ConfirmKeysScroll(t *testing.T) {
 
 	// Scrolling must not disturb which button is selected.
 	require.False(t, m.selectedNo)
+}
+
+// TestSandbox_ConfirmListUsesMoreThanFormHeightBudget verifies the
+// confirm stage may grow past the form's share of the screen, so its
+// path list keeps room on a short terminal.
+func TestSandbox_ConfirmListUsesMoreThanFormHeightBudget(t *testing.T) {
+	t.Parallel()
+
+	m := newConfirmSandbox(t, 25)
+	out := drawSandboxConfirm(m, sandboxShortH)
+
+	rows := 0
+	for line := range strings.SplitSeq(out, "\n") {
+		if strings.TrimSpace(line) != "" {
+			rows++
+		}
+	}
+	require.Greater(t, rows, int(sandboxHeightRatio*sandboxShortH))
+	require.LessOrEqual(t, rows, sandboxShortH)
 }
 
 func TestSandbox_ConfirmFewPathsDoNotScroll(t *testing.T) {

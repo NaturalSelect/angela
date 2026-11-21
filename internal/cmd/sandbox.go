@@ -25,9 +25,7 @@ func addSandboxFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSlice("sandbox-ro", nil, "Additional read-only directory for --sandbox, on top of the default set (repeatable)")
 	cmd.Flags().Bool("sandbox-no-network", false, "Block outbound network access for commands run under --sandbox, without affecting Angela's own provider requests; has no effect inside an auto-detected Docker/OCI container unless --no-docker-sandbox is also set, and is not supported on macOS: --sandbox then fails at startup")
 	cmd.Flags().Bool("no-docker-sandbox", false, "Do not treat an existing Docker/OCI container as sufficient sandboxing; apply Landlock restriction as well, both under --sandbox and for the /sandbox command")
-	cmd.Flags().Bool("no-sandbox-container-permission", false, "Skip every container grant for --sandbox and the /sandbox command: do not offer the image storage (overlay) directories of a detected Podman/Buildah CLI or the Docker/Podman daemon sockets. Equivalent to options.no_sandbox_container_permission")
-	cmd.Flags().Bool("sandbox-allow-docker-socket", false, "Let --sandbox and the /sandbox command connect to the detected Docker/Podman daemon sockets (for example /var/run/docker.sock); off by default because a daemon socket lets sandboxed commands start containers that mount any host path. Has no effect together with --no-sandbox-container-permission")
-	cmd.Flags().Bool("sandbox-allow-docker-storage", false, "Let --sandbox and the /sandbox command write to the image storage (overlay) directories of a detected Podman/Buildah CLI; off by default because a sandboxed command could edit image layers that a later podman run executes outside the sandbox. Has no effect together with --no-sandbox-container-permission")
+	cmd.Flags().Bool("sandbox-allow-docker-socket", false, "Let --sandbox and the /sandbox command connect to the detected Docker/Podman daemon sockets (for example /var/run/docker.sock); off by default because a daemon socket lets sandboxed commands start containers that mount any host path")
 }
 
 // sandboxConfigFromFlags builds the sandbox config from cmd's --sandbox
@@ -41,10 +39,9 @@ func addSandboxFlags(cmd *cobra.Command) {
 // sandbox never turns an already-approved edit into a confusing I/O
 // error.
 //
-// grants carries the Docker/Podman/Buildah directories and sockets the
-// caller detected; it is folded in before --sandbox-rw so the sandbox
-// stays usable for container tooling. Pass the zero value to grant
-// nothing.
+// grants carries the Docker/Podman daemon sockets the caller detected; it
+// is folded in before --sandbox-rw so the sandbox stays usable for
+// container tooling. Pass the zero value to grant nothing.
 func sandboxConfigFromFlags(cmd *cobra.Command, workingDir, dataDir string, permissions *config.Permissions, grants sandbox.ContainerGrants) (sandbox.Config, bool, error) {
 	enabled, _ := cmd.Flags().GetBool("sandbox")
 	if !enabled {

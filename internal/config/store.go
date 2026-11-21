@@ -79,19 +79,10 @@ type RuntimeOverrides struct {
 	// EnableImageTools is set by the --enable-image-tools flag. Nil means
 	// the flag was not passed, so options.enable_image_tools applies.
 	EnableImageTools *bool
-	// NoSandboxContainerPermission is set by the
-	// --no-sandbox-container-permission flag. Nil means the flag was not
-	// passed, so options.no_sandbox_container_permission applies.
-	NoSandboxContainerPermission *bool
 	// SandboxAllowDockerSocket is set by the --sandbox-allow-docker-socket
 	// flag. It grants the detected Docker/Podman daemon sockets to the
 	// sandbox, which are otherwise left out.
 	SandboxAllowDockerSocket bool
-	// SandboxAllowDockerStorage is set by the
-	// --sandbox-allow-docker-storage flag. It grants the detected
-	// Podman/Buildah image storage directories to the sandbox, which are
-	// otherwise left out.
-	SandboxAllowDockerStorage bool
 	// CommitDiffRunes is set by the commit command's --max-diff-runes flag.
 	// Nil means the flag was not passed, so options.commit_diff_runes
 	// applies.
@@ -248,6 +239,16 @@ func (s *ConfigStore) MCPFieldResolver(name, field string) VariableResolver {
 	return s.resolver
 }
 
+// NOTE: Project config loads from untrusted repos, so these fields never run command substitution.
+func (s *ConfigStore) ContainerFieldResolver(name string) VariableResolver {
+	s.writeMu.RLock()
+	defer s.writeMu.RUnlock()
+	if _, ok := s.overrides.MCP[name]; ok {
+		return IdentityResolver()
+	}
+	return s.envOnlyResolver
+}
+
 // KnownProviders returns the list of known providers.
 func (s *ConfigStore) KnownProviders() []catwalk.Provider {
 	s.writeMu.RLock()
@@ -291,20 +292,6 @@ func (s *ConfigStore) ImageToolsEnabled() *bool {
 		return cfg.Options.EnableImageTools
 	}
 	return nil
-}
-
-// SandboxContainerPermissionDisabled reports whether the sandbox must
-// skip granting detected Docker/Podman/Buildah paths and sockets: the
-// --no-sandbox-container-permission override when passed, else
-// options.no_sandbox_container_permission.
-func (s *ConfigStore) SandboxContainerPermissionDisabled() bool {
-	if disabled := s.Overrides().NoSandboxContainerPermission; disabled != nil {
-		return *disabled
-	}
-	if cfg := s.Config(); cfg != nil && cfg.Options != nil {
-		return cfg.Options.NoSandboxContainerPermission
-	}
-	return false
 }
 
 // CommitDiffRunes returns how many runes of the staged diff may be sent to

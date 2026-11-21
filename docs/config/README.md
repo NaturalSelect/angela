@@ -423,17 +423,19 @@ With `compose`, set `service` and nothing about the image itself: `args`,
 `env`, `volumes`, `network` and `workdir` belong in the compose file, and
 `pull`, `container_host` and `timeout` still apply. The file is read the way
 `docker compose` reads it, including `.env`, host environment interpolation,
-`include` and `extends`, but only the default profile. Angela starts the
+`include` and `extends`. Angela starts the
 service and the services it needs with `depends_on`, waits for `service_healthy`
 and `service_completed_successfully`, and puts them on one private network where
-each service answers to its name. Editing the compose file does not restart a
+each service answers to its name. Naming a service enables its own `profiles`,
+as `docker compose run` does. A required dependency that belongs to another
+profile is an error. Editing the compose file does not restart a
 running server; disable and enable the server, or restart Angela.
 
 These compose fields are used: `image`, `command`, `entrypoint`,
 `environment`, `env_file`, `volumes` (bind, named volume and tmpfs),
 `working_dir`, `user`, `depends_on`, `healthcheck`, `labels`, `networks`
-(aliases only), `network_mode` (`none`, `host`, `bridge`), `pull_policy` and
-`tty` (dependencies only). These are ignored with a warning: `restart`,
+(aliases only), `network_mode` (`none`, `host`, `bridge`), `pull_policy`,
+`profiles`, `init`, `shm_size`, `extra_hosts` and `tty` (dependencies only). These are ignored with a warning: `restart`,
 `deploy`, `logging`, `ports`, `expose`, `container_name`, `stdin_open`,
 `attach`, `develop`, `scale` and `build` next to an `image`. Everything else is
 an error that names the service and the field, including `privileged`,

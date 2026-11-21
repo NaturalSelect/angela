@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"net"
 	"sort"
 	"strings"
 	"time"
@@ -144,6 +145,11 @@ func (e *mobyEngine) Create(ctx context.Context, spec containerSpec) (string, er
 	host := &container.HostConfig{
 		AutoRemove:  spec.AutoRemove,
 		NetworkMode: container.NetworkMode(spec.NetworkMode),
+		ShmSize:     svc.ShmSize,
+		ExtraHosts:  svc.ExtraHosts,
+	}
+	if svc.Init {
+		host.Init = new(true)
 	}
 	var networking *network.NetworkingConfig
 	if spec.Network != "" {
@@ -244,7 +250,9 @@ func (e *mobyEngine) Kill(ctx context.Context, id string) error {
 	return err
 }
 
+// NOTE: Podman waits out the stop timeout before a forced removal, so a best-effort kill keeps cleanup inside its deadline.
 func (e *mobyEngine) Remove(ctx context.Context, id string) error {
+	_, _ = e.cli.ContainerKill(ctx, id, client.ContainerKillOptions{})
 	_, err := e.cli.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true})
 	return err
 }
@@ -296,7 +304,15 @@ type hijackedAttachment struct {
 
 func (a *hijackedAttachment) Read(p []byte) (int, error)  { return a.resp.Reader.Read(p) }
 func (a *hijackedAttachment) Write(p []byte) (int, error) { return a.resp.Conn.Write(p) }
-func (a *hijackedAttachment) CloseWrite() error           { return a.resp.CloseWrite() }
+
+// NOTE: The MCP SDK closes the writer after the reader has already ended the session, so a closed connection is fine.
+func (a *hijackedAttachment) CloseWrite() error {
+	if err := a.resp.CloseWrite(); err != nil && !errors.Is(err, net.ErrClosed) {
+		return err
+	}
+	return nil
+}
+
 func (a *hijackedAttachment) Close() error {
 	a.resp.Close()
 	return nil

@@ -23,6 +23,7 @@ var composeSupported = map[string]bool{
 	"image": true, "command": true, "entrypoint": true, "environment": true, "env_file": true,
 	"volumes": true, "working_dir": true, "user": true, "depends_on": true, "healthcheck": true,
 	"labels": true, "networks": true, "network_mode": true, "pull_policy": true, "tty": true,
+	"profiles": true, "init": true, "shm_size": true, "extra_hosts": true,
 }
 
 // NOTE: These fields do not apply to a container started for an MCP server, so they only log a warning.
@@ -50,7 +51,7 @@ var composeRejected = map[string]string{
 	"use_api_socket":      "it gives the container the engine API",
 }
 
-// NOTE: Loads a compose file and translates the selected service and what it depends on; profiles are never activated.
+// NOTE: Loads a compose file and translates the selected service and what it depends on; the service's own profiles are enabled.
 func FromCompose(ctx context.Context, server, file, service, workDir string) (Group, error) {
 	redirectComposeLogs()
 	path := home.Long(file)
@@ -87,10 +88,17 @@ func FromCompose(ctx context.Context, server, file, service, workDir string) (Gr
 		return Group{}, fmt.Errorf("compose file %q: %w", path, err)
 	}
 	if _, ok := project.Services[service]; !ok {
-		if _, off := project.DisabledServices[service]; off {
-			return Group{}, fmt.Errorf("compose service %q needs a profile, and profiles are not supported", service)
+		if _, off := project.DisabledServices[service]; !off {
+			return Group{}, fmt.Errorf("compose file %q has no service %q (it has %s)", path, service, strings.Join(project.ServiceNames(), ", "))
 		}
-		return Group{}, fmt.Errorf("compose file %q has no service %q (it has %s)", path, service, strings.Join(project.ServiceNames(), ", "))
+		// NOTE: Like docker compose run, naming a service enables the profiles it belongs to.
+		if project, err = project.WithServicesEnabled(service); err != nil {
+			return Group{}, fmt.Errorf("compose file %q: %w", path, err)
+		}
+	}
+
+	if parent, dep := disabledDependency(project, service); dep != "" {
+		return Group{}, fmt.Errorf("compose service %q depends on %q, which belongs to a profile that is not enabled", parent, dep)
 	}
 
 	var ordered []Service
@@ -130,6 +138,39 @@ func FromCompose(ctx context.Context, server, file, service, workDir string) (Gr
 	return g, nil
 }
 
+// NOTE: Only the selected service's own profiles are enabled, so a required dependency in another profile can never start.
+func disabledDependency(project *types.Project, root string) (parent, dep string) {
+	seen := map[string]bool{}
+	var walk func(name string) (string, string)
+	walk = func(name string) (string, string) {
+		if seen[name] {
+			return "", ""
+		}
+		seen[name] = true
+		svc, ok := project.Services[name]
+		if !ok {
+			return "", ""
+		}
+		deps := make([]string, 0, len(svc.DependsOn))
+		for d, cfg := range svc.DependsOn {
+			if cfg.Required {
+				deps = append(deps, d)
+			}
+		}
+		sort.Strings(deps)
+		for _, d := range deps {
+			if _, off := project.DisabledServices[d]; off {
+				return name, d
+			}
+			if p, c := walk(d); c != "" {
+				return p, c
+			}
+		}
+		return "", ""
+	}
+	return walk(root)
+}
+
 // NOTE: The compose loader logs through logrus to stderr, which would draw over the terminal UI.
 var redirectComposeLogs = sync.OnceFunc(func() { logrus.SetOutput(composeLogWriter{}) })
 
@@ -165,8 +206,12 @@ func translateService(project *types.Project, name string, svc types.ServiceConf
 		WorkingDir: svc.WorkingDir,
 		User:       svc.User,
 		Tty:        svc.Tty,
+		ShmSize:    int64(svc.ShmSize),
+		Init:       svc.Init != nil && *svc.Init,
 		Env:        map[string]string{},
 	}
+	out.ExtraHosts = svc.ExtraHosts.AsList(":")
+	sort.Strings(out.ExtraHosts)
 	for k, v := range svc.Environment {
 		if v != nil {
 			out.Env[k] = *v

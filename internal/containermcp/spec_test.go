@@ -73,6 +73,39 @@ func TestGroupValidate(t *testing.T) {
 		{"extra host without ip", func(g *Group) { g.Main.ExtraHosts = []string{"db.local"} }, "must be host:ip"},
 		{"extra host with empty ip", func(g *Group) { g.Main.ExtraHosts = []string{"db.local:"} }, "must be host:ip"},
 		{"extra host with empty name", func(g *Group) { g.Main.ExtraHosts = []string{":10.0.0.1"} }, "must be host:ip"},
+		{"hardening and identity", func(g *Group) {
+			g.Main.CapDrop, g.Main.NoNewPrivileges, g.Main.ReadOnly = []string{"ALL", "CAP_NET_RAW"}, true, true
+			g.Main.Hostname, g.Main.Domainname, g.Main.StopSignal = "mcp-1", "corp.test", "SIGRTMIN+3"
+			g.Main.DNS, g.Main.DNSSearch, g.Main.DNSOptions = []string{"1.1.1.1", "::1"}, []string{"corp.test"}, []string{"ndots:2"}
+			g.Main.Limits = Limits{Memory: 1 << 28, NanoCPUs: 500_000_000, CPUSet: "0-1,3", PidsLimit: 64}
+		}, ""},
+		{"bad capability", func(g *Group) { g.Main.CapDrop = []string{"NET RAW"} }, "cap_drop"},
+		{"negative memory", func(g *Group) { g.Main.Limits.Memory = -1 }, "memory limit must not be negative"},
+		{"negative pids", func(g *Group) { g.Main.Limits.PidsLimit = -1 }, "pids limit must not be negative"},
+		{"bad cpuset", func(g *Group) { g.Main.Limits.CPUSet = "all" }, "cpuset"},
+		{"swappiness zero", func(g *Group) { g.Main.Limits.MemorySwappiness = new(int64(0)) }, ""},
+		{"swappiness hundred", func(g *Group) { g.Main.Limits.MemorySwappiness = new(int64(100)) }, ""},
+		{"swappiness above hundred", func(g *Group) { g.Main.Limits.MemorySwappiness = new(int64(101)) }, "memory swappiness must be between 0 and 100"},
+		{"swappiness negative", func(g *Group) { g.Main.Limits.MemorySwappiness = new(int64(-1)) }, "memory swappiness must be between 0 and 100"},
+		{"bad hostname", func(g *Group) { g.Main.Hostname = "-bad" }, "hostname"},
+		{"dns that is not an address", func(g *Group) { g.Main.DNS = []string{"dns.local"} }, "not an IP address"},
+		{"dns option with whitespace", func(g *Group) { g.Main.DNSOptions = []string{"ndots:2 timeout:1"} }, "whitespace"},
+		{"bad stop signal", func(g *Group) { g.Main.StopSignal = "stop it" }, "stop signal"},
+		{"tmpfs options", func(g *Group) {
+			g.Main.Mounts = []Mount{{Type: MountTmpfs, Target: "/tmp", Options: "size=64m,mode=1777,noexec,nosuid,nodev,uid=1000"}}
+		}, ""},
+		{"tmpfs suid", func(g *Group) {
+			g.Main.Mounts = []Mount{{Type: MountTmpfs, Target: "/tmp", Options: "suid"}}
+		}, "widens"},
+		{"tmpfs dev", func(g *Group) {
+			g.Main.Mounts = []Mount{{Type: MountTmpfs, Target: "/tmp", Options: "rw,dev"}}
+		}, "widens"},
+		{"tmpfs unknown option", func(g *Group) {
+			g.Main.Mounts = []Mount{{Type: MountTmpfs, Target: "/tmp", Options: "size"}}
+		}, "not supported"},
+		{"options on a volume", func(g *Group) {
+			g.Main.Mounts = []Mount{{Type: MountVolume, Source: "v", Target: "/v", Options: "size=1m"}}
+		}, "only a tmpfs mount takes options"},
 	}
 
 	for _, tc := range tests {

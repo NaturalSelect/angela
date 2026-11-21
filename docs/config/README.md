@@ -435,12 +435,29 @@ These compose fields are used: `image`, `command`, `entrypoint`,
 `environment`, `env_file`, `volumes` (bind, named volume and tmpfs),
 `working_dir`, `user`, `depends_on`, `healthcheck`, `labels`, `networks`
 (aliases only), `network_mode` (`none`, `host`, `bridge`), `pull_policy`,
-`profiles`, `init`, `shm_size`, `extra_hosts` and `tty` (dependencies only). These are ignored with a warning: `restart`,
-`deploy`, `logging`, `ports`, `expose`, `container_name`, `stdin_open`,
-`attach`, `develop`, `scale` and `build` next to an `image`. Everything else is
-an error that names the service and the field, including `privileged`,
-`cap_add`, `devices`, `security_opt`, `volumes_from`, `sysctls`, host
-namespaces and a service without an `image`. Angela never builds images.
+`profiles`, `init`, `shm_size`, `extra_hosts` and `tty` (dependencies only).
+These only narrow the container or set its own identity, so they are used
+too: `cap_drop`, `read_only`, `tmpfs`, `security_opt` (only
+`no-new-privileges`), `mem_limit`, `mem_reservation`, `memswap_limit`, `cpus`,
+`cpu_shares`, `cpu_period`, `cpu_quota`, `cpuset`, `pids_limit`, `hostname`,
+`domainname`, `dns`, `dns_search`, `dns_opt` and `stop_signal`. A negative
+limit is an error because it would lift the limit. `deploy.resources.limits`
+(`cpus`, `memory`, `pids`) and `deploy.resources.reservations.memory` mean the
+same as `cpus`, `mem_limit`, `pids_limit` and `mem_reservation`, and must agree
+with them when both are set. `mem_swappiness` is used too, but an engine on
+cgroup v2 cannot apply it (Podman cannot start the container and Docker would
+drop it), so Angela stops with an error before it creates anything; this is the
+case on most current hosts. A tmpfs takes `size`,
+`mode`, `uid`, `gid`, `nr_inodes`, `rw`, `ro`, `exec`, `noexec`, `nosuid` and
+`nodev`; `suid` and `dev` are errors. These are ignored with a warning:
+`restart`, the rest of `deploy` (swarm scheduling such as `replicas`,
+`restart_policy` and `placement`), `logging`, `ports`, `expose`,
+`container_name`, `stdin_open`, `attach`, `develop`, `scale` and `build` next
+to an `image`. Everything else is an error that names the service and the
+field, including `privileged`, `cap_add`, `devices`, any `security_opt` other
+than `no-new-privileges`, `volumes_from`, `sysctls`, `ulimits`, `group_add`,
+`deploy.resources.reservations.devices` (GPUs), `deploy.resources.reservations.cpus`,
+host namespaces and a service without an `image`. Angela never builds images.
 
 ### LSP Servers
 

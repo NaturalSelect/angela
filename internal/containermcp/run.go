@@ -81,6 +81,9 @@ func start(ctx context.Context, eng engine, g Group) (_ *Session, err error) {
 	if err := g.Validate(); err != nil {
 		return nil, err
 	}
+	if err := checkSwappiness(ctx, eng, g); err != nil {
+		return nil, err
+	}
 	if len(g.Deps) > 0 {
 		sweepOrphans(ctx, eng, g.Server)
 	}
@@ -158,6 +161,24 @@ func start(ctx context.Context, eng engine, g Group) (_ *Session, err error) {
 		close(s.exited)
 	}()
 	return s, nil
+}
+
+// NOTE: Podman only fails when it starts such a container, with an error Angela cannot see, and Docker drops the setting.
+func checkSwappiness(ctx context.Context, eng engine, g Group) error {
+	for _, svc := range append(slices.Clone(g.Deps), g.Main) {
+		if svc.Limits.MemorySwappiness == nil {
+			continue
+		}
+		version, err := eng.CgroupVersion(ctx)
+		if err != nil {
+			return fmt.Errorf("inspect container engine: %w", err)
+		}
+		if version == "2" {
+			return fmt.Errorf("service %q sets mem_swappiness, which the container engine cannot apply because it uses cgroup v2; remove it", svc.Name)
+		}
+		return nil
+	}
+	return nil
 }
 
 // NOTE: Tracks what one startup has created so a failure can remove all of it.

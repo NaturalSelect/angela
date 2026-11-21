@@ -35,6 +35,8 @@ type Mount struct {
 	Target   string
 	ReadOnly bool
 	Relabel  string // "", "z" or "Z".
+	// NOTE: Tmpfs only, such as size=64m,mode=1777.
+	Options string
 }
 
 type Service struct {
@@ -62,6 +64,18 @@ type Service struct {
 	Init    bool
 	// NOTE: Entries are host:ip, where ip may be the engine's host-gateway keyword.
 	ExtraHosts []string
+	// NOTE: These only narrow what the container may do; nothing here can add a privilege.
+	CapDrop         []string
+	NoNewPrivileges bool
+	ReadOnly        bool
+	Limits          Limits
+	// NOTE: These shape the container's own view of its identity and name resolution.
+	Hostname   string
+	Domainname string
+	DNS        []string
+	DNSSearch  []string
+	DNSOptions []string
+	StopSignal string
 }
 
 type Condition string
@@ -163,6 +177,9 @@ func (s Service) validate() error {
 			return fmt.Errorf("service %q: extra host %q must be host:ip", s.Name, h)
 		}
 	}
+	if err := s.validateOptions(); err != nil {
+		return fmt.Errorf("service %q: %w", s.Name, err)
+	}
 	for _, m := range s.Mounts {
 		if err := m.validate(); err != nil {
 			return fmt.Errorf("service %q: %w", s.Name, err)
@@ -180,6 +197,9 @@ func (m Mount) validate() error {
 	default:
 		return fmt.Errorf("mount %q: relabel must be z or Z", m.Target)
 	}
+	if m.Options != "" && m.Type != MountTmpfs {
+		return fmt.Errorf("mount %q: only a tmpfs mount takes options", m.Target)
+	}
 	switch m.Type {
 	case MountBind:
 		return validateBindSource(m.Source)
@@ -190,6 +210,9 @@ func (m Mount) validate() error {
 	case MountTmpfs:
 		if m.Source != "" {
 			return fmt.Errorf("tmpfs mount %q cannot have a source", m.Target)
+		}
+		if err := validateTmpfsOptions(m.Options); err != nil {
+			return fmt.Errorf("tmpfs mount %q: %w", m.Target, err)
 		}
 	default:
 		return fmt.Errorf("unknown mount type %q", m.Type)

@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -210,19 +211,23 @@ func TestConfig_WithContainerGrants(t *testing.T) {
 func TestContainerSocketCandidates_IgnoresInstalledTools(t *testing.T) {
 	runtimeDir := t.TempDir()
 	home := t.TempDir()
+	customSock := filepath.Join(t.TempDir(), "custom.sock")
 	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 	t.Setenv("HOME", home)
-	t.Setenv("DOCKER_HOST", "unix:///custom/docker.sock")
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("DOCKER_HOST", "unix://"+customSock)
 	t.Setenv("CONTAINER_HOST", "tcp://127.0.0.1:2375")
 
 	got := ContainerSocketCandidates()
 
-	require.Contains(t, got, "/var/run/docker.sock")
-	require.Contains(t, got, "/run/podman/podman.sock")
+	if runtime.GOOS != "windows" {
+		require.Contains(t, got, "/var/run/docker.sock")
+		require.Contains(t, got, "/run/podman/podman.sock")
+	}
 	require.Contains(t, got, filepath.Join(runtimeDir, "docker.sock"))
 	require.Contains(t, got, filepath.Join(runtimeDir, "podman", "podman.sock"))
 	require.Contains(t, got, filepath.Join(home, ".docker", "desktop", "docker.sock"))
-	require.Contains(t, got, "/custom/docker.sock")
+	require.Contains(t, got, customSock)
 	require.NotContains(t, got, "")
 	for _, path := range got {
 		require.True(t, filepath.IsAbs(path), "path %q is not absolute", path)

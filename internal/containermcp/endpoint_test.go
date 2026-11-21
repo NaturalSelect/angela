@@ -1,6 +1,7 @@
 package containermcp
 
 import (
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -14,7 +15,14 @@ func envMap(m map[string]string) func(string) string {
 func TestResolveEndpoint_Order(t *testing.T) {
 	t.Parallel()
 
-	discover := func() []string { return []string{"/run/docker.sock", "/run/podman.sock"} }
+	dir := t.TempDir()
+	explicitSock := filepath.Join(dir, "explicit.sock")
+	dockerSock := filepath.Join(dir, "docker.sock")
+	podmanSock := filepath.Join(dir, "podman.sock")
+	discoveredDocker := filepath.Join(dir, "discovered-docker.sock")
+	discoveredPodman := filepath.Join(dir, "discovered-podman.sock")
+
+	discover := func() []string { return []string{discoveredDocker, discoveredPodman} }
 
 	tests := []struct {
 		name     string
@@ -24,23 +32,23 @@ func TestResolveEndpoint_Order(t *testing.T) {
 	}{
 		{
 			name:     "explicit wins",
-			explicit: "unix:///explicit.sock",
-			env:      map[string]string{"DOCKER_HOST": "unix:///docker.sock", "CONTAINER_HOST": "unix:///podman.sock"},
-			want:     Endpoint{Host: "unix:///explicit.sock", Socket: "/explicit.sock"},
+			explicit: "unix://" + explicitSock,
+			env:      map[string]string{"DOCKER_HOST": "unix://" + dockerSock, "CONTAINER_HOST": "unix://" + podmanSock},
+			want:     Endpoint{Host: "unix://" + explicitSock, Socket: explicitSock},
 		},
 		{
 			name: "docker host before container host",
-			env:  map[string]string{"DOCKER_HOST": "unix:///docker.sock", "CONTAINER_HOST": "unix:///podman.sock"},
-			want: Endpoint{Host: "unix:///docker.sock", Socket: "/docker.sock"},
+			env:  map[string]string{"DOCKER_HOST": "unix://" + dockerSock, "CONTAINER_HOST": "unix://" + podmanSock},
+			want: Endpoint{Host: "unix://" + dockerSock, Socket: dockerSock},
 		},
 		{
 			name: "container host",
-			env:  map[string]string{"CONTAINER_HOST": "unix:///podman.sock"},
-			want: Endpoint{Host: "unix:///podman.sock", Socket: "/podman.sock"},
+			env:  map[string]string{"CONTAINER_HOST": "unix://" + podmanSock},
+			want: Endpoint{Host: "unix://" + podmanSock, Socket: podmanSock},
 		},
 		{
 			name: "first discovered socket",
-			want: Endpoint{Host: "unix:///run/docker.sock", Socket: "/run/docker.sock"},
+			want: Endpoint{Host: "unix://" + discoveredDocker, Socket: discoveredDocker},
 		},
 		{
 			name:     "tcp has no socket",

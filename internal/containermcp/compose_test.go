@@ -3,6 +3,7 @@ package containermcp
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -207,7 +208,10 @@ services:
 `)
 
 	_, err := FromCompose(t.Context(), "srv", "compose.yaml", "app", dir)
-	require.ErrorIs(t, err, os.ErrNotExist, "the URL is read as a local path and never fetched")
+	var pathErr *os.PathError
+	require.ErrorAs(t, err, &pathErr, "the URL is read as a local path and never fetched")
+	require.Equal(t, "open", pathErr.Op)
+	require.Contains(t, pathErr.Path, dir)
 }
 
 func TestFromCompose_Extends(t *testing.T) {
@@ -646,7 +650,7 @@ volumes:
 func TestFromCompose_BindSourceMustNotExposeTheEngineSocket(t *testing.T) {
 	runtimeDir := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
-	_, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    volumes: [\""+runtimeDir+":/run/host\"]\n", "app")
+	_, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    volumes:\n      - type: bind\n        source: "+strconv.Quote(runtimeDir)+"\n        target: /run/host\n", "app")
 	require.ErrorContains(t, err, "container engine socket")
 }
 

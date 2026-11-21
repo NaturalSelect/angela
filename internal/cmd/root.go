@@ -19,6 +19,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/containermcp"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/event"
 	angelalog "github.com/NaturalSelect/angela/internal/log"
@@ -490,7 +491,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	// data directory unprotected. Both backends restrict the running
 	// process in place and return normally on success.
 	if o.Sandbox != nil {
-		grants := sandbox.DetectContainerGrants(o.SandboxAllowDockerSocket)
+		grants := containermcp.SandboxGrants(store, o.SandboxAllowDockerSocket)
 		sandboxCfg, sandboxEnabled, err := o.Sandbox(o.Cwd, cfg.Options.DataDirectory, cfg.Permissions, grants)
 		if err != nil {
 			return nil, nil, err

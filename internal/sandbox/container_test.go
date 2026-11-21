@@ -206,3 +206,90 @@ func TestConfig_WithContainerGrants(t *testing.T) {
 	require.Equal(t, []string{"/"}, got.ReadOnly)
 	require.Equal(t, []string{"/run/x.sock"}, base.UnixSockets, "receiver must not be modified")
 }
+
+func TestContainerSocketCandidates_IgnoresInstalledTools(t *testing.T) {
+	runtimeDir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+	t.Setenv("HOME", home)
+	t.Setenv("DOCKER_HOST", "unix:///custom/docker.sock")
+	t.Setenv("CONTAINER_HOST", "tcp://127.0.0.1:2375")
+
+	got := ContainerSocketCandidates()
+
+	require.Contains(t, got, "/var/run/docker.sock")
+	require.Contains(t, got, "/run/podman/podman.sock")
+	require.Contains(t, got, filepath.Join(runtimeDir, "docker.sock"))
+	require.Contains(t, got, filepath.Join(runtimeDir, "podman", "podman.sock"))
+	require.Contains(t, got, filepath.Join(home, ".docker", "desktop", "docker.sock"))
+	require.Contains(t, got, "/custom/docker.sock")
+	require.NotContains(t, got, "")
+	for _, path := range got {
+		require.True(t, filepath.IsAbs(path), "path %q is not absolute", path)
+	}
+}
+
+func TestContainerSocketCandidates_NoRuntimeDirYieldsNoRelativePaths(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	t.Setenv("DOCKER_HOST", "")
+	t.Setenv("CONTAINER_HOST", "")
+
+	for _, path := range ContainerSocketCandidates() {
+		require.True(t, filepath.IsAbs(path), "path %q is not absolute", path)
+	}
+}
+
+func TestEnforced(t *testing.T) {
+	rs := resolve(Config{ReadWrite: []string{"/work"}})
+	empty := resolve(Config{})
+
+	setSandboxStateForTest(t, false, false, nil)
+	require.False(t, Enforced())
+
+	appliedRules.Store(&empty)
+	require.False(t, Enforced())
+
+	appliedRules.Store(&rs)
+	require.True(t, Enforced())
+}
+
+func TestAllowsUnixSocket_NotEnforced(t *testing.T) {
+	setSandboxStateForTest(t, false, false, nil)
+	require.True(t, AllowsUnixSocket("/var/run/docker.sock"))
+
+	empty := resolve(Config{})
+	appliedRules.Store(&empty)
+	require.True(t, AllowsUnixSocket("/var/run/docker.sock"))
+}
+
+func TestAllowsUnixSocket_Enforced(t *testing.T) {
+	dir := t.TempDir()
+	granted := filepath.Join(dir, "granted.sock")
+	other := filepath.Join(dir, "other.sock")
+	listenUnix(t, granted)
+	listenUnix(t, other)
+	link := filepath.Join(dir, "link.sock")
+	require.NoError(t, os.Symlink(granted, link))
+
+	rs := resolve(Config{ReadWrite: []string{dir}, UnixSockets: []string{granted}})
+	setSandboxStateForTest(t, true, false, &rs)
+
+	require.True(t, AllowsUnixSocket(granted))
+	require.True(t, AllowsUnixSocket(granted+"/../granted.sock"), "path is cleaned first")
+	require.True(t, AllowsUnixSocket(link), "a symlink to a granted socket is the same file")
+	require.False(t, AllowsUnixSocket(other))
+	require.False(t, AllowsUnixSocket(filepath.Join(dir, "missing.sock")))
+}
+
+func TestAllowsUnixSocket_GrantedThroughSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.sock")
+	listenUnix(t, target)
+	link := filepath.Join(dir, "link.sock")
+	require.NoError(t, os.Symlink(target, link))
+
+	rs := resolve(Config{ReadWrite: []string{dir}, UnixSockets: []string{link}})
+	setSandboxStateForTest(t, true, false, &rs)
+
+	require.True(t, AllowsUnixSocket(target))
+}

@@ -325,16 +325,17 @@ func (c *ProviderConfig) SetupGitHubCopilot() {
 type MCPType string
 
 const (
-	MCPStdio MCPType = "stdio"
-	MCPSSE   MCPType = "sse"
-	MCPHttp  MCPType = "http"
+	MCPStdio     MCPType = "stdio"
+	MCPSSE       MCPType = "sse"
+	MCPHttp      MCPType = "http"
+	MCPContainer MCPType = "container"
 )
 
 type MCPConfig struct {
 	Command       string            `json:"command,omitempty" jsonschema:"description=Command to execute for stdio MCP servers,example=npx"`
 	Env           map[string]string `json:"env,omitempty" jsonschema:"description=Environment variables to set for the MCP server"`
 	Args          []string          `json:"args,omitempty" jsonschema:"description=Arguments to pass to the MCP server command"`
-	Type          MCPType           `json:"type" jsonschema:"required,description=Type of MCP connection,enum=stdio,enum=sse,enum=http,default=stdio"`
+	Type          MCPType           `json:"type" jsonschema:"required,description=Type of MCP connection,enum=stdio,enum=sse,enum=http,enum=container,default=stdio"`
 	URL           string            `json:"url,omitempty" jsonschema:"description=URL for HTTP or SSE MCP servers,format=uri,example=http://localhost:3000/mcp"`
 	Disabled      bool              `json:"disabled,omitempty" jsonschema:"description=Whether this MCP server is disabled,default=false"`
 	DisabledTools []string          `json:"disabled_tools,omitempty" jsonschema:"description=List of tools from this MCP server to disable,example=get-library-doc"`
@@ -348,6 +349,15 @@ type MCPConfig struct {
 	// omitted from the outgoing request rather than sent as
 	// "Header:".
 	Headers map[string]string `json:"headers,omitempty" jsonschema:"description=HTTP headers for HTTP/SSE MCP servers"`
+
+	Image         string   `json:"image,omitempty" jsonschema:"description=Container image for container MCP servers. Set either image or compose,example=mcp/time"`
+	Compose       string   `json:"compose,omitempty" jsonschema:"description=Path of a compose file for container MCP servers. Needs service. A relative path is resolved against the project directory,example=./compose.yaml"`
+	Service       string   `json:"service,omitempty" jsonschema:"description=Service of the compose file that speaks MCP over stdio. Its depends_on services start with it,example=mcp"`
+	Volumes       []string `json:"volumes,omitempty" jsonschema:"description=Mounts for container MCP servers as source:target[:options]. A relative source is resolved against the project directory,example=./data:/data:ro"`
+	Network       string   `json:"network,omitempty" jsonschema:"description=Network mode for container MCP servers,enum=bridge,enum=none,enum=host,default=bridge"`
+	Pull          string   `json:"pull,omitempty" jsonschema:"description=When to pull the image for container MCP servers,enum=missing,enum=always,enum=never,default=missing"`
+	Workdir       string   `json:"workdir,omitempty" jsonschema:"description=Working directory inside the container for container MCP servers"`
+	ContainerHost string   `json:"container_host,omitempty" jsonschema:"description=Container engine endpoint for container MCP servers,example=unix:///run/user/1000/podman/podman.sock"`
 
 	// OAuth enables the MCP OAuth 2.1 authorization flow for HTTP
 	// transport servers. When true, the client uses dynamic client

@@ -15,6 +15,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/containermcp"
 	"github.com/NaturalSelect/angela/internal/env"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/images"
@@ -698,7 +699,7 @@ func (w *AppWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) err
 }
 
 func (w *AppWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {
-	return sandbox.DetectContainerGrants(w.store.Overrides().SandboxAllowDockerSocket)
+	return containermcp.SandboxGrants(w.store, w.store.Overrides().SandboxAllowDockerSocket)
 }
 
 // -- Environment --

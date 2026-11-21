@@ -34,13 +34,21 @@ minimal edit, run `angela config validate`, report whether a restart is needed.
 
 | Field | Type | Notes |
 |---|---|---|
-| `type` | string | **Required**: `stdio`, `sse`, or `http`. The JSON schema lists `stdio` as the default, but the runtime applies none: an entry without `type` fails to start with `unsupported mcp type`, so always set it. |
+| `type` | string | **Required**: `stdio`, `sse`, `http`, or `container`. The JSON schema lists `stdio` as the default, but the runtime applies none: an entry without `type` fails to start with `unsupported mcp type`, so always set it. |
 | `command` | string | stdio only. Shell-expanded including `$(cmd)`. |
-| `args` | array | stdio only. Shell-expanded including `$(cmd)`. |
-| `env` | object | stdio only. Shell-expanded including `$(cmd)`. |
+| `args` | array | stdio: arguments of `command`. container: arguments for the image. Shell-expanded including `$(cmd)`. |
+| `env` | object | stdio and container. Shell-expanded including `$(cmd)`. A container never inherits the host environment. |
 | `url` | string | http/sse only. Shell-expanded; `$(cmd)` only from system/global config. |
+| `image` | string | container only. Set this or `compose`. Expands `$VAR` only. |
+| `compose` | string | container only. Path of a compose file, relative to the project directory. Needs `service`. |
+| `service` | string | container only. The compose service that speaks MCP over stdio. |
+| `volumes` | array | container only, with `image`. `source:target[:ro,rw,z,Z]`. A source starting with `/`, `.` or `~` is a host path (a relative one is resolved against the project directory and must exist), anything else a named volume. |
+| `network` | string | container only, with `image`. `bridge` (default), `none` or `host`. |
+| `pull` | string | container only. `missing` (default), `always` or `never`. With `compose` it overrides every service. |
+| `workdir` | string | container only, with `image`. Working directory inside the container. |
+| `container_host` | string | container only. Engine address such as `unix:///run/user/1000/podman/podman.sock`. Default: `DOCKER_HOST`, `CONTAINER_HOST`, then the first Docker or Podman socket found. |
 | `headers` | object | http/sse only. Shell-expanded; empty values are omitted from requests. `$(cmd)` only from system/global config. |
-| `timeout` | int | Seconds. Default `10`; when unset, `oauth` servers get `30` (and up to 5 minutes while a user-initiated sign-in is waiting on the browser). |
+| `timeout` | int | Seconds. Default `10`; when unset, `oauth` servers get `30` (and up to 5 minutes while a user-initiated sign-in is waiting on the browser) and `container` servers get 5 minutes so an image pull can finish. |
 | `disabled` | bool | Default `false`. Disables without removing the entry. |
 | `enabled_tools` | array | Allow-list of tool names from this server, as the server names them (no `MCP_<server>_` prefix). |
 | `disabled_tools` | array | Deny-list of tool names from this server, same naming. Applied after `enabled_tools`, so it wins on a conflict. |
@@ -54,6 +62,9 @@ minimal edit, run `angela config validate`, report whether a restart is needed.
 > any config layer — restricting command substitution there would add no safety,
 > since those fields already run an arbitrary program. `url`, `headers`, and the
 > two `oauth_client_*` fields restrict `$(cmd)` to system/global config layers.
+> The other container fields (`image`, `compose`, `service`, `volumes`,
+> `network`, `pull`, `workdir`, `container_host`) expand `$VAR` only, at every
+> layer.
 
 ## Tool Naming
 
@@ -115,6 +126,59 @@ Do not suggest that a built-in tool, flag, or option enables computer use.
 
 Screenshots returned by such a server follow the media handling described
 above, and the model must support images to see them.
+
+## Container MCP Servers
+
+`"type": "container"` runs the server in a container that Angela starts through
+the Docker or Podman API socket and talks to over stdin and stdout. It needs no
+`docker` or `podman` command. Use it when a server is only published as an
+image, or when the user already runs MCP servers through `docker run` or
+`docker compose`.
+
+```json
+{
+  "mcp": {
+    "time": {
+      "type": "container",
+      "image": "mcp/time",
+      "args": ["--local-timezone=UTC"],
+      "volumes": ["./data:/data:ro"],
+      "network": "none"
+    },
+    "stack": {
+      "type": "container",
+      "compose": "./docker-compose.yaml",
+      "service": "mcp"
+    }
+  }
+}
+```
+
+Things to tell the user:
+
+- **Sandbox.** The Angela process connects to the engine socket, so under
+  `--sandbox` the server fails to start unless the socket is allowed with
+  `--sandbox-allow-docker-socket` or the `/sandbox` dialog. That socket lets a
+  container mount any host path, so granting it is a real widening. Load the
+  `angela-sandbox` skill for the details.
+- **Rootless Podman.** The API socket must be running:
+  `systemctl --user start podman.socket`.
+- **Private images.** Angela does not read registry credentials. Pull the image
+  first and set `pull` to `never`.
+- **Compose.** Use `compose` plus `service`, and leave `image`, `args`, `env`,
+  `volumes`, `network` and `workdir` out; they belong in the compose file. The
+  service and its `depends_on` services start together on one private network,
+  and `service_healthy` and `service_completed_successfully` are honoured. Only
+  the default profile is used. Fields that widen access to the host
+  (`privileged`, `cap_add`, `devices`, `security_opt`, `volumes_from`, host
+  namespaces) and any field Angela does not know are errors that name the
+  service and the field; `restart`, `deploy`, `logging`, `ports` and
+  `container_name` are ignored with a warning. Angela never builds images, so
+  every service needs an `image`.
+- **Changes.** Editing a compose file does not restart a running server.
+  Disable and enable it, or restart Angela.
+- **Failures.** A container that exits during startup is reported with its exit
+  code and the end of its stderr.
 
 ## Docker MCP
 

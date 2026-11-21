@@ -270,6 +270,12 @@ to check them for errors.
 Selected string fields (API keys, headers, URLs) support `$VAR` and `$(cmd)`
 shell expansion.
 
+An MCP server can also run in a container. Set `"type": "container"` with an
+`image` (and optional `args`, `env`, `volumes`, `network`), or with a
+`compose` file and a `service`, and Angela starts it through the Docker or
+Podman API socket, with no `docker` or `podman` command needed. See
+[docs/config/](./docs/config/) for the fields and the compose subset.
+
 Angela also reads project instructions from `AGENTS.md`, `ANGELA.md`,
 `CLAUDE.md`, `GEMINI.md`, `.cursorrules`, and
 `.github/copilot-instructions.md` in the working directory (plus `*.local.md`
@@ -406,6 +412,12 @@ detected socket and leaves it off until you turn it on.
 Rootless `podman run` and `podman build` cannot work inside a sandbox either
 way, since Landlock forbids `mount(2)`; use `podman --remote` against a
 running `podman.socket` instead.
+
+MCP servers of `"type": "container"` need the same socket, because Angela
+itself connects to it to start the container. The flag covers the socket such a
+server uses even when no `docker` or `podman` command is installed. Without the
+flag (or the `/sandbox` dialog) the server fails to start with an error that
+says so.
 
 Inside a Docker or other OCI container Angela treats the container as the
 sandbox and does not apply Landlock on top. Pass `--no-docker-sandbox` to

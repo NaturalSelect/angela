@@ -355,7 +355,6 @@ type MCPConfig struct {
 	Service       string   `json:"service,omitempty" jsonschema:"description=Service of the compose file that speaks MCP over stdio. Its depends_on services start with it,example=mcp"`
 	Volumes       []string `json:"volumes,omitempty" jsonschema:"description=Mounts for container MCP servers as source:target[:options]. A relative source is resolved against the project directory,example=./data:/data:ro"`
 	Network       string   `json:"network,omitempty" jsonschema:"description=Network mode for container MCP servers,enum=bridge,enum=none,enum=host,default=bridge"`
-	Pull          string   `json:"pull,omitempty" jsonschema:"description=When to pull the image for container MCP servers,enum=missing,enum=always,enum=never,default=missing"`
 	Workdir       string   `json:"workdir,omitempty" jsonschema:"description=Working directory inside the container for container MCP servers"`
 	ContainerHost string   `json:"container_host,omitempty" jsonschema:"description=Container engine endpoint for container MCP servers,example=unix:///run/user/1000/podman/podman.sock"`
 

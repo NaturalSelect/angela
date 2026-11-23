@@ -240,7 +240,7 @@ func TestMaybeContainerErr(t *testing.T) {
 func TestMCPTimeout_Container(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, 5*time.Minute, mcpTimeout(t.Context(), config.MCPConfig{Type: config.MCPContainer}))
+	require.Equal(t, 10*time.Second, mcpTimeout(t.Context(), config.MCPConfig{Type: config.MCPContainer}), "no image pull, so no longer budget than stdio")
 	require.Equal(t, 20*time.Second, mcpTimeout(t.Context(), config.MCPConfig{Type: config.MCPContainer, Timeout: 20}))
 	require.Equal(t, 10*time.Second, mcpTimeout(t.Context(), config.MCPConfig{Type: config.MCPStdio}))
 }

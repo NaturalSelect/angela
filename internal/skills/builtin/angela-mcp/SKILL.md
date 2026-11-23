@@ -44,11 +44,10 @@ minimal edit, run `angela config validate`, report whether a restart is needed.
 | `service` | string | container only. The compose service that speaks MCP over stdio. |
 | `volumes` | array | container only, with `image`. `source:target[:ro,rw,z,Z]`. A source starting with `/`, `.` or `~` is a host path (a relative one is resolved against the project directory and must exist), anything else a named volume. |
 | `network` | string | container only, with `image`. `bridge` (default), `none` or `host`. |
-| `pull` | string | container only. `missing` (default), `always` or `never`. With `compose` it overrides every service. |
 | `workdir` | string | container only, with `image`. Working directory inside the container. |
 | `container_host` | string | container only. Engine address such as `unix:///run/user/1000/podman/podman.sock`. Default: `DOCKER_HOST`, `CONTAINER_HOST`, then the first Docker or Podman socket found. |
 | `headers` | object | http/sse only. Shell-expanded; empty values are omitted from requests. `$(cmd)` only from system/global config. |
-| `timeout` | int | Seconds. Default `10`; when unset, `oauth` servers get `30` (and up to 5 minutes while a user-initiated sign-in is waiting on the browser) and `container` servers get 5 minutes so an image pull can finish. |
+| `timeout` | int | Seconds. Default `10`; when unset, `oauth` servers get `30` (and up to 5 minutes while a user-initiated sign-in is waiting on the browser). |
 | `disabled` | bool | Default `false`. Disables without removing the entry. |
 | `enabled_tools` | array | Allow-list of tool names from this server, as the server names them (no `MCP_<server>_` prefix). |
 | `disabled_tools` | array | Deny-list of tool names from this server, same naming. Applied after `enabled_tools`, so it wins on a conflict. |
@@ -63,7 +62,7 @@ minimal edit, run `angela config validate`, report whether a restart is needed.
 > since those fields already run an arbitrary program. `url`, `headers`, and the
 > two `oauth_client_*` fields restrict `$(cmd)` to system/global config layers.
 > The other container fields (`image`, `compose`, `service`, `volumes`,
-> `network`, `pull`, `workdir`, `container_host`) expand `$VAR` only, at every
+> `network`, `workdir`, `container_host`) expand `$VAR` only, at every
 > layer.
 
 ## Tool Naming
@@ -163,8 +162,9 @@ Things to tell the user:
   `angela-sandbox` skill for the details.
 - **Rootless Podman.** The API socket must be running:
   `systemctl --user start podman.socket`.
-- **Private images.** Angela does not read registry credentials. Pull the image
-  first and set `pull` to `never`.
+- **Images.** Angela never pulls an image and does not read registry
+  credentials. Pull the image with `docker` or `podman` first; a server whose
+  image is not present locally refuses to start.
 - **Compose.** Use `compose` plus `service`, and leave `image`, `args`, `env`,
   `volumes`, `network` and `workdir` out; they belong in the compose file. The
   service and its `depends_on` services start together on one private network,

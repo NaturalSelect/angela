@@ -238,11 +238,10 @@ func translateService(project *types.Project, name string, svc types.ServiceConf
 		out.Labels = map[string]string(svc.Labels)
 	}
 
-	pull, err := composePull(name, svc.PullPolicy)
+	err := checkComposePull(name, svc.PullPolicy)
 	if err != nil {
 		return Service{}, err
 	}
-	out.Pull = pull
 
 	if out.NetworkMode, err = composeNetworkMode(name, svc.NetworkMode); err != nil {
 		return Service{}, err
@@ -341,16 +340,13 @@ func hasNetworkSettings(cfg *types.ServiceNetworkConfig) bool {
 	return err == nil && !emptyJSON(raw)
 }
 
-func composePull(service, policy string) (PullPolicy, error) {
+// NOTE: Angela never pulls, so only policies satisfied by a local image are accepted.
+func checkComposePull(service, policy string) error {
 	switch policy {
-	case "", "missing", "if_not_present":
-		return PullMissing, nil
-	case "always":
-		return PullAlways, nil
-	case "never":
-		return PullNever, nil
+	case "", "missing", "if_not_present", "never":
+		return nil
 	}
-	return "", fmt.Errorf("compose service %q: pull_policy %q is not supported", service, policy)
+	return fmt.Errorf("compose service %q: pull_policy %q is not supported; images must be pulled beforehand", service, policy)
 }
 
 func composeNetworkMode(service, mode string) (string, error) {

@@ -37,20 +37,7 @@ func TestFromConfig_FieldsNeverRunCommands(t *testing.T) {
 	require.Equal(t, map[string]string{"TOKEN": "s3cret"}, g.Main.Env)
 	require.Equal(t, "none", g.Network)
 	require.Equal(t, "/work", g.Main.WorkingDir)
-	require.Equal(t, PullMissing, g.Main.Pull)
 	require.Empty(t, g.Deps)
-}
-
-func TestFromConfig_PullPolicy(t *testing.T) {
-	t.Parallel()
-
-	field, argsEnv := resolvers(nil)
-	g, err := FromConfig(t.Context(), "s", config.MCPConfig{Image: "img", Pull: "never"}, "", field, argsEnv)
-	require.NoError(t, err)
-	require.Equal(t, PullNever, g.Main.Pull)
-
-	_, err = FromConfig(t.Context(), "s", config.MCPConfig{Image: "img", Pull: "sometimes"}, "", field, argsEnv)
-	require.ErrorContains(t, err, "pull must be")
 }
 
 func TestFromConfig_Volumes(t *testing.T) {
@@ -163,22 +150,6 @@ func TestFromConfig_Compose(t *testing.T) {
 	require.Equal(t, "stack", g.Server)
 	require.Equal(t, "mcp", g.Main.Name)
 	require.Len(t, g.Deps, 1)
-	require.Equal(t, PullMissing, g.Main.Pull, "a service without pull_policy pulls a missing image")
-}
-
-func TestFromConfig_ComposePullOverridesEveryService(t *testing.T) {
-	t.Parallel()
-
-	dir := composeConfigFixture(t)
-	field, argsEnv := resolvers(nil)
-
-	g, err := FromConfig(t.Context(), "stack", config.MCPConfig{Compose: "compose.yaml", Service: "mcp", Pull: "never"}, dir, field, argsEnv)
-	require.NoError(t, err)
-	require.Equal(t, PullNever, g.Main.Pull)
-	require.Equal(t, PullNever, g.Deps[0].Pull)
-
-	_, err = FromConfig(t.Context(), "stack", config.MCPConfig{Compose: "compose.yaml", Service: "mcp", Pull: "sometimes"}, dir, field, argsEnv)
-	require.ErrorContains(t, err, "pull must be")
 }
 
 func TestFromConfig_ComposeConflicts(t *testing.T) {

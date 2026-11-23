@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// NOTE: Runs only when ANGELA_TEST_CONTAINER_HOST names a Docker or Podman API endpoint.
+// NOTE: Runs only when ANGELA_TEST_CONTAINER_HOST names a Docker or Podman API endpoint. The image must already be pulled, since Angela never pulls.
 func integrationEndpoint(t *testing.T) (Endpoint, string) {
 	t.Helper()
 	host := os.Getenv("ANGELA_TEST_CONTAINER_HOST")
@@ -34,7 +34,7 @@ func TestIntegration_RoundTripAndCleanup(t *testing.T) {
 
 	s, err := Open(ctx, ep, Group{
 		Server: "integration",
-		Main:   Service{Name: "integration", Image: image, Entrypoint: []string{"cat"}, Pull: PullMissing},
+		Main:   Service{Name: "integration", Image: image, Entrypoint: []string{"cat"}},
 	})
 	require.NoError(t, err)
 	id := s.id
@@ -66,7 +66,6 @@ func TestIntegration_ExitCodeAndStderr(t *testing.T) {
 			Name:       "integration",
 			Image:      image,
 			Entrypoint: []string{"sh", "-c", "echo oops >&2; exit 7"},
-			Pull:       PullMissing,
 		},
 	})
 	require.NoError(t, err)

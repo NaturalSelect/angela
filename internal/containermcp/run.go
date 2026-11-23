@@ -88,7 +88,7 @@ func start(ctx context.Context, eng engine, g Group) (_ *Session, err error) {
 		sweepOrphans(ctx, eng, g.Server)
 	}
 	for _, svc := range append(slices.Clone(g.Deps), g.Main) {
-		if err := ensureImage(ctx, eng, svc.Image, svc.Pull); err != nil {
+		if err := ensureImage(ctx, eng, svc.Image); err != nil {
 			return nil, err
 		}
 	}
@@ -399,26 +399,14 @@ func mainAlive(c listedContainer) bool {
 	return false
 }
 
-func ensureImage(ctx context.Context, eng engine, image string, pull PullPolicy) error {
-	if pull == PullAlways {
-		return pullImage(ctx, eng, image)
-	}
+// NOTE: Images are never pulled here, so a slow registry cannot stall startup.
+func ensureImage(ctx context.Context, eng engine, image string) error {
 	exists, err := eng.ImageExists(ctx, image)
 	if err != nil {
 		return fmt.Errorf("inspect image %s: %w", image, err)
 	}
-	if exists {
-		return nil
-	}
-	if pull == PullNever {
-		return fmt.Errorf("image %s is not present and pull is never", image)
-	}
-	return pullImage(ctx, eng, image)
-}
-
-func pullImage(ctx context.Context, eng engine, image string) error {
-	if err := eng.ImagePull(ctx, image); err != nil {
-		return fmt.Errorf("pull image %s: %w", image, err)
+	if !exists {
+		return fmt.Errorf("image %s is not present locally; pull it with docker or podman before starting the server", image)
 	}
 	return nil
 }

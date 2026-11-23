@@ -1429,10 +1429,6 @@ func mcpTimeout(ctx context.Context, m config.MCPConfig) time.Duration {
 	if m.OAuth {
 		return 30 * time.Second
 	}
-	// NOTE: The first start may pull an image, which takes far longer than launching a local command.
-	if m.Type == config.MCPContainer {
-		return 5 * time.Minute
-	}
 	return 10 * time.Second
 }
 

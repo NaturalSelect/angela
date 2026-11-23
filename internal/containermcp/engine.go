@@ -22,7 +22,6 @@ type engine interface {
 	// NOTE: Empty when the engine does not say.
 	CgroupVersion(ctx context.Context) (string, error)
 	ImageExists(ctx context.Context, ref string) (bool, error)
-	ImagePull(ctx context.Context, ref string) error
 	Create(ctx context.Context, spec containerSpec) (string, error)
 	Attach(ctx context.Context, id string) (attachment, error)
 	Start(ctx context.Context, id string) error
@@ -112,15 +111,6 @@ func (e *mobyEngine) ImageExists(ctx context.Context, ref string) (bool, error) 
 		return false, nil
 	}
 	return false, err
-}
-
-func (e *mobyEngine) ImagePull(ctx context.Context, ref string) error {
-	resp, err := e.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
-	if err != nil {
-		return err
-	}
-	defer resp.Close()
-	return resp.Wait(ctx)
 }
 
 func (e *mobyEngine) Create(ctx context.Context, spec containerSpec) (string, error) {

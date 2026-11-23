@@ -22,7 +22,7 @@ func listenUnix(t *testing.T, path string) {
 }
 
 func validGroup() Group {
-	return Group{Server: "srv", Main: Service{Name: "srv", Image: "img:1", Pull: PullMissing}}
+	return Group{Server: "srv", Main: Service{Name: "srv", Image: "img:1"}}
 }
 
 func TestGroupValidate(t *testing.T) {
@@ -37,8 +37,6 @@ func TestGroupValidate(t *testing.T) {
 		{"no image", func(g *Group) { g.Main.Image = "  " }, "has no image"},
 		{"bad network", func(g *Group) { g.Network = "container:abc" }, "network must be"},
 		{"host network", func(g *Group) { g.Network = "host" }, ""},
-		{"bad pull", func(g *Group) { g.Main.Pull = "sometimes" }, "pull must be"},
-		{"empty pull", func(g *Group) { g.Main.Pull = "" }, ""},
 		{"relative target", func(g *Group) {
 			g.Main.Mounts = []Mount{{Type: MountVolume, Source: "v", Target: "data"}}
 		}, "absolute path"},

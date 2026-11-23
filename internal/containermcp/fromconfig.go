@@ -26,12 +26,8 @@ func FromConfig(ctx context.Context, name string, m config.MCPConfig, workDir st
 		return strings.TrimSpace(out), nil
 	}
 
-	pull, err := resolve("pull", m.Pull)
-	if err != nil {
-		return Group{}, err
-	}
 	if m.Compose != "" || m.Service != "" {
-		return fromComposeConfig(ctx, name, m, workDir, resolve, PullPolicy(pull))
+		return fromComposeConfig(ctx, name, m, workDir, resolve)
 	}
 
 	image, err := resolve("image", m.Image)
@@ -83,12 +79,8 @@ func FromConfig(ctx context.Context, name string, m config.MCPConfig, workDir st
 			Env:        env,
 			Mounts:     mounts,
 			WorkingDir: containerDir,
-			Pull:       PullPolicy(pull),
 		},
 		Network: network,
-	}
-	if g.Main.Pull == "" {
-		g.Main.Pull = PullMissing
 	}
 	if err := g.Validate(); err != nil {
 		return Group{}, err
@@ -97,7 +89,7 @@ func FromConfig(ctx context.Context, name string, m config.MCPConfig, workDir st
 }
 
 // NOTE: The compose file owns everything about the containers, so the per-image fields are refused instead of merged.
-func fromComposeConfig(ctx context.Context, name string, m config.MCPConfig, workDir string, resolve func(field, value string) (string, error), pull PullPolicy) (Group, error) {
+func fromComposeConfig(ctx context.Context, name string, m config.MCPConfig, workDir string, resolve func(field, value string) (string, error)) (Group, error) {
 	var conflict string
 	switch {
 	case m.Image != "":
@@ -132,15 +124,6 @@ func fromComposeConfig(ctx context.Context, name string, m config.MCPConfig, wor
 	g, err := FromCompose(ctx, name, file, service, workDir)
 	if err != nil {
 		return Group{}, err
-	}
-	if pull != "" {
-		g.Main.Pull = pull
-		for i := range g.Deps {
-			g.Deps[i].Pull = pull
-		}
-		if err := g.Validate(); err != nil {
-			return Group{}, err
-		}
 	}
 	return g, nil
 }

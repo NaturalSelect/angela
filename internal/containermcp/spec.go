@@ -13,14 +13,6 @@ import (
 	"github.com/NaturalSelect/angela/internal/sandbox"
 )
 
-type PullPolicy string
-
-const (
-	PullMissing PullPolicy = "missing"
-	PullAlways  PullPolicy = "always"
-	PullNever   PullPolicy = "never"
-)
-
 type MountType string
 
 const (
@@ -49,7 +41,6 @@ type Service struct {
 	Mounts     []Mount
 	WorkingDir string
 	User       string
-	Pull       PullPolicy
 
 	// NOTE: The fields below come from compose files only.
 	Labels  map[string]string
@@ -150,11 +141,6 @@ func (s Service) validateOrder(started map[string]bool) error {
 func (s Service) validate() error {
 	if strings.TrimSpace(s.Image) == "" {
 		return fmt.Errorf("service %q has no image", s.Name)
-	}
-	switch s.Pull {
-	case "", PullMissing, PullAlways, PullNever:
-	default:
-		return fmt.Errorf("pull must be missing, always or never, got %q", s.Pull)
 	}
 	switch s.NetworkMode {
 	case "", "none", "host", "bridge":

@@ -94,6 +94,8 @@ type Group struct {
 	Deps   []Service
 	// NOTE: Only used without Deps; a group with dependencies gets its own network.
 	Network string
+	// NOTE: Machine-wide directory for the per-server startup lock; empty means no cross-process lock.
+	LockDir string
 }
 
 var volumeName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)

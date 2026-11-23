@@ -36,14 +36,16 @@ func (t *containerTransport) ExitErr() error { return t.session.ExitErr() }
 
 func createContainerTransport(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
 	fieldRes, workDir := resolver, ""
+	lockDir := ""
 	if cfg != nil {
-		fieldRes, workDir = cfg.ContainerFieldResolver(name), cfg.WorkingDir()
+		fieldRes, workDir, lockDir = cfg.ContainerFieldResolver(name), cfg.WorkingDir(), cfg.LockDir()
 	}
 
 	g, err := containermcp.FromConfig(ctx, name, m, workDir, fieldRes, resolver)
 	if err != nil {
 		return nil, fmt.Errorf("invalid container mcp config: %w", err)
 	}
+	g.LockDir = lockDir
 	host, err := fieldRes.ResolveValue(m.ContainerHost)
 	if err != nil {
 		return nil, fmt.Errorf("container_host: %w", err)

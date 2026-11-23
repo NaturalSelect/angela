@@ -10,11 +10,13 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/lock"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -84,6 +86,11 @@ func start(ctx context.Context, eng engine, g Group) (_ *Session, err error) {
 	if err := checkSwappiness(ctx, eng, g); err != nil {
 		return nil, err
 	}
+	releaseStartup, err := lockStartup(ctx, g)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseStartup()
 	if len(g.Deps) > 0 {
 		sweepOrphans(ctx, eng, g.Server)
 	}
@@ -111,11 +118,12 @@ func start(ctx context.Context, eng engine, g Group) (_ *Session, err error) {
 		}
 	}
 
-	// NOTE: The main container is created first so a concurrent sweep sees the group as alive.
+	// NOTE: The main container is created first so a sweep that runs after the startup lock is released sees the group as alive.
 	l.mainID, err = eng.Create(ctx, l.spec(g.Main, roleMain))
 	if err != nil {
 		return nil, fmt.Errorf("create container: %w", err)
 	}
+	releaseStartup()
 	mainExit := eng.Wait(waitCtx, l.mainID, true)
 
 	for _, dep := range g.Deps {
@@ -336,6 +344,23 @@ func (l *launch) discard() {
 		removeQuietly(l.eng, l.depList[i].id)
 	}
 	removeNetworkQuietly(l.eng, l.networkID)
+}
+
+// NOTE: Held from the orphan sweep until the main container exists. The group's network has no container yet, so without the lock a sweep in another process would delete it as an orphan.
+func lockStartup(ctx context.Context, g Group) (func(), error) {
+	if len(g.Deps) == 0 || g.LockDir == "" {
+		return func() {}, nil
+	}
+	release, err := lock.File(ctx, filepath.Join(g.LockDir, "container-"+safeName(g.Server)+".lock"))
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("wait to start %q: %w", g.Server, err)
+		}
+		// NOTE: An unwritable lock directory must not stop the server; the race it guards against is rare.
+		slog.Warn("Starting container MCP server without a startup lock", "server", g.Server, "error", err)
+		return func() {}, nil
+	}
+	return sync.OnceFunc(release), nil
 }
 
 func safeName(s string) string {

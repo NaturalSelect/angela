@@ -213,9 +213,26 @@ func (s *ConfigStore) withRefreshLock(providerID string, fn func() error) error 
 // on demand by lock.File and is never removed (flock keys on inode, not
 // path).
 func (s *ConfigStore) refreshLockPath(providerID string) string {
-	dir := filepath.Join(filepath.Dir(s.globalDataPath), "locks")
+	dir := filepath.Join(filepath.Dir(s.globalDataPath), lockDirName)
 	_ = os.MkdirAll(dir, 0o755)
 	return filepath.Join(dir, fmt.Sprintf("%s.refresh.lock", providerID))
+}
+
+const lockDirName = "locks"
+
+// LockDir returns the machine-wide directory for cross-process lock files,
+// or "" when the store has no global config path. It sits beside the global
+// config, not in the per-project data directory, so instances started from
+// different projects contend on the same files.
+func (s *ConfigStore) LockDir() string {
+	if s.globalDataPath == "" {
+		return ""
+	}
+	dir := filepath.Join(filepath.Dir(s.globalDataPath), lockDirName)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
+	}
+	return dir
 }
 
 // applyToken updates the in-memory provider config with the given token.

@@ -28,7 +28,7 @@ while IFS= read -r line; do
 done
 `
 
-// NOTE: Runs only when ANGELA_TEST_CONTAINER_HOST names a Docker or Podman API endpoint. Not parallel: it uses the package-global state maps.
+// NOTE: Runs only when ANGELA_TEST_CONTAINER_HOST names a Docker or Podman API endpoint. The image must already be pulled, since Angela never pulls. Not parallel: it uses the package-global state maps.
 func TestCreateSession_ContainerOnARealEngine(t *testing.T) {
 	host := os.Getenv("ANGELA_TEST_CONTAINER_HOST")
 	if host == "" {
@@ -45,7 +45,6 @@ func TestCreateSession_ContainerOnARealEngine(t *testing.T) {
 	m := config.MCPConfig{
 		Type:          config.MCPContainer,
 		Image:         image,
-		Pull:          "missing",
 		Args:          []string{"sh", "/srv/server.sh"},
 		Volumes:       []string{dir + ":/srv:ro"},
 		Network:       "none",

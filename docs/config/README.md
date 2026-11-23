@@ -385,7 +385,6 @@ working inside `--sandbox` once the socket is allowed (see below).
       "env": { "TOKEN": "$TOKEN" },           // never inherited from the host
       "volumes": ["./data:/data:ro"],         // source:target[:ro,rw,z,Z]
       "network": "none",                      // bridge (default), none or host
-      "pull": "missing",                      // missing (default), always or never
       "workdir": "/data",
       "container_host": "unix:///run/user/1000/podman/podman.sock"
     },
@@ -409,9 +408,10 @@ working inside `--sandbox` once the socket is allowed (see below).
   holds an engine socket, but that is a safety net and not a boundary.
 - **Expansion.** `args` and `env` expand `$VAR` and `$(cmd)` like a `stdio`
   server. Every other field expands only `$VAR`, in every config layer.
-- **Images.** Angela pulls a missing image itself and does not read registry
-  credentials. For a private image, pull it first and set `pull` to `never`.
-  The default startup timeout is 5 minutes so that a pull can finish.
+- **Images.** Angela never pulls an image and does not read registry
+  credentials. Pull the image with `docker` or `podman` first. If it is not
+  present locally, the server refuses to start and the error says so. The
+  default startup timeout stays 10 seconds.
 - **Cleanup.** The container is removed when the server stops. After a crash,
   the next start removes the leftover dependency containers and networks of the
   same server.
@@ -421,7 +421,7 @@ working inside `--sandbox` once the socket is allowed (see below).
 
 With `compose`, set `service` and nothing about the image itself: `args`,
 `env`, `volumes`, `network` and `workdir` belong in the compose file, and
-`pull`, `container_host` and `timeout` still apply. The file is read the way
+`container_host` and `timeout` still apply. The file is read the way
 `docker compose` reads it, including `.env`, host environment interpolation,
 `include` and `extends`. Angela starts the
 service and the services it needs with `depends_on`, waits for `service_healthy`
@@ -434,7 +434,8 @@ running server; disable and enable the server, or restart Angela.
 These compose fields are used: `image`, `command`, `entrypoint`,
 `environment`, `env_file`, `volumes` (bind, named volume and tmpfs),
 `working_dir`, `user`, `depends_on`, `healthcheck`, `labels`, `networks`
-(aliases only), `network_mode` (`none`, `host`, `bridge`), `pull_policy`,
+(aliases only), `network_mode` (`none`, `host`, `bridge`), `pull_policy`
+(`missing`, `if_not_present` and `never` only, since nothing is pulled),
 `profiles`, `init`, `shm_size`, `extra_hosts` and `tty` (dependencies only).
 These only narrow the container or set its own identity, so they are used
 too: `cap_drop`, `read_only`, `tmpfs`, `security_opt` (only

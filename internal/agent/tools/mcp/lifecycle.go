@@ -272,7 +272,6 @@ func mcpConfigEqual(a, b config.MCPConfig) bool {
 		a.Service == b.Service &&
 		slices.Equal(a.Volumes, b.Volumes) &&
 		a.Network == b.Network &&
-		a.Pull == b.Pull &&
 		a.Workdir == b.Workdir &&
 		a.ContainerHost == b.ContainerHost
 }

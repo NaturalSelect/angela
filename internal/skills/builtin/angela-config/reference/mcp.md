@@ -15,9 +15,8 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `image`                | string | container only; set this or `compose`; `$VAR` only         |
 | `compose`, `service`   | string | container only; a compose file and the service that speaks MCP over stdio; `$VAR` only |
 | `volumes`, `network`, `workdir` | array, string, string | container with `image` only; `$VAR` only |
-| `pull`                 | string | container only: `missing` (default), `always`, `never`     |
 | `container_host`       | string | container only: engine address; default `DOCKER_HOST`, `CONTAINER_HOST`, then a socket found on the machine |
-| `timeout`              | int    | Seconds. Default `10`; with `oauth` the default is `30` (`5` minutes while a user-initiated login waits on the browser); `container` servers get `5` minutes |
+| `timeout`              | int    | Seconds. Default `10`; with `oauth` the default is `30` (`5` minutes while a user-initiated login waits on the browser) |
 | `disabled`             | bool   | Default `false`                                            |
 | `enabled_tools`        | array  | Allow list of tool names from this server                  |
 | `disabled_tools`       | array  | Deny list of tool names from this server                   |

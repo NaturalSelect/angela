@@ -449,6 +449,7 @@ func TestFromCompose_RejectedFields(t *testing.T) {
 		{"main tty", "tty: true", []string{"tty"}},
 		{"anonymous volume", "volumes: [\"/data\"]", []string{"anonymous"}},
 		{"unsupported condition policy", "pull_policy: daily", []string{"pull_policy"}},
+		{"always pull policy", "pull_policy: always", []string{"pull_policy", "pulled beforehand"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -625,10 +626,13 @@ func TestFromCompose_NetworkMode(t *testing.T) {
 	require.Equal(t, "none", g.Main.NetworkMode)
 }
 
-func TestFromCompose_PullPolicy(t *testing.T) {
-	g, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    pull_policy: never\n", "app")
-	require.NoError(t, err)
-	require.Equal(t, PullNever, g.Main.Pull)
+func TestFromCompose_PullPolicyNeedingNoPull(t *testing.T) {
+	for _, policy := range []string{"missing", "if_not_present", "never"} {
+		t.Run(policy, func(t *testing.T) {
+			_, _, err := loadCompose(t, "services:\n  app:\n    image: example/app\n    pull_policy: "+policy+"\n", "app")
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestFromCompose_VolumeDriverOptionsAreRejected(t *testing.T) {

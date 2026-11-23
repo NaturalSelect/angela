@@ -538,16 +538,6 @@
           "description": "Network mode for container MCP servers",
           "default": "bridge"
         },
-        "pull": {
-          "type": "string",
-          "enum": [
-            "missing",
-            "always",
-            "never"
-          ],
-          "description": "When to pull the image for container MCP servers",
-          "default": "missing"
-        },
         "workdir": {
           "type": "string",
           "description": "Working directory inside the container for container MCP servers"

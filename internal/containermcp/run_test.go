@@ -88,10 +88,8 @@ type fakeEngine struct {
 	mu      sync.Mutex
 	calls   []string
 	created []containerSpec
-	pulled  []string
 
 	exists    bool
-	pullErr   error
 	createErr error
 	attachErr error
 	startErr  error
@@ -134,14 +132,6 @@ func (f *fakeEngine) CgroupVersion(context.Context) (string, error) {
 func (f *fakeEngine) ImageExists(context.Context, string) (bool, error) {
 	f.record("exists")
 	return f.exists, nil
-}
-
-func (f *fakeEngine) ImagePull(_ context.Context, ref string) error {
-	f.record("pull")
-	f.mu.Lock()
-	f.pulled = append(f.pulled, ref)
-	f.mu.Unlock()
-	return f.pullErr
 }
 
 func (f *fakeEngine) Create(_ context.Context, spec containerSpec) (string, error) {
@@ -246,59 +236,41 @@ func TestStart_CreateAttachStartOrderAndSpec(t *testing.T) {
 	require.Len(t, spec.Labels[LabelGroup], 12)
 }
 
-func TestStart_PullPolicy(t *testing.T) {
+func TestStart_RequiresLocalImage(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name       string
-		pull       PullPolicy
-		exists     bool
-		wantPulled bool
-		wantErr    string
-	}{
-		{"missing and present", PullMissing, true, false, ""},
-		{"missing and absent", PullMissing, false, true, ""},
-		{"default and absent", "", false, true, ""},
-		{"always and present", PullAlways, true, true, ""},
-		{"never and present", PullNever, true, false, ""},
-		{"never and absent", PullNever, false, false, "pull is never"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			eng := newFakeEngine()
-			eng.exists = tc.exists
-			g := validGroup()
-			g.Main.Pull = tc.pull
+	t.Run("present", func(t *testing.T) {
+		t.Parallel()
+		eng := newFakeEngine()
 
-			s, err := start(t.Context(), eng, g)
-			if tc.wantErr != "" {
-				require.ErrorContains(t, err, tc.wantErr)
-				require.Contains(t, eng.callList(), "close", "engine is closed when start fails")
-				require.NotContains(t, eng.callList(), "create")
-				return
-			}
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = s.Close() })
-			require.Equal(t, tc.wantPulled, slices.Contains(eng.callList(), "pull"))
-			if tc.wantPulled {
-				require.Equal(t, []string{"img:1"}, eng.pulled)
-			}
-		})
-	}
-}
+		s, err := start(t.Context(), eng, validGroup())
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = s.Close() })
+		require.Contains(t, eng.callList(), "exists")
+		require.Contains(t, eng.callList(), "create")
+	})
 
-func TestStart_PullFailure(t *testing.T) {
-	t.Parallel()
+	t.Run("absent", func(t *testing.T) {
+		t.Parallel()
+		eng := newFakeEngine()
+		eng.exists = false
 
-	eng := newFakeEngine()
-	eng.exists = false
-	eng.pullErr = errors.New("denied")
+		_, err := start(t.Context(), eng, validGroup())
+		require.ErrorContains(t, err, "image img:1 is not present locally")
+		require.Equal(t, []string{"exists", "close"}, eng.callList(), "nothing is created")
+	})
 
-	_, err := start(t.Context(), eng, validGroup())
-	require.ErrorContains(t, err, "pull image img:1")
-	require.ErrorContains(t, err, "denied")
-	require.NotContains(t, eng.callList(), "create")
+	t.Run("absent dependency", func(t *testing.T) {
+		t.Parallel()
+		eng := newFakeEngine()
+		eng.exists = false
+		g := validGroup()
+		g.Deps = []Service{{Name: "db", Image: "db:1"}}
+
+		_, err := start(t.Context(), eng, g)
+		require.ErrorContains(t, err, "image db:1 is not present locally")
+		require.NotContains(t, eng.callList(), "create")
+	})
 }
 
 func TestStart_FailuresRemoveTheContainer(t *testing.T) {
@@ -354,7 +326,7 @@ func TestStart_SwappinessIsRefusedOnCgroupV2BeforeAnythingIsCreated(t *testing.T
 	_, err := start(t.Context(), eng, g)
 	require.ErrorContains(t, err, `service "srv" sets mem_swappiness`)
 	require.ErrorContains(t, err, "cgroup v2")
-	require.Equal(t, []string{"cgroup-version", "close"}, eng.callList(), "nothing is pulled or created")
+	require.Equal(t, []string{"cgroup-version", "close"}, eng.callList(), "nothing is created")
 }
 
 func TestStart_SwappinessWorksWhereTheEngineCanApplyIt(t *testing.T) {

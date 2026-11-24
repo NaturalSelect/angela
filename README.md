@@ -101,6 +101,7 @@ See the [full provider list](./docs/config/) for all supported variables.
 | `angela`                     | Start the interactive UI                                 |
 | `angela run "<prompt>"`      | Run one prompt non-interactively and exit                |
 | `angela commit`              | Generate a commit message for staged changes and commit  |
+| `angela describe <base> [head]` | Print a generated description of a branch's changes against a base branch |
 | `angela session ...`         | `list`, `show`, `last`, `rename`, `delete`, `export`     |
 | `angela agent ...`           | `list` configured agents, `create` one from a description |
 | `angela config validate`     | Load `angela.json` and report errors and warnings        |
@@ -164,6 +165,25 @@ or lower that budget for one run with `--max-diff-runes`, or permanently with
 ```bash
 angela commit --max-diff-runes 100000
 ```
+
+### Describing a branch
+
+`angela describe <base> [head]` prints a description of what a branch changed
+relative to another, ready to paste into a pull request. Nothing is committed
+or modified. It compares like a pull request does, with `git diff base...head`,
+so only the changes `head` made since it forked from `base` are described.
+`head` defaults to the commit you have checked out, and either side can be any
+branch, tag or remote branch.
+
+```bash
+angela describe main
+angela describe origin/main feature/login
+```
+
+The model receives the commit subjects, a diffstat and the diff, in that
+order. The same `--max-diff-runes` and `options.commit_diff_runes` budget as
+`angela commit` applies to all three together, and a diff that exceeds it is
+cut from the end. The description is written in English.
 
 ### Editor integration (ACP)
 

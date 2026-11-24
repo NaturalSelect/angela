@@ -378,6 +378,13 @@ func (w *AppWorkspace) AgentGenerateCommitMessage(ctx context.Context, sessionID
 	return w.app.AgentCoordinator.GenerateCommitMessage(ctx, sessionID, diff)
 }
 
+func (w *AppWorkspace) AgentGenerateChangeDescription(ctx context.Context, sessionID, base, head, changes string) (string, error) {
+	if w.app.AgentCoordinator == nil {
+		return "", errors.New("agent coordinator not initialized")
+	}
+	return w.app.AgentCoordinator.GenerateChangeDescription(ctx, sessionID, base, head, changes)
+}
+
 func (w *AppWorkspace) UpdateAgentModel(ctx context.Context) error {
 	return w.app.UpdateAgentModel(ctx)
 }

@@ -139,6 +139,21 @@ func (mr *MockWorkspaceMockRecorder) AgentEditActive(ctx, sessionID, edit any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentEditActive", reflect.TypeOf((*MockWorkspace)(nil).AgentEditActive), ctx, sessionID, edit)
 }
 
+// AgentGenerateChangeDescription mocks base method.
+func (m *MockWorkspace) AgentGenerateChangeDescription(ctx context.Context, sessionID, base, head, changes string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AgentGenerateChangeDescription", ctx, sessionID, base, head, changes)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AgentGenerateChangeDescription indicates an expected call of AgentGenerateChangeDescription.
+func (mr *MockWorkspaceMockRecorder) AgentGenerateChangeDescription(ctx, sessionID, base, head, changes any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AgentGenerateChangeDescription", reflect.TypeOf((*MockWorkspace)(nil).AgentGenerateChangeDescription), ctx, sessionID, base, head, changes)
+}
+
 // AgentGenerateCommitMessage mocks base method.
 func (m *MockWorkspace) AgentGenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error) {
 	m.ctrl.T.Helper()

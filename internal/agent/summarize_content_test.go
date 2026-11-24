@@ -359,6 +359,74 @@ func TestRejectedSummaryIsExcludedFromModelContext(t *testing.T) {
 	}
 }
 
+// TestGetSessionMessagesStartsAtTheAdoptedSummary pins that the model
+// context begins at the session's summary, relabelled as a user message,
+// and carries nothing from before it.
+func TestGetSessionMessagesStartsAtTheAdoptedSummary(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+	add := func(role message.MessageRole, text string, isSummary bool) message.Message {
+		t.Helper()
+		msg, err := env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
+			Role:             role,
+			Parts:            []message.ContentPart{message.TextContent{Text: text}},
+			IsSummaryMessage: isSummary,
+		})
+		require.NoError(t, err)
+		return msg
+	}
+	add(message.User, "old question", false)
+	add(message.Assistant, "old answer", false)
+	summary := add(message.Assistant, "the summary", true)
+	add(message.User, "new question", false)
+	add(message.Assistant, "new answer", false)
+
+	sess.SummaryMessageID = summary.ID
+	sess, err = env.sessions.Save(t.Context(), sess)
+	require.NoError(t, err)
+
+	msgs, err := sa.getSessionMessages(t.Context(), sess)
+	require.NoError(t, err)
+	require.Len(t, msgs, 3)
+	require.Equal(t, "the summary", msgs[0].Content().Text)
+	require.Equal(t, message.User, msgs[0].Role)
+	require.Equal(t, "new question", msgs[1].Content().Text)
+	require.Equal(t, "new answer", msgs[2].Content().Text)
+}
+
+// TestGetSessionMessagesKeepsEverythingWhenTheSummaryIsGone pins the
+// fallback for a session pointing at a summary that no longer exists: the
+// whole transcript is the context, not an empty one.
+func TestGetSessionMessagesKeepsEverythingWhenTheSummaryIsGone(t *testing.T) {
+	t.Parallel()
+
+	sa, env := summarizeGomockEnv(t)
+
+	sess, err := env.sessions.Create(t.Context(), "session")
+	require.NoError(t, err)
+	for _, text := range []string{"one", "two"} {
+		_, err := env.messages.Create(t.Context(), sess.ID, message.CreateMessageParams{
+			Role:  message.User,
+			Parts: []message.ContentPart{message.TextContent{Text: text}},
+		})
+		require.NoError(t, err)
+	}
+
+	sess.SummaryMessageID = "no-such-message"
+	sess, err = env.sessions.Save(t.Context(), sess)
+	require.NoError(t, err)
+
+	msgs, err := sa.getSessionMessages(t.Context(), sess)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2)
+	require.Equal(t, "one", msgs[0].Content().Text)
+	require.Equal(t, "two", msgs[1].Content().Text)
+}
+
 // TestSummarizeExtractsContentBetweenSummaryTags pins that a compliant
 // answer has its wrapper tags (and anything a model added outside
 // them) stripped before being persisted: the tags are a detection

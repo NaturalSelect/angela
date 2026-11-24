@@ -56,6 +56,20 @@ type Service interface {
 	Update(ctx context.Context, message Message) error
 	Get(ctx context.Context, id string) (Message, error)
 	List(ctx context.Context, sessionID string) ([]Message, error)
+
+	// ListSince returns sessionID's messages from sinceMessageID (inclusive)
+	// to the end, in insertion order. An empty sinceMessageID, or one that
+	// is not in sessionID, lists the whole session, same as List.
+	ListSince(ctx context.Context, sessionID, sinceMessageID string) ([]Message, error)
+
+	// ListPage returns up to limit messages of sessionID that come before
+	// beforeMessageID (exclusive), oldest first. An empty beforeMessageID
+	// means the end of the session, so the first call returns the tail.
+	//
+	// Feed the first message of a page back as beforeMessageID to get the
+	// page before it. It is an error for a non-empty beforeMessageID not to
+	// belong to sessionID, or for limit not to be positive.
+	ListPage(ctx context.Context, sessionID, beforeMessageID string, limit int) (Page, error)
 	ListUserMessages(ctx context.Context, sessionID string) ([]Message, error)
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
 	GetLastAssistantMessage(ctx context.Context, sessionID string) (Message, error)
@@ -571,6 +585,106 @@ func (s *service) List(ctx context.Context, sessionID string) ([]Message, error)
 	}
 	messages := make([]Message, len(dbMessages))
 	for i, dbMessage := range dbMessages {
+		messages[i], err = s.fromDBItem(dbMessage)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return messages, nil
+}
+
+// Page is a contiguous run of a session's transcript, oldest first.
+type Page struct {
+	Messages []Message
+	// HasOlder reports whether messages before Messages[0] remain.
+	HasOlder bool
+}
+
+// ListSince returns a session's transcript from sinceMessageID on, in
+// insertion order. See [Service.ListSince].
+func (s *service) ListSince(ctx context.Context, sessionID, sinceMessageID string) ([]Message, error) {
+	dbMessages, err := s.q.ListMessagesBySessionSince(ctx, db.ListMessagesBySessionSinceParams{
+		SessionID: sessionID,
+		SinceID:   sinceMessageID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.fromDBItems(dbMessages)
+}
+
+// ListPage returns one page of a session's transcript. See
+// [Service.ListPage].
+//
+// NOTE: The cursor is a message ID, resolved to a rowid inside the query.
+// A rowid kept on the caller's side would not survive VACUUM, which may
+// renumber the rowids of a table without an integer primary key.
+func (s *service) ListPage(ctx context.Context, sessionID, beforeMessageID string, limit int) (Page, error) {
+	if limit <= 0 {
+		return Page{}, fmt.Errorf("page limit must be positive, got %d", limit)
+	}
+
+	// One row beyond the page tells whether anything older is left.
+	fetch := int64(limit) + 1
+	var rows []db.Message
+	var err error
+	if beforeMessageID == "" {
+		rows, err = s.q.ListMessagesBySessionTail(ctx, db.ListMessagesBySessionTailParams{
+			SessionID: sessionID,
+			Lim:       fetch,
+		})
+	} else {
+		var before db.Message
+		before, err = s.q.GetMessage(ctx, beforeMessageID)
+		if err != nil {
+			return Page{}, fmt.Errorf("message %q: %w", beforeMessageID, err)
+		}
+		if before.SessionID != sessionID {
+			return Page{}, fmt.Errorf("message %q does not belong to session %s", beforeMessageID, sessionID)
+		}
+		rows, err = s.q.ListMessagesBySessionBefore(ctx, db.ListMessagesBySessionBeforeParams{
+			SessionID: sessionID,
+			BeforeID:  beforeMessageID,
+			Lim:       fetch,
+		})
+	}
+	if err != nil {
+		return Page{}, err
+	}
+
+	// The rows came newest first; the extra one is the oldest.
+	hasOlder := len(rows) > limit
+	if hasOlder {
+		rows = rows[:limit]
+	}
+	slices.Reverse(rows)
+
+	// A tool result is stored after the assistant message that called it.
+	// A page that began with results would show their calls as
+	// interrupted, so those results go to the page before, which then
+	// ends with the call they answer. Dropping every row would leave
+	// nothing to continue from, so that case keeps the page as read.
+	if hasOlder {
+		lead := 0
+		for lead < len(rows) && MessageRole(rows[lead].Role) == Tool {
+			lead++
+		}
+		if lead < len(rows) {
+			rows = rows[lead:]
+		}
+	}
+
+	messages, err := s.fromDBItems(rows)
+	if err != nil {
+		return Page{}, err
+	}
+	return Page{Messages: messages, HasOlder: hasOlder}, nil
+}
+
+func (s *service) fromDBItems(dbMessages []db.Message) ([]Message, error) {
+	messages := make([]Message, len(dbMessages))
+	for i, dbMessage := range dbMessages {
+		var err error
 		messages[i], err = s.fromDBItem(dbMessage)
 		if err != nil {
 			return nil, err

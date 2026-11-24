@@ -117,6 +117,11 @@ type Workspace interface {
 
 	// Messages
 	ListMessages(ctx context.Context, sessionID string) ([]message.Message, error)
+	// ListMessagePage reads up to limit messages that come before
+	// beforeMessageID, oldest first. An empty beforeMessageID reads the
+	// end of the session. See message.Service.ListPage for the cursor
+	// rules.
+	ListMessagePage(ctx context.Context, sessionID, beforeMessageID string, limit int) (message.Page, error)
 	ListUserMessages(ctx context.Context, sessionID string) ([]message.Message, error)
 	ListAllUserMessages(ctx context.Context) ([]message.Message, error)
 

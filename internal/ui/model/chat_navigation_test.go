@@ -854,3 +854,101 @@ func TestChatWarmStep(t *testing.T) {
 		require.Equal(t, total, u.chat.warmNext)
 	})
 }
+
+func TestChatPrependMessagesKeepsTheViewportOnTheSameContent(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	msgs := make([]chat.MessageItem, 0, 60)
+	for i := range 60 {
+		msgs = append(msgs, testMessageItem{id: "m-" + strconv.Itoa(i), text: "message " + strconv.Itoa(i)})
+	}
+	u.chat.SetMessages(msgs...)
+	u.updateLayoutAndSize()
+	u.chat.ScrollToIndex(0)
+	require.Equal(t, 0, u.chat.FirstVisibleIndex())
+
+	older := []chat.MessageItem{
+		testMessageItem{id: "old-0", text: "older 0"},
+		testMessageItem{id: "old-1", text: "older 1"},
+		testMessageItem{id: "old-2", text: "older 2"},
+	}
+	u.chat.PrependMessages(older...)
+
+	require.Equal(t, 63, u.chat.Len())
+	require.Equal(t, 3, u.chat.FirstVisibleIndex(), "the viewport must stay on the first message it showed")
+	first, ok := u.chat.list.ItemAt(u.chat.FirstVisibleIndex()).(chat.MessageItem)
+	require.True(t, ok)
+	require.Equal(t, "m-0", first.ID())
+}
+
+func TestChatPrependMessagesKeepsLookupAndRemovalByIDWorking(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	u.chat.SetMessages(
+		testMessageItem{id: "a", text: "a"},
+		testMessageItem{id: "b", text: "b"},
+		testMessageItem{id: "c", text: "c"},
+	)
+	u.chat.PrependMessages(
+		testMessageItem{id: "x", text: "x"},
+		testMessageItem{id: "y", text: "y"},
+	)
+
+	for i, id := range []string{"x", "y", "a", "b", "c"} {
+		require.Equal(t, i, u.chat.idInxMap[id], id)
+		require.NotNil(t, u.chat.MessageItem(id), id)
+	}
+
+	u.chat.RemoveMessage("a")
+	require.Nil(t, u.chat.MessageItem("a"))
+	require.Equal(t, 4, u.chat.Len())
+	for i, id := range []string{"x", "y", "b", "c"} {
+		require.Equal(t, i, u.chat.idInxMap[id], id)
+	}
+}
+
+func TestChatPrependMessagesRegistersNestedToolsUnderTheirContainer(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	u.chat.SetMessages(testMessageItem{id: "a", text: "a"})
+
+	container := &testContainerItem{testMessageItem: testMessageItem{id: "c1", text: "c1"}}
+	container.SetNestedTools([]chat.ToolMessageItem{
+		&testToolMessageItem{testMessageItem: testMessageItem{id: "n1", text: "n1"}, tc: message.ToolCall{ID: "n1"}},
+	})
+	u.chat.PrependMessages(container)
+
+	require.Equal(t, 0, u.chat.idInxMap["c1"])
+	require.Equal(t, 0, u.chat.idInxMap["n1"])
+	require.Equal(t, 1, u.chat.idInxMap["a"])
+}
+
+func TestChatPrependMessagesOnAnEmptyChatShowsThem(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	u.chat.PrependMessages(
+		testMessageItem{id: "a", text: "a"},
+		testMessageItem{id: "b", text: "b"},
+	)
+
+	require.Equal(t, 2, u.chat.Len())
+	require.Equal(t, 0, u.chat.idInxMap["a"])
+	require.Equal(t, 1, u.chat.idInxMap["b"])
+}
+
+func TestChatPrependMessagesShiftsTheMouseSelection(t *testing.T) {
+	t.Parallel()
+
+	u := newTestUI()
+	u.chat.SetMessages(testMessageItem{id: "a", text: "a"}, testMessageItem{id: "b", text: "b"})
+	u.chat.mouseDownItem, u.chat.mouseDragItem = 0, 1
+
+	u.chat.PrependMessages(testMessageItem{id: "x", text: "x"})
+
+	require.Equal(t, 1, u.chat.mouseDownItem)
+	require.Equal(t, 2, u.chat.mouseDragItem)
+}

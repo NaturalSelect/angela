@@ -223,6 +223,156 @@ func (q *Queries) ListMessagesBySession(ctx context.Context, sessionID string) (
 	return items, nil
 }
 
+const listMessagesBySessionBefore = `-- name: ListMessagesBySessionBefore :many
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
+FROM messages
+WHERE messages.session_id = ?1
+  AND messages.rowid < (SELECT m.rowid FROM messages m
+               WHERE m.id = ?2 AND m.session_id = ?1)
+ORDER BY rowid DESC
+LIMIT ?3
+`
+
+type ListMessagesBySessionBeforeParams struct {
+	SessionID string `json:"session_id"`
+	BeforeID  string `json:"before_id"`
+	Lim       int64  `json:"lim"`
+}
+
+func (q *Queries) ListMessagesBySessionBefore(ctx context.Context, arg ListMessagesBySessionBeforeParams) ([]Message, error) {
+	rows, err := q.query(ctx, q.listMessagesBySessionBeforeStmt, listMessagesBySessionBefore, arg.SessionID, arg.BeforeID, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Role,
+			&i.Parts,
+			&i.Model,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FinishedAt,
+			&i.Provider,
+			&i.IsSummaryMessage,
+			&i.Agent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesBySessionSince = `-- name: ListMessagesBySessionSince :many
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
+FROM messages
+WHERE messages.session_id = ?1
+  AND messages.rowid >= COALESCE(
+    (SELECT m.rowid FROM messages m
+     WHERE m.id = ?2 AND m.session_id = ?1),
+    0)
+ORDER BY rowid ASC
+`
+
+type ListMessagesBySessionSinceParams struct {
+	SessionID string `json:"session_id"`
+	SinceID   string `json:"since_id"`
+}
+
+func (q *Queries) ListMessagesBySessionSince(ctx context.Context, arg ListMessagesBySessionSinceParams) ([]Message, error) {
+	rows, err := q.query(ctx, q.listMessagesBySessionSinceStmt, listMessagesBySessionSince, arg.SessionID, arg.SinceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Role,
+			&i.Parts,
+			&i.Model,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FinishedAt,
+			&i.Provider,
+			&i.IsSummaryMessage,
+			&i.Agent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesBySessionTail = `-- name: ListMessagesBySessionTail :many
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
+FROM messages
+WHERE session_id = ?1
+ORDER BY rowid DESC
+LIMIT ?2
+`
+
+type ListMessagesBySessionTailParams struct {
+	SessionID string `json:"session_id"`
+	Lim       int64  `json:"lim"`
+}
+
+func (q *Queries) ListMessagesBySessionTail(ctx context.Context, arg ListMessagesBySessionTailParams) ([]Message, error) {
+	rows, err := q.query(ctx, q.listMessagesBySessionTailStmt, listMessagesBySessionTail, arg.SessionID, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Role,
+			&i.Parts,
+			&i.Model,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FinishedAt,
+			&i.Provider,
+			&i.IsSummaryMessage,
+			&i.Agent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserMessagesBySession = `-- name: ListUserMessagesBySession :many
 SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
 FROM messages

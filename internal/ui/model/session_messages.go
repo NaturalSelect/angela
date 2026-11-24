@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -18,23 +19,41 @@ import (
 	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
-// loadSessionMessagesCmd fetches a session's transcript and builds its
-// chat items off the Update goroutine. Both halves belong here: the
-// fetch may block, and resolving nested agent tool calls costs one more
-// call per nested tool, so doing it inline stalls the render loop for the
-// whole tree.
+// loadSessionMessagesCmd fetches the newest page of a session's transcript
+// and builds its chat items off the Update goroutine. Both halves belong
+// here: the fetch may block, and resolving nested agent tool calls costs one
+// more call per nested tool, so doing it inline stalls the render loop for
+// the whole tree. Earlier pages come on demand, see loadOlderMessagesCmd.
 func (m *UI) loadSessionMessagesCmd(sessionID string) tea.Cmd {
 	return func() tea.Msg {
-		msgs, err := m.com.Workspace.ListMessages(context.Background(), sessionID)
+		start := time.Now()
+		page, err := m.com.Workspace.ListMessagePage(context.Background(), sessionID, "", transcriptPageSize)
 		if err != nil {
 			return util.ReportError(err)()
 		}
-		items, lastUserMessageTime := m.buildSessionItems(sessionID, msgs)
-		return sessionMessagesMsg{
+		listDur := time.Since(start)
+
+		start = time.Now()
+		items, lastUserMessageTime, outcomes := m.buildTranscriptItems(sessionID, page.Messages, true, nil)
+		slog.Debug("Loaded session transcript",
+			"session_id", sessionID,
+			"messages", len(page.Messages),
+			"has_older", page.HasOlder,
+			"items", len(items),
+			"list", listDur,
+			"build", time.Since(start),
+		)
+		msg := sessionMessagesMsg{
 			sessionID:           sessionID,
 			items:               items,
 			lastUserMessageTime: lastUserMessageTime,
+			hasOlder:            page.HasOlder,
+			outcomes:            outcomes,
 		}
+		if len(page.Messages) > 0 {
+			msg.oldestID = page.Messages[0].ID
+		}
+		return msg
 	}
 }
 
@@ -70,10 +89,29 @@ func hasOrphanedCall(msgs []*message.Message, results map[string]message.ToolRes
 	return false
 }
 
-// buildSessionItems turns a transcript into chat items and reports the
+// buildSessionItems turns a whole transcript into chat items and reports the
 // timestamp of the last user message. It touches no UI state, so it is
 // safe to run from a command.
 func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat.MessageItem, int64) {
+	items, lastUserMessageTime, _ := m.buildTranscriptItems(sessionID, msgs, true, nil)
+	return items, lastUserMessageTime
+}
+
+// buildTranscriptItems turns a run of a transcript into chat items. It
+// reports the timestamp of the last user message and how the background
+// agents named in the run's reminders ended. It touches no UI state, so it
+// is safe to run from a command.
+//
+// latest says the run reaches the end of the session. Only then can its
+// last assistant message still be producing results, so only then is the
+// agent asked whether the session is busy. seen holds the outcomes of the
+// pages after this one: a notice there ends an agent launched in this run.
+func (m *UI) buildTranscriptItems(
+	sessionID string,
+	msgs []message.Message,
+	latest bool,
+	seen map[string]agenttools.BackgroundAgentStatus,
+) ([]chat.MessageItem, int64, map[string]agenttools.BackgroundAgentStatus) {
 	msgPtrs := make([]*message.Message, len(msgs))
 	for i := range msgs {
 		msgPtrs[i] = &msgs[i]
@@ -84,7 +122,7 @@ func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat
 	// for the whole process and carries a TTL, so another session's run
 	// would keep this one's orphans spinning.
 	runActive := false
-	if hasOrphanedCall(msgPtrs, toolResultMap) {
+	if latest && hasOrphanedCall(msgPtrs, toolResultMap) {
 		runActive = m.com.Workspace.AgentIsSessionBusy(sessionID)
 	}
 	lastAssistant := lastAssistantIndex(msgPtrs)
@@ -124,9 +162,17 @@ func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat
 		}
 	}
 
-	m.settleBackgroundAgents(items, outcomes)
+	// This run's own notices come first and the later pages' override them,
+	// as a later notice does within a run.
+	settled := outcomes
+	if len(seen) > 0 {
+		settled = make(map[string]agenttools.BackgroundAgentStatus, len(outcomes)+len(seen))
+		maps.Copy(settled, outcomes)
+		maps.Copy(settled, seen)
+	}
+	m.settleBackgroundAgents(items, settled)
 	m.loadNestedToolCalls(items)
-	return items, lastUserMessageTime
+	return items, lastUserMessageTime, outcomes
 }
 
 // applySessionItems installs prebuilt chat items as the current
@@ -319,6 +365,7 @@ func (m *UI) appendSessionMessage(msg message.Message) tea.Cmd {
 			// probe that follows every created message covers the wake
 			// turn this may have started.
 			applyBackgroundOutcomes(m.chat.AgentToolItems(), noticeOutcomes(&msg))
+			m.noteBackgroundOutcomes(noticeOutcomes(&msg))
 			return nil
 		}
 		// Shell commands are rendered live via shellResultMsg; skip
@@ -641,6 +688,7 @@ func (m *UI) handleLoadSession(msg loadSessionMsg) []tea.Cmd {
 	m.setState(uiChat, focus)
 	switched := !m.hasSession() || m.session.ID != msg.session.ID
 	m.session = msg.session
+	m.sessionLoadRequestedAt = msg.requestedAt
 	m.sessionIsBranch = isBranch
 	m.sessionFiles = msg.files
 	// Session switch: the memoized busy state and queued prompts
@@ -672,6 +720,7 @@ func (m *UI) handleLoadSession(msg loadSessionMsg) []tea.Cmd {
 		cmds = append(cmds, cmd)
 	}
 	cmds = append(cmds, m.startLSPs(msg.lspFilePaths()))
+	m.transcript = transcriptWindow{sessionID: m.session.ID}
 	cmds = append(cmds, m.loadSessionMessagesCmd(m.session.ID))
 	if cmd := m.syncTurnSpinner(); cmd != nil {
 		cmds = append(cmds, cmd)
@@ -693,7 +742,19 @@ func (m *UI) handleSessionMessages(msg sessionMessagesMsg) []tea.Cmd {
 		return cmds
 	}
 	m.clearSessionLoading()
+	if !m.sessionLoadRequestedAt.IsZero() {
+		slog.Debug("Session transcript shown",
+			"session_id", msg.sessionID,
+			"since_request", time.Since(m.sessionLoadRequestedAt),
+		)
+	}
 	m.lastUserMessageTime = msg.lastUserMessageTime
+	m.transcript = transcriptWindow{
+		sessionID: msg.sessionID,
+		oldestID:  msg.oldestID,
+		hasOlder:  msg.hasOlder && msg.oldestID != "",
+		outcomes:  msg.outcomes,
+	}
 	if cmd := m.applySessionItems(msg.items); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -741,6 +802,9 @@ func (m *UI) handleMessageEvent(msg pubsub.Event[message.Message]) []tea.Cmd {
 	case pubsub.UpdatedEvent:
 		cmds = append(cmds, m.updateSessionMessage(msg.Payload))
 	case pubsub.DeletedEvent:
+		if msg.Payload.ID == m.transcript.oldestID {
+			m.transcript.stale = true
+		}
 		m.chat.RemoveMessageWithToolCalls(msg.Payload.ID)
 	}
 	// Follow the turn: spin while the agent works, stop when it stops.

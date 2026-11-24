@@ -142,6 +142,14 @@ func (w *AppWorkspace) ListMessages(ctx context.Context, sessionID string) ([]me
 	return w.app.Messages.List(ctx, sessionID)
 }
 
+func (w *AppWorkspace) ListMessagePage(ctx context.Context, sessionID, beforeMessageID string, limit int) (message.Page, error) {
+	// Same flush as ListMessages, for the same reason.
+	if err := w.app.Messages.FlushAll(ctx); err != nil {
+		return message.Page{}, err
+	}
+	return w.app.Messages.ListPage(ctx, sessionID, beforeMessageID, limit)
+}
+
 func (w *AppWorkspace) ListUserMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
 	return w.app.Messages.ListUserMessages(ctx, sessionID)
 }

@@ -126,6 +126,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listMessagesBySessionStmt, err = db.PrepareContext(ctx, listMessagesBySession); err != nil {
 		return nil, fmt.Errorf("error preparing query ListMessagesBySession: %w", err)
 	}
+	if q.listMessagesBySessionBeforeStmt, err = db.PrepareContext(ctx, listMessagesBySessionBefore); err != nil {
+		return nil, fmt.Errorf("error preparing query ListMessagesBySessionBefore: %w", err)
+	}
+	if q.listMessagesBySessionSinceStmt, err = db.PrepareContext(ctx, listMessagesBySessionSince); err != nil {
+		return nil, fmt.Errorf("error preparing query ListMessagesBySessionSince: %w", err)
+	}
+	if q.listMessagesBySessionTailStmt, err = db.PrepareContext(ctx, listMessagesBySessionTail); err != nil {
+		return nil, fmt.Errorf("error preparing query ListMessagesBySessionTail: %w", err)
+	}
 	if q.listNewFilesStmt, err = db.PrepareContext(ctx, listNewFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query ListNewFiles: %w", err)
 	}
@@ -337,6 +346,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listMessagesBySessionStmt: %w", cerr)
 		}
 	}
+	if q.listMessagesBySessionBeforeStmt != nil {
+		if cerr := q.listMessagesBySessionBeforeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listMessagesBySessionBeforeStmt: %w", cerr)
+		}
+	}
+	if q.listMessagesBySessionSinceStmt != nil {
+		if cerr := q.listMessagesBySessionSinceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listMessagesBySessionSinceStmt: %w", cerr)
+		}
+	}
+	if q.listMessagesBySessionTailStmt != nil {
+		if cerr := q.listMessagesBySessionTailStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listMessagesBySessionTailStmt: %w", cerr)
+		}
+	}
 	if q.listNewFilesStmt != nil {
 		if cerr := q.listNewFilesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listNewFilesStmt: %w", cerr)
@@ -470,6 +494,9 @@ type Queries struct {
 	listGeneratedImagesBySessionStmt     *sql.Stmt
 	listLatestSessionFilesStmt           *sql.Stmt
 	listMessagesBySessionStmt            *sql.Stmt
+	listMessagesBySessionBeforeStmt      *sql.Stmt
+	listMessagesBySessionSinceStmt       *sql.Stmt
+	listMessagesBySessionTailStmt        *sql.Stmt
 	listNewFilesStmt                     *sql.Stmt
 	listSessionActivityStmt              *sql.Stmt
 	listSessionReadFilesStmt             *sql.Stmt
@@ -522,6 +549,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listGeneratedImagesBySessionStmt:     q.listGeneratedImagesBySessionStmt,
 		listLatestSessionFilesStmt:           q.listLatestSessionFilesStmt,
 		listMessagesBySessionStmt:            q.listMessagesBySessionStmt,
+		listMessagesBySessionBeforeStmt:      q.listMessagesBySessionBeforeStmt,
+		listMessagesBySessionSinceStmt:       q.listMessagesBySessionSinceStmt,
+		listMessagesBySessionTailStmt:        q.listMessagesBySessionTailStmt,
 		listNewFilesStmt:                     q.listNewFilesStmt,
 		listSessionActivityStmt:              q.listSessionActivityStmt,
 		listSessionReadFilesStmt:             q.listSessionReadFilesStmt,

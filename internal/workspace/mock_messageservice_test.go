@@ -218,6 +218,36 @@ func (mr *MockMessageServiceMockRecorder) ListAllUserMessages(ctx any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllUserMessages", reflect.TypeOf((*MockMessageService)(nil).ListAllUserMessages), ctx)
 }
 
+// ListPage mocks base method.
+func (m *MockMessageService) ListPage(ctx context.Context, sessionID, beforeMessageID string, limit int) (message.Page, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPage", ctx, sessionID, beforeMessageID, limit)
+	ret0, _ := ret[0].(message.Page)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPage indicates an expected call of ListPage.
+func (mr *MockMessageServiceMockRecorder) ListPage(ctx, sessionID, beforeMessageID, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPage", reflect.TypeOf((*MockMessageService)(nil).ListPage), ctx, sessionID, beforeMessageID, limit)
+}
+
+// ListSince mocks base method.
+func (m *MockMessageService) ListSince(ctx context.Context, sessionID, sinceMessageID string) ([]message.Message, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListSince", ctx, sessionID, sinceMessageID)
+	ret0, _ := ret[0].([]message.Message)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListSince indicates an expected call of ListSince.
+func (mr *MockMessageServiceMockRecorder) ListSince(ctx, sessionID, sinceMessageID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSince", reflect.TypeOf((*MockMessageService)(nil).ListSince), ctx, sessionID, sinceMessageID)
+}
+
 // ListUserMessages mocks base method.
 func (m *MockMessageService) ListUserMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
 	m.ctrl.T.Helper()

@@ -300,7 +300,10 @@ func toolResultsForCalls(m message.Message, results map[string][]fantasy.ToolRes
 }
 
 func (a *sessionAgent) getSessionMessages(ctx context.Context, session session.Session) ([]message.Message, error) {
-	msgs, err := a.messages.List(ctx, session.ID)
+	// NOTE: Reading from the adopted summary on skips everything the model
+	// no longer sees. Without a summary, or with one that is gone, the
+	// whole session comes back.
+	msgs, err := a.messages.ListSince(ctx, session.ID, session.SummaryMessageID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list messages: %w", err)
 	}

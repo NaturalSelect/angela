@@ -134,6 +134,12 @@ type Coordinator interface {
 	// (the output of `git diff --cached`), using a tool-free internal
 	// agent. It never reads or writes sessionID's message history.
 	GenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error)
+	// GenerateChangeDescription writes a description of what head
+	// changed relative to base, from changes (the commit subjects,
+	// diffstat and diff of `git diff base...head`), using a tool-free
+	// internal agent. It never reads or writes sessionID's message
+	// history.
+	GenerateChangeDescription(ctx context.Context, sessionID, base, head, changes string) (string, error)
 
 	// DefaultModel reports what a brand new session would run on.
 	// Callers asking what a specific session runs want ActiveAgent.

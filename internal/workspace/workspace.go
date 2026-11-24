@@ -182,6 +182,12 @@ type Workspace interface {
 	// tool-free internal agent, without reading or writing the
 	// session's message history.
 	AgentGenerateCommitMessage(ctx context.Context, sessionID, diff string) (string, error)
+	// AgentGenerateChangeDescription writes a description of what head
+	// changed relative to base from changes (the commit subjects,
+	// diffstat and diff of `git diff base...head`) using a tool-free
+	// internal agent, without reading or writing the session's message
+	// history.
+	AgentGenerateChangeDescription(ctx context.Context, sessionID, base, head, changes string) (string, error)
 
 	// AgentActive reports what a session is running, with its
 	// parameter preset already folded into the model. An empty

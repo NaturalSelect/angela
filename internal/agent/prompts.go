@@ -32,6 +32,9 @@ var initializePromptTmpl []byte
 //go:embed templates/commit.md
 var commitPromptTmpl []byte
 
+//go:embed templates/describe.md
+var describePromptTmpl []byte
+
 //go:embed templates/title.md
 var titlePromptTmpl []byte
 
@@ -113,6 +116,10 @@ func commitPrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
 	return prompt.NewPrompt(config.AgentCommit, string(commitPromptTmpl), opts...)
 }
 
+func describePrompt(opts ...prompt.Option) (*prompt.Prompt, error) {
+	return prompt.NewPrompt(config.AgentDescribe, string(describePromptTmpl), opts...)
+}
+
 // builtinPromptForAgent returns the built-in prompt for a known agent
 // ID. Returns nil for unknown IDs — the caller falls back to the
 // general template.
@@ -129,6 +136,7 @@ var builtinPromptForAgent = map[string]func(...prompt.Option) (*prompt.Prompt, e
 	config.AgentGenerateAgent: generateAgentPrompt,
 	config.AgentInitialize:    initializePrompt,
 	config.AgentCommit:        commitPrompt,
+	config.AgentDescribe:      describePrompt,
 }
 
 // builtinPromptTemplateFile names the template each built-in prompt is
@@ -149,6 +157,7 @@ var builtinPromptTemplateFile = map[string]string{
 	config.AgentGenerateAgent: "generate_agent.md.tpl",
 	config.AgentInitialize:    "initialize.md.tpl",
 	config.AgentCommit:        "commit.md",
+	config.AgentDescribe:      "describe.md",
 }
 
 // agentPrompt resolves the system prompt for an agent. If the agent

@@ -795,7 +795,7 @@
         "commit_diff_runes": {
           "type": "integer",
           "minimum": 1,
-          "description": "Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. A longer diff is cut off and marked as truncated. Raising it costs more input tokens per commit.",
+          "description": "Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. The same budget caps what angela describe sends when it describes a branch. A longer input is cut off and marked as truncated. Raising it costs more input tokens per run.",
           "default": 48000,
           "examples": [
             100000

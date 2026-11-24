@@ -70,6 +70,7 @@ func init() {
 	rootCmd.AddCommand(
 		runCmd,
 		commitCmd,
+		describeCmd,
 		dirsCmd,
 		projectsCmd,
 		updateProvidersCmd,

@@ -109,6 +109,7 @@ these child sessions.
 | Command | Notes |
 |---|---|
 | `angela commit` | Generates a commit message for the staged diff (`commit` agent, `chore` slot) and runs `git commit -s --no-verify`. Fails with "nothing staged to commit" when nothing is staged. |
+| `angela describe <base> [head]` | Prints a generated description of what `head` (default: the checked-out commit) changed since it forked from `base`, from `git diff base...head` (`describe` agent, `chore` slot). Commits, stages and edits nothing. Shares the `--max-diff-runes` budget with `angela commit`. |
 | `angela logs` | Prints the data directory's `logs/angela.log`; `-f, --follow`, `-t, --tail N` (default 1000). |
 | `angela stats` | Usage statistics; `--all` aggregates every known project, `--crawl-dir <dir>` scans a directory for projects. |
 | `angela vacuum` | Alias `gc`. Runs SQLite `VACUUM` on the project database and deletes saved tool output, fetched pages, MCP media and viewer files under the data directory. Anything modified in the last hour is kept, and sessions, messages and config are never touched unless `--trim-session[=DAYS]` is given (write the number after an equals sign; bare `--trim-session` means 30). That flag also permanently deletes every session, with its subagent and branch sessions, messages and files, that nothing in its tree has used for DAYS days. `--dry-run` only reports, including how many sessions would go. Run it while no other Angela uses the project. |

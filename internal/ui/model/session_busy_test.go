@@ -521,7 +521,7 @@ func TestSessionSwitchRefreshesQueueAndBusy(t *testing.T) {
 	active := workspace.ActiveAgent{}
 	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
 	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return([]message.QueuedPrompt{{Prompt: "a"}, {Prompt: "b"}}).AnyTimes()
-	ws.EXPECT().ListMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	ws.EXPECT().ListMessagePage(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(message.Page{}, nil).AnyTimes()
 	ws.EXPECT().ListUserMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
 	_, cmd := m.Update(loadSessionMsg{session: &session.Session{ID: "s2"}})
@@ -535,9 +535,9 @@ func TestSessionSwitchRefreshesQueueAndBusy(t *testing.T) {
 }
 
 // TestSessionSwitchLoadsTheTranscriptOffThread is B3. Loading a session
-// costs one ListMessages round-trip plus one more per nested agent tool
-// call, and it used to run inline in Update, stalling the render loop
-// for the whole tree.
+// costs one ListMessagePage round-trip plus one ListMessages per nested
+// agent tool call, and it used to run inline in Update, stalling the
+// render loop for the whole tree.
 func TestSessionSwitchLoadsTheTranscriptOffThread(t *testing.T) {
 	pinTTLs(t)
 
@@ -545,22 +545,22 @@ func TestSessionSwitchLoadsTheTranscriptOffThread(t *testing.T) {
 	warmCaches(m, false)
 
 	_, cmd := m.Update(loadSessionMsg{session: &session.Session{ID: "s2"}})
-	// ListMessages deliberately left unstubbed until after this point:
+	// ListMessagePage deliberately left unstubbed until after this point:
 	// the transcript must not be fetched on the Update goroutine.
 
 	active := workspace.ActiveAgent{}
 	stubBusyProbe(ws, true, false, permission.ModeManual, &active)
 	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
 	ws.EXPECT().ListUserMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	var listMessageCalls int
-	ws.EXPECT().ListMessages(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(context.Context, string) ([]message.Message, error) {
-			listMessageCalls++
-			return nil, nil
+	var listPageCalls int
+	ws.EXPECT().ListMessagePage(gomock.Any(), "s2", "", transcriptPageSize).
+		DoAndReturn(func(context.Context, string, string, int) (message.Page, error) {
+			listPageCalls++
+			return message.Page{}, nil
 		})
 
 	runCmds(m, cmd)
-	require.Equal(t, 1, listMessageCalls, "the transcript must still be fetched")
+	require.Equal(t, 1, listPageCalls, "the newest page of the transcript must still be fetched")
 }
 
 // TestCyclePermissionModeWritesThroughCache: both permission-mode cycle

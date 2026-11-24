@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
@@ -21,7 +22,7 @@ func stubSessionSwitch(ws *MockWorkspace, busy bool) {
 	active := workspace.ActiveAgent{}
 	stubBusyProbe(ws, true, busy, permission.ModeManual, &active)
 	ws.EXPECT().AgentQueuedPromptsList(gomock.Any()).Return(nil).AnyTimes()
-	ws.EXPECT().ListMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	ws.EXPECT().ListMessagePage(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(message.Page{}, nil).AnyTimes()
 	ws.EXPECT().ListUserMessages(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 }
 

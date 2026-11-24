@@ -651,6 +651,12 @@ func (l *List) PrependItems(items ...Item) {
 	l.totalHeightValid = false
 }
 
+// OffsetIndex returns the index of the first item the viewport shows. It
+// costs nothing, unlike anything that has to measure item heights.
+func (l *List) OffsetIndex() int {
+	return l.offsetIdx
+}
+
 // SetItems sets the items in the list. Cache entries for items that
 // remain after the swap are preserved; entries for removed items are
 // dropped.

@@ -9,6 +9,32 @@ FROM messages
 WHERE session_id = ?
 ORDER BY rowid ASC;
 
+-- name: ListMessagesBySessionSince :many
+SELECT *
+FROM messages
+WHERE messages.session_id = sqlc.arg(session_id)
+  AND messages.rowid >= COALESCE(
+    (SELECT m.rowid FROM messages m
+     WHERE m.id = sqlc.arg(since_id) AND m.session_id = sqlc.arg(session_id)),
+    0)
+ORDER BY rowid ASC;
+
+-- name: ListMessagesBySessionTail :many
+SELECT *
+FROM messages
+WHERE session_id = sqlc.arg(session_id)
+ORDER BY rowid DESC
+LIMIT sqlc.arg(lim);
+
+-- name: ListMessagesBySessionBefore :many
+SELECT *
+FROM messages
+WHERE messages.session_id = sqlc.arg(session_id)
+  AND messages.rowid < (SELECT m.rowid FROM messages m
+               WHERE m.id = sqlc.arg(before_id) AND m.session_id = sqlc.arg(session_id))
+ORDER BY rowid DESC
+LIMIT sqlc.arg(lim);
+
 -- name: CreateMessage :one
 INSERT INTO messages (
     id,

@@ -429,6 +429,31 @@ func TestAppWorkspace_ListMessages_Success(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestAppWorkspace_ListMessagePage_FlushError(t *testing.T) {
+	t.Parallel()
+	fx := newAWFixture(t)
+	boom := errors.New("flush failed")
+	fx.messages.EXPECT().FlushAll(gomock.Any()).Return(boom)
+
+	got, err := fx.ws.ListMessagePage(t.Context(), "sess-1", "", 200)
+	require.ErrorIs(t, err, boom)
+	require.Empty(t, got.Messages)
+}
+
+func TestAppWorkspace_ListMessagePage_Success(t *testing.T) {
+	t.Parallel()
+	fx := newAWFixture(t)
+	want := message.Page{Messages: []message.Message{{ID: "m1"}, {ID: "m2"}}, HasOlder: true}
+	gomock.InOrder(
+		fx.messages.EXPECT().FlushAll(gomock.Any()).Return(nil),
+		fx.messages.EXPECT().ListPage(gomock.Any(), "sess-1", "m3", 200).Return(want, nil),
+	)
+
+	got, err := fx.ws.ListMessagePage(t.Context(), "sess-1", "m3", 200)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
 func TestAppWorkspace_ListUserMessages(t *testing.T) {
 	t.Parallel()
 

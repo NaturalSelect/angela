@@ -742,6 +742,21 @@ func (mr *MockWorkspaceMockRecorder) ListMCPPrompts(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMCPPrompts", reflect.TypeOf((*MockWorkspace)(nil).ListMCPPrompts), ctx)
 }
 
+// ListMessagePage mocks base method.
+func (m *MockWorkspace) ListMessagePage(ctx context.Context, sessionID, beforeMessageID string, limit int) (message.Page, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMessagePage", ctx, sessionID, beforeMessageID, limit)
+	ret0, _ := ret[0].(message.Page)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMessagePage indicates an expected call of ListMessagePage.
+func (mr *MockWorkspaceMockRecorder) ListMessagePage(ctx, sessionID, beforeMessageID, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMessagePage", reflect.TypeOf((*MockWorkspace)(nil).ListMessagePage), ctx, sessionID, beforeMessageID, limit)
+}
+
 // ListMessages mocks base method.
 func (m *MockWorkspace) ListMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
 	m.ctrl.T.Helper()

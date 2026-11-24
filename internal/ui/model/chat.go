@@ -2,6 +2,7 @@ package model
 
 import (
 	"image"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -138,6 +139,7 @@ type Chat struct {
 	resizing        bool
 	resizeSettleSeq int
 	warmNext        int
+	warmStartedAt   time.Time
 
 	// imageCaps is the terminal's current image-rendering capabilities,
 	// applied to every chat.ImageItem so it knows whether and how to
@@ -356,6 +358,7 @@ func (m *Chat) beginWarm(delay time.Duration) tea.Cmd {
 	m.resizing = true
 	m.resizeSettleSeq++
 	m.warmNext = 0
+	m.warmStartedAt = time.Now()
 	return chatWarmCmd(m.resizeSettleSeq, delay)
 }
 
@@ -371,6 +374,7 @@ func (m *Chat) WarmStep(seq int) (cmd tea.Cmd, done bool) {
 	m.warmNext = m.list.Prewarm(m.warmNext, warmBatchSize, warmStepBudget)
 	if m.warmNext >= m.list.Len() {
 		m.resizing = false
+		slog.Debug("Warmed chat cache", "items", m.list.Len(), "duration", time.Since(m.warmStartedAt))
 		return nil, true
 	}
 	return chatWarmCmd(seq, 0), false
@@ -481,6 +485,50 @@ func (m *Chat) AppendMessages(msgs ...chat.MessageItem) {
 	}
 	m.list.AppendItems(items...)
 	m.appendQueuedTail(queued)
+}
+
+// FirstVisibleIndex returns the index of the first item the viewport shows.
+func (m *Chat) FirstVisibleIndex() int {
+	return m.list.OffsetIndex()
+}
+
+// PrependMessages inserts older messages above the ones already shown and
+// keeps the viewport on the content it was showing. The cached renders of
+// the existing items stay valid, so only the new ones cost anything to draw.
+func (m *Chat) PrependMessages(msgs ...chat.MessageItem) {
+	if len(msgs) == 0 {
+		return
+	}
+	if m.list.Len() == 0 {
+		m.SetMessages(msgs...)
+		return
+	}
+
+	n := len(msgs)
+	for id, idx := range m.idInxMap {
+		m.idInxMap[id] = idx + n
+	}
+	if m.mouseDownItem >= 0 {
+		m.mouseDownItem += n
+	}
+	if m.mouseDragItem >= 0 {
+		m.mouseDragItem += n
+	}
+
+	items := make([]list.Item, n)
+	for i, msg := range msgs {
+		m.idInxMap[msg.ID()] = i
+		if container, ok := msg.(chat.NestedToolContainer); ok {
+			for _, nested := range container.NestedTools() {
+				m.idInxMap[nested.ID()] = i
+			}
+		}
+		if item, ok := msg.(chat.ImageItem); ok {
+			item.SetImageCaps(m.imageCaps)
+		}
+		items[i] = msg
+	}
+	m.list.PrependItems(items...)
 }
 
 // SetImageCaps updates the terminal capabilities every chat.ImageItem in

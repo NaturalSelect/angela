@@ -185,6 +185,14 @@ type UI struct {
 
 	lastUserMessageTime int64
 
+	// sessionLoadRequestedAt is when the load of the current session was
+	// asked for. It only feeds the load timing log.
+	sessionLoadRequestedAt time.Time
+
+	// transcript tracks the part of the open session's transcript still
+	// to be read.
+	transcript transcriptWindow
+
 	// The width and height of the terminal in cells.
 	width  int
 	height int
@@ -706,6 +714,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case sessionMessagesMsg:
 		cmds = append(cmds, m.handleSessionMessages(msg)...)
+	case olderMessagesMsg:
+		cmds = append(cmds, m.handleOlderMessages(msg)...)
 	case undoPreviewMsg:
 		m.clearPending(undoPreviewingInfo)
 		// Drop a preview for a session the user has already navigated
@@ -1143,6 +1153,11 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.Placeholder = m.editorPlaceholder()
 	}
 
+	// Read the page before the loaded ones once the viewport nears the top.
+	if cmd := m.maybeLoadOlderMessages(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
 	// TTL backstop: schedule an off-thread re-probe for any memoized
 	// workspace state that has gone stale. Never does IO on this
 	// goroutine.
@@ -1160,6 +1175,12 @@ type sessionMessagesMsg struct {
 	sessionID           string
 	items               []chat.MessageItem
 	lastUserMessageTime int64
+
+	// oldestID, hasOlder and outcomes describe where the page the items
+	// came from sits in the transcript.
+	oldestID string
+	hasOlder bool
+	outcomes map[string]agenttools.BackgroundAgentStatus
 }
 
 // undoPreviewMsg carries the result of previewing an undo, fetched off
@@ -2010,6 +2031,7 @@ func (m *UI) newSession() tea.Cmd {
 	}
 
 	m.session = nil
+	m.transcript = transcriptWindow{}
 	m.sessionFiles = nil
 	m.sessionFileReads = nil
 	m.sessionStack = nil

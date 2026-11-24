@@ -24,6 +24,7 @@ var (
 	importingReportInfo    = pendingInfo("Importing report")
 	describingInfo         = pendingInfo("Describing branch changes")
 	undoingInfo            = pendingInfo("Undoing last turn")
+	olderMessagesInfo      = pendingInfo("Loading earlier messages")
 )
 
 // pendingInfo builds an animated status notice for an action still in

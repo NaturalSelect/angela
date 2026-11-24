@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -39,6 +40,10 @@ type loadSessionMsg struct {
 	session   *session.Session
 	files     []SessionFile
 	readFiles []string
+
+	// requestedAt is when the load was asked for, so the time until the
+	// transcript shows can be logged end to end.
+	requestedAt time.Time
 
 	// isBranch reports whether the agent process still has a parent
 	// tool call suspended on this session. It is probed in the load
@@ -118,27 +123,46 @@ func (m *UI) loadSession(sessionID string, opts ...loadSessionOpt) tea.Cmd {
 	if len(opts) > 0 {
 		o = opts[0]
 	}
+	requestedAt := time.Now()
 	load := func() tea.Msg {
+		start := time.Now()
 		session, err := m.com.Workspace.GetSession(context.Background(), sessionID)
 		if err != nil {
 			return util.ReportError(err)()
 		}
+		getDur := time.Since(start)
 
+		start = time.Now()
 		sessionFiles, err := m.loadSessionFiles(sessionID)
 		if err != nil {
 			return util.ReportError(err)()
 		}
+		filesDur := time.Since(start)
 
+		start = time.Now()
 		readFiles, err := m.com.Workspace.FileTrackerListReadFiles(context.Background(), sessionID)
 		if err != nil {
 			slog.Error("Failed to load read files for session", "error", err)
 		}
+		readDur := time.Since(start)
+
+		start = time.Now()
+		isBranch := m.com.Workspace.AgentIsSessionBranch(sessionID)
+		slog.Debug("Loaded session metadata",
+			"session_id", sessionID,
+			"files", len(sessionFiles),
+			"get", getDur,
+			"history", filesDur,
+			"read_files", readDur,
+			"branch", time.Since(start),
+		)
 
 		return loadSessionMsg{
 			session:         &session,
 			files:           sessionFiles,
 			readFiles:       readFiles,
-			isBranch:        m.com.Workspace.AgentIsSessionBranch(sessionID),
+			requestedAt:     requestedAt,
+			isBranch:        isBranch,
 			enterFrame:      o.enterFrame,
 			leaveLevel:      o.leaveLevel,
 			clearStack:      o.clearStack,

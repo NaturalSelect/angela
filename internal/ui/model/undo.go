@@ -82,6 +82,13 @@ func (m *UI) handleUndoResult(msg undoResultMsg) []tea.Cmd {
 				cmds = append(cmds, cmd)
 			}
 		}
+		// NOTE: The undo reached past the loaded part of the transcript, so
+		// the chat holds nothing to continue from. Read the tail again now
+		// that every deletion has landed.
+		if w := m.transcript; w.stale && w.hasOlder {
+			m.transcript = transcriptWindow{sessionID: w.sessionID}
+			cmds = append(cmds, m.loadSessionMessagesCmd(w.sessionID))
+		}
 	}
 	switch {
 	case len(msg.result.Skipped) > 0:

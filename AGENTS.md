@@ -95,6 +95,9 @@ internal/
                                     search tools
   diff/                            Unified diff text generation & line stats
   diffdetect/                      Detect unified diff format markers in text
+  branchdiff/                      Gathers the commit subjects, diffstat and diff of one branch
+                                    against another through a caller-supplied git runner (behind
+                                    `angela describe` and the TUI `/describe`)
   clipboard/                       Cross-platform clipboard read/write (text + PNG)
   log/                             Structured logging (slog + lumberjack rotation)
   env/                             Environment variable abstraction (testable)

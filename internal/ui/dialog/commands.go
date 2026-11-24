@@ -594,6 +594,8 @@ func (c *Commands) defaultCommands() []*CommandItem {
 
 	commands = append(commands, NewCommandItem(c.com.Styles, "commit", "Commit Staged Changes", "", ActionCommit{SessionID: c.sessionID}))
 
+	commands = append(commands, NewCommandItem(c.com.Styles, "describe", "Describe Branch Changes", "", ActionDescribe{SessionID: c.sessionID}).WithAliases("pr", "diff"))
+
 	if c.hasSession && !c.viewingSubAgent() {
 		commands = append(commands, NewCommandItem(c.com.Styles, "undo", "Undo Last Turn", "", ActionUndo{SessionID: c.sessionID}).WithAliases("revert"))
 	}

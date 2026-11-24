@@ -734,6 +734,12 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearPending(openingReportInfo)
 		m.openReportViewer(msg.report)
 		cmds = append(cmds, util.ReportWarn("Could not open the report in VS Code, showing it here: "+msg.err.Error()))
+	case describeReadyMsg:
+		m.clearPending(describingInfo)
+		m.openDescriptionViewer(msg)
+		if msg.openErr != nil {
+			cmds = append(cmds, util.ReportWarn("Could not open the description in VS Code, showing it here: "+msg.openErr.Error()))
+		}
 	case pendingDoneMsg:
 		m.clearPending(msg.info)
 	case sessionsListedMsg:
@@ -1296,6 +1302,8 @@ func (m *UI) handleDialogMsg(msg tea.Msg) tea.Cmd {
 		m.dialog.CloseDialog(dialog.CommandsID)
 	case dialog.ActionCommit:
 		return m.handleCommit(msg)
+	case dialog.ActionDescribe:
+		return m.handleDescribe(msg)
 	case dialog.ActionExportSession:
 		return m.handleExportSession(msg)
 	case dialog.ActionExportImage:

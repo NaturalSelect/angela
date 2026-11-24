@@ -286,7 +286,7 @@ Ask if the user wants to customize built-in agents. Common adjustments:
 ```
 
 `title`, `web-fetch`, `commit` (the hidden agent behind `angela commit`
-and `/commit`) and `describe` (behind `angela describe`) already default to
+and `/commit`) and `describe` (behind `angela describe` and `/describe`) already default to
 `chore`, so they need no
 override. `compact` is different: it defaults to `inherited`, so it summarizes
 a session on the model of the agent that session belongs to. That keeps the

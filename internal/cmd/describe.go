@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NaturalSelect/angela/internal/branchdiff"
 	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/vscodemcp"
 	"github.com/charmbracelet/x/term"
@@ -19,11 +20,6 @@ import (
 )
 
 const (
-	// maxDescribeCommits caps how many commit subjects are sent to the
-	// model, so a long-lived branch cannot crowd the diff out of the diff
-	// budget.
-	maxDescribeCommits = 100
-
 	// describeViewerFile is the fixed name the description is written
 	// under in the viewer directory. A later run reuses the file and VS
 	// Code reuses its tab.
@@ -161,62 +157,16 @@ func openDescriptionInVSCode(ctx context.Context, dataDir, description string, o
 	return path, nil
 }
 
-// branchChanges gathers what a description of head against base is written
-// from: the commit subjects, the diffstat and the diff of base...head, in
-// that order. The diff comes last because it is the part cut when the
-// model's budget runs out, and the other two still cover the whole branch.
-// It returns an error when the two sides do not differ.
+// branchChanges gathers what a description of head against base in dir is
+// written from.
 func branchChanges(ctx context.Context, dir, base, head string) (string, error) {
-	// NOTE: Outside a repository git reinterprets some of these commands
-	// as no-index diffs and prints its entire usage text, so check first.
-	if _, err := runGit(ctx, dir, "rev-parse", "--is-inside-work-tree"); err != nil {
+	changes, err := branchdiff.Changes(ctx, func(ctx context.Context, args ...string) (string, error) {
+		return runGit(ctx, dir, args...)
+	}, base, head)
+	if errors.Is(err, branchdiff.ErrNotRepository) {
 		return "", fmt.Errorf("%s is not inside a git repository", dir)
 	}
-
-	for _, ref := range []string{base, head} {
-		if err := verifyRef(ctx, dir, ref); err != nil {
-			return "", err
-		}
-	}
-
-	diff, err := runGit(ctx, dir, "diff", "--no-color", base+"..."+head, "--")
-	if err != nil {
-		return "", err
-	}
-	if diff == "" {
-		return "", fmt.Errorf("no changes between %s and %s", base, head)
-	}
-
-	stat, err := runGit(ctx, dir, "diff", "--no-color", "--stat", base+"..."+head, "--")
-	if err != nil {
-		return "", err
-	}
-
-	commits, err := runGit(ctx, dir, "log", "--no-color", "--no-merges", "--reverse",
-		fmt.Sprintf("--max-count=%d", maxDescribeCommits), "--format=- %s", base+".."+head, "--")
-	if err != nil {
-		return "", err
-	}
-
-	var b strings.Builder
-	if commits != "" {
-		fmt.Fprintf(&b, "Commits (oldest first, at most %d):\n%s\n\n", maxDescribeCommits, commits)
-	}
-	fmt.Fprintf(&b, "Diffstat:\n%s\n\nDiff:\n%s", stat, diff)
-	return b.String(), nil
-}
-
-// verifyRef checks that ref names a commit in dir.
-func verifyRef(ctx context.Context, dir, ref string) error {
-	// NOTE: A leading dash would make git read the ref as an option when it
-	// is joined into a range such as base...head below.
-	if strings.HasPrefix(ref, "-") {
-		return fmt.Errorf("invalid revision %q", ref)
-	}
-	if _, err := runGit(ctx, dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}"); err != nil {
-		return fmt.Errorf("unknown branch or commit %q", ref)
-	}
-	return nil
+	return changes, err
 }
 
 // runGit runs git in dir and returns its trimmed standard output. A failure

@@ -190,6 +190,13 @@ In VS Code's integrated terminal the description opens in the editor, the same
 way viewing a report does, and the command prints only the file's path. It is
 printed as usual when the output is redirected, or when VS Code cannot open it.
 
+The interactive UI has the same thing as `/describe` ("Describe Branch Changes"
+in the command palette). It asks for the base branch and, optionally, the head
+branch, then shows the description in a viewer with a key to copy it. In VS
+Code's integrated terminal it opens in the editor instead, as the command does,
+and falls back to the viewer if VS Code cannot open it. It works without an open
+session and shares the same budget.
+
 ### Editor integration (ACP)
 
 `angela acp` runs Angela as an [Agent Client Protocol](https://agentclientprotocol.com)

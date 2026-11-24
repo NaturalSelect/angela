@@ -267,6 +267,10 @@ func (a *Arguments) HandleMsg(msg tea.Msg) Action {
 				case ActionImportReport:
 					action.Path = args["PATH"]
 					return action
+				case ActionDescribe:
+					action.Base = strings.TrimSpace(args["BASE"])
+					action.Head = strings.TrimSpace(args["HEAD"])
+					return action
 				case ActionExportProfile:
 					// Like the report step, the Profile was already set by
 					// the picker. Only timed profiles have a SECONDS field.

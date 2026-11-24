@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/branchdiff"
 	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/vscodemcp"
 	"github.com/stretchr/testify/require"
@@ -86,7 +87,7 @@ func TestBranchChanges_NoDifference(t *testing.T) {
 func TestBranchChanges_OnlyCommitsBeyondTheLimitAreDropped(t *testing.T) {
 	t.Parallel()
 	dir := newBranchRepo(t)
-	for i := range maxDescribeCommits + 5 {
+	for i := range branchdiff.MaxCommits + 5 {
 		runGitForTest(t, dir, "commit", "-q", "--allow-empty", "-m", "chore: filler "+string(rune('a'+i%26)))
 	}
 	commitFileForTest(t, dir, "last.txt", "last\n", "feat: the newest commit")

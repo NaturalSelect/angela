@@ -97,6 +97,7 @@ func TestOpenDialog_RoutesEveryKnownID(t *testing.T) {
 	ws.EXPECT().WorkingDir().Return("/tmp/work").AnyTimes()
 	ws.EXPECT().SandboxContainerGrants().Return(sandbox.ContainerGrants{}).AnyTimes()
 	ws.EXPECT().MCPGetStates().Return(map[string]mcp.ClientInfo{}).AnyTimes()
+	ws.EXPECT().SessionEnvNames().Return(nil).AnyTimes()
 	m := newDialogUI(t, ws)
 
 	for _, id := range []string{

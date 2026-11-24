@@ -50,6 +50,10 @@ FROM sessions
 WHERE parent_session_id = ?
 ORDER BY created_at ASC, rowid ASC;
 
+-- name: ListSessionActivity :many
+SELECT id, parent_session_id, updated_at
+FROM sessions;
+
 -- name: UpdateSession :one
 UPDATE sessions
 SET

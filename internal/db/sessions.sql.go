@@ -236,6 +236,40 @@ func (q *Queries) ListChildSessions(ctx context.Context, parentSessionID sql.Nul
 	return items, nil
 }
 
+const listSessionActivity = `-- name: ListSessionActivity :many
+SELECT id, parent_session_id, updated_at
+FROM sessions
+`
+
+type ListSessionActivityRow struct {
+	ID              string         `json:"id"`
+	ParentSessionID sql.NullString `json:"parent_session_id"`
+	UpdatedAt       int64          `json:"updated_at"`
+}
+
+func (q *Queries) ListSessionActivity(ctx context.Context) ([]ListSessionActivityRow, error) {
+	rows, err := q.query(ctx, q.listSessionActivityStmt, listSessionActivity)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionActivityRow{}
+	for rows.Next() {
+		var i ListSessionActivityRow
+		if err := rows.Scan(&i.ID, &i.ParentSessionID, &i.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessions = `-- name: ListSessions :many
 SELECT id, parent_session_id, title, message_count, prompt_tokens, completion_tokens, cost, updated_at, created_at, summary_message_id, todos, agent, active_agent, gen_output_tokens, gen_duration_ms, cache_read_tokens, cache_creation_tokens, uncached_input_tokens, base_message_id
 FROM sessions

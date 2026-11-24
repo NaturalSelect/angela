@@ -260,6 +260,16 @@ type (
 	ActionCommit struct {
 		SessionID string
 	}
+	// ActionDescribe asks for a description of the changes Head made
+	// relative to Base, shown without touching the repository. An empty
+	// Base means the user picked the command from the palette but has not
+	// entered the branches yet; an empty Head means the checked out
+	// commit.
+	ActionDescribe struct {
+		SessionID string
+		Base      string
+		Head      string
+	}
 	// ActionUndo asks for a preview of undoing sessionID's last turn,
 	// to be shown in a confirmation dialog before anything is reverted.
 	ActionUndo struct {

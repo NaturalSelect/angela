@@ -115,6 +115,7 @@ func TestNewCommands_DefaultSystemCommands(t *testing.T) {
 	require.NotContains(t, ids, "scroll_to_top", "no session is open yet")
 	require.NotContains(t, ids, "scroll_to_latest_user", "no session is open yet")
 	require.Contains(t, ids, "commit", "committing staged changes needs no session")
+	require.Contains(t, ids, "describe", "describing a branch needs no session")
 }
 
 // TestNewCommands_SessionGatedCommands verifies the commands that only

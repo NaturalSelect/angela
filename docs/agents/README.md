@@ -543,7 +543,7 @@ it a different slot or prompt, or set `"hidden": false` to show it.
 | `generate-agent` | `main`  | Writes the definition for `angela agent create`.               |
 | `initialize`     | none    | Makes no model call of its own. Its prompt is injected into an ordinary session when you run `/init`. |
 | `commit`         | `chore` | Writes the commit message for `angela commit` and `/commit`. Output is capped at 150 tokens. |
-| `describe`       | `chore` | Writes the branch description printed by `angela describe`. Output is capped at 1500 tokens. |
+| `describe`       | `chore` | Writes the branch description printed by `angela describe` and `/describe`. Output is capped at 1500 tokens. |
 | `image`          | `image` | Selects the model the built-in image tools use.                |
 
 ### JSON Configuration (`angela.json`)

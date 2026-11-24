@@ -22,6 +22,7 @@ var (
 	exportingReportInfo    = pendingInfo("Exporting report")
 	openingReportInfo      = pendingInfo("Opening report")
 	importingReportInfo    = pendingInfo("Importing report")
+	describingInfo         = pendingInfo("Describing branch changes")
 	undoingInfo            = pendingInfo("Undoing last turn")
 )
 

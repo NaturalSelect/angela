@@ -575,7 +575,7 @@ A rule's `mode` chooses how `pattern` is compared:
     "enable_image_tools": true,         // unset = only with Kitty previews; true = any terminal; false = off
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
-    "commit_diff_runes": 48000,       // characters of the staged diff `angela commit` and /commit send to the model; `angela describe` applies it to the branch comparison
+    "commit_diff_runes": 48000,       // characters of the staged diff `angela commit` and /commit send to the model; `angela describe` and /describe apply it to the branch comparison
 
     // Attribution
     "attribution": {

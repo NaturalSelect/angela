@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/scratch"
+	"github.com/NaturalSelect/angela/internal/vscodemcp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -138,4 +143,86 @@ func TestDescribeCmd_DiffBudgetFlag(t *testing.T) {
 	flag := describeCmd.Flags().Lookup("max-diff-runes")
 	require.NotNil(t, flag, "the budget flag must exist so commitDiffRunesFlag finds it")
 	require.Equal(t, "0", flag.DefValue)
+}
+
+func TestShowDescription_PrintsWhenNotOpeningInVSCode(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+	showDescription(t.Context(), &stdout, &stderr, dataDir, "## Summary\nDoes a thing.", nil)
+
+	require.Equal(t, "## Summary\nDoes a thing.\n", stdout.String())
+	require.Empty(t, stderr.String())
+	require.NoDirExists(t, filepath.Join(dataDir, scratch.ViewerDir),
+		"nothing is written when the description is only printed")
+}
+
+func TestShowDescription_OpensInVSCodeInsteadOfPrinting(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	want := filepath.Join(dataDir, scratch.ViewerDir, describeViewerFile)
+
+	var opened vscodemcp.OpenRequest
+	open := func(_ context.Context, req vscodemcp.OpenRequest) error {
+		opened = req
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	showDescription(t.Context(), &stdout, &stderr, dataDir, "## Summary\nDoes a thing.", open)
+
+	require.Equal(t, want, opened.Path)
+	got, err := os.ReadFile(want)
+	require.NoError(t, err)
+	require.Equal(t, "## Summary\nDoes a thing.\n", string(got))
+	require.Contains(t, stdout.String(), want)
+	require.NotContains(t, stdout.String(), "Does a thing.",
+		"the text lives in the editor and is not repeated in the terminal")
+	require.Empty(t, stderr.String())
+}
+
+func TestShowDescription_ReusesTheSameFile(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	open := func(context.Context, vscodemcp.OpenRequest) error { return nil }
+
+	var out bytes.Buffer
+	showDescription(t.Context(), &out, &out, dataDir, "first", open)
+	showDescription(t.Context(), &out, &out, dataDir, "second", open)
+
+	entries, err := os.ReadDir(filepath.Join(dataDir, scratch.ViewerDir))
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "a later run overwrites the file so VS Code reuses its tab")
+	got, err := os.ReadFile(filepath.Join(dataDir, scratch.ViewerDir, describeViewerFile))
+	require.NoError(t, err)
+	require.Equal(t, "second\n", string(got))
+}
+
+func TestShowDescription_FallsBackToPrintingWhenVSCodeFails(t *testing.T) {
+	t.Parallel()
+	open := func(context.Context, vscodemcp.OpenRequest) error { return errors.New("code: not found") }
+
+	var stdout, stderr bytes.Buffer
+	showDescription(t.Context(), &stdout, &stderr, t.TempDir(), "## Summary\nDoes a thing.", open)
+
+	require.Equal(t, "## Summary\nDoes a thing.\n", stdout.String(), "the text must never be lost")
+	require.Contains(t, stderr.String(), "Could not open the description in VS Code")
+	require.Contains(t, stderr.String(), "code: not found")
+}
+
+func TestShowDescription_FallsBackToPrintingWithoutDataDirectory(t *testing.T) {
+	t.Parallel()
+	called := false
+	open := func(context.Context, vscodemcp.OpenRequest) error {
+		called = true
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	showDescription(t.Context(), &stdout, &stderr, "", "## Summary\nDoes a thing.", open)
+
+	require.False(t, called)
+	require.Equal(t, "## Summary\nDoes a thing.\n", stdout.String())
+	require.Contains(t, stderr.String(), "the data directory is not set")
 }

@@ -183,7 +183,12 @@ angela describe origin/main feature/login
 The model receives the commit subjects, a diffstat and the diff, in that
 order. The same `--max-diff-runes` and `options.commit_diff_runes` budget as
 `angela commit` applies to all three together, and a diff that exceeds it is
-cut from the end. The description is written in English.
+cut from the end. The description is written in English and has no title, so
+it can go under whatever title the pull request already has.
+
+In VS Code's integrated terminal the description opens in the editor, the same
+way viewing a report does, and the command prints only the file's path. It is
+printed as usual when the output is redirected, or when VS Code cannot open it.
 
 ### Editor integration (ACP)
 

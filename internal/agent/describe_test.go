@@ -62,7 +62,7 @@ func TestGenerateChangeDescriptionRejectsEmptyModelResponse(t *testing.T) {
 func TestGenerateChangeDescriptionNamesBothBranchesAndKeepsMarkdown(t *testing.T) {
 	t.Parallel()
 
-	const inner = "feat: add login flow\n\n## Summary\nAdds the `login` command."
+	const inner = "## Summary\nAdds the `login` command."
 
 	var gotBody []byte
 	server := commitCompletionServer(t, "```markdown\n"+inner+"\n```", &gotBody)
@@ -107,10 +107,10 @@ func TestStripCodeFence(t *testing.T) {
 	t.Parallel()
 
 	for name, tc := range map[string]struct{ in, want string }{
-		"plain text":           {"feat: x\n\nbody", "feat: x\n\nbody"},
-		"surrounding space":    {"\n  feat: x  \n", "feat: x"},
-		"fence with language":  {"```markdown\nfeat: x\n```", "feat: x"},
-		"bare fence":           {"```\nfeat: x\nbody\n```", "feat: x\nbody"},
+		"plain text":           {"## Summary\nbody", "## Summary\nbody"},
+		"surrounding space":    {"\n  ## Summary  \n", "## Summary"},
+		"fence with language":  {"```markdown\n## Summary\n```", "## Summary"},
+		"bare fence":           {"```\n## Summary\nbody\n```", "## Summary\nbody"},
 		"leading fence only":   {"```go\nfoo()\n```\nand more text", "```go\nfoo()\n```\nand more text"},
 		"inline code at start": {"`a` and `b`", "`a` and `b`"},
 		"one line of backtick": {"```", "```"},
@@ -120,4 +120,15 @@ func TestStripCodeFence(t *testing.T) {
 			require.Equal(t, tc.want, stripCodeFence(tc.in))
 		})
 	}
+}
+
+// TestDescribePromptAsksForNoTitle pins that the built-in prompt tells the
+// model to leave the title out and does not ask for a commit-style first line.
+func TestDescribePromptAsksForNoTitle(t *testing.T) {
+	t.Parallel()
+
+	tpl := string(describePromptTmpl)
+	require.Contains(t, tpl, "Do not write a title")
+	require.NotContains(t, tpl, "Conventional Commits")
+	require.NotContains(t, tpl, "72 characters")
 }

@@ -30,9 +30,9 @@ type transcriptWindow struct {
 	hasOlder bool
 	loading  bool
 
-	// stale marks a cursor whose message was deleted, by an undo longer
-	// than the window. The chat is reloaded from the tail once the undo
-	// finishes.
+	// stale marks a cursor no page can be read before: its message was
+	// deleted, or the last read before it failed. It only stops reads; the
+	// undo result reads the tail again whether or not it was set.
 	stale bool
 
 	// outcomes holds how background agents ended according to the notices
@@ -112,7 +112,9 @@ func (m *UI) handleOlderMessages(msg olderMessagesMsg) []tea.Cmd {
 	m.clearPending(olderMessagesInfo)
 	if msg.err != nil {
 		slog.Warn("Failed to load earlier messages", "session_id", msg.sessionID, "error", msg.err)
-		w.hasOlder = false
+		// NOTE: Older history still exists, so hasOlder stays set for an undo
+		// result to see; stale stops the read from being retried on every update.
+		w.stale = true
 		return nil
 	}
 

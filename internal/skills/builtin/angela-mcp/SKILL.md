@@ -158,7 +158,9 @@ Things to tell the user:
 
 - **Sandbox.** The Angela process connects to the engine socket, so under
   `--sandbox` the server fails to start unless the socket is allowed with
-  `--sandbox-allow-docker-socket` or the `/sandbox` dialog. That socket lets a
+  `--sandbox-allow-docker-socket` or the `/sandbox` dialog, which starts with
+  the server's socket allowed while a container server is configured. That
+  socket lets a
   container mount any host path, so granting it is a real widening. Load the
   `angela-sandbox` skill for the details.
 - **Rootless Podman.** The API socket must be running:

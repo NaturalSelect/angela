@@ -1148,6 +1148,35 @@ func TestSandbox_OptionalSocketsStartBlocked(t *testing.T) {
 	require.Empty(t, m.config().UnixSockets)
 }
 
+// TestSandbox_PreselectedSocketStartsAllowed verifies an optional socket
+// the workspace preselected starts allowed while the other detected ones
+// stay blocked, and that the user can still turn it off.
+func TestSandbox_PreselectedSocketStartsAllowed(t *testing.T) {
+	t.Parallel()
+
+	s := styles.CharmtonePantera()
+	com := &common.Common{
+		Styles: &s,
+		Workspace: &sandboxTestWorkspace{
+			dir: t.TempDir(),
+			grants: sandbox.ContainerGrants{
+				OptionalSockets:    []string{"/var/run/docker.sock", "/run/podman/podman.sock"},
+				PreselectedSockets: []string{"/run/podman/podman.sock"},
+			},
+		},
+	}
+	m := NewSandbox(com)
+
+	require.Len(t, m.sockets, 2)
+	require.False(t, m.sockets[0].allowed)
+	require.True(t, m.sockets[1].allowed)
+	require.Equal(t, []string{"/run/podman/podman.sock"}, m.config().UnixSockets)
+
+	m.setFocus(m.socketStop(1))
+	m.HandleMsg(tea.KeyPressMsg{Code: tea.KeyEnter})
+	require.Empty(t, m.config().UnixSockets)
+}
+
 // TestSandbox_GrantedSocketsStartAllowed verifies a socket the workspace
 // already granted starts allowed, can be turned off, and is not offered
 // twice when it is also listed as optional.

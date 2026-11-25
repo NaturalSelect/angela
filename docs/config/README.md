@@ -415,7 +415,9 @@ working inside `--sandbox` once the socket is allowed (see below).
   ones.
 - **Sandbox.** A container server connects to the engine socket from the Angela
   process, so under `--sandbox` it fails to start unless the socket is allowed
-  with `--sandbox-allow-docker-socket` or the `/sandbox` dialog. The socket is a
+  with `--sandbox-allow-docker-socket` or the `/sandbox` dialog. While an
+  enabled container server is configured, the dialog starts with that server's
+  socket allowed, and you can turn it off. The socket is a
   deliberate hole: whatever can reach it can start a container that mounts any
   host path. Angela refuses bind mounts of a socket or of a directory that
   holds an engine socket, but that is a safety net and not a boundary.

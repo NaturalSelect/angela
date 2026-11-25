@@ -15,7 +15,15 @@ func SandboxGrants(store *config.ConfigStore, grantSockets bool) sandbox.Contain
 	if cfg == nil {
 		return g
 	}
-	return g.WithSockets(serverSockets(cfg.MCP, existingCandidateSockets), grantSockets)
+	return withServerSockets(g, cfg.MCP, existingCandidateSockets, grantSockets)
+}
+
+// NOTE: The socket of a configured container server is also preselected, so the interactive form starts with it allowed.
+func withServerSockets(g sandbox.ContainerGrants, servers config.MCPs, discover func() []string, grantSockets bool) sandbox.ContainerGrants {
+	sockets := serverSockets(servers, discover)
+	g = g.WithSockets(sockets, grantSockets)
+	g.PreselectedSockets = sockets
+	return g
 }
 
 func serverSockets(servers config.MCPs, discover func() []string) []string {

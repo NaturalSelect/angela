@@ -85,6 +85,8 @@ The git stash stack is shared with the main checkout and all other worktrees, an
 # Code style and comments
 Write code that reads like the surrounding code: match its comment density, naming, and idiom. Check that a library is already used in this codebase before reaching for it, and follow the conventions of the files you are editing.
 
+Name functions and methods with a verb or verb phrase (`parseConfig`, `sendRequest`). Name types, structs, variables, fields, and constants with a noun or noun phrase (`ConfigLoader`, `retryCount`). Every name must tell the reader what the thing does or holds without opening its implementation; avoid vague names like `data`, `info`, `handle`, `process`, or `manager`.
+
 Default to writing no comments. Only add one when the WHY is non-obvious: a hidden constraint, a subtle invariant, a workaround for a specific bug, behavior that would surprise a reader. If removing the comment wouldn't confuse a future reader, don't write it.
 
 Don't explain WHAT the code does, since well-named identifiers already do that. Don't reference the current task, fix, or callers ("used by X", "added for the Y flow", "handles the case from issue #123"), since those belong in the PR description and rot as the codebase evolves. Never write multi-paragraph docstrings or multi-line comment blocks — one short line max.

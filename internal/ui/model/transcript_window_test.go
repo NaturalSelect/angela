@@ -70,6 +70,15 @@ func olderMessagesIn(msgs []tea.Msg) (olderMessagesMsg, bool) {
 	return olderMessagesMsg{}, false
 }
 
+func sessionMessagesIn(msgs []tea.Msg) (sessionMessagesMsg, bool) {
+	for _, msg := range msgs {
+		if loaded, ok := msg.(sessionMessagesMsg); ok {
+			return loaded, true
+		}
+	}
+	return sessionMessagesMsg{}, false
+}
+
 func TestMaybeLoadOlderMessagesStaysIdleAwayFromTheTop(t *testing.T) {
 	m, _ := loadedWindow(t, 50, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true})
 
@@ -230,9 +239,39 @@ func TestOlderMessagesFailureStopsPagingButKeepsTheChat(t *testing.T) {
 
 	require.Equal(t, 100, m.chat.Len())
 	require.False(t, m.transcript.loading)
-	require.False(t, m.transcript.hasOlder, "a failing read must not be retried on every update")
+	require.True(t, m.transcript.stale, "a failing read must not be retried on every update")
+	require.True(t, m.transcript.hasOlder, "older history still exists, which a later undo needs to know")
 	require.Nil(t, m.maybeLoadOlderMessages())
 	require.NotEqual(t, olderMessagesInfo, m.status.msg)
+}
+
+// NOTE: An undo deletes the cursor message while the viewport, shortened by
+// the deletions, reads ahead before it. That read fails, and the undo result
+// must still bring the tail back.
+func TestUndoResultReloadsTheTailAfterAReadBeforeTheCursorFailed(t *testing.T) {
+	m, ws := loadedWindow(t, 0, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true, loading: true})
+
+	var calls int
+	ws.EXPECT().ListMessagePage(gomock.Any(), "s1", "", transcriptPageSize).
+		DoAndReturn(func(context.Context, string, string, int) (message.Page, error) {
+			calls++
+			return message.Page{Messages: userMessages("tail", 2), HasOlder: true}, nil
+		})
+	ws.EXPECT().ListMessagePage(gomock.Any(), "s1", "tail-0", transcriptPageSize).
+		Return(message.Page{}, nil).AnyTimes()
+
+	m.handleOlderMessages(olderMessagesMsg{sessionID: "s1", beforeID: "m-0", err: errors.New("no rows")})
+	_, cmd := m.Update(undoResultMsg{sessionID: "s1", result: undo.Result{}})
+	msgs := runCmds(m, cmd)
+	tail, ok := sessionMessagesIn(msgs)
+	require.True(t, ok, "the tail must be read although the read before the cursor failed")
+	_, cmd = m.Update(tail)
+	runCmds(m, cmd)
+
+	require.Equal(t, 1, calls)
+	require.Equal(t, 2, m.chat.Len())
+	require.Equal(t, "tail-0", m.transcript.oldestID)
+	require.False(t, m.transcript.stale)
 }
 
 func TestOlderMessagesLandingClearsTheLoadingNotice(t *testing.T) {
@@ -388,11 +427,91 @@ func TestUndoResultReloadsTheTailWhenTheCursorIsGone(t *testing.T) {
 	require.True(t, reloaded.hasOlder)
 }
 
-func TestUndoResultKeepsTheChatWhenTheCursorSurvives(t *testing.T) {
-	m, _ := loadedWindow(t, 50, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true})
+// NOTE: The deletion events travel to Update by a longer route than the undo
+// result, so the result can come first, and the cursor's event can come after
+// the reload was started or after it finished. None of it may freeze the
+// window or leave the chat without the tail.
+func TestUndoResultReloadsTheTailWhenItArrivesBeforeTheCursorEvent(t *testing.T) {
+	tests := []struct {
+		name            string
+		eventBeforeTail bool
+	}{
+		{name: "event lands while the tail is being read", eventBeforeTail: true},
+		{name: "event lands after the tail is shown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, ws := loadedWindow(t, 0, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true})
+
+			var calls int
+			ws.EXPECT().ListMessagePage(gomock.Any(), "s1", "", transcriptPageSize).
+				DoAndReturn(func(context.Context, string, string, int) (message.Page, error) {
+					calls++
+					return message.Page{Messages: userMessages("tail", 2), HasOlder: true}, nil
+				})
+			// NOTE: Two items leave the viewport inside the preload zone, so the
+			// window reads ahead as soon as the tail is shown.
+			ws.EXPECT().ListMessagePage(gomock.Any(), "s1", "tail-0", transcriptPageSize).
+				Return(message.Page{}, nil).AnyTimes()
+			deleteCursor := func() {
+				_, cmd := m.Update(pubsub.Event[message.Message]{
+					Type:    pubsub.DeletedEvent,
+					Payload: message.Message{ID: "m-0", SessionID: "s1"},
+				})
+				runCmds(m, cmd)
+			}
+
+			require.False(t, m.transcript.stale, "the result must come before the cursor's event")
+			_, cmd := m.Update(undoResultMsg{sessionID: "s1", result: undo.Result{}})
+			msgs := runCmds(m, cmd)
+			tail, ok := sessionMessagesIn(msgs)
+			require.True(t, ok, "the tail must be read although no event told the window it was stale")
+
+			if tt.eventBeforeTail {
+				deleteCursor()
+			}
+			_, cmd = m.Update(tail)
+			runCmds(m, cmd)
+			if !tt.eventBeforeTail {
+				deleteCursor()
+			}
+
+			require.Equal(t, 1, calls)
+			require.Equal(t, 2, m.chat.Len())
+			require.Equal(t, "tail-0", m.transcript.oldestID)
+			require.True(t, m.transcript.hasOlder)
+			require.False(t, m.transcript.stale, "an event for a deleted message must not freeze the reloaded window")
+		})
+	}
+}
+
+// NOTE: Whether the undo passed the loaded part cannot be told from the
+// window, so a window with older history is read again even when the cursor
+// is still there.
+func TestUndoResultReloadsTheTailWhenOlderHistoryExists(t *testing.T) {
+	m, ws := loadedWindow(t, 50, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true})
+
+	var calls int
+	ws.EXPECT().ListMessagePage(gomock.Any(), "s1", "", transcriptPageSize).
+		DoAndReturn(func(context.Context, string, string, int) (message.Page, error) {
+			calls++
+			return message.Page{Messages: userMessages("tail", 2), HasOlder: true}, nil
+		})
+
+	_, cmd := m.Update(undoResultMsg{sessionID: "s1", result: undo.Result{}})
+	msgs := runCmds(m, cmd)
+
+	require.Equal(t, 1, calls)
+	_, ok := sessionMessagesIn(msgs)
+	require.True(t, ok)
+	require.Equal(t, transcriptWindow{sessionID: "s1"}, m.transcript)
+}
+
+func TestUndoResultKeepsTheChatWhenTheWholeSessionIsLoaded(t *testing.T) {
+	m, _ := loadedWindow(t, 50, transcriptWindow{sessionID: "s1", oldestID: "m-0"})
 
 	// NOTE: ListMessagePage is not stubbed: the mock fails the test on a
-	// read nobody needed. The viewport is mid-list, outside the preload zone.
+	// read nobody needed.
 	_, cmd := m.Update(undoResultMsg{sessionID: "s1", result: undo.Result{}})
 	runCmds(m, cmd)
 

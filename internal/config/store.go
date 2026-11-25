@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -247,6 +248,22 @@ func (s *ConfigStore) ContainerFieldResolver(name string) VariableResolver {
 		return IdentityResolver()
 	}
 	return s.envOnlyResolver
+}
+
+// NOTE: One engine serves every container server, and only the system and global config can name it, so no per-server override applies.
+func (s *ConfigStore) ContainerHost() (string, error) {
+	cfg := s.Config()
+	if cfg == nil || cfg.Options == nil || cfg.Options.ContainerHost == "" {
+		return "", nil
+	}
+	s.writeMu.RLock()
+	resolver := s.envOnlyResolver
+	s.writeMu.RUnlock()
+	host, err := resolver.ResolveValue(cfg.Options.ContainerHost)
+	if err != nil {
+		return "", fmt.Errorf("options.container_host: %w", err)
+	}
+	return strings.TrimSpace(host), nil
 }
 
 // KnownProviders returns the list of known providers.
@@ -864,6 +881,10 @@ func (s *ConfigStore) reloadFromDiskLocked(ctx context.Context) error {
 	// file (see recent_models.go); load it last so it always wins over
 	// any legacy recent_models key a config file still carries.
 	cfg.RecentModels = loadRecentModels(s.globalDataPath, workspacePath, legacyRecentModels)
+
+	// Settings only the system and global config may change, applied
+	// before applyEnv so a project env cannot set them first.
+	applyGlobalOnly(cfg, loadedPaths, layers)
 
 	// Validate hooks after all config merging is complete so matcher
 	// regexes are recompiled on the reloaded config (mirrors Load).

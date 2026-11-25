@@ -351,13 +351,12 @@ type MCPConfig struct {
 	// "Header:".
 	Headers map[string]string `json:"headers,omitempty" jsonschema:"description=HTTP headers for HTTP/SSE MCP servers"`
 
-	Image         string   `json:"image,omitempty" jsonschema:"description=Container image for container MCP servers. Set either image or compose,example=mcp/time"`
-	Compose       string   `json:"compose,omitempty" jsonschema:"description=Path of a compose file for container MCP servers. Needs service. A relative path is resolved against the project directory,example=./compose.yaml"`
-	Service       string   `json:"service,omitempty" jsonschema:"description=Service of the compose file that speaks MCP over stdio. Its depends_on services start with it,example=mcp"`
-	Volumes       []string `json:"volumes,omitempty" jsonschema:"description=Mounts for container MCP servers as source:target[:options]. A relative source is resolved against the project directory,example=./data:/data:ro"`
-	Network       string   `json:"network,omitempty" jsonschema:"description=Network mode for container MCP servers,enum=bridge,enum=none,enum=host,default=bridge"`
-	Workdir       string   `json:"workdir,omitempty" jsonschema:"description=Working directory inside the container for container MCP servers"`
-	ContainerHost string   `json:"container_host,omitempty" jsonschema:"description=Container engine endpoint for container MCP servers,example=unix:///run/user/1000/podman/podman.sock"`
+	Image   string   `json:"image,omitempty" jsonschema:"description=Container image for container MCP servers. Set either image or compose,example=mcp/time"`
+	Compose string   `json:"compose,omitempty" jsonschema:"description=Path of a compose file for container MCP servers. Needs service. A relative path is resolved against the project directory,example=./compose.yaml"`
+	Service string   `json:"service,omitempty" jsonschema:"description=Service of the compose file that speaks MCP over stdio. Its depends_on services start with it,example=mcp"`
+	Volumes []string `json:"volumes,omitempty" jsonschema:"description=Mounts for container MCP servers as source:target[:options]. A relative source is resolved against the project directory,example=./data:/data:ro"`
+	Network string   `json:"network,omitempty" jsonschema:"description=Network mode for container MCP servers,enum=bridge,enum=none,enum=host,default=bridge"`
+	Workdir string   `json:"workdir,omitempty" jsonschema:"description=Working directory inside the container for container MCP servers"`
 
 	// OAuth enables the MCP OAuth 2.1 authorization flow for HTTP
 	// transport servers. When true, the client uses dynamic client
@@ -583,6 +582,7 @@ type Options struct {
 	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
 	EnableImageTools          *bool        `json:"enable_image_tools,omitempty" jsonschema:"description=Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported\\, images can still be saved with Export Image); false disables them"`
 	CommitDiffRunes           *int         `json:"commit_diff_runes,omitempty" jsonschema:"description=Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. The same budget caps what angela describe sends when it describes a branch. A longer input is cut off and marked as truncated. Raising it costs more input tokens per run.,minimum=1,default=48000,example=100000"`
+	ContainerHost             string       `json:"container_host,omitempty" jsonschema:"description=Container engine endpoint shared by every container MCP server. Only the system and global config can set it; a project config is ignored because it could send container workloads to another host.,example=unix:///run/user/1000/podman/podman.sock"`
 }
 
 // DefaultCommitDiffRunes is the staged diff budget, in runes, when neither

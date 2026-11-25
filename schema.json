@@ -542,13 +542,6 @@
           "type": "string",
           "description": "Working directory inside the container for container MCP servers"
         },
-        "container_host": {
-          "type": "string",
-          "description": "Container engine endpoint for container MCP servers",
-          "examples": [
-            "unix:///run/user/1000/podman/podman.sock"
-          ]
-        },
         "oauth": {
           "type": "boolean",
           "description": "Enable OAuth 2.1 authorization flow for this MCP server (HTTP transport only)",
@@ -799,6 +792,13 @@
           "default": 48000,
           "examples": [
             100000
+          ]
+        },
+        "container_host": {
+          "type": "string",
+          "description": "Container engine endpoint shared by every container MCP server. Only the system and global config can set it; a project config is ignored because it could send container workloads to another host.",
+          "examples": [
+            "unix:///run/user/1000/podman/podman.sock"
           ]
         }
       },

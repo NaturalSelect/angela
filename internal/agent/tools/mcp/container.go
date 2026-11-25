@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/containermcp"
@@ -36,9 +35,14 @@ func (t *containerTransport) ExitErr() error { return t.session.ExitErr() }
 
 func createContainerTransport(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
 	fieldRes, workDir := resolver, ""
-	lockDir := ""
+	lockDir, host := "", ""
 	if cfg != nil {
 		fieldRes, workDir, lockDir = cfg.ContainerFieldResolver(name), cfg.WorkingDir(), cfg.LockDir()
+		var err error
+		host, err = cfg.ContainerHost()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	g, err := containermcp.FromConfig(ctx, name, m, workDir, fieldRes, resolver)
@@ -46,11 +50,7 @@ func createContainerTransport(ctx context.Context, cfg *config.ConfigStore, name
 		return nil, fmt.Errorf("invalid container mcp config: %w", err)
 	}
 	g.LockDir = lockDir
-	host, err := fieldRes.ResolveValue(m.ContainerHost)
-	if err != nil {
-		return nil, fmt.Errorf("container_host: %w", err)
-	}
-	ep, err := containermcp.ResolveEndpoint(strings.TrimSpace(host))
+	ep, err := containermcp.ResolveEndpoint(host)
 	if err != nil {
 		return nil, err
 	}

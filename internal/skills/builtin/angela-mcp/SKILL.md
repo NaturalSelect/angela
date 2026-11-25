@@ -45,7 +45,6 @@ minimal edit, run `angela config validate`, report whether a restart is needed.
 | `volumes` | array | container only, with `image`. `source:target[:ro,rw,z,Z]`. A source starting with `/`, `.` or `~` is a host path (a relative one is resolved against the project directory and must exist), anything else a named volume. |
 | `network` | string | container only, with `image`. `bridge` (default), `none` or `host`. |
 | `workdir` | string | container only, with `image`. Working directory inside the container. |
-| `container_host` | string | container only. Engine address such as `unix:///run/user/1000/podman/podman.sock`. Default: `DOCKER_HOST`, `CONTAINER_HOST`, then the first Docker or Podman socket found. |
 | `headers` | object | http/sse only. Shell-expanded; empty values are omitted from requests. `$(cmd)` only from system/global config. |
 | `timeout` | int | Seconds. Default `10`; when unset, `oauth` servers get `30` (and up to 5 minutes while a user-initiated sign-in is waiting on the browser). |
 | `disabled` | bool | Default `false`. Disables without removing the entry. |
@@ -62,8 +61,9 @@ minimal edit, run `angela config validate`, report whether a restart is needed.
 > since those fields already run an arbitrary program. `url`, `headers`, and the
 > two `oauth_client_*` fields restrict `$(cmd)` to system/global config layers.
 > The other container fields (`image`, `compose`, `service`, `volumes`,
-> `network`, `workdir`, `container_host`) expand `$VAR` only, at every
-> layer.
+> `network`, `workdir`) expand `$VAR` only, at every
+> layer. The engine address of container servers is not a server field: it is
+> `options.container_host`, read only from the system and global config.
 
 ## Tool Naming
 

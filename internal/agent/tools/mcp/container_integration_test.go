@@ -43,15 +43,15 @@ func TestCreateSession_ContainerOnARealEngine(t *testing.T) {
 	cleanupServer(t, name)
 
 	m := config.MCPConfig{
-		Type:          config.MCPContainer,
-		Image:         image,
-		Args:          []string{"sh", "/srv/server.sh"},
-		Volumes:       []string{dir + ":/srv:ro"},
-		Network:       "none",
-		ContainerHost: host,
-		Timeout:       120,
+		Type:    config.MCPContainer,
+		Image:   image,
+		Args:    []string{"sh", "/srv/server.sh"},
+		Volumes: []string{dir + ":/srv:ro"},
+		Network: "none",
+		Timeout: 120,
 	}
-	sess, err := createSession(t.Context(), nil, name, m, currentGen(name), shellResolverWithPath(t, nil), false)
+	cfg := config.NewTestStore(&config.Config{Options: &config.Options{ContainerHost: host}})
+	sess, err := createSession(t.Context(), cfg, name, m, currentGen(name), shellResolverWithPath(t, nil), false)
 	require.NoError(t, err)
 	require.Equal(t, "shell-mcp", sess.InitializeResult().ServerInfo.Name)
 

@@ -57,6 +57,8 @@ type Session struct {
 	deps       []startedDep
 	networkID  string
 	cancelWait context.CancelFunc
+	// NOTE: Ends the session's registration with the sandbox gate.
+	onClose func()
 }
 
 type startedDep struct {
@@ -65,12 +67,25 @@ type startedDep struct {
 	exit <-chan exitResult
 }
 
+// NOTE: Registers with the sandbox gate before checking it, so a server is either waited for by WaitIdle or refused by the check, never neither.
 func Open(ctx context.Context, ep Endpoint, g Group) (*Session, error) {
-	eng, err := newMobyEngine(ep)
-	if err != nil {
+	done := gate.track(g.Server)
+	if err := CheckSandbox(g.Server, ep); err != nil {
+		done()
 		return nil, err
 	}
-	return start(ctx, eng, g)
+	eng, err := newMobyEngine(ep)
+	if err != nil {
+		done()
+		return nil, err
+	}
+	s, err := start(ctx, eng, g)
+	if err != nil {
+		done()
+		return nil, err
+	}
+	s.onClose = done
+	return s, nil
 }
 
 // NOTE: Takes ownership of eng and closes it on failure.
@@ -527,6 +542,9 @@ func (s *Session) Close() error {
 		s.cancelWait()
 		_ = s.att.Close()
 		_ = s.eng.Close()
+		if s.onClose != nil {
+			s.onClose()
+		}
 	})
 	return nil
 }

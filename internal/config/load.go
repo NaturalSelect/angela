@@ -91,6 +91,10 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 	// a config file still carries.
 	cfg.RecentModels = loadRecentModels(store.globalDataPath, store.workspacePath, legacyRecentModels)
 
+	// Settings only the system and global config may change, applied
+	// before applyEnv so a project env cannot set them first.
+	applyGlobalOnly(cfg, store.loadedPaths, layers)
+
 	// Validate hooks after all config merging is complete so workspace
 	// hooks also get their matcher regexes compiled.
 	if err := cfg.ValidateHooks(); err != nil {

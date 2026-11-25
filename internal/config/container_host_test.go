@@ -1,7 +1,9 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
@@ -83,6 +85,82 @@ func requireEngineEnvEmpty(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{"DOCKER_HOST", "CONTAINER_HOST", "docker_host", "container_host", "Docker_Host", "Container_Host"} {
 		require.Empty(t, os.Getenv(key), "a project env must not set %s", key)
+	}
+}
+
+// NOTE: The bind mount check lists the engine sockets from these variables, so a project that could move them could hide a socket from it. Not parallel, because the load sets environment variables.
+func TestLoad_ProjectEnvCannotMoveTheEngineLocations(t *testing.T) {
+	workDir, dataDir := isolateReloadEnv(t)
+	userHome := os.Getenv("HOME")
+	runtimeDir := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+	t.Setenv("USERPROFILE", userHome)
+	writeJSONConfig(t, workDir, `{"env":{
+	  "XDG_RUNTIME_DIR": "/nonexistent",
+	  "xdg_runtime_dir": "/nonexistent",
+	  "HOME": "/nonexistent",
+	  "USERPROFILE": "/nonexistent",
+	  "KEEP": "1"
+	}}`)
+
+	requireUnmoved := func(t *testing.T) {
+		t.Helper()
+		require.Equal(t, runtimeDir, os.Getenv("XDG_RUNTIME_DIR"))
+		require.Equal(t, userHome, os.Getenv("HOME"))
+		require.Equal(t, userHome, os.Getenv("USERPROFILE"))
+		require.Equal(t, "1", os.Getenv("KEEP"), "other variables still apply")
+	}
+
+	store, err := config.Load(workDir, dataDir, false)
+	require.NoError(t, err)
+	requireUnmoved(t)
+
+	require.NoError(t, store.ReloadFromDisk(t.Context()))
+	requireUnmoved(t)
+}
+
+// NOTE: A reload finds the global config through these variables, and anything found there is trusted, so a project that could move them could hand itself the global layer. Not parallel, because the load sets environment variables.
+func TestLoad_ProjectEnvCannotMoveTheGlobalConfig(t *testing.T) {
+	levers := map[string]func(t *testing.T, fake string) string{
+		"ANGELA_GLOBAL_CONFIG": func(t *testing.T, fake string) string {
+			writeJSONConfig(t, fake, `{"options":{"container_host":"tcp://attacker:2375"}}`)
+			return fmt.Sprintf(`{"env":{"ANGELA_GLOBAL_CONFIG":%q}}`, fake)
+		},
+		"XDG_CONFIG_HOME": func(t *testing.T, fake string) string {
+			writeJSONConfig(t, filepath.Join(fake, "angela"), `{"options":{"container_host":"tcp://attacker:2375"}}`)
+			return fmt.Sprintf(`{"env":{"XDG_CONFIG_HOME":%q}}`, fake)
+		},
+	}
+	for name, plant := range levers {
+		t.Run(name, func(t *testing.T) {
+			workDir, dataDir := isolateReloadEnv(t)
+			t.Setenv("DOCKER_HOST", "")
+			t.Setenv("CONTAINER_HOST", "")
+
+			realConfig := t.TempDir()
+			if name == "XDG_CONFIG_HOME" {
+				t.Setenv("ANGELA_GLOBAL_CONFIG", "")
+				require.NoError(t, os.Unsetenv("ANGELA_GLOBAL_CONFIG"))
+				t.Setenv("XDG_CONFIG_HOME", realConfig)
+				writeJSONConfig(t, filepath.Join(realConfig, "angela"), `{"options":{"container_host":"unix:///global.sock"}}`)
+			} else {
+				t.Setenv("ANGELA_GLOBAL_CONFIG", realConfig)
+				writeJSONConfig(t, realConfig, `{"options":{"container_host":"unix:///global.sock"}}`)
+			}
+			want := config.GlobalConfig()
+
+			writeJSONConfig(t, workDir, plant(t, filepath.Join(workDir, "planted")))
+
+			store, err := config.Load(workDir, dataDir, false)
+			require.NoError(t, err)
+			require.Equal(t, want, config.GlobalConfig(), "a project env must not move the global config")
+
+			require.NoError(t, store.ReloadFromDisk(t.Context()))
+			require.Equal(t, want, config.GlobalConfig())
+			host, err := store.ContainerHost()
+			require.NoError(t, err)
+			require.Equal(t, "unix:///global.sock", host)
+		})
 	}
 }
 

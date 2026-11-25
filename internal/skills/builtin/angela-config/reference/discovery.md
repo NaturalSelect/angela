@@ -74,10 +74,10 @@ automatically just by being there, even in a repository you haven't read yet.
 | MCP `command`, `args`, `env`                                      | full, every layer                                                   |
 | MCP `url`, `headers`, `oauth_client_id`, `oauth_client_secret`    | full in system/global; `$VAR`/`${VAR}` only from a project layer   |
 | MCP container `image`, `compose`, `service`, `volumes`, `network`, `workdir` | `$VAR`/`${VAR}` only, every layer (`args` and `env` stay full) |
-| `options.container_host`                                          | `$VAR`/`${VAR}` only, and read only from system/global; a project layer cannot set it, nor `DOCKER_HOST`/`CONTAINER_HOST` in `env` |
+| `options.container_host`                                          | `$VAR`/`${VAR}` only, and read only from system/global; a project layer cannot set it |
 | LSP `command`, `args`, `env`                                      | full, every layer                                                   |
 | Permission rule `pattern`                                         | `$VAR`/`${VAR}` and a leading `~`, every layer; `$(cmd)` only from system/global |
-| Top-level `env` values                                             | full, every layer                                                   |
+| Top-level `env` values                                             | full, every layer; a project layer cannot set `DOCKER_HOST`, `CONTAINER_HOST`, `XDG_RUNTIME_DIR`, `HOME`, `USERPROFILE`, `ANGELA_GLOBAL_CONFIG` or `XDG_CONFIG_HOME` |
 | Hook `command`                                                     | full, runs via the shell at fire time                               |
 
 Supported constructs where a field gets full expansion: `$VAR`, `${VAR}`,

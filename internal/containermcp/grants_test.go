@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,6 +18,33 @@ func shortSocket(t *testing.T) string {
 	path := filepath.Join(dir, "e.sock")
 	listenUnix(t, path)
 	return path
+}
+
+func TestWithServerSockets(t *testing.T) {
+	sock := shortSocket(t)
+	t.Setenv("DOCKER_HOST", "unix://"+sock)
+	none := func() []string { return nil }
+	container := config.MCPs{"a": {Type: config.MCPContainer, Image: "i"}}
+	detected := sandbox.ContainerGrants{OptionalSockets: []string{"/run/podman/podman.sock"}}
+
+	t.Run("offered and preselected when sockets are not granted", func(t *testing.T) {
+		got := withServerSockets(detected, container, none, false)
+		require.Empty(t, got.UnixSockets)
+		require.Equal(t, []string{"/run/podman/podman.sock", sock}, got.OptionalSockets)
+		require.Equal(t, []string{sock}, got.PreselectedSockets, "only the server's own socket starts allowed")
+	})
+	t.Run("granted when sockets are granted", func(t *testing.T) {
+		got := withServerSockets(detected, container, none, true)
+		require.Equal(t, []string{sock}, got.UnixSockets)
+		require.Equal(t, []string{"/run/podman/podman.sock"}, got.OptionalSockets)
+	})
+	t.Run("nothing preselected without a container server", func(t *testing.T) {
+		servers := config.MCPs{
+			"stdio": {Type: config.MCPStdio, Command: "x"},
+			"off":   {Type: config.MCPContainer, Image: "i", Disabled: true},
+		}
+		require.Equal(t, detected, withServerSockets(detected, servers, none, false))
+	})
 }
 
 func TestServerSockets(t *testing.T) {

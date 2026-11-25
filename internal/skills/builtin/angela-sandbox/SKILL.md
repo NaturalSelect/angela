@@ -100,8 +100,9 @@ rules. Two ways to grant them:
 
 - Pass `--sandbox-allow-docker-socket` to grant every detected socket at startup.
 - In the **Enter Sandbox** dialog, each detected socket is a toggle that starts
-  off (or on, when the flag was passed); the confirmation step lists the ones
-  that were turned on.
+  off (or on, when the flag was passed, or when it is the socket a configured
+  container MCP server uses); the confirmation step lists the ones that were
+  turned on.
 
 On Landlock ABI 9 or newer, connecting to any pathname Unix socket is denied
 unless it is listed, so granted sockets show up individually as `unix_sockets`

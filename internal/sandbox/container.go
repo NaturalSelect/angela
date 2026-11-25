@@ -18,6 +18,8 @@ type ContainerGrants struct {
 	UnixSockets []string
 	// NOTE: Detected daemon sockets that stay ungranted until the user opts in.
 	OptionalSockets []string
+	// NOTE: The optional sockets an interactive form starts allowed; a subset of OptionalSockets.
+	PreselectedSockets []string
 }
 
 // Empty reports whether g grants nothing.

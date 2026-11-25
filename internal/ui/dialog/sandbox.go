@@ -157,7 +157,7 @@ func NewSandbox(com *common.Common) *Sandbox {
 	m := &Sandbox{
 		com:          com,
 		allowNetwork: cfg.AllowNetwork,
-		sockets:      sandboxSockets(cfg.UnixSockets, grants.OptionalSockets),
+		sockets:      sandboxSockets(cfg.UnixSockets, grants),
 	}
 	m.frame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxHeightRatio})
 	m.confirmFrame = NewFrame(t, FrameSpec{MaxWidth: 64, HeightRatio: sandboxConfirmHeightRatio})
@@ -251,15 +251,16 @@ func sandboxDefaultConfig(com *common.Common) (sandbox.Config, sandbox.Container
 }
 
 // sandboxSockets builds the socket choices of the form: every socket
-// already granted starts allowed, every optional one starts blocked.
-func sandboxSockets(granted, optional []string) []sandboxSocket {
-	sockets := make([]sandboxSocket, 0, len(granted)+len(optional))
+// already granted starts allowed, and so does every optional one the
+// workspace preselected. The other optional sockets start blocked.
+func sandboxSockets(granted []string, grants sandbox.ContainerGrants) []sandboxSocket {
+	sockets := make([]sandboxSocket, 0, len(granted)+len(grants.OptionalSockets))
 	for _, p := range granted {
 		sockets = append(sockets, sandboxSocket{path: p, allowed: true})
 	}
-	for _, p := range optional {
+	for _, p := range grants.OptionalSockets {
 		if !slices.Contains(granted, p) {
-			sockets = append(sockets, sandboxSocket{path: p})
+			sockets = append(sockets, sandboxSocket{path: p, allowed: slices.Contains(grants.PreselectedSockets, p)})
 		}
 	}
 	return sockets

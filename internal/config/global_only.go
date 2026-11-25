@@ -9,12 +9,16 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// NOTE: These reach the same engine as options.container_host, so a project layer may not set them either.
-var containerEngineEnvKeys = []string{"DOCKER_HOST", "CONTAINER_HOST"}
+// NOTE: The first two reach the same engine as options.container_host. The next three decide where the engine sockets are looked up, which the bind mount check and the endpoint search rely on. The last two decide where the global config is found, and a reload trusts whatever it finds there.
+var globalOnlyEnvKeys = []string{
+	"DOCKER_HOST", "CONTAINER_HOST",
+	"XDG_RUNTIME_DIR", "HOME", "USERPROFILE",
+	"ANGELA_GLOBAL_CONFIG", "XDG_CONFIG_HOME",
+}
 
 // NOTE: Matched without regard to case on every platform, because Windows environment names ignore case and a lower-case spelling is harmless elsewhere.
-func isContainerEngineEnv(name string) bool {
-	return slices.ContainsFunc(containerEngineEnvKeys, func(key string) bool { return strings.EqualFold(key, name) })
+func isGlobalOnlyEnv(name string) bool {
+	return slices.ContainsFunc(globalOnlyEnvKeys, func(key string) bool { return strings.EqualFold(key, name) })
 }
 
 // NOTE: Decoded like the loader decodes a layer, so a spelling the loader accepts, such as ENV for env, cannot slip past a lookup on exact keys.
@@ -25,7 +29,7 @@ type globalOnlyProbe struct {
 	Env map[string]string `json:"env"`
 }
 
-// NOTE: A project config is untrusted and could aim the engine at another host, so only trusted layers set the engine address. Run it before applyEnv. The workspace sidecar is untrusted here because a repository can ship it.
+// NOTE: A project config is untrusted and could aim the engine at another host or move the global config, so only trusted layers set the engine address or a global-only variable. Run it before applyEnv. The workspace sidecar is untrusted here because a repository can ship it.
 func applyGlobalOnly(cfg *Config, paths []string, layers [][]byte) {
 	var host string
 	trustedEnv := map[string]string{}
@@ -48,7 +52,7 @@ func applyGlobalOnly(cfg *Config, paths []string, layers [][]byte) {
 		}
 
 		for name, value := range probe.Env {
-			if !isContainerEngineEnv(name) {
+			if !isGlobalOnlyEnv(name) {
 				continue
 			}
 			if trusted {
@@ -73,7 +77,7 @@ func applyGlobalOnly(cfg *Config, paths []string, layers [][]byte) {
 
 	// NOTE: Rebuilt from the trusted layers alone, so no spelling an untrusted layer used can survive the merge.
 	for name := range cfg.Env {
-		if isContainerEngineEnv(name) {
+		if isGlobalOnlyEnv(name) {
 			delete(cfg.Env, name)
 		}
 	}

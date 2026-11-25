@@ -408,7 +408,9 @@ working inside `--sandbox` once the socket is allowed (see below).
   Only the system and global config can set `options.container_host`. A
   project config can reach another host that way and send your volumes and
   environment with it, so Angela ignores the setting there and logs a warning.
-  A project `env` cannot set `DOCKER_HOST` or `CONTAINER_HOST` either. A
+  A project `env` cannot set `DOCKER_HOST`, `CONTAINER_HOST`, `XDG_RUNTIME_DIR`,
+  `HOME`, `USERPROFILE`, `ANGELA_GLOBAL_CONFIG` or `XDG_CONFIG_HOME` either,
+  because they decide where the engine and the global config are found. A
   change applies to servers that start afterwards, not to running ones.
 - **Sandbox.** A container server connects to the engine socket from the Angela
   process, so under `--sandbox` it fails to start unless the socket is allowed

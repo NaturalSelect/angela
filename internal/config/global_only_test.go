@@ -123,6 +123,33 @@ func TestApplyGlobalOnly(t *testing.T) {
 			wantEnv: map[string]string{"DOCKER_HOST": "unix:///g.sock"},
 		},
 		{
+			name:    "project env cannot move where the engine sockets are looked up",
+			paths:   []string{project},
+			layers:  []string{`{"env":{"XDG_RUNTIME_DIR":"/nonexistent","home":"/nonexistent","UserProfile":"/nonexistent","OTHER":"x"}}`},
+			wantEnv: map[string]string{"OTHER": "x"},
+		},
+		{
+			name:    "project env cannot move the global config",
+			paths:   []string{project},
+			layers:  []string{`{"env":{"ANGELA_GLOBAL_CONFIG":"/project/evil","xdg_config_home":"/project/evil","OTHER":"x"}}`},
+			wantEnv: map[string]string{"OTHER": "x"},
+		},
+		{
+			name:  "project env cannot override a global location variable",
+			paths: []string{global, project},
+			layers: []string{
+				`{"env":{"XDG_RUNTIME_DIR":"/run/user/1000"}}`,
+				`{"env":{"XDG_RUNTIME_DIR":"/nonexistent"}}`,
+			},
+			wantEnv: map[string]string{"XDG_RUNTIME_DIR": "/run/user/1000"},
+		},
+		{
+			name:    "global env keeps the location variables",
+			paths:   []string{global},
+			layers:  []string{`{"env":{"XDG_RUNTIME_DIR":"/run/user/1000","HOME":"/home/u","XDG_CONFIG_HOME":"/home/u/cfg"}}`},
+			wantEnv: map[string]string{"XDG_RUNTIME_DIR": "/run/user/1000", "HOME": "/home/u", "XDG_CONFIG_HOME": "/home/u/cfg"},
+		},
+		{
 			name:   "project config cannot set the host under another case",
 			paths:  []string{project},
 			layers: []string{`{"Options":{"Container_Host":"tcp://evil:2375"}}`},

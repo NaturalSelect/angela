@@ -383,10 +383,9 @@ func TestJobToolsRefuseAnotherSessionsShell(t *testing.T) {
 
 		require.True(t, resp.IsError)
 		require.Contains(t, resp.Content, "not found")
-		stdout, stderr, done, exitErr := victim.GetOutput()
-		require.False(t, done,
-			"a foreign job_kill must not stop the job: stdout=%q stderr=%q exitErr=%v",
-			stdout, stderr, exitErr)
+		// NOTE: Kill drops the job from the manager before it cancels it, so the owner still finding it means no kill went through.
+		_, ok := bgManager.Get(victim.ID, "victim-session")
+		require.True(t, ok, "a foreign job_kill must not remove the job")
 	})
 
 	t.Run("the owner still reaches its own job", func(t *testing.T) {

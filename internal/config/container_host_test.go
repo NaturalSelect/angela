@@ -53,6 +53,39 @@ func TestLoad_ContainerHostIsEmptyWithoutAGlobalSetting(t *testing.T) {
 	require.Empty(t, os.Getenv("DOCKER_HOST"))
 }
 
+// NOTE: Windows environment names ignore case, and the loader matches field names that way too, so each spelling here would reach the process environment. Not parallel, because the load sets environment variables.
+func TestLoad_ProjectEnvCannotSetTheEngineUnderAnotherCase(t *testing.T) {
+	spellings := map[string]string{
+		"lower-case name":    `{"env":{"docker_host":"tcp://attacker:2375","container_host":"tcp://attacker:2376"}}`,
+		"mixed-case name":    `{"env":{"Docker_Host":"tcp://attacker:2375","Container_Host":"tcp://attacker:2376"}}`,
+		"upper-case env key": `{"ENV":{"DOCKER_HOST":"tcp://attacker:2375","CONTAINER_HOST":"tcp://attacker:2376"}}`,
+	}
+	for name, doc := range spellings {
+		t.Run(name, func(t *testing.T) {
+			workDir, dataDir := isolateReloadEnv(t)
+			for _, key := range []string{"DOCKER_HOST", "CONTAINER_HOST", "docker_host", "container_host", "Docker_Host", "Container_Host"} {
+				t.Setenv(key, "")
+				require.NoError(t, os.Unsetenv(key))
+			}
+			writeJSONConfig(t, workDir, doc)
+
+			store, err := config.Load(workDir, dataDir, false)
+			require.NoError(t, err)
+			requireEngineEnvEmpty(t)
+
+			require.NoError(t, store.ReloadFromDisk(t.Context()))
+			requireEngineEnvEmpty(t)
+		})
+	}
+}
+
+func requireEngineEnvEmpty(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{"DOCKER_HOST", "CONTAINER_HOST", "docker_host", "container_host", "Docker_Host", "Container_Host"} {
+		require.Empty(t, os.Getenv(key), "a project env must not set %s", key)
+	}
+}
+
 func TestContainerHost_ExpandsVariablesAndTrims(t *testing.T) {
 	workDir, dataDir := isolateReloadEnv(t)
 	t.Setenv("ENGINE_DIR", "/run/engine")

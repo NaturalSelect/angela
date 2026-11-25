@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -248,22 +247,6 @@ func (s *ConfigStore) ContainerFieldResolver(name string) VariableResolver {
 		return IdentityResolver()
 	}
 	return s.envOnlyResolver
-}
-
-// NOTE: One engine serves every container server, and only the system and global config can name it, so no per-server override applies.
-func (s *ConfigStore) ContainerHost() (string, error) {
-	cfg := s.Config()
-	if cfg == nil || cfg.Options == nil || cfg.Options.ContainerHost == "" {
-		return "", nil
-	}
-	s.writeMu.RLock()
-	resolver := s.envOnlyResolver
-	s.writeMu.RUnlock()
-	host, err := resolver.ResolveValue(cfg.Options.ContainerHost)
-	if err != nil {
-		return "", fmt.Errorf("options.container_host: %w", err)
-	}
-	return strings.TrimSpace(host), nil
 }
 
 // KnownProviders returns the list of known providers.

@@ -15,14 +15,10 @@ func SandboxGrants(store *config.ConfigStore, grantSockets bool) sandbox.Contain
 	if cfg == nil {
 		return g
 	}
-	host, err := store.ContainerHost()
-	if err != nil {
-		return g
-	}
-	return g.WithSockets(serverSockets(cfg.MCP, host, existingCandidateSockets), grantSockets)
+	return g.WithSockets(serverSockets(cfg.MCP, existingCandidateSockets), grantSockets)
 }
 
-func serverSockets(servers config.MCPs, host string, discover func() []string) []string {
+func serverSockets(servers config.MCPs, discover func() []string) []string {
 	enabled := false
 	for _, m := range servers {
 		if m.Type == config.MCPContainer && !m.Disabled {
@@ -33,7 +29,7 @@ func serverSockets(servers config.MCPs, host string, discover func() []string) [
 	if !enabled {
 		return nil
 	}
-	ep, err := resolveEndpoint(host, os.Getenv, discover)
+	ep, err := resolveEndpoint(os.Getenv, discover)
 	if err != nil || ep.Socket == "" {
 		return nil
 	}

@@ -16,61 +16,21 @@ func TestApplyGlobalOnly(t *testing.T) {
 	)
 
 	tests := []struct {
-		name     string
-		paths    []string
-		layers   []string
-		wantHost string
-		wantEnv  map[string]string
+		name    string
+		paths   []string
+		layers  []string
+		wantEnv map[string]string
 	}{
-		{
-			name:     "global config sets the host",
-			paths:    []string{global},
-			layers:   []string{`{"options":{"container_host":"unix:///g.sock"}}`},
-			wantHost: "unix:///g.sock",
-		},
-		{
-			name:     "system config sets the host",
-			paths:    []string{systemConfigPath},
-			layers:   []string{`{"options":{"container_host":"unix:///s.sock"}}`},
-			wantHost: "unix:///s.sock",
-		},
-		{
-			name:  "global config wins over system config",
-			paths: []string{systemConfigPath, global},
-			layers: []string{
-				`{"options":{"container_host":"unix:///s.sock"}}`,
-				`{"options":{"container_host":"unix:///g.sock"}}`,
-			},
-			wantHost: "unix:///g.sock",
-		},
-		{
-			name:   "project config cannot set the host",
-			paths:  []string{project},
-			layers: []string{`{"options":{"container_host":"tcp://evil:2375"}}`},
-		},
-		{
-			name:   "workspace sidecar cannot set the host",
-			paths:  []string{workspace},
-			layers: []string{`{"options":{"container_host":"tcp://evil:2375"}}`},
-		},
-		{
-			name:  "project config cannot override the global host",
-			paths: []string{global, project},
-			layers: []string{
-				`{"options":{"container_host":"unix:///g.sock"}}`,
-				`{"options":{"container_host":"tcp://evil:2375"}}`,
-			},
-			wantHost: "unix:///g.sock",
-		},
-		{
-			name:   "a per-server host is ignored",
-			paths:  []string{global},
-			layers: []string{`{"mcp":{"box":{"type":"container","image":"i","container_host":"tcp://evil:2375"}}}`},
-		},
 		{
 			name:    "project env cannot set the engine variables",
 			paths:   []string{project},
 			layers:  []string{`{"env":{"DOCKER_HOST":"tcp://evil:2375","CONTAINER_HOST":"tcp://evil:2376","KEEP":"1"}}`},
+			wantEnv: map[string]string{"KEEP": "1"},
+		},
+		{
+			name:    "workspace sidecar cannot set the engine variables",
+			paths:   []string{workspace},
+			layers:  []string{`{"env":{"DOCKER_HOST":"tcp://evil:2375","KEEP":"1"}}`},
 			wantEnv: map[string]string{"KEEP": "1"},
 		},
 		{
@@ -87,6 +47,21 @@ func TestApplyGlobalOnly(t *testing.T) {
 			paths:   []string{global},
 			layers:  []string{`{"env":{"DOCKER_HOST":"unix:///g.sock","OTHER":"x"}}`},
 			wantEnv: map[string]string{"DOCKER_HOST": "unix:///g.sock", "OTHER": "x"},
+		},
+		{
+			name:    "system env keeps the engine variables",
+			paths:   []string{systemConfigPath},
+			layers:  []string{`{"env":{"CONTAINER_HOST":"unix:///s.sock"}}`},
+			wantEnv: map[string]string{"CONTAINER_HOST": "unix:///s.sock"},
+		},
+		{
+			name:  "global env wins over system env",
+			paths: []string{systemConfigPath, global},
+			layers: []string{
+				`{"env":{"DOCKER_HOST":"unix:///s.sock"}}`,
+				`{"env":{"DOCKER_HOST":"unix:///g.sock"}}`,
+			},
+			wantEnv: map[string]string{"DOCKER_HOST": "unix:///g.sock"},
 		},
 		{
 			name:    "project env keeps unrelated variables",
@@ -149,17 +124,6 @@ func TestApplyGlobalOnly(t *testing.T) {
 			layers:  []string{`{"env":{"XDG_RUNTIME_DIR":"/run/user/1000","HOME":"/home/u","XDG_CONFIG_HOME":"/home/u/cfg"}}`},
 			wantEnv: map[string]string{"XDG_RUNTIME_DIR": "/run/user/1000", "HOME": "/home/u", "XDG_CONFIG_HOME": "/home/u/cfg"},
 		},
-		{
-			name:   "project config cannot set the host under another case",
-			paths:  []string{project},
-			layers: []string{`{"Options":{"Container_Host":"tcp://evil:2375"}}`},
-		},
-		{
-			name:     "global config may spell the host in another case",
-			paths:    []string{global},
-			layers:   []string{`{"Options":{"Container_Host":"unix:///g.sock"}}`},
-			wantHost: "unix:///g.sock",
-		},
 	}
 
 	for _, tt := range tests {
@@ -173,8 +137,6 @@ func TestApplyGlobalOnly(t *testing.T) {
 
 			applyGlobalOnly(cfg, tt.paths, raw)
 
-			require.NotNil(t, cfg.Options)
-			require.Equal(t, tt.wantHost, cfg.Options.ContainerHost)
 			if len(tt.wantEnv) == 0 {
 				require.Empty(t, cfg.Env)
 			} else {

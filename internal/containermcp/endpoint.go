@@ -19,13 +19,13 @@ type Endpoint struct {
 	Socket string
 }
 
-// NOTE: Tries explicit, DOCKER_HOST, CONTAINER_HOST, then the first Docker or Podman socket that exists.
-func ResolveEndpoint(explicit string) (Endpoint, error) {
-	return resolveEndpoint(explicit, os.Getenv, existingCandidateSockets)
+// NOTE: Tries DOCKER_HOST, CONTAINER_HOST, then the first Docker or Podman socket that exists. The address comes from the environment alone, so no config file can send container workloads to another host.
+func ResolveEndpoint() (Endpoint, error) {
+	return resolveEndpoint(os.Getenv, existingCandidateSockets)
 }
 
-func resolveEndpoint(explicit string, getenv func(string) string, discover func() []string) (Endpoint, error) {
-	for _, host := range []string{explicit, getenv("DOCKER_HOST"), getenv("CONTAINER_HOST")} {
+func resolveEndpoint(getenv func(string) string, discover func() []string) (Endpoint, error) {
+	for _, host := range []string{getenv("DOCKER_HOST"), getenv("CONTAINER_HOST")} {
 		if host != "" {
 			return parseEndpoint(host)
 		}
@@ -33,7 +33,7 @@ func resolveEndpoint(explicit string, getenv func(string) string, discover func(
 	if sockets := discover(); len(sockets) > 0 {
 		return Endpoint{Host: "unix://" + sockets[0], Socket: sockets[0]}, nil
 	}
-	return Endpoint{}, errors.New("no container engine found: set options.container_host in the global config, or DOCKER_HOST or CONTAINER_HOST, or start the docker or podman socket")
+	return Endpoint{}, errors.New("no container engine found: set DOCKER_HOST or CONTAINER_HOST, or start the docker or podman socket")
 }
 
 func parseEndpoint(host string) (Endpoint, error) {

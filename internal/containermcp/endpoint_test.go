@@ -16,7 +16,6 @@ func TestResolveEndpoint_Order(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	explicitSock := filepath.Join(dir, "explicit.sock")
 	dockerSock := filepath.Join(dir, "docker.sock")
 	podmanSock := filepath.Join(dir, "podman.sock")
 	discoveredDocker := filepath.Join(dir, "discovered-docker.sock")
@@ -25,17 +24,10 @@ func TestResolveEndpoint_Order(t *testing.T) {
 	discover := func() []string { return []string{discoveredDocker, discoveredPodman} }
 
 	tests := []struct {
-		name     string
-		explicit string
-		env      map[string]string
-		want     Endpoint
+		name string
+		env  map[string]string
+		want Endpoint
 	}{
-		{
-			name:     "explicit wins",
-			explicit: "unix://" + explicitSock,
-			env:      map[string]string{"DOCKER_HOST": "unix://" + dockerSock, "CONTAINER_HOST": "unix://" + podmanSock},
-			want:     Endpoint{Host: "unix://" + explicitSock, Socket: explicitSock},
-		},
 		{
 			name: "docker host before container host",
 			env:  map[string]string{"DOCKER_HOST": "unix://" + dockerSock, "CONTAINER_HOST": "unix://" + podmanSock},
@@ -51,15 +43,15 @@ func TestResolveEndpoint_Order(t *testing.T) {
 			want: Endpoint{Host: "unix://" + discoveredDocker, Socket: discoveredDocker},
 		},
 		{
-			name:     "tcp has no socket",
-			explicit: "tcp://127.0.0.1:2375",
-			want:     Endpoint{Host: "tcp://127.0.0.1:2375"},
+			name: "tcp has no socket",
+			env:  map[string]string{"DOCKER_HOST": "tcp://127.0.0.1:2375"},
+			want: Endpoint{Host: "tcp://127.0.0.1:2375"},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := resolveEndpoint(tc.explicit, envMap(tc.env), discover)
+			got, err := resolveEndpoint(envMap(tc.env), discover)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
 		})
@@ -69,9 +61,10 @@ func TestResolveEndpoint_Order(t *testing.T) {
 func TestResolveEndpoint_NothingFound(t *testing.T) {
 	t.Parallel()
 
-	_, err := resolveEndpoint("", envMap(nil), func() []string { return nil })
+	_, err := resolveEndpoint(envMap(nil), func() []string { return nil })
 	require.ErrorContains(t, err, "no container engine found")
-	require.ErrorContains(t, err, "container_host")
+	require.ErrorContains(t, err, "DOCKER_HOST")
+	require.NotContains(t, err.Error(), "container_host")
 }
 
 func TestParseEndpoint_Errors(t *testing.T) {

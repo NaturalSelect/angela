@@ -109,10 +109,10 @@ in `angela_info`.
 
 MCP servers with `"type": "container"` connect to the engine socket from the
 Angela process itself, so they need the socket granted too. The grant also
-covers the socket such a server will use (`options.container_host` in the global
-config, `DOCKER_HOST`, `CONTAINER_HOST` or a socket found on the machine) when
-no `docker` or `podman` CLI is installed. Without the grant the server shows an
-error that names the socket and `--sandbox-allow-docker-socket`.
+covers the socket such a server will use (`DOCKER_HOST`, `CONTAINER_HOST` or a
+socket found on the machine) when no `docker` or `podman` CLI is installed.
+Without the grant the server shows an error that names the socket and
+`--sandbox-allow-docker-socket`.
 
 A container server that is already running when the sandbox is entered from the
 dialog, and whose socket the sandbox does not grant, is stopped first. Its
@@ -217,9 +217,9 @@ before launching, or confirm what was granted in the `unix_sockets` line of
 **A container MCP server fails with `needs the container engine socket ...,
 which this sandbox does not allow`** — grant the socket the same way as above:
 launch with `--sandbox-allow-docker-socket`, or turn it on in the **Enter
-Sandbox** dialog. Set `options.container_host` in the global config if the
-servers should use a different socket than the one Angela picks. A project
-config cannot set it.
+Sandbox** dialog. Set `DOCKER_HOST` or `CONTAINER_HOST` in the environment if
+the servers should use a different socket than the one Angela picks. A project
+config cannot set them.
 
 **A tool call that should be scoped in still fails with an I/O error** — the
 path may fall outside the read-write set (everything is readable by default,

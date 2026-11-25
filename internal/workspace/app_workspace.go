@@ -718,7 +718,7 @@ func (w *AppWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) err
 		return enter()
 	}
 	return sandboxEntry{
-		blocker:  containermcp.SandboxBlocker(w.store, cfg),
+		blocker:  containermcp.SandboxBlocker(cfg),
 		hold:     func() func() { return containermcp.HoldSandbox(cfg) },
 		stop:     func(reason func(string) error) []string { return mcptools.StopContainerServers(w.store, reason) },
 		waitIdle: containermcp.WaitIdle,

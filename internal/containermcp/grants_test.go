@@ -26,29 +26,37 @@ func TestServerSockets(t *testing.T) {
 	none := func() []string { return nil }
 	container := config.MCPs{"a": {Type: config.MCPContainer, Image: "i"}}
 
-	t.Run("explicit host of an existing socket", func(t *testing.T) {
-		require.Equal(t, []string{sock}, serverSockets(container, "unix://"+sock, none))
+	t.Run("host of an existing socket", func(t *testing.T) {
+		t.Setenv("DOCKER_HOST", "unix://"+sock)
+		require.Equal(t, []string{sock}, serverSockets(container, none))
 	})
 	t.Run("discovered socket when no host is set", func(t *testing.T) {
-		require.Equal(t, []string{sock}, serverSockets(container, "", func() []string { return []string{sock} }))
+		require.Equal(t, []string{sock}, serverSockets(container, func() []string { return []string{sock} }))
 	})
 	t.Run("one socket however many servers use it", func(t *testing.T) {
+		t.Setenv("DOCKER_HOST", "unix://"+sock)
 		servers := config.MCPs{
 			"a": {Type: config.MCPContainer, Image: "i"},
 			"b": {Type: config.MCPContainer, Image: "j"},
 		}
-		require.Equal(t, []string{sock}, serverSockets(servers, "unix://"+sock, none))
+		require.Equal(t, []string{sock}, serverSockets(servers, none))
 	})
 	t.Run("ignores other types and disabled servers", func(t *testing.T) {
+		t.Setenv("DOCKER_HOST", "unix://"+sock)
 		servers := config.MCPs{
 			"stdio": {Type: config.MCPStdio, Command: "x"},
 			"off":   {Type: config.MCPContainer, Image: "i", Disabled: true},
 		}
-		require.Empty(t, serverSockets(servers, "unix://"+sock, none))
+		require.Empty(t, serverSockets(servers, none))
 	})
 	t.Run("ignores missing sockets and tcp hosts", func(t *testing.T) {
-		require.Empty(t, serverSockets(container, "unix://"+filepath.Join(t.TempDir(), "nope.sock"), none))
-		require.Empty(t, serverSockets(container, "tcp://127.0.0.1:2375", none))
-		require.Empty(t, serverSockets(container, "ftp://x", none))
+		for _, host := range []string{
+			"unix://" + filepath.Join(t.TempDir(), "nope.sock"),
+			"tcp://127.0.0.1:2375",
+			"ftp://x",
+		} {
+			t.Setenv("DOCKER_HOST", host)
+			require.Empty(t, serverSockets(container, none), host)
+		}
 	})
 }

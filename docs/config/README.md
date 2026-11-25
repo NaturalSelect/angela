@@ -396,22 +396,23 @@ working inside `--sandbox` once the socket is allowed (see below).
 }
 ```
 
-- **Engine.** One engine serves every container server. `options.container_host`
-  wins, then `DOCKER_HOST`, then `CONTAINER_HOST`, then the first Docker or
-  Podman socket found on the machine. Rootless Podman needs its socket running:
+- **Engine.** One engine serves every container server. Angela uses `DOCKER_HOST`,
+  then `CONTAINER_HOST`, then the first Docker or Podman socket found on the
+  machine. Rootless Podman needs its socket running:
   `systemctl --user start podman.socket`.
 
-  ```jsonc
-  { "options": { "container_host": "unix:///run/user/1000/podman/podman.sock" } }
+  ```sh
+  export DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
   ```
 
-  Only the system and global config can set `options.container_host`. A
-  project config can reach another host that way and send your volumes and
-  environment with it, so Angela ignores the setting there and logs a warning.
-  A project `env` cannot set `DOCKER_HOST`, `CONTAINER_HOST`, `XDG_RUNTIME_DIR`,
-  `HOME`, `USERPROFILE`, `ANGELA_GLOBAL_CONFIG` or `XDG_CONFIG_HOME` either,
-  because they decide where the engine and the global config are found. A
-  change applies to servers that start afterwards, not to running ones.
+  There is no config setting for the engine address. A project config could use
+  one to reach another host and send your volumes and environment with it.
+  Set the variable in your shell, or in the `env` map of the system or global
+  config. A project `env` cannot set `DOCKER_HOST`, `CONTAINER_HOST`,
+  `XDG_RUNTIME_DIR`, `HOME`, `USERPROFILE`, `ANGELA_GLOBAL_CONFIG` or
+  `XDG_CONFIG_HOME`, because they decide where the engine and the global config
+  are found. A change applies to servers that start afterwards, not to running
+  ones.
 - **Sandbox.** A container server connects to the engine socket from the Angela
   process, so under `--sandbox` it fails to start unless the socket is allowed
   with `--sandbox-allow-docker-socket` or the `/sandbox` dialog. The socket is a
@@ -592,7 +593,6 @@ A rule's `mode` chooses how `pattern` is compared:
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
     "commit_diff_runes": 48000,       // characters of the staged diff `angela commit` and /commit send to the model; `angela describe` and /describe apply it to the branch comparison
-    "container_host": "unix:///run/user/1000/podman/podman.sock", // engine for container MCP servers; read only from the system and global config
 
     // Attribution
     "attribution": {

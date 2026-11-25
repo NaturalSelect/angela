@@ -62,8 +62,9 @@ minimal edit, run `angela config validate`, report whether a restart is needed.
 > two `oauth_client_*` fields restrict `$(cmd)` to system/global config layers.
 > The other container fields (`image`, `compose`, `service`, `volumes`,
 > `network`, `workdir`) expand `$VAR` only, at every
-> layer. The engine address of container servers is not a server field: it is
-> `options.container_host`, read only from the system and global config.
+> layer. The engine address of container servers is not a server field: it comes
+> from `DOCKER_HOST` or `CONTAINER_HOST` in the environment, which a project
+> config cannot set.
 
 ## Tool Naming
 

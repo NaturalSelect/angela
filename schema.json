@@ -793,13 +793,6 @@
           "examples": [
             100000
           ]
-        },
-        "container_host": {
-          "type": "string",
-          "description": "Container engine endpoint shared by every container MCP server. Only the system and global config can set it; a project config is ignored because it could send container workloads to another host.",
-          "examples": [
-            "unix:///run/user/1000/podman/podman.sock"
-          ]
         }
       },
       "additionalProperties": false,

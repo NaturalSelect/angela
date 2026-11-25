@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 	"github.com/stretchr/testify/require"
 )
@@ -131,29 +130,26 @@ func TestSession_CloseEndsItsRegistrationWithTheGate(t *testing.T) {
 func TestSandboxBlocker(t *testing.T) {
 	sock := shortSocket(t)
 	t.Setenv("DOCKER_HOST", "unix://"+sock)
-	store := config.NewTestStore(&config.Config{})
 	dir := t.TempDir()
 
 	t.Run("a sandbox without rules blocks nothing", func(t *testing.T) {
-		require.Nil(t, SandboxBlocker(store, sandbox.Config{}))
+		require.Nil(t, SandboxBlocker(sandbox.Config{}))
 	})
 	t.Run("a granted socket blocks nothing", func(t *testing.T) {
-		require.Nil(t, SandboxBlocker(store, sandbox.Config{ReadWrite: []string{dir}, UnixSockets: []string{sock}}))
+		require.Nil(t, SandboxBlocker(sandbox.Config{ReadWrite: []string{dir}, UnixSockets: []string{sock}}))
 	})
 	t.Run("a socket left out blocks every server", func(t *testing.T) {
-		blocked := SandboxBlocker(store, sandbox.Config{ReadWrite: []string{dir}})
+		blocked := SandboxBlocker(sandbox.Config{ReadWrite: []string{dir}})
 		require.NotNil(t, blocked)
 		require.ErrorContains(t, blocked("box"), `"box"`)
 		require.ErrorContains(t, blocked("other"), `"other"`)
 	})
-	t.Run("the configured host beats the environment", func(t *testing.T) {
+	t.Run("only the socket the environment names counts", func(t *testing.T) {
 		other := shortSocket(t)
-		cfg := config.NewTestStore(&config.Config{Options: &config.Options{ContainerHost: "unix://" + other}})
-		require.Nil(t, SandboxBlocker(cfg, sandbox.Config{ReadWrite: []string{dir}, UnixSockets: []string{other}}))
-		require.NotNil(t, SandboxBlocker(cfg, sandbox.Config{ReadWrite: []string{dir}, UnixSockets: []string{sock}}))
+		require.NotNil(t, SandboxBlocker(sandbox.Config{ReadWrite: []string{dir}, UnixSockets: []string{other}}))
 	})
 	t.Run("an engine that cannot be resolved blocks nothing", func(t *testing.T) {
-		cfg := config.NewTestStore(&config.Config{Options: &config.Options{ContainerHost: "ftp://x"}})
-		require.Nil(t, SandboxBlocker(cfg, sandbox.Config{ReadWrite: []string{dir}}))
+		t.Setenv("DOCKER_HOST", "ftp://x")
+		require.Nil(t, SandboxBlocker(sandbox.Config{ReadWrite: []string{dir}}))
 	})
 }

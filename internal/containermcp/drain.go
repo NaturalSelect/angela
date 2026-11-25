@@ -6,7 +6,6 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/sandbox"
 )
 
@@ -87,15 +86,11 @@ func WaitIdle(ctx context.Context) []string {
 }
 
 // NOTE: Returns nil when cfg leaves the engine reachable, so no container server has to stop.
-func SandboxBlocker(store *config.ConfigStore, cfg sandbox.Config) func(server string) error {
+func SandboxBlocker(cfg sandbox.Config) func(server string) error {
 	if !cfg.Restricts() {
 		return nil
 	}
-	host, err := store.ContainerHost()
-	if err != nil {
-		return nil
-	}
-	ep, err := ResolveEndpoint(host)
+	ep, err := ResolveEndpoint()
 	if err != nil {
 		return nil
 	}

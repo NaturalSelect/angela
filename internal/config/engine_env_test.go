@@ -10,49 +10,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// NOTE: Not parallel, because the load sets process environment variables.
-func TestLoad_ContainerHostComesOnlyFromTheGlobalConfig(t *testing.T) {
+// NOTE: The engine address comes from the environment alone, so what stands between a project config and the engine is the env map. Not parallel, because the load sets process environment variables.
+func TestLoad_EngineEnvComesOnlyFromTheTrustedLayers(t *testing.T) {
 	workDir, dataDir := isolateReloadEnv(t)
 	t.Setenv("DOCKER_HOST", "")
 	t.Setenv("CONTAINER_HOST", "")
 
 	globalDir := t.TempDir()
 	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	writeJSONConfig(t, globalDir, `{"options":{"container_host":"unix:///global.sock"}}`)
-	writeJSONConfig(t, workDir, `{
-	  "options": {"container_host": "tcp://evil:2375"},
-	  "env": {"DOCKER_HOST": "tcp://evil:2375", "CONTAINER_HOST": "tcp://evil:2376"},
-	  "mcp": {"box": {"type": "container", "image": "i", "container_host": "tcp://evil:2375"}}
-	}`)
+	writeJSONConfig(t, globalDir, `{"env":{"DOCKER_HOST":"unix:///global.sock"}}`)
+	writeJSONConfig(t, workDir, `{"env":{"DOCKER_HOST":"tcp://evil:2375","CONTAINER_HOST":"tcp://evil:2376"}}`)
 
 	store, err := config.Load(workDir, dataDir, false)
 	require.NoError(t, err)
-
-	host, err := store.ContainerHost()
-	require.NoError(t, err)
-	require.Equal(t, "unix:///global.sock", host)
-	require.Empty(t, os.Getenv("DOCKER_HOST"), "a project env must not redirect the engine")
-	require.Empty(t, os.Getenv("CONTAINER_HOST"), "a project env must not redirect the engine")
+	require.Equal(t, "unix:///global.sock", os.Getenv("DOCKER_HOST"), "the global config may name the engine")
+	require.Empty(t, os.Getenv("CONTAINER_HOST"), "a project env must not name the engine")
 
 	// NOTE: A reload takes the same path and must reach the same answer.
 	require.NoError(t, store.ReloadFromDisk(t.Context()))
-	host, err = store.ContainerHost()
-	require.NoError(t, err)
-	require.Equal(t, "unix:///global.sock", host)
+	require.Equal(t, "unix:///global.sock", os.Getenv("DOCKER_HOST"))
+	require.Empty(t, os.Getenv("CONTAINER_HOST"))
 }
 
-func TestLoad_ContainerHostIsEmptyWithoutAGlobalSetting(t *testing.T) {
+func TestLoad_ProjectEnvLeavesTheEngineUnsetWithoutAGlobalSetting(t *testing.T) {
 	workDir, dataDir := isolateReloadEnv(t)
 	t.Setenv("DOCKER_HOST", "")
-	writeJSONConfig(t, workDir, `{"options":{"container_host":"tcp://evil:2375"},"env":{"DOCKER_HOST":"tcp://evil:2375"}}`)
+	require.NoError(t, os.Unsetenv("DOCKER_HOST"))
+	writeJSONConfig(t, workDir, `{"env":{"DOCKER_HOST":"tcp://evil:2375"}}`)
 
-	store, err := config.Load(workDir, dataDir, false)
+	_, err := config.Load(workDir, dataDir, false)
 	require.NoError(t, err)
-
-	host, err := store.ContainerHost()
-	require.NoError(t, err)
-	require.Empty(t, host)
-	require.Empty(t, os.Getenv("DOCKER_HOST"))
+	_, set := os.LookupEnv("DOCKER_HOST")
+	require.False(t, set)
 }
 
 // NOTE: Windows environment names ignore case, and the loader matches field names that way too, so each spelling here would reach the process environment. Not parallel, because the load sets environment variables.
@@ -95,6 +84,7 @@ func TestLoad_ProjectEnvCannotMoveTheEngineLocations(t *testing.T) {
 	runtimeDir := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 	t.Setenv("USERPROFILE", userHome)
+	t.Setenv("KEEP", "")
 	writeJSONConfig(t, workDir, `{"env":{
 	  "XDG_RUNTIME_DIR": "/nonexistent",
 	  "xdg_runtime_dir": "/nonexistent",
@@ -119,33 +109,33 @@ func TestLoad_ProjectEnvCannotMoveTheEngineLocations(t *testing.T) {
 	requireUnmoved(t)
 }
 
-// NOTE: A reload finds the global config through these variables, and anything found there is trusted, so a project that could move them could hand itself the global layer. Not parallel, because the load sets environment variables.
+// NOTE: A reload finds the global config through these variables, and anything found there is trusted, so a project that could move them could hand itself the global layer. The global env map shows which file a reload read. Not parallel, because the load sets environment variables.
 func TestLoad_ProjectEnvCannotMoveTheGlobalConfig(t *testing.T) {
 	levers := map[string]func(t *testing.T, fake string) string{
 		"ANGELA_GLOBAL_CONFIG": func(t *testing.T, fake string) string {
-			writeJSONConfig(t, fake, `{"options":{"container_host":"tcp://attacker:2375"}}`)
+			writeJSONConfig(t, fake, `{"env":{"PLANTED":"yes"}}`)
 			return fmt.Sprintf(`{"env":{"ANGELA_GLOBAL_CONFIG":%q}}`, fake)
 		},
 		"XDG_CONFIG_HOME": func(t *testing.T, fake string) string {
-			writeJSONConfig(t, filepath.Join(fake, "angela"), `{"options":{"container_host":"tcp://attacker:2375"}}`)
+			writeJSONConfig(t, filepath.Join(fake, "angela"), `{"env":{"PLANTED":"yes"}}`)
 			return fmt.Sprintf(`{"env":{"XDG_CONFIG_HOME":%q}}`, fake)
 		},
 	}
 	for name, plant := range levers {
 		t.Run(name, func(t *testing.T) {
 			workDir, dataDir := isolateReloadEnv(t)
-			t.Setenv("DOCKER_HOST", "")
-			t.Setenv("CONTAINER_HOST", "")
+			t.Setenv("REAL", "")
+			t.Setenv("PLANTED", "")
 
 			realConfig := t.TempDir()
 			if name == "XDG_CONFIG_HOME" {
 				t.Setenv("ANGELA_GLOBAL_CONFIG", "")
 				require.NoError(t, os.Unsetenv("ANGELA_GLOBAL_CONFIG"))
 				t.Setenv("XDG_CONFIG_HOME", realConfig)
-				writeJSONConfig(t, filepath.Join(realConfig, "angela"), `{"options":{"container_host":"unix:///global.sock"}}`)
+				writeJSONConfig(t, filepath.Join(realConfig, "angela"), `{"env":{"REAL":"yes"}}`)
 			} else {
 				t.Setenv("ANGELA_GLOBAL_CONFIG", realConfig)
-				writeJSONConfig(t, realConfig, `{"options":{"container_host":"unix:///global.sock"}}`)
+				writeJSONConfig(t, realConfig, `{"env":{"REAL":"yes"}}`)
 			}
 			want := config.GlobalConfig()
 
@@ -157,24 +147,8 @@ func TestLoad_ProjectEnvCannotMoveTheGlobalConfig(t *testing.T) {
 
 			require.NoError(t, store.ReloadFromDisk(t.Context()))
 			require.Equal(t, want, config.GlobalConfig())
-			host, err := store.ContainerHost()
-			require.NoError(t, err)
-			require.Equal(t, "unix:///global.sock", host)
+			require.Equal(t, "yes", os.Getenv("REAL"), "the real global config is still the one read")
+			require.Empty(t, os.Getenv("PLANTED"), "the planted file must not be read as the global config")
 		})
 	}
-}
-
-func TestContainerHost_ExpandsVariablesAndTrims(t *testing.T) {
-	workDir, dataDir := isolateReloadEnv(t)
-	t.Setenv("ENGINE_DIR", "/run/engine")
-	globalDir := t.TempDir()
-	t.Setenv("ANGELA_GLOBAL_CONFIG", globalDir)
-	writeJSONConfig(t, globalDir, `{"options":{"container_host":" unix://$ENGINE_DIR/e.sock "}}`)
-
-	store, err := config.Load(workDir, dataDir, false)
-	require.NoError(t, err)
-
-	host, err := store.ContainerHost()
-	require.NoError(t, err)
-	require.Equal(t, "unix:///run/engine/e.sock", host)
 }

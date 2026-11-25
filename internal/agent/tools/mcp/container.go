@@ -34,15 +34,9 @@ type containerTransport struct {
 func (t *containerTransport) ExitErr() error { return t.session.ExitErr() }
 
 func createContainerTransport(ctx context.Context, cfg *config.ConfigStore, name string, m config.MCPConfig, resolver config.VariableResolver) (mcp.Transport, error) {
-	fieldRes, workDir := resolver, ""
-	lockDir, host := "", ""
+	fieldRes, workDir, lockDir := resolver, "", ""
 	if cfg != nil {
 		fieldRes, workDir, lockDir = cfg.ContainerFieldResolver(name), cfg.WorkingDir(), cfg.LockDir()
-		var err error
-		host, err = cfg.ContainerHost()
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	g, err := containermcp.FromConfig(ctx, name, m, workDir, fieldRes, resolver)
@@ -50,7 +44,7 @@ func createContainerTransport(ctx context.Context, cfg *config.ConfigStore, name
 		return nil, fmt.Errorf("invalid container mcp config: %w", err)
 	}
 	g.LockDir = lockDir
-	ep, err := containermcp.ResolveEndpoint(host)
+	ep, err := containermcp.ResolveEndpoint()
 	if err != nil {
 		return nil, err
 	}

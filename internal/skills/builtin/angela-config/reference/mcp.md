@@ -25,8 +25,8 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `oauth_callback_port`  | int    | Pin the localhost redirect port when the provider enforces exact-match redirect URIs |
 
 A `container` server has no engine field. Every container server uses the
-engine named by `options.container_host`, which only the system and global
-config can set (see `options.md`).
+engine named by `DOCKER_HOST`, then `CONTAINER_HOST`, then the first Docker or
+Podman socket found. A project config cannot set either variable in `env`.
 
 Angela has no native computer use. For GUI control, deploy an MCP server on
 the computer to be operated and add it here (`stdio` if local, `http`/`sse`

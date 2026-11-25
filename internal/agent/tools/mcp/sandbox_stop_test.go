@@ -29,9 +29,9 @@ func connectContainerServer(t *testing.T, name string) (*fakeContainerSession, c
 	cleanupServer(t, name)
 
 	sock := filepath.Join(t.TempDir(), "test-engine.sock")
-	cfg := config.NewTestStore(&config.Config{Options: &config.Options{ContainerHost: "unix://" + sock}})
+	t.Setenv("DOCKER_HOST", "unix://"+sock)
 	m := config.MCPConfig{Type: config.MCPContainer, Image: "img"}
-	sess, err := createSession(t.Context(), cfg, name, m, currentGen(name), shellResolverWithPath(t, nil), false)
+	sess, err := createSession(t.Context(), nil, name, m, currentGen(name), shellResolverWithPath(t, nil), false)
 	require.NoError(t, err)
 	sessions.Set(name, sess)
 	updateState(name, StateConnected, nil, sess, Counts{}, withConfig(m))

@@ -94,6 +94,45 @@ func TestApplyGlobalOnly(t *testing.T) {
 			layers:  []string{`{"env":{"OTHER":"x"}}`},
 			wantEnv: map[string]string{"OTHER": "x"},
 		},
+		// NOTE: Windows environment names ignore case, and encoding/json matches field names that way too, so each spelling below reaches the process environment.
+		{
+			name:    "project env cannot set the engine variables in another case",
+			paths:   []string{project},
+			layers:  []string{`{"env":{"docker_host":"tcp://evil:2375","Container_Host":"tcp://evil:2376","OTHER":"x"}}`},
+			wantEnv: map[string]string{"OTHER": "x"},
+		},
+		{
+			name:    "project env cannot hide behind another case of the env key",
+			paths:   []string{project},
+			layers:  []string{`{"ENV":{"DOCKER_HOST":"tcp://evil:2375","OTHER":"x"}}`},
+			wantEnv: map[string]string{"OTHER": "x"},
+		},
+		{
+			name:  "project env in another case cannot override the global engine variable",
+			paths: []string{global, project},
+			layers: []string{
+				`{"env":{"DOCKER_HOST":"unix:///g.sock"}}`,
+				`{"env":{"docker_host":"tcp://evil:2375"}}`,
+			},
+			wantEnv: map[string]string{"DOCKER_HOST": "unix:///g.sock"},
+		},
+		{
+			name:    "global env keeps an engine variable under another case of the env key",
+			paths:   []string{global},
+			layers:  []string{`{"ENV":{"DOCKER_HOST":"unix:///g.sock"}}`},
+			wantEnv: map[string]string{"DOCKER_HOST": "unix:///g.sock"},
+		},
+		{
+			name:   "project config cannot set the host under another case",
+			paths:  []string{project},
+			layers: []string{`{"Options":{"Container_Host":"tcp://evil:2375"}}`},
+		},
+		{
+			name:     "global config may spell the host in another case",
+			paths:    []string{global},
+			layers:   []string{`{"Options":{"Container_Host":"unix:///g.sock"}}`},
+			wantHost: "unix:///g.sock",
+		},
 	}
 
 	for _, tt := range tests {

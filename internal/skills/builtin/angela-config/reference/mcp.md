@@ -15,7 +15,6 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `image`                | string | container only; set this or `compose`; `$VAR` only         |
 | `compose`, `service`   | string | container only; a compose file and the service that speaks MCP over stdio; `$VAR` only |
 | `volumes`, `network`, `workdir` | array, string, string | container with `image` only; `$VAR` only |
-| `container_host`       | string | container only: engine address; default `DOCKER_HOST`, `CONTAINER_HOST`, then a socket found on the machine |
 | `timeout`              | int    | Seconds. Default `10`; with `oauth` the default is `30` (`5` minutes while a user-initiated login waits on the browser) |
 | `disabled`             | bool   | Default `false`                                            |
 | `enabled_tools`        | array  | Allow list of tool names from this server                  |
@@ -24,6 +23,10 @@ Field reference. The procedure lives in `angela://skills/angela-config/SKILL.md`
 | `oauth_client_id`      | string | Pre-registered client ID for servers without dynamic client registration (GitHub, Slack); shell-expanded, `$(cmd)` only from system/global |
 | `oauth_client_secret`  | string | Secret paired with `oauth_client_id`; shell-expanded, `$(cmd)` only from system/global |
 | `oauth_callback_port`  | int    | Pin the localhost redirect port when the provider enforces exact-match redirect URIs |
+
+A `container` server has no engine field. Every container server uses the
+engine named by `options.container_host`, which only the system and global
+config can set (see `options.md`).
 
 Angela has no native computer use. For GUI control, deploy an MCP server on
 the computer to be operated and add it here (`stdio` if local, `http`/`sse`

@@ -73,7 +73,8 @@ automatically just by being there, even in a repository you haven't read yet.
 | Provider `extra_body`                                             | **no** (JSON passthrough)                                          |
 | MCP `command`, `args`, `env`                                      | full, every layer                                                   |
 | MCP `url`, `headers`, `oauth_client_id`, `oauth_client_secret`    | full in system/global; `$VAR`/`${VAR}` only from a project layer   |
-| MCP container `image`, `compose`, `service`, `volumes`, `network`, `workdir`, `container_host` | `$VAR`/`${VAR}` only, every layer (`args` and `env` stay full) |
+| MCP container `image`, `compose`, `service`, `volumes`, `network`, `workdir` | `$VAR`/`${VAR}` only, every layer (`args` and `env` stay full) |
+| `options.container_host`                                          | `$VAR`/`${VAR}` only, and read only from system/global; a project layer cannot set it, nor `DOCKER_HOST`/`CONTAINER_HOST` in `env` |
 | LSP `command`, `args`, `env`                                      | full, every layer                                                   |
 | Permission rule `pattern`                                         | `$VAR`/`${VAR}` and a leading `~`, every layer; `$(cmd)` only from system/global |
 | Top-level `env` values                                             | full, every layer                                                   |

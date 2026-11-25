@@ -709,8 +709,27 @@ func (w *AppWorkspace) IsInSandbox() bool {
 	return w.app.Sandbox.IsInSandbox()
 }
 
+// NOTE: Container servers the new sandbox would cut off from the engine socket
+// are stopped first, so they can still remove their containers. They stay in
+// the error state until the sandbox grants the socket.
 func (w *AppWorkspace) EnterSandbox(ctx context.Context, cfg sandbox.Config) error {
-	return w.app.Sandbox.EnterSandbox(cfg)
+	enter := func() error { return w.app.Sandbox.EnterSandbox(cfg) }
+	if w.store == nil || w.app.Sandbox.IsInSandbox() {
+		return enter()
+	}
+	return sandboxEntry{
+		blocker:  containermcp.SandboxBlocker(w.store, cfg),
+		hold:     func() func() { return containermcp.HoldSandbox(cfg) },
+		stop:     func(reason func(string) error) []string { return mcptools.StopContainerServers(w.store, reason) },
+		waitIdle: containermcp.WaitIdle,
+		restart: func(servers []string) {
+			if len(servers) > 0 {
+				// NOTE: The restarted sessions must outlive this call, which Attach documents.
+				mcptools.Attach(context.WithoutCancel(ctx), w.store, servers)
+			}
+		},
+		enter: enter,
+	}.run(ctx)
 }
 
 func (w *AppWorkspace) SandboxContainerGrants() sandbox.ContainerGrants {

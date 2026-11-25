@@ -23,30 +23,32 @@ func TestServerSockets(t *testing.T) {
 	sock := shortSocket(t)
 	t.Setenv("DOCKER_HOST", "")
 	t.Setenv("CONTAINER_HOST", "")
-	res := func(string) config.VariableResolver { return config.IdentityResolver() }
 	none := func() []string { return nil }
+	container := config.MCPs{"a": {Type: config.MCPContainer, Image: "i"}}
 
 	t.Run("explicit host of an existing socket", func(t *testing.T) {
-		servers := config.MCPs{"a": {Type: config.MCPContainer, Image: "i", ContainerHost: "unix://" + sock}}
-		require.Equal(t, []string{sock}, serverSockets(servers, res, none))
+		require.Equal(t, []string{sock}, serverSockets(container, "unix://"+sock, none))
 	})
 	t.Run("discovered socket when no host is set", func(t *testing.T) {
-		servers := config.MCPs{"a": {Type: config.MCPContainer, Image: "i"}}
-		require.Equal(t, []string{sock}, serverSockets(servers, res, func() []string { return []string{sock} }))
+		require.Equal(t, []string{sock}, serverSockets(container, "", func() []string { return []string{sock} }))
+	})
+	t.Run("one socket however many servers use it", func(t *testing.T) {
+		servers := config.MCPs{
+			"a": {Type: config.MCPContainer, Image: "i"},
+			"b": {Type: config.MCPContainer, Image: "j"},
+		}
+		require.Equal(t, []string{sock}, serverSockets(servers, "unix://"+sock, none))
 	})
 	t.Run("ignores other types and disabled servers", func(t *testing.T) {
 		servers := config.MCPs{
-			"stdio": {Type: config.MCPStdio, Command: "x", ContainerHost: "unix://" + sock},
-			"off":   {Type: config.MCPContainer, Image: "i", Disabled: true, ContainerHost: "unix://" + sock},
+			"stdio": {Type: config.MCPStdio, Command: "x"},
+			"off":   {Type: config.MCPContainer, Image: "i", Disabled: true},
 		}
-		require.Empty(t, serverSockets(servers, res, none))
+		require.Empty(t, serverSockets(servers, "unix://"+sock, none))
 	})
 	t.Run("ignores missing sockets and tcp hosts", func(t *testing.T) {
-		servers := config.MCPs{
-			"gone": {Type: config.MCPContainer, Image: "i", ContainerHost: "unix://" + filepath.Join(t.TempDir(), "nope.sock")},
-			"tcp":  {Type: config.MCPContainer, Image: "i", ContainerHost: "tcp://127.0.0.1:2375"},
-			"bad":  {Type: config.MCPContainer, Image: "i", ContainerHost: "ftp://x"},
-		}
-		require.Empty(t, serverSockets(servers, res, none))
+		require.Empty(t, serverSockets(container, "unix://"+filepath.Join(t.TempDir(), "nope.sock"), none))
+		require.Empty(t, serverSockets(container, "tcp://127.0.0.1:2375", none))
+		require.Empty(t, serverSockets(container, "ftp://x", none))
 	})
 }

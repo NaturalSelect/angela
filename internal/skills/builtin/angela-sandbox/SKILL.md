@@ -109,13 +109,20 @@ in `angela_info`.
 
 MCP servers with `"type": "container"` connect to the engine socket from the
 Angela process itself, so they need the socket granted too. The grant also
-covers the socket such a server will use (its `container_host`, `DOCKER_HOST`,
-`CONTAINER_HOST` or a socket found on the machine) when no `docker` or `podman`
-CLI is installed. Without the grant the server shows an error that names the
-socket and `--sandbox-allow-docker-socket`. A container server that is already
-running when the sandbox is entered from the dialog keeps working, because the
-sandbox only checks new connections. A restart or reload after that fails
-without the grant. See the `angela-mcp` skill for the config.
+covers the socket such a server will use (`options.container_host` in the global
+config, `DOCKER_HOST`, `CONTAINER_HOST` or a socket found on the machine) when
+no `docker` or `podman` CLI is installed. Without the grant the server shows an
+error that names the socket and `--sandbox-allow-docker-socket`.
+
+A container server that is already running when the sandbox is entered from the
+dialog, and whose socket the sandbox does not grant, is stopped first. Its
+container, dependency containers and network are removed before the sandbox
+closes, because afterwards Angela could no longer reach the engine to remove
+them. The server then shows the same error as above until the socket is
+granted. Entering the sandbox can therefore take a few seconds. If a container
+does not go within 30 seconds, the sandbox is not entered, the error lists the
+servers, and they are started again so you can retry. See the `angela-mcp` skill
+for the config.
 
 ## Platform Backends
 
@@ -210,8 +217,9 @@ before launching, or confirm what was granted in the `unix_sockets` line of
 **A container MCP server fails with `needs the container engine socket ...,
 which this sandbox does not allow`** — grant the socket the same way as above:
 launch with `--sandbox-allow-docker-socket`, or turn it on in the **Enter
-Sandbox** dialog. Set `container_host` on the server if it should use a
-different socket than the one Angela picks.
+Sandbox** dialog. Set `options.container_host` in the global config if the
+servers should use a different socket than the one Angela picks. A project
+config cannot set it.
 
 **A tool call that should be scoped in still fails with an I/O error** — the
 path may fall outside the read-write set (everything is readable by default,

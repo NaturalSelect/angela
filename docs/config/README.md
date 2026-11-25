@@ -385,8 +385,7 @@ working inside `--sandbox` once the socket is allowed (see below).
       "env": { "TOKEN": "$TOKEN" },           // never inherited from the host
       "volumes": ["./data:/data:ro"],         // source:target[:ro,rw,z,Z]
       "network": "none",                      // bridge (default), none or host
-      "workdir": "/data",
-      "container_host": "unix:///run/user/1000/podman/podman.sock"
+      "workdir": "/data"
     },
     "stack": {
       "type": "container",
@@ -397,15 +396,30 @@ working inside `--sandbox` once the socket is allowed (see below).
 }
 ```
 
-- **Engine.** `container_host` wins, then `DOCKER_HOST`, then `CONTAINER_HOST`,
-  then the first Docker or Podman socket found on the machine. Rootless Podman
-  needs its socket running: `systemctl --user start podman.socket`.
+- **Engine.** One engine serves every container server. `options.container_host`
+  wins, then `DOCKER_HOST`, then `CONTAINER_HOST`, then the first Docker or
+  Podman socket found on the machine. Rootless Podman needs its socket running:
+  `systemctl --user start podman.socket`.
+
+  ```jsonc
+  { "options": { "container_host": "unix:///run/user/1000/podman/podman.sock" } }
+  ```
+
+  Only the system and global config can set `options.container_host`. A
+  project config can reach another host that way and send your volumes and
+  environment with it, so Angela ignores the setting there and logs a warning.
+  A project `env` cannot set `DOCKER_HOST` or `CONTAINER_HOST` either. A
+  change applies to servers that start afterwards, not to running ones.
 - **Sandbox.** A container server connects to the engine socket from the Angela
   process, so under `--sandbox` it fails to start unless the socket is allowed
   with `--sandbox-allow-docker-socket` or the `/sandbox` dialog. The socket is a
   deliberate hole: whatever can reach it can start a container that mounts any
   host path. Angela refuses bind mounts of a socket or of a directory that
   holds an engine socket, but that is a safety net and not a boundary.
+  A server that is already running when you enter the sandbox from the dialog,
+  with the socket not granted, is stopped first and its containers and network
+  are removed. It then shows the error above. If the containers do not go
+  within 30 seconds, the sandbox is not entered and the servers start again.
 - **Expansion.** `args` and `env` expand `$VAR` and `$(cmd)` like a `stdio`
   server. Every other field expands only `$VAR`, in every config layer.
 - **Images.** Angela never pulls an image and does not read registry
@@ -421,7 +435,7 @@ working inside `--sandbox` once the socket is allowed (see below).
 
 With `compose`, set `service` and nothing about the image itself: `args`,
 `env`, `volumes`, `network` and `workdir` belong in the compose file, and
-`container_host` and `timeout` still apply. The file is read the way
+`timeout` still applies. The file is read the way
 `docker compose` reads it, including `.env`, host environment interpolation,
 `include` and `extends`. Angela starts the
 service and the services it needs with `depends_on`, waits for `service_healthy`
@@ -576,6 +590,7 @@ A rule's `mode` chooses how `pattern` is compared:
     "notifications": "auto",          // auto, native, osc, bell, or disabled
     "subagent_depth": 2,              // max nesting for agent tool dispatches
     "commit_diff_runes": 48000,       // characters of the staged diff `angela commit` and /commit send to the model; `angela describe` and /describe apply it to the branch comparison
+    "container_host": "unix:///run/user/1000/podman/podman.sock", // engine for container MCP servers; read only from the system and global config
 
     // Attribution
     "attribution": {

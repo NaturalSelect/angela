@@ -58,7 +58,21 @@ func Enforced() bool {
 
 // NOTE: Answers from the rules Angela applied, so a kernel without socket rules is still refused.
 func AllowsUnixSocket(path string) bool {
-	rs := appliedRules.Load()
+	return appliedRules.Load().allowsUnixSocket(path)
+}
+
+// NOTE: Reports what EnterSandbox(c) would enforce, so a caller can act before the sandbox closes the door.
+func (c Config) Restricts() bool {
+	return !resolve(c).existing().empty()
+}
+
+// NOTE: Answers as AllowsUnixSocket will once EnterSandbox(c) has run.
+func (c Config) AllowsUnixSocket(path string) bool {
+	rs := resolve(c).existing()
+	return rs.allowsUnixSocket(path)
+}
+
+func (rs *ruleSet) allowsUnixSocket(path string) bool {
 	if rs == nil || rs.empty() {
 		return true
 	}

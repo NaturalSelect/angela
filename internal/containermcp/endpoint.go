@@ -33,7 +33,7 @@ func resolveEndpoint(explicit string, getenv func(string) string, discover func(
 	if sockets := discover(); len(sockets) > 0 {
 		return Endpoint{Host: "unix://" + sockets[0], Socket: sockets[0]}, nil
 	}
-	return Endpoint{}, errors.New("no container engine found: set container_host, DOCKER_HOST or CONTAINER_HOST, or start the docker or podman socket")
+	return Endpoint{}, errors.New("no container engine found: set options.container_host in the global config, or DOCKER_HOST or CONTAINER_HOST, or start the docker or podman socket")
 }
 
 func parseEndpoint(host string) (Endpoint, error) {
@@ -71,9 +71,17 @@ func existingCandidateSockets() []string {
 	return found
 }
 
-// NOTE: Refuses an endpoint the sandbox would block, so the server fails with advice instead of a bare connection error.
+// NOTE: Refuses an endpoint the sandbox would block, so the server fails with advice instead of a bare connection error. Also refuses what a sandbox about to be entered would block.
 func CheckSandbox(server string, ep Endpoint) error {
-	return checkSandbox(server, ep, sandbox.Enforced(), sandbox.AllowsUnixSocket)
+	if err := checkSandbox(server, ep, sandbox.Enforced(), sandbox.AllowsUnixSocket); err != nil {
+		return err
+	}
+	for _, cfg := range gate.held() {
+		if err := checkSandbox(server, ep, cfg.Restricts(), cfg.AllowsUnixSocket); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func checkSandbox(server string, ep Endpoint, enforced bool, allows func(string) bool) error {

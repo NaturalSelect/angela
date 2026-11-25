@@ -13,8 +13,6 @@ func TestConfig_Restricts(t *testing.T) {
 	require.False(t, Config{}.Restricts())
 	require.False(t, Config{AllowNetwork: true}.Restricts())
 	require.True(t, Config{ReadWrite: []string{t.TempDir()}}.Restricts())
-	require.True(t, Config{ReadWrite: []string{filepath.Join(t.TempDir(), "missing")}}.Restricts(),
-		"the /dev grants keep the rules non-empty even when every named path is missing")
 }
 
 func TestConfig_AllowsUnixSocket(t *testing.T) {

@@ -63,7 +63,7 @@ func (r *racyEngine) Create(ctx context.Context, spec containerSpec) (string, er
 }
 
 func (r *racyEngine) ListContainers(context.Context, string) ([]listedContainer, error) {
-	r.groupEngine.event("list-containers")
+	r.event("list-containers")
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.conts), nil

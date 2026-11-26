@@ -20,17 +20,26 @@ type fakeGit struct {
 func (f *fakeGit) run(_ context.Context, args ...string) (string, error) {
 	call := strings.Join(args, " ")
 	f.calls = append(f.calls, call)
-	for prefix, err := range f.fail {
-		if strings.HasPrefix(call, prefix) {
-			return "", err
+	if err, ok := longestPrefixMatch(f.fail, call); ok {
+		return "", err
+	}
+	out, _ := longestPrefixMatch(f.outputs, call)
+	return out, nil
+}
+
+// NOTE: The longest prefix wins because map order is random.
+func longestPrefixMatch[V any](m map[string]V, call string) (V, bool) {
+	var (
+		best  V
+		found bool
+		bestN = -1
+	)
+	for prefix, v := range m {
+		if strings.HasPrefix(call, prefix) && len(prefix) > bestN {
+			best, found, bestN = v, true, len(prefix)
 		}
 	}
-	for prefix, out := range f.outputs {
-		if strings.HasPrefix(call, prefix) {
-			return out, nil
-		}
-	}
-	return "", nil
+	return best, found
 }
 
 func newFakeGit() *fakeGit {

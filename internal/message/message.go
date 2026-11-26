@@ -668,6 +668,18 @@ func (s *service) ListPage(ctx context.Context, sessionID, beforeMessageID strin
 	if err != nil {
 		return Page{}, err
 	}
+	if beforeMessageID != "" && len(rows) == 0 {
+		// NOTE: The cursor may have been deleted after the lookup above, which
+		// the query reports as no rows. Re-check before claiming the start
+		// of the session.
+		_, gerr := s.q.GetMessage(ctx, beforeMessageID)
+		if errors.Is(gerr, sql.ErrNoRows) {
+			return Page{}, fmt.Errorf("message %q: %w", beforeMessageID, ErrCursorNotFound)
+		}
+		if gerr != nil {
+			return Page{}, fmt.Errorf("message %q: %w", beforeMessageID, gerr)
+		}
+	}
 
 	// The rows came newest first; the extra one is the oldest.
 	hasOlder := len(rows) > limit

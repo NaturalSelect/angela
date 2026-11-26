@@ -415,6 +415,58 @@ func (q *Queries) ListUserMessagesBySession(ctx context.Context, sessionID strin
 	return items, nil
 }
 
+const listUserMessagesBySessionBefore = `-- name: ListUserMessagesBySessionBefore :many
+SELECT id, session_id, role, parts, model, created_at, updated_at, finished_at, provider, is_summary_message, agent
+FROM messages
+WHERE messages.session_id = ?1
+  AND messages.role = 'user'
+  AND messages.rowid < (SELECT m.rowid FROM messages m
+               WHERE m.id = ?2 AND m.session_id = ?1)
+ORDER BY rowid DESC
+LIMIT ?3
+`
+
+type ListUserMessagesBySessionBeforeParams struct {
+	SessionID string `json:"session_id"`
+	BeforeID  string `json:"before_id"`
+	Lim       int64  `json:"lim"`
+}
+
+func (q *Queries) ListUserMessagesBySessionBefore(ctx context.Context, arg ListUserMessagesBySessionBeforeParams) ([]Message, error) {
+	rows, err := q.query(ctx, q.listUserMessagesBySessionBeforeStmt, listUserMessagesBySessionBefore, arg.SessionID, arg.BeforeID, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Role,
+			&i.Parts,
+			&i.Model,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FinishedAt,
+			&i.Provider,
+			&i.IsSummaryMessage,
+			&i.Agent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateMessage = `-- name: UpdateMessage :exec
 UPDATE messages
 SET

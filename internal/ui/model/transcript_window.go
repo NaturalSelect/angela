@@ -79,7 +79,7 @@ func (m *UI) loadOlderMessagesCmd(sessionID, beforeID string, seen map[string]ag
 		if err != nil {
 			return olderMessagesMsg{sessionID: sessionID, beforeID: beforeID, err: err}
 		}
-		items, _, outcomes := m.buildTranscriptItems(sessionID, page.Messages, false, seen)
+		items, _, outcomes := m.buildTranscriptItems(sessionID, page.Messages, page.PromptAt, false, seen)
 		msg := olderMessagesMsg{
 			sessionID: sessionID,
 			beforeID:  beforeID,

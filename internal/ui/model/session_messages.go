@@ -34,7 +34,7 @@ func (m *UI) loadSessionMessagesCmd(sessionID string) tea.Cmd {
 		listDur := time.Since(start)
 
 		start = time.Now()
-		items, lastUserMessageTime, outcomes := m.buildTranscriptItems(sessionID, page.Messages, true, nil)
+		items, lastUserMessageTime, outcomes := m.buildTranscriptItems(sessionID, page.Messages, page.PromptAt, true, nil)
 		slog.Debug("Loaded session transcript",
 			"session_id", sessionID,
 			"messages", len(page.Messages),
@@ -93,7 +93,7 @@ func hasOrphanedCall(msgs []*message.Message, results map[string]message.ToolRes
 // timestamp of the last user message. It touches no UI state, so it is
 // safe to run from a command.
 func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat.MessageItem, int64) {
-	items, lastUserMessageTime, _ := m.buildTranscriptItems(sessionID, msgs, true, nil)
+	items, lastUserMessageTime, _ := m.buildTranscriptItems(sessionID, msgs, 0, true, nil)
 	return items, lastUserMessageTime
 }
 
@@ -102,6 +102,10 @@ func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat
 // agents named in the run's reminders ended. It touches no UI state, so it
 // is safe to run from a command.
 //
+// promptAt is the time of the prompt before the run, for a run that starts
+// in the middle of a turn. Zero means the run starts with its own prompt or
+// at the start of the session.
+//
 // latest says the run reaches the end of the session. Only then can its
 // last assistant message still be producing results, so only then is the
 // agent asked whether the session is busy. seen holds the outcomes of the
@@ -109,6 +113,7 @@ func (m *UI) buildSessionItems(sessionID string, msgs []message.Message) ([]chat
 func (m *UI) buildTranscriptItems(
 	sessionID string,
 	msgs []message.Message,
+	promptAt int64,
 	latest bool,
 	seen map[string]agenttools.BackgroundAgentStatus,
 ) ([]chat.MessageItem, int64, map[string]agenttools.BackgroundAgentStatus) {
@@ -128,7 +133,10 @@ func (m *UI) buildTranscriptItems(
 	lastAssistant := lastAssistantIndex(msgPtrs)
 
 	var lastUserMessageTime int64
-	if len(msgPtrs) > 0 {
+	switch {
+	case promptAt != 0:
+		lastUserMessageTime = promptAt
+	case len(msgPtrs) > 0:
 		lastUserMessageTime = msgPtrs[0].CreatedAt
 	}
 

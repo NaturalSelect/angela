@@ -168,13 +168,14 @@ func TestListPageRejectsABadCursorOrLimit(t *testing.T) {
 	foreign := addMessage(t, svc, other, User, "elsewhere")
 
 	_, err := svc.ListPage(t.Context(), src, uuid.New().String(), 5)
-	require.Error(t, err, "an unknown cursor")
+	require.ErrorIs(t, err, ErrCursorNotFound, "an unknown cursor")
 
 	_, err = svc.ListPage(t.Context(), src, foreign, 5)
-	require.Error(t, err, "a cursor from another session")
+	require.ErrorIs(t, err, ErrCursorNotFound, "a cursor from another session")
 
 	_, err = svc.ListPage(t.Context(), src, "", 0)
 	require.Error(t, err, "a zero limit")
+	require.NotErrorIs(t, err, ErrCursorNotFound)
 }
 
 // promptFixture is a service whose messages can be given distinct creation

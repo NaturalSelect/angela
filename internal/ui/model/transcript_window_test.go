@@ -3,8 +3,10 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
@@ -15,6 +17,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
+	"github.com/NaturalSelect/angela/internal/ui/util"
 	"github.com/NaturalSelect/angela/internal/undo"
 )
 
@@ -231,16 +234,101 @@ func TestOlderMessagesDroppedAfterTheWindowWasResetClearTheNotice(t *testing.T) 
 	require.NotEqual(t, olderMessagesInfo, m.status.msg, "a notice with no read behind it must not linger")
 }
 
-func TestOlderMessagesFailureStopsPagingButKeepsTheChat(t *testing.T) {
+func infoMsgsIn(msgs []tea.Msg) []util.InfoMsg {
+	var out []util.InfoMsg
+	for _, msg := range msgs {
+		if info, ok := msg.(util.InfoMsg); ok {
+			out = append(out, info)
+		}
+	}
+	return out
+}
+
+// failOlderRead lands a failed read of the page before m-0 and returns what
+// the user was told.
+func failOlderRead(m *UI, err error) []tea.Msg {
+	cmds := m.handleOlderMessages(olderMessagesMsg{sessionID: "s1", beforeID: "m-0", err: err})
+	return runCmds(m, tea.Batch(cmds...))
+}
+
+func TestOlderMessagesFailureIsReportedAndKeepsTheChat(t *testing.T) {
 	m, _ := loadedWindow(t, 0, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true, loading: true})
 	m.showPending(olderMessagesInfo)
 
-	m.handleOlderMessages(olderMessagesMsg{sessionID: "s1", beforeID: "m-0", err: errors.New("boom")})
+	msgs := failOlderRead(m, errors.New("database is locked"))
 
 	require.Equal(t, 100, m.chat.Len())
 	require.False(t, m.transcript.loading)
-	require.True(t, m.transcript.stale, "a failing read must not be retried on every update")
 	require.True(t, m.transcript.hasOlder, "older history still exists, which a later undo needs to know")
+	require.False(t, m.transcript.stale, "a failed read is not a lost cursor")
+	require.NotEqual(t, olderMessagesInfo, m.status.msg)
+	require.Equal(t,
+		[]util.InfoMsg{util.NewWarnMsg("Could not load earlier messages: database is locked")},
+		infoMsgsIn(msgs))
+}
+
+func TestOlderMessagesAreNotReadAgainBeforeTheRetryDelay(t *testing.T) {
+	m, _ := loadedWindow(t, 0, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true, loading: true})
+	failOlderRead(m, errors.New("busy"))
+
+	require.Nil(t, m.maybeLoadOlderMessages(), "a failing read must not be retried on every update")
+	// NOTE: ListMessagePage is not stubbed, so a read here fails the test.
+	_, cmd := m.Update(plainMsg{})
+	runCmds(m, cmd)
+	require.False(t, m.transcript.loading)
+}
+
+func TestOlderMessagesAreReadAgainAfterTheRetryDelay(t *testing.T) {
+	m, ws := loadedWindow(t, 0, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true, loading: true})
+	failOlderRead(m, errors.New("busy"))
+	m.transcript.retryAt = time.Now().Add(-time.Second)
+
+	ws.EXPECT().ListMessagePage(gomock.Any(), "s1", "m-0", transcriptPageSize).
+		Return(message.Page{Messages: userMessages("old", 3), HasOlder: true}, nil)
+
+	older, ok := olderMessagesIn(runCmds(m, m.maybeLoadOlderMessages()))
+	require.True(t, ok, "the failed page must be asked for again")
+	m.handleOlderMessages(older)
+
+	require.Equal(t, 103, m.chat.Len())
+	require.Equal(t, "old-0", m.transcript.oldestID)
+	require.Zero(t, m.transcript.failures)
+	require.True(t, m.transcript.retryAt.IsZero())
+}
+
+func TestOlderMessagesWarnOnlyOnTheFirstOfRepeatedFailures(t *testing.T) {
+	m, _ := loadedWindow(t, 0, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true, loading: true})
+	require.Len(t, infoMsgsIn(failOlderRead(m, errors.New("busy"))), 1)
+
+	m.transcript.loading = true
+	before := time.Now()
+	msgs := failOlderRead(m, errors.New("busy"))
+
+	require.Empty(t, infoMsgsIn(msgs), "the same warning must not repeat on every retry")
+	require.Equal(t, 2, m.transcript.failures)
+	require.False(t, m.transcript.retryAt.Before(before.Add(2*olderRetryBase)), "each failure in a row doubles the wait")
+}
+
+func TestOlderMessagesRetryDelayStopsGrowing(t *testing.T) {
+	m, _ := loadedWindow(t, 0, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true, loading: true, failures: 50})
+
+	failOlderRead(m, errors.New("busy"))
+
+	require.WithinDuration(t, time.Now().Add(16*olderRetryBase), m.transcript.retryAt, time.Second)
+}
+
+// NOTE: An undo deletes the cursor message, so the read before it finds
+// nothing. That is expected, the undo result reloads the tail, and there is
+// nothing to warn about or to retry.
+func TestOlderMessagesFailureOfAMissingCursorIsSilentAndFinal(t *testing.T) {
+	m, _ := loadedWindow(t, 0, transcriptWindow{sessionID: "s1", oldestID: "m-0", hasOlder: true, loading: true})
+	m.showPending(olderMessagesInfo)
+
+	msgs := failOlderRead(m, fmt.Errorf("message %q: %w", "m-0", message.ErrCursorNotFound))
+
+	require.Empty(t, infoMsgsIn(msgs))
+	require.True(t, m.transcript.stale)
+	require.True(t, m.transcript.hasOlder)
 	require.Nil(t, m.maybeLoadOlderMessages())
 	require.NotEqual(t, olderMessagesInfo, m.status.msg)
 }
@@ -260,7 +348,7 @@ func TestUndoResultReloadsTheTailAfterAReadBeforeTheCursorFailed(t *testing.T) {
 	ws.EXPECT().ListMessagePage(gomock.Any(), "s1", "tail-0", transcriptPageSize).
 		Return(message.Page{}, nil).AnyTimes()
 
-	m.handleOlderMessages(olderMessagesMsg{sessionID: "s1", beforeID: "m-0", err: errors.New("no rows")})
+	m.handleOlderMessages(olderMessagesMsg{sessionID: "s1", beforeID: "m-0", err: fmt.Errorf("message %q: %w", "m-0", message.ErrCursorNotFound)})
 	_, cmd := m.Update(undoResultMsg{sessionID: "s1", result: undo.Result{}})
 	msgs := runCmds(m, cmd)
 	tail, ok := sessionMessagesIn(msgs)

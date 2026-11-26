@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -20,6 +21,10 @@ import (
 // (finish/error/cancel/tool-call structural changes) bypass the
 // debounce and flush synchronously.
 const defaultUpdateDebounce = 33 * time.Millisecond
+
+// ErrCursorNotFound is wrapped by the error [Service.ListPage] returns for a
+// cursor that is not a message of the session. Reading again cannot help.
+var ErrCursorNotFound = errors.New("page cursor is not a message of the session")
 
 type CreateMessageParams struct {
 	Role             MessageRole
@@ -68,7 +73,8 @@ type Service interface {
 	//
 	// Feed the first message of a page back as beforeMessageID to get the
 	// page before it. It is an error for a non-empty beforeMessageID not to
-	// belong to sessionID, or for limit not to be positive.
+	// belong to sessionID, which wraps [ErrCursorNotFound], or for limit not
+	// to be positive.
 	//
 	// A page may start in the middle of a turn. [Page.PromptAt] carries the
 	// time of the prompt that turn belongs to.
@@ -644,11 +650,14 @@ func (s *service) ListPage(ctx context.Context, sessionID, beforeMessageID strin
 	} else {
 		var before db.Message
 		before, err = s.q.GetMessage(ctx, beforeMessageID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return Page{}, fmt.Errorf("message %q: %w", beforeMessageID, ErrCursorNotFound)
+		}
 		if err != nil {
 			return Page{}, fmt.Errorf("message %q: %w", beforeMessageID, err)
 		}
 		if before.SessionID != sessionID {
-			return Page{}, fmt.Errorf("message %q does not belong to session %s", beforeMessageID, sessionID)
+			return Page{}, fmt.Errorf("message %q does not belong to session %s: %w", beforeMessageID, sessionID, ErrCursorNotFound)
 		}
 		rows, err = s.q.ListMessagesBySessionBefore(ctx, db.ListMessagesBySessionBeforeParams{
 			SessionID: sessionID,

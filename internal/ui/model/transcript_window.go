@@ -2,12 +2,16 @@ package model
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"maps"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	agenttools "github.com/NaturalSelect/angela/internal/agent/tools"
+	"github.com/NaturalSelect/angela/internal/message"
 	"github.com/NaturalSelect/angela/internal/ui/chat"
+	"github.com/NaturalSelect/angela/internal/ui/util"
 )
 
 const (
@@ -17,6 +21,11 @@ const (
 	// measurement. Reading ahead this early keeps a page ready before the
 	// user reaches the top.
 	transcriptPreloadDivisor = 10
+
+	// NOTE: A failed read is repeated after this long. Each failure in a row
+	// doubles the wait, up to 32s, so a fault that does not clear costs a
+	// read every half minute rather than one per update.
+	olderRetryBase = 2 * time.Second
 )
 
 // transcriptWindow tracks what is left to read of the open session's
@@ -30,10 +39,16 @@ type transcriptWindow struct {
 	hasOlder bool
 	loading  bool
 
-	// stale marks a cursor no page can be read before: its message was
-	// deleted, or the last read before it failed. It only stops reads; the
-	// undo result reads the tail again whether or not it was set.
+	// stale marks a cursor no page can be read before because its message
+	// is gone. It only stops reads; the undo result reads the tail again
+	// whether or not it was set.
 	stale bool
+
+	// retryAt is the earliest time a failed read may be repeated, and
+	// failures counts the reads that failed in a row. Unlike stale, a failed
+	// read may well succeed later, as with a database that was busy.
+	retryAt  time.Time
+	failures int
 
 	// outcomes holds how background agents ended according to the notices
 	// loaded so far. A notice only ever follows its agent's call, so these
@@ -60,7 +75,7 @@ func (m *UI) maybeLoadOlderMessages() tea.Cmd {
 	if m.state != uiChat || m.session == nil || w.sessionID != m.session.ID {
 		return nil
 	}
-	if !w.hasOlder || w.loading || w.stale {
+	if !w.hasOlder || w.loading || w.stale || time.Now().Before(w.retryAt) {
 		return nil
 	}
 	if m.chat.FirstVisibleIndex() > m.chat.Len()/transcriptPreloadDivisor {
@@ -113,10 +128,24 @@ func (m *UI) handleOlderMessages(msg olderMessagesMsg) []tea.Cmd {
 	if msg.err != nil {
 		slog.Warn("Failed to load earlier messages", "session_id", msg.sessionID, "error", msg.err)
 		// NOTE: Older history still exists, so hasOlder stays set for an undo
-		// result to see; stale stops the read from being retried on every update.
-		w.stale = true
-		return nil
+		// result to see.
+		if errors.Is(msg.err, message.ErrCursorNotFound) {
+			// An undo deletes the cursor before its result reloads the tail.
+			// That is no fault to report, and no retry can read before it.
+			w.stale = true
+			return nil
+		}
+		w.failures++
+		w.retryAt = time.Now().Add(olderRetryBase << min(w.failures-1, 4))
+		// NOTE: Only the first failure of a run is reported; the retries that
+		// follow would repeat the same warning every few seconds.
+		if w.failures > 1 {
+			return nil
+		}
+		return []tea.Cmd{util.ReportWarn("Could not load earlier messages: " + msg.err.Error())}
 	}
+	w.failures = 0
+	w.retryAt = time.Time{}
 
 	w.hasOlder = msg.hasOlder && msg.oldestID != ""
 	if msg.oldestID != "" {

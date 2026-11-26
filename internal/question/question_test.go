@@ -127,7 +127,12 @@ func TestQuestion_Validate(t *testing.T) {
 		{
 			name:    "single choice needs at least two choices",
 			q:       Question{Type: TypeSingleChoice, Text: "q", Description: "d", Choices: []Choice{{ID: "a", Label: "A"}}},
-			wantErr: "requires at least 2 choices",
+			wantErr: "do not invent a filler second option",
+		},
+		{
+			name:    "choice question without choices points at the field name",
+			q:       Question{Type: TypeMultiChoice, Text: "q", Description: "d"},
+			wantErr: "Use \"choices\", not \"options\"",
 		},
 		{
 			name: "choices exceed maximum",

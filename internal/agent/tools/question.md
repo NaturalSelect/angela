@@ -6,6 +6,10 @@ defaults.
 If you recommend a specific option, make that the first option in the list
 and add "(Recommended)" at the end of the label.
 
+Do not write text output in the same response as this tool call. The
+question dialog covers the conversation, so the user cannot read that
+text while answering. Put any context the user needs in `description`.
+
 ## How it works
 
 Always provide a `questions` array with at least one item. A single item

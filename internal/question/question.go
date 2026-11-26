@@ -109,7 +109,10 @@ func (q Question) Validate() error {
 	case TypeYesNo, TypeFreeText:
 		// No choices needed.
 	case TypeSingleChoice, TypeMultiChoice:
-		if len(q.Choices) < 2 {
+		if len(q.Choices) == 1 {
+			return fmt.Errorf("%s: %s has only 1 choice, so this whole call was rejected and the user saw none of it. A question with a single option has no decision in it. Do not retry it and do not invent a filler second option. Instead, state that option as the approach you are taking and continue with the task. Other questions from this call that offer at least 2 genuinely distinct choices may be re-asked alone in a new call", label, q.Type)
+		}
+		if len(q.Choices) == 0 {
 			return fmt.Errorf("%s: %s requires at least 2 choices in the \"choices\" array (got %d). Use \"choices\", not \"options\"", label, q.Type, len(q.Choices))
 		}
 		if len(q.Choices) > MaxChoices {

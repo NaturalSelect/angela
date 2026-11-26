@@ -1,6 +1,7 @@
 package message
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
@@ -176,6 +177,52 @@ func TestListPageRejectsABadCursorOrLimit(t *testing.T) {
 	_, err = svc.ListPage(t.Context(), src, "", 0)
 	require.Error(t, err, "a zero limit")
 	require.NotErrorIs(t, err, ErrCursorNotFound)
+}
+
+// vanishingCursorQuerier deletes the cursor row right before the page is
+// read, the way an undo can between ListPage's lookup and its query.
+type vanishingCursorQuerier struct {
+	db.Querier
+	conn   *sql.DB
+	cursor string
+}
+
+func (q vanishingCursorQuerier) ListMessagesBySessionBefore(ctx context.Context, arg db.ListMessagesBySessionBeforeParams) ([]db.Message, error) {
+	if _, err := q.conn.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", q.cursor); err != nil {
+		return nil, err
+	}
+	return q.Querier.ListMessagesBySessionBefore(ctx, arg)
+}
+
+func TestListPageReportsACursorDeletedMidRead(t *testing.T) {
+	t.Parallel()
+
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	q := db.New(conn)
+	sess := newTestSession(t, q).ID
+
+	setup := NewService(q)
+	addMessage(t, setup, sess, User, "a")
+	cursor := addMessage(t, setup, sess, User, "b")
+
+	svc := NewService(vanishingCursorQuerier{Querier: q, conn: conn, cursor: cursor})
+	_, err = svc.ListPage(t.Context(), sess, cursor, 5)
+	require.ErrorIs(t, err, ErrCursorNotFound)
+}
+
+func TestListPageBeforeTheFirstMessageIsEmptyWithoutError(t *testing.T) {
+	t.Parallel()
+
+	svc, sess := newTestService(t)
+	first := addMessage(t, svc, sess, User, "a")
+	addMessage(t, svc, sess, User, "b")
+
+	page, err := svc.ListPage(t.Context(), sess, first, 5)
+	require.NoError(t, err)
+	require.Empty(t, page.Messages)
+	require.False(t, page.HasOlder)
 }
 
 // promptFixture is a service whose messages can be given distinct creation

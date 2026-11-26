@@ -35,6 +35,16 @@ WHERE messages.session_id = sqlc.arg(session_id)
 ORDER BY rowid DESC
 LIMIT sqlc.arg(lim);
 
+-- name: ListUserMessagesBySessionBefore :many
+SELECT *
+FROM messages
+WHERE messages.session_id = sqlc.arg(session_id)
+  AND messages.role = 'user'
+  AND messages.rowid < (SELECT m.rowid FROM messages m
+               WHERE m.id = sqlc.arg(before_id) AND m.session_id = sqlc.arg(session_id))
+ORDER BY rowid DESC
+LIMIT sqlc.arg(lim);
+
 -- name: CreateMessage :one
 INSERT INTO messages (
     id,

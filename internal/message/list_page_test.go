@@ -1,8 +1,11 @@
 package message
 
 import (
+	"database/sql"
 	"testing"
 
+	"github.com/NaturalSelect/angela/internal/db"
+	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -172,4 +175,116 @@ func TestListPageRejectsABadCursorOrLimit(t *testing.T) {
 
 	_, err = svc.ListPage(t.Context(), src, "", 0)
 	require.Error(t, err, "a zero limit")
+}
+
+// promptFixture is a service whose messages can be given distinct creation
+// times, which the clock alone would not: created_at counts whole seconds.
+type promptFixture struct {
+	svc  Service
+	sess string
+	conn *sql.DB
+}
+
+func newPromptFixture(t *testing.T) promptFixture {
+	t.Helper()
+	conn, err := db.Connect(t.Context(), t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	q := db.New(conn)
+	return promptFixture{svc: NewService(q), sess: newTestSession(t, q).ID, conn: conn}
+}
+
+// add stores a message created at the given second and returns its ID.
+func (f promptFixture) add(t *testing.T, role MessageRole, text string, at int64) string {
+	t.Helper()
+	id := addMessage(t, f.svc, f.sess, role, text)
+	_, err := f.conn.ExecContext(t.Context(), "UPDATE messages SET created_at = ? WHERE id = ?", at, id)
+	require.NoError(t, err)
+	return id
+}
+
+// A page may start in the middle of a turn. The turn's duration is measured
+// from its prompt, so the page has to say when that was.
+func TestListPageCarriesThePromptOfATurnItStartsInTheMiddleOf(t *testing.T) {
+	t.Parallel()
+
+	f := newPromptFixture(t)
+	f.add(t, User, "u0", 100)
+	f.add(t, Assistant, "a1", 110)
+	f.add(t, Tool, "t1", 120)
+	f.add(t, Assistant, "a2", 130)
+	f.add(t, Tool, "t2", 140)
+	f.add(t, Assistant, "a3", 150)
+
+	newest, err := f.svc.ListPage(t.Context(), f.sess, "", 3)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a2", "t2", "a3"}, texts(newest.Messages))
+	require.EqualValues(t, 100, newest.PromptAt)
+
+	oldest, err := f.svc.ListPage(t.Context(), f.sess, newest.Messages[0].ID, 3)
+	require.NoError(t, err)
+	require.Equal(t, []string{"u0", "a1", "t1"}, texts(oldest.Messages))
+	require.Zero(t, oldest.PromptAt, "a page that starts with its prompt needs no other")
+}
+
+func TestListPageCarriesTheNearestPromptNotAnOlderOne(t *testing.T) {
+	t.Parallel()
+
+	f := newPromptFixture(t)
+	f.add(t, User, "u0", 100)
+	f.add(t, Assistant, "a1", 110)
+	f.add(t, User, "u1", 200)
+	f.add(t, Assistant, "a2", 210)
+	f.add(t, Assistant, "a3", 220)
+
+	page, err := f.svc.ListPage(t.Context(), f.sess, "", 2)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a2", "a3"}, texts(page.Messages))
+	require.EqualValues(t, 200, page.PromptAt)
+}
+
+func TestListPageLooksPastRemindersForThePrompt(t *testing.T) {
+	t.Parallel()
+
+	f := newPromptFixture(t)
+	f.add(t, User, "u0", 100)
+	// More reminders than one read of the user messages holds.
+	for range 10 {
+		f.add(t, User, reminder.Wrap("nudge"), 150)
+	}
+	f.add(t, Assistant, "a1", 160)
+
+	page, err := f.svc.ListPage(t.Context(), f.sess, "", 1)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a1"}, texts(page.Messages))
+	require.True(t, page.HasOlder)
+	require.EqualValues(t, 100, page.PromptAt, "a reminder is not the prompt the turn belongs to")
+}
+
+func TestListPageWithoutAPromptBeforeItCarriesNone(t *testing.T) {
+	t.Parallel()
+
+	f := newPromptFixture(t)
+	f.add(t, Assistant, "a1", 100)
+	f.add(t, Assistant, "a2", 110)
+	f.add(t, Assistant, "a3", 120)
+
+	page, err := f.svc.ListPage(t.Context(), f.sess, "", 2)
+	require.NoError(t, err)
+	require.True(t, page.HasOlder)
+	require.Zero(t, page.PromptAt)
+}
+
+func TestListPageThatReachesTheStartCarriesNoPrompt(t *testing.T) {
+	t.Parallel()
+
+	f := newPromptFixture(t)
+	f.add(t, User, "u0", 100)
+	f.add(t, Assistant, "a1", 110)
+
+	page, err := f.svc.ListPage(t.Context(), f.sess, "", 5)
+	require.NoError(t, err)
+	require.False(t, page.HasOlder)
+	require.Zero(t, page.PromptAt)
 }

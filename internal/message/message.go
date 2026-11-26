@@ -69,6 +69,9 @@ type Service interface {
 	// Feed the first message of a page back as beforeMessageID to get the
 	// page before it. It is an error for a non-empty beforeMessageID not to
 	// belong to sessionID, or for limit not to be positive.
+	//
+	// A page may start in the middle of a turn. [Page.PromptAt] carries the
+	// time of the prompt that turn belongs to.
 	ListPage(ctx context.Context, sessionID, beforeMessageID string, limit int) (Page, error)
 	ListUserMessages(ctx context.Context, sessionID string) ([]Message, error)
 	ListAllUserMessages(ctx context.Context) ([]Message, error)
@@ -598,6 +601,11 @@ type Page struct {
 	Messages []Message
 	// HasOlder reports whether messages before Messages[0] remain.
 	HasOlder bool
+	// PromptAt is the CreatedAt of the last prompt before Messages[0], the
+	// one a turn that runs into the start of the page belongs to. A prompt
+	// is a user message that is not a reminder. It is zero when Messages[0]
+	// is itself a prompt, or when no prompt comes before it.
+	PromptAt int64
 }
 
 // ListSince returns a session's transcript from sinceMessageID on, in
@@ -678,7 +686,51 @@ func (s *service) ListPage(ctx context.Context, sessionID, beforeMessageID strin
 	if err != nil {
 		return Page{}, err
 	}
-	return Page{Messages: messages, HasOlder: hasOlder}, nil
+	page := Page{Messages: messages, HasOlder: hasOlder}
+	if hasOlder && !isPrompt(&messages[0]) {
+		page.PromptAt, err = s.lastPromptBefore(ctx, sessionID, messages[0].ID)
+		if err != nil {
+			return Page{}, err
+		}
+	}
+	return page, nil
+}
+
+func isPrompt(m *Message) bool {
+	return m.Role == User && !m.IsReminder()
+}
+
+// lastPromptBefore returns the CreatedAt of the last prompt before
+// beforeMessageID, or zero when there is none.
+//
+// NOTE: Reminders are user messages too, but only the parts tell them apart,
+// so the query cannot skip them. They come in short runs, which a small
+// batch walks past in one read.
+func (s *service) lastPromptBefore(ctx context.Context, sessionID, beforeMessageID string) (int64, error) {
+	const batch = 8
+	for {
+		rows, err := s.q.ListUserMessagesBySessionBefore(ctx, db.ListUserMessagesBySessionBeforeParams{
+			SessionID: sessionID,
+			BeforeID:  beforeMessageID,
+			Lim:       batch,
+		})
+		if err != nil {
+			return 0, err
+		}
+		for _, row := range rows {
+			msg, err := s.fromDBItem(row)
+			if err != nil {
+				return 0, err
+			}
+			if isPrompt(&msg) {
+				return msg.CreatedAt, nil
+			}
+		}
+		if len(rows) < batch {
+			return 0, nil
+		}
+		beforeMessageID = rows[len(rows)-1].ID
+	}
 }
 
 func (s *service) fromDBItems(dbMessages []db.Message) ([]Message, error) {

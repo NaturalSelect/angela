@@ -71,6 +71,14 @@ code.
     it.
 - Follow the structure of the surrounding code, and apply these rules only to
   code the plan adds or modifies.
+- Name what the plan adds so the executing agent can keep the name. Name
+  functions and methods with a verb or verb phrase (`parseConfig`,
+  `sendRequest`). Name types, structs, variables, fields, and constants with
+  a noun or noun phrase (`ConfigLoader`, `retryCount`). Every name must tell
+  the reader what the thing does or holds without opening its
+  implementation; avoid vague names like `data`, `info`, `handle`,
+  `process`, or `manager`. Match the naming conventions of the code around
+  it.
 - Take the verification commands from the repository itself — its manifest,
   task runner, or CI config — never from memory of how projects like this
   usually work.
@@ -90,6 +98,7 @@ code.
 - Check every function, type, interface, option, and parameter the plan adds
   against the rules in Phase 2. Drop the ones that hide nothing or serve only
   a case that does not exist yet, and drop steps the request did not ask for.
+  Rename any that break the naming rules in Phase 2.
 - If a question remains whose answer would still change the plan, this is the
   last point to ask it before the user reviews the final version.
 

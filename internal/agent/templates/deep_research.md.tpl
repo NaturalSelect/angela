@@ -36,6 +36,9 @@ code harder.
 - For anything intermittent or timing-dependent, name the interleaving or the
   window that produces it. "A race somewhere in here" does not let anyone fix
   anything.
+- When you point at a fix, scope it to the cause: the change that removes it,
+  leaving the surrounding code as it is and adding no abstraction the fix
+  does not need.
 
 ## Design questions
 
@@ -43,6 +46,13 @@ Name the axes the choice actually turns on in this repository — not the generi
 tradeoffs of the technologies involved. Weigh the options against constraints
 you verified here: how the existing code is shaped, what it already depends on,
 what the team would have to maintain.
+
+Prefer the option that calls code which already does the job and stays
+concrete for the cases that exist today. Flexibility for a case nobody has
+counts for nothing: an interface, option, or parameter wins only when a
+second real case is in the code. Every function, type, and parameter an
+option adds must hide something its callers would otherwise have to know or
+repeat. Keep the recommendation to what the question asks.
 
 Recommend one, and say what would have to be true for the other to win. Present
 a comparison without a recommendation only if the choice genuinely belongs to

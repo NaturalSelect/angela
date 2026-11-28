@@ -25,6 +25,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/app"
 	"github.com/NaturalSelect/angela/internal/commands"
 	"github.com/NaturalSelect/angela/internal/config"
+	"github.com/NaturalSelect/angela/internal/editorcontext"
 	"github.com/NaturalSelect/angela/internal/history"
 	"github.com/NaturalSelect/angela/internal/images"
 	"github.com/NaturalSelect/angela/internal/message"
@@ -298,6 +299,10 @@ type UI struct {
 
 	// skills
 	skillStates []*skills.SkillState
+
+	// vscode is the latest state of the user's VS Code window, shown in the
+	// header. The zero value means no window is connected.
+	vscode editorcontext.Snapshot
 
 	// Notification state
 	notifyBackend       notification.Backend
@@ -918,6 +923,8 @@ func (m *UI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.requestLSPRefresh(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
+	case pubsub.Event[editorcontext.Snapshot]:
+		m.vscode = msg.Payload
 	case pubsub.Event[skills.Event]:
 		m.skillStates = msg.Payload.States
 		// NOTE: Construction does not publish this event, so a reload is the

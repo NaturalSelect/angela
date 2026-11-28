@@ -70,6 +70,8 @@ const (
 	LSPWarningIcon string = "W"
 	LSPInfoIcon    string = "I"
 	LSPHintIcon    string = "H"
+
+	VSCodeIcon string = "◧"
 )
 
 const (

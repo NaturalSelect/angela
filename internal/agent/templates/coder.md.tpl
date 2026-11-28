@@ -83,9 +83,12 @@ When you encounter an obstacle, do not use destructive actions as a shortcut to 
 The git stash stack is shared with the main checkout and all other worktrees, and other sessions may push or pop it concurrently. Never use bare `git stash` / `git stash pop` — you could pop another session's changes. Prefer a temporary WIP commit to set work aside; if you must stash, use `git stash push -u -m "<unique-tag>"`, immediately capture your entry's SHA via `git stash list --format='%H %gs'`, restore with `git stash apply <sha>` (not pop), and afterwards drop the entry, re-finding its current `stash@{n}` by tag first.
 
 # Code structure
+Decide where knowledge lives before you write code. List what the change has to know: each format, rule, invariant, and order of steps it depends on. Assign each one to a single owner, the one type or function that knows it, and pick an owner the codebase already has when one exists. Everything else calls the owner instead of repeating what it knows.
+
 Every function, type, and parameter you add must hide something its callers would otherwise have to know or repeat.
 
 - Search the codebase for existing code that does the job and call it.
+- Keep a type's data together with the rules for that data, so callers get answers from it instead of reading its fields and applying the rules themselves.
 - Extract logic your change needs in more than one place; leave apart code that only looks alike.
 - Keep each function at one level of detail: the steps of a task, or the mechanics of one step.
 - Write the concrete thing for the cases that exist today; add an interface, option, or parameter when a second real case is in the code.

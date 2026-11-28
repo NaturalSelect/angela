@@ -473,6 +473,16 @@ a native VS Code diff tab with Accept/Reject buttons, alongside the usual
 terminal dialog — whichever you answer first settles the request. Pass
 `--no-vscode-diff` to always use the terminal dialog only.
 
+In the same setup Angela also tells the model which file is active in that
+VS Code window, which lines you have selected, and the last few files you
+looked at. The notice goes in front of your message, and only when it differs
+from the last one in the conversation. A selection is cut to 50 lines or
+2000 characters, and may come from a file outside the project. VS Code gives
+no list of open tabs, so the recent files are the ones you recently worked in.
+The TUI header shows the active file while the window is connected. Pass
+`--no-vscode-context` or set `options.vscode_context` to `false` to turn it
+off.
+
 Inline image previews need a terminal that supports Kitty graphics protocol
 Unicode placeholders. Angela auto-detects kitty, Ghostty, and Rio; VS Code's
 integrated terminal and WezTerm answer the basic Kitty query but don't render

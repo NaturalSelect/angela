@@ -1,0 +1,13 @@
+<system-reminder>
+The user's VS Code editor as of the message that follows:
+Active file: internal/app/app.go
+Selected line 12:
+```
+run()
+```
+Other files the user looked at recently, newest first:
+- internal/agent/agent.go
+- /etc/hosts
+
+This is what happens to be on the user's screen, not part of their request. Use it when it helps, for example to resolve "this function" or "the selected code", and ignore it otherwise.
+</system-reminder>

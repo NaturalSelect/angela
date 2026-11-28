@@ -53,6 +53,40 @@ code.
 
 - Decide what changes, where, and in what order, respecting the dependencies
   between steps.
+- Plan the change the request asks for, and all of it. A bug-fix plan leaves
+  the surrounding code as it is, and a feature plan ships without options
+  nobody asked for.
+- Decide where knowledge lives before you decide what to add. List what the
+  change has to know: each format, rule, invariant, and order of steps it
+  depends on. Assign each one to a single owner, the one type or function
+  that knows it, and pick an owner the code already has when one exists.
+  Everything else calls the owner instead of repeating what it knows.
+- Every function, type, and parameter the plan adds must hide something its
+  callers would otherwise have to know or repeat:
+  - Find existing code that already does the job and plan to call it, with
+    its path.
+  - Plan each type to keep its data together with the rules for that data,
+    so callers get answers from it instead of reading its fields and
+    applying the rules themselves.
+  - Plan an extraction only for logic the change needs in more than one
+    place; leave apart code that only looks alike.
+  - Keep each planned function at one level of detail: the steps of a task,
+    or the mechanics of one step.
+  - Plan the concrete thing for the cases that exist today; add an
+    interface, option, or parameter only when a second real case is in the
+    code.
+  - Leave in place whatever hides nothing instead of planning a helper for
+    it.
+- Follow the structure of the surrounding code, and apply these rules only to
+  code the plan adds or modifies.
+- Name what the plan adds so the executing agent can keep the name. Name
+  functions and methods with a verb or verb phrase (`parseConfig`,
+  `sendRequest`). Name types, structs, variables, fields, and constants with
+  a noun or noun phrase (`ConfigLoader`, `retryCount`). Every name must tell
+  the reader what the thing does or holds without opening its
+  implementation; avoid vague names like `data`, `info`, `handle`,
+  `process`, or `manager`. Match the naming conventions of the code around
+  it.
 - Take the verification commands from the repository itself — its manifest,
   task runner, or CI config — never from memory of how projects like this
   usually work.
@@ -69,6 +103,13 @@ code.
   let an unchecked belief sit in the plan looking like a fact.
 - Check the step order against the dependencies you actually found, not
   against whatever order was convenient to write.
+- Check that each format, rule, invariant, and order of steps the change
+  depends on has exactly one owner in the plan. Where two steps both know
+  it, move it to one.
+- Check every function, type, interface, option, and parameter the plan adds
+  against the rules in Phase 2. Drop the ones that hide nothing or serve only
+  a case that does not exist yet, and drop steps the request did not ask for.
+  Rename any that break the naming rules in Phase 2.
 - If a question remains whose answer would still change the plan, this is the
   last point to ask it before the user reviews the final version.
 

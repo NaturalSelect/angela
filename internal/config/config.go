@@ -582,6 +582,17 @@ type Options struct {
 	SubagentDepth             *int         `json:"subagent_depth,omitempty" jsonschema:"description=Maximum levels of subagent nesting allowed through the agent tool\\, counting a branch hop the same as a subagent hop. 2 (the default) lets a primary agent dispatch a subagent or branch that may itself dispatch one further level\\, 0 disables delegation entirely. Raising this multiplies token and time cost per dispatch chain.,minimum=0,default=2,example=3"`
 	EnableImageTools          *bool        `json:"enable_image_tools,omitempty" jsonschema:"description=Built-in ImageGenerate/ImageEdit tools. Unset enables them only when the terminal supports Kitty graphics Unicode placeholders (inline previews); true enables them in any terminal (no preview where unsupported\\, images can still be saved with Export Image); false disables them"`
 	CommitDiffRunes           *int         `json:"commit_diff_runes,omitempty" jsonschema:"description=Maximum number of characters (runes) of the staged diff sent to the model when generating a commit message. The same budget caps what angela describe sends when it describes a branch. A longer input is cut off and marked as truncated. Raising it costs more input tokens per run.,minimum=1,default=48000,example=100000"`
+	VSCodeContext             *bool        `json:"vscode_context,omitempty" jsonschema:"description=Share the active file\\, the selected lines and the recently active files of a VS Code window with the model. Only takes effect when Angela runs in VS Code's integrated terminal and the Copilot Chat extension is active. The selection is sent with your messages and costs tokens\\, and it may come from a file outside the project.,default=true"`
+}
+
+// VSCodeContextEnabled reports whether the VS Code editor context may be
+// shared with the model. A nil receiver or unset field means "not
+// configured", which defaults to true.
+func (o *Options) VSCodeContextEnabled() bool {
+	if o == nil {
+		return true
+	}
+	return ptrValOr(o.VSCodeContext, true)
 }
 
 // DefaultCommitDiffRunes is the staged diff budget, in runes, when neither

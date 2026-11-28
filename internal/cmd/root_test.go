@@ -611,6 +611,38 @@ func TestEnableImageToolsFlag(t *testing.T) {
 	}
 }
 
+// TestVSCodeContextFromFlags pins that the editor context is an opt-in of
+// the command that defines --no-vscode-context: a command without the flag
+// must never ask for the long-lived VS Code connection.
+func TestVSCodeContextFromFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		defined bool
+		val     string
+		want    bool
+	}{
+		{"command without the flag", false, "", false},
+		{"flag defined and not passed", true, "", true},
+		{"flag passed", true, "true", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cobra.Command{}
+			if tt.defined {
+				cmd.Flags().Bool("no-vscode-context", false, "")
+			}
+			if tt.val != "" {
+				require.NoError(t, cmd.Flags().Set("no-vscode-context", tt.val))
+			}
+			require.Equal(t, tt.want, vscodeContextFromFlags(cmd))
+		})
+	}
+}
+
 // TestKittyPlaceholdersFlag pins the tri-state behavior of
 // --kitty-placeholders: unset must defer to config/auto-detection
 // (nil), while an explicit true or false always wins, including an

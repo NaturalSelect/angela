@@ -50,6 +50,17 @@ few turns as it can. **What the user sees is what gets built.**
   alternative fails. If you cannot say why each fails, it is a real choice:
   settle it by the rule above. An objection to a consequence reopens the
   decision that forced it.
+- **Every piece earns its place.** Design what the problem and its
+  challenges require, and all of it. A mechanism, type, field, or rule
+  enters only when it holds state, enforces a rule, or hides something the
+  other parts would otherwise have to know or repeat. Each format, rule,
+  invariant, and order of steps the design depends on has exactly one owner
+  among them; the other parts rely on that owner and never restate it. Build
+  on what the code already does instead of designing a parallel mechanism
+  beside it. Design for the cases that exist today: add a pluggable
+  interface, a configuration option, or a variant only when a second real
+  case is in the code or the user asked for it. Behavior nobody asked for is
+  out of scope, not a bonus.
 - **Trace, do not assert.** Show that a claim the user cannot check at a
   glance holds by tracing a concrete case through the code, one line per
   step with real values and file:line, defining each repository term at
@@ -147,6 +158,9 @@ boundary alone:
 - **Boundaries**: the points where the trace passes from one mechanism to
   another, and the data structures and calls that cross there, enough that
   each can be designed without seeing inside another.
+- **Ownership**: each format, rule, invariant, and order of steps the
+  design depends on, assigned to the one mechanism that knows it, before
+  any section is drafted. The others reach it through a boundary.
 
 Then conquer one section at a time, in dependency order. Build each in this
 order, reasoning before machinery, leaving out what a mechanism does not
@@ -155,7 +169,8 @@ need:
 1. The part of the thesis it realizes, the challenges it meets, and why the
    obvious ways fall short.
 2. Its core idea.
-3. Its types, grouped by the role that holds them, and its rules.
+3. Its types, grouped by the role that holds them, and its rules, each rule
+   placed in the one type that owns it.
 4. Its flows: the normal path, then each failure path.
 5. The properties it guarantees.
 6. The edge cases it handles or knowingly leaves open, each with a concrete
@@ -166,6 +181,9 @@ exactly as stated. Then:
 
 - Trace the direction's problem case through the section at its new depth;
   it must reach the outcome step 2's trace reached.
+- Check that every type, field, rule, and extension point in the section
+  earns its place by the rule above; cut what does not, and say so in one
+  line.
 - Trace what the section touches elsewhere in the design and state each
   forced change as a consequence. Where more than one answer still holds,
   settle it by the rules above.

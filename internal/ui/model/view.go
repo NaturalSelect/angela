@@ -19,7 +19,7 @@ import (
 
 // drawHeader draws the header section of the UI.
 func (m *UI) drawHeader(scr uv.Screen, area uv.Rectangle) {
-	m.header.drawHeader(scr, area, m.sessionTrail(), area.Dx(), m.lspErrorCount())
+	m.header.drawHeader(scr, area, m.sessionTrail(), area.Dx(), m.lspErrorCount(), vscodeLabel(m.vscode))
 }
 
 // drawEditor draws whatever currently owns the editor rect: an inline dialog

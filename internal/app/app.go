@@ -26,6 +26,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/config"
 	"github.com/NaturalSelect/angela/internal/db"
 	"github.com/NaturalSelect/angela/internal/editorapproval"
+	"github.com/NaturalSelect/angela/internal/editorcontext"
 	"github.com/NaturalSelect/angela/internal/event"
 	"github.com/NaturalSelect/angela/internal/filetracker"
 	"github.com/NaturalSelect/angela/internal/herdr"
@@ -96,6 +97,10 @@ type App struct {
 	// herdrClient reports agent state to herdr when running inside
 	// a herdr-managed pane. Nil when not in a herdr environment.
 	herdrClient *herdr.Client
+
+	// editorContext follows the VS Code window the user works in. Nil when
+	// sharing it with the model is off.
+	editorContext *editorcontext.Tracker
 
 	// clientImageSupport records whether a connected client has ever
 	// reported Kitty graphics Unicode placeholder (virtual placement)
@@ -210,7 +215,21 @@ func New(ctx context.Context, conn *sql.DB, store *config.ConfigStore, skillsMgr
 
 	app.Undo = undo.NewService(messages, files, sessions, fileTracker, coordinatorBusyChecker{app: app}, store.WorkingDir())
 
+	if store.Overrides().VSCodeContext && cfg.Options.VSCodeContextEnabled() {
+		app.editorContext = editorcontext.New(clientEnvGetenv(store), store.WorkingDir())
+	}
+
 	app.setupEvents()
+
+	// Started after setupEvents so that the first snapshot reaches the
+	// subscriber it registered.
+	if app.editorContext != nil {
+		app.editorContext.Start(ctx)
+		app.cleanupFuncs = append(app.cleanupFuncs, func(context.Context) error {
+			app.editorContext.Close()
+			return nil
+		})
+	}
 
 	// Initialize clipboard support. This is best-effort; if it fails
 	// (e.g., headless environment), clipboard operations will return nil.
@@ -646,6 +665,9 @@ func (app *App) setupEvents() {
 	if app.Skills != nil {
 		setupSubscriber(ctx, app.serviceEventsWG, "skills", app.Skills.SubscribeEvents, app.events)
 	}
+	if app.editorContext != nil {
+		setupSubscriber(ctx, app.serviceEventsWG, "vscode-context", app.editorContext.Subscribe, app.events)
+	}
 	cleanupFunc := func(context.Context) error {
 		cancel()
 		app.serviceEventsWG.Wait()
@@ -759,21 +781,22 @@ func (app *App) initCoderAgent(ctx context.Context, interactive bool) error {
 	}
 	var err error
 	app.AgentCoordinator, err = agent.NewCoordinator(ctx, agent.CoordinatorOptions{
-		Config:       app.config,
-		Sessions:     app.Sessions,
-		Messages:     app.Messages,
-		Permissions:  app.Permissions,
-		Questions:    app.Questions,
-		History:      app.History,
-		FileTracker:  app.FileTracker,
-		LSPManager:   app.LSPManager,
-		Notify:       app.agentNotifications,
-		RunComplete:  app.runCompletions,
-		Skills:       app.Skills,
-		Images:       app.Images,
-		ImageSupport: app.ClientImageSupported,
-		Reload:       app.reloadForTool,
-		Interactive:  interactive,
+		Config:        app.config,
+		Sessions:      app.Sessions,
+		Messages:      app.Messages,
+		Permissions:   app.Permissions,
+		Questions:     app.Questions,
+		History:       app.History,
+		FileTracker:   app.FileTracker,
+		LSPManager:    app.LSPManager,
+		Notify:        app.agentNotifications,
+		RunComplete:   app.runCompletions,
+		Skills:        app.Skills,
+		Images:        app.Images,
+		ImageSupport:  app.ClientImageSupported,
+		Reload:        app.reloadForTool,
+		Interactive:   interactive,
+		EditorContext: app.agentEditorContext(),
 
 		NoBranchAgents: app.config.Overrides().NoBranchAgents,
 	})
@@ -802,6 +825,12 @@ func (app *App) Subscribe(program *tea.Program) {
 	defer app.tuiWG.Done()
 
 	events := app.events.Subscribe(tuiCtx)
+	// NOTE: The tracker usually connects before the TUI is listening, and an
+	// event nobody subscribed to is gone, so the header would stay blank
+	// until the selection next moved.
+	if app.editorContext != nil {
+		program.Send(pubsub.Event[editorcontext.Snapshot]{Type: pubsub.UpdatedEvent, Payload: app.editorContext.Snapshot()})
+	}
 	for {
 		select {
 		case <-tuiCtx.Done():

@@ -58,6 +58,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("auto-accept-edits", false, "Automatically accept file edits but still ask about everything else (same as cycling Shift+Tab once)")
 	rootCmd.MarkFlagsMutuallyExclusive("yolo", "auto-accept-edits")
 	rootCmd.Flags().Bool("no-vscode-diff", false, "Do not open edit diffs in VS Code even when running inside its terminal")
+	rootCmd.Flags().Bool("no-vscode-context", false, "Do not share the VS Code active file and selection with the model even when running inside its terminal")
 	rootCmd.Flags().Bool("enable-image-tools", false, "Force the built-in ImageGenerate/ImageEdit tools on (even without Kitty inline previews) or off with =false; omit to use options.enable_image_tools or auto-detection")
 	rootCmd.Flags().Bool("kitty-placeholders", false, "Force Kitty graphics Unicode placeholder support on or off (needed for inline images, and for the ImageGenerate/ImageEdit tools unless --enable-image-tools is set); omit to use options.tui.kitty_placeholders or auto-detection")
 	rootCmd.PersistentFlags().StringSlice("channels", nil, "MCP servers to enable as channels (repeatable), e.g. --channels server:webhook")
@@ -108,6 +109,14 @@ func enableImageToolsFlag(cmd *cobra.Command) *bool {
 	return &v
 }
 
+// vscodeContextFromFlags reports whether the command wants the VS Code
+// context shared. Only the root command, which runs the TUI, defines
+// --no-vscode-context, so every other command gets false.
+func vscodeContextFromFlags(cmd *cobra.Command) bool {
+	f := cmd.Flags().Lookup("no-vscode-context")
+	return f != nil && f.Value.String() != "true"
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "angela",
 	Short: "A terminal-first AI assistant for software development",
@@ -136,6 +145,9 @@ angela --auto-accept-edits
 
 # Run without opening edit diffs in VS Code's own diff viewer
 angela --no-vscode-diff
+
+# Run without sharing the VS Code active file and selection with the model
+angela --no-vscode-context
 
 # Force-enable inline images in a terminal Angela doesn't recognize
 angela --kitty-placeholders
@@ -384,6 +396,7 @@ type localWorkspaceOptions struct {
 	PermissionMode   permission.PermissionMode
 	YoloMerge        bool
 	NoVSCodeDiff     bool
+	VSCodeContext    bool
 	EnableImageTools *bool
 	CommitDiffRunes  *int
 	NoDockerSandbox  bool
@@ -420,6 +433,7 @@ func localWorkspaceOptionsFromFlags(cmd *cobra.Command, cwd string) localWorkspa
 		PermissionMode:           permissionModeFromFlags(cmd),
 		YoloMerge:                yoloMerge,
 		NoVSCodeDiff:             noVSCodeDiff,
+		VSCodeContext:            vscodeContextFromFlags(cmd),
 		EnableImageTools:         enableImageToolsFlag(cmd),
 		CommitDiffRunes:          commitDiffRunesFlag(cmd),
 		NoDockerSandbox:          noDockerSandbox,
@@ -469,6 +483,7 @@ func openLocalWorkspace(ctx context.Context, o localWorkspaceOptions) (*workspac
 	overrides.NoDockerSandbox = o.NoDockerSandbox
 	overrides.YoloMerge = o.YoloMerge
 	overrides.NoVSCodeDiff = o.NoVSCodeDiff
+	overrides.VSCodeContext = o.VSCodeContext
 	overrides.EnableImageTools = o.EnableImageTools
 	overrides.SandboxAllowDockerSocket = o.SandboxAllowDockerSocket
 	overrides.CommitDiffRunes = o.CommitDiffRunes

@@ -793,6 +793,11 @@
           "examples": [
             100000
           ]
+        },
+        "vscode_context": {
+          "type": "boolean",
+          "description": "Share the active file, the selected lines and the recently active files of a VS Code window with the model. Only takes effect when Angela runs in VS Code's integrated terminal and the Copilot Chat extension is active. The selection is sent with your messages and costs tokens, and it may come from a file outside the project.",
+          "default": true
         }
       },
       "additionalProperties": false,

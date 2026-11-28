@@ -26,6 +26,7 @@ import (
 	"github.com/NaturalSelect/angela/internal/permission"
 	"github.com/NaturalSelect/angela/internal/pubsub"
 	"github.com/NaturalSelect/angela/internal/question"
+	"github.com/NaturalSelect/angela/internal/reminder"
 	"github.com/NaturalSelect/angela/internal/scratch"
 	"github.com/NaturalSelect/angela/internal/session"
 	"github.com/NaturalSelect/angela/internal/skills"
@@ -222,6 +223,10 @@ type coordinator struct {
 	background *backgroundAgents
 	notices    *noticeInbox
 
+	// editorContext reports what the user's VS Code window shows, and false
+	// when no window is connected. Nil leaves the editor out of every turn.
+	editorContext func() (reminder.EditorContext, bool)
+
 	// subSessions records every sub-session this process dispatched, whether
 	// it runs in the foreground, in the background or as a branch. It is nil
 	// on a hand-built coordinator, and every use is nil-safe.
@@ -282,6 +287,9 @@ type CoordinatorOptions struct {
 	// Reload backs the AngelaReload tool. Nil leaves the tool unregistered.
 	Reload      func(context.Context) (string, error)
 	Interactive bool
+	// EditorContext reports what the user's VS Code window shows, and false
+	// when no window is connected. Nil leaves the editor out of every turn.
+	EditorContext func() (reminder.EditorContext, bool)
 	// NoBranchAgents disables branch agents and background agents while
 	// leaving the other interactive tools, such as question, available.
 	NoBranchAgents bool
@@ -322,6 +330,7 @@ func NewCoordinator(ctx context.Context, opts CoordinatorOptions) (Coordinator, 
 		images:         opts.Images,
 		imageSupport:   opts.ImageSupport,
 		reload:         opts.Reload,
+		editorContext:  opts.EditorContext,
 		interactive:    opts.Interactive,
 		noBranchAgents: opts.NoBranchAgents,
 	}
@@ -562,6 +571,11 @@ func (c *coordinator) compactFor(ctx context.Context, sessionID string, host res
 // a label — the primary executor serves whichever agent the session is
 // currently pointed at.
 func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
+	// NOTE: A subagent's prompt is written by a model, not typed by the user.
+	var editorContext func() (reminder.EditorContext, bool)
+	if !isSubAgent {
+		editorContext = c.editorContext
+	}
 	return NewSessionAgent(SessionAgentOptions{
 		IsSubAgent:    isSubAgent,
 		AgentID:       agentID,
@@ -574,6 +588,7 @@ func (c *coordinator) buildAgent(agentID string, isSubAgent bool) SessionAgent {
 		GenerateTitle: c.generateSessionTitle,
 		SkillTracker:  c.skillTracker,
 		Reminders:     c.cfg.Config().Options.Reminders,
+		EditorContext: editorContext,
 
 		Notices:        c.notices,
 		WakeForNotices: c.wakeForNotices,

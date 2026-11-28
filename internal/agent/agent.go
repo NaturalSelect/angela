@@ -356,6 +356,10 @@ type sessionAgent struct {
 	// when the agent is built, the same way compaction is.
 	reminders []string
 
+	// editorContext reports what the user's VS Code window shows, and false
+	// when no window is connected. Nil means the feature is off.
+	editorContext func() (reminder.EditorContext, bool)
+
 	// notices holds background-agent notices not yet shown to a model.
 	// May be nil.
 	notices *noticeInbox
@@ -391,6 +395,10 @@ type SessionAgentOptions struct {
 	// Reminders holds the user's standing notices from config.
 	Reminders []string
 
+	// EditorContext reports what the user's VS Code window shows, and
+	// false when no window is connected. Nil means the feature is off.
+	EditorContext func() (reminder.EditorContext, bool)
+
 	// Notices holds the background-agent notices awaiting delivery. It is
 	// shared by every executor of a coordinator. Nil means the feature is
 	// off and no notice is ever delivered.
@@ -418,6 +426,7 @@ func NewSessionAgent(
 		generateTitle:  opts.GenerateTitle,
 		skillTracker:   opts.SkillTracker,
 		reminders:      opts.Reminders,
+		editorContext:  opts.EditorContext,
 		notices:        opts.Notices,
 		wakeForNotices: opts.WakeForNotices,
 
@@ -736,6 +745,12 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 	// A wake turn's prompt is the notices themselves. They are taken
 	// under the lock so the decision to run and the claim on them are one
 	// step.
+	//
+	// NOTE: Both markers are cleared below, so whether the user's own
+	// words start this turn has to be read first. A wake or a resume
+	// after compaction is the harness talking, and the editor state would
+	// only be noise there.
+	startsFromUser := !call.noticeWake && !call.internal
 	var wakeNotices []string
 	if call.noticeWake {
 		wakeNotices = a.notices.Take(call.SessionID)
@@ -922,6 +937,20 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 		history = append(history, reminderMsg.ToAIMessage()...)
 	}
 
+	// The notice of the user's editor is the one reminder that is not
+	// recomputed every turn: it is sent when it differs from the last one
+	// in the conversation. Reading that one from history, instead of
+	// remembering it, makes compaction and undo reset it correctly.
+	sentEditorNotice := lastEditorNotice(msgs)
+	if startsFromUser {
+		editorMsgs, notice, createErr := a.createEditorNotice(ctx, call.SessionID, sentEditorNotice)
+		if createErr != nil {
+			return nil, createErr
+		}
+		history = append(history, editorMsgs...)
+		sentEditorNotice = notice
+	}
+
 	// Background-agent notices that arrived while the session was idle or
 	// between turns go in one reminder ahead of the prompt, for the same
 	// replay-stability reason as the reminders above. A wake turn already
@@ -1034,6 +1063,13 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 					return callContext, prepared, createErr
 				}
 				prepared.Messages = append(prepared.Messages, announceMsg.ToAIMessage()...)
+
+				editorMsgs, notice, createErr := a.createEditorNotice(callContext, call.SessionID, sentEditorNotice)
+				if createErr != nil {
+					return callContext, prepared, createErr
+				}
+				prepared.Messages = append(prepared.Messages, editorMsgs...)
+				sentEditorNotice = notice
 			}
 			for _, queued := range fold {
 				userMessage, createErr := a.createUserMessage(callContext, queued)

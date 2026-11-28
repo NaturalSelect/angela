@@ -59,6 +59,9 @@ internal/
   sandbox/                         OS-level isolation for the process and the commands it runs
                                     (Landlock, Seatbelt, Docker detection)
   editorapproval/                  External-editor diff review, built on vscodemcp
+  editorcontext/                   Tracks the active file, selection and recently active files of a
+                                    VS Code window through a vscodemcp `Watch` session; feeds the
+                                    editor notice in `reminder` and the TUI header
   vscodemcp/                       Client for VS Code's Copilot Chat private MCP endpoint (lock file
                                     discovery, all six upstream tools: `open_diff`, `close_diff`,
                                     `get_vscode_info`, `get_selection`, `get_diagnostics` and

@@ -76,6 +76,13 @@ type RuntimeOverrides struct {
 	// is detected, so an edit-shaped prompt only ever opens in the
 	// terminal.
 	NoVSCodeDiff bool
+	// VSCodeContext lets the app watch a matching VS Code window and
+	// share its active file and selection with the model. It is an
+	// opt-in rather than a --no flag because only the interactive TUI
+	// wants the long-lived connection; run, commit and the other
+	// commands build a workspace through the same path and must not
+	// open one.
+	VSCodeContext bool
 	// EnableImageTools is set by the --enable-image-tools flag. Nil means
 	// the flag was not passed, so options.enable_image_tools applies.
 	EnableImageTools *bool

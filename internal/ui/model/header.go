@@ -2,9 +2,11 @@ package model
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/NaturalSelect/angela/internal/editorcontext"
 	"github.com/NaturalSelect/angela/internal/fsext"
 	"github.com/NaturalSelect/angela/internal/ui/common"
 	"github.com/NaturalSelect/angela/internal/ui/list"
@@ -64,16 +66,18 @@ func (h *header) refresh() {
 // drawHeader draws the one-row header band: the wordmark, the session
 // breadcrumb, and the working directory flush right. lspErrorCount comes from
 // the UI's memoized state — drawing runs on every frame and must not probe the
-// workspace (a call that may block).
+// workspace (a call that may block). editor is the VS Code label, empty when
+// there is none.
 func (h *header) drawHeader(
 	scr uv.Screen,
 	area uv.Rectangle,
 	trail []string,
 	width int,
 	lspErrorCount int,
+	editor string,
 ) {
 	base := list.ToStyle(h.com.Styles.Header.Band)
-	common.DrawOnSurface(scr, area, base, h.renderBar(trail, width, lspErrorCount))
+	common.DrawOnSurface(scr, area, base, h.renderBar(trail, width, lspErrorCount, editor))
 }
 
 // renderTrail joins the session titles into a breadcrumb, shedding outer
@@ -146,8 +150,8 @@ func (h *header) HitTestBreadcrumb(x int) (int, bool) {
 }
 
 // renderBar renders the one-row header: wordmark on the left, session title in
-// the middle, working directory and LSP errors flush right.
-func (h *header) renderBar(trail []string, width int, lspErrorCount int) string {
+// the middle, working directory, VS Code file and LSP errors flush right.
+func (h *header) renderBar(trail []string, width int, lspErrorCount int, editor string) string {
 	t := h.com.Styles
 
 	inner := width - leftPadding - rightPadding
@@ -156,6 +160,7 @@ func (h *header) renderBar(trail []string, width int, lspErrorCount int) string 
 	details := renderHeaderDetails(
 		h.com,
 		lspErrorCount,
+		editor,
 		max(0, inner-markWidth-logoToDetailSpacing),
 	)
 
@@ -189,6 +194,7 @@ func (h *header) renderBar(trail []string, width int, lspErrorCount int) string 
 func renderHeaderDetails(
 	com *common.Common,
 	lspErrorCount int,
+	editor string,
 	availWidth int,
 ) string {
 	t := com.Styles
@@ -196,6 +202,10 @@ func renderHeaderDetails(
 	const dirTrimLimit = 4
 	cwd := fsext.DirTrim(fsext.PrettyPath(com.Workspace.WorkingDir()), dirTrimLimit)
 	result := t.Header.WorkingDir.Render(cwd)
+
+	if editor != "" {
+		result = t.Header.WorkingDir.Render(editor) + t.Header.Separator.Render(" • ") + result
+	}
 
 	if lspErrorCount > 0 {
 		errs := t.LSP.ErrorDiagnostic.Render(
@@ -205,4 +215,22 @@ func renderHeaderDetails(
 	}
 
 	return ansi.Truncate(result, max(0, availWidth), "…")
+}
+
+// vscodeLabel names the file open in the user's VS Code window, with the
+// selected lines when there are any. It is empty while no window is
+// connected.
+func vscodeLabel(snap editorcontext.Snapshot) string {
+	if !snap.Connected || snap.ActiveFile == "" {
+		return ""
+	}
+	label := styles.VSCodeIcon + " " + filepath.Base(snap.ActiveFile)
+	switch sel := snap.Selection; {
+	case sel == nil:
+		return label
+	case sel.StartLine == sel.EndLine:
+		return fmt.Sprintf("%s:%d", label, sel.StartLine)
+	default:
+		return fmt.Sprintf("%s:%d-%d", label, sel.StartLine, sel.EndLine)
+	}
 }
